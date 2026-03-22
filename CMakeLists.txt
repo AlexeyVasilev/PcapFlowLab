@@ -42,6 +42,9 @@ add_library(
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
     src/core/io/PcapReader.cpp
+    src/core/io/FileByteSource.cpp
+    src/core/io/PacketDataReader.cpp
+    src/core/io/CaptureFilePacketReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImporter.cpp
@@ -64,6 +67,7 @@ if(BUILD_TESTING)
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
+        tests/unit/PacketAccessTests.cpp
     )
 
     target_link_libraries(

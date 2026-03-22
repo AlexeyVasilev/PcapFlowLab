@@ -1,5 +1,6 @@
 #include "app/session/CaptureSession.h"
 
+#include "core/io/CaptureFilePacketReader.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl {
@@ -25,6 +26,19 @@ bool CaptureSession::has_capture() const noexcept {
 
 const CaptureSummary& CaptureSession::summary() const noexcept {
     return state_.summary;
+}
+
+std::vector<std::uint8_t> CaptureSession::read_packet_data(const PacketRef& packet) const {
+    if (!has_capture()) {
+        return {};
+    }
+
+    CaptureFilePacketReader reader {capture_path_};
+    if (!reader.is_open()) {
+        return {};
+    }
+
+    return reader.read_packet_data(packet);
 }
 
 CaptureState& CaptureSession::state() noexcept {

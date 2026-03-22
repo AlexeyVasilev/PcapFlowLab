@@ -7,6 +7,7 @@ namespace pfl {
 
 struct PacketRef {
     std::uint64_t packet_index {0};
+    // File offset of the packet data bytes inside the original capture file.
     std::uint64_t byte_offset {0};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
