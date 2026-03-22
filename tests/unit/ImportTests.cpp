@@ -90,7 +90,7 @@ void run_import_tests() {
 
         CaptureState state {};
         CaptureImporter importer {};
-        PFL_EXPECT(importer.import_pcap(path, state));
+        PFL_EXPECT(importer.import_capture(path, state));
         PFL_EXPECT(state.summary.packet_count == 2);
         PFL_EXPECT(state.summary.flow_count == 2);
         PFL_EXPECT(state.ipv4_connections.size() == 2);
@@ -126,3 +126,4 @@ void run_import_tests() {
 }
 
 }  // namespace pfl::tests
+

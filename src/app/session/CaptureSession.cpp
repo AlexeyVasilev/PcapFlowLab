@@ -152,7 +152,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path) {
     CaptureImporter importer {};
     CaptureState imported_state {};
 
-    if (!importer.import_pcap(path, imported_state)) {
+    if (!importer.import_capture(path, imported_state)) {
         capture_path_.clear();
         state_ = {};
         return false;
@@ -270,3 +270,4 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+

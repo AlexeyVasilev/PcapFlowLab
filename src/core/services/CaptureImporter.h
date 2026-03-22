@@ -8,7 +8,7 @@ namespace pfl {
 
 class CaptureImporter {
 public:
-    bool import_pcap(const std::filesystem::path& path, CaptureState& state);
+    bool import_capture(const std::filesystem::path& path, CaptureState& state);
 };
 
 }  // namespace pfl

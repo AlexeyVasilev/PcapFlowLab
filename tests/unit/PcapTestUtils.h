@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +32,11 @@ inline void append_le32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 24U) & 0x000000FFU));
 }
 
+inline void append_le64(std::vector<std::uint8_t>& bytes, std::uint64_t value) {
+    append_le32(bytes, static_cast<std::uint32_t>(value & 0xFFFFFFFFULL));
+    append_le32(bytes, static_cast<std::uint32_t>(value >> 32U));
+}
+
 inline void append_be16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0x00FFU));
     bytes.push_back(static_cast<std::uint8_t>(value & 0x00FFU));
@@ -43,6 +49,35 @@ inline void append_be32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0x000000FFU));
 }
 
+inline void append_be64(std::vector<std::uint8_t>& bytes, std::uint64_t value) {
+    append_be32(bytes, static_cast<std::uint32_t>(value >> 32U));
+    append_be32(bytes, static_cast<std::uint32_t>(value & 0xFFFFFFFFULL));
+}
+
+inline void append_u16(std::vector<std::uint8_t>& bytes, std::uint16_t value, bool little_endian) {
+    if (little_endian) {
+        append_le16(bytes, value);
+    } else {
+        append_be16(bytes, value);
+    }
+}
+
+inline void append_u32(std::vector<std::uint8_t>& bytes, std::uint32_t value, bool little_endian) {
+    if (little_endian) {
+        append_le32(bytes, value);
+    } else {
+        append_be32(bytes, value);
+    }
+}
+
+inline void append_u64(std::vector<std::uint8_t>& bytes, std::uint64_t value, bool little_endian) {
+    if (little_endian) {
+        append_le64(bytes, value);
+    } else {
+        append_be64(bytes, value);
+    }
+}
+
 inline std::array<std::uint8_t, 16> ipv6(std::initializer_list<std::uint8_t> bytes) {
     std::array<std::uint8_t, 16> address {};
     std::size_t index = 0;
@@ -51,6 +86,97 @@ inline std::array<std::uint8_t, 16> ipv6(std::initializer_list<std::uint8_t> byt
         ++index;
     }
     return address;
+}
+
+inline void append_padded_bytes(std::vector<std::uint8_t>& bytes, const std::vector<std::uint8_t>& payload) {
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    while ((bytes.size() % 4U) != 0U) {
+        bytes.push_back(0x00);
+    }
+}
+
+inline void append_pcapng_option(
+    std::vector<std::uint8_t>& bytes,
+    std::uint16_t code,
+    const std::vector<std::uint8_t>& value,
+    bool little_endian
+) {
+    append_u16(bytes, code, little_endian);
+    append_u16(bytes, static_cast<std::uint16_t>(value.size()), little_endian);
+    bytes.insert(bytes.end(), value.begin(), value.end());
+    while ((bytes.size() % 4U) != 0U) {
+        bytes.push_back(0x00);
+    }
+}
+
+inline std::vector<std::uint8_t> make_pcapng_block(
+    std::uint32_t block_type,
+    const std::vector<std::uint8_t>& body,
+    bool little_endian = true
+) {
+    std::vector<std::uint8_t> bytes {};
+    const auto total_length = static_cast<std::uint32_t>(body.size() + 12U);
+    append_u32(bytes, block_type, little_endian);
+    append_u32(bytes, total_length, little_endian);
+    bytes.insert(bytes.end(), body.begin(), body.end());
+    append_u32(bytes, total_length, little_endian);
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_pcapng_section_header_block(bool little_endian = true) {
+    std::vector<std::uint8_t> body {};
+    append_u32(body, 0x1A2B3C4DU, little_endian);
+    append_u16(body, 1, little_endian);
+    append_u16(body, 0, little_endian);
+    append_u64(body, 0xFFFFFFFFFFFFFFFFULL, little_endian);
+    return make_pcapng_block(0x0A0D0D0AU, body, little_endian);
+}
+
+inline std::vector<std::uint8_t> make_pcapng_interface_description_block(
+    std::uint16_t linktype = 1,
+    std::uint32_t snaplen = 65535,
+    bool little_endian = true,
+    std::optional<std::uint8_t> timestamp_resolution = std::nullopt
+) {
+    std::vector<std::uint8_t> body {};
+    append_u16(body, linktype, little_endian);
+    append_u16(body, 0, little_endian);
+    append_u32(body, snaplen, little_endian);
+
+    if (timestamp_resolution.has_value()) {
+        append_pcapng_option(body, 9U, std::vector<std::uint8_t> {*timestamp_resolution}, little_endian);
+        append_u16(body, 0U, little_endian);
+        append_u16(body, 0U, little_endian);
+    }
+
+    return make_pcapng_block(0x00000001U, body, little_endian);
+}
+
+inline std::vector<std::uint8_t> make_pcapng_enhanced_packet_block(
+    std::uint32_t interface_id,
+    std::uint32_t ts_sec,
+    std::uint32_t ts_usec,
+    const std::vector<std::uint8_t>& packet,
+    bool little_endian = true
+) {
+    const auto timestamp = (static_cast<std::uint64_t>(ts_sec) * 1'000'000ULL) + static_cast<std::uint64_t>(ts_usec);
+
+    std::vector<std::uint8_t> body {};
+    append_u32(body, interface_id, little_endian);
+    append_u32(body, static_cast<std::uint32_t>(timestamp >> 32U), little_endian);
+    append_u32(body, static_cast<std::uint32_t>(timestamp & 0xFFFFFFFFULL), little_endian);
+    append_u32(body, static_cast<std::uint32_t>(packet.size()), little_endian);
+    append_u32(body, static_cast<std::uint32_t>(packet.size()), little_endian);
+    append_padded_bytes(body, packet);
+    return make_pcapng_block(0x00000006U, body, little_endian);
+}
+
+inline std::vector<std::uint8_t> make_pcapng(const std::vector<std::vector<std::uint8_t>>& blocks) {
+    std::vector<std::uint8_t> bytes {};
+    for (const auto& block : blocks) {
+        bytes.insert(bytes.end(), block.begin(), block.end());
+    }
+    return bytes;
 }
 
 inline std::vector<std::uint8_t> make_ethernet_ipv4_tcp_packet(
@@ -203,3 +329,4 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
+

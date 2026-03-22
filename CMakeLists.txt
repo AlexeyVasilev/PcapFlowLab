@@ -43,6 +43,7 @@ add_library(
     src/core/domain/CaptureSummary.cpp
     src/core/domain/PacketDetails.cpp
     src/core/io/PcapReader.cpp
+    src/core/io/PcapNgReader.cpp
     src/core/io/PcapWriter.cpp
     src/core/io/FileByteSource.cpp
     src/core/io/PacketDataReader.cpp
@@ -91,6 +92,7 @@ if(BUILD_TESTING)
         tests/unit/QueryTests.cpp
         tests/unit/VlanTests.cpp
         tests/unit/ExportTests.cpp
+        tests/unit/PcapNgTests.cpp
     )
 
     target_link_libraries(
