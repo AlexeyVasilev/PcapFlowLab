@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include "core/domain/CaptureSummary.h"
+#include "core/domain/CaptureState.h"
 
 namespace pfl {
 
@@ -11,10 +11,12 @@ public:
     bool open_capture(const std::filesystem::path& path);
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
+    [[nodiscard]] CaptureState& state() noexcept;
+    [[nodiscard]] const CaptureState& state() const noexcept;
 
 private:
     std::filesystem::path capture_path_ {};
-    CaptureSummary summary_ {};
+    CaptureState state_ {};
 };
 
 }  // namespace pfl

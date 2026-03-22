@@ -38,8 +38,10 @@ add_library(
     src/core/domain/ConnectionKey.cpp
     src/core/domain/Flow.cpp
     src/core/domain/Connection.cpp
+    src/core/domain/ConnectionTable.cpp
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
+    src/core/services/PacketIngestor.cpp
     src/app/session/CaptureSession.cpp
 )
 
@@ -57,6 +59,7 @@ if(BUILD_TESTING)
         tests/unit/test_main.cpp
         tests/unit/FlowKeyTests.cpp
         tests/unit/ConnectionTests.cpp
+        tests/unit/IngestorTests.cpp
     )
 
     target_link_libraries(
