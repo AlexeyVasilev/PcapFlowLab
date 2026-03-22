@@ -9,6 +9,7 @@ namespace pfl::tests {
 void run_flow_key_tests();
 void run_connection_tests();
 void run_ingestor_tests();
+void run_import_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -27,6 +28,7 @@ int main() {
         pfl::tests::run_flow_key_tests();
         pfl::tests::run_connection_tests();
         pfl::tests::run_ingestor_tests();
+        pfl::tests::run_import_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
         return 1;

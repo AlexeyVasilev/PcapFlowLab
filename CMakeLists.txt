@@ -41,7 +41,10 @@ add_library(
     src/core/domain/ConnectionTable.cpp
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
+    src/core/io/PcapReader.cpp
+    src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
+    src/core/services/CaptureImporter.cpp
     src/app/session/CaptureSession.cpp
 )
 
@@ -60,6 +63,7 @@ if(BUILD_TESTING)
         tests/unit/FlowKeyTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
+        tests/unit/ImportTests.cpp
     )
 
     target_link_libraries(
