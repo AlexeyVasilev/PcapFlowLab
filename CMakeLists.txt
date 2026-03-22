@@ -62,6 +62,20 @@ target_include_directories(
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+add_executable(
+    pcap_flow_lab_cli
+    src/cli/main.cpp
+    src/cli/CliFormatting.cpp
+)
+
+set_target_properties(pcap_flow_lab_cli PROPERTIES OUTPUT_NAME "pcap-flow-lab")
+
+target_link_libraries(
+    pcap_flow_lab_cli
+    PRIVATE
+        pcap_flow_lab_core
+)
+
 if(BUILD_TESTING)
     add_executable(
         pcap_flow_lab_core_tests
@@ -72,6 +86,7 @@ if(BUILD_TESTING)
         tests/unit/ImportTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/QueryTests.cpp
     )
 
     target_link_libraries(

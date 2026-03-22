@@ -63,6 +63,70 @@ std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const 
     return service.format(bytes);
 }
 
+std::vector<FlowRowV4> CaptureSession::list_ipv4_flows() const {
+    std::vector<FlowRowV4> rows {};
+    const auto connections = state_.ipv4_connections.list();
+    rows.reserve(connections.size());
+
+    for (const auto* connection : connections) {
+        rows.push_back(FlowRowV4 {
+            .key = connection->key,
+            .packet_count = connection->packet_count,
+            .total_bytes = connection->total_bytes,
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FlowRowV6> CaptureSession::list_ipv6_flows() const {
+    std::vector<FlowRowV6> rows {};
+    const auto connections = state_.ipv6_connections.list();
+    rows.reserve(connections.size());
+
+    for (const auto* connection : connections) {
+        rows.push_back(FlowRowV6 {
+            .key = connection->key,
+            .packet_count = connection->packet_count,
+            .total_bytes = connection->total_bytes,
+        });
+    }
+
+    return rows;
+}
+
+std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {
+    for (const auto* connection : state_.ipv4_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            if (packet.packet_index == packet_index) {
+                return packet;
+            }
+        }
+
+        for (const auto& packet : connection->flow_b.packets) {
+            if (packet.packet_index == packet_index) {
+                return packet;
+            }
+        }
+    }
+
+    for (const auto* connection : state_.ipv6_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            if (packet.packet_index == packet_index) {
+                return packet;
+            }
+        }
+
+        for (const auto& packet : connection->flow_b.packets) {
+            if (packet.packet_index == packet_index) {
+                return packet;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 CaptureState& CaptureSession::state() noexcept {
     return state_;
 }
