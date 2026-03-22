@@ -1,9 +1,12 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "core/domain/CaptureState.h"
+#include "core/domain/PacketDetails.h"
 
 namespace pfl {
 
@@ -13,6 +16,8 @@ public:
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
+    [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
+    [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
 

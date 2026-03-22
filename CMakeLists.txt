@@ -41,6 +41,7 @@ add_library(
     src/core/domain/ConnectionTable.cpp
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
+    src/core/domain/PacketDetails.cpp
     src/core/io/PcapReader.cpp
     src/core/io/FileByteSource.cpp
     src/core/io/PacketDataReader.cpp
@@ -48,6 +49,8 @@ add_library(
     src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImporter.cpp
+    src/core/services/PacketDetailsService.cpp
+    src/core/services/HexDumpService.cpp
     src/app/session/CaptureSession.cpp
 )
 
@@ -68,6 +71,7 @@ if(BUILD_TESTING)
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
         tests/unit/PacketAccessTests.cpp
+        tests/unit/PacketDetailsTests.cpp
     )
 
     target_link_libraries(

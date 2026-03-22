@@ -2,6 +2,8 @@
 
 #include "core/io/CaptureFilePacketReader.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/HexDumpService.h"
+#include "core/services/PacketDetailsService.h"
 
 namespace pfl {
 
@@ -39,6 +41,26 @@ std::vector<std::uint8_t> CaptureSession::read_packet_data(const PacketRef& pack
     }
 
     return reader.read_packet_data(packet);
+}
+
+std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef& packet) const {
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        return std::nullopt;
+    }
+
+    PacketDetailsService service {};
+    return service.decode(bytes, packet);
+}
+
+std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const {
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        return {};
+    }
+
+    HexDumpService service {};
+    return service.format(bytes);
 }
 
 CaptureState& CaptureSession::state() noexcept {
