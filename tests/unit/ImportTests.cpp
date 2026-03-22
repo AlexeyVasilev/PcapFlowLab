@@ -24,6 +24,8 @@ void run_import_tests() {
         const auto packet = reader.read_next();
         PFL_EXPECT(packet.has_value());
         PFL_EXPECT(packet->packet_index == 0);
+        PFL_EXPECT(packet->ts_sec == 1);
+        PFL_EXPECT(packet->ts_usec == 100);
         PFL_EXPECT(packet->captured_length == tcp_packet.size());
         PFL_EXPECT(packet->original_length == tcp_packet.size());
         PFL_EXPECT(packet->data_offset == 40);
@@ -53,6 +55,8 @@ void run_import_tests() {
         PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::tcp);
         PFL_EXPECT(decoded.ipv4->packet_ref.packet_index == 3);
         PFL_EXPECT(decoded.ipv4->packet_ref.byte_offset == 128);
+        PFL_EXPECT(decoded.ipv4->packet_ref.ts_sec == 1);
+        PFL_EXPECT(decoded.ipv4->packet_ref.ts_usec == 10);
     }
 
     {
@@ -74,6 +78,8 @@ void run_import_tests() {
         PFL_EXPECT(decoded.ipv4->flow_key.src_port == 5353);
         PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 53);
         PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
+        PFL_EXPECT(decoded.ipv4->packet_ref.ts_sec == 1);
+        PFL_EXPECT(decoded.ipv4->packet_ref.ts_usec == 11);
     }
 
     {

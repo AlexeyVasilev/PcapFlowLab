@@ -1,11 +1,152 @@
 #include "app/session/CaptureSession.h"
 
+#include <algorithm>
+#include <variant>
+
 #include "core/io/CaptureFilePacketReader.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/FlowExportService.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketDetailsService.h"
 
 namespace pfl {
+
+namespace {
+
+struct ListedConnectionRef {
+    FlowAddressFamily family {FlowAddressFamily::ipv4};
+    const ConnectionV4* ipv4 {nullptr};
+    const ConnectionV6* ipv6 {nullptr};
+};
+
+std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
+}
+
+std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->total_bytes : connection.ipv6->total_bytes;
+}
+
+bool listed_connection_less(const ListedConnectionRef& left, const ListedConnectionRef& right) noexcept {
+    if (total_bytes(left) != total_bytes(right)) {
+        return total_bytes(left) > total_bytes(right);
+    }
+
+    if (packet_count(left) != packet_count(right)) {
+        return packet_count(left) > packet_count(right);
+    }
+
+    if (left.family != right.family) {
+        return left.family < right.family;
+    }
+
+    if (left.family == FlowAddressFamily::ipv4) {
+        return left.ipv4->key < right.ipv4->key;
+    }
+
+    return left.ipv6->key < right.ipv6->key;
+}
+
+std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
+    std::vector<ListedConnectionRef> connections {};
+
+    const auto ipv4_connections = state.ipv4_connections.list();
+    const auto ipv6_connections = state.ipv6_connections.list();
+    connections.reserve(ipv4_connections.size() + ipv6_connections.size());
+
+    for (const auto* connection : ipv4_connections) {
+        connections.push_back(ListedConnectionRef {
+            .family = FlowAddressFamily::ipv4,
+            .ipv4 = connection,
+        });
+    }
+
+    for (const auto* connection : ipv6_connections) {
+        connections.push_back(ListedConnectionRef {
+            .family = FlowAddressFamily::ipv6,
+            .ipv6 = connection,
+        });
+    }
+
+    std::sort(connections.begin(), connections.end(), listed_connection_less);
+    return connections;
+}
+
+std::vector<PacketRef> collect_packets(const ConnectionV4& connection) {
+    std::vector<PacketRef> packets {};
+    packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+    packets.insert(packets.end(), connection.flow_a.packets.begin(), connection.flow_a.packets.end());
+    packets.insert(packets.end(), connection.flow_b.packets.begin(), connection.flow_b.packets.end());
+    std::sort(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
+        return left.packet_index < right.packet_index;
+    });
+    return packets;
+}
+
+std::vector<PacketRef> collect_packets(const ConnectionV6& connection) {
+    std::vector<PacketRef> packets {};
+    packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+    packets.insert(packets.end(), connection.flow_a.packets.begin(), connection.flow_a.packets.end());
+    packets.insert(packets.end(), connection.flow_b.packets.begin(), connection.flow_b.packets.end());
+    std::sort(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
+        return left.packet_index < right.packet_index;
+    });
+    return packets;
+}
+
+FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return FlowRow {
+            .index = index,
+            .family = FlowAddressFamily::ipv4,
+            .key = connection.ipv4->key,
+            .packet_count = connection.ipv4->packet_count,
+            .total_bytes = connection.ipv4->total_bytes,
+        };
+    }
+
+    return FlowRow {
+        .index = index,
+        .family = FlowAddressFamily::ipv6,
+        .key = connection.ipv6->key,
+        .packet_count = connection.ipv6->packet_count,
+        .total_bytes = connection.ipv6->total_bytes,
+    };
+}
+
+std::optional<PacketRef> find_packet_in_connection(const ConnectionV4& connection, std::uint64_t packet_index) {
+    for (const auto& packet : connection.flow_a.packets) {
+        if (packet.packet_index == packet_index) {
+            return packet;
+        }
+    }
+
+    for (const auto& packet : connection.flow_b.packets) {
+        if (packet.packet_index == packet_index) {
+            return packet;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connection, std::uint64_t packet_index) {
+    for (const auto& packet : connection.flow_a.packets) {
+        if (packet.packet_index == packet_index) {
+            return packet;
+        }
+    }
+
+    for (const auto& packet : connection.flow_b.packets) {
+        if (packet.packet_index == packet_index) {
+            return packet;
+        }
+    }
+
+    return std::nullopt;
+}
+
+}  // namespace
 
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
     CaptureImporter importer {};
@@ -63,64 +204,57 @@ std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const 
     return service.format(bytes);
 }
 
-std::vector<FlowRowV4> CaptureSession::list_ipv4_flows() const {
-    std::vector<FlowRowV4> rows {};
-    const auto connections = state_.ipv4_connections.list();
+std::vector<FlowRow> CaptureSession::list_flows() const {
+    const auto connections = list_connections(state_);
+    std::vector<FlowRow> rows {};
     rows.reserve(connections.size());
 
-    for (const auto* connection : connections) {
-        rows.push_back(FlowRowV4 {
-            .key = connection->key,
-            .packet_count = connection->packet_count,
-            .total_bytes = connection->total_bytes,
-        });
+    for (std::size_t index = 0; index < connections.size(); ++index) {
+        rows.push_back(make_flow_row(index, connections[index]));
     }
 
     return rows;
 }
 
-std::vector<FlowRowV6> CaptureSession::list_ipv6_flows() const {
-    std::vector<FlowRowV6> rows {};
-    const auto connections = state_.ipv6_connections.list();
-    rows.reserve(connections.size());
-
-    for (const auto* connection : connections) {
-        rows.push_back(FlowRowV6 {
-            .key = connection->key,
-            .packet_count = connection->packet_count,
-            .total_bytes = connection->total_bytes,
-        });
+std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t flow_index) const {
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
     }
 
-    return rows;
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        return collect_packets(*connections[flow_index].ipv4);
+    }
+
+    return collect_packets(*connections[flow_index].ipv6);
+}
+
+bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const {
+    if (!has_capture()) {
+        return false;
+    }
+
+    const auto packets = flow_packets(flow_index);
+    if (!packets.has_value()) {
+        return false;
+    }
+
+    FlowExportService service {};
+    return service.export_packets_to_pcap(output_path, *packets, capture_path_);
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {
     for (const auto* connection : state_.ipv4_connections.list()) {
-        for (const auto& packet : connection->flow_a.packets) {
-            if (packet.packet_index == packet_index) {
-                return packet;
-            }
-        }
-
-        for (const auto& packet : connection->flow_b.packets) {
-            if (packet.packet_index == packet_index) {
-                return packet;
-            }
+        const auto packet = find_packet_in_connection(*connection, packet_index);
+        if (packet.has_value()) {
+            return packet;
         }
     }
 
     for (const auto* connection : state_.ipv6_connections.list()) {
-        for (const auto& packet : connection->flow_a.packets) {
-            if (packet.packet_index == packet_index) {
-                return packet;
-            }
-        }
-
-        for (const auto& packet : connection->flow_b.packets) {
-            if (packet.packet_index == packet_index) {
-                return packet;
-            }
+        const auto packet = find_packet_in_connection(*connection, packet_index);
+        if (packet.has_value()) {
+            return packet;
         }
     }
 

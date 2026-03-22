@@ -1,19 +1,24 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <variant>
 
 #include "core/domain/ConnectionKey.h"
 
 namespace pfl {
 
-struct FlowRowV4 {
-    ConnectionKeyV4 key {};
-    std::uint64_t packet_count {0};
-    std::uint64_t total_bytes {0};
+enum class FlowAddressFamily : std::uint8_t {
+    ipv4,
+    ipv6
 };
 
-struct FlowRowV6 {
-    ConnectionKeyV6 key {};
+using FlowConnectionKey = std::variant<ConnectionKeyV4, ConnectionKeyV6>;
+
+struct FlowRow {
+    std::size_t index {0};
+    FlowAddressFamily family {FlowAddressFamily::ipv4};
+    FlowConnectionKey key {ConnectionKeyV4 {}};
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
 };

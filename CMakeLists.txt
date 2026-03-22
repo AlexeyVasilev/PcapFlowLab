@@ -43,12 +43,14 @@ add_library(
     src/core/domain/CaptureSummary.cpp
     src/core/domain/PacketDetails.cpp
     src/core/io/PcapReader.cpp
+    src/core/io/PcapWriter.cpp
     src/core/io/FileByteSource.cpp
     src/core/io/PacketDataReader.cpp
     src/core/io/CaptureFilePacketReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImporter.cpp
+    src/core/services/FlowExportService.cpp
     src/core/services/PacketDetailsService.cpp
     src/core/services/HexDumpService.cpp
     src/app/session/CaptureSession.cpp
@@ -85,7 +87,10 @@ if(BUILD_TESTING)
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
         tests/unit/PacketAccessTests.cpp
-        tests/unit/PacketDetailsTests.cpp`r`n        tests/unit/QueryTests.cpp`r`n        tests/unit/VlanTests.cpp
+        tests/unit/PacketDetailsTests.cpp
+        tests/unit/QueryTests.cpp
+        tests/unit/VlanTests.cpp
+        tests/unit/ExportTests.cpp
     )
 
     target_link_libraries(
@@ -96,4 +101,3 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
-

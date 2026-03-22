@@ -74,6 +74,8 @@ PacketRef make_packet_ref(const RawPcapPacket& packet) {
         .byte_offset = packet.data_offset,
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
+        .ts_sec = packet.ts_sec,
+        .ts_usec = packet.ts_usec,
     };
 }
 

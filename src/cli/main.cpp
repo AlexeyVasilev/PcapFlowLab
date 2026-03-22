@@ -1,4 +1,4 @@
-#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <iomanip>
@@ -6,6 +6,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <variant>
 #include <vector>
 
 #include "app/session/CaptureSession.h"
@@ -13,13 +15,29 @@
 
 namespace {
 
+struct ExportArgs {
+    std::size_t flow_index {0};
+    std::string output_path {};
+};
+
+struct PrintableFlowRow {
+    std::size_t index {0};
+    std::string family {};
+    std::string protocol {};
+    std::string endpoint_a {};
+    std::string endpoint_b {};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
 void print_usage() {
     std::cout
         << "Usage:\n"
         << "  pcap-flow-lab summary <file>\n"
         << "  pcap-flow-lab flows <file>\n"
         << "  pcap-flow-lab inspect-packet <file> --packet-index <N>\n"
-        << "  pcap-flow-lab hex <file> --packet-index <N>\n";
+        << "  pcap-flow-lab hex <file> --packet-index <N>\n"
+        << "  pcap-flow-lab export-flow <file> --flow-index <N> --out <output.pcap>\n";
 }
 
 std::optional<std::uint64_t> parse_packet_index(int argc, char* argv[]) {
@@ -38,6 +56,47 @@ std::optional<std::uint64_t> parse_packet_index(int argc, char* argv[]) {
     }
 }
 
+std::optional<ExportArgs> parse_export_args(int argc, char* argv[]) {
+    if (argc != 7) {
+        return std::nullopt;
+    }
+
+    std::optional<std::size_t> flow_index {};
+    std::string output_path {};
+
+    for (int index = 3; index < argc; index += 2) {
+        const std::string_view option = argv[index];
+        if (index + 1 >= argc) {
+            return std::nullopt;
+        }
+
+        if (option == "--flow-index") {
+            try {
+                flow_index = static_cast<std::size_t>(std::stoull(argv[index + 1]));
+            } catch (const std::exception&) {
+                return std::nullopt;
+            }
+            continue;
+        }
+
+        if (option == "--out") {
+            output_path = argv[index + 1];
+            continue;
+        }
+
+        return std::nullopt;
+    }
+
+    if (!flow_index.has_value() || output_path.empty()) {
+        return std::nullopt;
+    }
+
+    return ExportArgs {
+        .flow_index = *flow_index,
+        .output_path = std::move(output_path),
+    };
+}
+
 bool open_session(const char* file, pfl::CaptureSession& session) {
     if (session.open_capture(file)) {
         return true;
@@ -47,14 +106,22 @@ bool open_session(const char* file, pfl::CaptureSession& session) {
     return false;
 }
 
-struct PrintableFlowRow {
-    std::string family {};
-    std::string protocol {};
-    std::string endpoint_a {};
-    std::string endpoint_b {};
-    std::uint64_t packet_count {0};
-    std::uint64_t total_bytes {0};
-};
+PrintableFlowRow make_printable_flow_row(const pfl::FlowRow& row) {
+    PrintableFlowRow printable {
+        .index = row.index,
+        .family = (row.family == pfl::FlowAddressFamily::ipv4) ? "v4" : "v6",
+        .packet_count = row.packet_count,
+        .total_bytes = row.total_bytes,
+    };
+
+    std::visit([&](const auto& key) {
+        printable.protocol = pfl::format_protocol(key.protocol);
+        printable.endpoint_a = pfl::format_endpoint(key.first);
+        printable.endpoint_b = pfl::format_endpoint(key.second);
+    }, row.key);
+
+    return printable;
+}
 
 void print_packet_details(const pfl::PacketDetails& details) {
     std::cout << "Packet Index: " << details.packet_index << '\n';
@@ -140,55 +207,19 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::vector<PrintableFlowRow> rows {};
-        for (const auto& row : session.list_ipv4_flows()) {
-            rows.push_back(PrintableFlowRow {
-                .family = "v4",
-                .protocol = pfl::format_protocol(row.key.protocol),
-                .endpoint_a = pfl::format_endpoint(row.key.first),
-                .endpoint_b = pfl::format_endpoint(row.key.second),
-                .packet_count = row.packet_count,
-                .total_bytes = row.total_bytes,
-            });
-        }
-
-        for (const auto& row : session.list_ipv6_flows()) {
-            rows.push_back(PrintableFlowRow {
-                .family = "v6",
-                .protocol = pfl::format_protocol(row.key.protocol),
-                .endpoint_a = pfl::format_endpoint(row.key.first),
-                .endpoint_b = pfl::format_endpoint(row.key.second),
-                .packet_count = row.packet_count,
-                .total_bytes = row.total_bytes,
-            });
-        }
-
-        std::sort(rows.begin(), rows.end(), [](const auto& left, const auto& right) {
-            if (left.total_bytes != right.total_bytes) {
-                return left.total_bytes > right.total_bytes;
-            }
-
-            if (left.packet_count != right.packet_count) {
-                return left.packet_count > right.packet_count;
-            }
-
-            if (left.family != right.family) {
-                return left.family < right.family;
-            }
-
-            return left.endpoint_a < right.endpoint_a;
-        });
-
-        std::cout << "Family  Proto  Endpoint A                      Endpoint B                      Packets  Bytes\n";
+        const auto rows = session.list_flows();
+        std::cout << "Index  Family  Proto  Endpoint A                      Endpoint B                      Packets  Bytes\n";
         for (const auto& row : rows) {
+            const auto printable = make_printable_flow_row(row);
             std::cout << std::left
-                      << std::setw(8) << row.family
-                      << std::setw(7) << row.protocol
-                      << std::setw(32) << row.endpoint_a
-                      << std::setw(32) << row.endpoint_b
+                      << std::setw(7) << printable.index
+                      << std::setw(8) << printable.family
+                      << std::setw(7) << printable.protocol
+                      << std::setw(32) << printable.endpoint_a
+                      << std::setw(32) << printable.endpoint_b
                       << std::right
-                      << std::setw(8) << row.packet_count
-                      << std::setw(7) << row.total_bytes
+                      << std::setw(8) << printable.packet_count
+                      << std::setw(7) << printable.total_bytes
                       << '\n';
         }
 
@@ -248,6 +279,27 @@ int main(int argc, char* argv[]) {
         }
 
         std::cout << dump << '\n';
+        return 0;
+    }
+
+    if (command == "export-flow") {
+        const auto export_args = parse_export_args(argc, argv);
+        if (!export_args.has_value()) {
+            print_usage();
+            return 1;
+        }
+
+        pfl::CaptureSession session {};
+        if (!open_session(file, session)) {
+            return 1;
+        }
+
+        if (!session.export_flow_to_pcap(export_args->flow_index, export_args->output_path)) {
+            std::cerr << "Failed to export flow " << export_args->flow_index << " to " << export_args->output_path << '\n';
+            return 1;
+        }
+
+        std::cout << "Exported flow " << export_args->flow_index << " to " << export_args->output_path << '\n';
         return 0;
     }
 

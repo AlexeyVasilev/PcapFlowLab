@@ -1,3 +1,5 @@
+#include <variant>
+
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "PcapTestUtils.h"
@@ -15,30 +17,41 @@ void run_query_tests() {
     CaptureSession session {};
     PFL_EXPECT(session.open_capture(path));
 
-    const auto ipv4_rows = session.list_ipv4_flows();
-    PFL_EXPECT(ipv4_rows.size() == 2);
-    PFL_EXPECT(session.list_ipv6_flows().empty());
+    const auto rows = session.list_flows();
+    PFL_EXPECT(rows.size() == 2);
+    PFL_EXPECT(rows[0].index == 0);
+    PFL_EXPECT(rows[1].index == 1);
+    PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
+    PFL_EXPECT(rows[1].family == FlowAddressFamily::ipv4);
+    PFL_EXPECT(std::holds_alternative<ConnectionKeyV4>(rows[0].key));
+    PFL_EXPECT(std::holds_alternative<ConnectionKeyV4>(rows[1].key));
 
-    bool found_tcp = false;
-    bool found_udp = false;
-    for (const auto& row : ipv4_rows) {
-        if (row.key.protocol == ProtocolId::tcp) {
-            found_tcp = true;
-            PFL_EXPECT(row.packet_count == 1);
-            PFL_EXPECT(row.total_bytes == tcp_packet.size());
-            PFL_EXPECT(row.key.first.addr == ipv4(10, 0, 0, 1));
-            PFL_EXPECT(row.key.second.addr == ipv4(10, 0, 0, 2));
-        }
+    const auto& tcp_key = std::get<ConnectionKeyV4>(rows[0].key);
+    PFL_EXPECT(tcp_key.protocol == ProtocolId::tcp);
+    PFL_EXPECT(rows[0].packet_count == 1);
+    PFL_EXPECT(rows[0].total_bytes == tcp_packet.size());
+    PFL_EXPECT(tcp_key.first.addr == ipv4(10, 0, 0, 1));
+    PFL_EXPECT(tcp_key.second.addr == ipv4(10, 0, 0, 2));
 
-        if (row.key.protocol == ProtocolId::udp) {
-            found_udp = true;
-            PFL_EXPECT(row.packet_count == 1);
-            PFL_EXPECT(row.total_bytes == udp_packet.size());
-        }
-    }
+    const auto& udp_key = std::get<ConnectionKeyV4>(rows[1].key);
+    PFL_EXPECT(udp_key.protocol == ProtocolId::udp);
+    PFL_EXPECT(rows[1].packet_count == 1);
+    PFL_EXPECT(rows[1].total_bytes == udp_packet.size());
 
-    PFL_EXPECT(found_tcp);
-    PFL_EXPECT(found_udp);
+    const auto first_flow_packets = session.flow_packets(0);
+    PFL_EXPECT(first_flow_packets.has_value());
+    PFL_EXPECT(first_flow_packets->size() == 1);
+    PFL_EXPECT(first_flow_packets->front().packet_index == 0);
+    PFL_EXPECT(first_flow_packets->front().captured_length == tcp_packet.size());
+
+    const auto second_flow_packets = session.flow_packets(1);
+    PFL_EXPECT(second_flow_packets.has_value());
+    PFL_EXPECT(second_flow_packets->size() == 1);
+    PFL_EXPECT(second_flow_packets->front().packet_index == 1);
+    PFL_EXPECT(second_flow_packets->front().captured_length == udp_packet.size());
+    PFL_EXPECT(second_flow_packets->front().byte_offset == 40 + tcp_packet.size() + 16);
+
+    PFL_EXPECT(!session.flow_packets(99).has_value());
 
     const auto packet = session.find_packet(1);
     PFL_EXPECT(packet.has_value());

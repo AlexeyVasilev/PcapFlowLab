@@ -19,3 +19,5 @@ Examples:
 `pcap-flow-lab inspect-packet sample.pcap --packet-index 0`
 
 `pcap-flow-lab hex sample.pcap --packet-index 0`
+
+`pcap-flow-lab export-flow sample.pcap --flow-index 0 --out selected-flow.pcap`

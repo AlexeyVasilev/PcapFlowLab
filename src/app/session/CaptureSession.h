@@ -19,8 +19,9 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
-    [[nodiscard]] std::vector<FlowRowV4> list_ipv4_flows() const;
-    [[nodiscard]] std::vector<FlowRowV6> list_ipv6_flows() const;
+    [[nodiscard]] std::vector<FlowRow> list_flows() const;
+    [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
+    bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
