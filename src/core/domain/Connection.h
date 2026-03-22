@@ -1,0 +1,40 @@
+#pragma once
+
+#include <cstdint>
+
+#include "core/domain/ConnectionKey.h"
+#include "core/domain/Flow.h"
+
+namespace pfl {
+
+struct ConnectionV4 {
+    ConnectionKeyV4 key {};
+
+    FlowV4 flow_a {};
+    FlowV4 flow_b {};
+
+    bool has_flow_a {false};
+    bool has_flow_b {false};
+
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+
+    void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet);
+};
+
+struct ConnectionV6 {
+    ConnectionKeyV6 key {};
+
+    FlowV6 flow_a {};
+    FlowV6 flow_b {};
+
+    bool has_flow_a {false};
+    bool has_flow_b {false};
+
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+
+    void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet);
+};
+
+}  // namespace pfl
