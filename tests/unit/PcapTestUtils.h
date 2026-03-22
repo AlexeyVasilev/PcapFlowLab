@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -111,6 +112,61 @@ inline std::vector<std::uint8_t> make_ethernet_ipv4_udp_packet(
     append_be16(bytes, 8);
     append_be16(bytes, 0);
     return bytes;
+}
+
+inline std::vector<std::uint8_t> add_vlan_tags(
+    const std::vector<std::uint8_t>& ethernet_packet,
+    const std::vector<std::pair<std::uint16_t, std::uint16_t>>& tags
+) {
+    if (ethernet_packet.size() < 14 || tags.empty()) {
+        return ethernet_packet;
+    }
+
+    const auto original_ether_type = static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(ethernet_packet[12]) << 8U) |
+        static_cast<std::uint16_t>(ethernet_packet[13])
+    );
+
+    std::vector<std::uint8_t> bytes {};
+    bytes.reserve(ethernet_packet.size() + tags.size() * 4U);
+    bytes.insert(bytes.end(), ethernet_packet.begin(), ethernet_packet.begin() + 12);
+    append_be16(bytes, tags.front().first);
+
+    for (std::size_t index = 0; index < tags.size(); ++index) {
+        append_be16(bytes, tags[index].second);
+        const auto encapsulated_ether_type = (index + 1U < tags.size()) ? tags[index + 1U].first : original_ether_type;
+        append_be16(bytes, encapsulated_ether_type);
+    }
+
+    bytes.insert(bytes.end(), ethernet_packet.begin() + 14, ethernet_packet.end());
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_single_tagged_ethernet_ipv4_tcp_packet(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint16_t src_port,
+    std::uint16_t dst_port,
+    std::uint16_t vlan_tci
+) {
+    return add_vlan_tags(
+        make_ethernet_ipv4_tcp_packet(src_addr, dst_addr, src_port, dst_port),
+        {{0x8100U, vlan_tci}}
+    );
+}
+
+inline std::vector<std::uint8_t> make_double_tagged_ethernet_ipv4_udp_packet(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint16_t src_port,
+    std::uint16_t dst_port,
+    std::uint16_t outer_tci,
+    std::uint16_t inner_tci
+) {
+    return add_vlan_tags(
+        make_ethernet_ipv4_udp_packet(src_addr, dst_addr, src_port, dst_port),
+        {{0x88A8U, outer_tci}, {0x8100U, inner_tci}}
+    );
 }
 
 inline std::vector<std::uint8_t> make_classic_pcap(

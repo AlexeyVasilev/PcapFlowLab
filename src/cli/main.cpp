@@ -66,6 +66,15 @@ void print_packet_details(const pfl::PacketDetails& details) {
                   << details.ethernet.ether_type << std::dec << '\n';
     }
 
+    if (details.has_vlan) {
+        std::cout << "VLAN tags: " << details.vlan_tags.size() << '\n';
+        for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
+            std::cout << "VLAN[" << index << "] TCI: " << details.vlan_tags[index].tci
+                      << " Encapsulated EtherType: 0x" << std::hex << std::setw(4) << std::setfill('0')
+                      << details.vlan_tags[index].encapsulated_ether_type << std::dec << '\n';
+        }
+    }
+
     if (details.has_ipv4) {
         std::cout << "IPv4 Source: " << pfl::format_ipv4_address(details.ipv4.src_addr) << '\n';
         std::cout << "IPv4 Destination: " << pfl::format_ipv4_address(details.ipv4.dst_addr) << '\n';

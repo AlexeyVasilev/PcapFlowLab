@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace pfl {
 
@@ -13,6 +14,11 @@ enum class NetworkAddressFamily : std::uint8_t {
 
 struct EthernetDetails {
     std::uint16_t ether_type {0};
+};
+
+struct VlanTagDetails {
+    std::uint16_t tci {0};
+    std::uint16_t encapsulated_ether_type {0};
 };
 
 struct IPv4Details {
@@ -52,6 +58,9 @@ struct PacketDetails {
 
     bool has_ethernet {false};
     EthernetDetails ethernet {};
+
+    bool has_vlan {false};
+    std::vector<VlanTagDetails> vlan_tags {};
 
     NetworkAddressFamily address_family {NetworkAddressFamily::unknown};
 
