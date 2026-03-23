@@ -118,13 +118,25 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
     };
 }
 
-PacketRow make_packet_row(const PacketRef& packet) {
-    std::ostringstream timestamp {};
-    timestamp << packet.ts_sec << '.' << std::setw(6) << std::setfill('0') << packet.ts_usec;
+std::string format_packet_timestamp(const PacketRef& packet) {
+    const auto seconds_of_day = packet.ts_sec % 86400U;
+    const auto hours = seconds_of_day / 3600U;
+    const auto minutes = (seconds_of_day % 3600U) / 60U;
+    const auto seconds = seconds_of_day % 60U;
 
+    std::ostringstream timestamp {};
+    timestamp << std::setfill('0')
+              << std::setw(2) << hours << ':'
+              << std::setw(2) << minutes << ':'
+              << std::setw(2) << seconds << '.'
+              << std::setw(6) << packet.ts_usec;
+    return timestamp.str();
+}
+
+PacketRow make_packet_row(const PacketRef& packet) {
     return PacketRow {
         .packet_index = packet.packet_index,
-        .timestamp_text = timestamp.str(),
+        .timestamp_text = format_packet_timestamp(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
     };

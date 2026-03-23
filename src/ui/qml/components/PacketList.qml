@@ -39,26 +39,28 @@ Frame {
             Label {
                 text: "Packet"
                 font.bold: true
-                Layout.preferredWidth: 72
+                Layout.preferredWidth: 78
+                horizontalAlignment: Text.AlignRight
             }
 
             Label {
                 text: "Time"
                 font.bold: true
-                Layout.fillWidth: true
-                Layout.preferredWidth: 120
+                Layout.preferredWidth: 148
             }
 
             Label {
                 text: "Captured"
                 font.bold: true
                 Layout.preferredWidth: 84
+                horizontalAlignment: Text.AlignRight
             }
 
             Label {
                 text: "Original"
                 font.bold: true
                 Layout.preferredWidth: 84
+                horizontalAlignment: Text.AlignRight
             }
         }
 
@@ -84,7 +86,7 @@ Frame {
                     required property int originalLength
 
                     width: packetListView.width
-                    height: 36
+                    height: 38
                     color: root.selectedPacketIndex === packetIndex
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
@@ -97,13 +99,14 @@ Frame {
 
                         Label {
                             text: packetIndex
-                            Layout.preferredWidth: 72
+                            Layout.preferredWidth: 78
+                            horizontalAlignment: Text.AlignRight
                         }
 
                         Label {
                             text: timestamp
-                            Layout.fillWidth: true
-                            Layout.preferredWidth: 120
+                            Layout.preferredWidth: 148
+                            font.family: "Consolas"
                         }
 
                         Label {

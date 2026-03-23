@@ -56,7 +56,7 @@ void run_query_tests() {
     PFL_EXPECT(second_flow_rows.front().packet_index == 1);
     PFL_EXPECT(second_flow_rows.front().captured_length == udp_packet.size());
     PFL_EXPECT(second_flow_rows.front().original_length == udp_packet.size());
-    PFL_EXPECT(second_flow_rows.front().timestamp_text == "2.000200");
+    PFL_EXPECT(second_flow_rows.front().timestamp_text == "00:00:02.000200");
 
     PFL_EXPECT(!session.flow_packets(99).has_value());
     PFL_EXPECT(session.list_flow_packets(99).empty());
@@ -71,4 +71,5 @@ void run_query_tests() {
 }
 
 }  // namespace pfl::tests
+
 

@@ -11,10 +11,6 @@ ApplicationWindow {
     visible: true
     title: "Pcap Flow Lab"
 
-    property string loadedLabel: mainController.currentInputPath.length > 0
-        ? mainController.currentInputPath
-        : "No file loaded"
-
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
@@ -39,13 +35,6 @@ ApplicationWindow {
                 text: "Open Index"
                 onClicked: mainController.openIndexFile(inputPathField.text)
             }
-        }
-
-        Label {
-            Layout.fillWidth: true
-            text: loadedLabel
-            elide: Text.ElideMiddle
-            color: "#475569"
         }
 
         SummaryBar {

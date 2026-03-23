@@ -132,66 +132,98 @@ QString formatTcpFlags(const std::uint8_t flags) {
     return parts.isEmpty() ? QStringLiteral("none") : parts.join(QStringLiteral("|"));
 }
 
+void appendSection(QStringList& lines, const QString& title, const QStringList& values) {
+    if (values.isEmpty()) {
+        return;
+    }
+
+    if (!lines.isEmpty()) {
+        lines.push_back({});
+    }
+
+    lines.push_back(title);
+    for (const auto& value : values) {
+        lines.push_back(QStringLiteral("  %1").arg(value));
+    }
+}
+
 QString buildPacketSummary(const PacketDetails& details) {
     QStringList lines {};
-    lines.push_back(QStringLiteral("Packet: %1").arg(details.packet_index));
-    lines.push_back(QStringLiteral("Captured Length: %1").arg(details.captured_length));
-    lines.push_back(QStringLiteral("Original Length: %1").arg(details.original_length));
+
+    appendSection(lines, QStringLiteral("Packet"), {
+        QStringLiteral("Index: %1").arg(details.packet_index),
+        QStringLiteral("Captured Length: %1").arg(details.captured_length),
+        QStringLiteral("Original Length: %1").arg(details.original_length),
+    });
 
     if (details.has_ethernet) {
-        lines.push_back(QStringLiteral("EtherType: %1").arg(formatHex16(details.ethernet.ether_type)));
+        appendSection(lines, QStringLiteral("Ethernet"), {
+            QStringLiteral("EtherType: %1").arg(formatHex16(details.ethernet.ether_type)),
+        });
     }
 
     if (details.has_vlan) {
-        lines.push_back(QStringLiteral("VLAN Tags: %1").arg(details.vlan_tags.size()));
+        QStringList values {};
+        values.push_back(QStringLiteral("Tags: %1").arg(details.vlan_tags.size()));
         for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
             const auto& tag = details.vlan_tags[index];
-            lines.push_back(
-                QStringLiteral("VLAN[%1] TCI: %2 Encapsulated EtherType: %3")
-                    .arg(index)
-                    .arg(tag.tci)
-                    .arg(formatHex16(tag.encapsulated_ether_type))
-            );
+            values.push_back(QStringLiteral("VLAN[%1] TCI: %2").arg(index).arg(tag.tci));
+            values.push_back(QStringLiteral("VLAN[%1] Encapsulated EtherType: %2").arg(index).arg(formatHex16(tag.encapsulated_ether_type)));
         }
+        appendSection(lines, QStringLiteral("VLAN"), values);
     }
 
     if (details.has_arp) {
-        lines.push_back(QStringLiteral("ARP Opcode: %1").arg(details.arp.opcode));
-        lines.push_back(QStringLiteral("ARP Sender IPv4: %1").arg(formatIpv4Address(details.arp.sender_ipv4)));
-        lines.push_back(QStringLiteral("ARP Target IPv4: %1").arg(formatIpv4Address(details.arp.target_ipv4)));
+        appendSection(lines, QStringLiteral("ARP"), {
+            QStringLiteral("Opcode: %1").arg(details.arp.opcode),
+            QStringLiteral("Sender IPv4: %1").arg(formatIpv4Address(details.arp.sender_ipv4)),
+            QStringLiteral("Target IPv4: %1").arg(formatIpv4Address(details.arp.target_ipv4)),
+        });
     }
 
     if (details.has_ipv4) {
-        lines.push_back(QStringLiteral("IPv4 Source: %1").arg(formatIpv4Address(details.ipv4.src_addr)));
-        lines.push_back(QStringLiteral("IPv4 Destination: %1").arg(formatIpv4Address(details.ipv4.dst_addr)));
-        lines.push_back(QStringLiteral("IPv4 Protocol: %1").arg(formatProtocol(details.ipv4.protocol)));
+        appendSection(lines, QStringLiteral("IPv4"), {
+            QStringLiteral("Source: %1").arg(formatIpv4Address(details.ipv4.src_addr)),
+            QStringLiteral("Destination: %1").arg(formatIpv4Address(details.ipv4.dst_addr)),
+            QStringLiteral("Protocol: %1").arg(formatProtocol(details.ipv4.protocol)),
+        });
     }
 
     if (details.has_ipv6) {
-        lines.push_back(QStringLiteral("IPv6 Source: %1").arg(formatIpv6Address(details.ipv6.src_addr)));
-        lines.push_back(QStringLiteral("IPv6 Destination: %1").arg(formatIpv6Address(details.ipv6.dst_addr)));
-        lines.push_back(QStringLiteral("IPv6 Next Header: %1").arg(formatProtocol(details.ipv6.next_header)));
+        appendSection(lines, QStringLiteral("IPv6"), {
+            QStringLiteral("Source: %1").arg(formatIpv6Address(details.ipv6.src_addr)),
+            QStringLiteral("Destination: %1").arg(formatIpv6Address(details.ipv6.dst_addr)),
+            QStringLiteral("Next Header: %1").arg(formatProtocol(details.ipv6.next_header)),
+        });
     }
 
     if (details.has_tcp) {
-        lines.push_back(QStringLiteral("TCP Source Port: %1").arg(details.tcp.src_port));
-        lines.push_back(QStringLiteral("TCP Destination Port: %1").arg(details.tcp.dst_port));
-        lines.push_back(QStringLiteral("TCP Flags: %1").arg(formatTcpFlags(details.tcp.flags)));
+        appendSection(lines, QStringLiteral("TCP"), {
+            QStringLiteral("Source Port: %1").arg(details.tcp.src_port),
+            QStringLiteral("Destination Port: %1").arg(details.tcp.dst_port),
+            QStringLiteral("Flags: %1").arg(formatTcpFlags(details.tcp.flags)),
+        });
     }
 
     if (details.has_udp) {
-        lines.push_back(QStringLiteral("UDP Source Port: %1").arg(details.udp.src_port));
-        lines.push_back(QStringLiteral("UDP Destination Port: %1").arg(details.udp.dst_port));
+        appendSection(lines, QStringLiteral("UDP"), {
+            QStringLiteral("Source Port: %1").arg(details.udp.src_port),
+            QStringLiteral("Destination Port: %1").arg(details.udp.dst_port),
+        });
     }
 
     if (details.has_icmp) {
-        lines.push_back(QStringLiteral("ICMP Type: %1").arg(details.icmp.type));
-        lines.push_back(QStringLiteral("ICMP Code: %1").arg(details.icmp.code));
+        appendSection(lines, QStringLiteral("ICMP"), {
+            QStringLiteral("Type: %1").arg(details.icmp.type),
+            QStringLiteral("Code: %1").arg(details.icmp.code),
+        });
     }
 
     if (details.has_icmpv6) {
-        lines.push_back(QStringLiteral("ICMPv6 Type: %1").arg(details.icmpv6.type));
-        lines.push_back(QStringLiteral("ICMPv6 Code: %1").arg(details.icmpv6.code));
+        appendSection(lines, QStringLiteral("ICMPv6"), {
+            QStringLiteral("Type: %1").arg(details.icmpv6.type),
+            QStringLiteral("Code: %1").arg(details.icmpv6.code),
+        });
     }
 
     return lines.join(QLatin1Char('\n'));

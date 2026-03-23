@@ -20,7 +20,7 @@ Frame {
             return ""
         }
 
-        return root.sortAscending ? " ^" : " ¡"
+        return root.sortAscending ? " ^" : " v"
     }
 
     background: Rectangle {
@@ -143,6 +143,7 @@ Frame {
                         Label {
                             text: flowIndex
                             Layout.preferredWidth: 52
+                            horizontalAlignment: Text.AlignRight
                         }
 
                         Label {

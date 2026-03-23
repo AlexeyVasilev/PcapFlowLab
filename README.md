@@ -40,4 +40,4 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists, and the desktop shell can already open captures or indexes, show summary data, browse flows, apply basic flow filtering and sorting, browse packets for the selected flow, and inspect packet details with a hex dump.
+The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists, and the desktop shell can already open captures or indexes, show summary data, browse flows, apply basic flow filtering and sorting, browse packets for the selected flow, and inspect packet details with a hex dump. Packet browsing and inspection formatting was also cleaned up for better readability.
