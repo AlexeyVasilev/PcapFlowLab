@@ -59,24 +59,37 @@ ApplicationWindow {
         SplitView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            orientation: Qt.Vertical
 
             FlowTable {
-                SplitView.preferredWidth: 520
-                Layout.fillHeight: true
+                SplitView.fillWidth: true
+                SplitView.fillHeight: true
+                SplitView.preferredHeight: 430
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
+                filterText: mainController.flowFilterText
+                sortColumn: mainController.flowSortColumn
+                sortAscending: mainController.flowSortAscending
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
+                }
+                onFilterTextEdited: function(text) {
+                    mainController.flowFilterText = text
+                }
+                onSortRequested: function(column) {
+                    mainController.sortFlows(column)
                 }
             }
 
             SplitView {
-                orientation: Qt.Vertical
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+                SplitView.fillWidth: true
+                SplitView.fillHeight: true
+                SplitView.preferredHeight: 300
 
                 PacketList {
-                    SplitView.preferredHeight: 240
+                    SplitView.fillWidth: true
+                    SplitView.fillHeight: true
+                    SplitView.preferredWidth: 420
                     packetModel: mainController.packetModel
                     selectedPacketIndex: mainController.selectedPacketIndex
                     onPacketSelected: function(packetIndex) {
@@ -85,7 +98,9 @@ ApplicationWindow {
                 }
 
                 PacketDetailsPane {
-                    Layout.fillHeight: true
+                    SplitView.fillWidth: true
+                    SplitView.fillHeight: true
+                    SplitView.preferredWidth: 720
                     packetDetailsModel: mainController.packetDetailsModel
                 }
             }

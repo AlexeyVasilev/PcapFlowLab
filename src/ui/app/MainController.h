@@ -22,6 +22,9 @@ class MainController final : public QObject {
     Q_PROPERTY(QObject* packetDetailsModel READ packetDetailsModel CONSTANT)
     Q_PROPERTY(int selectedFlowIndex READ selectedFlowIndex WRITE setSelectedFlowIndex NOTIFY selectedFlowIndexChanged)
     Q_PROPERTY(qulonglong selectedPacketIndex READ selectedPacketIndex WRITE setSelectedPacketIndex NOTIFY selectedPacketIndexChanged)
+    Q_PROPERTY(QString flowFilterText READ flowFilterText WRITE setFlowFilterText NOTIFY flowFilterTextChanged)
+    Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
+    Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
 
 public:
     explicit MainController(QObject* parent = nullptr);
@@ -36,21 +39,30 @@ public:
     [[nodiscard]] QObject* packetDetailsModel() noexcept;
     [[nodiscard]] int selectedFlowIndex() const noexcept;
     [[nodiscard]] qulonglong selectedPacketIndex() const noexcept;
+    [[nodiscard]] QString flowFilterText() const;
+    [[nodiscard]] int flowSortColumn() const noexcept;
+    [[nodiscard]] bool flowSortAscending() const noexcept;
 
     Q_INVOKABLE bool openCaptureFile(const QString& path);
     Q_INVOKABLE bool openIndexFile(const QString& path);
+    Q_INVOKABLE void sortFlows(int column);
 
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
+    void setFlowFilterText(const QString& text);
 
 signals:
     void stateChanged();
     void selectedFlowIndexChanged();
     void selectedPacketIndexChanged();
+    void flowFilterTextChanged();
+    void flowSortChanged();
 
 private:
     bool openPath(const QString& path, bool asIndex);
     void clearPacketSelection();
+    void clearFlowSelection();
+    void synchronizeFlowSelection();
 
     CaptureSession session_ {};
     FlowListModel flow_model_ {};

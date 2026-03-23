@@ -11,6 +11,48 @@ namespace {
 
 constexpr qulonglong kInvalidPacketSelection = std::numeric_limits<qulonglong>::max();
 
+FlowListModel::SortKey sort_key_from_column(const int column) {
+    switch (column) {
+    case 0:
+        return FlowListModel::SortKey::index;
+    case 1:
+        return FlowListModel::SortKey::family;
+    case 2:
+        return FlowListModel::SortKey::protocol;
+    case 3:
+        return FlowListModel::SortKey::endpoint_a;
+    case 4:
+        return FlowListModel::SortKey::endpoint_b;
+    case 5:
+        return FlowListModel::SortKey::packets;
+    case 6:
+        return FlowListModel::SortKey::bytes;
+    default:
+        return FlowListModel::SortKey::index;
+    }
+}
+
+int column_from_sort_key(const FlowListModel::SortKey key) noexcept {
+    switch (key) {
+    case FlowListModel::SortKey::index:
+        return 0;
+    case FlowListModel::SortKey::family:
+        return 1;
+    case FlowListModel::SortKey::protocol:
+        return 2;
+    case FlowListModel::SortKey::endpoint_a:
+        return 3;
+    case FlowListModel::SortKey::endpoint_b:
+        return 4;
+    case FlowListModel::SortKey::packets:
+        return 5;
+    case FlowListModel::SortKey::bytes:
+        return 6;
+    }
+
+    return 0;
+}
+
 QString formatHex16(const std::uint16_t value) {
     return QStringLiteral("0x%1").arg(value, 4, 16, QChar('0'));
 }
@@ -202,6 +244,18 @@ qulonglong MainController::selectedPacketIndex() const noexcept {
     return selected_packet_index_;
 }
 
+QString MainController::flowFilterText() const {
+    return flow_model_.filterText();
+}
+
+int MainController::flowSortColumn() const noexcept {
+    return column_from_sort_key(flow_model_.sortKey());
+}
+
+bool MainController::flowSortAscending() const noexcept {
+    return flow_model_.sortAscending();
+}
+
 bool MainController::openCaptureFile(const QString& path) {
     return openPath(path, false);
 }
@@ -210,15 +264,31 @@ bool MainController::openIndexFile(const QString& path) {
     return openPath(path, true);
 }
 
+void MainController::sortFlows(const int column) {
+    const auto requestedKey = sort_key_from_column(column);
+
+    if (flow_model_.sortKey() == requestedKey) {
+        flow_model_.setSortAscending(!flow_model_.sortAscending());
+    } else {
+        flow_model_.setSortKey(requestedKey);
+        flow_model_.setSortAscending(true);
+    }
+
+    synchronizeFlowSelection();
+    emit flowSortChanged();
+}
+
 bool MainController::openPath(const QString& path, const bool asIndex) {
     const QString trimmed_path = path.trimmed();
     if (trimmed_path.isEmpty()) {
         current_input_path_.clear();
         session_ = {};
+        flow_model_.resetViewState();
         flow_model_.clear();
-        packet_model_.clear();
-        clearPacketSelection();
+        clearFlowSelection();
         emit stateChanged();
+        emit flowFilterTextChanged();
+        emit flowSortChanged();
         return false;
     }
 
@@ -228,18 +298,22 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     if (!opened) {
         current_input_path_.clear();
         session_ = {};
+        flow_model_.resetViewState();
         flow_model_.clear();
-        packet_model_.clear();
-        clearPacketSelection();
+        clearFlowSelection();
         emit stateChanged();
+        emit flowFilterTextChanged();
+        emit flowSortChanged();
         return false;
     }
 
     current_input_path_ = trimmed_path;
+    flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
-    packet_model_.clear();
-    clearPacketSelection();
+    clearFlowSelection();
     emit stateChanged();
+    emit flowFilterTextChanged();
+    emit flowSortChanged();
     return true;
 }
 
@@ -294,6 +368,16 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     emit selectedPacketIndexChanged();
 }
 
+void MainController::setFlowFilterText(const QString& text) {
+    if (flow_model_.filterText() == text) {
+        return;
+    }
+
+    flow_model_.setFilterText(text);
+    synchronizeFlowSelection();
+    emit flowFilterTextChanged();
+}
+
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     selected_packet_index_ = kInvalidPacketSelection;
@@ -301,6 +385,23 @@ void MainController::clearPacketSelection() {
 
     if (selectionChanged) {
         emit selectedPacketIndexChanged();
+    }
+}
+
+void MainController::clearFlowSelection() {
+    const bool flowChanged = selected_flow_index_ != -1;
+    selected_flow_index_ = -1;
+    packet_model_.clear();
+    clearPacketSelection();
+
+    if (flowChanged) {
+        emit selectedFlowIndexChanged();
+    }
+}
+
+void MainController::synchronizeFlowSelection() {
+    if (selected_flow_index_ >= 0 && !flow_model_.containsFlowIndex(selected_flow_index_)) {
+        clearFlowSelection();
     }
 }
 

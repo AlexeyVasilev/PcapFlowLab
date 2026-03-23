@@ -7,8 +7,21 @@ Frame {
 
     property var flowModel: null
     property int selectedFlowIndex: -1
+    property string filterText: ""
+    property int sortColumn: 0
+    property bool sortAscending: true
 
     signal flowSelected(int flowIndex)
+    signal filterTextEdited(string text)
+    signal sortRequested(int column)
+
+    function sortIndicator(column) {
+        if (root.sortColumn !== column) {
+            return ""
+        }
+
+        return root.sortAscending ? " ^" : " ¡"
+    }
 
     background: Rectangle {
         color: "#ffffff"
@@ -26,6 +39,16 @@ Frame {
             font.bold: true
         }
 
+        TextField {
+            id: filterField
+            Layout.fillWidth: true
+            placeholderText: "Filter by protocol, family, or endpoint"
+            text: root.filterText
+            onTextEdited: function() {
+                root.filterTextEdited(text)
+            }
+        }
+
         Rectangle {
             Layout.fillWidth: true
             height: 1
@@ -36,48 +59,48 @@ Frame {
             Layout.fillWidth: true
             spacing: 12
 
-            Label {
-                text: "Index"
-                font.bold: true
-                Layout.preferredWidth: 52
+            Button {
+                text: "Index" + root.sortIndicator(0)
+                Layout.preferredWidth: 70
+                onClicked: root.sortRequested(0)
             }
 
-            Label {
-                text: "Family"
-                font.bold: true
-                Layout.preferredWidth: 60
+            Button {
+                text: "Family" + root.sortIndicator(1)
+                Layout.preferredWidth: 78
+                onClicked: root.sortRequested(1)
             }
 
-            Label {
-                text: "Protocol"
-                font.bold: true
-                Layout.preferredWidth: 72
+            Button {
+                text: "Protocol" + root.sortIndicator(2)
+                Layout.preferredWidth: 90
+                onClicked: root.sortRequested(2)
             }
 
-            Label {
-                text: "Endpoint A"
-                font.bold: true
+            Button {
+                text: "Endpoint A" + root.sortIndicator(3)
                 Layout.fillWidth: true
                 Layout.preferredWidth: 180
+                onClicked: root.sortRequested(3)
             }
 
-            Label {
-                text: "Endpoint B"
-                font.bold: true
+            Button {
+                text: "Endpoint B" + root.sortIndicator(4)
                 Layout.fillWidth: true
                 Layout.preferredWidth: 180
+                onClicked: root.sortRequested(4)
             }
 
-            Label {
-                text: "Packets"
-                font.bold: true
-                Layout.preferredWidth: 72
+            Button {
+                text: "Packets" + root.sortIndicator(5)
+                Layout.preferredWidth: 90
+                onClicked: root.sortRequested(5)
             }
 
-            Label {
-                text: "Bytes"
-                font.bold: true
-                Layout.preferredWidth: 84
+            Button {
+                text: "Bytes" + root.sortIndicator(6)
+                Layout.preferredWidth: 90
+                onClicked: root.sortRequested(6)
             }
         }
 

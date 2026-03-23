@@ -2,6 +2,7 @@
 
 #include <QStringList>
 
+#include <algorithm>
 #include <variant>
 
 namespace pfl {
@@ -60,6 +61,40 @@ QString format_endpoint(const EndpointKeyV6& endpoint) {
         .arg(endpoint.port);
 }
 
+bool contains_text(const FlowListModel::Item& item, const QString& filter) {
+    return item.family.contains(filter, Qt::CaseInsensitive)
+        || item.protocol.contains(filter, Qt::CaseInsensitive)
+        || item.endpoint_a.contains(filter, Qt::CaseInsensitive)
+        || item.endpoint_b.contains(filter, Qt::CaseInsensitive);
+}
+
+bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right, const FlowListModel::SortKey key) {
+    switch (key) {
+    case FlowListModel::SortKey::index:
+        return left.flow_index < right.flow_index;
+    case FlowListModel::SortKey::family:
+        return left.family < right.family;
+    case FlowListModel::SortKey::protocol:
+        return left.protocol < right.protocol;
+    case FlowListModel::SortKey::endpoint_a:
+        return left.endpoint_a < right.endpoint_a;
+    case FlowListModel::SortKey::endpoint_b:
+        return left.endpoint_b < right.endpoint_b;
+    case FlowListModel::SortKey::packets:
+        if (left.packets != right.packets) {
+            return left.packets < right.packets;
+        }
+        return left.flow_index < right.flow_index;
+    case FlowListModel::SortKey::bytes:
+        if (left.bytes != right.bytes) {
+            return left.bytes < right.bytes;
+        }
+        return left.flow_index < right.flow_index;
+    }
+
+    return left.flow_index < right.flow_index;
+}
+
 }  // namespace
 
 FlowListModel::FlowListModel(QObject* parent)
@@ -71,7 +106,7 @@ int FlowListModel::rowCount(const QModelIndex& parent) const {
         return 0;
     }
 
-    return static_cast<int>(items_.size());
+    return static_cast<int>(visible_items_.size());
 }
 
 QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
@@ -79,7 +114,7 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
         return {};
     }
 
-    const Item& item = items_[static_cast<std::size_t>(index.row())];
+    const Item& item = visible_items_[static_cast<std::size_t>(index.row())];
     switch (role) {
     case FlowIndexRole:
         return item.flow_index;
@@ -113,9 +148,8 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
 }
 
 void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
-    beginResetModel();
-    items_.clear();
-    items_.reserve(rows.size());
+    all_items_.clear();
+    all_items_.reserve(rows.size());
 
     for (const auto& row : rows) {
         Item item {};
@@ -137,15 +171,92 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
             item.endpoint_b = format_endpoint(key.second);
         }
 
-        items_.push_back(std::move(item));
+        all_items_.push_back(std::move(item));
     }
+
+    rebuildVisibleItems();
+}
+
+void FlowListModel::clear() {
+    all_items_.clear();
+    rebuildVisibleItems();
+}
+
+void FlowListModel::resetViewState() {
+    filter_text_.clear();
+    sort_key_ = SortKey::index;
+    sort_ascending_ = true;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::setFilterText(const QString& text) {
+    if (filter_text_ == text) {
+        return;
+    }
+
+    filter_text_ = text;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::setSortKey(const SortKey key) {
+    if (sort_key_ == key) {
+        return;
+    }
+
+    sort_key_ = key;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::setSortAscending(const bool ascending) noexcept {
+    if (sort_ascending_ == ascending) {
+        return;
+    }
+
+    sort_ascending_ = ascending;
+    rebuildVisibleItems();
+}
+
+const QString& FlowListModel::filterText() const noexcept {
+    return filter_text_;
+}
+
+FlowListModel::SortKey FlowListModel::sortKey() const noexcept {
+    return sort_key_;
+}
+
+bool FlowListModel::sortAscending() const noexcept {
+    return sort_ascending_;
+}
+
+bool FlowListModel::containsFlowIndex(const int flowIndex) const noexcept {
+    return std::any_of(visible_items_.begin(), visible_items_.end(), [flowIndex](const Item& item) {
+        return item.flow_index == flowIndex;
+    });
+}
+
+void FlowListModel::rebuildVisibleItems() {
+    beginResetModel();
+    visible_items_.clear();
+    visible_items_.reserve(all_items_.size());
+
+    for (const auto& item : all_items_) {
+        if (filter_text_.isEmpty() || contains_text(item, filter_text_)) {
+            visible_items_.push_back(item);
+        }
+    }
+
+    std::sort(visible_items_.begin(), visible_items_.end(), [this](const Item& left, const Item& right) {
+        const bool isLess = less_than(left, right, sort_key_);
+        const bool isGreater = less_than(right, left, sort_key_);
+
+        if (!isLess && !isGreater) {
+            return left.flow_index < right.flow_index;
+        }
+
+        return sort_ascending_ ? isLess : isGreater;
+    });
 
     endResetModel();
 }
 
-void FlowListModel::clear() {
-    refresh({});
-}
-
 }  // namespace pfl
-

@@ -24,6 +24,16 @@ public:
         BytesRole,
     };
 
+    enum class SortKey {
+        index,
+        family,
+        protocol,
+        endpoint_a,
+        endpoint_b,
+        packets,
+        bytes,
+    };
+
     explicit FlowListModel(QObject* parent = nullptr);
 
     [[nodiscard]] int rowCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -32,8 +42,16 @@ public:
 
     void refresh(const std::vector<FlowRow>& rows);
     void clear();
+    void resetViewState();
+    void setFilterText(const QString& text);
+    void setSortKey(SortKey key);
+    void setSortAscending(bool ascending) noexcept;
 
-private:
+    [[nodiscard]] const QString& filterText() const noexcept;
+    [[nodiscard]] SortKey sortKey() const noexcept;
+    [[nodiscard]] bool sortAscending() const noexcept;
+    [[nodiscard]] bool containsFlowIndex(int flowIndex) const noexcept;
+
     struct Item {
         int flow_index {0};
         QString family {};
@@ -44,7 +62,15 @@ private:
         qulonglong bytes {0};
     };
 
-    std::vector<Item> items_ {};
+private:
+    void rebuildVisibleItems();
+
+    std::vector<Item> all_items_ {};
+    std::vector<Item> visible_items_ {};
+    QString filter_text_ {};
+    SortKey sort_key_ {SortKey::index};
+    bool sort_ascending_ {true};
 };
 
 }  // namespace pfl
+
