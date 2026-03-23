@@ -3,7 +3,9 @@
 #include <filesystem>
 #include <limits>
 
+#include <QFileDialog>
 #include <QStringList>
+#include <QWidget>
 
 namespace pfl {
 
@@ -240,6 +242,10 @@ QString MainController::currentInputPath() const {
     return current_input_path_;
 }
 
+QString MainController::openErrorText() const {
+    return open_error_text_;
+}
+
 bool MainController::hasCapture() const noexcept {
     return session_.has_capture();
 }
@@ -296,6 +302,20 @@ bool MainController::openIndexFile(const QString& path) {
     return openPath(path, true);
 }
 
+void MainController::browseCaptureFile() {
+    const QString path = chooseFile(false);
+    if (!path.isEmpty()) {
+        openCaptureFile(path);
+    }
+}
+
+void MainController::browseIndexFile() {
+    const QString path = chooseFile(true);
+    if (!path.isEmpty()) {
+        openIndexFile(path);
+    }
+}
+
 void MainController::sortFlows(const int column) {
     const auto requestedKey = sort_key_from_column(column);
 
@@ -313,6 +333,7 @@ void MainController::sortFlows(const int column) {
 bool MainController::openPath(const QString& path, const bool asIndex) {
     const QString trimmed_path = path.trimmed();
     if (trimmed_path.isEmpty()) {
+        setOpenErrorText(QStringLiteral("No file selected."));
         current_input_path_.clear();
         session_ = {};
         flow_model_.resetViewState();
@@ -325,9 +346,13 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     }
 
     const std::filesystem::path filesystem_path = std::filesystem::path {trimmed_path.toStdWString()};
+    setLastDirectoryFromPath(filesystem_path);
     const bool opened = asIndex ? session_.load_index(filesystem_path) : session_.open_capture(filesystem_path);
 
     if (!opened) {
+        setOpenErrorText(asIndex
+            ? QStringLiteral("Failed to open index file.")
+            : QStringLiteral("Failed to open capture file."));
         current_input_path_.clear();
         session_ = {};
         flow_model_.resetViewState();
@@ -339,6 +364,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         return false;
     }
 
+    setOpenErrorText({});
     current_input_path_ = trimmed_path;
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
@@ -435,6 +461,43 @@ void MainController::synchronizeFlowSelection() {
     if (selected_flow_index_ >= 0 && !flow_model_.containsFlowIndex(selected_flow_index_)) {
         clearFlowSelection();
     }
+}
+
+void MainController::setOpenErrorText(const QString& text) {
+    if (open_error_text_ == text) {
+        return;
+    }
+
+    open_error_text_ = text;
+    emit openErrorTextChanged();
+}
+
+QString MainController::chooseFile(const bool forIndex) const {
+    const QString directory = last_directory_path_.isEmpty() ? QString {} : last_directory_path_;
+    const QString title = forIndex ? QStringLiteral("Open Index") : QStringLiteral("Open Capture");
+    const QString filter = forIndex
+        ? QStringLiteral("Index Files (*.idx);;All Files (*)")
+        : QStringLiteral("Capture Files (*.pcap *.pcapng);;All Files (*)");
+
+    return QFileDialog::getOpenFileName(nullptr, title, directory, filter);
+}
+
+void MainController::setLastDirectoryFromPath(const std::filesystem::path& path) {
+    std::filesystem::path directory = path;
+    if (!std::filesystem::is_directory(directory)) {
+        directory = directory.parent_path();
+    }
+
+    if (directory.empty()) {
+        return;
+    }
+
+    const QString newPath = QString::fromStdWString(directory.wstring());
+    if (last_directory_path_ == newPath) {
+        return;
+    }
+
+    last_directory_path_ = newPath;
 }
 
 }  // namespace pfl

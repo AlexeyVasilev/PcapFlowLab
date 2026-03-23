@@ -90,7 +90,7 @@ target_link_libraries(
 )
 
 if(PFL_BUILD_UI)
-    find_package(Qt6 QUIET COMPONENTS Quick Qml QuickControls2)
+    find_package(Qt6 QUIET COMPONENTS Quick Qml QuickControls2 Widgets)
 
     if(Qt6_FOUND)
         qt_standard_project_setup()
@@ -129,6 +129,7 @@ if(PFL_BUILD_UI)
                 Qt6::Quick
                 Qt6::Qml
                 Qt6::QuickControls2
+                Qt6::Widgets
         )
     else()
         message(STATUS "Qt 6 Quick/QML not found, skipping pcap_flow_lab_ui target.")

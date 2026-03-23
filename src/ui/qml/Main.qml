@@ -20,21 +20,31 @@ ApplicationWindow {
             Layout.fillWidth: true
             spacing: 12
 
-            TextField {
-                id: inputPathField
-                Layout.fillWidth: true
-                placeholderText: "Enter a .pcap, .pcapng, or index file path"
-            }
-
             Button {
                 text: "Open Capture"
-                onClicked: mainController.openCaptureFile(inputPathField.text)
+                onClicked: mainController.browseCaptureFile()
             }
 
             Button {
                 text: "Open Index"
-                onClicked: mainController.openIndexFile(inputPathField.text)
+                onClicked: mainController.browseIndexFile()
             }
+
+            TextField {
+                Layout.fillWidth: true
+                readOnly: true
+                text: mainController.currentInputPath.length > 0
+                    ? mainController.currentInputPath
+                    : "No file loaded"
+            }
+        }
+
+        Label {
+            Layout.fillWidth: true
+            visible: mainController.openErrorText.length > 0
+            text: mainController.openErrorText
+            color: "#b91c1c"
+            wrapMode: Text.WordWrap
         }
 
         SummaryBar {
