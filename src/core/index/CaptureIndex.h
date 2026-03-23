@@ -21,6 +21,8 @@ struct CaptureSourceInfo {
 inline constexpr std::uint64_t kCaptureIndexMagic = 0x315844494c465050ULL;
 inline constexpr std::uint16_t kCaptureIndexVersion = 1;
 
+[[nodiscard]] bool validate_index_magic(const std::filesystem::path& index_path);
+[[nodiscard]] bool looks_like_index_file(const std::filesystem::path& path);
 [[nodiscard]] bool read_capture_source_info(const std::filesystem::path& capture_path, CaptureSourceInfo& out_info);
 [[nodiscard]] bool validate_capture_source(const CaptureSourceInfo& expected, const std::filesystem::path& capture_path);
 [[nodiscard]] bool validate_capture_source(const CaptureSourceInfo& expected);

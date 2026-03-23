@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/io/CaptureFilePacketReader.h"
@@ -162,6 +163,14 @@ bool CaptureSession::open_capture(const std::filesystem::path& path) {
     capture_path_ = path;
     state_ = imported_state;
     return true;
+}
+
+bool CaptureSession::open_input(const std::filesystem::path& path) {
+    if (looks_like_index_file(path)) {
+        return load_index(path);
+    }
+
+    return open_capture(path);
 }
 
 bool CaptureSession::save_index(const std::filesystem::path& index_path) const {

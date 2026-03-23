@@ -14,6 +14,7 @@ namespace pfl {
 class CaptureSession {
 public:
     bool open_capture(const std::filesystem::path& path);
+    bool open_input(const std::filesystem::path& path);
     bool save_index(const std::filesystem::path& index_path) const;
     bool load_index(const std::filesystem::path& index_path);
     [[nodiscard]] bool has_capture() const noexcept;

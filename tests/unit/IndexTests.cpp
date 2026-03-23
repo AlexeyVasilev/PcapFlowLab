@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <variant>
 #include <vector>
 
 #include "TestSupport.h"
@@ -9,6 +10,28 @@
 
 namespace pfl::tests {
 
+namespace {
+
+void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<FlowRow>& right) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        PFL_EXPECT(left[index].index == right[index].index);
+        PFL_EXPECT(left[index].family == right[index].family);
+        PFL_EXPECT(left[index].packet_count == right[index].packet_count);
+        PFL_EXPECT(left[index].total_bytes == right[index].total_bytes);
+        PFL_EXPECT(left[index].key == right[index].key);
+    }
+}
+
+void expect_matching_packets(const std::vector<PacketRef>& left, const std::vector<PacketRef>& right) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        PFL_EXPECT(left[index] == right[index]);
+    }
+}
+
+}  // namespace
+
 void run_index_tests() {
     const auto forward_packet = make_ethernet_ipv4_tcp_packet(ipv4(172, 16, 0, 10), ipv4(172, 16, 0, 20), 40000, 443);
     const auto reverse_packet = make_ethernet_ipv4_tcp_packet(ipv4(172, 16, 0, 20), ipv4(172, 16, 0, 10), 443, 40000);
@@ -17,24 +40,33 @@ void run_index_tests() {
         make_classic_pcap({{100, forward_packet}, {200, reverse_packet}})
     );
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_capture_state.idx";
+    const auto exported_path = std::filesystem::temp_directory_path() / "pfl_index_exported_flow.pcap";
     std::filesystem::remove(index_path);
+    std::filesystem::remove(exported_path);
+
+    CaptureSession original_session {};
+    PFL_EXPECT(original_session.open_capture(source_path));
+    PFL_EXPECT(original_session.summary().packet_count == 2);
+    PFL_EXPECT(original_session.summary().flow_count == 1);
+    const auto original_rows = original_session.list_flows();
+    const auto original_packets = original_session.flow_packets(0);
+    PFL_EXPECT(original_packets.has_value());
+    PFL_EXPECT(original_session.save_index(index_path));
+    PFL_EXPECT(std::filesystem::exists(index_path));
 
     {
-        CaptureSession session {};
-        PFL_EXPECT(session.open_capture(source_path));
-        PFL_EXPECT(session.summary().packet_count == 2);
-        PFL_EXPECT(session.summary().flow_count == 1);
-        PFL_EXPECT(session.save_index(index_path));
-        PFL_EXPECT(std::filesystem::exists(index_path));
-
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
         PFL_EXPECT(loaded_session.has_capture());
         PFL_EXPECT(loaded_session.capture_path() == source_path);
-        PFL_EXPECT(loaded_session.summary().packet_count == session.summary().packet_count);
-        PFL_EXPECT(loaded_session.summary().flow_count == session.summary().flow_count);
-        PFL_EXPECT(loaded_session.summary().total_bytes == session.summary().total_bytes);
-        PFL_EXPECT(loaded_session.list_flows().size() == session.list_flows().size());
+        PFL_EXPECT(loaded_session.summary().packet_count == original_session.summary().packet_count);
+        PFL_EXPECT(loaded_session.summary().flow_count == original_session.summary().flow_count);
+        PFL_EXPECT(loaded_session.summary().total_bytes == original_session.summary().total_bytes);
+        expect_matching_rows(loaded_session.list_flows(), original_rows);
+
+        const auto loaded_packets = loaded_session.flow_packets(0);
+        PFL_EXPECT(loaded_packets.has_value());
+        expect_matching_packets(*loaded_packets, *original_packets);
 
         const auto first_packet = loaded_session.find_packet(0);
         PFL_EXPECT(first_packet.has_value());
@@ -57,6 +89,35 @@ void run_index_tests() {
         PFL_EXPECT(details->ipv4.dst_addr == ipv4(172, 16, 0, 20));
         PFL_EXPECT(details->tcp.src_port == 40000);
         PFL_EXPECT(details->tcp.dst_port == 443);
+
+        PFL_EXPECT(!loaded_session.read_packet_hex_dump(*first_packet).empty());
+        PFL_EXPECT(loaded_session.export_flow_to_pcap(0, exported_path));
+    }
+
+    {
+        CaptureSession exported_session {};
+        PFL_EXPECT(exported_session.open_capture(exported_path));
+        PFL_EXPECT(exported_session.summary().packet_count == 2);
+        PFL_EXPECT(exported_session.summary().flow_count == 1);
+        PFL_EXPECT(exported_session.list_flows().size() == 1);
+    }
+
+    {
+        CaptureSession capture_input_session {};
+        PFL_EXPECT(capture_input_session.open_input(source_path));
+        PFL_EXPECT(capture_input_session.summary().packet_count == 2);
+        PFL_EXPECT(capture_input_session.capture_path() == source_path);
+
+        CaptureSession index_input_session {};
+        PFL_EXPECT(index_input_session.open_input(index_path));
+        PFL_EXPECT(index_input_session.summary().packet_count == 2);
+        PFL_EXPECT(index_input_session.capture_path() == source_path);
+        expect_matching_rows(index_input_session.list_flows(), original_rows);
+
+        PFL_EXPECT(!looks_like_index_file(source_path));
+        PFL_EXPECT(looks_like_index_file(index_path));
+        PFL_EXPECT(validate_index_magic(index_path));
+        PFL_EXPECT(!validate_index_magic(source_path));
     }
 
     {
@@ -98,6 +159,36 @@ void run_index_tests() {
         mismatched_info.last_write_time += 1;
         PFL_EXPECT(!validate_capture_source(mismatched_info, source_path));
     }
+
+    {
+        const auto missing_source_path = write_temp_pcap(
+            "pfl_index_missing_source.pcap",
+            make_classic_pcap({{100, forward_packet}, {200, reverse_packet}})
+        );
+        const auto missing_index_path = std::filesystem::temp_directory_path() / "pfl_missing_source.idx";
+        const auto renamed_source_path = std::filesystem::temp_directory_path() / "pfl_index_missing_source.gone";
+        std::filesystem::remove(missing_index_path);
+        std::filesystem::remove(renamed_source_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(missing_source_path));
+        PFL_EXPECT(session.save_index(missing_index_path));
+
+        CaptureSession loaded_session {};
+        PFL_EXPECT(loaded_session.load_index(missing_index_path));
+        std::filesystem::rename(missing_source_path, renamed_source_path);
+
+        PFL_EXPECT(loaded_session.summary().packet_count == 2);
+        PFL_EXPECT(loaded_session.list_flows().size() == 1);
+
+        const auto packet = loaded_session.find_packet(0);
+        PFL_EXPECT(packet.has_value());
+        PFL_EXPECT(loaded_session.read_packet_data(*packet).empty());
+        PFL_EXPECT(!loaded_session.read_packet_details(*packet).has_value());
+        PFL_EXPECT(loaded_session.read_packet_hex_dump(*packet).empty());
+        PFL_EXPECT(!loaded_session.export_flow_to_pcap(0, std::filesystem::temp_directory_path() / "pfl_should_not_export.pcap"));
+    }
 }
 
 }  // namespace pfl::tests
+

@@ -37,11 +37,11 @@ struct PrintableFlowRow {
 void print_usage() {
     std::cout
         << "Usage:\n"
-        << "  pcap-flow-lab summary <file>\n"
-        << "  pcap-flow-lab flows <file>\n"
-        << "  pcap-flow-lab inspect-packet <file> --packet-index <N>\n"
-        << "  pcap-flow-lab hex <file> --packet-index <N>\n"
-        << "  pcap-flow-lab export-flow <file> --flow-index <N> --out <output.pcap>\n"
+        << "  pcap-flow-lab summary <input>\n"
+        << "  pcap-flow-lab flows <input>\n"
+        << "  pcap-flow-lab inspect-packet <input> --packet-index <N>\n"
+        << "  pcap-flow-lab hex <input> --packet-index <N>\n"
+        << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap>\n"
         << "  pcap-flow-lab save-index <capture-file> --out <index-file>\n"
         << "  pcap-flow-lab load-index-summary <index-file>\n";
 }
@@ -113,16 +113,25 @@ std::optional<OutputPathArgs> parse_output_path_args(int argc, char* argv[]) {
     };
 }
 
-bool open_session(const char* file, pfl::CaptureSession& session) {
-    if (session.open_capture(file)) {
+bool open_analysis_input(const char* input, pfl::CaptureSession& session) {
+    if (session.open_input(input)) {
         return true;
     }
 
-    std::cerr << "Failed to open capture: " << file << '\n';
+    std::cerr << "Failed to open input: " << input << '\n';
     return false;
 }
 
-bool load_index_session(const char* index_file, pfl::CaptureSession& session) {
+bool open_capture_only(const char* capture_file, pfl::CaptureSession& session) {
+    if (session.open_capture(capture_file)) {
+        return true;
+    }
+
+    std::cerr << "Failed to open capture: " << capture_file << '\n';
+    return false;
+}
+
+bool load_index_only(const char* index_file, pfl::CaptureSession& session) {
     if (session.load_index(index_file)) {
         return true;
     }
@@ -194,9 +203,14 @@ void print_packet_details(const pfl::PacketDetails& details) {
 
 void print_summary(const pfl::CaptureSession& session, const std::string_view label, const std::string_view value) {
     std::cout << label << ": " << value << '\n';
+
     if (session.has_capture()) {
-        std::cout << "Source Capture: " << session.capture_path().string() << '\n';
+        const auto source_capture = session.capture_path().string();
+        if (source_capture != value) {
+            std::cout << "Source Capture: " << source_capture << '\n';
+        }
     }
+
     std::cout << "Packets: " << session.summary().packet_count << '\n';
     std::cout << "Flows: " << session.summary().flow_count << '\n';
     std::cout << "Bytes: " << session.summary().total_bytes << '\n';
@@ -211,7 +225,7 @@ int main(int argc, char* argv[]) {
     }
 
     const std::string_view command = argv[1];
-    const char* file = argv[2];
+    const char* input = argv[2];
 
     if (command == "summary") {
         if (argc != 3) {
@@ -220,11 +234,11 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!open_session(file, session)) {
+        if (!open_analysis_input(input, session)) {
             return 1;
         }
 
-        print_summary(session, "File", file);
+        print_summary(session, "Input", input);
         return 0;
     }
 
@@ -235,11 +249,11 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!load_index_session(file, session)) {
+        if (!load_index_only(input, session)) {
             return 1;
         }
 
-        print_summary(session, "Index", file);
+        print_summary(session, "Index", input);
         return 0;
     }
 
@@ -250,7 +264,7 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!open_session(file, session)) {
+        if (!open_analysis_input(input, session)) {
             return 1;
         }
 
@@ -281,7 +295,7 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!open_session(file, session)) {
+        if (!open_analysis_input(input, session)) {
             return 1;
         }
 
@@ -309,7 +323,7 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!open_session(file, session)) {
+        if (!open_analysis_input(input, session)) {
             return 1;
         }
 
@@ -337,7 +351,7 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!open_session(file, session)) {
+        if (!open_analysis_input(input, session)) {
             return 1;
         }
 
@@ -358,7 +372,7 @@ int main(int argc, char* argv[]) {
         }
 
         pfl::CaptureSession session {};
-        if (!open_session(file, session)) {
+        if (!open_capture_only(input, session)) {
             return 1;
         }
 
