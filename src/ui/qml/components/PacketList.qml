@@ -6,6 +6,9 @@ Frame {
     id: root
 
     property var packetModel: null
+    property var selectedPacketIndex: -1
+
+    signal packetSelected(var packetIndex)
 
     background: Rectangle {
         color: "#ffffff"
@@ -75,14 +78,16 @@ Frame {
                 model: root.packetModel
 
                 delegate: Rectangle {
-                    required property int packetIndex
+                    required property var packetIndex
                     required property string timestamp
                     required property int capturedLength
                     required property int originalLength
 
                     width: packetListView.width
                     height: 36
-                    color: index % 2 === 0 ? "#ffffff" : "#f8fafc"
+                    color: root.selectedPacketIndex === packetIndex
+                        ? "#dbeafe"
+                        : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
                     RowLayout {
                         anchors.fill: parent
@@ -112,6 +117,11 @@ Frame {
                             Layout.preferredWidth: 84
                             horizontalAlignment: Text.AlignRight
                         }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: root.packetSelected(packetIndex)
                     }
                 }
             }

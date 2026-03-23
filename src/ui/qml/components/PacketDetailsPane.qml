@@ -3,6 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 Frame {
+    id: root
+
+    property var packetDetailsModel: null
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -25,11 +29,64 @@ Frame {
             color: "#e2e8f0"
         }
 
-        Label {
+        TabBar {
+            id: tabs
             Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            color: "#64748b"
-            text: "Packet details and hex view integration is next. This pane will attach to the existing lazy packet access and on-demand decode services."
+
+            TabButton {
+                text: "Summary"
+            }
+
+            TabButton {
+                text: "Hex"
+            }
+        }
+
+        StackLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: tabs.currentIndex
+
+            Rectangle {
+                color: "#f8fafc"
+                border.color: "#e2e8f0"
+                radius: 6
+
+                ScrollView {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    clip: true
+
+                    TextArea {
+                        readOnly: true
+                        wrapMode: TextEdit.Wrap
+                        text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            ? root.packetDetailsModel.summaryText
+                            : "No packet selected"
+                    }
+                }
+            }
+
+            Rectangle {
+                color: "#f8fafc"
+                border.color: "#e2e8f0"
+                radius: 6
+
+                ScrollView {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    clip: true
+
+                    TextArea {
+                        readOnly: true
+                        wrapMode: TextEdit.NoWrap
+                        font.family: "Consolas"
+                        text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            ? root.packetDetailsModel.hexText
+                            : "No packet selected"
+                    }
+                }
+            }
         }
     }
 }

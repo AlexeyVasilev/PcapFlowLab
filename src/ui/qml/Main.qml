@@ -78,10 +78,15 @@ ApplicationWindow {
                 PacketList {
                     SplitView.preferredHeight: 240
                     packetModel: mainController.packetModel
+                    selectedPacketIndex: mainController.selectedPacketIndex
+                    onPacketSelected: function(packetIndex) {
+                        mainController.selectedPacketIndex = packetIndex
+                    }
                 }
 
                 PacketDetailsPane {
                     Layout.fillHeight: true
+                    packetDetailsModel: mainController.packetDetailsModel
                 }
             }
         }

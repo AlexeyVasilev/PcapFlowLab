@@ -104,6 +104,8 @@ if(PFL_BUILD_UI)
             src/ui/app/FlowListModel.h
             src/ui/app/PacketListModel.cpp
             src/ui/app/PacketListModel.h
+            src/ui/app/PacketDetailsViewModel.cpp
+            src/ui/app/PacketDetailsViewModel.h
         )
 
         qt_add_qml_module(
