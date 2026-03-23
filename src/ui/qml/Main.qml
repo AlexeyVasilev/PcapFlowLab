@@ -77,6 +77,7 @@ ApplicationWindow {
 
                 PacketList {
                     SplitView.preferredHeight: 240
+                    packetModel: mainController.packetModel
                 }
 
                 PacketDetailsPane {

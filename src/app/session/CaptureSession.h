@@ -24,6 +24,7 @@ public:
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
+    [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;

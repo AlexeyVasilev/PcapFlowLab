@@ -1,6 +1,8 @@
 #include "app/session/CaptureSession.h"
 
 #include <algorithm>
+#include <iomanip>
+#include <sstream>
 
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
@@ -113,6 +115,18 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
         .key = connection.ipv6->key,
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
+    };
+}
+
+PacketRow make_packet_row(const PacketRef& packet) {
+    std::ostringstream timestamp {};
+    timestamp << packet.ts_sec << '.' << std::setw(6) << std::setfill('0') << packet.ts_usec;
+
+    return PacketRow {
+        .packet_index = packet.packet_index,
+        .timestamp_text = timestamp.str(),
+        .captured_length = packet.captured_length,
+        .original_length = packet.original_length,
     };
 }
 
@@ -250,6 +264,22 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
 
     for (std::size_t index = 0; index < connections.size(); ++index) {
         rows.push_back(make_flow_row(index, connections[index]));
+    }
+
+    return rows;
+}
+
+std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_index) const {
+    const auto packets = flow_packets(flow_index);
+    if (!packets.has_value()) {
+        return {};
+    }
+
+    std::vector<PacketRow> rows {};
+    rows.reserve(packets->size());
+
+    for (const auto& packet : *packets) {
+        rows.push_back(make_packet_row(packet));
     }
 
     return rows;

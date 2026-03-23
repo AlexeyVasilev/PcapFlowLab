@@ -40,4 +40,4 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists, and the flow panel already displays real flow rows from the current session.
+The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists, and the desktop shell can already open captures or indexes, show summary data, browse flows, and list packets for the selected flow.

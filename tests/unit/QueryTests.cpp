@@ -51,7 +51,15 @@ void run_query_tests() {
     PFL_EXPECT(second_flow_packets->front().captured_length == udp_packet.size());
     PFL_EXPECT(second_flow_packets->front().byte_offset == 40 + tcp_packet.size() + 16);
 
+    const auto second_flow_rows = session.list_flow_packets(1);
+    PFL_EXPECT(second_flow_rows.size() == 1);
+    PFL_EXPECT(second_flow_rows.front().packet_index == 1);
+    PFL_EXPECT(second_flow_rows.front().captured_length == udp_packet.size());
+    PFL_EXPECT(second_flow_rows.front().original_length == udp_packet.size());
+    PFL_EXPECT(second_flow_rows.front().timestamp_text == "2.000200");
+
     PFL_EXPECT(!session.flow_packets(99).has_value());
+    PFL_EXPECT(session.list_flow_packets(99).empty());
 
     const auto packet = session.find_packet(1);
     PFL_EXPECT(packet.has_value());
@@ -63,3 +71,4 @@ void run_query_tests() {
 }
 
 }  // namespace pfl::tests
+

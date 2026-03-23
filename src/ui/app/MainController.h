@@ -5,6 +5,7 @@
 
 #include "app/session/CaptureSession.h"
 #include "ui/app/FlowListModel.h"
+#include "ui/app/PacketListModel.h"
 
 namespace pfl {
 
@@ -16,6 +17,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
     Q_PROPERTY(QObject* flowModel READ flowModel CONSTANT)
+    Q_PROPERTY(QObject* packetModel READ packetModel CONSTANT)
     Q_PROPERTY(int selectedFlowIndex READ selectedFlowIndex WRITE setSelectedFlowIndex NOTIFY selectedFlowIndexChanged)
 
 public:
@@ -27,6 +29,7 @@ public:
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
     [[nodiscard]] QObject* flowModel() noexcept;
+    [[nodiscard]] QObject* packetModel() noexcept;
     [[nodiscard]] int selectedFlowIndex() const noexcept;
 
     Q_INVOKABLE bool openCaptureFile(const QString& path);
@@ -43,6 +46,7 @@ private:
 
     CaptureSession session_ {};
     FlowListModel flow_model_ {};
+    PacketListModel packet_model_ {};
     QString current_input_path_ {};
     int selected_flow_index_ {-1};
 };

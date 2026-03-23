@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <variant>
 
 #include "core/domain/ConnectionKey.h"
@@ -21,6 +22,13 @@ struct FlowRow {
     FlowConnectionKey key {ConnectionKeyV4 {}};
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+};
+
+struct PacketRow {
+    std::uint64_t packet_index {0};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
 };
 
 }  // namespace pfl

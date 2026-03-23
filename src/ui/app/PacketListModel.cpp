@@ -1,0 +1,67 @@
+#include "ui/app/PacketListModel.h"
+
+namespace pfl {
+
+PacketListModel::PacketListModel(QObject* parent)
+    : QAbstractListModel(parent) {
+}
+
+int PacketListModel::rowCount(const QModelIndex& parent) const {
+    if (parent.isValid()) {
+        return 0;
+    }
+
+    return static_cast<int>(items_.size());
+}
+
+QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
+    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount()) {
+        return {};
+    }
+
+    const Item& item = items_[static_cast<std::size_t>(index.row())];
+    switch (role) {
+    case PacketIndexRole:
+        return QVariant::fromValue(item.packet_index);
+    case TimestampRole:
+        return item.timestamp;
+    case CapturedLengthRole:
+        return item.captured_length;
+    case OriginalLengthRole:
+        return item.original_length;
+    default:
+        return {};
+    }
+}
+
+QHash<int, QByteArray> PacketListModel::roleNames() const {
+    return {
+        {PacketIndexRole, "packetIndex"},
+        {TimestampRole, "timestamp"},
+        {CapturedLengthRole, "capturedLength"},
+        {OriginalLengthRole, "originalLength"},
+    };
+}
+
+void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
+    beginResetModel();
+    items_.clear();
+    items_.reserve(rows.size());
+
+    for (const auto& row : rows) {
+        items_.push_back(Item {
+            .packet_index = static_cast<qulonglong>(row.packet_index),
+            .timestamp = QString::fromStdString(row.timestamp_text),
+            .captured_length = row.captured_length,
+            .original_length = row.original_length,
+        });
+    }
+
+    endResetModel();
+}
+
+void PacketListModel::clear() {
+    refresh({});
+}
+
+}  // namespace pfl

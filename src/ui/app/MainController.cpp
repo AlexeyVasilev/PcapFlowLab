@@ -32,6 +32,10 @@ QObject* MainController::flowModel() noexcept {
     return &flow_model_;
 }
 
+QObject* MainController::packetModel() noexcept {
+    return &packet_model_;
+}
+
 int MainController::selectedFlowIndex() const noexcept {
     return selected_flow_index_;
 }
@@ -50,6 +54,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         current_input_path_.clear();
         session_ = {};
         flow_model_.clear();
+        packet_model_.clear();
         setSelectedFlowIndex(-1);
         emit stateChanged();
         return false;
@@ -62,6 +67,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         current_input_path_.clear();
         session_ = {};
         flow_model_.clear();
+        packet_model_.clear();
         setSelectedFlowIndex(-1);
         emit stateChanged();
         return false;
@@ -69,6 +75,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
 
     current_input_path_ = trimmed_path;
     flow_model_.refresh(session_.list_flows());
+    packet_model_.clear();
     setSelectedFlowIndex(-1);
     emit stateChanged();
     return true;
@@ -80,6 +87,13 @@ void MainController::setSelectedFlowIndex(const int index) {
     }
 
     selected_flow_index_ = index;
+
+    if (selected_flow_index_ >= 0) {
+        packet_model_.refresh(session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_)));
+    } else {
+        packet_model_.clear();
+    }
+
     emit selectedFlowIndexChanged();
 }
 
