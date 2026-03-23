@@ -31,3 +31,9 @@ Examples:
 `pcap-flow-lab save-index sample.pcapng --out sample.idx`
 
 `pcap-flow-lab load-index-summary sample.idx`
+
+`pcap-flow-lab chunked-import sample.pcap --checkpoint sample.ckp --max-packets 100000`
+
+`pcap-flow-lab resume-import --checkpoint sample.ckp --max-packets 100000`
+
+`pcap-flow-lab finalize-import --checkpoint sample.ckp --out sample.idx`

@@ -38,16 +38,20 @@ struct RawPcapPacket {
 class PcapReader {
 public:
     bool open(const std::filesystem::path& path);
+    bool open(const std::filesystem::path& path, std::uint64_t next_input_offset, std::uint64_t next_packet_index);
     [[nodiscard]] bool is_open() const noexcept;
     [[nodiscard]] bool has_error() const noexcept;
+    [[nodiscard]] bool at_eof();
     [[nodiscard]] const PcapGlobalHeader& global_header() const noexcept;
     [[nodiscard]] std::uint32_t data_link_type() const noexcept;
+    [[nodiscard]] std::uint64_t next_input_offset() const noexcept;
     std::optional<RawPcapPacket> read_next();
 
 private:
     std::ifstream stream_ {};
     PcapGlobalHeader global_header_ {};
     std::uint64_t next_packet_index_ {0};
+    std::uint64_t next_input_offset_ {0};
     bool has_error_ {false};
 };
 

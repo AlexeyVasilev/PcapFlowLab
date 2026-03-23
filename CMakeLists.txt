@@ -49,11 +49,16 @@ add_library(
     src/core/io/PacketDataReader.cpp
     src/core/io/CaptureFilePacketReader.cpp
     src/core/index/CaptureIndex.cpp
+    src/core/index/Serialization.cpp
     src/core/index/CaptureIndexWriter.cpp
     src/core/index/CaptureIndexReader.cpp
+    src/core/index/ImportCheckpoint.cpp
+    src/core/index/ImportCheckpointWriter.cpp
+    src/core/index/ImportCheckpointReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImporter.cpp
+    src/core/services/ChunkedCaptureImporter.cpp
     src/core/services/FlowExportService.cpp
     src/core/services/PacketDetailsService.cpp
     src/core/services/HexDumpService.cpp
@@ -97,6 +102,7 @@ if(BUILD_TESTING)
         tests/unit/ExportTests.cpp
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
+        tests/unit/ChunkedImportTests.cpp
     )
 
     target_link_libraries(

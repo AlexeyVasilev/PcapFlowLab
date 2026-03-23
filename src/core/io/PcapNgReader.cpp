@@ -90,9 +90,14 @@ std::pair<std::uint32_t, std::uint32_t> normalize_timestamp(
 }  // namespace
 
 bool PcapNgReader::open(const std::filesystem::path& path) {
+    return open(path, 0, 0);
+}
+
+bool PcapNgReader::open(const std::filesystem::path& path, std::uint64_t next_input_offset, std::uint64_t next_packet_index) {
     stream_ = std::ifstream(path, std::ios::binary);
     interfaces_.clear();
-    next_packet_index_ = 0;
+    next_packet_index_ = next_packet_index;
+    next_input_offset_ = 0;
     has_error_ = false;
     little_endian_ = true;
 
@@ -100,7 +105,18 @@ bool PcapNgReader::open(const std::filesystem::path& path) {
         return false;
     }
 
-    return parse_section_header();
+    if (!parse_section_header()) {
+        return false;
+    }
+
+    if (next_input_offset != 0 && next_input_offset != next_input_offset_) {
+        if (!seek_to_offset(next_input_offset)) {
+            stream_.close();
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool PcapNgReader::is_open() const noexcept {
@@ -109,6 +125,24 @@ bool PcapNgReader::is_open() const noexcept {
 
 bool PcapNgReader::has_error() const noexcept {
     return has_error_;
+}
+
+bool PcapNgReader::at_eof() {
+    if (!stream_.is_open()) {
+        return true;
+    }
+
+    const auto next = stream_.peek();
+    if (next == std::char_traits<char>::eof()) {
+        stream_.clear();
+        return true;
+    }
+
+    return false;
+}
+
+std::uint64_t PcapNgReader::next_input_offset() const noexcept {
+    return next_input_offset_;
 }
 
 std::optional<RawPcapPacket> PcapNgReader::read_next() {
@@ -122,6 +156,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         std::array<std::uint8_t, 8> header {};
         stream_.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
         if (stream_.gcount() == 0) {
+            next_input_offset_ = block_start;
             return std::nullopt;
         }
 
@@ -152,6 +187,8 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
             has_error_ = true;
             return std::nullopt;
         }
+
+        next_input_offset_ = block_start + block_total_length;
 
         const auto trailing_length = read_u32(remaining, remaining.size() - 4U, little_endian_);
         if (trailing_length != block_total_length) {
@@ -219,6 +256,8 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
 }
 
 bool PcapNgReader::parse_section_header() {
+    const auto block_start = static_cast<std::uint64_t>(stream_.tellg());
+
     std::array<std::uint8_t, 12> header {};
     stream_.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
     if (stream_.gcount() != static_cast<std::streamsize>(header.size())) {
@@ -269,6 +308,7 @@ bool PcapNgReader::parse_section_header() {
     }
 
     interfaces_.clear();
+    next_input_offset_ = block_start + block_total_length;
     return true;
 }
 
@@ -311,6 +351,99 @@ bool PcapNgReader::parse_interface_description(std::span<const std::uint8_t> bod
 
     interfaces_.push_back(interface_info);
     return true;
+}
+
+bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
+    while (stream_.is_open()) {
+        const auto block_start_position = stream_.tellg();
+        if (block_start_position < 0) {
+            return false;
+        }
+
+        const auto block_start = static_cast<std::uint64_t>(block_start_position);
+        if (block_start == target_offset) {
+            next_input_offset_ = target_offset;
+            return true;
+        }
+
+        if (block_start > target_offset) {
+            return false;
+        }
+
+        std::array<std::uint8_t, 8> header {};
+        stream_.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+        if (stream_.gcount() == 0) {
+            next_input_offset_ = block_start;
+            return target_offset == block_start;
+        }
+
+        if (stream_.gcount() != static_cast<std::streamsize>(header.size())) {
+            has_error_ = true;
+            return false;
+        }
+
+        if (std::equal(kSectionHeaderBlockBytes.begin(), kSectionHeaderBlockBytes.end(), header.begin())) {
+            stream_.clear();
+            stream_.seekg(static_cast<std::streamoff>(block_start), std::ios::beg);
+            if (!stream_ || !parse_section_header()) {
+                has_error_ = true;
+                return false;
+            }
+            if (next_input_offset_ == target_offset) {
+                return true;
+            }
+            if (next_input_offset_ > target_offset) {
+                return false;
+            }
+            continue;
+        }
+
+        const auto block_type = read_u32(header, 0, little_endian_);
+        const auto block_total_length = read_u32(header, 4, little_endian_);
+        if (block_total_length < 12U || (block_total_length % 4U) != 0U) {
+            has_error_ = true;
+            return false;
+        }
+
+        const auto block_end = block_start + block_total_length;
+        if (block_end > target_offset && block_start < target_offset) {
+            return false;
+        }
+
+        const auto remaining_size = static_cast<std::size_t>(block_total_length - header.size());
+        if (block_type == kInterfaceDescriptionBlockType) {
+            std::vector<std::uint8_t> remaining(remaining_size);
+            if (!read_exact(stream_, std::span<std::uint8_t>(remaining))) {
+                has_error_ = true;
+                return false;
+            }
+
+            const auto trailing_length = read_u32(remaining, remaining.size() - 4U, little_endian_);
+            if (trailing_length != block_total_length) {
+                has_error_ = true;
+                return false;
+            }
+
+            const auto body = std::span<const std::uint8_t>(remaining.data(), remaining.size() - 4U);
+            if (!parse_interface_description(body)) {
+                has_error_ = true;
+                return false;
+            }
+        } else {
+            stream_.seekg(static_cast<std::streamoff>(remaining_size), std::ios::cur);
+            if (!stream_) {
+                has_error_ = true;
+                return false;
+            }
+        }
+
+        next_input_offset_ = block_end;
+        if (next_input_offset_ == target_offset) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 }  // namespace pfl

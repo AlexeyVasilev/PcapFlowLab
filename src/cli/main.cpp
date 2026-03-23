@@ -12,6 +12,8 @@
 
 #include "app/session/CaptureSession.h"
 #include "cli/CliFormatting.h"
+#include "core/index/ImportCheckpointReader.h"
+#include "core/services/ChunkedCaptureImporter.h"
 
 namespace {
 
@@ -21,6 +23,16 @@ struct ExportArgs {
 };
 
 struct OutputPathArgs {
+    std::string output_path {};
+};
+
+struct CheckpointArgs {
+    std::string checkpoint_path {};
+    std::size_t max_packets {0};
+};
+
+struct FinalizeImportArgs {
+    std::string checkpoint_path {};
     std::string output_path {};
 };
 
@@ -43,7 +55,10 @@ void print_usage() {
         << "  pcap-flow-lab hex <input> --packet-index <N>\n"
         << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap>\n"
         << "  pcap-flow-lab save-index <capture-file> --out <index-file>\n"
-        << "  pcap-flow-lab load-index-summary <index-file>\n";
+        << "  pcap-flow-lab load-index-summary <index-file>\n"
+        << "  pcap-flow-lab chunked-import <capture-file> --checkpoint <checkpoint-file> --max-packets <N>\n"
+        << "  pcap-flow-lab resume-import --checkpoint <checkpoint-file> --max-packets <N>\n"
+        << "  pcap-flow-lab finalize-import --checkpoint <checkpoint-file> --out <index-file>\n";
 }
 
 std::optional<std::uint64_t> parse_packet_index(int argc, char* argv[]) {
@@ -110,6 +125,84 @@ std::optional<OutputPathArgs> parse_output_path_args(int argc, char* argv[]) {
 
     return OutputPathArgs {
         .output_path = argv[4],
+    };
+}
+
+std::optional<CheckpointArgs> parse_checkpoint_args(int argc, char* argv[], int start_index) {
+    if (argc != start_index + 4) {
+        return std::nullopt;
+    }
+
+    std::string checkpoint_path {};
+    std::optional<std::size_t> max_packets {};
+
+    for (int index = start_index; index < argc; index += 2) {
+        const std::string_view option = argv[index];
+        if (index + 1 >= argc) {
+            return std::nullopt;
+        }
+
+        if (option == "--checkpoint") {
+            checkpoint_path = argv[index + 1];
+            continue;
+        }
+
+        if (option == "--max-packets") {
+            try {
+                max_packets = static_cast<std::size_t>(std::stoull(argv[index + 1]));
+            } catch (const std::exception&) {
+                return std::nullopt;
+            }
+            continue;
+        }
+
+        return std::nullopt;
+    }
+
+    if (checkpoint_path.empty() || !max_packets.has_value()) {
+        return std::nullopt;
+    }
+
+    return CheckpointArgs {
+        .checkpoint_path = std::move(checkpoint_path),
+        .max_packets = *max_packets,
+    };
+}
+
+std::optional<FinalizeImportArgs> parse_finalize_import_args(int argc, char* argv[]) {
+    if (argc != 6) {
+        return std::nullopt;
+    }
+
+    std::string checkpoint_path {};
+    std::string output_path {};
+
+    for (int index = 2; index < argc; index += 2) {
+        const std::string_view option = argv[index];
+        if (index + 1 >= argc) {
+            return std::nullopt;
+        }
+
+        if (option == "--checkpoint") {
+            checkpoint_path = argv[index + 1];
+            continue;
+        }
+
+        if (option == "--out") {
+            output_path = argv[index + 1];
+            continue;
+        }
+
+        return std::nullopt;
+    }
+
+    if (checkpoint_path.empty() || output_path.empty()) {
+        return std::nullopt;
+    }
+
+    return FinalizeImportArgs {
+        .checkpoint_path = std::move(checkpoint_path),
+        .output_path = std::move(output_path),
     };
 }
 
@@ -216,16 +309,97 @@ void print_summary(const pfl::CaptureSession& session, const std::string_view la
     std::cout << "Bytes: " << session.summary().total_bytes << '\n';
 }
 
+bool read_checkpoint(const std::filesystem::path& checkpoint_path, pfl::ImportCheckpoint& checkpoint) {
+    pfl::ImportCheckpointReader reader {};
+    return reader.read(checkpoint_path, checkpoint);
+}
+
+int print_chunked_result(pfl::ChunkedImportStatus status, const std::filesystem::path& checkpoint_path) {
+    if (status == pfl::ChunkedImportStatus::failed) {
+        return 1;
+    }
+
+    pfl::ImportCheckpoint checkpoint {};
+    if (!read_checkpoint(checkpoint_path, checkpoint)) {
+        std::cerr << "Failed to read checkpoint: " << checkpoint_path.string() << '\n';
+        return 1;
+    }
+
+    if (status == pfl::ChunkedImportStatus::completed) {
+        std::cout << "Import completed.\n";
+    } else {
+        std::cout << "Checkpoint saved.\n";
+    }
+
+    std::cout << "Packets processed: " << checkpoint.packets_processed << '\n';
+    std::cout << "Flows: " << checkpoint.state.summary.flow_count << '\n';
+    std::cout << "Bytes: " << checkpoint.state.summary.total_bytes << '\n';
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
+    if (argc < 2) {
         print_usage();
         return 1;
     }
 
     const std::string_view command = argv[1];
+
+    if (command == "finalize-import") {
+        const auto finalize_args = parse_finalize_import_args(argc, argv);
+        if (!finalize_args.has_value()) {
+            print_usage();
+            return 1;
+        }
+
+        pfl::ChunkedCaptureImporter importer {};
+        if (!importer.finalize_to_index(finalize_args->checkpoint_path, finalize_args->output_path)) {
+            std::cerr << "Failed to finalize import to " << finalize_args->output_path << '\n';
+            return 1;
+        }
+
+        std::cout << "Finalized import to " << finalize_args->output_path << '\n';
+        return 0;
+    }
+
+    if (command == "resume-import") {
+        const auto checkpoint_args = parse_checkpoint_args(argc, argv, 2);
+        if (!checkpoint_args.has_value()) {
+            print_usage();
+            return 1;
+        }
+
+        pfl::ChunkedCaptureImporter importer {};
+        const auto status = importer.resume_chunk(checkpoint_args->checkpoint_path, checkpoint_args->max_packets);
+        if (status == pfl::ChunkedImportStatus::failed) {
+            std::cerr << "Failed to resume import from checkpoint: " << checkpoint_args->checkpoint_path << '\n';
+        }
+        return print_chunked_result(status, checkpoint_args->checkpoint_path);
+    }
+
+    if (argc < 3) {
+        print_usage();
+        return 1;
+    }
+
     const char* input = argv[2];
+
+    if (command == "chunked-import") {
+        const auto checkpoint_args = parse_checkpoint_args(argc, argv, 3);
+        if (!checkpoint_args.has_value()) {
+            print_usage();
+            return 1;
+        }
+
+        pfl::ChunkedCaptureImporter importer {};
+        const auto status = importer.import_chunk(input, checkpoint_args->checkpoint_path, checkpoint_args->max_packets);
+        if (status == pfl::ChunkedImportStatus::failed) {
+            std::cerr << "Failed to import chunk from capture: " << input << '\n';
+        }
+        return print_chunked_result(status, checkpoint_args->checkpoint_path);
+    }
 
     if (command == "summary") {
         if (argc != 3) {

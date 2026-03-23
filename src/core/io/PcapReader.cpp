@@ -5,13 +5,19 @@ namespace pfl {
 namespace {
 
 constexpr std::uint32_t kClassicPcapLittleEndianMagic = 0xa1b2c3d4U;
+constexpr std::uint64_t kPcapGlobalHeaderSize = sizeof(PcapGlobalHeader);
 
 }  // namespace
 
 bool PcapReader::open(const std::filesystem::path& path) {
+    return open(path, 0, 0);
+}
+
+bool PcapReader::open(const std::filesystem::path& path, std::uint64_t next_input_offset, std::uint64_t next_packet_index) {
     stream_ = std::ifstream(path, std::ios::binary);
     global_header_ = {};
     next_packet_index_ = 0;
+    next_input_offset_ = 0;
     has_error_ = false;
 
     if (!stream_.is_open()) {
@@ -39,6 +45,23 @@ bool PcapReader::open(const std::filesystem::path& path) {
         return false;
     }
 
+    next_input_offset_ = kPcapGlobalHeaderSize;
+    next_packet_index_ = next_packet_index;
+
+    if (next_input_offset != 0) {
+        if (next_input_offset < kPcapGlobalHeaderSize) {
+            stream_.close();
+            return false;
+        }
+
+        stream_.seekg(static_cast<std::streamoff>(next_input_offset), std::ios::beg);
+        if (!stream_) {
+            stream_.close();
+            return false;
+        }
+        next_input_offset_ = next_input_offset;
+    }
+
     return true;
 }
 
@@ -50,12 +73,30 @@ bool PcapReader::has_error() const noexcept {
     return has_error_;
 }
 
+bool PcapReader::at_eof() {
+    if (!stream_.is_open()) {
+        return true;
+    }
+
+    const auto next = stream_.peek();
+    if (next == std::char_traits<char>::eof()) {
+        stream_.clear();
+        return true;
+    }
+
+    return false;
+}
+
 const PcapGlobalHeader& PcapReader::global_header() const noexcept {
     return global_header_;
 }
 
 std::uint32_t PcapReader::data_link_type() const noexcept {
     return global_header_.network;
+}
+
+std::uint64_t PcapReader::next_input_offset() const noexcept {
+    return next_input_offset_;
 }
 
 std::optional<RawPcapPacket> PcapReader::read_next() {
@@ -81,6 +122,8 @@ std::optional<RawPcapPacket> PcapReader::read_next() {
         has_error_ = true;
         return std::nullopt;
     }
+
+    next_input_offset_ = static_cast<std::uint64_t>(stream_.tellg());
 
     RawPcapPacket packet {
         .packet_index = next_packet_index_,

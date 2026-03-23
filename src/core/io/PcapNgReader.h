@@ -25,17 +25,22 @@ struct PcapNgInterfaceInfo {
 class PcapNgReader {
 public:
     bool open(const std::filesystem::path& path);
+    bool open(const std::filesystem::path& path, std::uint64_t next_input_offset, std::uint64_t next_packet_index);
     [[nodiscard]] bool is_open() const noexcept;
     [[nodiscard]] bool has_error() const noexcept;
+    [[nodiscard]] bool at_eof();
+    [[nodiscard]] std::uint64_t next_input_offset() const noexcept;
     std::optional<RawPcapPacket> read_next();
 
 private:
     bool parse_section_header();
     bool parse_interface_description(std::span<const std::uint8_t> body);
+    bool seek_to_offset(std::uint64_t target_offset);
 
     std::ifstream stream_ {};
     std::vector<PcapNgInterfaceInfo> interfaces_ {};
     std::uint64_t next_packet_index_ {0};
+    std::uint64_t next_input_offset_ {0};
     bool has_error_ {false};
     bool little_endian_ {true};
 };
