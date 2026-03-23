@@ -40,4 +40,4 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists and will be expanded incrementally on top of the current C++ session/core stack.
+The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists, and the flow panel already displays real flow rows from the current session.

@@ -63,7 +63,11 @@ ApplicationWindow {
             FlowTable {
                 SplitView.preferredWidth: 520
                 Layout.fillHeight: true
-                flowCount: mainController.flowCount
+                flowModel: mainController.flowModel
+                selectedFlowIndex: mainController.selectedFlowIndex
+                onFlowSelected: function(flowIndex) {
+                    mainController.selectedFlowIndex = flowIndex
+                }
             }
 
             SplitView {
@@ -82,4 +86,3 @@ ApplicationWindow {
         }
     }
 }
-

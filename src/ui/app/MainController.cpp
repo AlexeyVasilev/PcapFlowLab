@@ -28,6 +28,14 @@ qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
 }
 
+QObject* MainController::flowModel() noexcept {
+    return &flow_model_;
+}
+
+int MainController::selectedFlowIndex() const noexcept {
+    return selected_flow_index_;
+}
+
 bool MainController::openCaptureFile(const QString& path) {
     return openPath(path, false);
 }
@@ -41,6 +49,8 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     if (trimmed_path.isEmpty()) {
         current_input_path_.clear();
         session_ = {};
+        flow_model_.clear();
+        setSelectedFlowIndex(-1);
         emit stateChanged();
         return false;
     }
@@ -51,13 +61,26 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     if (!opened) {
         current_input_path_.clear();
         session_ = {};
+        flow_model_.clear();
+        setSelectedFlowIndex(-1);
         emit stateChanged();
         return false;
     }
 
     current_input_path_ = trimmed_path;
+    flow_model_.refresh(session_.list_flows());
+    setSelectedFlowIndex(-1);
     emit stateChanged();
     return true;
+}
+
+void MainController::setSelectedFlowIndex(const int index) {
+    if (selected_flow_index_ == index) {
+        return;
+    }
+
+    selected_flow_index_ = index;
+    emit selectedFlowIndexChanged();
 }
 
 }  // namespace pfl
