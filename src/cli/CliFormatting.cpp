@@ -8,10 +8,16 @@ namespace pfl {
 
 std::string format_protocol(ProtocolId protocol) {
     switch (protocol) {
+    case ProtocolId::arp:
+        return "ARP";
+    case ProtocolId::icmp:
+        return "ICMP";
     case ProtocolId::tcp:
         return "TCP";
     case ProtocolId::udp:
         return "UDP";
+    case ProtocolId::icmpv6:
+        return "ICMPv6";
     default:
         return "unknown";
     }

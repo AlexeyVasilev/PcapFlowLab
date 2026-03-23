@@ -2,7 +2,7 @@
 
 Flow-centric PCAP analyzer for large network captures.
 
-Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, up to two VLAN tags, IPv4/IPv6, and TCP/UDP.
+Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and safe traversal of common IPv6 extension headers.
 
 ## Project status
 

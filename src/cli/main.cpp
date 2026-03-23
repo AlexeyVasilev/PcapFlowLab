@@ -251,6 +251,15 @@ PrintableFlowRow make_printable_flow_row(const pfl::FlowRow& row) {
 }
 
 void print_packet_details(const pfl::PacketDetails& details) {
+    const auto format_ipv4_bytes = [](const std::array<std::uint8_t, 4>& address) {
+        return pfl::format_ipv4_address(
+            (static_cast<std::uint32_t>(address[0]) << 24U) |
+            (static_cast<std::uint32_t>(address[1]) << 16U) |
+            (static_cast<std::uint32_t>(address[2]) << 8U) |
+            static_cast<std::uint32_t>(address[3])
+        );
+    };
+
     std::cout << "Packet Index: " << details.packet_index << '\n';
     std::cout << "Captured Length: " << details.captured_length << '\n';
     std::cout << "Original Length: " << details.original_length << '\n';
@@ -269,17 +278,22 @@ void print_packet_details(const pfl::PacketDetails& details) {
         }
     }
 
+    if (details.has_arp) {
+        std::cout << "ARP Opcode: " << details.arp.opcode << '\n';
+        std::cout << "ARP Sender IPv4: " << format_ipv4_bytes(details.arp.sender_ipv4) << '\n';
+        std::cout << "ARP Target IPv4: " << format_ipv4_bytes(details.arp.target_ipv4) << '\n';
+    }
+
     if (details.has_ipv4) {
         std::cout << "IPv4 Source: " << pfl::format_ipv4_address(details.ipv4.src_addr) << '\n';
         std::cout << "IPv4 Destination: " << pfl::format_ipv4_address(details.ipv4.dst_addr) << '\n';
-        std::cout << "IP Protocol: " << ((details.ipv4.protocol == 6) ? "TCP" :
-                                          (details.ipv4.protocol == 17) ? "UDP" : "unknown") << '\n';
+        std::cout << "IP Protocol: " << pfl::format_protocol(static_cast<pfl::ProtocolId>(details.ipv4.protocol)) << '\n';
     }
 
     if (details.has_ipv6) {
         std::cout << "IPv6 Source: " << pfl::format_ipv6_address(details.ipv6.src_addr) << '\n';
         std::cout << "IPv6 Destination: " << pfl::format_ipv6_address(details.ipv6.dst_addr) << '\n';
-        std::cout << "Next Header: " << static_cast<unsigned>(details.ipv6.next_header) << '\n';
+        std::cout << "Next Header: " << pfl::format_protocol(static_cast<pfl::ProtocolId>(details.ipv6.next_header)) << '\n';
     }
 
     if (details.has_tcp) {
@@ -291,6 +305,16 @@ void print_packet_details(const pfl::PacketDetails& details) {
     if (details.has_udp) {
         std::cout << "UDP Source Port: " << details.udp.src_port << '\n';
         std::cout << "UDP Destination Port: " << details.udp.dst_port << '\n';
+    }
+
+    if (details.has_icmp) {
+        std::cout << "ICMP Type: " << static_cast<unsigned>(details.icmp.type) << '\n';
+        std::cout << "ICMP Code: " << static_cast<unsigned>(details.icmp.code) << '\n';
+    }
+
+    if (details.has_icmpv6) {
+        std::cout << "ICMPv6 Type: " << static_cast<unsigned>(details.icmpv6.type) << '\n';
+        std::cout << "ICMPv6 Code: " << static_cast<unsigned>(details.icmpv6.code) << '\n';
     }
 }
 
@@ -562,3 +586,4 @@ int main(int argc, char* argv[]) {
     print_usage();
     return 1;
 }
+

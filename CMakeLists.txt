@@ -103,6 +103,7 @@ if(BUILD_TESTING)
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
         tests/unit/ChunkedImportTests.cpp
+        tests/unit/ProtocolCoverageTests.cpp
     )
 
     target_link_libraries(

@@ -295,6 +295,149 @@ inline std::vector<std::uint8_t> make_double_tagged_ethernet_ipv4_udp_packet(
     );
 }
 
+inline std::vector<std::uint8_t> make_ethernet_arp_packet(
+    std::uint32_t sender_ipv4,
+    std::uint32_t target_ipv4,
+    std::uint16_t opcode = 1
+) {
+    std::vector<std::uint8_t> bytes {
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x08, 0x06,
+    };
+
+    append_be16(bytes, 1);
+    append_be16(bytes, 0x0800);
+    bytes.push_back(6);
+    bytes.push_back(4);
+    append_be16(bytes, opcode);
+    bytes.insert(bytes.end(), {0x00, 0x11, 0x22, 0x33, 0x44, 0x55});
+    append_be32(bytes, sender_ipv4);
+    bytes.insert(bytes.end(), {0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb});
+    append_be32(bytes, target_ipv4);
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ethernet_ipv4_icmp_packet(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint8_t type,
+    std::uint8_t code
+) {
+    std::vector<std::uint8_t> bytes {
+        0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
+        0xca, 0xfe, 0xba, 0xbe, 0x00, 0x02,
+        0x08, 0x00,
+        0x45, 0x00,
+    };
+
+    append_be16(bytes, 28);
+    append_be16(bytes, 0);
+    append_be16(bytes, 0);
+    bytes.push_back(64);
+    bytes.push_back(1);
+    append_be16(bytes, 0);
+    append_be32(bytes, src_addr);
+    append_be32(bytes, dst_addr);
+    bytes.push_back(type);
+    bytes.push_back(code);
+    append_be16(bytes, 0);
+    append_be32(bytes, 0);
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ethernet_ipv6_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    std::uint8_t next_header,
+    const std::vector<std::uint8_t>& payload
+) {
+    std::vector<std::uint8_t> bytes {
+        0x00, 0x24, 0x81, 0xaa, 0xbb, 0xcc,
+        0x00, 0x24, 0x81, 0xdd, 0xee, 0xff,
+        0x86, 0xdd,
+        0x60, 0x00, 0x00, 0x00,
+    };
+
+    append_be16(bytes, static_cast<std::uint16_t>(payload.size()));
+    bytes.push_back(next_header);
+    bytes.push_back(64);
+    bytes.insert(bytes.end(), src_addr.begin(), src_addr.end());
+    bytes.insert(bytes.end(), dst_addr.begin(), dst_addr.end());
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ipv6_hop_by_hop_extension(
+    std::uint8_t next_header,
+    const std::vector<std::uint8_t>& payload
+) {
+    std::vector<std::uint8_t> bytes {
+        next_header,
+        0x00,
+        0x01, 0x04, 0x00, 0x00, 0x00, 0x00,
+    };
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ipv6_udp_segment(
+    std::uint16_t src_port,
+    std::uint16_t dst_port,
+    std::uint16_t payload_length = 0
+) {
+    std::vector<std::uint8_t> bytes {};
+    append_be16(bytes, src_port);
+    append_be16(bytes, dst_port);
+    append_be16(bytes, static_cast<std::uint16_t>(8 + payload_length));
+    append_be16(bytes, 0);
+    for (std::uint16_t index = 0; index < payload_length; ++index) {
+        bytes.push_back(static_cast<std::uint8_t>(index & 0xFFU));
+    }
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ipv6_icmpv6_message(std::uint8_t type, std::uint8_t code) {
+    return std::vector<std::uint8_t> {
+        type, code, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+    };
+}
+
+inline std::vector<std::uint8_t> make_ethernet_ipv6_icmpv6_with_hop_by_hop_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    std::uint8_t type,
+    std::uint8_t code
+) {
+    return make_ethernet_ipv6_packet(
+        src_addr,
+        dst_addr,
+        0,
+        make_ipv6_hop_by_hop_extension(58, make_ipv6_icmpv6_message(type, code))
+    );
+}
+
+inline std::vector<std::uint8_t> make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    std::uint16_t src_port,
+    std::uint16_t dst_port
+) {
+    return make_ethernet_ipv6_packet(
+        src_addr,
+        dst_addr,
+        0,
+        make_ipv6_hop_by_hop_extension(17, make_ipv6_udp_segment(src_port, dst_port))
+    );
+}
+
+inline std::vector<std::uint8_t> make_truncated_ethernet_ipv6_extension_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr
+) {
+    return make_ethernet_ipv6_packet(src_addr, dst_addr, 0, {58, 1, 0x00});
+}
+
 inline std::vector<std::uint8_t> make_classic_pcap(
     const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>& packets
 ) {
@@ -333,5 +476,6 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
+
 
 

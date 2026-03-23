@@ -18,6 +18,7 @@ void run_export_tests();
 void run_pcapng_tests();
 void run_index_tests();
 void run_chunked_import_tests();
+void run_protocol_coverage_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -45,6 +46,7 @@ int main() {
         pfl::tests::run_pcapng_tests();
         pfl::tests::run_index_tests();
         pfl::tests::run_chunked_import_tests();
+        pfl::tests::run_protocol_coverage_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
         return 1;
@@ -56,3 +58,4 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+
