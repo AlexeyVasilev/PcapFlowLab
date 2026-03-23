@@ -20,6 +20,17 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tcpFlowCount READ tcpFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tcpPacketCount READ tcpPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tcpTotalBytes READ tcpTotalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong udpFlowCount READ udpFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong udpPacketCount READ udpPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong udpTotalBytes READ udpTotalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong otherFlowCount READ otherFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong otherPacketCount READ otherPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
     Q_PROPERTY(QObject* flowModel READ flowModel CONSTANT)
     Q_PROPERTY(QObject* packetModel READ packetModel CONSTANT)
     Q_PROPERTY(QObject* packetDetailsModel READ packetDetailsModel CONSTANT)
@@ -38,6 +49,17 @@ public:
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
+    [[nodiscard]] qulonglong tcpFlowCount() const noexcept;
+    [[nodiscard]] qulonglong tcpPacketCount() const noexcept;
+    [[nodiscard]] qulonglong tcpTotalBytes() const noexcept;
+    [[nodiscard]] qulonglong udpFlowCount() const noexcept;
+    [[nodiscard]] qulonglong udpPacketCount() const noexcept;
+    [[nodiscard]] qulonglong udpTotalBytes() const noexcept;
+    [[nodiscard]] qulonglong otherFlowCount() const noexcept;
+    [[nodiscard]] qulonglong otherPacketCount() const noexcept;
+    [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
+    [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
+    [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
     [[nodiscard]] QObject* flowModel() noexcept;
     [[nodiscard]] QObject* packetModel() noexcept;
     [[nodiscard]] QObject* packetDetailsModel() noexcept;
@@ -70,11 +92,14 @@ private:
     void clearPacketSelection();
     void clearFlowSelection();
     void synchronizeFlowSelection();
+    void resetLoadedState();
+    void applyLoadedState(const QString& path);
     void setOpenErrorText(const QString& text);
     QString chooseFile(bool forIndex) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
     CaptureSession session_ {};
+    CaptureProtocolSummary protocol_summary_ {};
     FlowListModel flow_model_ {};
     PacketListModel packet_model_ {};
     PacketDetailsViewModel packet_details_model_ {};

@@ -55,6 +55,22 @@ ApplicationWindow {
             hasCapture: mainController.hasCapture
         }
 
+        ProtocolStatsPane {
+            Layout.fillWidth: true
+            hasCapture: mainController.hasCapture
+            tcpFlowCount: mainController.tcpFlowCount
+            tcpPacketCount: mainController.tcpPacketCount
+            tcpTotalBytes: mainController.tcpTotalBytes
+            udpFlowCount: mainController.udpFlowCount
+            udpPacketCount: mainController.udpPacketCount
+            udpTotalBytes: mainController.udpTotalBytes
+            otherFlowCount: mainController.otherFlowCount
+            otherPacketCount: mainController.otherPacketCount
+            otherTotalBytes: mainController.otherTotalBytes
+            ipv4FlowCount: mainController.ipv4FlowCount
+            ipv6FlowCount: mainController.ipv6FlowCount
+        }
+
         SplitView {
             Layout.fillWidth: true
             Layout.fillHeight: true

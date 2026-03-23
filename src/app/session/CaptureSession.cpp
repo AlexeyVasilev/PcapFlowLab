@@ -31,6 +31,10 @@ std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->total_bytes : connection.ipv6->total_bytes;
 }
 
+ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->key.protocol : connection.ipv6->key.protocol;
+}
+
 bool listed_connection_less(const ListedConnectionRef& left, const ListedConnectionRef& right) noexcept {
     if (total_bytes(left) != total_bytes(right)) {
         return total_bytes(left) > total_bytes(right);
@@ -74,6 +78,12 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
 
     std::sort(connections.begin(), connections.end(), listed_connection_less);
     return connections;
+}
+
+void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept {
+    ++stats.flow_count;
+    stats.packet_count += packet_count(connection);
+    stats.total_bytes += total_bytes(connection);
 }
 
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection) {
@@ -234,6 +244,32 @@ const std::filesystem::path& CaptureSession::capture_path() const noexcept {
 
 const CaptureSummary& CaptureSession::summary() const noexcept {
     return state_.summary;
+}
+
+CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
+    CaptureProtocolSummary summary {};
+
+    for (const auto& connection : list_connections(state_)) {
+        if (connection.family == FlowAddressFamily::ipv4) {
+            add_protocol_stats(summary.ipv4, connection);
+        } else {
+            add_protocol_stats(summary.ipv6, connection);
+        }
+
+        switch (protocol_id(connection)) {
+        case ProtocolId::tcp:
+            add_protocol_stats(summary.tcp, connection);
+            break;
+        case ProtocolId::udp:
+            add_protocol_stats(summary.udp, connection);
+            break;
+        default:
+            add_protocol_stats(summary.other, connection);
+            break;
+        }
+    }
+
+    return summary;
 }
 
 std::vector<std::uint8_t> CaptureSession::read_packet_data(const PacketRef& packet) const {

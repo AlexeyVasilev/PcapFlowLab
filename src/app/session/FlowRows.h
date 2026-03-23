@@ -31,4 +31,18 @@ struct PacketRow {
     std::uint32_t original_length {0};
 };
 
+struct ProtocolStats {
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct CaptureProtocolSummary {
+    ProtocolStats tcp {};
+    ProtocolStats udp {};
+    ProtocolStats other {};
+    ProtocolStats ipv4 {};
+    ProtocolStats ipv6 {};
+};
+
 }  // namespace pfl

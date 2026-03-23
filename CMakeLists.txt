@@ -115,6 +115,7 @@ if(PFL_BUILD_UI)
             QML_FILES
                 src/ui/qml/Main.qml
                 src/ui/qml/components/SummaryBar.qml
+                src/ui/qml/components/ProtocolStatsPane.qml
                 src/ui/qml/components/FlowTable.qml
                 src/ui/qml/components/PacketList.qml
                 src/ui/qml/components/PacketDetailsPane.qml
@@ -147,6 +148,7 @@ if(BUILD_TESTING)
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/QueryTests.cpp
+        tests/unit/ProtocolSummaryTests.cpp
         tests/unit/VlanTests.cpp
         tests/unit/ExportTests.cpp
         tests/unit/PcapNgTests.cpp

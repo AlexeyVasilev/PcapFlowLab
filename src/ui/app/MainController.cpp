@@ -1,5 +1,6 @@
 #include "ui/app/MainController.h"
 
+#include <array>
 #include <filesystem>
 #include <limits>
 
@@ -262,6 +263,50 @@ qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
 }
 
+qulonglong MainController::tcpFlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.tcp.flow_count);
+}
+
+qulonglong MainController::tcpPacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.tcp.packet_count);
+}
+
+qulonglong MainController::tcpTotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.tcp.total_bytes);
+}
+
+qulonglong MainController::udpFlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.udp.flow_count);
+}
+
+qulonglong MainController::udpPacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.udp.packet_count);
+}
+
+qulonglong MainController::udpTotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.udp.total_bytes);
+}
+
+qulonglong MainController::otherFlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.other.flow_count);
+}
+
+qulonglong MainController::otherPacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.other.packet_count);
+}
+
+qulonglong MainController::otherTotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.other.total_bytes);
+}
+
+qulonglong MainController::ipv4FlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv4.flow_count);
+}
+
+qulonglong MainController::ipv6FlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv6.flow_count);
+}
+
 QObject* MainController::flowModel() noexcept {
     return &flow_model_;
 }
@@ -334,11 +379,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     const QString trimmed_path = path.trimmed();
     if (trimmed_path.isEmpty()) {
         setOpenErrorText(QStringLiteral("No file selected."));
-        current_input_path_.clear();
-        session_ = {};
-        flow_model_.resetViewState();
-        flow_model_.clear();
-        clearFlowSelection();
+        resetLoadedState();
         emit stateChanged();
         emit flowFilterTextChanged();
         emit flowSortChanged();
@@ -353,11 +394,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         setOpenErrorText(asIndex
             ? QStringLiteral("Failed to open index file.")
             : QStringLiteral("Failed to open capture file."));
-        current_input_path_.clear();
-        session_ = {};
-        flow_model_.resetViewState();
-        flow_model_.clear();
-        clearFlowSelection();
+        resetLoadedState();
         emit stateChanged();
         emit flowFilterTextChanged();
         emit flowSortChanged();
@@ -365,10 +402,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     }
 
     setOpenErrorText({});
-    current_input_path_ = trimmed_path;
-    flow_model_.resetViewState();
-    flow_model_.refresh(session_.list_flows());
-    clearFlowSelection();
+    applyLoadedState(trimmed_path);
     emit stateChanged();
     emit flowFilterTextChanged();
     emit flowSortChanged();
@@ -461,6 +495,23 @@ void MainController::synchronizeFlowSelection() {
     if (selected_flow_index_ >= 0 && !flow_model_.containsFlowIndex(selected_flow_index_)) {
         clearFlowSelection();
     }
+}
+
+void MainController::resetLoadedState() {
+    current_input_path_.clear();
+    protocol_summary_ = {};
+    session_ = {};
+    flow_model_.resetViewState();
+    flow_model_.clear();
+    clearFlowSelection();
+}
+
+void MainController::applyLoadedState(const QString& path) {
+    current_input_path_ = path;
+    protocol_summary_ = session_.protocol_summary();
+    flow_model_.resetViewState();
+    flow_model_.refresh(session_.list_flows());
+    clearFlowSelection();
 }
 
 void MainController::setOpenErrorText(const QString& text) {
