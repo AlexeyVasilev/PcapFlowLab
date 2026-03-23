@@ -14,6 +14,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_SUPPRESS_REGENERATION ON)
 
+option(PFL_BUILD_UI "Build the Qt Quick desktop UI when Qt 6 is available." ON)
+
 add_library(pcap_flow_lab_warnings INTERFACE)
 
 target_compile_features(pcap_flow_lab_warnings INTERFACE cxx_std_20)
@@ -86,6 +88,46 @@ target_link_libraries(
     PRIVATE
         pcap_flow_lab_core
 )
+
+if(PFL_BUILD_UI)
+    find_package(Qt6 QUIET COMPONENTS Quick Qml QuickControls2)
+
+    if(Qt6_FOUND)
+        qt_standard_project_setup()
+
+        qt_add_executable(
+            pcap_flow_lab_ui
+            src/ui/app/main.cpp
+            src/ui/app/MainController.cpp
+            src/ui/app/MainController.h
+        )
+
+        qt_add_qml_module(
+            pcap_flow_lab_ui
+            URI PcapFlowLab
+            VERSION 1.0
+            QML_FILES
+                src/ui/qml/Main.qml
+                src/ui/qml/components/SummaryBar.qml
+                src/ui/qml/components/FlowTable.qml
+                src/ui/qml/components/PacketList.qml
+                src/ui/qml/components/PacketDetailsPane.qml
+        )
+
+        set_target_properties(pcap_flow_lab_ui PROPERTIES OUTPUT_NAME "pcap-flow-lab-ui")
+
+        target_link_libraries(
+            pcap_flow_lab_ui
+            PRIVATE
+                pcap_flow_lab_core
+                Qt6::Quick
+                Qt6::Qml
+                Qt6::QuickControls2
+        )
+    else()
+        message(STATUS "Qt 6 Quick/QML not found, skipping pcap_flow_lab_ui target.")
+    endif()
+endif()
 
 if(BUILD_TESTING)
     add_executable(

@@ -37,3 +37,7 @@ Examples:
 `pcap-flow-lab resume-import --checkpoint sample.ckp --max-packets 100000`
 
 `pcap-flow-lab finalize-import --checkpoint sample.ckp --out sample.idx`
+
+## Desktop UI
+
+The CLI remains the primary interface today. A first Qt Quick desktop UI skeleton now exists and will be expanded incrementally on top of the current C++ session/core stack.
