@@ -20,6 +20,10 @@ struct ExportArgs {
     std::string output_path {};
 };
 
+struct OutputPathArgs {
+    std::string output_path {};
+};
+
 struct PrintableFlowRow {
     std::size_t index {0};
     std::string family {};
@@ -37,7 +41,9 @@ void print_usage() {
         << "  pcap-flow-lab flows <file>\n"
         << "  pcap-flow-lab inspect-packet <file> --packet-index <N>\n"
         << "  pcap-flow-lab hex <file> --packet-index <N>\n"
-        << "  pcap-flow-lab export-flow <file> --flow-index <N> --out <output.pcap>\n";
+        << "  pcap-flow-lab export-flow <file> --flow-index <N> --out <output.pcap>\n"
+        << "  pcap-flow-lab save-index <capture-file> --out <index-file>\n"
+        << "  pcap-flow-lab load-index-summary <index-file>\n";
 }
 
 std::optional<std::uint64_t> parse_packet_index(int argc, char* argv[]) {
@@ -97,12 +103,31 @@ std::optional<ExportArgs> parse_export_args(int argc, char* argv[]) {
     };
 }
 
+std::optional<OutputPathArgs> parse_output_path_args(int argc, char* argv[]) {
+    if (argc != 5 || std::string_view(argv[3]) != "--out") {
+        return std::nullopt;
+    }
+
+    return OutputPathArgs {
+        .output_path = argv[4],
+    };
+}
+
 bool open_session(const char* file, pfl::CaptureSession& session) {
     if (session.open_capture(file)) {
         return true;
     }
 
     std::cerr << "Failed to open capture: " << file << '\n';
+    return false;
+}
+
+bool load_index_session(const char* index_file, pfl::CaptureSession& session) {
+    if (session.load_index(index_file)) {
+        return true;
+    }
+
+    std::cerr << "Failed to load index: " << index_file << '\n';
     return false;
 }
 
@@ -167,6 +192,16 @@ void print_packet_details(const pfl::PacketDetails& details) {
     }
 }
 
+void print_summary(const pfl::CaptureSession& session, const std::string_view label, const std::string_view value) {
+    std::cout << label << ": " << value << '\n';
+    if (session.has_capture()) {
+        std::cout << "Source Capture: " << session.capture_path().string() << '\n';
+    }
+    std::cout << "Packets: " << session.summary().packet_count << '\n';
+    std::cout << "Flows: " << session.summary().flow_count << '\n';
+    std::cout << "Bytes: " << session.summary().total_bytes << '\n';
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -189,10 +224,22 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::cout << "File: " << file << '\n';
-        std::cout << "Packets: " << session.summary().packet_count << '\n';
-        std::cout << "Flows: " << session.summary().flow_count << '\n';
-        std::cout << "Bytes: " << session.summary().total_bytes << '\n';
+        print_summary(session, "File", file);
+        return 0;
+    }
+
+    if (command == "load-index-summary") {
+        if (argc != 3) {
+            print_usage();
+            return 1;
+        }
+
+        pfl::CaptureSession session {};
+        if (!load_index_session(file, session)) {
+            return 1;
+        }
+
+        print_summary(session, "Index", file);
         return 0;
     }
 
@@ -300,6 +347,27 @@ int main(int argc, char* argv[]) {
         }
 
         std::cout << "Exported flow " << export_args->flow_index << " to " << export_args->output_path << '\n';
+        return 0;
+    }
+
+    if (command == "save-index") {
+        const auto output_args = parse_output_path_args(argc, argv);
+        if (!output_args.has_value()) {
+            print_usage();
+            return 1;
+        }
+
+        pfl::CaptureSession session {};
+        if (!open_session(file, session)) {
+            return 1;
+        }
+
+        if (!session.save_index(output_args->output_path)) {
+            std::cerr << "Failed to save index to " << output_args->output_path << '\n';
+            return 1;
+        }
+
+        std::cout << "Saved index to " << output_args->output_path << '\n';
         return 0;
     }
 

@@ -1,0 +1,82 @@
+#include "core/index/CaptureIndex.h"
+
+#include <array>
+#include <fstream>
+
+namespace pfl {
+
+namespace {
+
+constexpr std::array<std::uint8_t, 4> kClassicPcapLittleEndianMagicBytes {0xd4U, 0xc3U, 0xb2U, 0xa1U};
+constexpr std::array<std::uint8_t, 4> kPcapNgSectionHeaderMagicBytes {0x0aU, 0x0dU, 0x0dU, 0x0aU};
+
+CaptureSourceFormat detect_capture_source_format(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream.is_open()) {
+        return CaptureSourceFormat::unknown;
+    }
+
+    std::array<std::uint8_t, 4> header {};
+    stream.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+    if (stream.gcount() != static_cast<std::streamsize>(header.size())) {
+        return CaptureSourceFormat::unknown;
+    }
+
+    if (header == kClassicPcapLittleEndianMagicBytes) {
+        return CaptureSourceFormat::classic_pcap;
+    }
+
+    if (header == kPcapNgSectionHeaderMagicBytes) {
+        return CaptureSourceFormat::pcapng;
+    }
+
+    return CaptureSourceFormat::unknown;
+}
+
+[[nodiscard]] std::int64_t to_serialized_file_time(const std::filesystem::file_time_type& value) {
+    return static_cast<std::int64_t>(value.time_since_epoch().count());
+}
+
+}  // namespace
+
+bool read_capture_source_info(const std::filesystem::path& capture_path, CaptureSourceInfo& out_info) {
+    std::error_code error {};
+    const auto file_size = std::filesystem::file_size(capture_path, error);
+    if (error) {
+        return false;
+    }
+
+    const auto last_write_time = std::filesystem::last_write_time(capture_path, error);
+    if (error) {
+        return false;
+    }
+
+    out_info = CaptureSourceInfo {
+        .capture_path = capture_path,
+        .format = detect_capture_source_format(capture_path),
+        .file_size = file_size,
+        .last_write_time = to_serialized_file_time(last_write_time),
+    };
+    return true;
+}
+
+bool validate_capture_source(const CaptureSourceInfo& expected, const std::filesystem::path& capture_path) {
+    CaptureSourceInfo current {};
+    if (!read_capture_source_info(capture_path, current)) {
+        return false;
+    }
+
+    return current.format == expected.format &&
+           current.file_size == expected.file_size &&
+           current.last_write_time == expected.last_write_time;
+}
+
+bool validate_capture_source(const CaptureSourceInfo& expected) {
+    if (expected.capture_path.empty()) {
+        return false;
+    }
+
+    return validate_capture_source(expected, expected.capture_path);
+}
+
+}  // namespace pfl

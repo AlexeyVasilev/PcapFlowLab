@@ -48,6 +48,9 @@ add_library(
     src/core/io/FileByteSource.cpp
     src/core/io/PacketDataReader.cpp
     src/core/io/CaptureFilePacketReader.cpp
+    src/core/index/CaptureIndex.cpp
+    src/core/index/CaptureIndexWriter.cpp
+    src/core/index/CaptureIndexReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImporter.cpp
@@ -93,6 +96,7 @@ if(BUILD_TESTING)
         tests/unit/VlanTests.cpp
         tests/unit/ExportTests.cpp
         tests/unit/PcapNgTests.cpp
+        tests/unit/IndexTests.cpp
     )
 
     target_link_libraries(

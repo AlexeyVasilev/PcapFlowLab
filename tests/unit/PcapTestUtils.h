@@ -320,7 +320,7 @@ inline std::vector<std::uint8_t> make_classic_pcap(
     return bytes;
 }
 
-inline std::filesystem::path write_temp_pcap(const std::string& name, const std::vector<std::uint8_t>& bytes) {
+inline std::filesystem::path write_temp_binary_file(const std::string& name, const std::vector<std::uint8_t>& bytes) {
     const auto path = std::filesystem::temp_directory_path() / name;
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
     stream.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
@@ -328,5 +328,10 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
     return path;
 }
 
+inline std::filesystem::path write_temp_pcap(const std::string& name, const std::vector<std::uint8_t>& bytes) {
+    return write_temp_binary_file(name, bytes);
+}
+
 }  // namespace pfl::tests
+
 

@@ -21,3 +21,7 @@ Examples:
 `pcap-flow-lab hex sample.pcapng --packet-index 0`
 
 `pcap-flow-lab export-flow sample.pcap --flow-index 0 --out selected-flow.pcap`
+
+`pcap-flow-lab save-index sample.pcapng --out sample.idx`
+
+`pcap-flow-lab load-index-summary sample.idx`

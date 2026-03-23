@@ -1,8 +1,9 @@
 #include "app/session/CaptureSession.h"
 
 #include <algorithm>
-#include <variant>
 
+#include "core/index/CaptureIndexReader.h"
+#include "core/index/CaptureIndexWriter.h"
 #include "core/io/CaptureFilePacketReader.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/FlowExportService.h"
@@ -163,8 +164,37 @@ bool CaptureSession::open_capture(const std::filesystem::path& path) {
     return true;
 }
 
+bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
+    if (!has_capture()) {
+        return false;
+    }
+
+    CaptureIndexWriter writer {};
+    return writer.write(index_path, state_, capture_path_);
+}
+
+bool CaptureSession::load_index(const std::filesystem::path& index_path) {
+    CaptureIndexReader reader {};
+    CaptureState loaded_state {};
+    std::filesystem::path loaded_capture_path {};
+
+    if (!reader.read(index_path, loaded_state, loaded_capture_path)) {
+        capture_path_.clear();
+        state_ = {};
+        return false;
+    }
+
+    capture_path_ = loaded_capture_path;
+    state_ = loaded_state;
+    return true;
+}
+
 bool CaptureSession::has_capture() const noexcept {
     return !capture_path_.empty();
+}
+
+const std::filesystem::path& CaptureSession::capture_path() const noexcept {
+    return capture_path_;
 }
 
 const CaptureSummary& CaptureSession::summary() const noexcept {
@@ -270,4 +300,3 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
-
