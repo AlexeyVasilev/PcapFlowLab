@@ -137,6 +137,34 @@ if(PFL_BUILD_UI)
                 Qt6::QuickControls2
                 Qt6::Widgets
         )
+
+        if(BUILD_TESTING)
+            add_executable(
+                pcap_flow_lab_ui_tests
+                tests/ui/MainControllerUiTests.cpp
+                src/ui/app/MainController.cpp
+                src/ui/app/FlowListModel.cpp
+                src/ui/app/TopSummaryListModel.cpp
+                src/ui/app/PacketListModel.cpp
+                src/ui/app/PacketDetailsViewModel.cpp
+            )
+
+            target_link_libraries(
+                pcap_flow_lab_ui_tests
+                PRIVATE
+                    pcap_flow_lab_core
+                    Qt6::Widgets
+            )
+
+            target_include_directories(
+                pcap_flow_lab_ui_tests
+                PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/src
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/unit
+            )
+
+            add_test(NAME pcap_flow_lab_ui_tests COMMAND pcap_flow_lab_ui_tests)
+        endif()
     else()
         message(STATUS "Qt 6 Quick/QML not found, skipping pcap_flow_lab_ui target.")
     endif()

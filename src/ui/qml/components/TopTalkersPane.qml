@@ -9,6 +9,9 @@ Frame {
     property var topPortsModel: null
     property bool hasCapture: false
 
+    signal endpointActivated(string endpointText)
+    signal portActivated(int port)
+
     background: Rectangle {
         color: "#f8fafc"
         border.color: "#d8dee9"
@@ -71,26 +74,47 @@ Frame {
                     interactive: false
                     model: root.topEndpointsModel
 
-                    delegate: RowLayout {
-                        width: ListView.view.width
-                        spacing: 12
+                    delegate: Rectangle {
+                        required property string itemLabel
+                        required property var packets
+                        required property var bytes
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: model.itemLabel
-                            elide: Text.ElideMiddle
+                        width: endpointListView.width
+                        height: 34
+                        color: endpointMouseArea.containsMouse ? "#eff6ff" : "transparent"
+                        radius: 4
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            spacing: 12
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: itemLabel
+                                elide: Text.ElideMiddle
+                            }
+
+                            Label {
+                                width: 80
+                                horizontalAlignment: Text.AlignRight
+                                text: packets
+                            }
+
+                            Label {
+                                width: 100
+                                horizontalAlignment: Text.AlignRight
+                                text: bytes
+                            }
                         }
 
-                        Label {
-                            width: 80
-                            horizontalAlignment: Text.AlignRight
-                            text: model.packets
-                        }
-
-                        Label {
-                            width: 100
-                            horizontalAlignment: Text.AlignRight
-                            text: model.bytes
+                        MouseArea {
+                            id: endpointMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.endpointActivated(itemLabel)
                         }
                     }
                 }
@@ -155,25 +179,46 @@ Frame {
                     interactive: false
                     model: root.topPortsModel
 
-                    delegate: RowLayout {
-                        width: ListView.view.width
-                        spacing: 12
+                    delegate: Rectangle {
+                        required property string itemLabel
+                        required property var packets
+                        required property var bytes
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: model.itemLabel
+                        width: portListView.width
+                        height: 34
+                        color: portMouseArea.containsMouse ? "#eff6ff" : "transparent"
+                        radius: 4
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            spacing: 12
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: itemLabel
+                            }
+
+                            Label {
+                                width: 80
+                                horizontalAlignment: Text.AlignRight
+                                text: packets
+                            }
+
+                            Label {
+                                width: 100
+                                horizontalAlignment: Text.AlignRight
+                                text: bytes
+                            }
                         }
 
-                        Label {
-                            width: 80
-                            horizontalAlignment: Text.AlignRight
-                            text: model.packets
-                        }
-
-                        Label {
-                            width: 100
-                            horizontalAlignment: Text.AlignRight
-                            text: model.bytes
+                        MouseArea {
+                            id: portMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.portActivated(Number(itemLabel))
                         }
                     }
                 }

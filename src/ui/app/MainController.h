@@ -32,6 +32,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
+    Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
     Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
     Q_PROPERTY(QObject* flowModel READ flowModel CONSTANT)
@@ -63,6 +64,7 @@ public:
     [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
+    [[nodiscard]] int currentTabIndex() const noexcept;
     [[nodiscard]] QObject* topEndpointsModel() noexcept;
     [[nodiscard]] QObject* topPortsModel() noexcept;
     [[nodiscard]] QObject* flowModel() noexcept;
@@ -79,7 +81,11 @@ public:
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
     Q_INVOKABLE void sortFlows(int column);
+    Q_INVOKABLE void drillDownToFlows(const QString& filterText);
+    Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
+    Q_INVOKABLE void drillDownToPort(quint32 port);
 
+    void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
     void setFlowFilterText(const QString& text);
@@ -87,6 +93,7 @@ public:
 signals:
     void stateChanged();
     void openErrorTextChanged();
+    void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void selectedPacketIndexChanged();
     void flowFilterTextChanged();
@@ -114,6 +121,7 @@ private:
     QString current_input_path_ {};
     QString open_error_text_ {};
     QString last_directory_path_ {};
+    int current_tab_index_ {0};
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
 };

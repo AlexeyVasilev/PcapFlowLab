@@ -23,6 +23,9 @@ Item {
     property var topEndpointsModel: null
     property var topPortsModel: null
 
+    signal endpointActivated(string endpointText)
+    signal portActivated(int port)
+
     ScrollView {
         anchors.fill: parent
         clip: true
@@ -61,6 +64,12 @@ Item {
                 hasCapture: root.hasCapture
                 topEndpointsModel: root.topEndpointsModel
                 topPortsModel: root.topPortsModel
+                onEndpointActivated: function(endpointText) {
+                    root.endpointActivated(endpointText)
+                }
+                onPortActivated: function(port) {
+                    root.portActivated(port)
+                }
             }
         }
     }

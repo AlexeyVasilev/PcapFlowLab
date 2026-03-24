@@ -13,6 +13,8 @@ namespace pfl {
 namespace {
 
 constexpr qulonglong kInvalidPacketSelection = std::numeric_limits<qulonglong>::max();
+constexpr int kFlowTabIndex = 0;
+constexpr int kStatsTabIndex = 1;
 
 FlowListModel::SortKey sort_key_from_column(const int column) {
     switch (column) {
@@ -236,6 +238,7 @@ QString buildPacketSummary(const PacketDetails& details) {
 
 MainController::MainController(QObject* parent)
     : QObject(parent)
+    , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
 }
 
@@ -305,6 +308,10 @@ qulonglong MainController::ipv4FlowCount() const noexcept {
 
 qulonglong MainController::ipv6FlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.flow_count);
+}
+
+int MainController::currentTabIndex() const noexcept {
+    return current_tab_index_;
 }
 
 QObject* MainController::topEndpointsModel() noexcept {
@@ -383,6 +390,20 @@ void MainController::sortFlows(const int column) {
     emit flowSortChanged();
 }
 
+void MainController::drillDownToFlows(const QString& filterText) {
+    clearFlowSelection();
+    setFlowFilterText(filterText.trimmed());
+    setCurrentTabIndex(kFlowTabIndex);
+}
+
+void MainController::drillDownToEndpoint(const QString& endpointText) {
+    drillDownToFlows(endpointText);
+}
+
+void MainController::drillDownToPort(const quint32 port) {
+    drillDownToFlows(QString::number(port));
+}
+
 bool MainController::openPath(const QString& path, const bool asIndex) {
     const QString trimmed_path = path.trimmed();
     if (trimmed_path.isEmpty()) {
@@ -415,6 +436,16 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     emit flowFilterTextChanged();
     emit flowSortChanged();
     return true;
+}
+
+void MainController::setCurrentTabIndex(const int index) {
+    const int normalizedIndex = (index == kStatsTabIndex) ? kStatsTabIndex : kFlowTabIndex;
+    if (current_tab_index_ == normalizedIndex) {
+        return;
+    }
+
+    current_tab_index_ = normalizedIndex;
+    emit currentTabIndexChanged();
 }
 
 void MainController::setSelectedFlowIndex(const int index) {
@@ -507,6 +538,7 @@ void MainController::synchronizeFlowSelection() {
 
 void MainController::resetLoadedState() {
     current_input_path_.clear();
+    setCurrentTabIndex(kFlowTabIndex);
     protocol_summary_ = {};
     session_ = {};
     flow_model_.resetViewState();
@@ -518,6 +550,7 @@ void MainController::resetLoadedState() {
 
 void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
+    setCurrentTabIndex(kFlowTabIndex);
     protocol_summary_ = session_.protocol_summary();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
@@ -569,3 +602,4 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+

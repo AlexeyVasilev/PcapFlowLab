@@ -49,6 +49,16 @@ Frame {
             }
         }
 
+        Connections {
+            target: root
+
+            function onFilterTextChanged() {
+                if (filterField.text !== root.filterText) {
+                    filterField.text = root.filterText
+                }
+            }
+        }
+
         Rectangle {
             Layout.fillWidth: true
             height: 1

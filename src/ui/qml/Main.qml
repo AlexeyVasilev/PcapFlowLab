@@ -50,6 +50,8 @@ ApplicationWindow {
         TabBar {
             id: mainTabs
             Layout.fillWidth: true
+            currentIndex: mainController.currentTabIndex
+            onCurrentIndexChanged: mainController.currentTabIndex = currentIndex
 
             TabButton {
                 text: "Flows"
@@ -63,7 +65,7 @@ ApplicationWindow {
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: mainTabs.currentIndex
+            currentIndex: mainController.currentTabIndex
 
             FlowWorkspacePane {
                 flowModel: mainController.flowModel
@@ -106,6 +108,12 @@ ApplicationWindow {
                 ipv6FlowCount: mainController.ipv6FlowCount
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
+                onEndpointActivated: function(endpointText) {
+                    mainController.drillDownToEndpoint(endpointText)
+                }
+                onPortActivated: function(port) {
+                    mainController.drillDownToPort(port)
+                }
             }
         }
     }
