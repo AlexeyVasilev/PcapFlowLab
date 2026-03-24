@@ -307,6 +307,14 @@ qulonglong MainController::ipv6FlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.flow_count);
 }
 
+QObject* MainController::topEndpointsModel() noexcept {
+    return &top_endpoints_model_;
+}
+
+QObject* MainController::topPortsModel() noexcept {
+    return &top_ports_model_;
+}
+
 QObject* MainController::flowModel() noexcept {
     return &flow_model_;
 }
@@ -503,6 +511,8 @@ void MainController::resetLoadedState() {
     session_ = {};
     flow_model_.resetViewState();
     flow_model_.clear();
+    top_endpoints_model_.clear();
+    top_ports_model_.clear();
     clearFlowSelection();
 }
 
@@ -511,7 +521,14 @@ void MainController::applyLoadedState(const QString& path) {
     protocol_summary_ = session_.protocol_summary();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
+    refreshTopSummaryModels();
     clearFlowSelection();
+}
+
+void MainController::refreshTopSummaryModels() {
+    const auto summary = session_.top_summary();
+    top_endpoints_model_.refreshEndpoints(summary.endpoints_by_bytes);
+    top_ports_model_.refreshPorts(summary.ports_by_bytes);
 }
 
 void MainController::setOpenErrorText(const QString& text) {

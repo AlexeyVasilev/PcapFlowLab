@@ -47,44 +47,33 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
         }
 
-        SummaryBar {
+        TabBar {
+            id: mainTabs
             Layout.fillWidth: true
-            packetCount: mainController.packetCount
-            flowCount: mainController.flowCount
-            totalBytes: mainController.totalBytes
-            hasCapture: mainController.hasCapture
+
+            TabButton {
+                text: "Flows"
+            }
+
+            TabButton {
+                text: "Statistics"
+            }
         }
 
-        ProtocolStatsPane {
-            Layout.fillWidth: true
-            hasCapture: mainController.hasCapture
-            tcpFlowCount: mainController.tcpFlowCount
-            tcpPacketCount: mainController.tcpPacketCount
-            tcpTotalBytes: mainController.tcpTotalBytes
-            udpFlowCount: mainController.udpFlowCount
-            udpPacketCount: mainController.udpPacketCount
-            udpTotalBytes: mainController.udpTotalBytes
-            otherFlowCount: mainController.otherFlowCount
-            otherPacketCount: mainController.otherPacketCount
-            otherTotalBytes: mainController.otherTotalBytes
-            ipv4FlowCount: mainController.ipv4FlowCount
-            ipv6FlowCount: mainController.ipv6FlowCount
-        }
-
-        SplitView {
+        StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            orientation: Qt.Vertical
+            currentIndex: mainTabs.currentIndex
 
-            FlowTable {
-                SplitView.fillWidth: true
-                SplitView.fillHeight: true
-                SplitView.preferredHeight: 430
+            FlowWorkspacePane {
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
                 filterText: mainController.flowFilterText
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
+                packetModel: mainController.packetModel
+                selectedPacketIndex: mainController.selectedPacketIndex
+                packetDetailsModel: mainController.packetDetailsModel
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
                 }
@@ -94,30 +83,29 @@ ApplicationWindow {
                 onSortRequested: function(column) {
                     mainController.sortFlows(column)
                 }
+                onPacketSelected: function(packetIndex) {
+                    mainController.selectedPacketIndex = packetIndex
+                }
             }
 
-            SplitView {
-                SplitView.fillWidth: true
-                SplitView.fillHeight: true
-                SplitView.preferredHeight: 300
-
-                PacketList {
-                    SplitView.fillWidth: true
-                    SplitView.fillHeight: true
-                    SplitView.preferredWidth: 420
-                    packetModel: mainController.packetModel
-                    selectedPacketIndex: mainController.selectedPacketIndex
-                    onPacketSelected: function(packetIndex) {
-                        mainController.selectedPacketIndex = packetIndex
-                    }
-                }
-
-                PacketDetailsPane {
-                    SplitView.fillWidth: true
-                    SplitView.fillHeight: true
-                    SplitView.preferredWidth: 720
-                    packetDetailsModel: mainController.packetDetailsModel
-                }
+            StatisticsPane {
+                hasCapture: mainController.hasCapture
+                packetCount: mainController.packetCount
+                flowCount: mainController.flowCount
+                totalBytes: mainController.totalBytes
+                tcpFlowCount: mainController.tcpFlowCount
+                tcpPacketCount: mainController.tcpPacketCount
+                tcpTotalBytes: mainController.tcpTotalBytes
+                udpFlowCount: mainController.udpFlowCount
+                udpPacketCount: mainController.udpPacketCount
+                udpTotalBytes: mainController.udpTotalBytes
+                otherFlowCount: mainController.otherFlowCount
+                otherPacketCount: mainController.otherPacketCount
+                otherTotalBytes: mainController.otherTotalBytes
+                ipv4FlowCount: mainController.ipv4FlowCount
+                ipv6FlowCount: mainController.ipv6FlowCount
+                topEndpointsModel: mainController.topEndpointsModel
+                topPortsModel: mainController.topPortsModel
             }
         }
     }

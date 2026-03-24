@@ -102,6 +102,8 @@ if(PFL_BUILD_UI)
             src/ui/app/MainController.h
             src/ui/app/FlowListModel.cpp
             src/ui/app/FlowListModel.h
+            src/ui/app/TopSummaryListModel.cpp
+            src/ui/app/TopSummaryListModel.h
             src/ui/app/PacketListModel.cpp
             src/ui/app/PacketListModel.h
             src/ui/app/PacketDetailsViewModel.cpp
@@ -115,7 +117,10 @@ if(PFL_BUILD_UI)
             QML_FILES
                 src/ui/qml/Main.qml
                 src/ui/qml/components/SummaryBar.qml
+                src/ui/qml/components/FlowWorkspacePane.qml
+                src/ui/qml/components/StatisticsPane.qml
                 src/ui/qml/components/ProtocolStatsPane.qml
+                src/ui/qml/components/TopTalkersPane.qml
                 src/ui/qml/components/FlowTable.qml
                 src/ui/qml/components/PacketList.qml
                 src/ui/qml/components/PacketDetailsPane.qml
@@ -149,6 +154,7 @@ if(BUILD_TESTING)
         tests/unit/PacketDetailsTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/ProtocolSummaryTests.cpp
+        tests/unit/TopSummaryTests.cpp
         tests/unit/VlanTests.cpp
         tests/unit/ExportTests.cpp
         tests/unit/PcapNgTests.cpp

@@ -14,6 +14,7 @@ void run_packet_access_tests();
 void run_packet_details_tests();
 void run_query_tests();
 void run_protocol_summary_tests();
+void run_top_summary_tests();
 void run_vlan_tests();
 void run_export_tests();
 void run_pcapng_tests();
@@ -43,6 +44,7 @@ int main() {
         pfl::tests::run_packet_details_tests();
         pfl::tests::run_query_tests();
         pfl::tests::run_protocol_summary_tests();
+        pfl::tests::run_top_summary_tests();
         pfl::tests::run_vlan_tests();
         pfl::tests::run_export_tests();
         pfl::tests::run_pcapng_tests();

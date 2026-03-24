@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include "core/domain/ConnectionKey.h"
 
@@ -43,6 +44,23 @@ struct CaptureProtocolSummary {
     ProtocolStats other {};
     ProtocolStats ipv4 {};
     ProtocolStats ipv6 {};
+};
+
+struct TopEndpointRow {
+    std::string endpoint {};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct TopPortRow {
+    std::uint16_t port {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct CaptureTopSummary {
+    std::vector<TopEndpointRow> endpoints_by_bytes {};
+    std::vector<TopPortRow> ports_by_bytes {};
 };
 
 }  // namespace pfl

@@ -9,6 +9,7 @@
 #include "ui/app/FlowListModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/TopSummaryListModel.h"
 
 namespace pfl {
 
@@ -31,6 +32,8 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
+    Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
+    Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
     Q_PROPERTY(QObject* flowModel READ flowModel CONSTANT)
     Q_PROPERTY(QObject* packetModel READ packetModel CONSTANT)
     Q_PROPERTY(QObject* packetDetailsModel READ packetDetailsModel CONSTANT)
@@ -60,6 +63,8 @@ public:
     [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
+    [[nodiscard]] QObject* topEndpointsModel() noexcept;
+    [[nodiscard]] QObject* topPortsModel() noexcept;
     [[nodiscard]] QObject* flowModel() noexcept;
     [[nodiscard]] QObject* packetModel() noexcept;
     [[nodiscard]] QObject* packetDetailsModel() noexcept;
@@ -94,6 +99,7 @@ private:
     void synchronizeFlowSelection();
     void resetLoadedState();
     void applyLoadedState(const QString& path);
+    void refreshTopSummaryModels();
     void setOpenErrorText(const QString& text);
     QString chooseFile(bool forIndex) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
@@ -101,6 +107,8 @@ private:
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
     FlowListModel flow_model_ {};
+    TopSummaryListModel top_endpoints_model_ {};
+    TopSummaryListModel top_ports_model_ {};
     PacketListModel packet_model_ {};
     PacketDetailsViewModel packet_details_model_ {};
     QString current_input_path_ {};

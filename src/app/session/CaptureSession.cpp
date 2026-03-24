@@ -1,7 +1,9 @@
 #include "app/session/CaptureSession.h"
 
 #include <algorithm>
+#include <array>
 #include <iomanip>
+#include <map>
 #include <sstream>
 
 #include "core/index/CaptureIndex.h"
@@ -143,6 +145,46 @@ std::string format_packet_timestamp(const PacketRef& packet) {
     return timestamp.str();
 }
 
+std::string format_ipv4_address(const std::uint32_t address) {
+    std::ostringstream builder {};
+    builder << ((address >> 24U) & 0xFFU) << '.'
+            << ((address >> 16U) & 0xFFU) << '.'
+            << ((address >> 8U) & 0xFFU) << '.'
+            << (address & 0xFFU);
+    return builder.str();
+}
+
+std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address) {
+    std::ostringstream builder {};
+    builder << std::hex << std::setfill('0');
+
+    for (std::size_t index = 0; index < 8; ++index) {
+        if (index > 0) {
+            builder << ':';
+        }
+
+        const auto word = static_cast<std::uint16_t>(
+            (static_cast<std::uint16_t>(address[index * 2U]) << 8U) |
+            static_cast<std::uint16_t>(address[index * 2U + 1U])
+        );
+        builder << std::setw(4) << word;
+    }
+
+    return builder.str();
+}
+
+std::string format_endpoint(const EndpointKeyV4& endpoint) {
+    std::ostringstream builder {};
+    builder << format_ipv4_address(endpoint.addr) << ':' << endpoint.port;
+    return builder.str();
+}
+
+std::string format_endpoint(const EndpointKeyV6& endpoint) {
+    std::ostringstream builder {};
+    builder << '[' << format_ipv6_address(endpoint.addr) << "]:" << endpoint.port;
+    return builder.str();
+}
+
 PacketRow make_packet_row(const PacketRef& packet) {
     return PacketRow {
         .packet_index = packet.packet_index,
@@ -267,6 +309,100 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
             add_protocol_stats(summary.other, connection);
             break;
         }
+    }
+
+    return summary;
+}
+
+CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
+    std::map<std::string, TopEndpointRow> endpoints {};
+    std::map<std::uint16_t, TopPortRow> ports {};
+
+    for (const auto& connection : list_connections(state_)) {
+        const auto connection_packets = packet_count(connection);
+        const auto connection_bytes = total_bytes(connection);
+
+        if (connection.family == FlowAddressFamily::ipv4) {
+            const auto& key = connection.ipv4->key;
+
+            for (const auto& endpointText : {format_endpoint(key.first), format_endpoint(key.second)}) {
+                auto& row = endpoints[endpointText];
+                row.endpoint = endpointText;
+                row.packet_count += connection_packets;
+                row.total_bytes += connection_bytes;
+            }
+
+            for (const auto port : {key.first.port, key.second.port}) {
+                if (port == 0U) {
+                    continue;
+                }
+
+                auto& row = ports[port];
+                row.port = port;
+                row.packet_count += connection_packets;
+                row.total_bytes += connection_bytes;
+            }
+        } else {
+            const auto& key = connection.ipv6->key;
+
+            for (const auto& endpointText : {format_endpoint(key.first), format_endpoint(key.second)}) {
+                auto& row = endpoints[endpointText];
+                row.endpoint = endpointText;
+                row.packet_count += connection_packets;
+                row.total_bytes += connection_bytes;
+            }
+
+            for (const auto port : {key.first.port, key.second.port}) {
+                if (port == 0U) {
+                    continue;
+                }
+
+                auto& row = ports[port];
+                row.port = port;
+                row.packet_count += connection_packets;
+                row.total_bytes += connection_bytes;
+            }
+        }
+    }
+
+    CaptureTopSummary summary {};
+    summary.endpoints_by_bytes.reserve(endpoints.size());
+    summary.ports_by_bytes.reserve(ports.size());
+
+    for (const auto& [_, row] : endpoints) {
+        summary.endpoints_by_bytes.push_back(row);
+    }
+
+    for (const auto& [_, row] : ports) {
+        summary.ports_by_bytes.push_back(row);
+    }
+
+    std::sort(summary.endpoints_by_bytes.begin(), summary.endpoints_by_bytes.end(), [](const TopEndpointRow& left, const TopEndpointRow& right) {
+        if (left.total_bytes != right.total_bytes) {
+            return left.total_bytes > right.total_bytes;
+        }
+        if (left.packet_count != right.packet_count) {
+            return left.packet_count > right.packet_count;
+        }
+        return left.endpoint < right.endpoint;
+    });
+
+    std::sort(summary.ports_by_bytes.begin(), summary.ports_by_bytes.end(), [](const TopPortRow& left, const TopPortRow& right) {
+        if (left.total_bytes != right.total_bytes) {
+            return left.total_bytes > right.total_bytes;
+        }
+        if (left.packet_count != right.packet_count) {
+            return left.packet_count > right.packet_count;
+        }
+        return left.port < right.port;
+    });
+
+    if (summary.endpoints_by_bytes.size() > limit) {
+        summary.endpoints_by_bytes.resize(limit);
+    }
+
+    if (summary.ports_by_bytes.size() > limit) {
+        summary.ports_by_bytes.resize(limit);
     }
 
     return summary;
