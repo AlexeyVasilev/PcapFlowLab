@@ -40,4 +40,5 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or indexes via native file dialogs, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows, apply basic flow filtering and sorting, browse packets for the selected flow, and inspect packet details with a hex dump. Packet browsing and inspection formatting was also cleaned up for better readability.
+The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or indexes via native file dialogs, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details with a hex dump, and show transport payload length and TCP flags directly in the packet list. Packet browsing and inspection formatting was also cleaned up for better readability.
+

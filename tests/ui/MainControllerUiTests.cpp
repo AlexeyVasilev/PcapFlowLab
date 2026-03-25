@@ -8,6 +8,7 @@
 #include "PcapTestUtils.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/MainController.h"
+#include "ui/app/PacketListModel.h"
 
 namespace {
 
@@ -29,7 +30,7 @@ int main(int argc, char* argv[]) {
     using namespace pfl;
     using namespace pfl::tests;
 
-    const auto tcp_ab = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80);
+    const auto tcp_ab = make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80, 5, 0x12);
     const auto udp_cd = make_ethernet_ipv4_udp_packet(ipv4(10, 0, 0, 3), ipv4(10, 0, 0, 4), 5353, 53);
     const auto capture_path = write_temp_pcap(
         "pfl_ui_drilldown.pcap",
@@ -44,8 +45,17 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
 
-    controller.setCurrentTabIndex(1);
     controller.setSelectedFlowIndex(0);
+    auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+    UI_EXPECT(packet_model != nullptr);
+    UI_EXPECT(packet_model->rowCount() == 1);
+
+    const auto packet_index_model = packet_model->index(0, 0);
+    UI_EXPECT(packet_index_model.isValid());
+    UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::PayloadLengthRole).toUInt() == 5U);
+    UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
+
+    controller.setCurrentTabIndex(1);
     controller.setSelectedPacketIndex(0);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));
 

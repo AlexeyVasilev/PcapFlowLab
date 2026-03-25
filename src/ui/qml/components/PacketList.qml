@@ -39,28 +39,41 @@ Frame {
             Label {
                 text: "Packet"
                 font.bold: true
-                Layout.preferredWidth: 78
+                Layout.preferredWidth: 70
                 horizontalAlignment: Text.AlignRight
             }
 
             Label {
                 text: "Time"
                 font.bold: true
-                Layout.preferredWidth: 148
+                Layout.preferredWidth: 126
             }
 
             Label {
                 text: "Captured"
                 font.bold: true
-                Layout.preferredWidth: 84
+                Layout.preferredWidth: 72
                 horizontalAlignment: Text.AlignRight
             }
 
             Label {
                 text: "Original"
                 font.bold: true
-                Layout.preferredWidth: 84
+                Layout.preferredWidth: 72
                 horizontalAlignment: Text.AlignRight
+            }
+
+            Label {
+                text: "Payload"
+                font.bold: true
+                Layout.preferredWidth: 68
+                horizontalAlignment: Text.AlignRight
+            }
+
+            Label {
+                text: "Flags"
+                font.bold: true
+                Layout.fillWidth: true
             }
         }
 
@@ -84,6 +97,8 @@ Frame {
                     required property string timestamp
                     required property int capturedLength
                     required property int originalLength
+                    required property int payloadLength
+                    required property string tcpFlagsText
 
                     width: packetListView.width
                     height: 38
@@ -99,26 +114,39 @@ Frame {
 
                         Label {
                             text: packetIndex
-                            Layout.preferredWidth: 78
+                            Layout.preferredWidth: 70
                             horizontalAlignment: Text.AlignRight
                         }
 
                         Label {
                             text: timestamp
-                            Layout.preferredWidth: 148
+                            Layout.preferredWidth: 126
                             font.family: "Consolas"
                         }
 
                         Label {
                             text: capturedLength
-                            Layout.preferredWidth: 84
+                            Layout.preferredWidth: 72
                             horizontalAlignment: Text.AlignRight
                         }
 
                         Label {
                             text: originalLength
-                            Layout.preferredWidth: 84
+                            Layout.preferredWidth: 72
                             horizontalAlignment: Text.AlignRight
+                        }
+
+                        Label {
+                            text: payloadLength
+                            Layout.preferredWidth: 68
+                            horizontalAlignment: Text.AlignRight
+                        }
+
+                        Label {
+                            text: tcpFlagsText
+                            Layout.fillWidth: true
+                            font.family: "Consolas"
+                            elide: Text.ElideRight
                         }
                     }
 
