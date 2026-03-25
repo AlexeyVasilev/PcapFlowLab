@@ -51,7 +51,7 @@ Frame {
         TextField {
             id: filterField
             Layout.fillWidth: true
-            placeholderText: "Filter by protocol, family, address, or port"
+            placeholderText: "Filter by protocol, hint, service, address, or port"
             text: root.filterText
             onTextEdited: function() {
                 root.filterTextEdited(text)
@@ -97,41 +97,54 @@ Frame {
             }
 
             Button {
-                text: "Address A" + root.sortIndicator(3)
-                Layout.fillWidth: true
-                Layout.preferredWidth: 190
+                text: "Proto Hint" + root.sortIndicator(3)
+                Layout.preferredWidth: 98
                 onClicked: root.sortRequested(3)
             }
 
             Button {
-                text: "Port A" + root.sortIndicator(4)
-                Layout.preferredWidth: 78
+                text: "Service" + root.sortIndicator(4)
+                Layout.fillWidth: true
+                Layout.preferredWidth: 220
                 onClicked: root.sortRequested(4)
             }
 
             Button {
-                text: "Address B" + root.sortIndicator(5)
+                text: "Address A" + root.sortIndicator(5)
                 Layout.fillWidth: true
-                Layout.preferredWidth: 190
+                Layout.preferredWidth: 180
                 onClicked: root.sortRequested(5)
             }
 
             Button {
-                text: "Port B" + root.sortIndicator(6)
+                text: "Port A" + root.sortIndicator(6)
                 Layout.preferredWidth: 78
                 onClicked: root.sortRequested(6)
             }
 
             Button {
-                text: "Packets" + root.sortIndicator(7)
-                Layout.preferredWidth: 86
+                text: "Address B" + root.sortIndicator(7)
+                Layout.fillWidth: true
+                Layout.preferredWidth: 180
                 onClicked: root.sortRequested(7)
             }
 
             Button {
-                text: "Bytes" + root.sortIndicator(8)
-                Layout.preferredWidth: 92
+                text: "Port B" + root.sortIndicator(8)
+                Layout.preferredWidth: 78
                 onClicked: root.sortRequested(8)
+            }
+
+            Button {
+                text: "Packets" + root.sortIndicator(9)
+                Layout.preferredWidth: 86
+                onClicked: root.sortRequested(9)
+            }
+
+            Button {
+                text: "Bytes" + root.sortIndicator(10)
+                Layout.preferredWidth: 92
+                onClicked: root.sortRequested(10)
             }
         }
 
@@ -158,6 +171,8 @@ Frame {
                     required property int flowIndex
                     required property string family
                     required property string protocol
+                    required property string protocolHint
+                    required property string serviceHint
                     required property string addressA
                     required property int portA
                     required property string addressB
@@ -194,9 +209,22 @@ Frame {
                         }
 
                         Label {
+                            text: protocolHint
+                            Layout.preferredWidth: 78
+                            elide: Text.ElideRight
+                        }
+
+                        Label {
+                            text: serviceHint
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 220
+                            elide: Text.ElideRight
+                        }
+
+                        Label {
                             text: addressA
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 190
+                            Layout.preferredWidth: 180
                             elide: Text.ElideMiddle
                         }
 
@@ -209,7 +237,7 @@ Frame {
                         Label {
                             text: addressB
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 190
+                            Layout.preferredWidth: 180
                             elide: Text.ElideMiddle
                         }
 

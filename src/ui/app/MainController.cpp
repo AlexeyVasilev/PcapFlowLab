@@ -25,16 +25,20 @@ FlowListModel::SortKey sort_key_from_column(const int column) {
     case 2:
         return FlowListModel::SortKey::protocol;
     case 3:
-        return FlowListModel::SortKey::address_a;
+        return FlowListModel::SortKey::protocol_hint;
     case 4:
-        return FlowListModel::SortKey::port_a;
+        return FlowListModel::SortKey::service_hint;
     case 5:
-        return FlowListModel::SortKey::address_b;
+        return FlowListModel::SortKey::address_a;
     case 6:
-        return FlowListModel::SortKey::port_b;
+        return FlowListModel::SortKey::port_a;
     case 7:
-        return FlowListModel::SortKey::packets;
+        return FlowListModel::SortKey::address_b;
     case 8:
+        return FlowListModel::SortKey::port_b;
+    case 9:
+        return FlowListModel::SortKey::packets;
+    case 10:
         return FlowListModel::SortKey::bytes;
     default:
         return FlowListModel::SortKey::index;
@@ -49,18 +53,22 @@ int column_from_sort_key(const FlowListModel::SortKey key) noexcept {
         return 1;
     case FlowListModel::SortKey::protocol:
         return 2;
-    case FlowListModel::SortKey::address_a:
+    case FlowListModel::SortKey::protocol_hint:
         return 3;
-    case FlowListModel::SortKey::port_a:
+    case FlowListModel::SortKey::service_hint:
         return 4;
-    case FlowListModel::SortKey::address_b:
+    case FlowListModel::SortKey::address_a:
         return 5;
-    case FlowListModel::SortKey::port_b:
+    case FlowListModel::SortKey::port_a:
         return 6;
-    case FlowListModel::SortKey::packets:
+    case FlowListModel::SortKey::address_b:
         return 7;
-    case FlowListModel::SortKey::bytes:
+    case FlowListModel::SortKey::port_b:
         return 8;
+    case FlowListModel::SortKey::packets:
+        return 9;
+    case FlowListModel::SortKey::bytes:
+        return 10;
     }
 
     return 0;
@@ -624,6 +632,7 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
 

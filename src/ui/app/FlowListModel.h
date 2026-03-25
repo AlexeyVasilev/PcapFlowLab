@@ -18,6 +18,8 @@ public:
         FlowIndexRole = Qt::UserRole + 1,
         FamilyRole,
         ProtocolRole,
+        ProtocolHintRole,
+        ServiceHintRole,
         AddressARole,
         PortARole,
         AddressBRole,
@@ -30,6 +32,8 @@ public:
         index,
         family,
         protocol,
+        protocol_hint,
+        service_hint,
         address_a,
         port_a,
         address_b,
@@ -62,6 +66,8 @@ public:
         int flow_index {0};
         QString family {};
         QString protocol {};
+        QString protocol_hint {};
+        QString service_hint {};
         QString address_a {};
         quint32 port_a {0};
         QString endpoint_a {};

@@ -1,20 +1,24 @@
 #include "ui/app/FlowListModel.h"
 
-#include <QStringList>
-
 #include <algorithm>
 
 namespace pfl {
 
 namespace {
 
-QString format_protocol(const std::string& protocol) {
-    return QString::fromStdString(protocol);
+QString to_qstring(const std::string& value) {
+    return QString::fromStdString(value);
+}
+
+QString format_protocol_hint(const std::string& value) {
+    return QString::fromStdString(value).toUpper();
 }
 
 bool contains_text(const FlowListModel::Item& item, const QString& filter) {
     return item.family.contains(filter, Qt::CaseInsensitive)
         || item.protocol.contains(filter, Qt::CaseInsensitive)
+        || item.protocol_hint.contains(filter, Qt::CaseInsensitive)
+        || item.service_hint.contains(filter, Qt::CaseInsensitive)
         || item.address_a.contains(filter, Qt::CaseInsensitive)
         || item.address_b.contains(filter, Qt::CaseInsensitive)
         || item.endpoint_a.contains(filter, Qt::CaseInsensitive)
@@ -30,7 +34,20 @@ bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right
     case FlowListModel::SortKey::family:
         return left.family < right.family;
     case FlowListModel::SortKey::protocol:
-        return left.protocol < right.protocol;
+        if (left.protocol != right.protocol) {
+            return left.protocol < right.protocol;
+        }
+        return left.flow_index < right.flow_index;
+    case FlowListModel::SortKey::protocol_hint:
+        if (left.protocol_hint != right.protocol_hint) {
+            return left.protocol_hint < right.protocol_hint;
+        }
+        return left.flow_index < right.flow_index;
+    case FlowListModel::SortKey::service_hint:
+        if (left.service_hint != right.service_hint) {
+            return left.service_hint < right.service_hint;
+        }
+        return left.flow_index < right.flow_index;
     case FlowListModel::SortKey::address_a:
         if (left.address_a != right.address_a) {
             return left.address_a < right.address_a;
@@ -93,6 +110,10 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
         return item.family;
     case ProtocolRole:
         return item.protocol;
+    case ProtocolHintRole:
+        return item.protocol_hint;
+    case ServiceHintRole:
+        return item.service_hint;
     case AddressARole:
         return item.address_a;
     case PortARole:
@@ -115,6 +136,8 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
         {FlowIndexRole, "flowIndex"},
         {FamilyRole, "family"},
         {ProtocolRole, "protocol"},
+        {ProtocolHintRole, "protocolHint"},
+        {ServiceHintRole, "serviceHint"},
         {AddressARole, "addressA"},
         {PortARole, "portA"},
         {AddressBRole, "addressB"},
@@ -142,13 +165,15 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
         all_items_.push_back(Item {
             .flow_index = static_cast<int>(row.index),
             .family = (row.family == FlowAddressFamily::ipv4) ? "IPv4" : "IPv6",
-            .protocol = format_protocol(row.protocol_text),
-            .address_a = QString::fromStdString(row.address_a),
+            .protocol = to_qstring(row.protocol_text),
+            .protocol_hint = format_protocol_hint(row.protocol_hint),
+            .service_hint = to_qstring(row.service_hint),
+            .address_a = to_qstring(row.address_a),
             .port_a = row.port_a,
-            .endpoint_a = QString::fromStdString(row.endpoint_a),
-            .address_b = QString::fromStdString(row.address_b),
+            .endpoint_a = to_qstring(row.endpoint_a),
+            .address_b = to_qstring(row.address_b),
             .port_b = row.port_b,
-            .endpoint_b = QString::fromStdString(row.endpoint_b),
+            .endpoint_b = to_qstring(row.endpoint_b),
             .packets = static_cast<qulonglong>(row.packet_count),
             .bytes = static_cast<qulonglong>(row.total_bytes),
         });
@@ -240,3 +265,4 @@ void FlowListModel::rebuildVisibleItems() {
 }
 
 }  // namespace pfl
+

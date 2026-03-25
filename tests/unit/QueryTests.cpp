@@ -1,10 +1,43 @@
+#include <string>
 #include <variant>
+#include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
+
+namespace {
+
+std::vector<std::uint8_t> make_http_request_payload() {
+    constexpr char request[] =
+        "GET / HTTP/1.1\r\n"
+        "Host: hint.example\r\n"
+        "User-Agent: PFL\r\n"
+        "\r\n";
+    return std::vector<std::uint8_t>(request, request + sizeof(request) - 1);
+}
+
+std::vector<std::uint8_t> make_dns_query_payload() {
+    std::vector<std::uint8_t> payload {};
+    append_be16(payload, 0x1234);
+    append_be16(payload, 0x0100);
+    append_be16(payload, 1);
+    append_be16(payload, 0);
+    append_be16(payload, 0);
+    append_be16(payload, 0);
+    payload.push_back(6);
+    payload.insert(payload.end(), {'w', 'i', 'd', 'g', 'e', 't'});
+    payload.push_back(7);
+    payload.insert(payload.end(), {'e', 'x', 'a', 'm', 'p', 'l', 'e'});
+    payload.push_back(0);
+    append_be16(payload, 1);
+    append_be16(payload, 1);
+    return payload;
+}
+
+}  // namespace
 
 void run_query_tests() {
     const auto tcp_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 12345, 443);
@@ -86,6 +119,44 @@ void run_query_tests() {
     PFL_EXPECT(packet->byte_offset == 40 + tcp_packet.size() + 16);
 
     PFL_EXPECT(!session.find_packet(999).has_value());
+
+    const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(192, 168, 1, 10), ipv4(93, 184, 216, 34), 51515, 80, make_http_request_payload(), 0x18);
+    const auto dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 0, 0, 5), ipv4(8, 8, 8, 8), 53000, 53, make_dns_query_payload());
+    const auto hint_path = write_temp_pcap(
+        "pfl_query_hints.pcap",
+        make_classic_pcap({{100, http_packet}, {200, dns_packet}})
+    );
+
+    CaptureSession hint_session {};
+    PFL_EXPECT(hint_session.open_capture(hint_path));
+    const auto hint_rows = hint_session.list_flows();
+    PFL_EXPECT(hint_rows.size() == 2);
+
+    const auto* http_row = static_cast<const FlowRow*>(nullptr);
+    const auto* dns_row = static_cast<const FlowRow*>(nullptr);
+    for (const auto& row : hint_rows) {
+        if (row.protocol_hint == "http") {
+            http_row = &row;
+        }
+        if (row.protocol_hint == "dns") {
+            dns_row = &row;
+        }
+    }
+
+    PFL_EXPECT(http_row != nullptr);
+    PFL_EXPECT(dns_row != nullptr);
+    PFL_EXPECT(http_row->service_hint == "hint.example");
+    PFL_EXPECT(
+        (http_row->address_a == "192.168.1.10" && http_row->port_a == 51515) ||
+        (http_row->address_b == "192.168.1.10" && http_row->port_b == 51515)
+    );
+    PFL_EXPECT(dns_row->service_hint == "widget.example");
+    PFL_EXPECT(
+        (dns_row->address_a == "8.8.8.8" && dns_row->port_a == 53) ||
+        (dns_row->address_b == "8.8.8.8" && dns_row->port_b == 53)
+    );
 }
 
 }  // namespace pfl::tests
