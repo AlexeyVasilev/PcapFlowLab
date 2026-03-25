@@ -180,6 +180,7 @@ if(BUILD_TESTING)
         tests/unit/ImportTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
+        tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/ProtocolSummaryTests.cpp
         tests/unit/TopSummaryTests.cpp
@@ -199,3 +200,5 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+

@@ -145,6 +145,41 @@ std::string format_packet_timestamp(const PacketRef& packet) {
     return timestamp.str();
 }
 
+std::string format_tcp_flags_text(const std::uint8_t flags) {
+    struct FlagName {
+        std::uint8_t mask;
+        const char* name;
+    };
+
+    constexpr FlagName names[] {
+        {0x80U, "CWR"},
+        {0x40U, "ECE"},
+        {0x20U, "URG"},
+        {0x10U, "ACK"},
+        {0x08U, "PSH"},
+        {0x04U, "RST"},
+        {0x02U, "SYN"},
+        {0x01U, "FIN"},
+    };
+
+    std::ostringstream builder {};
+    bool first = true;
+    for (const auto& flag : names) {
+        if ((flags & flag.mask) == 0U) {
+            continue;
+        }
+
+        if (!first) {
+            builder << '|';
+        }
+
+        builder << flag.name;
+        first = false;
+    }
+
+    return first ? std::string {} : builder.str();
+}
+
 std::string format_ipv4_address(const std::uint32_t address) {
     std::ostringstream builder {};
     builder << ((address >> 24U) & 0xFFU) << '.'
@@ -191,6 +226,8 @@ PacketRow make_packet_row(const PacketRef& packet) {
         .timestamp_text = format_packet_timestamp(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
+        .payload_length = packet.payload_length,
+        .tcp_flags_text = format_tcp_flags_text(packet.tcp_flags),
     };
 }
 
@@ -523,3 +560,4 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+

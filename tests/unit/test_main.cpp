@@ -12,6 +12,7 @@ void run_ingestor_tests();
 void run_import_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
+void run_packet_metadata_tests();
 void run_query_tests();
 void run_protocol_summary_tests();
 void run_top_summary_tests();
@@ -42,6 +43,7 @@ int main() {
         pfl::tests::run_import_tests();
         pfl::tests::run_packet_access_tests();
         pfl::tests::run_packet_details_tests();
+        pfl::tests::run_packet_metadata_tests();
         pfl::tests::run_query_tests();
         pfl::tests::run_protocol_summary_tests();
         pfl::tests::run_top_summary_tests();

@@ -240,6 +240,79 @@ inline std::vector<std::uint8_t> make_ethernet_ipv4_udp_packet(
     return bytes;
 }
 
+inline std::vector<std::uint8_t> make_ethernet_ipv4_tcp_packet_with_payload(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint16_t src_port,
+    std::uint16_t dst_port,
+    std::uint16_t payload_length,
+    std::uint8_t tcp_flags
+) {
+    std::vector<std::uint8_t> bytes {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+        0x08, 0x00,
+        0x45, 0x00,
+    };
+
+    append_be16(bytes, static_cast<std::uint16_t>(40 + payload_length));
+    append_be16(bytes, 0);
+    append_be16(bytes, 0);
+    bytes.push_back(64);
+    bytes.push_back(6);
+    append_be16(bytes, 0);
+    append_be32(bytes, src_addr);
+    append_be32(bytes, dst_addr);
+    append_be16(bytes, src_port);
+    append_be16(bytes, dst_port);
+    append_be32(bytes, 0);
+    append_be32(bytes, 0);
+    bytes.push_back(0x50);
+    bytes.push_back(tcp_flags);
+    append_be16(bytes, 0);
+    append_be16(bytes, 0);
+    append_be16(bytes, 0);
+
+    for (std::uint16_t index2 = 0; index2 < payload_length; ++index2) {
+        bytes.push_back(static_cast<std::uint8_t>(0x41U + (index2 % 26U)));
+    }
+
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ethernet_ipv4_udp_packet_with_payload(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint16_t src_port,
+    std::uint16_t dst_port,
+    std::uint16_t payload_length
+) {
+    std::vector<std::uint8_t> bytes {
+        0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
+        0xca, 0xfe, 0xba, 0xbe, 0x00, 0x02,
+        0x08, 0x00,
+        0x45, 0x00,
+    };
+
+    append_be16(bytes, static_cast<std::uint16_t>(28 + payload_length));
+    append_be16(bytes, 0);
+    append_be16(bytes, 0);
+    bytes.push_back(64);
+    bytes.push_back(17);
+    append_be16(bytes, 0);
+    append_be32(bytes, src_addr);
+    append_be32(bytes, dst_addr);
+    append_be16(bytes, src_port);
+    append_be16(bytes, dst_port);
+    append_be16(bytes, static_cast<std::uint16_t>(8 + payload_length));
+    append_be16(bytes, 0);
+
+    for (std::uint16_t index2 = 0; index2 < payload_length; ++index2) {
+        bytes.push_back(static_cast<std::uint8_t>(0x61U + (index2 % 26U)));
+    }
+
+    return bytes;
+}
 inline std::vector<std::uint8_t> add_vlan_tags(
     const std::vector<std::uint8_t>& ethernet_packet,
     const std::vector<std::pair<std::uint16_t, std::uint16_t>>& tags
@@ -476,6 +549,8 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
+
+
 
 
 

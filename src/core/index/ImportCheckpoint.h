@@ -16,6 +16,6 @@ struct ImportCheckpoint {
 };
 
 inline constexpr std::uint64_t kImportCheckpointMagic = 0x3150544b434c4650ULL;
-inline constexpr std::uint16_t kImportCheckpointVersion = 1;
+inline constexpr std::uint16_t kImportCheckpointVersion = 2;
 
 }  // namespace pfl

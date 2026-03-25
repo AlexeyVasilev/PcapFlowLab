@@ -31,6 +31,8 @@ constexpr std::uint8_t kIpProtocolHopByHop = 0;
 constexpr std::size_t kIpv4MinimumHeaderSize = 20;
 constexpr std::size_t kIpv6HeaderSize = 40;
 constexpr std::size_t kTransportPortsSize = 4;
+constexpr std::size_t kTcpMinimumHeaderSize = 20;
+constexpr std::size_t kUdpHeaderSize = 8;
 
 struct EthernetPayloadView {
     std::uint16_t ether_type {0};
@@ -155,6 +157,8 @@ PacketRef make_packet_ref(const RawPcapPacket& packet) {
         .original_length = packet.original_length,
         .ts_sec = packet.ts_sec,
         .ts_usec = packet.ts_usec,
+        .payload_length = 0,
+        .tcp_flags = 0,
     };
 }
 
@@ -212,11 +216,12 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
 
         const auto version = static_cast<std::uint8_t>(packet.bytes[ipv4_offset] >> 4U);
         const auto ihl = static_cast<std::size_t>((packet.bytes[ipv4_offset] & 0x0FU) * 4U);
-        if (version != 4 || ihl < kIpv4MinimumHeaderSize) {
+        const auto total_length = static_cast<std::size_t>(read_be16(packet.bytes, ipv4_offset + 2));
+        if (version != 4 || ihl < kIpv4MinimumHeaderSize || total_length < ihl) {
             return {};
         }
 
-        if (packet.bytes.size() < ipv4_offset + ihl) {
+        if (packet.bytes.size() < ipv4_offset + ihl || packet.bytes.size() < ipv4_offset + total_length) {
             return {};
         }
 
@@ -227,25 +232,62 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
 
         const auto protocol = packet.bytes[ipv4_offset + 9];
         const auto transport_offset = ipv4_offset + ihl;
+        const auto packet_end = ipv4_offset + total_length;
         const auto flow_base = FlowKeyV4 {
             .src_addr = read_be32(packet.bytes, ipv4_offset + 12),
             .dst_addr = read_be32(packet.bytes, ipv4_offset + 16),
         };
 
-        if (protocol == kIpProtocolTcp || protocol == kIpProtocolUdp) {
-            if (packet.bytes.size() < transport_offset + kTransportPortsSize) {
+        if (protocol == kIpProtocolTcp) {
+            if (transport_offset + kTcpMinimumHeaderSize > packet_end || packet.bytes.size() < transport_offset + kTcpMinimumHeaderSize) {
+                return {};
+            }
+
+            const auto tcp_header_length = static_cast<std::size_t>((packet.bytes[transport_offset + 12] >> 4U) * 4U);
+            if (tcp_header_length < kTcpMinimumHeaderSize || transport_offset + tcp_header_length > packet_end ||
+                packet.bytes.size() < transport_offset + tcp_header_length) {
                 return {};
             }
 
             auto flow_key = flow_base;
             flow_key.src_port = read_be16(packet.bytes, transport_offset);
             flow_key.dst_port = read_be16(packet.bytes, transport_offset + 2);
-            flow_key.protocol = (protocol == kIpProtocolTcp) ? ProtocolId::tcp : ProtocolId::udp;
+            flow_key.protocol = ProtocolId::tcp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
+            packet_ref.tcp_flags = packet.bytes[transport_offset + 13];
 
             return DecodedPacket {
                 .ipv4 = IngestedPacketV4 {
                     .flow_key = flow_key,
-                    .packet_ref = make_packet_ref(packet),
+                    .packet_ref = packet_ref,
+                },
+            };
+        }
+
+        if (protocol == kIpProtocolUdp) {
+            if (transport_offset + kUdpHeaderSize > packet_end || packet.bytes.size() < transport_offset + kUdpHeaderSize) {
+                return {};
+            }
+
+            const auto udp_length = static_cast<std::size_t>(read_be16(packet.bytes, transport_offset + 4));
+            if (udp_length < kUdpHeaderSize || transport_offset + udp_length > packet_end) {
+                return {};
+            }
+
+            auto flow_key = flow_base;
+            flow_key.src_port = read_be16(packet.bytes, transport_offset);
+            flow_key.dst_port = read_be16(packet.bytes, transport_offset + 2);
+            flow_key.protocol = ProtocolId::udp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(udp_length - kUdpHeaderSize);
+
+            return DecodedPacket {
+                .ipv4 = IngestedPacketV4 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
                 },
             };
         }
@@ -280,8 +322,14 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
             return {};
         }
 
+        const auto ipv6_payload_length = static_cast<std::size_t>(read_be16(packet.bytes, ipv6_offset + 4));
+        const auto packet_end = ipv6_offset + kIpv6HeaderSize + ipv6_payload_length;
+        if (packet.bytes.size() < packet_end) {
+            return {};
+        }
+
         const auto payload = parse_ipv6_payload(packet.bytes, ipv6_offset);
-        if (!payload.has_value()) {
+        if (!payload.has_value() || payload->payload_offset > packet_end) {
             return {};
         }
 
@@ -291,19 +339,56 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
             flow_key.dst_addr[index] = packet.bytes[ipv6_offset + 24 + index];
         }
 
-        if (payload->next_header == kIpProtocolTcp || payload->next_header == kIpProtocolUdp) {
-            if (packet.bytes.size() < payload->payload_offset + kTransportPortsSize) {
+        if (payload->next_header == kIpProtocolTcp) {
+            if (payload->payload_offset + kTcpMinimumHeaderSize > packet_end ||
+                packet.bytes.size() < payload->payload_offset + kTcpMinimumHeaderSize) {
+                return {};
+            }
+
+            const auto tcp_header_length = static_cast<std::size_t>((packet.bytes[payload->payload_offset + 12] >> 4U) * 4U);
+            if (tcp_header_length < kTcpMinimumHeaderSize || payload->payload_offset + tcp_header_length > packet_end ||
+                packet.bytes.size() < payload->payload_offset + tcp_header_length) {
                 return {};
             }
 
             flow_key.src_port = read_be16(packet.bytes, payload->payload_offset);
             flow_key.dst_port = read_be16(packet.bytes, payload->payload_offset + 2);
-            flow_key.protocol = (payload->next_header == kIpProtocolTcp) ? ProtocolId::tcp : ProtocolId::udp;
+            flow_key.protocol = ProtocolId::tcp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
+            packet_ref.tcp_flags = packet.bytes[payload->payload_offset + 13];
 
             return DecodedPacket {
                 .ipv6 = IngestedPacketV6 {
                     .flow_key = flow_key,
-                    .packet_ref = make_packet_ref(packet),
+                    .packet_ref = packet_ref,
+                },
+            };
+        }
+
+        if (payload->next_header == kIpProtocolUdp) {
+            if (payload->payload_offset + kUdpHeaderSize > packet_end ||
+                packet.bytes.size() < payload->payload_offset + kUdpHeaderSize) {
+                return {};
+            }
+
+            const auto udp_length = static_cast<std::size_t>(read_be16(packet.bytes, payload->payload_offset + 4));
+            if (udp_length < kUdpHeaderSize || payload->payload_offset + udp_length > packet_end) {
+                return {};
+            }
+
+            flow_key.src_port = read_be16(packet.bytes, payload->payload_offset);
+            flow_key.dst_port = read_be16(packet.bytes, payload->payload_offset + 2);
+            flow_key.protocol = ProtocolId::udp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(udp_length - kUdpHeaderSize);
+
+            return DecodedPacket {
+                .ipv6 = IngestedPacketV6 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
                 },
             };
         }

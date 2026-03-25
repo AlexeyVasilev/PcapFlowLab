@@ -29,6 +29,10 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
         return item.captured_length;
     case OriginalLengthRole:
         return item.original_length;
+    case PayloadLengthRole:
+        return item.payload_length;
+    case TcpFlagsTextRole:
+        return item.tcp_flags_text;
     default:
         return {};
     }
@@ -40,6 +44,8 @@ QHash<int, QByteArray> PacketListModel::roleNames() const {
         {TimestampRole, "timestamp"},
         {CapturedLengthRole, "capturedLength"},
         {OriginalLengthRole, "originalLength"},
+        {PayloadLengthRole, "payloadLength"},
+        {TcpFlagsTextRole, "tcpFlagsText"},
     };
 }
 
@@ -54,6 +60,8 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
             .timestamp = QString::fromStdString(row.timestamp_text),
             .captured_length = row.captured_length,
             .original_length = row.original_length,
+            .payload_length = row.payload_length,
+            .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
         });
     }
 

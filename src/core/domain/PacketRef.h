@@ -13,6 +13,8 @@ struct PacketRef {
     std::uint32_t original_length {0};
     std::uint32_t ts_sec {0};
     std::uint32_t ts_usec {0};
+    std::uint32_t payload_length {0};
+    std::uint8_t tcp_flags {0};
 
     [[nodiscard]] friend constexpr bool operator==(const PacketRef&, const PacketRef&) = default;
 };

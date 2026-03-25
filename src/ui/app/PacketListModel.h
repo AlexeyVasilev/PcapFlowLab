@@ -19,6 +19,8 @@ public:
         TimestampRole,
         CapturedLengthRole,
         OriginalLengthRole,
+        PayloadLengthRole,
+        TcpFlagsTextRole,
     };
 
     explicit PacketListModel(QObject* parent = nullptr);
@@ -36,6 +38,8 @@ private:
         QString timestamp {};
         uint captured_length {0};
         uint original_length {0};
+        uint payload_length {0};
+        QString tcp_flags_text {};
     };
 
     std::vector<Item> items_ {};
