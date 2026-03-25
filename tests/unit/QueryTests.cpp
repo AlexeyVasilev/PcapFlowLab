@@ -28,6 +28,13 @@ void run_query_tests() {
 
     const auto& tcp_key = std::get<ConnectionKeyV4>(rows[0].key);
     PFL_EXPECT(tcp_key.protocol == ProtocolId::tcp);
+    PFL_EXPECT(rows[0].protocol_text == "TCP");
+    PFL_EXPECT(rows[0].address_a == "10.0.0.1");
+    PFL_EXPECT(rows[0].port_a == 12345);
+    PFL_EXPECT(rows[0].endpoint_a == "10.0.0.1:12345");
+    PFL_EXPECT(rows[0].address_b == "10.0.0.2");
+    PFL_EXPECT(rows[0].port_b == 443);
+    PFL_EXPECT(rows[0].endpoint_b == "10.0.0.2:443");
     PFL_EXPECT(rows[0].packet_count == 1);
     PFL_EXPECT(rows[0].total_bytes == tcp_packet.size());
     PFL_EXPECT(tcp_key.first.addr == ipv4(10, 0, 0, 1));
@@ -35,6 +42,11 @@ void run_query_tests() {
 
     const auto& udp_key = std::get<ConnectionKeyV4>(rows[1].key);
     PFL_EXPECT(udp_key.protocol == ProtocolId::udp);
+    PFL_EXPECT(rows[1].protocol_text == "UDP");
+    PFL_EXPECT(rows[1].address_a == "10.0.0.3");
+    PFL_EXPECT(rows[1].port_a == 5353);
+    PFL_EXPECT(rows[1].address_b == "10.0.0.4");
+    PFL_EXPECT(rows[1].port_b == 53);
     PFL_EXPECT(rows[1].packet_count == 1);
     PFL_EXPECT(rows[1].total_bytes == udp_packet.size());
 

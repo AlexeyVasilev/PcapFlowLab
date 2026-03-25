@@ -45,6 +45,31 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
 
+    auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+    UI_EXPECT(flow_model != nullptr);
+    UI_EXPECT(flow_model->rowCount() == 2);
+
+    const auto flow_row = flow_model->index(0, 0);
+    UI_EXPECT(flow_row.isValid());
+    UI_EXPECT(flow_model->data(flow_row, FlowListModel::AddressARole).toString() == QStringLiteral("10.0.0.1"));
+    UI_EXPECT(flow_model->data(flow_row, FlowListModel::PortARole).toUInt() == 1111U);
+    UI_EXPECT(flow_model->data(flow_row, FlowListModel::AddressBRole).toString() == QStringLiteral("10.0.0.2"));
+    UI_EXPECT(flow_model->data(flow_row, FlowListModel::PortBRole).toUInt() == 80U);
+
+    controller.setFlowFilterText(QStringLiteral("5353"));
+    UI_EXPECT(flow_model->rowCount() == 1);
+    UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::PortARole).toUInt() == 5353U);
+
+    controller.sortFlows(4);
+    UI_EXPECT(controller.flowSortColumn() == 4);
+    UI_EXPECT(controller.flowSortAscending());
+
+    controller.sortFlows(4);
+    UI_EXPECT(!controller.flowSortAscending());
+
+    controller.setFlowFilterText(QStringLiteral(""));
+    UI_EXPECT(flow_model->rowCount() == 2);
+
     controller.setSelectedFlowIndex(0);
     auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
     UI_EXPECT(packet_model != nullptr);
@@ -63,9 +88,6 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.flowFilterText() == QStringLiteral("10.0.0.1:1111"));
     UI_EXPECT(controller.selectedFlowIndex() == -1);
     UI_EXPECT(controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-
-    auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
-    UI_EXPECT(flow_model != nullptr);
     UI_EXPECT(flow_model->rowCount() == 1);
 
     controller.setCurrentTabIndex(1);

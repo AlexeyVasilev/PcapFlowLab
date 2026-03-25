@@ -25,6 +25,11 @@ struct ListedConnectionRef {
     const ConnectionV6* ipv6 {nullptr};
 };
 
+std::string format_ipv4_address(std::uint32_t address);
+std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address);
+std::string format_endpoint(const EndpointKeyV4& endpoint);
+std::string format_endpoint(const EndpointKeyV6& endpoint);
+
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
 }
@@ -35,6 +40,22 @@ std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
 
 ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->key.protocol : connection.ipv6->key.protocol;
+}
+std::string protocol_text(const ProtocolId protocol) {
+    switch (protocol) {
+    case ProtocolId::arp:
+        return "ARP";
+    case ProtocolId::icmp:
+        return "ICMP";
+    case ProtocolId::tcp:
+        return "TCP";
+    case ProtocolId::udp:
+        return "UDP";
+    case ProtocolId::icmpv6:
+        return "ICMPv6";
+    default:
+        return "unknown";
+    }
 }
 
 bool listed_connection_less(const ListedConnectionRef& left, const ListedConnectionRef& right) noexcept {
@@ -112,19 +133,35 @@ std::vector<PacketRef> collect_packets(const ConnectionV6& connection) {
 
 FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) {
     if (connection.family == FlowAddressFamily::ipv4) {
+        const auto& key = connection.ipv4->key;
         return FlowRow {
             .index = index,
             .family = FlowAddressFamily::ipv4,
-            .key = connection.ipv4->key,
+            .key = key,
+            .protocol_text = protocol_text(key.protocol),
+            .address_a = format_ipv4_address(key.first.addr),
+            .port_a = key.first.port,
+            .endpoint_a = format_endpoint(key.first),
+            .address_b = format_ipv4_address(key.second.addr),
+            .port_b = key.second.port,
+            .endpoint_b = format_endpoint(key.second),
             .packet_count = connection.ipv4->packet_count,
             .total_bytes = connection.ipv4->total_bytes,
         };
     }
 
+    const auto& key = connection.ipv6->key;
     return FlowRow {
         .index = index,
         .family = FlowAddressFamily::ipv6,
-        .key = connection.ipv6->key,
+        .key = key,
+        .protocol_text = protocol_text(key.protocol),
+        .address_a = format_ipv6_address(key.first.addr),
+        .port_a = key.first.port,
+        .endpoint_a = format_endpoint(key.first),
+        .address_b = format_ipv6_address(key.second.addr),
+        .port_b = key.second.port,
+        .endpoint_b = format_endpoint(key.second),
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };
@@ -560,4 +597,6 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
 

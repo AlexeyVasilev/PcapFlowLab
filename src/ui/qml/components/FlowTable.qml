@@ -51,7 +51,7 @@ Frame {
         TextField {
             id: filterField
             Layout.fillWidth: true
-            placeholderText: "Filter by protocol, family, or endpoint"
+            placeholderText: "Filter by protocol, family, address, or port"
             text: root.filterText
             onTextEdited: function() {
                 root.filterTextEdited(text)
@@ -76,50 +76,62 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 10
 
             Button {
                 text: "Index" + root.sortIndicator(0)
-                Layout.preferredWidth: 70
+                Layout.preferredWidth: 64
                 onClicked: root.sortRequested(0)
             }
 
             Button {
                 text: "Family" + root.sortIndicator(1)
-                Layout.preferredWidth: 78
+                Layout.preferredWidth: 74
                 onClicked: root.sortRequested(1)
             }
 
             Button {
                 text: "Protocol" + root.sortIndicator(2)
-                Layout.preferredWidth: 90
+                Layout.preferredWidth: 86
                 onClicked: root.sortRequested(2)
             }
 
             Button {
-                text: "Endpoint A" + root.sortIndicator(3)
+                text: "Address A" + root.sortIndicator(3)
                 Layout.fillWidth: true
-                Layout.preferredWidth: 180
+                Layout.preferredWidth: 190
                 onClicked: root.sortRequested(3)
             }
 
             Button {
-                text: "Endpoint B" + root.sortIndicator(4)
-                Layout.fillWidth: true
-                Layout.preferredWidth: 180
+                text: "Port A" + root.sortIndicator(4)
+                Layout.preferredWidth: 78
                 onClicked: root.sortRequested(4)
             }
 
             Button {
-                text: "Packets" + root.sortIndicator(5)
-                Layout.preferredWidth: 90
+                text: "Address B" + root.sortIndicator(5)
+                Layout.fillWidth: true
+                Layout.preferredWidth: 190
                 onClicked: root.sortRequested(5)
             }
 
             Button {
-                text: "Bytes" + root.sortIndicator(6)
-                Layout.preferredWidth: 90
+                text: "Port B" + root.sortIndicator(6)
+                Layout.preferredWidth: 78
                 onClicked: root.sortRequested(6)
+            }
+
+            Button {
+                text: "Packets" + root.sortIndicator(7)
+                Layout.preferredWidth: 86
+                onClicked: root.sortRequested(7)
+            }
+
+            Button {
+                text: "Bytes" + root.sortIndicator(8)
+                Layout.preferredWidth: 92
+                onClicked: root.sortRequested(8)
             }
         }
 
@@ -146,8 +158,10 @@ Frame {
                     required property int flowIndex
                     required property string family
                     required property string protocol
-                    required property string endpointA
-                    required property string endpointB
+                    required property string addressA
+                    required property int portA
+                    required property string addressB
+                    required property int portB
                     required property string packets
                     required property string bytes
 
@@ -161,47 +175,59 @@ Frame {
                         anchors.fill: parent
                         anchors.leftMargin: 10
                         anchors.rightMargin: 10
-                        spacing: 12
+                        spacing: 10
 
                         Label {
                             text: flowIndex
-                            Layout.preferredWidth: 52
+                            Layout.preferredWidth: 46
                             horizontalAlignment: Text.AlignRight
                         }
 
                         Label {
                             text: family
-                            Layout.preferredWidth: 60
+                            Layout.preferredWidth: 58
                         }
 
                         Label {
                             text: protocol
-                            Layout.preferredWidth: 72
+                            Layout.preferredWidth: 66
                         }
 
                         Label {
-                            text: endpointA
+                            text: addressA
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 180
+                            Layout.preferredWidth: 190
                             elide: Text.ElideMiddle
                         }
 
                         Label {
-                            text: endpointB
+                            text: portA
+                            Layout.preferredWidth: 62
+                            horizontalAlignment: Text.AlignRight
+                        }
+
+                        Label {
+                            text: addressB
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 180
+                            Layout.preferredWidth: 190
                             elide: Text.ElideMiddle
+                        }
+
+                        Label {
+                            text: portB
+                            Layout.preferredWidth: 62
+                            horizontalAlignment: Text.AlignRight
                         }
 
                         Label {
                             text: packets
-                            Layout.preferredWidth: 72
+                            Layout.preferredWidth: 68
                             horizontalAlignment: Text.AlignRight
                         }
 
                         Label {
                             text: bytes
-                            Layout.preferredWidth: 84
+                            Layout.preferredWidth: 80
                             horizontalAlignment: Text.AlignRight
                         }
                     }
@@ -225,4 +251,3 @@ Frame {
         }
     }
 }
-

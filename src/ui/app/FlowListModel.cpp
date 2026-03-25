@@ -3,69 +3,24 @@
 #include <QStringList>
 
 #include <algorithm>
-#include <variant>
 
 namespace pfl {
 
 namespace {
 
-QString format_protocol(const ProtocolId protocol) {
-    switch (protocol) {
-    case ProtocolId::arp:
-        return "ARP";
-    case ProtocolId::icmp:
-        return "ICMP";
-    case ProtocolId::tcp:
-        return "TCP";
-    case ProtocolId::udp:
-        return "UDP";
-    case ProtocolId::icmpv6:
-        return "ICMPv6";
-    default:
-        return "unknown";
-    }
-}
-
-QString format_ipv4_address(const std::uint32_t address) {
-    return QStringLiteral("%1.%2.%3.%4")
-        .arg((address >> 24U) & 0xFFU)
-        .arg((address >> 16U) & 0xFFU)
-        .arg((address >> 8U) & 0xFFU)
-        .arg(address & 0xFFU);
-}
-
-QString format_ipv6_address(const std::array<std::uint8_t, 16>& address) {
-    QStringList parts {};
-    parts.reserve(8);
-
-    for (std::size_t index = 0; index < 8; ++index) {
-        const auto word = static_cast<std::uint16_t>(
-            (static_cast<std::uint16_t>(address[index * 2U]) << 8U) |
-            static_cast<std::uint16_t>(address[index * 2U + 1U])
-        );
-        parts.push_back(QStringLiteral("%1").arg(word, 4, 16, QChar('0')));
-    }
-
-    return parts.join(QStringLiteral(":"));
-}
-
-QString format_endpoint(const EndpointKeyV4& endpoint) {
-    return QStringLiteral("%1:%2")
-        .arg(format_ipv4_address(endpoint.addr))
-        .arg(endpoint.port);
-}
-
-QString format_endpoint(const EndpointKeyV6& endpoint) {
-    return QStringLiteral("[%1]:%2")
-        .arg(format_ipv6_address(endpoint.addr))
-        .arg(endpoint.port);
+QString format_protocol(const std::string& protocol) {
+    return QString::fromStdString(protocol);
 }
 
 bool contains_text(const FlowListModel::Item& item, const QString& filter) {
     return item.family.contains(filter, Qt::CaseInsensitive)
         || item.protocol.contains(filter, Qt::CaseInsensitive)
+        || item.address_a.contains(filter, Qt::CaseInsensitive)
+        || item.address_b.contains(filter, Qt::CaseInsensitive)
         || item.endpoint_a.contains(filter, Qt::CaseInsensitive)
-        || item.endpoint_b.contains(filter, Qt::CaseInsensitive);
+        || item.endpoint_b.contains(filter, Qt::CaseInsensitive)
+        || QString::number(item.port_a).contains(filter, Qt::CaseInsensitive)
+        || QString::number(item.port_b).contains(filter, Qt::CaseInsensitive);
 }
 
 bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right, const FlowListModel::SortKey key) {
@@ -76,10 +31,26 @@ bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right
         return left.family < right.family;
     case FlowListModel::SortKey::protocol:
         return left.protocol < right.protocol;
-    case FlowListModel::SortKey::endpoint_a:
-        return left.endpoint_a < right.endpoint_a;
-    case FlowListModel::SortKey::endpoint_b:
-        return left.endpoint_b < right.endpoint_b;
+    case FlowListModel::SortKey::address_a:
+        if (left.address_a != right.address_a) {
+            return left.address_a < right.address_a;
+        }
+        return left.port_a < right.port_a;
+    case FlowListModel::SortKey::port_a:
+        if (left.port_a != right.port_a) {
+            return left.port_a < right.port_a;
+        }
+        return left.address_a < right.address_a;
+    case FlowListModel::SortKey::address_b:
+        if (left.address_b != right.address_b) {
+            return left.address_b < right.address_b;
+        }
+        return left.port_b < right.port_b;
+    case FlowListModel::SortKey::port_b:
+        if (left.port_b != right.port_b) {
+            return left.port_b < right.port_b;
+        }
+        return left.address_b < right.address_b;
     case FlowListModel::SortKey::packets:
         if (left.packets != right.packets) {
             return left.packets < right.packets;
@@ -122,10 +93,14 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
         return item.family;
     case ProtocolRole:
         return item.protocol;
-    case EndpointARole:
-        return item.endpoint_a;
-    case EndpointBRole:
-        return item.endpoint_b;
+    case AddressARole:
+        return item.address_a;
+    case PortARole:
+        return item.port_a;
+    case AddressBRole:
+        return item.address_b;
+    case PortBRole:
+        return item.port_b;
     case PacketsRole:
         return QString::number(item.packets);
     case BytesRole:
@@ -140,8 +115,10 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
         {FlowIndexRole, "flowIndex"},
         {FamilyRole, "family"},
         {ProtocolRole, "protocol"},
-        {EndpointARole, "endpointA"},
-        {EndpointBRole, "endpointB"},
+        {AddressARole, "addressA"},
+        {PortARole, "portA"},
+        {AddressBRole, "addressB"},
+        {PortBRole, "portB"},
         {PacketsRole, "packets"},
         {BytesRole, "bytes"},
     };
@@ -162,26 +139,19 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
     all_items_.reserve(rows.size());
 
     for (const auto& row : rows) {
-        Item item {};
-        item.flow_index = static_cast<int>(row.index);
-        item.packets = static_cast<qulonglong>(row.packet_count);
-        item.bytes = static_cast<qulonglong>(row.total_bytes);
-
-        if (row.family == FlowAddressFamily::ipv4) {
-            const auto& key = std::get<ConnectionKeyV4>(row.key);
-            item.family = "IPv4";
-            item.protocol = format_protocol(key.protocol);
-            item.endpoint_a = format_endpoint(key.first);
-            item.endpoint_b = format_endpoint(key.second);
-        } else {
-            const auto& key = std::get<ConnectionKeyV6>(row.key);
-            item.family = "IPv6";
-            item.protocol = format_protocol(key.protocol);
-            item.endpoint_a = format_endpoint(key.first);
-            item.endpoint_b = format_endpoint(key.second);
-        }
-
-        all_items_.push_back(std::move(item));
+        all_items_.push_back(Item {
+            .flow_index = static_cast<int>(row.index),
+            .family = (row.family == FlowAddressFamily::ipv4) ? "IPv4" : "IPv6",
+            .protocol = format_protocol(row.protocol_text),
+            .address_a = QString::fromStdString(row.address_a),
+            .port_a = row.port_a,
+            .endpoint_a = QString::fromStdString(row.endpoint_a),
+            .address_b = QString::fromStdString(row.address_b),
+            .port_b = row.port_b,
+            .endpoint_b = QString::fromStdString(row.endpoint_b),
+            .packets = static_cast<qulonglong>(row.packet_count),
+            .bytes = static_cast<qulonglong>(row.total_bytes),
+        });
     }
 
     rebuildVisibleItems();

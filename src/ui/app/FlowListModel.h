@@ -18,8 +18,10 @@ public:
         FlowIndexRole = Qt::UserRole + 1,
         FamilyRole,
         ProtocolRole,
-        EndpointARole,
-        EndpointBRole,
+        AddressARole,
+        PortARole,
+        AddressBRole,
+        PortBRole,
         PacketsRole,
         BytesRole,
     };
@@ -28,8 +30,10 @@ public:
         index,
         family,
         protocol,
-        endpoint_a,
-        endpoint_b,
+        address_a,
+        port_a,
+        address_b,
+        port_b,
         packets,
         bytes,
     };
@@ -58,7 +62,11 @@ public:
         int flow_index {0};
         QString family {};
         QString protocol {};
+        QString address_a {};
+        quint32 port_a {0};
         QString endpoint_a {};
+        QString address_b {};
+        quint32 port_b {0};
         QString endpoint_b {};
         qulonglong packets {0};
         qulonglong bytes {0};
