@@ -194,6 +194,7 @@ if(BUILD_TESTING)
         tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/FlowHintsTests.cpp
+        tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
     )
 
@@ -205,6 +206,7 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
 
 
 
