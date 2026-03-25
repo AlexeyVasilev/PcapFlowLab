@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QModelIndex>
 #include <QString>
 #include <QVariant>
 
@@ -28,6 +29,8 @@ public:
     [[nodiscard]] int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
+
+    Q_INVOKABLE int rowForPacketIndex(qulonglong packetIndex) const noexcept;
 
     void refresh(const std::vector<PacketRow>& rows);
     void clear();

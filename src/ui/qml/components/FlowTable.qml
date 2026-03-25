@@ -23,11 +23,20 @@ Frame {
         return root.sortAscending ? " ^" : " v"
     }
 
+    function resetSelectionIfNeeded() {
+        if (!flowListView.model || flowListView.count === 0 || root.selectedFlowIndex < 0) {
+            flowListView.currentIndex = -1
+        }
+    }
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
         radius: 8
     }
+
+    onFlowModelChanged: resetSelectionIfNeeded()
+    onSelectedFlowIndexChanged: resetSelectionIfNeeded()
 
     ColumnLayout {
         anchors.fill: parent
@@ -128,8 +137,12 @@ Frame {
                 anchors.margins: 1
                 clip: true
                 model: root.flowModel
+                currentIndex: -1
+                onCountChanged: root.resetSelectionIfNeeded()
+                onModelChanged: root.resetSelectionIfNeeded()
 
                 delegate: Rectangle {
+                    required property int index
                     required property int flowIndex
                     required property string family
                     required property string protocol
@@ -140,7 +153,7 @@ Frame {
 
                     width: flowListView.width
                     height: 40
-                    color: root.selectedFlowIndex === flowIndex
+                    color: index === flowListView.currentIndex
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
@@ -195,7 +208,10 @@ Frame {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: root.flowSelected(flowIndex)
+                        onClicked: {
+                            flowListView.currentIndex = index
+                            root.flowSelected(flowIndex)
+                        }
                     }
                 }
             }
@@ -209,3 +225,4 @@ Frame {
         }
     }
 }
+

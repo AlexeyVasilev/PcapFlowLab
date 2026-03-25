@@ -40,6 +40,8 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
+    Q_INVOKABLE int rowForFlowIndex(int flowIndex) const noexcept;
+
     void refresh(const std::vector<FlowRow>& rows);
     void clear();
     void resetViewState();
@@ -73,4 +75,3 @@ private:
 };
 
 }  // namespace pfl
-

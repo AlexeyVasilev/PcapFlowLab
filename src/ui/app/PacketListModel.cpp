@@ -49,6 +49,16 @@ QHash<int, QByteArray> PacketListModel::roleNames() const {
     };
 }
 
+int PacketListModel::rowForPacketIndex(const qulonglong packetIndex) const noexcept {
+    for (std::size_t row = 0; row < items_.size(); ++row) {
+        if (items_[row].packet_index == packetIndex) {
+            return static_cast<int>(row);
+        }
+    }
+
+    return -1;
+}
+
 void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
     beginResetModel();
     items_.clear();

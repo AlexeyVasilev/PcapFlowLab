@@ -10,11 +10,23 @@ Frame {
 
     signal packetSelected(var packetIndex)
 
+    function syncCurrentSelection() {
+        if (!packetListView.model || !root.packetModel) {
+            packetListView.currentIndex = -1
+            return
+        }
+
+        packetListView.currentIndex = root.packetModel.rowForPacketIndex(root.selectedPacketIndex)
+    }
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
         radius: 8
     }
+
+    onPacketModelChanged: syncCurrentSelection()
+    onSelectedPacketIndexChanged: syncCurrentSelection()
 
     ColumnLayout {
         anchors.fill: parent
@@ -91,8 +103,12 @@ Frame {
                 anchors.margins: 1
                 clip: true
                 model: root.packetModel
+                currentIndex: -1
+                onCountChanged: root.syncCurrentSelection()
+                onModelChanged: root.syncCurrentSelection()
 
                 delegate: Rectangle {
+                    required property int index
                     required property var packetIndex
                     required property string timestamp
                     required property int capturedLength
@@ -102,7 +118,7 @@ Frame {
 
                     width: packetListView.width
                     height: 38
-                    color: root.selectedPacketIndex === packetIndex
+                    color: index === packetListView.currentIndex
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
@@ -152,7 +168,10 @@ Frame {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: root.packetSelected(packetIndex)
+                        onClicked: {
+                            packetListView.currentIndex = index
+                            root.packetSelected(packetIndex)
+                        }
                     }
                 }
             }
@@ -166,3 +185,4 @@ Frame {
         }
     }
 }
+

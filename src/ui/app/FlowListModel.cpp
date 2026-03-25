@@ -147,6 +147,16 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
     };
 }
 
+int FlowListModel::rowForFlowIndex(const int flowIndex) const noexcept {
+    for (std::size_t row = 0; row < visible_items_.size(); ++row) {
+        if (visible_items_[row].flow_index == flowIndex) {
+            return static_cast<int>(row);
+        }
+    }
+
+    return -1;
+}
+
 void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
     all_items_.clear();
     all_items_.reserve(rows.size());
