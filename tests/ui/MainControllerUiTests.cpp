@@ -8,6 +8,7 @@
 #include "PcapTestUtils.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/MainController.h"
+#include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
 
 namespace {
@@ -80,14 +81,20 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::PayloadLengthRole).toUInt() == 5U);
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
 
-    controller.setCurrentTabIndex(1);
     controller.setSelectedPacketIndex(0);
+    auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());
+    UI_EXPECT(details_model != nullptr);
+    UI_EXPECT(details_model->hasPacket());
+    UI_EXPECT(details_model->payloadText().contains(QStringLiteral("41 42 43 44 45")));
+
+    controller.setCurrentTabIndex(1);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));
 
     UI_EXPECT(controller.currentTabIndex() == 0);
     UI_EXPECT(controller.flowFilterText() == QStringLiteral("10.0.0.1:1111"));
     UI_EXPECT(controller.selectedFlowIndex() == -1);
     UI_EXPECT(controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
+    UI_EXPECT(details_model->payloadText().isEmpty());
     UI_EXPECT(flow_model->rowCount() == 1);
 
     controller.setCurrentTabIndex(1);

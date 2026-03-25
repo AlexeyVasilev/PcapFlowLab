@@ -40,6 +40,10 @@ Frame {
             TabButton {
                 text: "Hex"
             }
+
+            TabButton {
+                text: "Payload"
+            }
         }
 
         StackLayout {
@@ -83,6 +87,27 @@ Frame {
                         font.family: "Consolas"
                         text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
                             ? root.packetDetailsModel.hexText
+                            : "No packet selected"
+                    }
+                }
+            }
+
+            Rectangle {
+                color: "#f8fafc"
+                border.color: "#e2e8f0"
+                radius: 6
+
+                ScrollView {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    clip: true
+
+                    TextArea {
+                        readOnly: true
+                        wrapMode: TextEdit.NoWrap
+                        font.family: "Consolas"
+                        text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                            ? root.packetDetailsModel.payloadText
                             : "No packet selected"
                     }
                 }

@@ -14,6 +14,7 @@
 #include "core/services/FlowExportService.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketDetailsService.h"
+#include "core/services/PacketPayloadService.h"
 
 namespace pfl {
 
@@ -515,6 +516,19 @@ std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const 
     return service.format(bytes);
 }
 
+std::string CaptureSession::read_packet_payload_hex_dump(const PacketRef& packet) const {
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        return {};
+    }
+
+    PacketPayloadService payload_service {};
+    const auto payload_bytes = payload_service.extract_transport_payload(bytes);
+
+    HexDumpService hex_dump_service {};
+    return hex_dump_service.format(payload_bytes);
+}
+
 std::vector<FlowRow> CaptureSession::list_flows() const {
     const auto connections = list_connections(state_);
     std::vector<FlowRow> rows {};
@@ -597,6 +611,7 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
 
 
 

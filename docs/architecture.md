@@ -26,3 +26,4 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Chunked import v1: partial imports can be checkpointed by storing the current `CaptureState` together with source validation metadata, processed-packet count, and the next reader offset. This is a first step toward large-capture workflows, not yet a disk-backed merge engine.
 
 This separation keeps the core reusable across future CLI and desktop frontends while supporting large captures with predictable memory use.
+

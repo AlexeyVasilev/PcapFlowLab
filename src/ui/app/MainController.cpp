@@ -160,6 +160,18 @@ void appendSection(QStringList& lines, const QString& title, const QStringList& 
     }
 }
 
+QString buildPayloadText(const PacketDetails& details, const std::string& payloadHexDump) {
+    if (!payloadHexDump.empty()) {
+        return QString::fromStdString(payloadHexDump);
+    }
+
+    if (details.has_tcp || details.has_udp) {
+        return QStringLiteral("No transport payload");
+    }
+
+    return QStringLiteral("Transport payload not available for this packet");
+}
+
 QString buildPacketSummary(const PacketDetails& details) {
     QStringList lines {};
 
@@ -495,6 +507,7 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
 
     const auto details = session_.read_packet_details(*packet);
     const std::string hex = session_.read_packet_hex_dump(*packet);
+    const std::string payload_hex = session_.read_packet_payload_hex_dump(*packet);
 
     if (!details.has_value()) {
         packet_details_model_.clear();
@@ -504,6 +517,7 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
 
     packet_details_model_.setPacketDetailsText(buildPacketSummary(*details));
     packet_details_model_.setHexText(QString::fromStdString(hex));
+    packet_details_model_.setPayloadText(buildPayloadText(*details, payload_hex));
     emit selectedPacketIndexChanged();
 }
 
@@ -610,5 +624,6 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
