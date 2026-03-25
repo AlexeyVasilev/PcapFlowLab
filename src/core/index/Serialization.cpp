@@ -40,6 +40,20 @@ bool read_protocol_id(std::ifstream& stream, ProtocolId& protocol) {
     return true;
 }
 
+bool write_flow_protocol_hint(std::ofstream& stream, const FlowProtocolHint hint) {
+    return write_u8(stream, static_cast<std::uint8_t>(hint));
+}
+
+bool read_flow_protocol_hint(std::ifstream& stream, FlowProtocolHint& hint) {
+    std::uint8_t value {0};
+    if (!read_u8(stream, value)) {
+        return false;
+    }
+
+    hint = static_cast<FlowProtocolHint>(value);
+    return true;
+}
+
 bool write_flow_key(std::ofstream& stream, const FlowKeyV4& key) {
     return write_u32(stream, key.src_addr) &&
            write_u32(stream, key.dst_addr) &&
@@ -387,7 +401,9 @@ bool write_connection(std::ofstream& stream, const ConnectionV4& connection) {
         !write_u8(stream, connection.has_flow_a ? 1U : 0U) ||
         !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
         !write_u64(stream, connection.packet_count) ||
-        !write_u64(stream, connection.total_bytes)) {
+        !write_u64(stream, connection.total_bytes) ||
+        !write_flow_protocol_hint(stream, connection.protocol_hint) ||
+        !write_string(stream, connection.service_hint)) {
         return false;
     }
 
@@ -407,7 +423,9 @@ bool write_connection(std::ofstream& stream, const ConnectionV6& connection) {
         !write_u8(stream, connection.has_flow_a ? 1U : 0U) ||
         !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
         !write_u64(stream, connection.packet_count) ||
-        !write_u64(stream, connection.total_bytes)) {
+        !write_u64(stream, connection.total_bytes) ||
+        !write_flow_protocol_hint(stream, connection.protocol_hint) ||
+        !write_string(stream, connection.service_hint)) {
         return false;
     }
 
@@ -430,7 +448,9 @@ bool read_connection(std::ifstream& stream, ConnectionV4& connection) {
         !read_u8(stream, has_flow_a) ||
         !read_u8(stream, has_flow_b) ||
         !read_u64(stream, connection.packet_count) ||
-        !read_u64(stream, connection.total_bytes)) {
+        !read_u64(stream, connection.total_bytes) ||
+        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
+        !read_string(stream, connection.service_hint)) {
         return false;
     }
 
@@ -458,7 +478,9 @@ bool read_connection(std::ifstream& stream, ConnectionV6& connection) {
         !read_u8(stream, has_flow_a) ||
         !read_u8(stream, has_flow_b) ||
         !read_u64(stream, connection.packet_count) ||
-        !read_u64(stream, connection.total_bytes)) {
+        !read_u64(stream, connection.total_bytes) ||
+        !read_flow_protocol_hint(stream, connection.protocol_hint) ||
+        !read_string(stream, connection.service_hint)) {
         return false;
     }
 
@@ -561,4 +583,5 @@ bool read_capture_state(std::ifstream& stream, CaptureState& state) {
 }
 
 }  // namespace pfl::detail
+
 

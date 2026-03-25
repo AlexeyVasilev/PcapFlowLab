@@ -140,6 +140,8 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
             .family = FlowAddressFamily::ipv4,
             .key = key,
             .protocol_text = protocol_text(key.protocol),
+            .protocol_hint = connection.ipv4->protocol_hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(connection.ipv4->protocol_hint)},
+            .service_hint = connection.ipv4->service_hint,
             .address_a = format_ipv4_address(key.first.addr),
             .port_a = key.first.port,
             .endpoint_a = format_endpoint(key.first),
@@ -157,6 +159,8 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
         .family = FlowAddressFamily::ipv6,
         .key = key,
         .protocol_text = protocol_text(key.protocol),
+        .protocol_hint = connection.ipv6->protocol_hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(connection.ipv6->protocol_hint)},
+        .service_hint = connection.ipv6->service_hint,
         .address_a = format_ipv6_address(key.first.addr),
         .port_a = key.first.port,
         .endpoint_a = format_endpoint(key.first),
@@ -167,7 +171,6 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
         .total_bytes = connection.ipv6->total_bytes,
     };
 }
-
 std::string format_packet_timestamp(const PacketRef& packet) {
     const auto seconds_of_day = packet.ts_sec % 86400U;
     const auto hours = seconds_of_day / 3600U;
@@ -611,6 +614,10 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
 
 
 

@@ -20,6 +20,8 @@ void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<Fl
         PFL_EXPECT(left[index].packet_count == right[index].packet_count);
         PFL_EXPECT(left[index].total_bytes == right[index].total_bytes);
         PFL_EXPECT(left[index].key == right[index].key);
+        PFL_EXPECT(left[index].protocol_hint == right[index].protocol_hint);
+        PFL_EXPECT(left[index].service_hint == right[index].service_hint);
     }
 }
 
@@ -191,5 +193,6 @@ void run_index_tests() {
 }
 
 }  // namespace pfl::tests
+
 
 

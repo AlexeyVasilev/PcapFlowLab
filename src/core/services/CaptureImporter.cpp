@@ -6,6 +6,7 @@
 #include "core/decode/PacketDecoder.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"
+#include "core/services/FlowHintService.h"
 #include "core/services/PacketIngestor.h"
 
 namespace pfl {
@@ -49,16 +50,23 @@ template <typename Reader>
 bool import_packets(Reader& reader, CaptureState& state) {
     PacketDecoder decoder {};
     PacketIngestor ingestor {state};
+    FlowHintService hint_service {};
 
     while (const auto packet = reader.read_next()) {
         const auto decoded = decoder.decode_ethernet(*packet);
+        const auto packet_bytes = std::span<const std::uint8_t>(packet->bytes.data(), packet->bytes.size());
+
         if (decoded.ipv4.has_value()) {
             ingestor.ingest(*decoded.ipv4);
+            auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
+            connection.apply_hints(hint_service.detect(packet_bytes, decoded.ipv4->flow_key));
             continue;
         }
 
         if (decoded.ipv6.has_value()) {
             ingestor.ingest(*decoded.ipv6);
+            auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
+            connection.apply_hints(hint_service.detect(packet_bytes, decoded.ipv6->flow_key));
         }
     }
 

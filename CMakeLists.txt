@@ -64,6 +64,7 @@ add_library(
     src/core/services/FlowExportService.cpp
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
+    src/core/services/FlowHintService.cpp
     src/core/services/HexDumpService.cpp
     src/app/session/CaptureSession.cpp
 )
@@ -192,6 +193,8 @@ if(BUILD_TESTING)
         tests/unit/IndexTests.cpp
         tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
+        tests/unit/FlowHintsTests.cpp
+        tests/unit/FlowHintsRealFixturesTests.cpp
     )
 
     target_link_libraries(
@@ -202,6 +205,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

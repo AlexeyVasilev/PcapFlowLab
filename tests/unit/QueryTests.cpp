@@ -29,6 +29,8 @@ void run_query_tests() {
     const auto& tcp_key = std::get<ConnectionKeyV4>(rows[0].key);
     PFL_EXPECT(tcp_key.protocol == ProtocolId::tcp);
     PFL_EXPECT(rows[0].protocol_text == "TCP");
+    PFL_EXPECT(rows[0].protocol_hint.empty());
+    PFL_EXPECT(rows[0].service_hint.empty());
     PFL_EXPECT(rows[0].address_a == "10.0.0.1");
     PFL_EXPECT(rows[0].port_a == 12345);
     PFL_EXPECT(rows[0].endpoint_a == "10.0.0.1:12345");
@@ -43,6 +45,8 @@ void run_query_tests() {
     const auto& udp_key = std::get<ConnectionKeyV4>(rows[1].key);
     PFL_EXPECT(udp_key.protocol == ProtocolId::udp);
     PFL_EXPECT(rows[1].protocol_text == "UDP");
+    PFL_EXPECT(rows[1].protocol_hint.empty());
+    PFL_EXPECT(rows[1].service_hint.empty());
     PFL_EXPECT(rows[1].address_a == "10.0.0.3");
     PFL_EXPECT(rows[1].port_a == 5353);
     PFL_EXPECT(rows[1].address_b == "10.0.0.4");
@@ -85,3 +89,4 @@ void run_query_tests() {
 }
 
 }  // namespace pfl::tests
+

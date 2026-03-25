@@ -22,6 +22,8 @@ struct FlowRow {
     FlowAddressFamily family {FlowAddressFamily::ipv4};
     FlowConnectionKey key {ConnectionKeyV4 {}};
     std::string protocol_text {};
+    std::string protocol_hint {};
+    std::string service_hint {};
     std::string address_a {};
     std::uint16_t port_a {0};
     std::string endpoint_a {};

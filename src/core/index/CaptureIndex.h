@@ -19,7 +19,7 @@ struct CaptureSourceInfo {
 };
 
 inline constexpr std::uint64_t kCaptureIndexMagic = 0x315844494c465050ULL;
-inline constexpr std::uint16_t kCaptureIndexVersion = 2;
+inline constexpr std::uint16_t kCaptureIndexVersion = 3;
 
 [[nodiscard]] bool validate_index_magic(const std::filesystem::path& index_path);
 [[nodiscard]] bool looks_like_index_file(const std::filesystem::path& path);
@@ -28,3 +28,4 @@ inline constexpr std::uint16_t kCaptureIndexVersion = 2;
 [[nodiscard]] bool validate_capture_source(const CaptureSourceInfo& expected);
 
 }  // namespace pfl
+

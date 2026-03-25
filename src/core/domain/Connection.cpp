@@ -18,6 +18,17 @@ void append_packet(FlowV6& flow, const FlowKeyV6& packet_key, const PacketRef& p
     flow.total_bytes += packet.original_length;
 }
 
+template <typename Connection>
+void apply_hints_to_connection(Connection& connection, const FlowHintUpdate& hints) {
+    if (connection.protocol_hint == FlowProtocolHint::unknown && hints.protocol_hint != FlowProtocolHint::unknown) {
+        connection.protocol_hint = hints.protocol_hint;
+    }
+
+    if (connection.service_hint.empty() && !hints.service_hint.empty()) {
+        connection.service_hint = hints.service_hint;
+    }
+}
+
 }  // namespace
 
 void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& packet) {
@@ -49,6 +60,10 @@ void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& pack
     // Unexpected third direction for this connection. Ignore for now.
 }
 
+void ConnectionV4::apply_hints(const FlowHintUpdate& hints) {
+    apply_hints_to_connection(*this, hints);
+}
+
 void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& packet) {
     ++packet_count;
     total_bytes += packet.original_length;
@@ -76,6 +91,10 @@ void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& pack
     }
 
     // Unexpected third direction for this connection. Ignore for now.
+}
+
+void ConnectionV6::apply_hints(const FlowHintUpdate& hints) {
+    apply_hints_to_connection(*this, hints);
 }
 
 }  // namespace pfl

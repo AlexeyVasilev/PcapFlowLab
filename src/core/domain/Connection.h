@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "core/domain/ConnectionKey.h"
 #include "core/domain/Flow.h"
+#include "core/domain/FlowHints.h"
 
 namespace pfl {
 
@@ -18,8 +20,11 @@ struct ConnectionV4 {
 
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
 
     void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet);
+    void apply_hints(const FlowHintUpdate& hints);
 };
 
 struct ConnectionV6 {
@@ -33,8 +38,11 @@ struct ConnectionV6 {
 
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+    FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
+    std::string service_hint {};
 
     void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet);
+    void apply_hints(const FlowHintUpdate& hints);
 };
 
 }  // namespace pfl

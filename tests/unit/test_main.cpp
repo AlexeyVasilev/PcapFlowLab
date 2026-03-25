@@ -14,6 +14,8 @@ void run_packet_access_tests();
 void run_packet_details_tests();
 void run_packet_payload_tests();
 void run_packet_metadata_tests();
+void run_flow_hints_tests();
+void run_flow_hints_real_fixtures_tests();
 void run_query_tests();
 void run_protocol_summary_tests();
 void run_top_summary_tests();
@@ -46,6 +48,8 @@ int main() {
         pfl::tests::run_packet_details_tests();
         pfl::tests::run_packet_payload_tests();
         pfl::tests::run_packet_metadata_tests();
+        pfl::tests::run_flow_hints_tests();
+        pfl::tests::run_flow_hints_real_fixtures_tests();
         pfl::tests::run_query_tests();
         pfl::tests::run_protocol_summary_tests();
         pfl::tests::run_top_summary_tests();
@@ -66,3 +70,5 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+
+

@@ -6,6 +6,7 @@
 #include "core/index/ImportCheckpointWriter.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"
+#include "core/services/FlowHintService.h"
 #include "core/services/PacketIngestor.h"
 
 namespace pfl {
@@ -26,6 +27,7 @@ ChunkedImportStatus import_with_reader(Reader& reader,
                                        std::size_t max_packets_per_chunk) {
     PacketDecoder decoder {};
     PacketIngestor ingestor {checkpoint.state};
+    FlowHintService hint_service {};
     std::size_t chunk_packet_count {0};
 
     while (chunk_packet_count < max_packets_per_chunk) {
@@ -44,10 +46,15 @@ ChunkedImportStatus import_with_reader(Reader& reader,
         ++chunk_packet_count;
 
         const auto decoded = decoder.decode_ethernet(*packet);
+        const auto packet_bytes = std::span<const std::uint8_t>(packet->bytes.data(), packet->bytes.size());
         if (decoded.ipv4.has_value()) {
             ingestor.ingest(*decoded.ipv4);
+            auto& connection = checkpoint.state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
+            connection.apply_hints(hint_service.detect(packet_bytes, decoded.ipv4->flow_key));
         } else if (decoded.ipv6.has_value()) {
             ingestor.ingest(*decoded.ipv6);
+            auto& connection = checkpoint.state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
+            connection.apply_hints(hint_service.detect(packet_bytes, decoded.ipv6->flow_key));
         }
     }
 
