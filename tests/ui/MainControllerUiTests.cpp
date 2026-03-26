@@ -52,6 +52,27 @@ std::vector<std::uint8_t> make_dns_query_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_classic_pcap_with_lengths(
+    const std::uint32_t ts_usec,
+    const std::vector<std::uint8_t>& captured_packet,
+    const std::uint32_t original_length
+) {
+    std::vector<std::uint8_t> bytes {};
+    pfl::tests::append_le32(bytes, 0xa1b2c3d4U);
+    pfl::tests::append_le16(bytes, 2U);
+    pfl::tests::append_le16(bytes, 4U);
+    pfl::tests::append_le32(bytes, 0U);
+    pfl::tests::append_le32(bytes, 0U);
+    pfl::tests::append_le32(bytes, 65535U);
+    pfl::tests::append_le32(bytes, 1U);
+    pfl::tests::append_le32(bytes, 1U);
+    pfl::tests::append_le32(bytes, ts_usec);
+    pfl::tests::append_le32(bytes, static_cast<std::uint32_t>(captured_packet.size()));
+    pfl::tests::append_le32(bytes, original_length);
+    bytes.insert(bytes.end(), captured_packet.begin(), captured_packet.end());
+    return bytes;
+}
+
 #define UI_EXPECT(expr) expect_true((expr), #expr, __FILE__, __LINE__)
 
 }  // namespace
@@ -168,6 +189,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_index_model.isValid());
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::PayloadLengthRole).toUInt() == make_http_request_payload().size());
+    UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::OriginalLengthRole).toUInt() == http_flow.size());
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
 
     controller.setSelectedPacketIndex(0);
@@ -206,7 +228,31 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(deep_details_model->protocolText().contains(QStringLiteral("TLS")));
     UI_EXPECT(deep_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
 
+    const auto full_truncated_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(172, 16, 0, 1), ipv4(172, 16, 0, 2), 34567, 8080, make_http_request_payload(), 0x18);
+    const auto captured_truncated_packet = std::vector<std::uint8_t>(full_truncated_packet.begin(), full_truncated_packet.end() - 4);
+    const auto truncated_capture_path = write_temp_pcap(
+        "pfl_ui_truncated_packet.pcap",
+        make_classic_pcap_with_lengths(100U, captured_truncated_packet, static_cast<std::uint32_t>(full_truncated_packet.size()))
+    );
+
+    MainController truncated_controller {};
+    UI_EXPECT(truncated_controller.openCaptureFile(QString::fromStdWString(truncated_capture_path.wstring())));
+    truncated_controller.setSelectedFlowIndex(0);
+    auto* truncated_packet_model = qobject_cast<PacketListModel*>(truncated_controller.packetModel());
+    UI_EXPECT(truncated_packet_model != nullptr);
+    UI_EXPECT(truncated_packet_model->rowCount() == 1);
+    const auto truncated_index = truncated_packet_model->index(0, 0);
+    UI_EXPECT(truncated_packet_model->data(truncated_index, PacketListModel::CapturedLengthRole).toUInt() == captured_truncated_packet.size());
+    UI_EXPECT(truncated_packet_model->data(truncated_index, PacketListModel::OriginalLengthRole).toUInt() == full_truncated_packet.size());
+
+    truncated_controller.setSelectedPacketIndex(0);
+    auto* truncated_details_model = qobject_cast<PacketDetailsViewModel*>(truncated_controller.packetDetailsModel());
+    UI_EXPECT(truncated_details_model != nullptr);
+    UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Warnings")));
+    UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Packet is truncated in capture")));
+    UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Captured Length: %1").arg(captured_truncated_packet.size())));
+    UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Original Length: %1").arg(full_truncated_packet.size())));
+
     return 0;
 }
-
-

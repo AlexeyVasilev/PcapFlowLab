@@ -7,6 +7,8 @@ Frame {
 
     property var packetModel: null
     property var selectedPacketIndex: -1
+    readonly property string forwardDirection: "A\u2192B"
+    readonly property string reverseDirection: "B\u2192A"
 
     signal packetSelected(var packetIndex)
 
@@ -17,6 +19,54 @@ Frame {
         }
 
         packetListView.currentIndex = root.packetModel.rowForPacketIndex(root.selectedPacketIndex)
+    }
+
+    function isTruncated(capturedLength, originalLength) {
+        return capturedLength !== originalLength
+    }
+
+    function rowBackgroundColor(index, capturedLength, originalLength, isSelected) {
+        if (isSelected) {
+            return "#dbeafe"
+        }
+
+        if (isTruncated(capturedLength, originalLength)) {
+            return "#fff8db"
+        }
+
+        return index % 2 === 0 ? "#ffffff" : "#f8fafc"
+    }
+
+    function directionBackgroundColor(directionText, isSelected) {
+        if (isSelected) {
+            return "transparent"
+        }
+
+        if (directionText === root.forwardDirection) {
+            return "#e8f5ee"
+        }
+
+        if (directionText === root.reverseDirection) {
+            return "#eaf2ff"
+        }
+
+        return "transparent"
+    }
+
+    function directionTextColor(directionText, isSelected) {
+        if (isSelected) {
+            return "#0f172a"
+        }
+
+        if (directionText === root.forwardDirection) {
+            return "#2f6f4f"
+        }
+
+        if (directionText === root.reverseDirection) {
+            return "#315b91"
+        }
+
+        return "#0f172a"
     }
 
     function flagTone(flagsText, payloadLength) {
@@ -134,13 +184,6 @@ Frame {
             }
 
             Label {
-                text: "Original"
-                font.bold: true
-                Layout.preferredWidth: 72
-                horizontalAlignment: Text.AlignRight
-            }
-
-            Label {
                 text: "Payload"
                 font.bold: true
                 Layout.preferredWidth: 68
@@ -186,9 +229,7 @@ Frame {
 
                     width: packetListView.width
                     height: 38
-                    color: selected
-                        ? "#dbeafe"
-                        : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
+                    color: root.rowBackgroundColor(index, capturedLength, originalLength, selected)
 
                     RowLayout {
                         anchors.fill: parent
@@ -202,11 +243,22 @@ Frame {
                             horizontalAlignment: Text.AlignRight
                         }
 
-                        Label {
-                            text: directionText
+                        Rectangle {
                             Layout.preferredWidth: 68
-                            horizontalAlignment: Text.AlignHCenter
-                            font.family: "Consolas"
+                            implicitHeight: 24
+                            radius: 4
+                            color: root.directionBackgroundColor(directionText, selected)
+                            border.width: color === "transparent" ? 0 : 1
+                            border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                            Label {
+                                anchors.fill: parent
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                text: directionText
+                                font.family: "Consolas"
+                                color: root.directionTextColor(directionText, selected)
+                            }
                         }
 
                         Label {
@@ -217,12 +269,6 @@ Frame {
 
                         Label {
                             text: capturedLength
-                            Layout.preferredWidth: 72
-                            horizontalAlignment: Text.AlignRight
-                        }
-
-                        Label {
-                            text: originalLength
                             Layout.preferredWidth: 72
                             horizontalAlignment: Text.AlignRight
                         }

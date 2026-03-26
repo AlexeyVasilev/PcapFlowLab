@@ -191,6 +191,14 @@ QString buildPacketSummary(const PacketDetails& details) {
         QStringLiteral("Original Length: %1").arg(details.original_length),
     });
 
+    if (details.captured_length != details.original_length) {
+        appendSection(lines, QStringLiteral("Warnings"), {
+            QStringLiteral("Packet is truncated in capture"),
+            QStringLiteral("Captured Length: %1").arg(details.captured_length),
+            QStringLiteral("Original Length: %1").arg(details.original_length),
+        });
+    }
+
     if (details.has_ethernet) {
         appendSection(lines, QStringLiteral("Ethernet"), {
             QStringLiteral("EtherType: %1").arg(formatHex16(details.ethernet.ether_type)),
@@ -657,6 +665,7 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
 
