@@ -103,6 +103,7 @@ void run_query_tests() {
     const auto second_flow_rows = session.list_flow_packets(1);
     PFL_EXPECT(second_flow_rows.size() == 1);
     PFL_EXPECT(second_flow_rows.front().packet_index == 1);
+    PFL_EXPECT(second_flow_rows.front().direction_text == "A\xE2\x86\x92" "B");
     PFL_EXPECT(second_flow_rows.front().captured_length == udp_packet.size());
     PFL_EXPECT(second_flow_rows.front().original_length == udp_packet.size());
     PFL_EXPECT(second_flow_rows.front().payload_length == 0);
@@ -119,6 +120,26 @@ void run_query_tests() {
     PFL_EXPECT(packet->byte_offset == 40 + tcp_packet.size() + 16);
 
     PFL_EXPECT(!session.find_packet(999).has_value());
+
+    const auto packet_ab = make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 40000, 80);
+    const auto packet_ba = make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 2), ipv4(10, 1, 0, 1), 80, 40000);
+    const auto direction_path = write_temp_pcap(
+        "pfl_query_direction.pcap",
+        make_classic_pcap({{100, packet_ab}, {200, packet_ba}})
+    );
+
+    CaptureSession direction_session {};
+    PFL_EXPECT(direction_session.open_capture(direction_path));
+    const auto direction_rows = direction_session.list_flows();
+    PFL_EXPECT(direction_rows.size() == 1);
+    const auto packet_rows = direction_session.list_flow_packets(0);
+    PFL_EXPECT(packet_rows.size() == 2);
+    PFL_EXPECT(packet_rows[0].packet_index == 0);
+    PFL_EXPECT(packet_rows[1].packet_index == 1);
+
+    const bool forward_is_a_to_b = direction_rows[0].address_a == "10.1.0.1" && direction_rows[0].port_a == 40000;
+    PFL_EXPECT(packet_rows[0].direction_text == (forward_is_a_to_b ? "A\xE2\x86\x92" "B" : "B\xE2\x86\x92" "A"));
+    PFL_EXPECT(packet_rows[1].direction_text == (forward_is_a_to_b ? "B\xE2\x86\x92" "A" : "A\xE2\x86\x92" "B"));
 
     const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(192, 168, 1, 10), ipv4(93, 184, 216, 34), 51515, 80, make_http_request_payload(), 0x18);
@@ -160,4 +181,5 @@ void run_query_tests() {
 }
 
 }  // namespace pfl::tests
+
 

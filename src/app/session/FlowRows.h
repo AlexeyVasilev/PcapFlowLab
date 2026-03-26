@@ -36,6 +36,7 @@ struct FlowRow {
 
 struct PacketRow {
     std::uint64_t packet_index {0};
+    std::string direction_text {};
     std::string timestamp_text {};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};

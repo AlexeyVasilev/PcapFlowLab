@@ -166,6 +166,7 @@ int main(int argc, char* argv[]) {
 
     const auto packet_index_model = packet_model->index(0, 0);
     UI_EXPECT(packet_index_model.isValid());
+    UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::PayloadLengthRole).toUInt() == make_http_request_payload().size());
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
 
@@ -207,3 +208,5 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+

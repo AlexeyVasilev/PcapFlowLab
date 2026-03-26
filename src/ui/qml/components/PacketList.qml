@@ -114,6 +114,13 @@ Frame {
             }
 
             Label {
+                text: "Direction"
+                font.bold: true
+                Layout.preferredWidth: 68
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Label {
                 text: "Time"
                 font.bold: true
                 Layout.preferredWidth: 126
@@ -168,6 +175,7 @@ Frame {
                 delegate: Rectangle {
                     required property int index
                     required property var packetIndex
+                    required property string directionText
                     required property string timestamp
                     required property int capturedLength
                     required property int originalLength
@@ -192,6 +200,13 @@ Frame {
                             text: packetIndex
                             Layout.preferredWidth: 70
                             horizontalAlignment: Text.AlignRight
+                        }
+
+                        Label {
+                            text: directionText
+                            Layout.preferredWidth: 68
+                            horizontalAlignment: Text.AlignHCenter
+                            font.family: "Consolas"
                         }
 
                         Label {

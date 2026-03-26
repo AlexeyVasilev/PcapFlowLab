@@ -23,6 +23,8 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
     switch (role) {
     case PacketIndexRole:
         return QVariant::fromValue(item.packet_index);
+    case DirectionTextRole:
+        return item.direction_text;
     case TimestampRole:
         return item.timestamp;
     case CapturedLengthRole:
@@ -41,6 +43,7 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
 QHash<int, QByteArray> PacketListModel::roleNames() const {
     return {
         {PacketIndexRole, "packetIndex"},
+        {DirectionTextRole, "directionText"},
         {TimestampRole, "timestamp"},
         {CapturedLengthRole, "capturedLength"},
         {OriginalLengthRole, "originalLength"},
@@ -67,6 +70,7 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
     for (const auto& row : rows) {
         items_.push_back(Item {
             .packet_index = static_cast<qulonglong>(row.packet_index),
+            .direction_text = QString::fromStdString(row.direction_text),
             .timestamp = QString::fromStdString(row.timestamp_text),
             .captured_length = row.captured_length,
             .original_length = row.original_length,

@@ -267,10 +267,13 @@ std::string format_endpoint(const EndpointKeyV6& endpoint) {
 constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
+constexpr std::string_view kDirectionAToB = "A\xE2\x86\x92" "B";
+constexpr std::string_view kDirectionBToA = "B\xE2\x86\x92" "A";
 
-PacketRow make_packet_row(const PacketRef& packet) {
+PacketRow make_packet_row(const PacketRef& packet, const std::string_view direction_text) {
     return PacketRow {
         .packet_index = packet.packet_index,
+        .direction_text = std::string {direction_text},
         .timestamp_text = format_packet_timestamp(packet),
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
@@ -591,17 +594,37 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
 }
 
 std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_index) const {
-    const auto packets = flow_packets(flow_index);
-    if (!packets.has_value()) {
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
         return {};
     }
 
     std::vector<PacketRow> rows {};
-    rows.reserve(packets->size());
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        const auto& connection = *connections[flow_index].ipv4;
+        rows.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
 
-    for (const auto& packet : *packets) {
-        rows.push_back(make_packet_row(packet));
+        for (const auto& packet : connection.flow_a.packets) {
+            rows.push_back(make_packet_row(packet, kDirectionAToB));
+        }
+        for (const auto& packet : connection.flow_b.packets) {
+            rows.push_back(make_packet_row(packet, kDirectionBToA));
+        }
+    } else {
+        const auto& connection = *connections[flow_index].ipv6;
+        rows.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+
+        for (const auto& packet : connection.flow_a.packets) {
+            rows.push_back(make_packet_row(packet, kDirectionAToB));
+        }
+        for (const auto& packet : connection.flow_b.packets) {
+            rows.push_back(make_packet_row(packet, kDirectionBToA));
+        }
     }
+
+    std::sort(rows.begin(), rows.end(), [](const PacketRow& left, const PacketRow& right) {
+        return left.packet_index < right.packet_index;
+    });
 
     return rows;
 }
@@ -660,6 +683,8 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
 
 
 
