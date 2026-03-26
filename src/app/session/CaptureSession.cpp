@@ -307,10 +307,14 @@ std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connectio
 }  // namespace
 
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
+    return open_capture(path, CaptureImportOptions {});
+}
+
+bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options) {
     CaptureImporter importer {};
     CaptureState imported_state {};
 
-    if (!importer.import_capture(path, imported_state)) {
+    if (!importer.import_capture(path, imported_state, options)) {
         capture_path_.clear();
         state_ = {};
         return false;
@@ -614,6 +618,8 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
 
 
 

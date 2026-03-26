@@ -59,6 +59,9 @@ add_library(
     src/core/index/ImportCheckpointReader.cpp
     src/core/decode/PacketDecoder.cpp
     src/core/services/PacketIngestor.cpp
+    src/core/services/CaptureImportProcessor.cpp
+    src/core/services/FastCaptureImporter.cpp
+    src/core/services/DeepCaptureImporter.cpp
     src/core/services/CaptureImporter.cpp
     src/core/services/ChunkedCaptureImporter.cpp
     src/core/services/FlowExportService.cpp
@@ -180,6 +183,7 @@ if(BUILD_TESTING)
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
+        tests/unit/ImportModeTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/PacketPayloadTests.cpp
@@ -206,6 +210,7 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
 
 
 

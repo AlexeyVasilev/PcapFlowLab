@@ -15,7 +15,7 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 ## Design Principles
 
 - Flow-first design: connection lookup uses canonical bidirectional connection keys, while per-direction packet grouping keeps exact directional flow keys.
-- Runtime ingestion path: import auto-detects classic PCAP vs PCAPNG, decodes packet metadata, and ingests it into IPv4 and IPv6 connection tables grouped as Flow A and Flow B.
+- Runtime ingestion path: import auto-detects classic PCAP vs PCAPNG, decodes packet metadata, and ingests it into IPv4 and IPv6 connection tables grouped as Flow A and Flow B.`r`n- Import modes: the project now distinguishes a fast import mode and a deep import mode. Fast mode is the default path and is kept simple for responsiveness and minimal branching. Deep mode is a separate architectural integration point for future richer analyzers and reassembly, but currently remains functionally close to fast mode.
 - Current import scope: classic PCAP is supported directly, and current PCAPNG support is focused on SHB + IDB + EPB with Ethernet-oriented packet ingestion. Richer block and option handling will come later.
 - Current decode scope: the decode path supports Ethernet II with up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and safe traversal of common IPv6 extension headers. Richer layered decode will come later.
 - Packet byte access: `PacketRef` stores packet-data offsets, timestamps, transport payload length, and TCP flags from the original capture file, and raw packet bytes are read lazily from the capture on demand.
@@ -27,5 +27,6 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Chunked import v1: partial imports can be checkpointed by storing the current `CaptureState` together with source validation metadata, processed-packet count, and the next reader offset. This is a first step toward large-capture workflows, not yet a disk-backed merge engine.
 
 This separation keeps the core reusable across future CLI and desktop frontends while supporting large captures with predictable memory use.
+
 
 

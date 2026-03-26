@@ -8,12 +8,14 @@
 #include "app/session/FlowRows.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
+#include "core/services/CaptureImporter.h"
 
 namespace pfl {
 
 class CaptureSession {
 public:
     bool open_capture(const std::filesystem::path& path);
+    bool open_capture(const std::filesystem::path& path, const CaptureImportOptions& options);
     bool open_input(const std::filesystem::path& path);
     bool save_index(const std::filesystem::path& index_path) const;
     bool load_index(const std::filesystem::path& index_path);

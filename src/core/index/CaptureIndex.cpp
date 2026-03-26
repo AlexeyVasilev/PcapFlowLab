@@ -13,6 +13,20 @@ namespace {
 constexpr std::array<std::uint8_t, 4> kClassicPcapLittleEndianMagicBytes {0xd4U, 0xc3U, 0xb2U, 0xa1U};
 constexpr std::array<std::uint8_t, 4> kPcapNgSectionHeaderMagicBytes {0x0aU, 0x0dU, 0x0dU, 0x0aU};
 
+[[nodiscard]] std::int64_t to_serialized_file_time(const std::filesystem::file_time_type& value) {
+    return static_cast<std::int64_t>(value.time_since_epoch().count());
+}
+
+[[nodiscard]] std::string lowercase_extension(const std::filesystem::path& path) {
+    auto extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
+    return extension;
+}
+
+}  // namespace
+
 CaptureSourceFormat detect_capture_source_format(const std::filesystem::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream.is_open()) {
@@ -35,20 +49,6 @@ CaptureSourceFormat detect_capture_source_format(const std::filesystem::path& pa
 
     return CaptureSourceFormat::unknown;
 }
-
-[[nodiscard]] std::int64_t to_serialized_file_time(const std::filesystem::file_time_type& value) {
-    return static_cast<std::int64_t>(value.time_since_epoch().count());
-}
-
-[[nodiscard]] std::string lowercase_extension(const std::filesystem::path& path) {
-    auto extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    return extension;
-}
-
-}  // namespace
 
 bool validate_index_magic(const std::filesystem::path& index_path) {
     std::ifstream stream(index_path, std::ios::binary);

@@ -1,13 +1,9 @@
 #include "core/services/ChunkedCaptureImporter.h"
 
-#include "core/decode/PacketDecoder.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/index/ImportCheckpointWriter.h"
-#include "core/io/PcapNgReader.h"
-#include "core/io/PcapReader.h"
-#include "core/services/FlowHintService.h"
-#include "core/services/PacketIngestor.h"
+#include "core/services/CaptureImportProcessor.h"
 
 namespace pfl {
 
@@ -24,10 +20,8 @@ template <typename Reader>
 ChunkedImportStatus import_with_reader(Reader& reader,
                                        ImportCheckpoint& checkpoint,
                                        const std::filesystem::path& checkpoint_path,
-                                       std::size_t max_packets_per_chunk) {
-    PacketDecoder decoder {};
-    PacketIngestor ingestor {checkpoint.state};
-    FlowHintService hint_service {};
+                                       std::size_t max_packets_per_chunk,
+                                       const CaptureImportProcessor& processor) {
     std::size_t chunk_packet_count {0};
 
     while (chunk_packet_count < max_packets_per_chunk) {
@@ -44,18 +38,7 @@ ChunkedImportStatus import_with_reader(Reader& reader,
 
         ++checkpoint.packets_processed;
         ++chunk_packet_count;
-
-        const auto decoded = decoder.decode_ethernet(*packet);
-        const auto packet_bytes = std::span<const std::uint8_t>(packet->bytes.data(), packet->bytes.size());
-        if (decoded.ipv4.has_value()) {
-            ingestor.ingest(*decoded.ipv4);
-            auto& connection = checkpoint.state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
-            connection.apply_hints(hint_service.detect(packet_bytes, decoded.ipv4->flow_key));
-        } else if (decoded.ipv6.has_value()) {
-            ingestor.ingest(*decoded.ipv6);
-            auto& connection = checkpoint.state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
-            connection.apply_hints(hint_service.detect(packet_bytes, decoded.ipv6->flow_key));
-        }
+        processor.process_packet(*packet, checkpoint.state);
     }
 
     checkpoint.next_input_offset = reader.next_input_offset();
@@ -75,6 +58,9 @@ ChunkedImportStatus import_from_checkpoint(const std::filesystem::path& checkpoi
         return ChunkedImportStatus::failed;
     }
 
+    // Chunked import remains aligned with the current fast pipeline.
+    CaptureImportProcessor processor {};
+
     switch (checkpoint.source_info.format) {
     case CaptureSourceFormat::classic_pcap: {
         PcapReader reader {};
@@ -86,7 +72,7 @@ ChunkedImportStatus import_from_checkpoint(const std::filesystem::path& checkpoi
             return ChunkedImportStatus::failed;
         }
 
-        return import_with_reader(reader, checkpoint, checkpoint_path, max_packets_per_chunk);
+        return import_with_reader(reader, checkpoint, checkpoint_path, max_packets_per_chunk, processor);
     }
     case CaptureSourceFormat::pcapng: {
         PcapNgReader reader {};
@@ -94,7 +80,7 @@ ChunkedImportStatus import_from_checkpoint(const std::filesystem::path& checkpoi
             return ChunkedImportStatus::failed;
         }
 
-        return import_with_reader(reader, checkpoint, checkpoint_path, max_packets_per_chunk);
+        return import_with_reader(reader, checkpoint, checkpoint_path, max_packets_per_chunk, processor);
     }
     default:
         return ChunkedImportStatus::failed;
@@ -154,3 +140,4 @@ bool ChunkedCaptureImporter::finalize_to_index(const std::filesystem::path& chec
 }
 
 }  // namespace pfl
+
