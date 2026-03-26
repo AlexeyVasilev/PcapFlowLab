@@ -19,6 +19,64 @@ Frame {
         packetListView.currentIndex = root.packetModel.rowForPacketIndex(root.selectedPacketIndex)
     }
 
+    function flagTone(flagsText, payloadLength) {
+        if (!flagsText || flagsText.length === 0) {
+            return "default"
+        }
+
+        if ((flagsText === "ACK" || flagsText === "A") && payloadLength === 0) {
+            return "default"
+        }
+
+        if (flagsText.indexOf("RST") >= 0 || flagsText === "R") {
+            return "rst"
+        }
+
+        if (flagsText.indexOf("SYN") >= 0 || flagsText === "S" || flagsText === "SA") {
+            return "syn"
+        }
+
+        if (flagsText.indexOf("FIN") >= 0 || flagsText === "F") {
+            return "fin"
+        }
+
+        return "default"
+    }
+
+    function flagBackgroundColor(flagsText, payloadLength, isSelected) {
+        if (isSelected) {
+            return "transparent"
+        }
+
+        switch (flagTone(flagsText, payloadLength)) {
+        case "syn":
+            return "#e8f5ee"
+        case "fin":
+            return "#eef2f7"
+        case "rst":
+            return "#fdecec"
+        default:
+            return "transparent"
+        }
+    }
+
+    function flagTextColor(flagsText, payloadLength, isSelected) {
+        if (isSelected) {
+            return "#0f172a"
+        }
+
+        switch (flagTone(flagsText, payloadLength)) {
+        case "syn":
+            return "#2f6f4f"
+        case "fin":
+            return "#475569"
+        case "rst":
+            return "#9f1239"
+        default:
+            return "#0f172a"
+        }
+    }
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -116,9 +174,11 @@ Frame {
                     required property int payloadLength
                     required property string tcpFlagsText
 
+                    readonly property bool selected: index === packetListView.currentIndex
+
                     width: packetListView.width
                     height: 38
-                    color: index === packetListView.currentIndex
+                    color: selected
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
@@ -158,11 +218,24 @@ Frame {
                             horizontalAlignment: Text.AlignRight
                         }
 
-                        Label {
-                            text: tcpFlagsText
+                        Rectangle {
                             Layout.fillWidth: true
-                            font.family: "Consolas"
-                            elide: Text.ElideRight
+                            implicitHeight: 24
+                            radius: 4
+                            color: root.flagBackgroundColor(tcpFlagsText, payloadLength, selected)
+                            border.width: color === "transparent" ? 0 : 1
+                            border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                verticalAlignment: Text.AlignVCenter
+                                text: tcpFlagsText
+                                font.family: "Consolas"
+                                color: root.flagTextColor(tcpFlagsText, payloadLength, selected)
+                                elide: Text.ElideRight
+                            }
                         }
                     }
 
@@ -185,4 +258,3 @@ Frame {
         }
     }
 }
-
