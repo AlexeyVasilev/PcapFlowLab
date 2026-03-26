@@ -7,6 +7,28 @@ Frame {
 
     property var packetDetailsModel: null
 
+    component TextPane: Rectangle {
+        property string viewText: ""
+        property bool monospace: false
+
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+        radius: 6
+
+        ScrollView {
+            anchors.fill: parent
+            anchors.margins: 1
+            clip: true
+
+            TextArea {
+                readOnly: true
+                wrapMode: monospace ? TextEdit.NoWrap : TextEdit.Wrap
+                font.family: monospace ? "Consolas" : ""
+                text: viewText
+            }
+        }
+    }
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -30,7 +52,7 @@ Frame {
         }
 
         TabBar {
-            id: tabs
+            id: topTabs
             Layout.fillWidth: true
 
             TabButton {
@@ -38,79 +60,70 @@ Frame {
             }
 
             TabButton {
-                text: "Hex"
+                text: "Raw"
             }
 
             TabButton {
-                text: "Payload"
+                text: "Protocol"
+                enabled: false
             }
         }
 
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: tabs.currentIndex
+            currentIndex: topTabs.currentIndex
+
+            TextPane {
+                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                    ? root.packetDetailsModel.summaryText
+                    : "No packet selected"
+            }
 
             Rectangle {
-                color: "#f8fafc"
-                border.color: "#e2e8f0"
-                radius: 6
+                color: "transparent"
 
-                ScrollView {
+                ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 1
-                    clip: true
+                    spacing: 10
 
-                    TextArea {
-                        readOnly: true
-                        wrapMode: TextEdit.Wrap
-                        text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                            ? root.packetDetailsModel.summaryText
-                            : "No packet selected"
+                    TabBar {
+                        id: rawTabs
+                        Layout.fillWidth: true
+
+                        TabButton {
+                            text: "Hex"
+                        }
+
+                        TabButton {
+                            text: "Payload"
+                        }
+                    }
+
+                    StackLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        currentIndex: rawTabs.currentIndex
+
+                        TextPane {
+                            monospace: true
+                            viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                                ? root.packetDetailsModel.hexText
+                                : "No packet selected"
+                        }
+
+                        TextPane {
+                            monospace: true
+                            viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                                ? root.packetDetailsModel.payloadText
+                                : "No packet selected"
+                        }
                     }
                 }
             }
 
-            Rectangle {
-                color: "#f8fafc"
-                border.color: "#e2e8f0"
-                radius: 6
-
-                ScrollView {
-                    anchors.fill: parent
-                    anchors.margins: 1
-                    clip: true
-
-                    TextArea {
-                        readOnly: true
-                        wrapMode: TextEdit.NoWrap
-                        font.family: "Consolas"
-                        text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                            ? root.packetDetailsModel.hexText
-                            : "No packet selected"
-                    }
-                }
-            }
-
-            Rectangle {
-                color: "#f8fafc"
-                border.color: "#e2e8f0"
-                radius: 6
-
-                ScrollView {
-                    anchors.fill: parent
-                    anchors.margins: 1
-                    clip: true
-
-                    TextArea {
-                        readOnly: true
-                        wrapMode: TextEdit.NoWrap
-                        font.family: "Consolas"
-                        text: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                            ? root.packetDetailsModel.payloadText
-                            : "No packet selected"
-                    }
-                }
+            TextPane {
+                viewText: "Protocol details will appear here"
             }
         }
     }
