@@ -539,6 +539,7 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     const auto details = session_.read_packet_details(*packet);
     const std::string hex = session_.read_packet_hex_dump(*packet);
     const std::string payload_hex = session_.read_packet_payload_hex_dump(*packet);
+    const std::string protocol_text = session_.read_packet_protocol_details_text(*packet);
 
     if (!details.has_value()) {
         packet_details_model_.clear();
@@ -549,6 +550,7 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     packet_details_model_.setPacketDetailsText(buildPacketSummary(*details));
     packet_details_model_.setHexText(QString::fromStdString(hex));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payload_hex));
+    packet_details_model_.setProtocolText(QString::fromStdString(protocol_text));
     emit selectedPacketIndexChanged();
 }
 
@@ -655,3 +657,6 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+

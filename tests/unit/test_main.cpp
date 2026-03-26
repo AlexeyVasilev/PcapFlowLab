@@ -15,6 +15,7 @@ void run_cli_import_mode_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
 void run_packet_payload_tests();
+void run_packet_protocol_details_tests();
 void run_packet_metadata_tests();
 void run_flow_hints_tests();
 void run_flow_hints_raw_fixtures_tests();
@@ -52,6 +53,7 @@ int main() {
         pfl::tests::run_packet_access_tests();
         pfl::tests::run_packet_details_tests();
         pfl::tests::run_packet_payload_tests();
+        pfl::tests::run_packet_protocol_details_tests();
         pfl::tests::run_packet_metadata_tests();
         pfl::tests::run_flow_hints_tests();
         pfl::tests::run_flow_hints_raw_fixtures_tests();

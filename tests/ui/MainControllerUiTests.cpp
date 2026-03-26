@@ -174,6 +174,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model != nullptr);
     UI_EXPECT(details_model->hasPacket());
     UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
+    UI_EXPECT(!details_model->protocolText().isEmpty());
 
     controller.setCurrentTabIndex(1);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));
@@ -192,6 +193,17 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.flowFilterText() == QStringLiteral("53"));
     UI_EXPECT(flow_model->rowCount() == 1);
     UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("DNS"));
+
+    const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
+    MainController deep_controller {};
+    deep_controller.setCaptureOpenMode(kCliDeepImportModeIndex);
+    UI_EXPECT(deep_controller.openCaptureFile(QString::fromStdWString(tls_capture_path.wstring())));
+    deep_controller.setSelectedFlowIndex(0);
+    deep_controller.setSelectedPacketIndex(0);
+    auto* deep_details_model = qobject_cast<PacketDetailsViewModel*>(deep_controller.packetDetailsModel());
+    UI_EXPECT(deep_details_model != nullptr);
+    UI_EXPECT(deep_details_model->protocolText().contains(QStringLiteral("TLS")));
+    UI_EXPECT(deep_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
 
     return 0;
 }

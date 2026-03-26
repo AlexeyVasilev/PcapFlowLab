@@ -15,6 +15,7 @@
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
+#include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
 
@@ -261,6 +262,10 @@ std::string format_endpoint(const EndpointKeyV6& endpoint) {
     return builder.str();
 }
 
+constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
+constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
+constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
+
 PacketRow make_packet_row(const PacketRef& packet) {
     return PacketRow {
         .packet_index = packet.packet_index,
@@ -317,11 +322,15 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     if (!importer.import_capture(path, imported_state, options)) {
         capture_path_.clear();
         state_ = {};
+        import_mode_ = ImportMode::fast;
+        deep_protocol_details_enabled_ = false;
         return false;
     }
 
     capture_path_ = path;
     state_ = imported_state;
+    import_mode_ = options.mode;
+    deep_protocol_details_enabled_ = (options.mode == ImportMode::deep);
     return true;
 }
 
@@ -350,11 +359,15 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
     if (!reader.read(index_path, loaded_state, loaded_capture_path)) {
         capture_path_.clear();
         state_ = {};
+        import_mode_ = ImportMode::fast;
+        deep_protocol_details_enabled_ = false;
         return false;
     }
 
     capture_path_ = loaded_capture_path;
     state_ = loaded_state;
+    import_mode_ = ImportMode::fast;
+    deep_protocol_details_enabled_ = false;
     return true;
 }
 
@@ -536,6 +549,24 @@ std::string CaptureSession::read_packet_payload_hex_dump(const PacketRef& packet
     return hex_dump_service.format(payload_bytes);
 }
 
+std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& packet) const {
+    if (!deep_protocol_details_enabled_) {
+        return std::string {kFastModeProtocolDetailsMessage};
+    }
+
+    const auto bytes = read_packet_data(packet);
+    if (bytes.empty()) {
+        return std::string {kUnavailableProtocolDetailsMessage};
+    }
+
+    TlsPacketProtocolAnalyzer analyzer {};
+    const auto details = analyzer.analyze(bytes);
+    if (details.has_value()) {
+        return *details;
+    }
+
+    return std::string {kNoProtocolDetailsMessage};
+}
 std::vector<FlowRow> CaptureSession::list_flows() const {
     const auto connections = list_connections(state_);
     std::vector<FlowRow> rows {};
@@ -618,6 +649,14 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
+
 
 
 

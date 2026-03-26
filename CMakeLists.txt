@@ -67,6 +67,7 @@ add_library(
     src/core/services/FlowExportService.cpp
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
+    src/core/services/TlsPacketProtocolAnalyzer.cpp
     src/core/services/FlowHintService.cpp
     src/core/services/HexDumpService.cpp
     src/app/session/CaptureSession.cpp
@@ -188,6 +189,7 @@ if(BUILD_TESTING)
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/PacketPayloadTests.cpp
+        tests/unit/PacketProtocolDetailsTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/ProtocolSummaryTests.cpp
@@ -211,6 +213,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

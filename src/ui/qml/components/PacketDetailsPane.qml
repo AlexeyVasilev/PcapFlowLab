@@ -65,7 +65,6 @@ Frame {
 
             TabButton {
                 text: "Protocol"
-                enabled: false
             }
         }
 
@@ -123,7 +122,9 @@ Frame {
             }
 
             TextPane {
-                viewText: "Protocol details will appear here"
+                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                    ? root.packetDetailsModel.protocolText
+                    : "No packet selected"
             }
         }
     }
