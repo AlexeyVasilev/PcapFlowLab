@@ -15,6 +15,8 @@
 #include "core/services/HexDumpService.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
+#include "core/services/DnsPacketProtocolAnalyzer.h"
+#include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -559,10 +561,19 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return std::string {kUnavailableProtocolDetailsMessage};
     }
 
-    TlsPacketProtocolAnalyzer analyzer {};
-    const auto details = analyzer.analyze(bytes);
-    if (details.has_value()) {
-        return *details;
+    TlsPacketProtocolAnalyzer tls_analyzer {};
+    if (const auto tls_details = tls_analyzer.analyze(bytes); tls_details.has_value()) {
+        return *tls_details;
+    }
+
+    DnsPacketProtocolAnalyzer dns_analyzer {};
+    if (const auto dns_details = dns_analyzer.analyze(bytes); dns_details.has_value()) {
+        return *dns_details;
+    }
+
+    HttpPacketProtocolAnalyzer http_analyzer {};
+    if (const auto http_details = http_analyzer.analyze(bytes); http_details.has_value()) {
+        return *http_details;
     }
 
     return std::string {kNoProtocolDetailsMessage};
@@ -649,6 +660,8 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
 
 
 

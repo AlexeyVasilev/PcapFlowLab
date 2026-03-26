@@ -68,6 +68,8 @@ add_library(
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
     src/core/services/TlsPacketProtocolAnalyzer.cpp
+    src/core/services/DnsPacketProtocolAnalyzer.cpp
+    src/core/services/HttpPacketProtocolAnalyzer.cpp
     src/core/services/FlowHintService.cpp
     src/core/services/HexDumpService.cpp
     src/app/session/CaptureSession.cpp
@@ -213,6 +215,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

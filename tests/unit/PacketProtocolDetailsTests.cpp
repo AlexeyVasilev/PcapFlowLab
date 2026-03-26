@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
@@ -28,7 +29,7 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
 void run_packet_protocol_details_tests() {
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
         const auto packet = require_packet(session, 0);
         PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kFastModeMessage);
     }
@@ -46,11 +47,65 @@ void run_packet_protocol_details_tests() {
     }
 
     {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("DNS") != std::string::npos);
+        PFL_EXPECT(text.find("Message Type: Query") != std::string::npos);
+        PFL_EXPECT(text.find("QName: gsp85-ssl.ls.apple.com") != std::string::npos);
+        PFL_EXPECT(text.find("QType: HTTPS (65)") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("HTTP") != std::string::npos);
+        PFL_EXPECT(text.find("Message Type: Request") != std::string::npos);
+        PFL_EXPECT(text.find("Method: GET") != std::string::npos);
+        PFL_EXPECT(text.find("Path: /components/com_virtuemart/assets/css/vm-ltr-common.css?vmver=8dcacf73") != std::string::npos);
+        PFL_EXPECT(text.find("Version: HTTP/1.1") != std::string::npos);
+        PFL_EXPECT(text.find("Host: www.kresla-darom.ru") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_answer_2.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("HTTP") != std::string::npos);
+        PFL_EXPECT(text.find("Message Type: Response") != std::string::npos);
+        PFL_EXPECT(text.find("Version: HTTP/1.1") != std::string::npos);
+        PFL_EXPECT(text.find("Status Code: 200") != std::string::npos);
+    }
+
+    {
         const auto packet_bytes = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
             ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80,
             std::vector<std::uint8_t> {'G', 'E', 'T', ' ', '/', ' '}, 0x18);
         const auto capture_path = write_temp_pcap(
             "pfl_protocol_http_only.pcap",
+            make_classic_pcap({{100, packet_bytes}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
+    }
+
+    {
+        const std::vector<std::uint8_t> truncated_dns {
+            0x12, 0x34, 0x01, 0x00, 0x00, 0x01,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 'w', 'w', 'w', 0x00,
+        };
+        const auto packet_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 1), ipv4(8, 8, 8, 8), 53000, 53, truncated_dns);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_dns_truncated.pcap",
             make_classic_pcap({{100, packet_bytes}})
         );
 
