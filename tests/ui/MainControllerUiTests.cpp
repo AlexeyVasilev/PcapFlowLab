@@ -1,12 +1,15 @@
+#include <filesystem>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include <QApplication>
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "cli/CliImportMode.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
@@ -76,9 +79,25 @@ int main(int argc, char* argv[]) {
     );
 
     MainController controller {};
+    UI_EXPECT(controller.captureOpenMode() == kCliFastImportModeIndex);
+    controller.setCaptureOpenMode(kCliDeepImportModeIndex);
+    UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
     UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
+
+    CaptureSession index_session {};
+    UI_EXPECT(index_session.open_capture(capture_path));
+    const auto index_path = std::filesystem::temp_directory_path() / "pfl_ui_mode_test.idx";
+    std::error_code remove_error {};
+    std::filesystem::remove(index_path, remove_error);
+    UI_EXPECT(index_session.save_index(index_path));
+
+    controller.setCaptureOpenMode(kCliDeepImportModeIndex);
+    UI_EXPECT(controller.openIndexFile(QString::fromStdWString(index_path.wstring())));
+    UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
+    UI_EXPECT(controller.flowCount() == 3U);
+    UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
 
     auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(flow_model != nullptr);
@@ -176,5 +195,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-

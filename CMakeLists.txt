@@ -184,6 +184,7 @@ if(BUILD_TESTING)
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
         tests/unit/ImportModeTests.cpp
+        tests/unit/CliImportModeTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/PacketPayloadTests.cpp
@@ -210,6 +211,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

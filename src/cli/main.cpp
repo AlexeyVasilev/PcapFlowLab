@@ -12,6 +12,8 @@
 
 #include "app/session/CaptureSession.h"
 #include "cli/CliFormatting.h"
+#include "cli/CliImportMode.h"
+#include "core/index/CaptureIndex.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/services/ChunkedCaptureImporter.h"
 
@@ -36,6 +38,13 @@ struct FinalizeImportArgs {
     std::string output_path {};
 };
 
+struct ParsedModeArgs {
+    pfl::CaptureImportOptions options {};
+    bool mode_specified {false};
+    bool valid {true};
+    std::vector<std::string_view> remaining_args {};
+};
+
 struct PrintableFlowRow {
     std::size_t index {0};
     std::string family {};
@@ -49,51 +58,73 @@ struct PrintableFlowRow {
 void print_usage() {
     std::cout
         << "Usage:\n"
-        << "  pcap-flow-lab summary <input>\n"
-        << "  pcap-flow-lab flows <input>\n"
-        << "  pcap-flow-lab inspect-packet <input> --packet-index <N>\n"
-        << "  pcap-flow-lab hex <input> --packet-index <N>\n"
-        << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap>\n"
-        << "  pcap-flow-lab save-index <capture-file> --out <index-file>\n"
+        << "  pcap-flow-lab summary <input> [--mode fast|deep]\n"
+        << "  pcap-flow-lab flows <input> [--mode fast|deep]\n"
+        << "  pcap-flow-lab inspect-packet <input> --packet-index <N> [--mode fast|deep]\n"
+        << "  pcap-flow-lab hex <input> --packet-index <N> [--mode fast|deep]\n"
+        << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap> [--mode fast|deep]\n"
+        << "  pcap-flow-lab save-index <capture-file> --out <index-file> [--mode fast|deep]\n"
         << "  pcap-flow-lab load-index-summary <index-file>\n"
         << "  pcap-flow-lab chunked-import <capture-file> --checkpoint <checkpoint-file> --max-packets <N>\n"
         << "  pcap-flow-lab resume-import --checkpoint <checkpoint-file> --max-packets <N>\n"
         << "  pcap-flow-lab finalize-import --checkpoint <checkpoint-file> --out <index-file>\n";
 }
 
-std::optional<std::uint64_t> parse_packet_index(int argc, char* argv[]) {
-    if (argc != 5) {
-        return std::nullopt;
+ParsedModeArgs parse_mode_args(int argc, char* argv[], int start_index) {
+    ParsedModeArgs result {};
+
+    for (int index = start_index; index < argc; ++index) {
+        const std::string_view argument = argv[index];
+        if (argument == "--mode") {
+            if (result.mode_specified || index + 1 >= argc) {
+                result.valid = false;
+                return result;
+            }
+
+            const auto parsed_mode = pfl::parse_import_mode_value(argv[index + 1]);
+            if (!parsed_mode.has_value()) {
+                result.valid = false;
+                return result;
+            }
+
+            result.options.mode = *parsed_mode;
+            result.mode_specified = true;
+            ++index;
+            continue;
+        }
+
+        result.remaining_args.push_back(argument);
     }
 
-    if (std::string_view(argv[3]) != "--packet-index") {
+    return result;
+}
+
+std::optional<std::uint64_t> parse_packet_index(const std::vector<std::string_view>& args) {
+    if (args.size() != 2 || args[0] != "--packet-index") {
         return std::nullopt;
     }
 
     try {
-        return static_cast<std::uint64_t>(std::stoull(argv[4]));
+        return static_cast<std::uint64_t>(std::stoull(std::string {args[1]}));
     } catch (const std::exception&) {
         return std::nullopt;
     }
 }
 
-std::optional<ExportArgs> parse_export_args(int argc, char* argv[]) {
-    if (argc != 7) {
+std::optional<ExportArgs> parse_export_args(const std::vector<std::string_view>& args) {
+    if (args.size() != 4) {
         return std::nullopt;
     }
 
     std::optional<std::size_t> flow_index {};
     std::string output_path {};
 
-    for (int index = 3; index < argc; index += 2) {
-        const std::string_view option = argv[index];
-        if (index + 1 >= argc) {
-            return std::nullopt;
-        }
+    for (std::size_t index = 0; index < args.size(); index += 2) {
+        const auto option = args[index];
 
         if (option == "--flow-index") {
             try {
-                flow_index = static_cast<std::size_t>(std::stoull(argv[index + 1]));
+                flow_index = static_cast<std::size_t>(std::stoull(std::string {args[index + 1]}));
             } catch (const std::exception&) {
                 return std::nullopt;
             }
@@ -101,7 +132,7 @@ std::optional<ExportArgs> parse_export_args(int argc, char* argv[]) {
         }
 
         if (option == "--out") {
-            output_path = argv[index + 1];
+            output_path = std::string {args[index + 1]};
             continue;
         }
 
@@ -118,13 +149,13 @@ std::optional<ExportArgs> parse_export_args(int argc, char* argv[]) {
     };
 }
 
-std::optional<OutputPathArgs> parse_output_path_args(int argc, char* argv[]) {
-    if (argc != 5 || std::string_view(argv[3]) != "--out") {
+std::optional<OutputPathArgs> parse_output_path_args(const std::vector<std::string_view>& args) {
+    if (args.size() != 2 || args[0] != "--out") {
         return std::nullopt;
     }
 
     return OutputPathArgs {
-        .output_path = argv[4],
+        .output_path = std::string {args[1]},
     };
 }
 
@@ -206,17 +237,31 @@ std::optional<FinalizeImportArgs> parse_finalize_import_args(int argc, char* arg
     };
 }
 
-bool open_analysis_input(const char* input, pfl::CaptureSession& session) {
-    if (session.open_input(input)) {
+bool open_analysis_input(const char* input, const ParsedModeArgs& mode_args, pfl::CaptureSession& session) {
+    if (pfl::looks_like_index_file(input)) {
+        if (mode_args.mode_specified) {
+            std::cerr << "Import mode is only supported for capture inputs.\n";
+            return false;
+        }
+
+        if (session.open_input(input)) {
+            return true;
+        }
+
+        std::cerr << "Failed to open input: " << input << '\n';
+        return false;
+    }
+
+    if (session.open_capture(input, mode_args.options)) {
         return true;
     }
 
-    std::cerr << "Failed to open input: " << input << '\n';
+    std::cerr << "Failed to open capture: " << input << '\n';
     return false;
 }
 
-bool open_capture_only(const char* capture_file, pfl::CaptureSession& session) {
-    if (session.open_capture(capture_file)) {
+bool open_capture_only(const char* capture_file, const ParsedModeArgs& mode_args, pfl::CaptureSession& session) {
+    if (session.open_capture(capture_file, mode_args.options)) {
         return true;
     }
 
@@ -425,14 +470,20 @@ int main(int argc, char* argv[]) {
         return print_chunked_result(status, checkpoint_args->checkpoint_path);
     }
 
+    const auto mode_args = parse_mode_args(argc, argv, 3);
+    if (!mode_args.valid) {
+        print_usage();
+        return 1;
+    }
+
     if (command == "summary") {
-        if (argc != 3) {
+        if (!mode_args.remaining_args.empty()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, session)) {
+        if (!open_analysis_input(input, mode_args, session)) {
             return 1;
         }
 
@@ -456,13 +507,13 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "flows") {
-        if (argc != 3) {
+        if (!mode_args.remaining_args.empty()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, session)) {
+        if (!open_analysis_input(input, mode_args, session)) {
             return 1;
         }
 
@@ -486,14 +537,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "inspect-packet") {
-        const auto packet_index = parse_packet_index(argc, argv);
+        const auto packet_index = parse_packet_index(mode_args.remaining_args);
         if (!packet_index.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, session)) {
+        if (!open_analysis_input(input, mode_args, session)) {
             return 1;
         }
 
@@ -514,14 +565,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "hex") {
-        const auto packet_index = parse_packet_index(argc, argv);
+        const auto packet_index = parse_packet_index(mode_args.remaining_args);
         if (!packet_index.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, session)) {
+        if (!open_analysis_input(input, mode_args, session)) {
             return 1;
         }
 
@@ -542,14 +593,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "export-flow") {
-        const auto export_args = parse_export_args(argc, argv);
+        const auto export_args = parse_export_args(mode_args.remaining_args);
         if (!export_args.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, session)) {
+        if (!open_analysis_input(input, mode_args, session)) {
             return 1;
         }
 
@@ -563,14 +614,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "save-index") {
-        const auto output_args = parse_output_path_args(argc, argv);
+        const auto output_args = parse_output_path_args(mode_args.remaining_args);
         if (!output_args.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_capture_only(input, session)) {
+        if (!open_capture_only(input, mode_args, session)) {
             return 1;
         }
 
@@ -586,4 +637,3 @@ int main(int argc, char* argv[]) {
     print_usage();
     return 1;
 }
-

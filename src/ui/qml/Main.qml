@@ -25,6 +25,15 @@ ApplicationWindow {
                 onClicked: mainController.browseCaptureFile()
             }
 
+            ComboBox {
+                model: ["Fast", "Deep"]
+                currentIndex: mainController.captureOpenMode
+                onActivated: function(index) {
+                    mainController.captureOpenMode = index
+                }
+                Layout.preferredWidth: 96
+            }
+
             Button {
                 text: "Open Index"
                 onClicked: mainController.browseIndexFile()
@@ -118,3 +127,4 @@ ApplicationWindow {
         }
     }
 }
+

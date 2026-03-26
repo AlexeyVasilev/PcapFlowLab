@@ -8,6 +8,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include "cli/CliImportMode.h"
+
 namespace pfl {
 
 namespace {
@@ -266,6 +268,7 @@ QString buildPacketSummary(const PacketDetails& details) {
 
 MainController::MainController(QObject* parent)
     : QObject(parent)
+    , capture_open_mode_(kCliFastImportModeIndex)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
 }
@@ -336,6 +339,10 @@ qulonglong MainController::ipv4FlowCount() const noexcept {
 
 qulonglong MainController::ipv6FlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.flow_count);
+}
+
+int MainController::captureOpenMode() const noexcept {
+    return capture_open_mode_;
 }
 
 int MainController::currentTabIndex() const noexcept {
@@ -445,7 +452,10 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
 
     const std::filesystem::path filesystem_path = std::filesystem::path {trimmed_path.toStdWString()};
     setLastDirectoryFromPath(filesystem_path);
-    const bool opened = asIndex ? session_.load_index(filesystem_path) : session_.open_capture(filesystem_path);
+    const auto import_options = capture_import_options_for_ui_index(capture_open_mode_);
+    const bool opened = asIndex
+        ? session_.load_index(filesystem_path)
+        : session_.open_capture(filesystem_path, import_options);
 
     if (!opened) {
         setOpenErrorText(asIndex
@@ -464,6 +474,19 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     emit flowFilterTextChanged();
     emit flowSortChanged();
     return true;
+}
+
+void MainController::setCaptureOpenMode(const int mode) {
+    const int normalized_mode = (mode == kCliDeepImportModeIndex)
+        ? kCliDeepImportModeIndex
+        : kCliFastImportModeIndex;
+
+    if (capture_open_mode_ == normalized_mode) {
+        return;
+    }
+
+    capture_open_mode_ = normalized_mode;
+    emit captureOpenModeChanged();
 }
 
 void MainController::setCurrentTabIndex(const int index) {
@@ -632,7 +655,3 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
-
-
-
-

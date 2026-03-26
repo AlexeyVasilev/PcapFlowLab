@@ -14,11 +14,11 @@ The main read/query commands accept either a capture file or a saved analysis in
 
 Examples:
 
-`pcap-flow-lab summary sample.pcap`
+`pcap-flow-lab summary sample.pcap --mode fast`
 
 `pcap-flow-lab summary sample.idx`
 
-`pcap-flow-lab flows sample.pcapng`
+`pcap-flow-lab flows sample.pcapng --mode deep`
 
 `pcap-flow-lab flows sample.idx`
 
@@ -28,7 +28,7 @@ Examples:
 
 `pcap-flow-lab export-flow sample.idx --flow-index 0 --out selected-flow.pcap`
 
-`pcap-flow-lab save-index sample.pcapng --out sample.idx`
+`pcap-flow-lab save-index sample.pcapng --out sample.idx --mode deep`
 
 `pcap-flow-lab load-index-summary sample.idx`
 
@@ -40,9 +40,14 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or indexes via native file dialogs, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show transport payload length and TCP flags directly in the packet list. The Packet Details structure is also prepared for future protocol-aware decoding.
+The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or indexes via native file dialogs, choose `Fast` or `Deep` mode when opening captures, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show transport payload length and TCP flags directly in the packet list. The Packet Details structure is also prepared for future protocol-aware decoding.
 
 
 
 
+
+
+
+
+Deep mode already exists as a separate import path, but today it still produces the same analysis results as Fast mode by default.
 
