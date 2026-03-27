@@ -22,12 +22,13 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Current decode scope: the decode path supports Ethernet II with up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and conservative traversal of common IPv6 extension headers to reach TCP, UDP, and ICMPv6 safely. Richer layered decode will come later.
 - Packet byte access: `PacketRef` stores packet-data offsets, timestamps, transport payload length, and TCP flags from the original capture file, and raw packet bytes are read lazily from the capture on demand.
 - Cheap flow hints: import now attaches conservative single-packet protocol and service hints such as TLS, HTTP, DNS, and QUIC when they can be extracted safely from one packet payload. When enabled through analysis settings, HTTP request paths can be used as a fallback service hint if no Host header is present. Deep parsing and reassembly remain future work.
-- On-demand inspection: packet details and hex dump text are decoded only when requested, and the CLI reuses the same service layer.
+- On-demand inspection: packet details and hex dump text are decoded only when requested, and the CLI reuses the same service layer. Malformed and truncated packets are handled with explicit safe-failure behavior across decode, details, payload, and protocol inspection paths.
 - Flow export: selected connections can be exported back to classic PCAP by reusing `PacketRef` metadata and lazy reads from the source capture.
 - Persistent capture index: analysis state can be saved to a compact binary index file and loaded later without re-importing the source capture. The index stores source metadata, capture summary, connections, flows, and packet refs, while raw packet bytes are still read lazily from the original capture file.
 - First-class index inputs: the current session and CLI stack can now open either a capture file or a saved index file explicitly, without sidecar discovery.
 - Chunked import v1: partial imports can be checkpointed by storing the current `CaptureState` together with source validation metadata, processed-packet count, and the next reader offset. This is a first step toward large-capture workflows, not yet a disk-backed merge engine.
 
 This separation keeps the core reusable across future CLI and desktop frontends while supporting large captures with predictable memory use.
+
 
 

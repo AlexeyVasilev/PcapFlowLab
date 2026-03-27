@@ -1,5 +1,7 @@
 #include "core/services/PacketDetailsService.h"
 
+#include <algorithm>
+
 namespace pfl {
 
 namespace {
@@ -25,7 +27,8 @@ constexpr std::uint8_t kIpProtocolDestinationOptions = 60;
 constexpr std::uint8_t kIpProtocolHopByHop = 0;
 constexpr std::size_t kIpv4MinimumHeaderSize = 20;
 constexpr std::size_t kIpv6HeaderSize = 40;
-constexpr std::size_t kTransportMinimumSize = 4;
+constexpr std::size_t kTcpMinimumHeaderSize = 20;
+constexpr std::size_t kUdpHeaderSize = 8;
 
 struct EthernetPayloadView {
     std::uint16_t ether_type {0};
@@ -218,7 +221,8 @@ std::optional<PacketDetails> PacketDetailsService::decode(
 
         const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
         const auto ihl = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
-        if (version != 4 || ihl < kIpv4MinimumHeaderSize) {
+        const auto total_length = static_cast<std::size_t>(read_be16(packet_bytes, ipv4_offset + 2));
+        if (version != 4 || ihl < kIpv4MinimumHeaderSize || total_length < ihl) {
             return std::nullopt;
         }
 
@@ -231,6 +235,8 @@ std::optional<PacketDetails> PacketDetailsService::decode(
             return std::nullopt;
         }
 
+        const auto packet_end = std::min(ipv4_offset + total_length, packet_bytes.size());
+
         details.address_family = NetworkAddressFamily::ipv4;
         details.has_ipv4 = true;
         details.ipv4 = IPv4Details {
@@ -238,12 +244,18 @@ std::optional<PacketDetails> PacketDetailsService::decode(
             .dst_addr = read_be32(packet_bytes, ipv4_offset + 16),
             .protocol = packet_bytes[ipv4_offset + 9],
             .ttl = packet_bytes[ipv4_offset + 8],
-            .total_length = read_be16(packet_bytes, ipv4_offset + 2),
+            .total_length = static_cast<std::uint16_t>(total_length),
         };
 
         const auto transport_offset = ipv4_offset + ihl;
         if (details.ipv4.protocol == kIpProtocolTcp) {
-            if (packet_bytes.size() < transport_offset + 20) {
+            if (transport_offset + kTcpMinimumHeaderSize > packet_end || packet_bytes.size() < transport_offset + kTcpMinimumHeaderSize) {
+                return std::nullopt;
+            }
+
+            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12] >> 4U) * 4U);
+            if (tcp_header_length < kTcpMinimumHeaderSize || transport_offset + tcp_header_length > packet_end ||
+                packet_bytes.size() < transport_offset + tcp_header_length) {
                 return std::nullopt;
             }
 
@@ -259,7 +271,12 @@ std::optional<PacketDetails> PacketDetailsService::decode(
         }
 
         if (details.ipv4.protocol == kIpProtocolUdp) {
-            if (packet_bytes.size() < transport_offset + 8) {
+            if (transport_offset + kUdpHeaderSize > packet_end || packet_bytes.size() < transport_offset + kUdpHeaderSize) {
+                return std::nullopt;
+            }
+
+            const auto udp_length = static_cast<std::size_t>(read_be16(packet_bytes, transport_offset + 4));
+            if (udp_length < kUdpHeaderSize || transport_offset + udp_length > packet_end) {
                 return std::nullopt;
             }
 
@@ -267,13 +284,13 @@ std::optional<PacketDetails> PacketDetailsService::decode(
             details.udp = UdpDetails {
                 .src_port = read_be16(packet_bytes, transport_offset),
                 .dst_port = read_be16(packet_bytes, transport_offset + 2),
-                .length = read_be16(packet_bytes, transport_offset + 4),
+                .length = static_cast<std::uint16_t>(udp_length),
             };
             return details;
         }
 
         if (details.ipv4.protocol == kIpProtocolIcmp) {
-            if (packet_bytes.size() < transport_offset + 2) {
+            if (transport_offset + 2U > packet_end || packet_bytes.size() < transport_offset + 2U) {
                 return std::nullopt;
             }
 
@@ -309,14 +326,21 @@ std::optional<PacketDetails> PacketDetailsService::decode(
         }
 
         const auto payload = parse_ipv6_payload(packet_bytes, ipv6_offset);
-        if (!payload.has_value()) {
+        const auto packet_end = std::min(ipv6_offset + kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length), packet_bytes.size());
+        if (!payload.has_value() || payload->payload_offset > packet_end) {
             return std::nullopt;
         }
 
         details.ipv6.next_header = payload->next_header;
 
         if (payload->next_header == kIpProtocolTcp) {
-            if (packet_bytes.size() < payload->payload_offset + 20) {
+            if (payload->payload_offset + kTcpMinimumHeaderSize > packet_end || packet_bytes.size() < payload->payload_offset + kTcpMinimumHeaderSize) {
+                return std::nullopt;
+            }
+
+            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12] >> 4U) * 4U);
+            if (tcp_header_length < kTcpMinimumHeaderSize || payload->payload_offset + tcp_header_length > packet_end ||
+                packet_bytes.size() < payload->payload_offset + tcp_header_length) {
                 return std::nullopt;
             }
 
@@ -332,7 +356,12 @@ std::optional<PacketDetails> PacketDetailsService::decode(
         }
 
         if (payload->next_header == kIpProtocolUdp) {
-            if (packet_bytes.size() < payload->payload_offset + 8) {
+            if (payload->payload_offset + kUdpHeaderSize > packet_end || packet_bytes.size() < payload->payload_offset + kUdpHeaderSize) {
+                return std::nullopt;
+            }
+
+            const auto udp_length = static_cast<std::size_t>(read_be16(packet_bytes, payload->payload_offset + 4));
+            if (udp_length < kUdpHeaderSize || payload->payload_offset + udp_length > packet_end) {
                 return std::nullopt;
             }
 
@@ -340,13 +369,13 @@ std::optional<PacketDetails> PacketDetailsService::decode(
             details.udp = UdpDetails {
                 .src_port = read_be16(packet_bytes, payload->payload_offset),
                 .dst_port = read_be16(packet_bytes, payload->payload_offset + 2),
-                .length = read_be16(packet_bytes, payload->payload_offset + 4),
+                .length = static_cast<std::uint16_t>(udp_length),
             };
             return details;
         }
 
         if (payload->next_header == kIpProtocolIcmpV6) {
-            if (packet_bytes.size() < payload->payload_offset + 2) {
+            if (payload->payload_offset + 2U > packet_end || packet_bytes.size() < payload->payload_offset + 2U) {
                 return std::nullopt;
             }
 
