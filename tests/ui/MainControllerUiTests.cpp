@@ -397,6 +397,11 @@ int main(int argc, char* argv[]) {
     }
     UI_EXPECT(saw_fragmented_flow);
 
+    auto* fragmented_packet_model = qobject_cast<PacketListModel*>(fragmented_controller.packetModel());
+    UI_EXPECT(fragmented_packet_model != nullptr);
+    UI_EXPECT(fragmented_packet_model->rowCount() == 1);
+    UI_EXPECT(fragmented_packet_model->data(fragmented_packet_model->index(0, 0), PacketListModel::IsIpFragmentedRole).toBool());
+
     fragmented_controller.setSelectedPacketIndex(0);
     auto* fragmented_details_model = qobject_cast<PacketDetailsViewModel*>(fragmented_controller.packetDetailsModel());
     UI_EXPECT(fragmented_details_model != nullptr);
@@ -405,3 +410,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+

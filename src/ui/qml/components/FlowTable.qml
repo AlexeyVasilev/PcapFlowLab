@@ -1,4 +1,4 @@
-﻿import QtQuick
+import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -27,6 +27,22 @@ Frame {
         if (!flowListView.model || flowListView.count === 0 || root.selectedFlowIndex < 0) {
             flowListView.currentIndex = -1
         }
+    }
+
+    function fragBackgroundColor(hasFragmentedPackets, isSelected) {
+        if (isSelected || !hasFragmentedPackets) {
+            return "transparent"
+        }
+
+        return "#fff6d6"
+    }
+
+    function fragTextColor(hasFragmentedPackets, isSelected) {
+        if (isSelected) {
+            return "#0f172a"
+        }
+
+        return hasFragmentedPackets ? "#8a6a12" : "#0f172a"
     }
 
     background: Rectangle {
@@ -117,6 +133,7 @@ Frame {
                     required property string protocol
                     required property string protocolHint
                     required property string serviceHint
+                    required property bool hasFragmentedPackets
                     required property string fragmentedPacketCount
                     required property string addressA
                     required property int portA
@@ -125,9 +142,11 @@ Frame {
                     required property string packets
                     required property string bytes
 
+                    readonly property bool selected: index === flowListView.currentIndex
+
                     width: flowListView.width
                     height: 40
-                    color: index === flowListView.currentIndex
+                    color: selected
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
@@ -142,7 +161,24 @@ Frame {
                         Label { text: protocol; Layout.preferredWidth: 66 }
                         Label { text: protocolHint; Layout.preferredWidth: 78; elide: Text.ElideRight }
                         Label { text: serviceHint; Layout.fillWidth: true; Layout.preferredWidth: 220; elide: Text.ElideRight }
-                        Label { text: fragmentedPacketCount; Layout.preferredWidth: 48; horizontalAlignment: Text.AlignHCenter }
+
+                        Rectangle {
+                            Layout.preferredWidth: 48
+                            implicitHeight: 24
+                            radius: 4
+                            color: root.fragBackgroundColor(hasFragmentedPackets, selected)
+                            border.width: color === "transparent" ? 0 : 1
+                            border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                            Label {
+                                anchors.fill: parent
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                text: fragmentedPacketCount
+                                color: root.fragTextColor(hasFragmentedPackets, selected)
+                            }
+                        }
+
                         Label { text: addressA; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
                         Label { text: portA; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
                         Label { text: addressB; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }

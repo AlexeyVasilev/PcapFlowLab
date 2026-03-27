@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -44,6 +44,7 @@ struct PacketRow {
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
     std::uint32_t payload_length {0};
+    bool is_ip_fragmented {false};
     std::string tcp_flags_text {};
 };
 
@@ -79,3 +80,4 @@ struct CaptureTopSummary {
 };
 
 }  // namespace pfl
+

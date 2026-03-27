@@ -35,6 +35,8 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
         return item.original_length;
     case PayloadLengthRole:
         return item.payload_length;
+    case IsIpFragmentedRole:
+        return item.is_ip_fragmented;
     case TcpFlagsTextRole:
         return item.tcp_flags_text;
     default:
@@ -51,6 +53,7 @@ QHash<int, QByteArray> PacketListModel::roleNames() const {
         {CapturedLengthRole, "capturedLength"},
         {OriginalLengthRole, "originalLength"},
         {PayloadLengthRole, "payloadLength"},
+        {IsIpFragmentedRole, "isIpFragmented"},
         {TcpFlagsTextRole, "tcpFlagsText"},
     };
 }
@@ -79,6 +82,7 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
             .captured_length = row.captured_length,
             .original_length = row.original_length,
             .payload_length = row.payload_length,
+            .is_ip_fragmented = row.is_ip_fragmented,
             .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
         });
     }

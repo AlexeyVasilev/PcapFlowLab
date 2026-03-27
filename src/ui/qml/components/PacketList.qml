@@ -69,6 +69,22 @@ Frame {
         return "#0f172a"
     }
 
+    function capturedBackgroundColor(isIpFragmented, isSelected) {
+        if (isSelected || !isIpFragmented) {
+            return "transparent"
+        }
+
+        return "#fff6d6"
+    }
+
+    function capturedTextColor(isIpFragmented, isSelected) {
+        if (isSelected) {
+            return "#0f172a"
+        }
+
+        return isIpFragmented ? "#8a6a12" : "#0f172a"
+    }
+
     function flagTone(flagsText, payloadLength) {
         if (!flagsText || flagsText.length === 0) {
             return "default"
@@ -224,6 +240,7 @@ Frame {
                     required property int capturedLength
                     required property int originalLength
                     required property int payloadLength
+                    required property bool isIpFragmented
                     required property string tcpFlagsText
 
                     readonly property bool selected: index === packetListView.currentIndex
@@ -268,10 +285,23 @@ Frame {
                             font.family: "Consolas"
                         }
 
-                        Label {
-                            text: capturedLength
+                        Rectangle {
                             Layout.preferredWidth: 72
-                            horizontalAlignment: Text.AlignRight
+                            implicitHeight: 24
+                            radius: 4
+                            color: root.capturedBackgroundColor(isIpFragmented, selected)
+                            border.width: color === "transparent" ? 0 : 1
+                            border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                horizontalAlignment: Text.AlignRight
+                                verticalAlignment: Text.AlignVCenter
+                                text: capturedLength
+                                color: root.capturedTextColor(isIpFragmented, selected)
+                            }
                         }
 
                         Label {

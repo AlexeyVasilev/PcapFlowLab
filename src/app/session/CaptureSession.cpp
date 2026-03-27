@@ -1,4 +1,4 @@
-﻿#include "app/session/CaptureSession.h"
+#include "app/session/CaptureSession.h"
 
 #include <algorithm>
 #include <array>
@@ -332,6 +332,7 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
         .captured_length = packet.captured_length,
         .original_length = packet.original_length,
         .payload_length = packet.payload_length,
+        .is_ip_fragmented = packet.is_ip_fragmented,
         .tcp_flags_text = format_tcp_flags_text(packet.tcp_flags),
     };
 }
@@ -816,6 +817,7 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
 
 
 
