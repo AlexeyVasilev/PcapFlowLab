@@ -11,12 +11,12 @@
 #include "core/index/CaptureIndexWriter.h"
 #include "core/io/CaptureFilePacketReader.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowExportService.h"
 #include "core/services/HexDumpService.h"
+#include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
-#include "core/services/DnsPacketProtocolAnalyzer.h"
-#include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -364,6 +364,18 @@ std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connectio
 
 }  // namespace
 
+void CaptureSession::reset_runtime_state() noexcept {
+    capture_path_.clear();
+    source_capture_path_.clear();
+    source_info_ = {};
+    state_ = {};
+    import_mode_ = ImportMode::fast;
+    analysis_settings_ = {};
+    deep_protocol_details_enabled_ = false;
+    opened_from_index_ = false;
+    has_loaded_state_ = false;
+}
+
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
     return open_capture(path, CaptureImportOptions {});
 }
@@ -373,19 +385,22 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     CaptureState imported_state {};
 
     if (!importer.import_capture(path, imported_state, options)) {
-        capture_path_.clear();
-        state_ = {};
-        import_mode_ = ImportMode::fast;
-        analysis_settings_ = {};
-        deep_protocol_details_enabled_ = false;
+        reset_runtime_state();
         return false;
     }
 
     capture_path_ = path;
+    source_capture_path_ = path;
     state_ = imported_state;
     import_mode_ = options.mode;
     analysis_settings_ = options.settings;
     deep_protocol_details_enabled_ = (options.mode == ImportMode::deep);
+    opened_from_index_ = false;
+    has_loaded_state_ = true;
+    source_info_ = {};
+    if (!read_capture_source_info(path, source_info_)) {
+        source_info_.capture_path = path;
+    }
     return true;
 }
 
@@ -398,7 +413,7 @@ bool CaptureSession::open_input(const std::filesystem::path& path) {
 }
 
 bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
-    if (!has_capture()) {
+    if (!has_source_capture()) {
         return false;
     }
 
@@ -410,30 +425,59 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
     CaptureIndexReader reader {};
     CaptureState loaded_state {};
     std::filesystem::path loaded_capture_path {};
+    CaptureSourceInfo loaded_source_info {};
 
-    if (!reader.read(index_path, loaded_state, loaded_capture_path)) {
-        capture_path_.clear();
-        state_ = {};
-        import_mode_ = ImportMode::fast;
-        analysis_settings_ = {};
-        deep_protocol_details_enabled_ = false;
+    if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info)) {
+        reset_runtime_state();
         return false;
     }
 
-    capture_path_ = loaded_capture_path;
+    capture_path_.clear();
+    source_capture_path_ = loaded_capture_path;
+    source_info_ = loaded_source_info;
     state_ = loaded_state;
     import_mode_ = ImportMode::fast;
     analysis_settings_ = {};
     deep_protocol_details_enabled_ = false;
+    opened_from_index_ = true;
+    has_loaded_state_ = true;
+
+    if (validate_capture_source(source_info_)) {
+        capture_path_ = source_info_.capture_path;
+    }
+
     return true;
 }
 
 bool CaptureSession::has_capture() const noexcept {
+    return has_loaded_state_;
+}
+
+bool CaptureSession::has_source_capture() const noexcept {
     return !capture_path_.empty();
 }
 
+bool CaptureSession::opened_from_index() const noexcept {
+    return opened_from_index_;
+}
+
+bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
+    if (!opened_from_index_) {
+        return false;
+    }
+
+    if (!validate_capture_source(source_info_, path)) {
+        return false;
+    }
+
+    capture_path_ = path;
+    source_capture_path_ = path;
+    source_info_.capture_path = path;
+    return true;
+}
+
 const std::filesystem::path& CaptureSession::capture_path() const noexcept {
-    return capture_path_;
+    return source_capture_path_;
 }
 
 const CaptureSummary& CaptureSession::summary() const noexcept {
@@ -561,7 +605,7 @@ CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
 }
 
 std::vector<std::uint8_t> CaptureSession::read_packet_data(const PacketRef& packet) const {
-    if (!has_capture()) {
+    if (!has_source_capture()) {
         return {};
     }
 
@@ -706,7 +750,7 @@ std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t f
 }
 
 bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const {
-    if (!has_capture()) {
+    if (!has_source_capture()) {
         return false;
     }
 
@@ -746,33 +790,6 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

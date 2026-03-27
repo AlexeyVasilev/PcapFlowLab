@@ -21,6 +21,9 @@ class MainController final : public QObject {
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
     Q_PROPERTY(bool statusIsError READ statusIsError NOTIFY statusTextChanged)
     Q_PROPERTY(bool hasCapture READ hasCapture NOTIFY stateChanged)
+    Q_PROPERTY(bool hasSourceCapture READ hasSourceCapture NOTIFY sourceAvailabilityChanged)
+    Q_PROPERTY(bool openedFromIndex READ openedFromIndex NOTIFY sourceAvailabilityChanged)
+    Q_PROPERTY(bool canAttachSourceCapture READ canAttachSourceCapture NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canSaveIndex READ canSaveIndex NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canExportSelectedFlow READ canExportSelectedFlow NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
@@ -59,6 +62,9 @@ public:
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] bool statusIsError() const noexcept;
     [[nodiscard]] bool hasCapture() const noexcept;
+    [[nodiscard]] bool hasSourceCapture() const noexcept;
+    [[nodiscard]] bool openedFromIndex() const noexcept;
+    [[nodiscard]] bool canAttachSourceCapture() const noexcept;
     [[nodiscard]] bool canSaveIndex() const noexcept;
     [[nodiscard]] bool canExportSelectedFlow() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
@@ -91,10 +97,12 @@ public:
 
     Q_INVOKABLE bool openCaptureFile(const QString& path);
     Q_INVOKABLE bool openIndexFile(const QString& path);
+    Q_INVOKABLE bool attachSourceCapture(const QString& path);
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
     Q_INVOKABLE bool exportSelectedFlow(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
+    Q_INVOKABLE void browseAttachSourceCapture();
     Q_INVOKABLE void browseSaveAnalysisIndex();
     Q_INVOKABLE void browseExportSelectedFlow();
     Q_INVOKABLE void sortFlows(int column);
@@ -113,6 +121,7 @@ signals:
     void stateChanged();
     void openErrorTextChanged();
     void statusTextChanged();
+    void sourceAvailabilityChanged();
     void actionAvailabilityChanged();
     void captureOpenModeChanged();
     void httpUsePathAsServiceHintChanged();
@@ -124,6 +133,7 @@ signals:
 
 private:
     bool openPath(const QString& path, bool asIndex);
+    void reloadSelectedPacketDetails();
     void clearPacketSelection();
     void clearFlowSelection();
     void synchronizeFlowSelection();

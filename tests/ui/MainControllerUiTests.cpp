@@ -110,12 +110,18 @@ int main(int argc, char* argv[]) {
     MainController controller {};
     UI_EXPECT(!controller.canSaveIndex());
     UI_EXPECT(!controller.canExportSelectedFlow());
+    UI_EXPECT(!controller.hasSourceCapture());
+    UI_EXPECT(!controller.openedFromIndex());
+    UI_EXPECT(!controller.canAttachSourceCapture());
     UI_EXPECT(controller.statusText().isEmpty());
     UI_EXPECT(controller.captureOpenMode() == kCliFastImportModeIndex);
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
     UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
     UI_EXPECT(controller.canSaveIndex());
+    UI_EXPECT(controller.hasSourceCapture());
+    UI_EXPECT(!controller.openedFromIndex());
+    UI_EXPECT(!controller.canAttachSourceCapture());
     UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
@@ -142,12 +148,47 @@ int main(int argc, char* argv[]) {
     std::filesystem::remove(index_path, remove_error);
     UI_EXPECT(index_session.save_index(index_path));
 
+    const auto moved_capture_path = std::filesystem::temp_directory_path() / "pfl_ui_mode_test_source.gone.pcap";
+    const auto mismatched_attach_path = std::filesystem::temp_directory_path() / "pfl_ui_mode_test_source_mismatch.pcap";
+    std::filesystem::remove(moved_capture_path, remove_error);
+    std::filesystem::remove(mismatched_attach_path, remove_error);
+    std::filesystem::rename(capture_path, moved_capture_path);
+
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(controller.openIndexFile(QString::fromStdWString(index_path.wstring())));
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
-    UI_EXPECT(controller.canSaveIndex());
+    UI_EXPECT(controller.openedFromIndex());
+    UI_EXPECT(!controller.hasSourceCapture());
+    UI_EXPECT(controller.canAttachSourceCapture());
+    UI_EXPECT(!controller.canSaveIndex());
     UI_EXPECT(controller.flowCount() == 3U);
-    UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
+
+    auto mismatched_capture_bytes = make_classic_pcap({
+        {100, http_flow},
+        {200, dns_flow},
+        {300, generic_tcp},
+    });
+    mismatched_capture_bytes.back() ^= 0xFFU;
+    {
+        std::ofstream mismatched_stream(mismatched_attach_path, std::ios::binary | std::ios::trunc);
+        mismatched_stream.write(reinterpret_cast<const char*>(mismatched_capture_bytes.data()), static_cast<std::streamsize>(mismatched_capture_bytes.size()));
+    }
+    std::filesystem::last_write_time(mismatched_attach_path, std::filesystem::last_write_time(moved_capture_path));
+
+    UI_EXPECT(!controller.attachSourceCapture(QString::fromStdWString(mismatched_attach_path.wstring())));
+    UI_EXPECT(controller.openedFromIndex());
+    UI_EXPECT(!controller.hasSourceCapture());
+    UI_EXPECT(controller.canAttachSourceCapture());
+    UI_EXPECT(controller.statusIsError());
+
+    UI_EXPECT(controller.attachSourceCapture(QString::fromStdWString(moved_capture_path.wstring())));
+    UI_EXPECT(controller.openedFromIndex());
+    UI_EXPECT(controller.hasSourceCapture());
+    UI_EXPECT(!controller.canAttachSourceCapture());
+    UI_EXPECT(controller.canSaveIndex());
+    UI_EXPECT(!controller.statusIsError());
+
+    UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(moved_capture_path.wstring())));
 
     auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(flow_model != nullptr);
@@ -325,5 +366,6 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
 
 

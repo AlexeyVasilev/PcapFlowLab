@@ -60,6 +60,35 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.openedFromIndex && !mainController.hasSourceCapture
+            color: "#fef3c7"
+            border.color: "#f59e0b"
+            radius: 6
+            implicitHeight: warningLayout.implicitHeight + 16
+
+            RowLayout {
+                id: warningLayout
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 12
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Opened from analysis index. Raw packet data is unavailable until the original capture is attached."
+                    color: "#92400e"
+                    wrapMode: Text.WordWrap
+                }
+
+                Button {
+                    text: "Attach Source Capture"
+                    enabled: mainController.canAttachSourceCapture
+                    onClicked: mainController.browseAttachSourceCapture()
+                }
+            }
+        }
+
         Label {
             Layout.fillWidth: true
             visible: mainController.openErrorText.length > 0

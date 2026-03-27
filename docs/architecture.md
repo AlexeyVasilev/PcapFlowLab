@@ -24,11 +24,12 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Cheap flow hints: import now attaches conservative single-packet protocol and service hints such as TLS, HTTP, DNS, and QUIC when they can be extracted safely from one packet payload. When enabled through analysis settings, HTTP request paths can be used as a fallback service hint if no Host header is present. Deep parsing and reassembly remain future work.
 - On-demand inspection: packet details and hex dump text are decoded only when requested, and the CLI reuses the same service layer. Malformed and truncated packets are handled with explicit safe-failure behavior across decode, details, payload, and protocol inspection paths.
 - Flow export: selected connections can be exported back to classic PCAP by reusing `PacketRef` metadata and lazy reads from the source capture.
-- Persistent capture index: analysis state can be saved to a compact binary index file and loaded later without re-importing the source capture. The index stores source metadata, capture summary, connections, flows, and packet refs, while raw packet bytes are still read lazily from the original capture file. The current index and checkpoint formats are explicitly sectioned for robustness and future evolution, but they remain unstable and backward compatibility is not guaranteed yet.
+- Persistent capture index: analysis state can be saved to a compact binary index file and loaded later without re-importing the source capture. The index stores source metadata, capture summary, connections, flows, and packet refs, while raw packet bytes are still read lazily from the original capture file. Source validation now uses capture format, file size, last-write time, and a lightweight FNV-1a 64-bit fingerprint over the first and last 64 KB of the capture. The desktop UI makes index-only mode explicit and allows the matching source capture to be attached later. The current index and checkpoint formats are explicitly sectioned for robustness and future evolution, but they remain unstable and backward compatibility is not guaranteed yet.
 - First-class index inputs: the current session and CLI stack can now open either a capture file or a saved index file explicitly, without sidecar discovery.
 - Chunked import v1: partial imports can be checkpointed by storing the current `CaptureState` together with source validation metadata, processed-packet count, and the next reader offset. This is a first step toward large-capture workflows, not yet a disk-backed merge engine.
 
 This separation keeps the core reusable across future CLI and desktop frontends while supporting large captures with predictable memory use.
+
 
 
 

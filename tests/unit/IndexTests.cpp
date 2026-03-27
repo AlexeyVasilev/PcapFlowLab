@@ -48,6 +48,9 @@ void run_index_tests() {
 
     CaptureSession original_session {};
     PFL_EXPECT(original_session.open_capture(source_path));
+    PFL_EXPECT(original_session.has_capture());
+    PFL_EXPECT(original_session.has_source_capture());
+    PFL_EXPECT(!original_session.opened_from_index());
     PFL_EXPECT(original_session.summary().packet_count == 2);
     PFL_EXPECT(original_session.summary().flow_count == 1);
     const auto original_rows = original_session.list_flows();
@@ -60,6 +63,8 @@ void run_index_tests() {
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(index_path));
         PFL_EXPECT(loaded_session.has_capture());
+        PFL_EXPECT(loaded_session.has_source_capture());
+        PFL_EXPECT(loaded_session.opened_from_index());
         PFL_EXPECT(loaded_session.capture_path() == source_path);
         PFL_EXPECT(loaded_session.summary().packet_count == original_session.summary().packet_count);
         PFL_EXPECT(loaded_session.summary().flow_count == original_session.summary().flow_count);
@@ -134,6 +139,7 @@ void run_index_tests() {
         PFL_EXPECT(loaded_state.summary.flow_count == 1);
         PFL_EXPECT(loaded_state.ipv4_connections.size() == 1);
         PFL_EXPECT(loaded_state.ipv6_connections.size() == 0);
+        PFL_EXPECT(source_info.content_fingerprint != 0U);
         PFL_EXPECT(validate_capture_source(source_info));
 
         auto mismatched_info = source_info;
@@ -168,18 +174,29 @@ void run_index_tests() {
             make_classic_pcap({{100, forward_packet}, {200, reverse_packet}})
         );
         const auto missing_index_path = std::filesystem::temp_directory_path() / "pfl_missing_source.idx";
-        const auto renamed_source_path = std::filesystem::temp_directory_path() / "pfl_index_missing_source.gone";
+        const auto moved_source_path = std::filesystem::temp_directory_path() / "pfl_index_missing_source.gone.pcap";
+        const auto mismatched_source_path = std::filesystem::temp_directory_path() / "pfl_index_missing_source_mismatch.pcap";
+        const auto should_not_export_path = std::filesystem::temp_directory_path() / "pfl_should_not_export.pcap";
         std::filesystem::remove(missing_index_path);
-        std::filesystem::remove(renamed_source_path);
+        std::filesystem::remove(moved_source_path);
+        std::filesystem::remove(mismatched_source_path);
+        std::filesystem::remove(should_not_export_path);
 
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(missing_source_path));
         PFL_EXPECT(session.save_index(missing_index_path));
 
+        CaptureSourceInfo expected_source_info {};
+        PFL_EXPECT(read_capture_source_info(missing_source_path, expected_source_info));
+
+        std::filesystem::rename(missing_source_path, moved_source_path);
+
         CaptureSession loaded_session {};
         PFL_EXPECT(loaded_session.load_index(missing_index_path));
-        std::filesystem::rename(missing_source_path, renamed_source_path);
-
+        PFL_EXPECT(loaded_session.has_capture());
+        PFL_EXPECT(!loaded_session.has_source_capture());
+        PFL_EXPECT(loaded_session.opened_from_index());
+        PFL_EXPECT(loaded_session.capture_path() == missing_source_path);
         PFL_EXPECT(loaded_session.summary().packet_count == 2);
         PFL_EXPECT(loaded_session.list_flows().size() == 1);
 
@@ -188,11 +205,38 @@ void run_index_tests() {
         PFL_EXPECT(loaded_session.read_packet_data(*packet).empty());
         PFL_EXPECT(!loaded_session.read_packet_details(*packet).has_value());
         PFL_EXPECT(loaded_session.read_packet_hex_dump(*packet).empty());
-        PFL_EXPECT(!loaded_session.export_flow_to_pcap(0, std::filesystem::temp_directory_path() / "pfl_should_not_export.pcap"));
+        PFL_EXPECT(!loaded_session.export_flow_to_pcap(0, should_not_export_path));
+        PFL_EXPECT(!loaded_session.save_index(std::filesystem::temp_directory_path() / "pfl_should_not_save.idx"));
+
+        auto mismatched_bytes = make_classic_pcap({{100, forward_packet}, {200, reverse_packet}});
+        PFL_EXPECT(!mismatched_bytes.empty());
+        mismatched_bytes.back() ^= 0xFFU;
+        std::ofstream mismatched_stream(mismatched_source_path, std::ios::binary | std::ios::trunc);
+        mismatched_stream.write(reinterpret_cast<const char*>(mismatched_bytes.data()), static_cast<std::streamsize>(mismatched_bytes.size()));
+        mismatched_stream.close();
+        std::filesystem::last_write_time(mismatched_source_path, std::filesystem::last_write_time(moved_source_path));
+
+        CaptureSourceInfo mismatched_source_info {};
+        PFL_EXPECT(read_capture_source_info(mismatched_source_path, mismatched_source_info));
+        PFL_EXPECT(mismatched_source_info.file_size == expected_source_info.file_size);
+        PFL_EXPECT(mismatched_source_info.last_write_time == expected_source_info.last_write_time);
+        PFL_EXPECT(mismatched_source_info.content_fingerprint != expected_source_info.content_fingerprint);
+
+        PFL_EXPECT(!loaded_session.attach_source_capture(mismatched_source_path));
+        PFL_EXPECT(!loaded_session.has_source_capture());
+        PFL_EXPECT(loaded_session.capture_path() == missing_source_path);
+
+        PFL_EXPECT(loaded_session.attach_source_capture(moved_source_path));
+        PFL_EXPECT(loaded_session.has_source_capture());
+        PFL_EXPECT(loaded_session.capture_path() == moved_source_path);
+        PFL_EXPECT(!loaded_session.read_packet_data(*packet).empty());
+        PFL_EXPECT(loaded_session.read_packet_details(*packet).has_value());
+        PFL_EXPECT(!loaded_session.read_packet_hex_dump(*packet).empty());
+        PFL_EXPECT(loaded_session.export_flow_to_pcap(0, should_not_export_path));
+        PFL_EXPECT(loaded_session.save_index(std::filesystem::temp_directory_path() / "pfl_attached_source_save.idx"));
     }
 }
 
 }  // namespace pfl::tests
-
 
 

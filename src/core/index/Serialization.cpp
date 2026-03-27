@@ -311,7 +311,8 @@ bool write_capture_source_info(std::ostream& stream, const CaptureSourceInfo& so
     return write_string(stream, source_info.capture_path.generic_string()) &&
            write_u8(stream, static_cast<std::uint8_t>(source_info.format)) &&
            write_u64(stream, source_info.file_size) &&
-           write_i64(stream, source_info.last_write_time);
+           write_i64(stream, source_info.last_write_time) &&
+           write_u64(stream, source_info.content_fingerprint);
 }
 
 bool read_capture_source_info(std::istream& stream, CaptureSourceInfo& source_info) {
@@ -321,7 +322,8 @@ bool read_capture_source_info(std::istream& stream, CaptureSourceInfo& source_in
     if (!read_string(stream, capture_path) ||
         !read_u8(stream, format) ||
         !read_u64(stream, source_info.file_size) ||
-        !read_i64(stream, source_info.last_write_time)) {
+        !read_i64(stream, source_info.last_write_time) ||
+        !read_u64(stream, source_info.content_fingerprint)) {
         return false;
     }
 
@@ -618,6 +620,11 @@ bool read_capture_state(std::istream& stream, CaptureState& state) {
 }
 
 }  // namespace pfl::detail
+
+
+
+
+
 
 
 

@@ -8,6 +8,7 @@
 #include "app/session/FlowRows.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
+#include "core/index/CaptureIndex.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl {
@@ -20,6 +21,9 @@ public:
     bool save_index(const std::filesystem::path& index_path) const;
     bool load_index(const std::filesystem::path& index_path);
     [[nodiscard]] bool has_capture() const noexcept;
+    [[nodiscard]] bool has_source_capture() const noexcept;
+    [[nodiscard]] bool opened_from_index() const noexcept;
+    bool attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
@@ -38,11 +42,17 @@ public:
     [[nodiscard]] const CaptureState& state() const noexcept;
 
 private:
+    void reset_runtime_state() noexcept;
+
     std::filesystem::path capture_path_ {};
+    std::filesystem::path source_capture_path_ {};
+    CaptureSourceInfo source_info_ {};
     CaptureState state_ {};
     ImportMode import_mode_ {ImportMode::fast};
     AnalysisSettings analysis_settings_ {};
     bool deep_protocol_details_enabled_ {false};
+    bool opened_from_index_ {false};
+    bool has_loaded_state_ {false};
 };
 
 }  // namespace pfl

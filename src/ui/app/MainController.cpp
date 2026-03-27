@@ -301,12 +301,24 @@ bool MainController::hasCapture() const noexcept {
     return session_.has_capture();
 }
 
+bool MainController::hasSourceCapture() const noexcept {
+    return session_.has_source_capture();
+}
+
+bool MainController::openedFromIndex() const noexcept {
+    return session_.opened_from_index();
+}
+
+bool MainController::canAttachSourceCapture() const noexcept {
+    return session_.opened_from_index() && !session_.has_source_capture();
+}
+
 bool MainController::canSaveIndex() const noexcept {
-    return session_.has_capture();
+    return session_.has_capture() && session_.has_source_capture();
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return session_.has_capture() && selected_flow_index_ >= 0;
+    return session_.has_source_capture() && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::packetCount() const noexcept {
@@ -425,6 +437,33 @@ bool MainController::openIndexFile(const QString& path) {
     return openPath(path, true);
 }
 
+bool MainController::attachSourceCapture(const QString& path) {
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No source capture selected."), true);
+        return false;
+    }
+
+    if (!canAttachSourceCapture()) {
+        setStatusText(QStringLiteral("Source capture attachment is not available for the current session."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    if (!session_.attach_source_capture(filesystemPath)) {
+        setStatusText(QStringLiteral("Selected file does not match the expected source capture."), true);
+        return false;
+    }
+
+    setLastDirectoryFromPath(filesystemPath);
+    reloadSelectedPacketDetails();
+    emit stateChanged();
+    emit sourceAvailabilityChanged();
+    emit actionAvailabilityChanged();
+    setStatusText(QStringLiteral("Source capture attached successfully."));
+    return true;
+}
+
 bool MainController::saveAnalysisIndex(const QString& path) {
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
@@ -482,6 +521,13 @@ void MainController::browseIndexFile() {
     }
 }
 
+void MainController::browseAttachSourceCapture() {
+    const QString path = chooseFile(false);
+    if (!path.isEmpty()) {
+        attachSourceCapture(path);
+    }
+}
+
 void MainController::browseSaveAnalysisIndex() {
     const QString path = chooseSaveFile(true);
     if (!path.isEmpty()) {
@@ -511,9 +557,9 @@ void MainController::sortFlows(const int column) {
 }
 
 void MainController::drillDownToFlows(const QString& filterText) {
+    setCurrentTabIndex(kFlowTabIndex);
     clearFlowSelection();
     setFlowFilterText(filterText.trimmed());
-    setCurrentTabIndex(kFlowTabIndex);
 }
 
 void MainController::drillDownToEndpoint(const QString& endpointText) {
@@ -524,56 +570,16 @@ void MainController::drillDownToPort(const quint32 port) {
     drillDownToFlows(QString::number(port));
 }
 
-bool MainController::openPath(const QString& path, const bool asIndex) {
-    setStatusText({});
-
-    const QString trimmed_path = path.trimmed();
-    if (trimmed_path.isEmpty()) {
-        setOpenErrorText(QStringLiteral("No file selected."));
-        resetLoadedState();
-        emit stateChanged();
-        emit flowFilterTextChanged();
-        emit flowSortChanged();
-        return false;
-    }
-
-    const std::filesystem::path filesystem_path = std::filesystem::path {trimmed_path.toStdWString()};
-    setLastDirectoryFromPath(filesystem_path);
-    auto import_options = capture_import_options_for_ui_index(capture_open_mode_);
-    import_options.settings = pending_analysis_settings_;
-    const bool opened = asIndex
-        ? session_.load_index(filesystem_path)
-        : session_.open_capture(filesystem_path, import_options);
-
-    if (!opened) {
-        setOpenErrorText(asIndex
-            ? QStringLiteral("Failed to open index file.")
-            : QStringLiteral("Failed to open capture file."));
-        resetLoadedState();
-        emit stateChanged();
-        emit flowFilterTextChanged();
-        emit flowSortChanged();
-        return false;
-    }
-
-    setOpenErrorText({});
-    applyLoadedState(trimmed_path);
-    emit stateChanged();
-    emit flowFilterTextChanged();
-    emit flowSortChanged();
-    return true;
-}
-
 void MainController::setCaptureOpenMode(const int mode) {
-    const int normalized_mode = (mode == kCliDeepImportModeIndex)
+    const int normalizedMode = (mode == kCliDeepImportModeIndex)
         ? kCliDeepImportModeIndex
         : kCliFastImportModeIndex;
 
-    if (capture_open_mode_ == normalized_mode) {
+    if (capture_open_mode_ == normalizedMode) {
         return;
     }
 
-    capture_open_mode_ = normalized_mode;
+    capture_open_mode_ = normalizedMode;
     emit captureOpenModeChanged();
 }
 
@@ -590,6 +596,7 @@ void MainController::setCurrentTabIndex(const int index) {
     const int normalizedIndex = (index == kStatsTabIndex || index == kSettingsTabIndex)
         ? index
         : kFlowTabIndex;
+
     if (current_tab_index_ == normalizedIndex) {
         return;
     }
@@ -622,35 +629,13 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     }
 
     selected_packet_index_ = packetIndex;
-
     if (selected_packet_index_ == kInvalidPacketSelection) {
         packet_details_model_.clear();
         emit selectedPacketIndexChanged();
         return;
     }
 
-    const auto packet = session_.find_packet(static_cast<std::uint64_t>(selected_packet_index_));
-    if (!packet.has_value()) {
-        packet_details_model_.clear();
-        emit selectedPacketIndexChanged();
-        return;
-    }
-
-    const auto details = session_.read_packet_details(*packet);
-    const std::string hex = session_.read_packet_hex_dump(*packet);
-    const std::string payload_hex = session_.read_packet_payload_hex_dump(*packet);
-    const std::string protocol_text = session_.read_packet_protocol_details_text(*packet);
-
-    if (!details.has_value()) {
-        packet_details_model_.clear();
-        emit selectedPacketIndexChanged();
-        return;
-    }
-
-    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details));
-    packet_details_model_.setHexText(QString::fromStdString(hex));
-    packet_details_model_.setPayloadText(buildPayloadText(*details, payload_hex));
-    packet_details_model_.setProtocolText(QString::fromStdString(protocol_text));
+    reloadSelectedPacketDetails();
     emit selectedPacketIndexChanged();
 }
 
@@ -694,32 +679,95 @@ void MainController::synchronizeFlowSelection() {
 
 void MainController::resetLoadedState() {
     current_input_path_.clear();
-    setCurrentTabIndex(kFlowTabIndex);
-    protocol_summary_ = {};
     session_ = {};
+    protocol_summary_ = {};
     flow_model_.resetViewState();
     flow_model_.clear();
+    packet_model_.clear();
+    packet_details_model_.clear();
     top_endpoints_model_.clear();
     top_ports_model_.clear();
-    clearFlowSelection();
-    emit actionAvailabilityChanged();
+    selected_flow_index_ = -1;
+    selected_packet_index_ = kInvalidPacketSelection;
 }
 
 void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
-    setCurrentTabIndex(kFlowTabIndex);
     protocol_summary_ = session_.protocol_summary();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
     clearFlowSelection();
+    setOpenErrorText({});
+    setStatusText({});
+    emit stateChanged();
+    emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
 }
 
 void MainController::refreshTopSummaryModels() {
-    const auto summary = session_.top_summary();
-    top_endpoints_model_.refreshEndpoints(summary.endpoints_by_bytes);
-    top_ports_model_.refreshPorts(summary.ports_by_bytes);
+    const auto top = session_.top_summary();
+    top_endpoints_model_.refreshEndpoints(top.endpoints_by_bytes);
+    top_ports_model_.refreshPorts(top.ports_by_bytes);
+}
+
+bool MainController::openPath(const QString& path, const bool asIndex) {
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setOpenErrorText(QStringLiteral("No file selected."));
+        return false;
+    }
+
+    resetLoadedState();
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+
+    bool opened = false;
+    if (asIndex) {
+        opened = session_.load_index(filesystemPath);
+    } else {
+        auto importOptions = capture_import_options_for_ui_index(capture_open_mode_);
+        importOptions.settings = pending_analysis_settings_;
+        opened = session_.open_capture(filesystemPath, importOptions);
+    }
+
+    if (!opened) {
+        setOpenErrorText(asIndex
+            ? QStringLiteral("Failed to open analysis index.")
+            : QStringLiteral("Failed to open capture file."));
+        return false;
+    }
+
+    applyLoadedState(trimmedPath);
+    return true;
+}
+
+void MainController::reloadSelectedPacketDetails() {
+    if (selected_packet_index_ == kInvalidPacketSelection) {
+        return;
+    }
+
+    const auto packet = session_.find_packet(static_cast<std::uint64_t>(selected_packet_index_));
+    if (!packet.has_value()) {
+        packet_details_model_.clear();
+        return;
+    }
+
+    const auto details = session_.read_packet_details(*packet);
+    if (!details.has_value()) {
+        packet_details_model_.clear();
+        return;
+    }
+
+    const auto hexDump = session_.read_packet_hex_dump(*packet);
+    const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
+    const auto protocolText = session_.read_packet_protocol_details_text(*packet);
+
+    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details));
+    packet_details_model_.setHexText(QString::fromStdString(hexDump));
+    packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
+    packet_details_model_.setProtocolText(QString::fromStdString(protocolText));
 }
 
 void MainController::setOpenErrorText(const QString& text) {
@@ -795,4 +843,5 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
