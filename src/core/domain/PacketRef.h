@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +18,7 @@ struct PacketRef {
     std::uint32_t ts_usec {0};
     std::uint32_t payload_length {0};
     std::uint8_t tcp_flags {0};
+    bool is_ip_fragmented {false};
 
     [[nodiscard]] friend constexpr bool operator==(const PacketRef&, const PacketRef&) = default;
 };

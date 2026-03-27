@@ -31,16 +31,18 @@ FlowListModel::SortKey sort_key_from_column(const int column) {
     case 4:
         return FlowListModel::SortKey::service_hint;
     case 5:
-        return FlowListModel::SortKey::address_a;
+        return FlowListModel::SortKey::fragmented_packets;
     case 6:
-        return FlowListModel::SortKey::port_a;
+        return FlowListModel::SortKey::address_a;
     case 7:
-        return FlowListModel::SortKey::address_b;
+        return FlowListModel::SortKey::port_a;
     case 8:
-        return FlowListModel::SortKey::port_b;
+        return FlowListModel::SortKey::address_b;
     case 9:
-        return FlowListModel::SortKey::packets;
+        return FlowListModel::SortKey::port_b;
     case 10:
+        return FlowListModel::SortKey::packets;
+    case 11:
         return FlowListModel::SortKey::bytes;
     default:
         return FlowListModel::SortKey::index;
@@ -59,18 +61,20 @@ int column_from_sort_key(const FlowListModel::SortKey key) noexcept {
         return 3;
     case FlowListModel::SortKey::service_hint:
         return 4;
-    case FlowListModel::SortKey::address_a:
+    case FlowListModel::SortKey::fragmented_packets:
         return 5;
-    case FlowListModel::SortKey::port_a:
+    case FlowListModel::SortKey::address_a:
         return 6;
-    case FlowListModel::SortKey::address_b:
+    case FlowListModel::SortKey::port_a:
         return 7;
-    case FlowListModel::SortKey::port_b:
+    case FlowListModel::SortKey::address_b:
         return 8;
-    case FlowListModel::SortKey::packets:
+    case FlowListModel::SortKey::port_b:
         return 9;
-    case FlowListModel::SortKey::bytes:
+    case FlowListModel::SortKey::packets:
         return 10;
+    case FlowListModel::SortKey::bytes:
+        return 11;
     }
 
     return 0;
@@ -182,7 +186,7 @@ QString buildPayloadText(const PacketDetails& details, const std::string& payloa
     return QStringLiteral("Transport payload not available for this packet");
 }
 
-QString buildPacketSummary(const PacketDetails& details) {
+QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet) {
     QStringList lines {};
 
     appendSection(lines, QStringLiteral("Packet"), {
@@ -191,13 +195,16 @@ QString buildPacketSummary(const PacketDetails& details) {
         QStringLiteral("Original Length: %1").arg(details.original_length),
     });
 
-    if (details.captured_length != details.original_length) {
-        appendSection(lines, QStringLiteral("Warnings"), {
-            QStringLiteral("Packet is truncated in capture"),
-            QStringLiteral("Captured Length: %1").arg(details.captured_length),
-            QStringLiteral("Original Length: %1").arg(details.original_length),
-        });
+    QStringList warnings {};
+    if (packet.is_ip_fragmented) {
+        warnings.push_back(QStringLiteral("Packet is IP-fragmented"));
     }
+    if (details.captured_length != details.original_length) {
+        warnings.push_back(QStringLiteral("Packet is truncated in capture"));
+        warnings.push_back(QStringLiteral("Captured Length: %1").arg(details.captured_length));
+        warnings.push_back(QStringLiteral("Original Length: %1").arg(details.original_length));
+    }
+    appendSection(lines, QStringLiteral("Warnings"), warnings);
 
     if (details.has_ethernet) {
         appendSection(lines, QStringLiteral("Ethernet"), {
@@ -764,7 +771,7 @@ void MainController::reloadSelectedPacketDetails() {
     const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
     const auto protocolText = session_.read_packet_protocol_details_text(*packet);
 
-    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details));
+    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
     packet_details_model_.setProtocolText(QString::fromStdString(protocolText));
@@ -843,5 +850,10 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
 
 

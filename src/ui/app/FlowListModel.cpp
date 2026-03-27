@@ -1,4 +1,4 @@
-#include "ui/app/FlowListModel.h"
+﻿#include "ui/app/FlowListModel.h"
 
 #include <algorithm>
 
@@ -14,7 +14,12 @@ QString format_protocol_hint(const std::string& value) {
     return QString::fromStdString(value).toUpper();
 }
 
+QString format_fragmented_packet_count(const FlowListModel::Item& item) {
+    return item.fragmented_packets == 0 ? QString {} : QString::number(item.fragmented_packets);
+}
+
 bool contains_text(const FlowListModel::Item& item, const QString& filter) {
+    const bool matches_fragment_text = item.has_fragmented_packets && filter.contains(QStringLiteral("frag"), Qt::CaseInsensitive);
     return item.family.contains(filter, Qt::CaseInsensitive)
         || item.protocol.contains(filter, Qt::CaseInsensitive)
         || item.protocol_hint.contains(filter, Qt::CaseInsensitive)
@@ -24,7 +29,9 @@ bool contains_text(const FlowListModel::Item& item, const QString& filter) {
         || item.endpoint_a.contains(filter, Qt::CaseInsensitive)
         || item.endpoint_b.contains(filter, Qt::CaseInsensitive)
         || QString::number(item.port_a).contains(filter, Qt::CaseInsensitive)
-        || QString::number(item.port_b).contains(filter, Qt::CaseInsensitive);
+        || QString::number(item.port_b).contains(filter, Qt::CaseInsensitive)
+        || QString::number(item.fragmented_packets).contains(filter, Qt::CaseInsensitive)
+        || matches_fragment_text;
 }
 
 bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right, const FlowListModel::SortKey key) {
@@ -46,6 +53,11 @@ bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right
     case FlowListModel::SortKey::service_hint:
         if (left.service_hint != right.service_hint) {
             return left.service_hint < right.service_hint;
+        }
+        return left.flow_index < right.flow_index;
+    case FlowListModel::SortKey::fragmented_packets:
+        if (left.fragmented_packets != right.fragmented_packets) {
+            return left.fragmented_packets < right.fragmented_packets;
         }
         return left.flow_index < right.flow_index;
     case FlowListModel::SortKey::address_a:
@@ -114,6 +126,10 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
         return item.protocol_hint;
     case ServiceHintRole:
         return item.service_hint;
+    case HasFragmentedPacketsRole:
+        return item.has_fragmented_packets;
+    case FragmentedPacketCountRole:
+        return format_fragmented_packet_count(item);
     case AddressARole:
         return item.address_a;
     case PortARole:
@@ -138,6 +154,8 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
         {ProtocolRole, "protocol"},
         {ProtocolHintRole, "protocolHint"},
         {ServiceHintRole, "serviceHint"},
+        {HasFragmentedPacketsRole, "hasFragmentedPackets"},
+        {FragmentedPacketCountRole, "fragmentedPacketCount"},
         {AddressARole, "addressA"},
         {PortARole, "portA"},
         {AddressBRole, "addressB"},
@@ -168,6 +186,8 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
             .protocol = to_qstring(row.protocol_text),
             .protocol_hint = format_protocol_hint(row.protocol_hint),
             .service_hint = to_qstring(row.service_hint),
+            .has_fragmented_packets = row.has_fragmented_packets,
+            .fragmented_packets = static_cast<qulonglong>(row.fragmented_packet_count),
             .address_a = to_qstring(row.address_a),
             .port_a = row.port_a,
             .endpoint_a = to_qstring(row.endpoint_a),
@@ -265,4 +285,3 @@ void FlowListModel::rebuildVisibleItems() {
 }
 
 }  // namespace pfl
-

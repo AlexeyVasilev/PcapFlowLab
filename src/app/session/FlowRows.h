@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -24,6 +24,8 @@ struct FlowRow {
     std::string protocol_text {};
     std::string protocol_hint {};
     std::string service_hint {};
+    bool has_fragmented_packets {false};
+    std::uint64_t fragmented_packet_count {0};
     std::string address_a {};
     std::uint16_t port_a {0};
     std::string endpoint_a {};

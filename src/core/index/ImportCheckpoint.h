@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 
@@ -16,9 +16,10 @@ struct ImportCheckpoint {
 };
 
 inline constexpr std::uint64_t kImportCheckpointMagic = 0x3150544b434c4650ULL;
-inline constexpr std::uint16_t kImportCheckpointVersion = 6;
+inline constexpr std::uint16_t kImportCheckpointVersion = 7;
 
 }  // namespace pfl
+
 
 
 

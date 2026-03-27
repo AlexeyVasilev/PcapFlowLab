@@ -1,4 +1,4 @@
-#include "core/domain/Connection.h"
+﻿#include "core/domain/Connection.h"
 
 namespace pfl {
 
@@ -29,11 +29,22 @@ void apply_hints_to_connection(Connection& connection, const FlowHintUpdate& hin
     }
 }
 
+template <typename Connection>
+void update_fragmentation_stats(Connection& connection, const PacketRef& packet) {
+    if (!packet.is_ip_fragmented) {
+        return;
+    }
+
+    connection.has_fragmented_packets = true;
+    ++connection.fragmented_packet_count;
+}
+
 }  // namespace
 
 void ConnectionV4::add_packet(const FlowKeyV4& packet_key, const PacketRef& packet) {
     ++packet_count;
     total_bytes += packet.original_length;
+    update_fragmentation_stats(*this, packet);
 
     if (!has_flow_a) {
         append_packet(flow_a, packet_key, packet);
@@ -67,6 +78,7 @@ void ConnectionV4::apply_hints(const FlowHintUpdate& hints) {
 void ConnectionV6::add_packet(const FlowKeyV6& packet_key, const PacketRef& packet) {
     ++packet_count;
     total_bytes += packet.original_length;
+    update_fragmentation_stats(*this, packet);
 
     if (!has_flow_a) {
         append_packet(flow_a, packet_key, packet);

@@ -146,6 +146,8 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
             .protocol_text = protocol_text(key.protocol),
             .protocol_hint = connection.ipv4->protocol_hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(connection.ipv4->protocol_hint)},
             .service_hint = connection.ipv4->service_hint,
+            .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
+            .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
             .address_a = format_ipv4_address(key.first.addr),
             .port_a = key.first.port,
             .endpoint_a = format_endpoint(key.first),
@@ -165,6 +167,8 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
         .protocol_text = protocol_text(key.protocol),
         .protocol_hint = connection.ipv6->protocol_hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(connection.ipv6->protocol_hint)},
         .service_hint = connection.ipv6->service_hint,
+        .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
+        .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
         .address_a = format_ipv6_address(key.first.addr),
         .port_a = key.first.port,
         .endpoint_a = format_endpoint(key.first),
@@ -315,6 +319,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
 constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
+constexpr std::string_view kFragmentedProtocolDetailsMessage = "Protocol details are unavailable for fragmented packets until reassembly is implemented.";
 constexpr std::string_view kDirectionAToB = "A\xE2\x86\x92" "B";
 constexpr std::string_view kDirectionBToA = "B\xE2\x86\x92" "A";
 
@@ -656,6 +661,10 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return std::string {kFastModeProtocolDetailsMessage};
     }
 
+    if (packet.is_ip_fragmented) {
+        return std::string {kFragmentedProtocolDetailsMessage};
+    }
+
     const auto bytes = read_packet_data(packet);
     if (bytes.empty()) {
         return std::string {kUnavailableProtocolDetailsMessage};
@@ -807,6 +816,10 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
 
 
 

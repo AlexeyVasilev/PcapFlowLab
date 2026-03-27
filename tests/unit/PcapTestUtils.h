@@ -490,6 +490,83 @@ inline std::vector<std::uint8_t> make_ethernet_ipv6_packet(
     const std::array<std::uint8_t, 16>& dst_addr,
     std::uint8_t next_header,
     const std::vector<std::uint8_t>& payload
+);
+
+inline std::vector<std::uint8_t> make_ethernet_ipv4_fragment_packet(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint8_t protocol,
+    std::uint16_t flags_fragment,
+    const std::vector<std::uint8_t>& payload,
+    std::uint8_t ttl = 64
+) {
+    std::vector<std::uint8_t> bytes {
+        0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
+        0xca, 0xfe, 0xba, 0xbe, 0x00, 0x02,
+        0x08, 0x00,
+        0x45, 0x00,
+    };
+
+    append_be16(bytes, static_cast<std::uint16_t>(20 + payload.size()));
+    append_be16(bytes, 0);
+    append_be16(bytes, flags_fragment);
+    bytes.push_back(ttl);
+    bytes.push_back(protocol);
+    append_be16(bytes, 0);
+    append_be32(bytes, src_addr);
+    append_be32(bytes, dst_addr);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ipv6_fragment_header(
+    std::uint8_t next_header,
+    const std::vector<std::uint8_t>& payload,
+    std::uint16_t fragment_offset_units = 0,
+    bool more_fragments = false,
+    std::uint32_t identification = 1
+) {
+    std::vector<std::uint8_t> bytes {};
+    bytes.push_back(next_header);
+    bytes.push_back(0x00);
+
+    const std::uint16_t offset_and_flags = static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(fragment_offset_units << 3U) |
+        static_cast<std::uint16_t>(more_fragments ? 0x0001U : 0x0000U)
+    );
+    append_be16(bytes, offset_and_flags);
+    append_be32(bytes, identification);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_ethernet_ipv6_fragment_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    std::uint8_t encapsulated_next_header,
+    const std::vector<std::uint8_t>& fragment_payload,
+    std::uint16_t fragment_offset_units = 0,
+    bool more_fragments = false,
+    std::uint32_t identification = 1
+) {
+    return make_ethernet_ipv6_packet(
+        src_addr,
+        dst_addr,
+        44,
+        make_ipv6_fragment_header(
+            encapsulated_next_header,
+            fragment_payload,
+            fragment_offset_units,
+            more_fragments,
+            identification
+        )
+    );
+}
+inline std::vector<std::uint8_t> make_ethernet_ipv6_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    std::uint8_t next_header,
+    const std::vector<std::uint8_t>& payload
 ) {
     std::vector<std::uint8_t> bytes {
         0x00, 0x24, 0x81, 0xaa, 0xbb, 0xcc,
@@ -667,6 +744,8 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
+
+
 
 
 

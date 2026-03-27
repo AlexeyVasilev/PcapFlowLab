@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -50,6 +50,7 @@ struct LinkLayerPayloadView {
 struct Ipv6PayloadView {
     std::uint8_t next_header {0};
     std::size_t payload_offset {0};
+    bool has_fragment_header {false};
 };
 
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
@@ -145,12 +146,14 @@ inline std::optional<Ipv6PayloadView> parse_ipv6_payload(std::span<const std::ui
 
     std::uint8_t next_header = bytes[ipv6_offset + 6U];
     std::size_t payload_offset = ipv6_offset + kIpv6HeaderSize;
+    bool has_fragment_header = false;
 
     for (std::size_t extension_count = 0; extension_count < kMaxIpv6ExtensionHeaders; ++extension_count) {
         if (!is_ipv6_extension_header(next_header)) {
             return Ipv6PayloadView {
                 .next_header = next_header,
                 .payload_offset = payload_offset,
+                .has_fragment_header = has_fragment_header,
             };
         }
 
@@ -163,11 +166,7 @@ inline std::optional<Ipv6PayloadView> parse_ipv6_payload(std::span<const std::ui
                 return std::nullopt;
             }
 
-            const auto fragment_offset_and_flags = read_be16(bytes, payload_offset + 2U);
-            if ((fragment_offset_and_flags & 0xFFF8U) != 0U) {
-                return std::nullopt;
-            }
-
+            has_fragment_header = true;
             next_header = bytes[payload_offset];
             payload_offset += 8U;
             continue;

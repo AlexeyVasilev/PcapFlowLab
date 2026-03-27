@@ -1,4 +1,4 @@
-#include "core/services/PacketDetailsService.h"
+﻿#include "core/services/PacketDetailsService.h"
 
 #include <algorithm>
 #include <span>
@@ -170,10 +170,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         }
 
         const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
-        if ((flags_fragment & 0x3FFFU) != 0U) {
-            return std::nullopt;
-        }
-
+        const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
         const auto packet_end = std::min(ipv4_offset + total_length, packet_bytes.size());
 
         details.address_family = NetworkAddressFamily::ipv4;
@@ -185,6 +182,10 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             .ttl = packet_bytes[ipv4_offset + 8U],
             .total_length = static_cast<std::uint16_t>(total_length),
         };
+
+        if (is_fragmented) {
+            return details;
+        }
 
         const auto transport_offset = ipv4_offset + ihl;
         if (details.ipv4.protocol == detail::kIpProtocolTcp) {
@@ -275,6 +276,9 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         }
 
         details.ipv6.next_header = payload->next_header;
+        if (payload->has_fragment_header) {
+            return details;
+        }
 
         if (payload->next_header == detail::kIpProtocolTcp) {
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||

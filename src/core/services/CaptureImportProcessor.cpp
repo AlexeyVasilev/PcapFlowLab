@@ -1,4 +1,4 @@
-#include "core/services/CaptureImportProcessor.h"
+﻿#include "core/services/CaptureImportProcessor.h"
 
 #include <span>
 
@@ -34,14 +34,18 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     if (decoded.ipv4.has_value()) {
         ingestor.ingest(*decoded.ipv4);
         auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
-        connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv4->flow_key));
+        if (!decoded.ipv4->packet_ref.is_ip_fragmented) {
+            connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv4->flow_key));
+        }
         return;
     }
 
     if (decoded.ipv6.has_value()) {
         ingestor.ingest(*decoded.ipv6);
         auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
-        connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv6->flow_key));
+        if (!decoded.ipv6->packet_ref.is_ip_fragmented) {
+            connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv6->flow_key));
+        }
     }
 }
 

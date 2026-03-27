@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.24)
 
 project(
     pcap_flow_lab
@@ -12,7 +12,6 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_SUPPRESS_REGENERATION ON)
 
 option(PFL_BUILD_UI "Build the Qt Quick desktop UI when Qt 6 is available." ON)
 
@@ -208,6 +207,7 @@ if(BUILD_TESTING)
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp
         tests/unit/LinuxCookedTests.cpp
+        tests/unit/FragmentationTests.cpp
         tests/unit/ReassemblyArchitectureTests.cpp
         tests/unit/FlowHintsTests.cpp
         tests/unit/FlowHintsRawFixturesTests.cpp
@@ -222,6 +222,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

@@ -1,4 +1,4 @@
-#include "core/index/Serialization.h"
+﻿#include "core/index/Serialization.h"
 
 #include <algorithm>
 #include <array>
@@ -353,19 +353,27 @@ bool write_packet_ref(std::ostream& stream, const PacketRef& packet) {
            write_u32(stream, packet.captured_length) &&
            write_u32(stream, packet.original_length) &&
            write_u32(stream, packet.payload_length) &&
-           write_u8(stream, packet.tcp_flags);
+           write_u8(stream, packet.tcp_flags) &&
+           write_u8(stream, packet.is_ip_fragmented ? 1U : 0U);
 }
 
 bool read_packet_ref(std::istream& stream, PacketRef& packet) {
-    return read_u64(stream, packet.packet_index) &&
-           read_u32(stream, packet.ts_sec) &&
-           read_u32(stream, packet.ts_usec) &&
-           read_u64(stream, packet.byte_offset) &&
-           read_u32(stream, packet.data_link_type) &&
-           read_u32(stream, packet.captured_length) &&
-           read_u32(stream, packet.original_length) &&
-           read_u32(stream, packet.payload_length) &&
-           read_u8(stream, packet.tcp_flags);
+    std::uint8_t is_ip_fragmented {0};
+    if (!read_u64(stream, packet.packet_index) ||
+        !read_u32(stream, packet.ts_sec) ||
+        !read_u32(stream, packet.ts_usec) ||
+        !read_u64(stream, packet.byte_offset) ||
+        !read_u32(stream, packet.data_link_type) ||
+        !read_u32(stream, packet.captured_length) ||
+        !read_u32(stream, packet.original_length) ||
+        !read_u32(stream, packet.payload_length) ||
+        !read_u8(stream, packet.tcp_flags) ||
+        !read_u8(stream, is_ip_fragmented)) {
+        return false;
+    }
+
+    packet.is_ip_fragmented = is_ip_fragmented != 0;
+    return true;
 }
 
 bool write_flow(std::ostream& stream, const FlowV4& flow) {
@@ -422,6 +430,8 @@ bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
         !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
         !write_u64(stream, connection.packet_count) ||
         !write_u64(stream, connection.total_bytes) ||
+        !write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) ||
+        !write_u64(stream, connection.fragmented_packet_count) ||
         !write_flow_protocol_hint(stream, connection.protocol_hint) ||
         !write_string(stream, connection.service_hint)) {
         return false;
@@ -444,6 +454,8 @@ bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
         !write_u8(stream, connection.has_flow_b ? 1U : 0U) ||
         !write_u64(stream, connection.packet_count) ||
         !write_u64(stream, connection.total_bytes) ||
+        !write_u8(stream, connection.has_fragmented_packets ? 1U : 0U) ||
+        !write_u64(stream, connection.fragmented_packet_count) ||
         !write_flow_protocol_hint(stream, connection.protocol_hint) ||
         !write_string(stream, connection.service_hint)) {
         return false;
@@ -463,12 +475,15 @@ bool write_connection(std::ostream& stream, const ConnectionV6& connection) {
 bool read_connection(std::istream& stream, ConnectionV4& connection) {
     std::uint8_t has_flow_a {0};
     std::uint8_t has_flow_b {0};
+    std::uint8_t has_fragmented_packets {0};
 
     if (!read_connection_key(stream, connection.key) ||
         !read_u8(stream, has_flow_a) ||
         !read_u8(stream, has_flow_b) ||
         !read_u64(stream, connection.packet_count) ||
         !read_u64(stream, connection.total_bytes) ||
+        !read_u8(stream, has_fragmented_packets) ||
+        !read_u64(stream, connection.fragmented_packet_count) ||
         !read_flow_protocol_hint(stream, connection.protocol_hint) ||
         !read_string(stream, connection.service_hint)) {
         return false;
@@ -476,6 +491,7 @@ bool read_connection(std::istream& stream, ConnectionV4& connection) {
 
     connection.has_flow_a = has_flow_a != 0;
     connection.has_flow_b = has_flow_b != 0;
+    connection.has_fragmented_packets = has_fragmented_packets != 0;
     connection.flow_a = {};
     connection.flow_b = {};
 
@@ -493,12 +509,15 @@ bool read_connection(std::istream& stream, ConnectionV4& connection) {
 bool read_connection(std::istream& stream, ConnectionV6& connection) {
     std::uint8_t has_flow_a {0};
     std::uint8_t has_flow_b {0};
+    std::uint8_t has_fragmented_packets {0};
 
     if (!read_connection_key(stream, connection.key) ||
         !read_u8(stream, has_flow_a) ||
         !read_u8(stream, has_flow_b) ||
         !read_u64(stream, connection.packet_count) ||
         !read_u64(stream, connection.total_bytes) ||
+        !read_u8(stream, has_fragmented_packets) ||
+        !read_u64(stream, connection.fragmented_packet_count) ||
         !read_flow_protocol_hint(stream, connection.protocol_hint) ||
         !read_string(stream, connection.service_hint)) {
         return false;
@@ -506,6 +525,7 @@ bool read_connection(std::istream& stream, ConnectionV6& connection) {
 
     connection.has_flow_a = has_flow_a != 0;
     connection.has_flow_b = has_flow_b != 0;
+    connection.has_fragmented_packets = has_fragmented_packets != 0;
     connection.flow_a = {};
     connection.flow_b = {};
 
@@ -622,6 +642,7 @@ bool read_capture_state(std::istream& stream, CaptureState& state) {
 }
 
 }  // namespace pfl::detail
+
 
 
 

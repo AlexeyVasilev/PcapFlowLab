@@ -1,4 +1,4 @@
-#include "core/decode/PacketDecoder.h"
+﻿#include "core/decode/PacketDecoder.h"
 
 #include <algorithm>
 #include <array>
@@ -11,7 +11,7 @@ namespace pfl {
 
 namespace {
 
-PacketRef make_packet_ref(const RawPcapPacket& packet) {
+PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragmented = false) {
     return PacketRef {
         .packet_index = packet.packet_index,
         .byte_offset = packet.data_offset,
@@ -22,6 +22,7 @@ PacketRef make_packet_ref(const RawPcapPacket& packet) {
         .ts_usec = packet.ts_usec,
         .payload_length = 0,
         .tcp_flags = 0,
+        .is_ip_fragmented = is_ip_fragmented,
     };
 }
 
@@ -96,17 +97,38 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         }
 
         const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
-        if ((flags_fragment & 0x3FFFU) != 0U) {
-            return {};
-        }
+        const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
 
         const auto protocol = packet_bytes[ipv4_offset + 9U];
         const auto transport_offset = ipv4_offset + ihl;
         const auto packet_end = std::min(ipv4_offset + total_length, packet_bytes.size());
-        const auto flow_base = FlowKeyV4 {
+        auto flow_base = FlowKeyV4 {
             .src_addr = detail::read_be32(packet_bytes, ipv4_offset + 12U),
             .dst_addr = detail::read_be32(packet_bytes, ipv4_offset + 16U),
         };
+
+        if (is_fragmented) {
+            switch (protocol) {
+            case detail::kIpProtocolTcp:
+                flow_base.protocol = ProtocolId::tcp;
+                break;
+            case detail::kIpProtocolUdp:
+                flow_base.protocol = ProtocolId::udp;
+                break;
+            case detail::kIpProtocolIcmp:
+                flow_base.protocol = ProtocolId::icmp;
+                break;
+            default:
+                return {};
+            }
+
+            return DecodedPacket {
+                .ipv4 = IngestedPacketV4 {
+                    .flow_key = flow_base,
+                    .packet_ref = make_packet_ref(packet, true),
+                },
+            };
+        }
 
         if (protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
@@ -209,6 +231,29 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_addr[index] = packet_bytes[ipv6_offset + 24U + index];
         }
 
+        if (payload->has_fragment_header) {
+            switch (payload->next_header) {
+            case detail::kIpProtocolTcp:
+                flow_key.protocol = ProtocolId::tcp;
+                break;
+            case detail::kIpProtocolUdp:
+                flow_key.protocol = ProtocolId::udp;
+                break;
+            case detail::kIpProtocolIcmpV6:
+                flow_key.protocol = ProtocolId::icmpv6;
+                break;
+            default:
+                return {};
+            }
+
+            return DecodedPacket {
+                .ipv6 = IngestedPacketV6 {
+                    .flow_key = flow_key,
+                    .packet_ref = make_packet_ref(packet, true),
+                },
+            };
+        }
+
         if (payload->next_header == detail::kIpProtocolTcp) {
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 packet_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
@@ -285,4 +330,3 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 }
 
 }  // namespace pfl
-

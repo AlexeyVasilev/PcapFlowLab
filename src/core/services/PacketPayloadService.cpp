@@ -1,4 +1,4 @@
-#include "core/services/PacketPayloadService.h"
+﻿#include "core/services/PacketPayloadService.h"
 
 #include <optional>
 #include <span>
@@ -106,7 +106,7 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         }
 
         const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
-        if (!payload.has_value() || payload->payload_offset > packet_end) {
+        if (!payload.has_value() || payload->payload_offset > packet_end || payload->has_fragment_header) {
             return {};
         }
 

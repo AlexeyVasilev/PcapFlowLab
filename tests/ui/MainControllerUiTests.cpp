@@ -244,7 +244,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.flowSortColumn() == 4);
     UI_EXPECT(controller.flowSortAscending());
 
-    controller.sortFlows(4);
+    controller.sortFlows(5);
+    UI_EXPECT(controller.flowSortColumn() == 5);
+    UI_EXPECT(controller.flowSortAscending());
+
+    controller.sortFlows(5);
     UI_EXPECT(!controller.flowSortAscending());
 
     controller.setFlowFilterText(QStringLiteral("ui.example"));
@@ -363,9 +367,41 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Packet is truncated in capture")));
     UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Captured Length: %1").arg(captured_truncated_packet.size())));
     UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Original Length: %1").arg(full_truncated_packet.size())));
+    const auto fragmented_packet = make_ethernet_ipv4_fragment_packet(
+        ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 6, 0x2000U, {0x16, 0x03, 0x03, 0x00, 0x10});
+    const auto fragmented_capture_path = write_temp_pcap(
+        "pfl_ui_fragmented_packet.pcap",
+        make_classic_pcap({
+            {100, fragmented_packet},
+            {200, make_ethernet_ipv4_tcp_packet(ipv4(192, 0, 2, 10), ipv4(192, 0, 2, 20), 2222, 443)},
+        })
+    );
+
+    MainController fragmented_controller {};
+    UI_EXPECT(fragmented_controller.openCaptureFile(QString::fromStdWString(fragmented_capture_path.wstring())));
+    auto* fragmented_flow_model = qobject_cast<FlowListModel*>(fragmented_controller.flowModel());
+    UI_EXPECT(fragmented_flow_model != nullptr);
+    UI_EXPECT(fragmented_flow_model->rowCount() == 2);
+
+    bool saw_fragmented_flow = false;
+    for (int row = 0; row < fragmented_flow_model->rowCount(); ++row) {
+        const auto index = fragmented_flow_model->index(row, 0);
+        if (fragmented_flow_model->data(index, FlowListModel::HasFragmentedPacketsRole).toBool()) {
+            saw_fragmented_flow = true;
+            UI_EXPECT(fragmented_flow_model->data(index, FlowListModel::FragmentedPacketCountRole).toString() == QStringLiteral("1"));
+            fragmented_controller.setSelectedFlowIndex(
+                fragmented_flow_model->data(index, FlowListModel::FlowIndexRole).toInt()
+            );
+            break;
+        }
+    }
+    UI_EXPECT(saw_fragmented_flow);
+
+    fragmented_controller.setSelectedPacketIndex(0);
+    auto* fragmented_details_model = qobject_cast<PacketDetailsViewModel*>(fragmented_controller.packetDetailsModel());
+    UI_EXPECT(fragmented_details_model != nullptr);
+    UI_EXPECT(fragmented_details_model->summaryText().contains(QStringLiteral("Warnings")));
+    UI_EXPECT(fragmented_details_model->summaryText().contains(QStringLiteral("Packet is IP-fragmented")));
 
     return 0;
 }
-
-
-

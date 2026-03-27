@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <QAbstractListModel>
 #include <QString>
@@ -20,6 +20,8 @@ public:
         ProtocolRole,
         ProtocolHintRole,
         ServiceHintRole,
+        HasFragmentedPacketsRole,
+        FragmentedPacketCountRole,
         AddressARole,
         PortARole,
         AddressBRole,
@@ -34,6 +36,7 @@ public:
         protocol,
         protocol_hint,
         service_hint,
+        fragmented_packets,
         address_a,
         port_a,
         address_b,
@@ -68,6 +71,8 @@ public:
         QString protocol {};
         QString protocol_hint {};
         QString service_hint {};
+        bool has_fragmented_packets {false};
+        qulonglong fragmented_packets {0};
         QString address_a {};
         quint32 port_a {0};
         QString endpoint_a {};

@@ -1,4 +1,4 @@
-import QtQuick
+﻿import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -78,74 +78,18 @@ Frame {
             Layout.fillWidth: true
             spacing: 10
 
-            Button {
-                text: "Index" + root.sortIndicator(0)
-                Layout.preferredWidth: 64
-                onClicked: root.sortRequested(0)
-            }
-
-            Button {
-                text: "Family" + root.sortIndicator(1)
-                Layout.preferredWidth: 74
-                onClicked: root.sortRequested(1)
-            }
-
-            Button {
-                text: "Protocol" + root.sortIndicator(2)
-                Layout.preferredWidth: 86
-                onClicked: root.sortRequested(2)
-            }
-
-            Button {
-                text: "Proto Hint" + root.sortIndicator(3)
-                Layout.preferredWidth: 98
-                onClicked: root.sortRequested(3)
-            }
-
-            Button {
-                text: "Service" + root.sortIndicator(4)
-                Layout.fillWidth: true
-                Layout.preferredWidth: 220
-                onClicked: root.sortRequested(4)
-            }
-
-            Button {
-                text: "Address A" + root.sortIndicator(5)
-                Layout.fillWidth: true
-                Layout.preferredWidth: 180
-                onClicked: root.sortRequested(5)
-            }
-
-            Button {
-                text: "Port A" + root.sortIndicator(6)
-                Layout.preferredWidth: 78
-                onClicked: root.sortRequested(6)
-            }
-
-            Button {
-                text: "Address B" + root.sortIndicator(7)
-                Layout.fillWidth: true
-                Layout.preferredWidth: 180
-                onClicked: root.sortRequested(7)
-            }
-
-            Button {
-                text: "Port B" + root.sortIndicator(8)
-                Layout.preferredWidth: 78
-                onClicked: root.sortRequested(8)
-            }
-
-            Button {
-                text: "Packets" + root.sortIndicator(9)
-                Layout.preferredWidth: 86
-                onClicked: root.sortRequested(9)
-            }
-
-            Button {
-                text: "Bytes" + root.sortIndicator(10)
-                Layout.preferredWidth: 92
-                onClicked: root.sortRequested(10)
-            }
+            Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: 64; onClicked: root.sortRequested(0) }
+            Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: 74; onClicked: root.sortRequested(1) }
+            Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: 86; onClicked: root.sortRequested(2) }
+            Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: 98; onClicked: root.sortRequested(3) }
+            Button { text: "Service" + root.sortIndicator(4); Layout.fillWidth: true; Layout.preferredWidth: 220; onClicked: root.sortRequested(4) }
+            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: 64; onClicked: root.sortRequested(5) }
+            Button { text: "Address A" + root.sortIndicator(6); Layout.fillWidth: true; Layout.preferredWidth: 180; onClicked: root.sortRequested(6) }
+            Button { text: "Port A" + root.sortIndicator(7); Layout.preferredWidth: 78; onClicked: root.sortRequested(7) }
+            Button { text: "Address B" + root.sortIndicator(8); Layout.fillWidth: true; Layout.preferredWidth: 180; onClicked: root.sortRequested(8) }
+            Button { text: "Port B" + root.sortIndicator(9); Layout.preferredWidth: 78; onClicked: root.sortRequested(9) }
+            Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: 86; onClicked: root.sortRequested(10) }
+            Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: 92; onClicked: root.sortRequested(11) }
         }
 
         Rectangle {
@@ -173,6 +117,7 @@ Frame {
                     required property string protocol
                     required property string protocolHint
                     required property string serviceHint
+                    required property string fragmentedPacketCount
                     required property string addressA
                     required property int portA
                     required property string addressB
@@ -192,72 +137,18 @@ Frame {
                         anchors.rightMargin: 10
                         spacing: 10
 
-                        Label {
-                            text: flowIndex
-                            Layout.preferredWidth: 46
-                            horizontalAlignment: Text.AlignRight
-                        }
-
-                        Label {
-                            text: family
-                            Layout.preferredWidth: 58
-                        }
-
-                        Label {
-                            text: protocol
-                            Layout.preferredWidth: 66
-                        }
-
-                        Label {
-                            text: protocolHint
-                            Layout.preferredWidth: 78
-                            elide: Text.ElideRight
-                        }
-
-                        Label {
-                            text: serviceHint
-                            Layout.fillWidth: true
-                            Layout.preferredWidth: 220
-                            elide: Text.ElideRight
-                        }
-
-                        Label {
-                            text: addressA
-                            Layout.fillWidth: true
-                            Layout.preferredWidth: 180
-                            elide: Text.ElideMiddle
-                        }
-
-                        Label {
-                            text: portA
-                            Layout.preferredWidth: 62
-                            horizontalAlignment: Text.AlignRight
-                        }
-
-                        Label {
-                            text: addressB
-                            Layout.fillWidth: true
-                            Layout.preferredWidth: 180
-                            elide: Text.ElideMiddle
-                        }
-
-                        Label {
-                            text: portB
-                            Layout.preferredWidth: 62
-                            horizontalAlignment: Text.AlignRight
-                        }
-
-                        Label {
-                            text: packets
-                            Layout.preferredWidth: 68
-                            horizontalAlignment: Text.AlignRight
-                        }
-
-                        Label {
-                            text: bytes
-                            Layout.preferredWidth: 80
-                            horizontalAlignment: Text.AlignRight
-                        }
+                        Label { text: flowIndex; Layout.preferredWidth: 46; horizontalAlignment: Text.AlignRight }
+                        Label { text: family; Layout.preferredWidth: 58 }
+                        Label { text: protocol; Layout.preferredWidth: 66 }
+                        Label { text: protocolHint; Layout.preferredWidth: 78; elide: Text.ElideRight }
+                        Label { text: serviceHint; Layout.fillWidth: true; Layout.preferredWidth: 220; elide: Text.ElideRight }
+                        Label { text: fragmentedPacketCount; Layout.preferredWidth: 48; horizontalAlignment: Text.AlignHCenter }
+                        Label { text: addressA; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
+                        Label { text: portA; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
+                        Label { text: addressB; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
+                        Label { text: portB; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
+                        Label { text: packets; Layout.preferredWidth: 68; horizontalAlignment: Text.AlignRight }
+                        Label { text: bytes; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
                     }
 
                     MouseArea {

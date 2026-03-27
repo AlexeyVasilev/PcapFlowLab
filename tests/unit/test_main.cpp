@@ -1,4 +1,4 @@
-﻿#include <exception>
+#include <exception>
 #include <iostream>
 #include <sstream>
 
@@ -33,6 +33,7 @@ void run_chunked_import_tests();
 void run_protocol_coverage_tests();
 void run_malformed_packet_handling_tests();
 void run_linux_cooked_tests();
+void run_fragmentation_tests();
 void run_reassembly_architecture_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
@@ -76,6 +77,7 @@ int main() {
         pfl::tests::run_protocol_coverage_tests();
         pfl::tests::run_malformed_packet_handling_tests();
         pfl::tests::run_linux_cooked_tests();
+        pfl::tests::run_fragmentation_tests();
         pfl::tests::run_reassembly_architecture_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
@@ -88,6 +90,7 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+
 
 
 

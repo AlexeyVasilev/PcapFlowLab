@@ -2,7 +2,7 @@
 
 Flow-centric PCAP analyzer for large network captures.
 
-Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, Linux cooked captures (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and conservative traversal of common IPv6 extension headers.
+Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, Linux cooked captures (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, conservative traversal of common IPv6 extension headers, and always-on IP fragmentation detection as diagnostic metadata.
 
 ## Project status
 
@@ -40,7 +40,7 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or analysis indexes via native file dialogs, save the current analysis state back to an index, export the currently selected flow to classic PCAP, choose `Fast` or `Deep` mode when opening captures, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show local packet numbering within the selected flow, packet direction, transport payload length, and TCP flags directly in the packet list, with the original file index explicitly labeled in packet summary and truncated packets highlighted and warned about in packet details. In Deep mode, the Protocol tab now shows richer single-packet TLS, DNS, HTTP, ARP, ICMP, and ICMPv6 details when they are available. A temporary Settings tab now exposes the first analysis setting: falling back to the HTTP request path as a service hint when the Host header is missing. Analysis indexes can also be opened without the original capture, with explicit index-only UI feedback and a follow-up action to attach the matching source capture later and restore raw packet features. The Packet Details structure is also prepared for future protocol-aware decoding.
+The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or analysis indexes via native file dialogs, save the current analysis state back to an index, export the currently selected flow to classic PCAP, choose `Fast` or `Deep` mode when opening captures, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, show fragmented-packet counts in a compact `Frag` flow column, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show local packet numbering within the selected flow, packet direction, transport payload length, and TCP flags directly in the packet list, with the original file index explicitly labeled in packet summary and truncated or IP-fragmented packets warned about in packet details. In Deep mode, the Protocol tab now shows richer single-packet TLS, DNS, HTTP, ARP, ICMP, and ICMPv6 details when they are available. A temporary Settings tab now exposes the first analysis setting: falling back to the HTTP request path as a service hint when the Host header is missing. Analysis indexes can also be opened without the original capture, with explicit index-only UI feedback and a follow-up action to attach the matching source capture later and restore raw packet features. The Packet Details structure is also prepared for future protocol-aware decoding.
 
 
 
@@ -50,6 +50,7 @@ The CLI remains the primary interface today. The Qt Quick desktop UI can already
 
 
 Deep mode already exists as a separate import path, but Fast mode remains optimized for quick browsing. Deep mode currently exposes richer TLS, DNS, and HTTP packet-level details in the Protocol tab when they are available from a single packet.
+
 
 
 

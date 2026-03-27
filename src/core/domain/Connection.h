@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #include <string>
@@ -20,6 +20,8 @@ struct ConnectionV4 {
 
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+    bool has_fragmented_packets {false};
+    std::uint64_t fragmented_packet_count {0};
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
 
@@ -38,6 +40,8 @@ struct ConnectionV6 {
 
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+    bool has_fragmented_packets {false};
+    std::uint64_t fragmented_packet_count {0};
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
 
