@@ -202,6 +202,7 @@ if(BUILD_TESTING)
         tests/unit/ExportTests.cpp
         tests/unit/PcapNgTests.cpp
         tests/unit/IndexTests.cpp
+        tests/unit/IndexFormatTests.cpp
         tests/unit/ChunkedImportTests.cpp
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp
@@ -218,6 +219,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 
