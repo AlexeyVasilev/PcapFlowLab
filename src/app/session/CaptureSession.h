@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <filesystem>
 #include <optional>
@@ -9,6 +9,7 @@
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
+#include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
 
 namespace pfl {
@@ -33,6 +34,7 @@ public:
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_payload_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_protocol_details_text(const PacketRef& packet) const;
+    [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(const ReassemblyRequest& request) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
@@ -56,3 +58,6 @@ private:
 };
 
 }  // namespace pfl
+
+
+

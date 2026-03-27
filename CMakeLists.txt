@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+﻿cmake_minimum_required(VERSION 3.24)
 
 project(
     pcap_flow_lab
@@ -58,6 +58,7 @@ add_library(
     src/core/index/ImportCheckpointWriter.cpp
     src/core/index/ImportCheckpointReader.cpp
     src/core/decode/PacketDecoder.cpp
+    src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImportProcessor.cpp
     src/core/services/FastCaptureImporter.cpp
@@ -207,6 +208,7 @@ if(BUILD_TESTING)
         tests/unit/ProtocolCoverageTests.cpp
         tests/unit/MalformedPacketHandlingTests.cpp
         tests/unit/LinuxCookedTests.cpp
+        tests/unit/ReassemblyArchitectureTests.cpp
         tests/unit/FlowHintsTests.cpp
         tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
@@ -220,6 +222,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

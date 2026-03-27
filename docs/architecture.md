@@ -1,4 +1,4 @@
-# Architecture
+﻿# Architecture
 
 Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriented analysis rather than packet-by-packet UI workflows.
 
@@ -8,6 +8,7 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - `core/io`: classic PCAP and initial PCAPNG file access, random-access byte reading, lazy packet-data retrieval by file offset, and classic PCAP writing.
 - `core/index`: persistent analysis index read/write support, plus import checkpoint read/write support for source-capture metadata, partial state, flows, packet references, and resume progress.
 - `core/decode`: packet metadata decoding from raw frames into ingestion-ready flow keys.
+- `core/reassembly`: deep-only reassembly service scaffolding and shared request/result types for future analyzer-driven stream work.
 - `core/services`: orchestration logic such as packet ingestion, capture import, chunked import/resume, flow aggregation, queries, enrichment, exports, and on-demand packet inspection.
 - `app/session`: application-facing session state and use-case entry points, including small read-only query helpers and unified open helpers for captures and saved indexes.
 - `cli`: a small command-line interface that exercises the current core and session stack.
@@ -17,6 +18,7 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Flow-first design: connection lookup uses canonical bidirectional connection keys, while per-direction packet grouping keeps exact directional flow keys.
 - Runtime ingestion path: import auto-detects classic PCAP vs PCAPNG, decodes packet metadata, and ingests it into IPv4 and IPv6 connection tables grouped as Flow A and Flow B.
 - Import modes: the project now distinguishes a fast import mode and a deep import mode. Fast mode is the default path and is kept simple for responsiveness and minimal branching. Deep mode is a separate architectural integration point for future richer analyzers and reassembly, but currently remains functionally close to fast mode. Planned reassembly boundaries and first-scope goals are captured in `docs/reassembly-rfc.md`.
+- Reassembly architecture: `docs/reassembly-rfc.md` is the design basis for future deep-only reassembly work. The current tree now also includes a minimal `core/reassembly` service skeleton so analyzer integration points are explicit, but real reassembly logic is still intentionally deferred.
 - Analysis settings: import options also carry a small `AnalysisSettings` structure so future analyzer behavior can be configured without widening the session API. The first implemented setting is `http_use_path_as_service_hint`, and the current desktop UI exposes it in a temporary Settings tab. Settings apply to newly opened captures and are not retroactive.
 - Current import scope: classic PCAP is supported directly, and current PCAPNG support is focused on SHB + IDB + EPB with packet ingestion for Ethernet and common Linux cooked link-layer captures. Richer block and option handling will come later.
 - Current decode scope: the decode path supports Ethernet II, Linux cooked capture headers (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and conservative traversal of common IPv6 extension headers to reach TCP, UDP, and ICMPv6 safely. Richer layered decode will come later.
@@ -29,6 +31,8 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Chunked import v1: partial imports can be checkpointed by storing the current `CaptureState` together with source validation metadata, processed-packet count, and the next reader offset. This is a first step toward large-capture workflows, not yet a disk-backed merge engine.
 
 This separation keeps the core reusable across future CLI and desktop frontends while supporting large captures with predictable memory use.
+
+
 
 
 

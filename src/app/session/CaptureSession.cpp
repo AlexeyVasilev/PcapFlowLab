@@ -1,4 +1,4 @@
-#include "app/session/CaptureSession.h"
+﻿#include "app/session/CaptureSession.h"
 
 #include <algorithm>
 #include <array>
@@ -9,6 +9,7 @@
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
+#include "core/reassembly/ReassemblyService.h"
 #include "core/io/CaptureFilePacketReader.h"
 #include "core/services/CaptureImporter.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
@@ -684,6 +685,22 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
 
     return std::string {kNoProtocolDetailsMessage};
 }
+std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const ReassemblyRequest& request) const {
+    if (!has_loaded_state_ || import_mode_ != ImportMode::deep) {
+        return std::nullopt;
+    }
+
+    if (!has_source_capture()) {
+        return std::nullopt;
+    }
+
+    if (!flow_packets(request.flow_index).has_value()) {
+        return std::nullopt;
+    }
+
+    ReassemblyService service {};
+    return service.reassemble_tcp_payload(*this, request);
+}
 std::vector<FlowRow> CaptureSession::list_flows() const {
     const auto connections = list_connections(state_);
     std::vector<FlowRow> rows {};
@@ -790,6 +807,10 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
 
 
 

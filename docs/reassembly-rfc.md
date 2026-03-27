@@ -146,7 +146,7 @@ Each of those should remain incremental and measurable. The project should not j
 ## Proposed Near-Term Integration Points
 
 When implementation starts, the least disruptive entry points are likely:
-- a new deep-only reassembly service in `core/services`
+- a new deep-only reassembly service in `core/reassembly`
 - one or more `CaptureSession` helpers for selected-flow deep reads
 - analyzer-specific use from HTTP and TLS deep protocol analysis first
 
@@ -155,4 +155,5 @@ This keeps the design aligned with current project priorities:
 - conservative correctness
 - explicit deep-only cost
 - bounded memory behavior
+
 
