@@ -82,6 +82,61 @@ void run_packet_protocol_details_tests() {
     }
 
     {
+        const auto arp_packet = make_ethernet_arp_packet(ipv4(192, 168, 1, 10), ipv4(192, 168, 1, 1), 1);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_arp_deep.pcap",
+            make_classic_pcap({{100, arp_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("ARP") != std::string::npos);
+        PFL_EXPECT(text.find("Opcode: 1") != std::string::npos);
+        PFL_EXPECT(text.find("Sender IPv4: 192.168.1.10") != std::string::npos);
+        PFL_EXPECT(text.find("Target IPv4: 192.168.1.1") != std::string::npos);
+    }
+
+    {
+        const auto icmp_packet = make_ethernet_ipv4_icmp_packet(ipv4(10, 0, 0, 10), ipv4(10, 0, 0, 20), 8, 0);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_icmp_deep.pcap",
+            make_classic_pcap({{100, icmp_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("ICMP") != std::string::npos);
+        PFL_EXPECT(text.find("Type: 8") != std::string::npos);
+        PFL_EXPECT(text.find("Code: 0") != std::string::npos);
+        PFL_EXPECT(text.find("Source: 10.0.0.10") != std::string::npos);
+        PFL_EXPECT(text.find("Destination: 10.0.0.20") != std::string::npos);
+    }
+
+    {
+        const auto ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+        const auto ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02});
+        const auto icmpv6_packet = make_ethernet_ipv6_icmpv6_with_hop_by_hop_packet(ipv6_src, ipv6_dst, 128, 0);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_icmpv6_deep.pcap",
+            make_classic_pcap({{100, icmpv6_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("ICMPv6") != std::string::npos);
+        PFL_EXPECT(text.find("Type: 128") != std::string::npos);
+        PFL_EXPECT(text.find("Code: 0") != std::string::npos);
+        PFL_EXPECT(text.find("Source: 2001:0db8:0000:0000:0000:0000:0000:0001") != std::string::npos);
+        PFL_EXPECT(text.find("Destination: 2001:0db8:0000:0000:0000:0000:0000:0002") != std::string::npos);
+    }
+
+    {
         const auto packet_bytes = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
             ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80,
             std::vector<std::uint8_t> {'G', 'E', 'T', ' ', '/', ' '}, 0x18);
@@ -132,4 +187,3 @@ void run_packet_protocol_details_tests() {
 }
 
 }  // namespace pfl::tests
-

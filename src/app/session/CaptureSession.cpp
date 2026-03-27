@@ -264,6 +264,53 @@ std::string format_endpoint(const EndpointKeyV6& endpoint) {
     return builder.str();
 }
 
+std::string format_ipv4_address(const std::array<std::uint8_t, 4>& address) {
+    std::ostringstream builder {};
+    builder << static_cast<unsigned>(address[0]) << '.'
+            << static_cast<unsigned>(address[1]) << '.'
+            << static_cast<unsigned>(address[2]) << '.'
+            << static_cast<unsigned>(address[3]);
+    return builder.str();
+}
+
+std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details) {
+    std::ostringstream builder {};
+
+    if (details.has_arp) {
+        builder << "ARP\n"
+                << "Opcode: " << details.arp.opcode << '\n'
+                << "Sender IPv4: " << format_ipv4_address(details.arp.sender_ipv4) << '\n'
+                << "Target IPv4: " << format_ipv4_address(details.arp.target_ipv4);
+        return builder.str();
+    }
+
+    if (details.has_icmp) {
+        builder << "ICMP\n"
+                << "Type: " << static_cast<unsigned>(details.icmp.type) << '\n'
+                << "Code: " << static_cast<unsigned>(details.icmp.code);
+        if (details.has_ipv4) {
+            builder << '\n'
+                    << "Source: " << format_ipv4_address(details.ipv4.src_addr) << '\n'
+                    << "Destination: " << format_ipv4_address(details.ipv4.dst_addr);
+        }
+        return builder.str();
+    }
+
+    if (details.has_icmpv6) {
+        builder << "ICMPv6\n"
+                << "Type: " << static_cast<unsigned>(details.icmpv6.type) << '\n'
+                << "Code: " << static_cast<unsigned>(details.icmpv6.code);
+        if (details.has_ipv6) {
+            builder << '\n'
+                    << "Source: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
+                    << "Destination: " << format_ipv6_address(details.ipv6.dst_addr);
+        }
+        return builder.str();
+    }
+
+    return std::nullopt;
+}
+
 constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
@@ -584,6 +631,13 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return *http_details;
     }
 
+    PacketDetailsService details_service {};
+    if (const auto details = details_service.decode(bytes, packet); details.has_value()) {
+        if (const auto generic_details = build_basic_protocol_details_text(*details); generic_details.has_value()) {
+            return *generic_details;
+        }
+    }
+
     return std::string {kNoProtocolDetailsMessage};
 }
 std::vector<FlowRow> CaptureSession::list_flows() const {
@@ -692,6 +746,9 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
 
 
 
