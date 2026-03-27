@@ -577,8 +577,54 @@ inline std::vector<std::uint8_t> make_truncated_ethernet_ipv6_extension_packet(
     return make_ethernet_ipv6_packet(src_addr, dst_addr, 0, {58, 1, 0x00});
 }
 
+inline std::vector<std::uint8_t> strip_ethernet_header(const std::vector<std::uint8_t>& ethernet_packet) {
+    if (ethernet_packet.size() <= 14U) {
+        return {};
+    }
+
+    return std::vector<std::uint8_t>(ethernet_packet.begin() + 14, ethernet_packet.end());
+}
+
+inline std::vector<std::uint8_t> make_linux_cooked_sll_packet(
+    std::uint16_t protocol_type,
+    const std::vector<std::uint8_t>& network_payload,
+    std::uint16_t packet_type = 0,
+    std::uint16_t hardware_type = 1,
+    std::uint16_t link_address_length = 6
+) {
+    std::vector<std::uint8_t> bytes {};
+    append_be16(bytes, packet_type);
+    append_be16(bytes, hardware_type);
+    append_be16(bytes, link_address_length);
+    bytes.insert(bytes.end(), {0x00, 0x24, 0x81, 0xaa, 0xbb, 0xcc, 0x00, 0x00});
+    append_be16(bytes, protocol_type);
+    bytes.insert(bytes.end(), network_payload.begin(), network_payload.end());
+    return bytes;
+}
+
+inline std::vector<std::uint8_t> make_linux_cooked_sll2_packet(
+    std::uint16_t protocol_type,
+    const std::vector<std::uint8_t>& network_payload,
+    std::uint8_t packet_type = 0,
+    std::uint16_t hardware_type = 1,
+    std::uint8_t link_address_length = 6,
+    std::uint32_t interface_index = 1
+) {
+    std::vector<std::uint8_t> bytes {};
+    append_be16(bytes, protocol_type);
+    append_be16(bytes, 0);
+    append_be32(bytes, interface_index);
+    append_be16(bytes, hardware_type);
+    bytes.push_back(packet_type);
+    bytes.push_back(link_address_length);
+    bytes.insert(bytes.end(), {0x00, 0x24, 0x81, 0xaa, 0xbb, 0xcc, 0x00, 0x00});
+    bytes.insert(bytes.end(), network_payload.begin(), network_payload.end());
+    return bytes;
+}
+
 inline std::vector<std::uint8_t> make_classic_pcap(
-    const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>& packets
+    const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>& packets,
+    std::uint32_t linktype
 ) {
     std::vector<std::uint8_t> bytes {};
     append_le32(bytes, 0xa1b2c3d4U);
@@ -587,7 +633,7 @@ inline std::vector<std::uint8_t> make_classic_pcap(
     append_le32(bytes, 0);
     append_le32(bytes, 0);
     append_le32(bytes, 65535);
-    append_le32(bytes, 1);
+    append_le32(bytes, linktype);
 
     std::uint32_t ts_sec = 1;
     for (const auto& [ts_usec, packet] : packets) {
@@ -600,6 +646,12 @@ inline std::vector<std::uint8_t> make_classic_pcap(
     }
 
     return bytes;
+}
+
+inline std::vector<std::uint8_t> make_classic_pcap(
+    const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>& packets
+) {
+    return make_classic_pcap(packets, 1U);
 }
 
 inline std::filesystem::path write_temp_binary_file(const std::string& name, const std::vector<std::uint8_t>& bytes) {
@@ -615,6 +667,7 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
+
 
 
 

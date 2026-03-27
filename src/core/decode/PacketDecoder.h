@@ -18,6 +18,7 @@ struct DecodedPacket {
 
 class PacketDecoder {
 public:
+    [[nodiscard]] DecodedPacket decode(const RawPcapPacket& packet) const noexcept;
     [[nodiscard]] DecodedPacket decode_ethernet(const RawPcapPacket& packet) const noexcept;
 };
 

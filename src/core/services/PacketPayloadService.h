@@ -9,6 +9,8 @@ namespace pfl {
 class PacketPayloadService {
 public:
     [[nodiscard]] std::vector<std::uint8_t> extract_transport_payload(std::span<const std::uint8_t> packet_bytes) const;
+    [[nodiscard]] std::vector<std::uint8_t> extract_transport_payload(std::span<const std::uint8_t> packet_bytes,
+                                                                      std::uint32_t data_link_type) const;
 };
 
 }  // namespace pfl

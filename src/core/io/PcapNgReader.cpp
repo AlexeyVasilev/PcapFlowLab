@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 
+#include "core/io/LinkType.h"
+
 namespace pfl {
 
 namespace {
@@ -14,7 +16,6 @@ constexpr std::array<std::uint8_t, 4> kLittleEndianByteOrderMagicBytes {0x4dU, 0
 constexpr std::array<std::uint8_t, 4> kBigEndianByteOrderMagicBytes {0x1aU, 0x2bU, 0x3cU, 0x4dU};
 constexpr std::uint32_t kInterfaceDescriptionBlockType = 0x00000001U;
 constexpr std::uint32_t kEnhancedPacketBlockType = 0x00000006U;
-constexpr std::uint16_t kEthernetLinkType = 1U;
 constexpr std::uint16_t kEndOfOptionsCode = 0U;
 constexpr std::uint16_t kIfTsResolOptionCode = 9U;
 
@@ -228,7 +229,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         }
 
         const auto& interface_info = interfaces_[interface_id];
-        if (interface_info.linktype != kEthernetLinkType) {
+        if (!is_supported_capture_link_type(interface_info.linktype)) {
             continue;
         }
 
@@ -246,6 +247,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
             .captured_length = captured_length,
             .original_length = original_length,
             .data_offset = block_start + 28U,
+            .data_link_type = interface_info.linktype,
             .bytes = std::move(bytes),
         };
         ++next_packet_index_;
@@ -447,3 +449,8 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
 }
 
 }  // namespace pfl
+
+
+
+
+

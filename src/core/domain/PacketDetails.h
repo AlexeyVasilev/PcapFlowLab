@@ -21,6 +21,13 @@ struct VlanTagDetails {
     std::uint16_t encapsulated_ether_type {0};
 };
 
+struct LinuxCookedDetails {
+    std::uint32_t link_type {0};
+    std::uint16_t protocol_type {0};
+    std::uint16_t packet_type {0};
+    std::uint16_t hardware_type {0};
+};
+
 struct ArpDetails {
     std::uint16_t hardware_type {0};
     std::uint16_t protocol_type {0};
@@ -79,6 +86,9 @@ struct PacketDetails {
 
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
+
+    bool has_linux_cooked {false};
+    LinuxCookedDetails linux_cooked {};
 
     bool has_arp {false};
     ArpDetails arp {};

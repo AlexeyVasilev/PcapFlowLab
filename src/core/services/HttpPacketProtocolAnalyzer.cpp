@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "core/services/PacketPayloadService.h"
+#include "core/io/LinkType.h"
 
 namespace pfl {
 
@@ -153,8 +154,12 @@ std::optional<std::string> extract_host_header(const std::string_view headers) {
 }  // namespace
 
 std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes) const {
+    return analyze(packet_bytes, kLinkTypeEthernet);
+}
+
+std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
     PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes);
+    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
     if (payload_bytes.empty()) {
         return std::nullopt;
     }
@@ -258,3 +263,4 @@ std::optional<std::string> HttpPacketProtocolAnalyzer::analyze(std::span<const s
 }
 
 }  // namespace pfl
+

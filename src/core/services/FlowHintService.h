@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -16,7 +17,13 @@ public:
     explicit FlowHintService(AnalysisSettings settings = {});
 
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const;
+    [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,
+                                        std::uint32_t data_link_type,
+                                        const FlowKeyV4& flow_key) const;
     [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const;
+    [[nodiscard]] FlowHintUpdate detect(std::span<const std::uint8_t> packet_bytes,
+                                        std::uint32_t data_link_type,
+                                        const FlowKeyV6& flow_key) const;
 
 private:
     AnalysisSettings settings_ {};

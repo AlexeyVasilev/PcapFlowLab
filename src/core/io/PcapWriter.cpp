@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "core/io/LinkType.h"
+
 namespace pfl {
 
 namespace {
@@ -10,7 +12,6 @@ constexpr std::uint32_t kClassicPcapLittleEndianMagic = 0xa1b2c3d4U;
 constexpr std::uint16_t kPcapVersionMajor = 2;
 constexpr std::uint16_t kPcapVersionMinor = 4;
 constexpr std::uint32_t kPcapSnapLength = 65535U;
-constexpr std::uint32_t kEthernetLinkType = 1U;
 
 struct PcapGlobalHeader {
     std::uint32_t magic_number {kClassicPcapLittleEndianMagic};
@@ -19,7 +20,7 @@ struct PcapGlobalHeader {
     std::int32_t thiszone {0};
     std::uint32_t sigfigs {0};
     std::uint32_t snaplen {kPcapSnapLength};
-    std::uint32_t network {kEthernetLinkType};
+    std::uint32_t network {kLinkTypeEthernet};
 };
 
 struct PcapPacketHeader {
@@ -32,6 +33,10 @@ struct PcapPacketHeader {
 }  // namespace
 
 bool PcapWriter::open(const std::filesystem::path& path) {
+    return open(path, kLinkTypeEthernet);
+}
+
+bool PcapWriter::open(const std::filesystem::path& path, const std::uint32_t link_type) {
     close();
 
     stream_ = std::ofstream(path, std::ios::binary | std::ios::trunc);
@@ -39,7 +44,9 @@ bool PcapWriter::open(const std::filesystem::path& path) {
         return false;
     }
 
-    const PcapGlobalHeader header {};
+    const PcapGlobalHeader header {
+        .network = link_type,
+    };
     stream_.write(reinterpret_cast<const char*>(&header), static_cast<std::streamsize>(sizeof(header)));
     return stream_.good();
 }

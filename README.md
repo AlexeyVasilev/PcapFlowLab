@@ -2,7 +2,7 @@
 
 Flow-centric PCAP analyzer for large network captures.
 
-Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and conservative traversal of common IPv6 extension headers.
+Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, Linux cooked captures (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and conservative traversal of common IPv6 extension headers.
 
 ## Project status
 
@@ -50,6 +50,7 @@ The CLI remains the primary interface today. The Qt Quick desktop UI can already
 
 
 Deep mode already exists as a separate import path, but Fast mode remains optimized for quick browsing. Deep mode currently exposes richer TLS, DNS, and HTTP packet-level details in the Protocol tab when they are available from a single packet.
+
 
 
 

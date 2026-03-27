@@ -349,6 +349,7 @@ bool write_packet_ref(std::ostream& stream, const PacketRef& packet) {
            write_u32(stream, packet.ts_sec) &&
            write_u32(stream, packet.ts_usec) &&
            write_u64(stream, packet.byte_offset) &&
+           write_u32(stream, packet.data_link_type) &&
            write_u32(stream, packet.captured_length) &&
            write_u32(stream, packet.original_length) &&
            write_u32(stream, packet.payload_length) &&
@@ -360,6 +361,7 @@ bool read_packet_ref(std::istream& stream, PacketRef& packet) {
            read_u32(stream, packet.ts_sec) &&
            read_u32(stream, packet.ts_usec) &&
            read_u64(stream, packet.byte_offset) &&
+           read_u32(stream, packet.data_link_type) &&
            read_u32(stream, packet.captured_length) &&
            read_u32(stream, packet.original_length) &&
            read_u32(stream, packet.payload_length) &&
@@ -620,6 +622,9 @@ bool read_capture_state(std::istream& stream, CaptureState& state) {
 }
 
 }  // namespace pfl::detail
+
+
+
 
 
 

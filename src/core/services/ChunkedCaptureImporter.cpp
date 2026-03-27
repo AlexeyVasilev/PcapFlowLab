@@ -3,13 +3,12 @@
 #include "core/index/CaptureIndexWriter.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/index/ImportCheckpointWriter.h"
+#include "core/io/LinkType.h"
 #include "core/services/CaptureImportProcessor.h"
 
 namespace pfl {
 
 namespace {
-
-constexpr std::uint32_t kEthernetLinkType = 1U;
 
 bool save_checkpoint(const std::filesystem::path& checkpoint_path, const ImportCheckpoint& checkpoint) {
     ImportCheckpointWriter writer {};
@@ -68,7 +67,7 @@ ChunkedImportStatus import_from_checkpoint(const std::filesystem::path& checkpoi
             return ChunkedImportStatus::failed;
         }
 
-        if (reader.data_link_type() != kEthernetLinkType) {
+        if (!is_supported_capture_link_type(reader.data_link_type())) {
             return ChunkedImportStatus::failed;
         }
 
@@ -140,4 +139,3 @@ bool ChunkedCaptureImporter::finalize_to_index(const std::filesystem::path& chec
 }
 
 }  // namespace pfl
-

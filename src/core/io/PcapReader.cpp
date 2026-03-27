@@ -132,6 +132,7 @@ std::optional<RawPcapPacket> PcapReader::read_next() {
         .captured_length = packet_header.included_length,
         .original_length = packet_header.original_length,
         .data_offset = data_offset,
+        .data_link_type = global_header_.network,
         .bytes = std::move(bytes),
     };
     ++next_packet_index_;

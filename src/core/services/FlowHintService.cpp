@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "core/domain/ProtocolId.h"
+#include "core/io/LinkType.h"
 #include "core/services/PacketPayloadService.h"
 
 namespace pfl {
@@ -463,10 +464,11 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload) {
 
 template <typename FlowKey>
 FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes,
+                                      const std::uint32_t data_link_type,
                                       const FlowKey& flow_key,
                                       const AnalysisSettings& settings) {
     PacketPayloadService payload_service {};
-    const auto payload = payload_service.extract_transport_payload(packet_bytes);
+    const auto payload = payload_service.extract_transport_payload(packet_bytes, data_link_type);
     if (payload.empty()) {
         return {};
     }
@@ -515,11 +517,22 @@ FlowHintService::FlowHintService(const AnalysisSettings settings)
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const {
-    return detect_transport_hints(packet_bytes, flow_key, settings_);
+    return detect(packet_bytes, kLinkTypeEthernet, flow_key);
+}
+
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type, const FlowKeyV4& flow_key) const {
+    return detect_transport_hints(packet_bytes, data_link_type, flow_key, settings_);
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const {
-    return detect_transport_hints(packet_bytes, flow_key, settings_);
+    return detect(packet_bytes, kLinkTypeEthernet, flow_key);
+}
+
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type, const FlowKeyV6& flow_key) const {
+    return detect_transport_hints(packet_bytes, data_link_type, flow_key, settings_);
 }
 
 }  // namespace pfl
+
+
+

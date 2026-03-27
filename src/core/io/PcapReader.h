@@ -6,6 +6,8 @@
 #include <optional>
 #include <vector>
 
+#include "core/io/LinkType.h"
+
 namespace pfl {
 
 struct PcapGlobalHeader {
@@ -32,6 +34,7 @@ struct RawPcapPacket {
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
     std::uint64_t data_offset {0};
+    std::uint32_t data_link_type {kLinkTypeEthernet};
     std::vector<std::uint8_t> bytes {};
 };
 

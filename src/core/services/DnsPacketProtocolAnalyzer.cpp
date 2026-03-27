@@ -8,6 +8,7 @@
 #include <string>
 
 #include "core/services/PacketPayloadService.h"
+#include "core/io/LinkType.h"
 
 namespace pfl {
 
@@ -126,8 +127,12 @@ std::string qtype_text(const std::uint16_t qtype) {
 }  // namespace
 
 std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes) const {
+    return analyze(packet_bytes, kLinkTypeEthernet);
+}
+
+std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) const {
     PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes);
+    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, data_link_type);
     if (payload_bytes.empty()) {
         return std::nullopt;
     }
@@ -172,5 +177,6 @@ std::optional<std::string> DnsPacketProtocolAnalyzer::analyze(std::span<const st
 }
 
 }  // namespace pfl
+
 
 

@@ -32,6 +32,7 @@ void run_index_format_tests();
 void run_chunked_import_tests();
 void run_protocol_coverage_tests();
 void run_malformed_packet_handling_tests();
+void run_linux_cooked_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -73,6 +74,7 @@ int main() {
         pfl::tests::run_chunked_import_tests();
         pfl::tests::run_protocol_coverage_tests();
         pfl::tests::run_malformed_packet_handling_tests();
+        pfl::tests::run_linux_cooked_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
         return 1;
@@ -84,3 +86,4 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+

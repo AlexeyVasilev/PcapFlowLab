@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "core/io/CaptureFilePacketReader.h"
+#include "core/io/LinkType.h"
 #include "core/io/PcapWriter.h"
 
 namespace pfl {
@@ -16,7 +17,8 @@ bool FlowExportService::export_packets_to_pcap(const std::filesystem::path& outp
     }
 
     PcapWriter writer {};
-    if (!writer.open(output_path)) {
+    const auto link_type = packets.empty() ? kLinkTypeEthernet : packets.front().data_link_type;
+    if (!writer.open(output_path, link_type)) {
         return false;
     }
 
