@@ -16,9 +16,9 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 
 - Flow-first design: connection lookup uses canonical bidirectional connection keys, while per-direction packet grouping keeps exact directional flow keys.
 - Runtime ingestion path: import auto-detects classic PCAP vs PCAPNG, decodes packet metadata, and ingests it into IPv4 and IPv6 connection tables grouped as Flow A and Flow B.
-- Import modes: the project now distinguishes a fast import mode and a deep import mode. Fast mode is the default path and is kept simple for responsiveness and minimal branching. Deep mode is a separate architectural integration point for future richer analyzers and reassembly, but currently remains functionally close to fast mode.
+- Import modes: the project now distinguishes a fast import mode and a deep import mode. Fast mode is the default path and is kept simple for responsiveness and minimal branching. Deep mode is a separate architectural integration point for future richer analyzers and reassembly, but currently remains functionally close to fast mode. Planned reassembly boundaries and first-scope goals are captured in `docs/reassembly-rfc.md`.
 - Analysis settings: import options also carry a small `AnalysisSettings` structure so future analyzer behavior can be configured without widening the session API. The first implemented setting is `http_use_path_as_service_hint`, and the current desktop UI exposes it in a temporary Settings tab. Settings apply to newly opened captures and are not retroactive.
-- Current import scope: classic PCAP is supported directly, and current PCAPNG support is focused on SHB + IDB + EPB with Ethernet-oriented packet ingestion. Richer block and option handling will come later.
+- Current import scope: classic PCAP is supported directly, and current PCAPNG support is focused on SHB + IDB + EPB with packet ingestion for Ethernet and common Linux cooked link-layer captures. Richer block and option handling will come later.
 - Current decode scope: the decode path supports Ethernet II, Linux cooked capture headers (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, and conservative traversal of common IPv6 extension headers to reach TCP, UDP, and ICMPv6 safely. Richer layered decode will come later.
 - Packet byte access: `PacketRef` stores packet-data offsets, timestamps, transport payload length, and TCP flags from the original capture file, and raw packet bytes are read lazily from the capture on demand.
 - Cheap flow hints: import now attaches conservative single-packet protocol and service hints such as TLS, HTTP, DNS, and QUIC when they can be extracted safely from one packet payload. When enabled through analysis settings, HTTP request paths can be used as a fallback service hint if no Host header is present. Deep parsing and reassembly remain future work.
@@ -29,6 +29,8 @@ Pcap Flow Lab is organized as a layered C++20 codebase built around flow-oriente
 - Chunked import v1: partial imports can be checkpointed by storing the current `CaptureState` together with source validation metadata, processed-packet count, and the next reader offset. This is a first step toward large-capture workflows, not yet a disk-backed merge engine.
 
 This separation keeps the core reusable across future CLI and desktop frontends while supporting large captures with predictable memory use.
+
+
 
 
 
