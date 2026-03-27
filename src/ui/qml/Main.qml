@@ -39,6 +39,18 @@ ApplicationWindow {
                 onClicked: mainController.browseIndexFile()
             }
 
+            Button {
+                text: "Save Index"
+                enabled: mainController.canSaveIndex
+                onClicked: mainController.browseSaveAnalysisIndex()
+            }
+
+            Button {
+                text: "Export Flow"
+                enabled: mainController.canExportSelectedFlow
+                onClicked: mainController.browseExportSelectedFlow()
+            }
+
             TextField {
                 Layout.fillWidth: true
                 readOnly: true
@@ -53,6 +65,14 @@ ApplicationWindow {
             visible: mainController.openErrorText.length > 0
             text: mainController.openErrorText
             color: "#b91c1c"
+            wrapMode: Text.WordWrap
+        }
+
+        Label {
+            Layout.fillWidth: true
+            visible: mainController.statusText.length > 0
+            text: mainController.statusText
+            color: mainController.statusIsError ? "#b91c1c" : "#1f2937"
             wrapMode: Text.WordWrap
         }
 

@@ -108,23 +108,44 @@ int main(int argc, char* argv[]) {
     );
 
     MainController controller {};
+    UI_EXPECT(!controller.canSaveIndex());
+    UI_EXPECT(!controller.canExportSelectedFlow());
+    UI_EXPECT(controller.statusText().isEmpty());
     UI_EXPECT(controller.captureOpenMode() == kCliFastImportModeIndex);
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
     UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
+    UI_EXPECT(controller.canSaveIndex());
+    UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
+    UI_EXPECT(controller.statusText().isEmpty());
+
+    const auto saved_index_path = std::filesystem::temp_directory_path() / "pfl_ui_saved_analysis.idx";
+    std::error_code remove_error {};
+    std::filesystem::remove(saved_index_path, remove_error);
+    UI_EXPECT(controller.saveAnalysisIndex(QString::fromStdWString(saved_index_path.wstring())));
+    UI_EXPECT(std::filesystem::exists(saved_index_path));
+    UI_EXPECT(controller.statusText() == QStringLiteral("Analysis index saved successfully."));
+    UI_EXPECT(!controller.statusIsError());
+
+    const auto no_selection_export_path = std::filesystem::temp_directory_path() / "pfl_ui_no_selection_export.pcap";
+    std::filesystem::remove(no_selection_export_path, remove_error);
+    UI_EXPECT(!controller.exportSelectedFlow(QString::fromStdWString(no_selection_export_path.wstring())));
+    UI_EXPECT(controller.statusText() == QStringLiteral("No flow selected for export."));
+    UI_EXPECT(controller.statusIsError());
+    UI_EXPECT(!std::filesystem::exists(no_selection_export_path));
 
     CaptureSession index_session {};
     UI_EXPECT(index_session.open_capture(capture_path));
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_ui_mode_test.idx";
-    std::error_code remove_error {};
     std::filesystem::remove(index_path, remove_error);
     UI_EXPECT(index_session.save_index(index_path));
 
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(controller.openIndexFile(QString::fromStdWString(index_path.wstring())));
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
+    UI_EXPECT(controller.canSaveIndex());
     UI_EXPECT(controller.flowCount() == 3U);
     UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
 
@@ -188,6 +209,19 @@ int main(int argc, char* argv[]) {
     controller.setFlowFilterText(QStringLiteral("ui.example"));
     UI_EXPECT(flow_model->rowCount() == 1);
     controller.setSelectedFlowIndex(flow_model->data(flow_model->index(0, 0), FlowListModel::FlowIndexRole).toInt());
+    UI_EXPECT(controller.canExportSelectedFlow());
+
+    const auto exported_flow_path = std::filesystem::temp_directory_path() / "pfl_ui_selected_flow_export.pcap";
+    std::filesystem::remove(exported_flow_path, remove_error);
+    UI_EXPECT(controller.exportSelectedFlow(QString::fromStdWString(exported_flow_path.wstring())));
+    UI_EXPECT(std::filesystem::exists(exported_flow_path));
+    UI_EXPECT(controller.statusText() == QStringLiteral("Flow exported successfully."));
+    UI_EXPECT(!controller.statusIsError());
+
+    CaptureSession exported_flow_session {};
+    UI_EXPECT(exported_flow_session.open_capture(exported_flow_path));
+    UI_EXPECT(exported_flow_session.summary().packet_count == 1U);
+    UI_EXPECT(exported_flow_session.summary().flow_count == 1U);
 
     auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
     UI_EXPECT(packet_model != nullptr);
@@ -215,6 +249,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.currentTabIndex() == 0);
     UI_EXPECT(controller.flowFilterText() == QStringLiteral("10.0.0.1:1111"));
     UI_EXPECT(controller.selectedFlowIndex() == -1);
+    UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(details_model->payloadText().isEmpty());
     UI_EXPECT(flow_model->rowCount() == 1);
@@ -290,7 +325,5 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-
 
 

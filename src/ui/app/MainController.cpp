@@ -6,7 +6,6 @@
 
 #include <QFileDialog>
 #include <QStringList>
-#include <QWidget>
 
 #include "cli/CliImportMode.h"
 
@@ -290,8 +289,24 @@ QString MainController::openErrorText() const {
     return open_error_text_;
 }
 
+QString MainController::statusText() const {
+    return status_text_;
+}
+
+bool MainController::statusIsError() const noexcept {
+    return status_is_error_;
+}
+
 bool MainController::hasCapture() const noexcept {
     return session_.has_capture();
+}
+
+bool MainController::canSaveIndex() const noexcept {
+    return session_.has_capture();
+}
+
+bool MainController::canExportSelectedFlow() const noexcept {
+    return session_.has_capture() && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::packetCount() const noexcept {
@@ -410,6 +425,49 @@ bool MainController::openIndexFile(const QString& path) {
     return openPath(path, true);
 }
 
+bool MainController::saveAnalysisIndex(const QString& path) {
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    const bool saved = session_.save_index(filesystemPath);
+    if (!saved) {
+        setStatusText(QStringLiteral("Failed to save analysis index."), true);
+        return false;
+    }
+
+    setLastDirectoryFromPath(filesystemPath);
+    setStatusText(QStringLiteral("Analysis index saved successfully."));
+    return true;
+}
+
+bool MainController::exportSelectedFlow(const QString& path) {
+    if (selected_flow_index_ < 0) {
+        setStatusText(QStringLiteral("No flow selected for export."), true);
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    const bool exported = session_.export_flow_to_pcap(static_cast<std::size_t>(selected_flow_index_), filesystemPath);
+    if (!exported) {
+        setStatusText(QStringLiteral("Failed to export selected flow."), true);
+        return false;
+    }
+
+    setLastDirectoryFromPath(filesystemPath);
+    setStatusText(QStringLiteral("Flow exported successfully."));
+    return true;
+}
+
 void MainController::browseCaptureFile() {
     const QString path = chooseFile(false);
     if (!path.isEmpty()) {
@@ -421,6 +479,20 @@ void MainController::browseIndexFile() {
     const QString path = chooseFile(true);
     if (!path.isEmpty()) {
         openIndexFile(path);
+    }
+}
+
+void MainController::browseSaveAnalysisIndex() {
+    const QString path = chooseSaveFile(true);
+    if (!path.isEmpty()) {
+        saveAnalysisIndex(path);
+    }
+}
+
+void MainController::browseExportSelectedFlow() {
+    const QString path = chooseSaveFile(false);
+    if (!path.isEmpty()) {
+        exportSelectedFlow(path);
     }
 }
 
@@ -453,6 +525,8 @@ void MainController::drillDownToPort(const quint32 port) {
 }
 
 bool MainController::openPath(const QString& path, const bool asIndex) {
+    setStatusText({});
+
     const QString trimmed_path = path.trimmed();
     if (trimmed_path.isEmpty()) {
         setOpenErrorText(QStringLiteral("No file selected."));
@@ -539,6 +613,7 @@ void MainController::setSelectedFlowIndex(const int index) {
 
     clearPacketSelection();
     emit selectedFlowIndexChanged();
+    emit actionAvailabilityChanged();
 }
 
 void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
@@ -607,6 +682,7 @@ void MainController::clearFlowSelection() {
 
     if (flowChanged) {
         emit selectedFlowIndexChanged();
+        emit actionAvailabilityChanged();
     }
 }
 
@@ -626,6 +702,7 @@ void MainController::resetLoadedState() {
     top_endpoints_model_.clear();
     top_ports_model_.clear();
     clearFlowSelection();
+    emit actionAvailabilityChanged();
 }
 
 void MainController::applyLoadedState(const QString& path) {
@@ -636,6 +713,7 @@ void MainController::applyLoadedState(const QString& path) {
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
     clearFlowSelection();
+    emit actionAvailabilityChanged();
 }
 
 void MainController::refreshTopSummaryModels() {
@@ -653,6 +731,16 @@ void MainController::setOpenErrorText(const QString& text) {
     emit openErrorTextChanged();
 }
 
+void MainController::setStatusText(const QString& text, const bool isError) {
+    if (status_text_ == text && status_is_error_ == isError) {
+        return;
+    }
+
+    status_text_ = text;
+    status_is_error_ = isError;
+    emit statusTextChanged();
+}
+
 QString MainController::chooseFile(const bool forIndex) const {
     const QString directory = last_directory_path_.isEmpty() ? QString {} : last_directory_path_;
     const QString title = forIndex ? QStringLiteral("Open Index") : QStringLiteral("Open Capture");
@@ -661,6 +749,31 @@ QString MainController::chooseFile(const bool forIndex) const {
         : QStringLiteral("Capture Files (*.pcap *.pcapng);;All Files (*)");
 
     return QFileDialog::getOpenFileName(nullptr, title, directory, filter);
+}
+
+QString MainController::chooseSaveFile(const bool forIndex) const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+
+    if (forIndex) {
+        dialog.setWindowTitle(QStringLiteral("Save Analysis Index"));
+        dialog.setNameFilter(QStringLiteral("Index Files (*.idx);;All Files (*)"));
+        dialog.setDefaultSuffix(QStringLiteral("idx"));
+    } else {
+        dialog.setWindowTitle(QStringLiteral("Export Selected Flow"));
+        dialog.setNameFilter(QStringLiteral("PCAP Files (*.pcap);;All Files (*)"));
+        dialog.setDefaultSuffix(QStringLiteral("pcap"));
+    }
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
 }
 
 void MainController::setLastDirectoryFromPath(const std::filesystem::path& path) {
@@ -682,9 +795,4 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
-
-
-
-
-
 

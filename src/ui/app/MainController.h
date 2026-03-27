@@ -18,7 +18,11 @@ class MainController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
     Q_PROPERTY(QString openErrorText READ openErrorText NOTIFY openErrorTextChanged)
+    Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
+    Q_PROPERTY(bool statusIsError READ statusIsError NOTIFY statusTextChanged)
     Q_PROPERTY(bool hasCapture READ hasCapture NOTIFY stateChanged)
+    Q_PROPERTY(bool canSaveIndex READ canSaveIndex NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool canExportSelectedFlow READ canExportSelectedFlow NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
@@ -52,7 +56,11 @@ public:
 
     [[nodiscard]] QString currentInputPath() const;
     [[nodiscard]] QString openErrorText() const;
+    [[nodiscard]] QString statusText() const;
+    [[nodiscard]] bool statusIsError() const noexcept;
     [[nodiscard]] bool hasCapture() const noexcept;
+    [[nodiscard]] bool canSaveIndex() const noexcept;
+    [[nodiscard]] bool canExportSelectedFlow() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
@@ -83,8 +91,12 @@ public:
 
     Q_INVOKABLE bool openCaptureFile(const QString& path);
     Q_INVOKABLE bool openIndexFile(const QString& path);
+    Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
+    Q_INVOKABLE bool exportSelectedFlow(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
+    Q_INVOKABLE void browseSaveAnalysisIndex();
+    Q_INVOKABLE void browseExportSelectedFlow();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -100,6 +112,8 @@ public:
 signals:
     void stateChanged();
     void openErrorTextChanged();
+    void statusTextChanged();
+    void actionAvailabilityChanged();
     void captureOpenModeChanged();
     void httpUsePathAsServiceHintChanged();
     void currentTabIndexChanged();
@@ -117,7 +131,9 @@ private:
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
     void setOpenErrorText(const QString& text);
+    void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
+    QString chooseSaveFile(bool forIndex) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
     CaptureSession session_ {};
@@ -129,12 +145,14 @@ private:
     PacketDetailsViewModel packet_details_model_ {};
     QString current_input_path_ {};
     QString open_error_text_ {};
+    QString status_text_ {};
     QString last_directory_path_ {};
     AnalysisSettings pending_analysis_settings_ {};
     int capture_open_mode_ {0};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
+    bool status_is_error_ {false};
 };
 
 }  // namespace pfl
