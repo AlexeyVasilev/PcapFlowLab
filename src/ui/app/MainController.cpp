@@ -187,7 +187,7 @@ QString buildPacketSummary(const PacketDetails& details) {
     QStringList lines {};
 
     appendSection(lines, QStringLiteral("Packet"), {
-        QStringLiteral("Index: %1").arg(details.packet_index),
+        QStringLiteral("Packet index in file: %1").arg(details.packet_index),
         QStringLiteral("Captured Length: %1").arg(details.captured_length),
         QStringLiteral("Original Length: %1").arg(details.original_length),
     });
@@ -682,6 +682,7 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
 

@@ -102,6 +102,7 @@ void run_query_tests() {
 
     const auto second_flow_rows = session.list_flow_packets(1);
     PFL_EXPECT(second_flow_rows.size() == 1);
+    PFL_EXPECT(second_flow_rows.front().row_number == 1);
     PFL_EXPECT(second_flow_rows.front().packet_index == 1);
     PFL_EXPECT(second_flow_rows.front().direction_text == "A\xE2\x86\x92" "B");
     PFL_EXPECT(second_flow_rows.front().captured_length == udp_packet.size());
@@ -134,6 +135,8 @@ void run_query_tests() {
     PFL_EXPECT(direction_rows.size() == 1);
     const auto packet_rows = direction_session.list_flow_packets(0);
     PFL_EXPECT(packet_rows.size() == 2);
+    PFL_EXPECT(packet_rows[0].row_number == 1);
+    PFL_EXPECT(packet_rows[1].row_number == 2);
     PFL_EXPECT(packet_rows[0].packet_index == 0);
     PFL_EXPECT(packet_rows[1].packet_index == 1);
 
@@ -181,5 +184,7 @@ void run_query_tests() {
 }
 
 }  // namespace pfl::tests
+
+
 
 

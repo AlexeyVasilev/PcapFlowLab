@@ -157,9 +157,9 @@ Frame {
             spacing: 12
 
             Label {
-                text: "Packet"
+                text: "#"
                 font.bold: true
-                Layout.preferredWidth: 70
+                Layout.preferredWidth: 50
                 horizontalAlignment: Text.AlignRight
             }
 
@@ -217,6 +217,7 @@ Frame {
 
                 delegate: Rectangle {
                     required property int index
+                    required property var rowNumber
                     required property var packetIndex
                     required property string directionText
                     required property string timestamp
@@ -238,8 +239,8 @@ Frame {
                         spacing: 12
 
                         Label {
-                            text: packetIndex
-                            Layout.preferredWidth: 70
+                            text: rowNumber
+                            Layout.preferredWidth: 50
                             horizontalAlignment: Text.AlignRight
                         }
 

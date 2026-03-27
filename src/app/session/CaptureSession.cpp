@@ -272,6 +272,7 @@ constexpr std::string_view kDirectionBToA = "B\xE2\x86\x92" "A";
 
 PacketRow make_packet_row(const PacketRef& packet, const std::string_view direction_text) {
     return PacketRow {
+        .row_number = 0,
         .packet_index = packet.packet_index,
         .direction_text = std::string {direction_text},
         .timestamp_text = format_packet_timestamp(packet),
@@ -630,6 +631,10 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_
         return left.packet_index < right.packet_index;
     });
 
+    for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
+        rows[row_index].row_number = row_index + 1;
+    }
+
     return rows;
 }
 
@@ -687,6 +692,10 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
 
 
 

@@ -195,6 +195,7 @@ int main(int argc, char* argv[]) {
 
     const auto packet_index_model = packet_model->index(0, 0);
     UI_EXPECT(packet_index_model.isValid());
+    UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::RowNumberRole).toUInt() == 1U);
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::PayloadLengthRole).toUInt() == make_http_request_payload().size());
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::OriginalLengthRole).toUInt() == http_flow.size());
@@ -204,6 +205,7 @@ int main(int argc, char* argv[]) {
     auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());
     UI_EXPECT(details_model != nullptr);
     UI_EXPECT(details_model->hasPacket());
+    UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet index in file: 0")));
     UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(!details_model->protocolText().isEmpty());
 
@@ -288,4 +290,7 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
+
 

@@ -16,7 +16,8 @@ class PacketListModel final : public QAbstractListModel {
 
 public:
     enum Role {
-        PacketIndexRole = Qt::UserRole + 1,
+        RowNumberRole = Qt::UserRole + 1,
+        PacketIndexRole,
         DirectionTextRole,
         TimestampRole,
         CapturedLengthRole,
@@ -38,6 +39,7 @@ public:
 
 private:
     struct Item {
+        qulonglong row_number {0};
         qulonglong packet_index {0};
         QString direction_text {};
         QString timestamp {};
