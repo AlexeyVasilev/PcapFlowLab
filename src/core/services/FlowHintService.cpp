@@ -153,6 +153,40 @@ std::optional<std::string> extract_http_host(std::span<const std::uint8_t> paylo
     return std::nullopt;
 }
 
+std::optional<std::string> extract_http_request_path(std::span<const std::uint8_t> payload) {
+    const auto payload_text = payload_as_text(payload);
+    if (!looks_like_http_request(payload_text)) {
+        return std::nullopt;
+    }
+
+    auto line_end = payload_text.find("\r\n");
+    if (line_end == std::string_view::npos) {
+        line_end = payload_text.find('\n');
+    }
+    if (line_end == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    const auto request_line = payload_text.substr(0, line_end);
+    const auto first_space = request_line.find(' ');
+    if (first_space == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    const auto second_space = request_line.find(' ', first_space + 1U);
+    if (second_space == std::string_view::npos || second_space <= first_space + 1U) {
+        return std::nullopt;
+    }
+
+    const auto path = request_line.substr(first_space + 1U, second_space - first_space - 1U);
+    const auto version = request_line.substr(second_space + 1U);
+    if (!version.starts_with("HTTP/1.") || path.empty() || path.front() != '/') {
+        return std::nullopt;
+    }
+
+    return std::string(path);
+}
+
 bool looks_like_tls_record(std::span<const std::uint8_t> payload) {
     if (payload.size() < kTlsRecordHeaderSize) {
         return false;
@@ -193,8 +227,8 @@ std::optional<std::string> extract_tls_sni(std::span<const std::uint8_t> payload
         return std::nullopt;
     }
 
-    offset += 2;   // client version
-    offset += 32;  // random
+    offset += 2;
+    offset += 32;
 
     const auto session_id_length = static_cast<std::size_t>(body[offset]);
     ++offset;
@@ -354,7 +388,7 @@ FlowHintUpdate detect_dns_hint(std::span<const std::uint8_t> payload, const bool
     return hint;
 }
 
-FlowHintUpdate detect_http_hint(std::span<const std::uint8_t> payload) {
+FlowHintUpdate detect_http_hint(std::span<const std::uint8_t> payload, const AnalysisSettings& settings) {
     const auto payload_text = payload_as_text(payload);
     if (!looks_like_http_request(payload_text) && !looks_like_http_response(payload_text)) {
         return {};
@@ -367,6 +401,14 @@ FlowHintUpdate detect_http_hint(std::span<const std::uint8_t> payload) {
     const auto host = extract_http_host(payload);
     if (host.has_value()) {
         hint.service_hint = *host;
+        return hint;
+    }
+
+    if (settings.http_use_path_as_service_hint) {
+        const auto path = extract_http_request_path(payload);
+        if (path.has_value()) {
+            hint.service_hint = *path;
+        }
     }
 
     return hint;
@@ -420,7 +462,9 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload) {
 }
 
 template <typename FlowKey>
-FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes, const FlowKey& flow_key) {
+FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes,
+                                      const FlowKey& flow_key,
+                                      const AnalysisSettings& settings) {
     PacketPayloadService payload_service {};
     const auto payload = payload_service.extract_transport_payload(packet_bytes);
     if (payload.empty()) {
@@ -445,7 +489,7 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_http_hint(payload_view);
+        return detect_http_hint(payload_view, settings);
     case ProtocolId::udp:
         if (has_port(flow_key.src_port, flow_key.dst_port, kDnsPort)) {
             const auto dns_hint = detect_dns_hint(payload_view, false);
@@ -466,12 +510,16 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
 
 }  // namespace
 
+FlowHintService::FlowHintService(const AnalysisSettings settings)
+    : settings_(settings) {
+}
+
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const {
-    return detect_transport_hints(packet_bytes, flow_key);
+    return detect_transport_hints(packet_bytes, flow_key, settings_);
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const {
-    return detect_transport_hints(packet_bytes, flow_key);
+    return detect_transport_hints(packet_bytes, flow_key, settings_);
 }
 
 }  // namespace pfl

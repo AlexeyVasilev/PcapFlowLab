@@ -132,6 +132,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/FlowTable.qml
                 src/ui/qml/components/PacketList.qml
                 src/ui/qml/components/PacketDetailsPane.qml
+                src/ui/qml/components/SettingsPane.qml
         )
 
         set_target_properties(pcap_flow_lab_ui PROPERTIES OUTPUT_NAME "pcap-flow-lab-ui")
@@ -187,6 +188,7 @@ if(BUILD_TESTING)
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
         tests/unit/ImportModeTests.cpp
+        tests/unit/AnalysisSettingsTests.cpp
         tests/unit/CliImportModeTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
@@ -215,6 +217,7 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
 
 
 

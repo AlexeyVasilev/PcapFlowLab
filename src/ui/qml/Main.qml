@@ -69,6 +69,10 @@ ApplicationWindow {
             TabButton {
                 text: "Statistics"
             }
+
+            TabButton {
+                text: "Settings"
+            }
         }
 
         StackLayout {
@@ -124,7 +128,13 @@ ApplicationWindow {
                     mainController.drillDownToPort(port)
                 }
             }
+
+            SettingsPane {
+                httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
+                onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
+                    mainController.httpUsePathAsServiceHint = enabled
+                }
+            }
         }
     }
 }
-

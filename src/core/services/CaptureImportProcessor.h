@@ -6,12 +6,15 @@
 #include "core/domain/CaptureState.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"
+#include "core/services/AnalysisSettings.h"
 #include "core/services/FlowHintService.h"
 
 namespace pfl {
 
 class CaptureImportProcessor {
 public:
+    explicit CaptureImportProcessor(AnalysisSettings settings = {});
+
     void process_packet(const RawPcapPacket& packet, CaptureState& state) const;
 
 private:

@@ -328,6 +328,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
         capture_path_.clear();
         state_ = {};
         import_mode_ = ImportMode::fast;
+        analysis_settings_ = {};
         deep_protocol_details_enabled_ = false;
         return false;
     }
@@ -335,6 +336,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     capture_path_ = path;
     state_ = imported_state;
     import_mode_ = options.mode;
+    analysis_settings_ = options.settings;
     deep_protocol_details_enabled_ = (options.mode == ImportMode::deep);
     return true;
 }
@@ -365,6 +367,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
         capture_path_.clear();
         state_ = {};
         import_mode_ = ImportMode::fast;
+        analysis_settings_ = {};
         deep_protocol_details_enabled_ = false;
         return false;
     }
@@ -372,6 +375,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
     capture_path_ = loaded_capture_path;
     state_ = loaded_state;
     import_mode_ = ImportMode::fast;
+    analysis_settings_ = {};
     deep_protocol_details_enabled_ = false;
     return true;
 }
@@ -683,6 +687,8 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
 
 
 

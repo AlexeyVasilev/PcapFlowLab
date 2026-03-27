@@ -34,6 +34,14 @@ std::vector<std::uint8_t> make_http_request_payload() {
     return std::vector<std::uint8_t>(request, request + sizeof(request) - 1);
 }
 
+std::vector<std::uint8_t> make_http_request_without_host_payload() {
+    constexpr char request[] =
+        "GET /fallback/ui HTTP/1.1\r\n"
+        "User-Agent: PFL\r\n"
+        "\r\n";
+    return std::vector<std::uint8_t>(request, request + sizeof(request) - 1);
+}
+
 std::vector<std::uint8_t> make_dns_query_payload() {
     std::vector<std::uint8_t> payload {};
     pfl::tests::append_be16(payload, 0x1234);
@@ -217,6 +225,30 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(flow_model->rowCount() == 1);
     UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("DNS"));
 
+    const auto hostless_http_capture_path = write_temp_pcap(
+        "pfl_ui_http_settings.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 43000, 80, make_http_request_without_host_payload(), 0x18)},
+        })
+    );
+
+    MainController settings_controller {};
+    UI_EXPECT(!settings_controller.httpUsePathAsServiceHint());
+    UI_EXPECT(settings_controller.openCaptureFile(QString::fromStdWString(hostless_http_capture_path.wstring())));
+    auto* settings_flow_model = qobject_cast<FlowListModel*>(settings_controller.flowModel());
+    UI_EXPECT(settings_flow_model != nullptr);
+    UI_EXPECT(settings_flow_model->rowCount() == 1);
+    UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+
+    settings_controller.setHttpUsePathAsServiceHint(true);
+    UI_EXPECT(settings_controller.httpUsePathAsServiceHint());
+    UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+
+    UI_EXPECT(settings_controller.openCaptureFile(QString::fromStdWString(hostless_http_capture_path.wstring())));
+    UI_EXPECT(settings_flow_model->rowCount() == 1);
+    UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("/fallback/ui"));
+
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
     MainController deep_controller {};
     deep_controller.setCaptureOpenMode(kCliDeepImportModeIndex);
@@ -256,3 +288,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+

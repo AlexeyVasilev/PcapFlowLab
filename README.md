@@ -40,7 +40,7 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or indexes via native file dialogs, choose `Fast` or `Deep` mode when opening captures, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show packet direction, transport payload length, and TCP flags directly in the packet list, with truncated packets highlighted and warned about in packet details. In Deep mode, the Protocol tab now shows richer single-packet TLS, DNS, and HTTP details when they are available. The Packet Details structure is also prepared for future protocol-aware decoding.
+The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or indexes via native file dialogs, choose `Fast` or `Deep` mode when opening captures, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, apply basic flow filtering and sorting, browse packets for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show packet direction, transport payload length, and TCP flags directly in the packet list, with truncated packets highlighted and warned about in packet details. In Deep mode, the Protocol tab now shows richer single-packet TLS, DNS, and HTTP details when they are available. A temporary Settings tab now exposes the first analysis setting: falling back to the HTTP request path as a service hint when the Host header is missing. The Packet Details structure is also prepared for future protocol-aware decoding.
 
 
 
@@ -50,6 +50,7 @@ The CLI remains the primary interface today. The Qt Quick desktop UI can already
 
 
 Deep mode already exists as a separate import path, but Fast mode remains optimized for quick browsing. Deep mode currently exposes richer TLS, DNS, and HTTP packet-level details in the Protocol tab when they are available from a single packet.
+
 
 
 

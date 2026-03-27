@@ -1,5 +1,6 @@
 #include "core/decode/PacketDecoder.h"
 
+#include <algorithm>
 #include <array>
 #include <optional>
 
@@ -221,7 +222,7 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
             return {};
         }
 
-        if (packet.bytes.size() < ipv4_offset + ihl || packet.bytes.size() < ipv4_offset + total_length) {
+        if (packet.bytes.size() < ipv4_offset + ihl) {
             return {};
         }
 
@@ -232,7 +233,7 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
 
         const auto protocol = packet.bytes[ipv4_offset + 9];
         const auto transport_offset = ipv4_offset + ihl;
-        const auto packet_end = ipv4_offset + total_length;
+        const auto packet_end = std::min(ipv4_offset + total_length, packet.bytes.size());
         const auto flow_base = FlowKeyV4 {
             .src_addr = read_be32(packet.bytes, ipv4_offset + 12),
             .dst_addr = read_be32(packet.bytes, ipv4_offset + 16),
@@ -323,10 +324,7 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
         }
 
         const auto ipv6_payload_length = static_cast<std::size_t>(read_be16(packet.bytes, ipv6_offset + 4));
-        const auto packet_end = ipv6_offset + kIpv6HeaderSize + ipv6_payload_length;
-        if (packet.bytes.size() < packet_end) {
-            return {};
-        }
+        const auto packet_end = std::min(ipv6_offset + kIpv6HeaderSize + ipv6_payload_length, packet.bytes.size());
 
         const auto payload = parse_ipv6_payload(packet.bytes, ipv6_offset);
         if (!payload.has_value() || payload->payload_offset > packet_end) {

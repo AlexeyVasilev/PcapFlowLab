@@ -17,6 +17,7 @@ namespace {
 constexpr qulonglong kInvalidPacketSelection = std::numeric_limits<qulonglong>::max();
 constexpr int kFlowTabIndex = 0;
 constexpr int kStatsTabIndex = 1;
+constexpr int kSettingsTabIndex = 2;
 
 FlowListModel::SortKey sort_key_from_column(const int column) {
     switch (column) {
@@ -353,6 +354,10 @@ int MainController::captureOpenMode() const noexcept {
     return capture_open_mode_;
 }
 
+bool MainController::httpUsePathAsServiceHint() const noexcept {
+    return pending_analysis_settings_.http_use_path_as_service_hint;
+}
+
 int MainController::currentTabIndex() const noexcept {
     return current_tab_index_;
 }
@@ -460,7 +465,8 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
 
     const std::filesystem::path filesystem_path = std::filesystem::path {trimmed_path.toStdWString()};
     setLastDirectoryFromPath(filesystem_path);
-    const auto import_options = capture_import_options_for_ui_index(capture_open_mode_);
+    auto import_options = capture_import_options_for_ui_index(capture_open_mode_);
+    import_options.settings = pending_analysis_settings_;
     const bool opened = asIndex
         ? session_.load_index(filesystem_path)
         : session_.open_capture(filesystem_path, import_options);
@@ -497,8 +503,19 @@ void MainController::setCaptureOpenMode(const int mode) {
     emit captureOpenModeChanged();
 }
 
+void MainController::setHttpUsePathAsServiceHint(const bool enabled) {
+    if (pending_analysis_settings_.http_use_path_as_service_hint == enabled) {
+        return;
+    }
+
+    pending_analysis_settings_.http_use_path_as_service_hint = enabled;
+    emit httpUsePathAsServiceHintChanged();
+}
+
 void MainController::setCurrentTabIndex(const int index) {
-    const int normalizedIndex = (index == kStatsTabIndex) ? kStatsTabIndex : kFlowTabIndex;
+    const int normalizedIndex = (index == kStatsTabIndex || index == kSettingsTabIndex)
+        ? index
+        : kFlowTabIndex;
     if (current_tab_index_ == normalizedIndex) {
         return;
     }
@@ -665,6 +682,7 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
 

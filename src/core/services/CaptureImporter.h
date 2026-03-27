@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include "core/domain/CaptureState.h"
+#include "core/services/AnalysisSettings.h"
 
 namespace pfl {
 
@@ -14,6 +15,7 @@ enum class ImportMode : std::uint8_t {
 
 struct CaptureImportOptions {
     ImportMode mode {ImportMode::fast};
+    AnalysisSettings settings {};
 };
 
 class CaptureImporter {

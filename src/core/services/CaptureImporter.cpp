@@ -15,11 +15,11 @@ bool CaptureImporter::import_capture(const std::filesystem::path& path,
     switch (options.mode) {
     case ImportMode::fast: {
         FastCaptureImporter importer {};
-        return importer.import_capture(path, state);
+        return importer.import_capture(path, state, options);
     }
     case ImportMode::deep: {
         DeepCaptureImporter importer {};
-        return importer.import_capture(path, state);
+        return importer.import_capture(path, state, options);
     }
     }
 

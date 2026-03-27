@@ -41,6 +41,7 @@ private:
     std::filesystem::path capture_path_ {};
     CaptureState state_ {};
     ImportMode import_mode_ {ImportMode::fast};
+    AnalysisSettings analysis_settings_ {};
     bool deep_protocol_details_enabled_ {false};
 };
 

@@ -11,6 +11,7 @@ void run_connection_tests();
 void run_ingestor_tests();
 void run_import_tests();
 void run_import_mode_tests();
+void run_analysis_settings_tests();
 void run_cli_import_mode_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
@@ -49,6 +50,7 @@ int main() {
         pfl::tests::run_ingestor_tests();
         pfl::tests::run_import_tests();
         pfl::tests::run_import_mode_tests();
+        pfl::tests::run_analysis_settings_tests();
         pfl::tests::run_cli_import_mode_tests();
         pfl::tests::run_packet_access_tests();
         pfl::tests::run_packet_details_tests();
@@ -78,3 +80,4 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+

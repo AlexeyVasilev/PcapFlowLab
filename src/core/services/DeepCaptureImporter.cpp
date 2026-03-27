@@ -4,12 +4,14 @@
 
 namespace pfl {
 
-bool DeepCaptureImporter::import_capture(const std::filesystem::path& path, CaptureState& state) const {
+bool DeepCaptureImporter::import_capture(const std::filesystem::path& path,
+                                         CaptureState& state,
+                                         const CaptureImportOptions& options) const {
     state = {};
 
     // Deep import currently reuses the same base decode and aggregation path as fast import.
     // It remains a distinct integration point for future expensive protocol analyzers and reassembly.
-    CaptureImportProcessor processor {};
+    CaptureImportProcessor processor {options.settings};
     return import_capture_from_path(path, state, processor);
 }
 

@@ -3,12 +3,15 @@
 #include <filesystem>
 
 #include "core/domain/CaptureState.h"
+#include "core/services/CaptureImporter.h"
 
 namespace pfl {
 
 class DeepCaptureImporter {
 public:
-    [[nodiscard]] bool import_capture(const std::filesystem::path& path, CaptureState& state) const;
+    [[nodiscard]] bool import_capture(const std::filesystem::path& path,
+                                      CaptureState& state,
+                                      const CaptureImportOptions& options) const;
 };
 
 }  // namespace pfl

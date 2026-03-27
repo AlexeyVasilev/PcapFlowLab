@@ -22,6 +22,10 @@ bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProc
 
 }  // namespace
 
+CaptureImportProcessor::CaptureImportProcessor(const AnalysisSettings settings)
+    : hint_service_(settings) {
+}
+
 void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, CaptureState& state) const {
     PacketIngestor ingestor {state};
 

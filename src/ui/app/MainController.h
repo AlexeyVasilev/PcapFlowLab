@@ -6,6 +6,7 @@
 #include <QString>
 
 #include "app/session/CaptureSession.h"
+#include "core/services/AnalysisSettings.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
@@ -33,6 +34,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
+    Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
     Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
@@ -66,6 +68,7 @@ public:
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
     [[nodiscard]] int captureOpenMode() const noexcept;
+    [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] int currentTabIndex() const noexcept;
     [[nodiscard]] QObject* topEndpointsModel() noexcept;
     [[nodiscard]] QObject* topPortsModel() noexcept;
@@ -88,6 +91,7 @@ public:
     Q_INVOKABLE void drillDownToPort(quint32 port);
 
     void setCaptureOpenMode(int mode);
+    void setHttpUsePathAsServiceHint(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
@@ -97,6 +101,7 @@ signals:
     void stateChanged();
     void openErrorTextChanged();
     void captureOpenModeChanged();
+    void httpUsePathAsServiceHintChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void selectedPacketIndexChanged();
@@ -125,6 +130,7 @@ private:
     QString current_input_path_ {};
     QString open_error_text_ {};
     QString last_directory_path_ {};
+    AnalysisSettings pending_analysis_settings_ {};
     int capture_open_mode_ {0};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
