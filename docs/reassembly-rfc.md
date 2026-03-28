@@ -73,8 +73,6 @@ Reassembly does not imply new top-level UI surfaces. It is expected to enhance e
 
 ## First Implementation Scope
 
-Recommended first scope:
-
 Note: a first v1 implementation now exists for deep-only TCP payload concatenation in packet order. It is intentionally heuristic and remains analyzer helper output, not transport-correct TCP reassembly.
 
 Recommended first scope:
@@ -84,6 +82,9 @@ Recommended first scope:
 - best-effort analyzer input only, not transport-correct byte-stream reconstruction
 - bounded byte budget and/or packet budget per request
 - analyzer-driven invocation from deep mode only
+- reassembly must always be bounded by explicit limits such as `max_packets` and `max_bytes`
+- those limits must be enforced for both open-time analysis and interactive stream reconstruction
+- reassembly must never be allowed to become unbounded in memory use or latency
 
 What this first scope should do:
 - gather packets from `flow_a` or `flow_b`
@@ -119,12 +120,17 @@ A practical conceptual model is:
   - indicate missing or skipped regions once retransmission/out-of-order handling exists
 
 The important boundary is that reassembly should produce derived artifacts for analyzers, not mutate the underlying packet model. Those quality flags are primarily for analyzers; consumers must assume that a reassembled buffer may be incomplete or approximate. `tcp_reordering_detected` should be treated as a diagnostic signal that capture packet order was not sufficient for ideal stream reconstruction, not as an automatic fatal parse error.
+- `tcp_reordering_detected` is a quality signal, not a confirmed TCP protocol violation
+- diagnostic flags should represent uncertainty, approximation, or reconstruction limitations
+- diagnostic flags must not be treated as ground truth about the network
 
 Reassembly-derived outputs are used in two distinct ways:
 - during deep analysis on open, to improve small persisted analysis results such as `service_hint`, `protocol_hint`, `deep_analysis_used_reassembly`, `tcp_reordering_detected`, and `stream_reconstruction_incomplete`
 - during interactive viewing, to build temporary stream-view data for the currently selected connection
 
 The persistence policy is explicit: the project stores the value of reassembly-derived analysis, not the full reconstructed stream. Reassembled byte buffers, packet contribution lists, payload previews, stream items shown in the UI, and other large temporary artifacts should not be persisted in indexes or checkpoints.
+- persisted deep-analysis outputs and interactive stream artifacts are intentionally separate layers
+- no implicit coupling between persisted outputs and temporary stream artifacts is allowed
 
 ## Performance And Reliability Constraints
 
@@ -132,6 +138,9 @@ Fast path requirements stay unchanged:
 - no stream buffering during normal fast import
 - no deep analyzer hooks in the hot ingestion loop beyond existing lightweight metadata work
 - no hidden memory growth tied to capture size
+- reassembly must never be performed implicitly in fast-mode ingestion, summary computation paths, or index construction
+- the fast path must remain strictly packet-level and effectively O(1)-like per packet
+- all reassembly must stay explicitly opt-in inside deep analysis or interactive workflows
 
 Deep path requirements:
 - deep analysis may be slower, but the cost must be explicit and localized to user-requested operations
@@ -141,6 +150,10 @@ Deep path requirements:
 - stream-view data should be rebuilt on demand for the selected connection
 - only an ephemeral cache for the currently selected connection is allowed in v1; once the user switches connections, the old stream cache may be discarded
 - no persistent stream cache and no multi-connection LRU cache in v1, so temporary stream artifacts do not pollute `CaptureState` or saved indexes
+- the ephemeral cache is scoped strictly to the currently selected connection
+- it may be discarded at any time
+- it must not affect correctness or persisted analysis results
+- it exists only as a UI and performance optimization; it is not part of system state
 - safe failure is preferable to partial garbage output
 - analyzers should be told whether a buffer is complete, truncated by budget, or built under simplified ordering assumptions
 
@@ -168,6 +181,9 @@ This keeps the design aligned with current project priorities:
 - conservative correctness
 - explicit deep-only cost
 - bounded memory behavior
+
+
+
 
 
 
