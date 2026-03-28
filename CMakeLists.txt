@@ -209,6 +209,7 @@ if(BUILD_TESTING)
         tests/unit/LinuxCookedTests.cpp
         tests/unit/FragmentationTests.cpp
         tests/unit/ReassemblyArchitectureTests.cpp
+        tests/unit/ReassemblyV1Tests.cpp
         tests/unit/FlowHintsTests.cpp
         tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
@@ -222,6 +223,7 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
 
 
 

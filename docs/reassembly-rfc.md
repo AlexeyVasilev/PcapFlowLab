@@ -1,4 +1,4 @@
-﻿# Reassembly RFC
+# Reassembly RFC
 
 ## Status
 
@@ -32,7 +32,7 @@ The first implementation should explicitly avoid the following:
 
 Primary near-term target for richer HTTP and TLS analysis.
 
-The useful unit for this project is not “entire connection forever”, but a bounded analyzer input built from packets belonging to a selected flow and direction. The first useful outcome is payload concatenation in packet order for a single direction. Control packets such as SYN or ACK without payload do not contribute bytes to that buffer; their existence may still matter for future metadata or debugging, but the first implementation may ignore them for simplicity.
+The useful unit for this project is not �entire connection forever�, but a bounded analyzer input built from packets belonging to a selected flow and direction. The first useful outcome is payload concatenation in packet order for a single direction. Control packets such as SYN or ACK without payload do not contribute bytes to that buffer; their existence may still matter for future metadata or debugging, but the first implementation may ignore them for simplicity.
 
 ### QUIC Initial Reassembly
 
@@ -67,11 +67,15 @@ A reasonable shape is:
 - deep analyzer requests a bounded reassembly artifact for one selected flow and direction
 - analyzer consumes that artifact and returns protocol-specific results for UI or CLI presentation
 
-The primary reassembly API should operate on `flow_id`, direction (`A→B` or `B→A`), and a bounded budget. In v1, analyzers should not manually assemble arbitrary packet sets; keeping the API flow-and-direction based makes the model easier to reason about.
+The primary reassembly API should operate on `flow_id`, direction (`A>B` or `B>A`), and a bounded budget. In v1, analyzers should not manually assemble arbitrary packet sets; keeping the API flow-and-direction based makes the model easier to reason about.
 
 Reassembly does not imply new top-level UI surfaces. It is expected to enhance existing deep-analysis outputs such as the Protocol tab and, where useful, the Payload tab, while the packet list remains packet-based.
 
 ## First Implementation Scope
+
+Recommended first scope:
+
+Note: a first v1 implementation now exists for deep-only TCP payload concatenation in packet order. It is intentionally heuristic and remains analyzer helper output, not transport-correct TCP reassembly.
 
 Recommended first scope:
 - selected flow only
@@ -155,5 +159,6 @@ This keeps the design aligned with current project priorities:
 - conservative correctness
 - explicit deep-only cost
 - bounded memory behavior
+
 
 

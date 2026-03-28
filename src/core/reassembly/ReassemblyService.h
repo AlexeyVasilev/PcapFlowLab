@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <optional>
 
@@ -10,9 +10,9 @@ class CaptureSession;
 
 class ReassemblyService {
 public:
-    // Architecture scaffold only. Real TCP payload reassembly is intentionally
-    // deferred so deep analyzers can integrate against a stable service shape
-    // without changing current runtime behavior.
+    // Deep-only v1 helper for bounded TCP payload concatenation in packet order.
+    // This intentionally produces analyzer-oriented best-effort data rather than
+    // transport-correct TCP stream reconstruction.
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_tcp_payload(
         const CaptureSession& session,
         const ReassemblyRequest& request
@@ -20,3 +20,4 @@ public:
 };
 
 }  // namespace pfl
+

@@ -1,4 +1,4 @@
-﻿#include <filesystem>
+#include <filesystem>
 #include <vector>
 
 #include "TestSupport.h"
@@ -62,7 +62,11 @@ void run_reassembly_architecture_tests() {
             .flow_index = 0,
             .direction = Direction::a_to_b,
         });
-        PFL_EXPECT(!result.has_value());
+        PFL_EXPECT(result.has_value());
+        PFL_EXPECT(result->bytes == make_reassembly_test_payload());
+        PFL_EXPECT(result->packet_indices == std::vector<std::uint64_t> {0});
+        PFL_EXPECT(result->payload_packets_used == 1U);
+        PFL_EXPECT(result->total_packets_seen == 1U);
 
         const auto packet_rows = session.list_flow_packets(0);
         PFL_EXPECT(packet_rows.size() == 1);
