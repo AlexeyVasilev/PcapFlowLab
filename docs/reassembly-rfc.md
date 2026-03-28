@@ -110,7 +110,7 @@ A practical conceptual model is:
   - byte buffer
   - source packet refs or packet indices contributing to the buffer
   - direction metadata
-  - lightweight quality flags such as `truncated_by_budget`, `packet_order_only`, `incomplete_transport`, and `may_contain_retransmissions`
+  - lightweight quality flags such as `truncated_by_budget`, `packet_order_only`, `incomplete_transport`, `may_contain_retransmissions`, and `tcp_reordering_detected`
   - truncation or byte-budget flag
 - optional segment map later
   - per-segment source packet index
@@ -118,7 +118,13 @@ A practical conceptual model is:
 - optional gap markers later
   - indicate missing or skipped regions once retransmission/out-of-order handling exists
 
-The important boundary is that reassembly should produce derived artifacts for analyzers, not mutate the underlying packet model. Those quality flags are primarily for analyzers; consumers must assume that a reassembled buffer may be incomplete or approximate.
+The important boundary is that reassembly should produce derived artifacts for analyzers, not mutate the underlying packet model. Those quality flags are primarily for analyzers; consumers must assume that a reassembled buffer may be incomplete or approximate. `tcp_reordering_detected` should be treated as a diagnostic signal that capture packet order was not sufficient for ideal stream reconstruction, not as an automatic fatal parse error.
+
+Reassembly-derived outputs are used in two distinct ways:
+- during deep analysis on open, to improve small persisted analysis results such as `service_hint`, `protocol_hint`, `deep_analysis_used_reassembly`, `tcp_reordering_detected`, and `stream_reconstruction_incomplete`
+- during interactive viewing, to build temporary stream-view data for the currently selected connection
+
+The persistence policy is explicit: the project stores the value of reassembly-derived analysis, not the full reconstructed stream. Reassembled byte buffers, packet contribution lists, payload previews, stream items shown in the UI, and other large temporary artifacts should not be persisted in indexes or checkpoints.
 
 ## Performance And Reliability Constraints
 
@@ -132,6 +138,9 @@ Deep path requirements:
 - buffering must be bounded by policy, for example max packets per request and max reassembled bytes per request
 - byte and packet budgets should be defined centrally as policy, not hardcoded independently inside analyzers
 - v1 must not introduce persistent or session-wide reassembly caches; only request-scoped or per-selected-flow temporary buffering is allowed
+- stream-view data should be rebuilt on demand for the selected connection
+- only an ephemeral cache for the currently selected connection is allowed in v1; once the user switches connections, the old stream cache may be discarded
+- no persistent stream cache and no multi-connection LRU cache in v1, so temporary stream artifacts do not pollute `CaptureState` or saved indexes
 - safe failure is preferable to partial garbage output
 - analyzers should be told whether a buffer is complete, truncated by budget, or built under simplified ordering assumptions
 
@@ -159,6 +168,7 @@ This keeps the design aligned with current project priorities:
 - conservative correctness
 - explicit deep-only cost
 - bounded memory behavior
+
 
 
 
