@@ -11,6 +11,7 @@ Item {
     property int sortColumn: 0
     property bool sortAscending: true
     property var packetModel: null
+    property var streamModel: null
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
 
@@ -48,14 +49,45 @@ Item {
             SplitView.fillHeight: true
             SplitView.preferredHeight: 300
 
-            PacketList {
+            Item {
                 SplitView.fillWidth: true
                 SplitView.fillHeight: true
-                SplitView.preferredWidth: 420
-                packetModel: root.packetModel
-                selectedPacketIndex: root.selectedPacketIndex
-                onPacketSelected: function(packetIndex) {
-                    root.packetSelected(packetIndex)
+                SplitView.preferredWidth: 460
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    TabBar {
+                        id: flowDetailTabs
+                        Layout.fillWidth: true
+
+                        TabButton {
+                            text: "Packets"
+                        }
+
+                        TabButton {
+                            text: "Stream"
+                        }
+                    }
+
+                    StackLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        currentIndex: flowDetailTabs.currentIndex
+
+                        PacketList {
+                            packetModel: root.packetModel
+                            selectedPacketIndex: root.selectedPacketIndex
+                            onPacketSelected: function(packetIndex) {
+                                root.packetSelected(packetIndex)
+                            }
+                        }
+
+                        StreamView {
+                            streamModel: root.streamModel
+                        }
+                    }
                 }
             }
 

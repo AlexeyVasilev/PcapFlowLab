@@ -22,6 +22,7 @@ void run_flow_hints_tests();
 void run_flow_hints_raw_fixtures_tests();
 void run_flow_hints_real_fixtures_tests();
 void run_query_tests();
+void run_stream_query_tests();
 void run_protocol_summary_tests();
 void run_top_summary_tests();
 void run_vlan_tests();
@@ -67,6 +68,7 @@ int main() {
         pfl::tests::run_flow_hints_raw_fixtures_tests();
         pfl::tests::run_flow_hints_real_fixtures_tests();
         pfl::tests::run_query_tests();
+        pfl::tests::run_stream_query_tests();
         pfl::tests::run_protocol_summary_tests();
         pfl::tests::run_top_summary_tests();
         pfl::tests::run_vlan_tests();
@@ -92,6 +94,7 @@ int main() {
     std::cout << "All tests passed.\n";
     return 0;
 }
+
 
 
 

@@ -10,6 +10,7 @@
 #include "ui/app/FlowListModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/StreamListModel.h"
 #include "ui/app/TopSummaryListModel.h"
 
 namespace pfl {
@@ -47,6 +48,7 @@ class MainController final : public QObject {
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
     Q_PROPERTY(QObject* flowModel READ flowModel CONSTANT)
     Q_PROPERTY(QObject* packetModel READ packetModel CONSTANT)
+    Q_PROPERTY(QObject* streamModel READ streamModel CONSTANT)
     Q_PROPERTY(QObject* packetDetailsModel READ packetDetailsModel CONSTANT)
     Q_PROPERTY(int selectedFlowIndex READ selectedFlowIndex WRITE setSelectedFlowIndex NOTIFY selectedFlowIndexChanged)
     Q_PROPERTY(qulonglong selectedPacketIndex READ selectedPacketIndex WRITE setSelectedPacketIndex NOTIFY selectedPacketIndexChanged)
@@ -88,6 +90,7 @@ public:
     [[nodiscard]] QObject* topPortsModel() noexcept;
     [[nodiscard]] QObject* flowModel() noexcept;
     [[nodiscard]] QObject* packetModel() noexcept;
+    [[nodiscard]] QObject* streamModel() noexcept;
     [[nodiscard]] QObject* packetDetailsModel() noexcept;
     [[nodiscard]] int selectedFlowIndex() const noexcept;
     [[nodiscard]] qulonglong selectedPacketIndex() const noexcept;
@@ -152,6 +155,7 @@ private:
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
     PacketListModel packet_model_ {};
+    StreamListModel stream_model_ {};
     PacketDetailsViewModel packet_details_model_ {};
     QString current_input_path_ {};
     QString open_error_text_ {};

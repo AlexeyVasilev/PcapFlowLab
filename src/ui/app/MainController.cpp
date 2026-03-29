@@ -412,6 +412,10 @@ QObject* MainController::packetModel() noexcept {
     return &packet_model_;
 }
 
+QObject* MainController::streamModel() noexcept {
+    return &stream_model_;
+}
+
 QObject* MainController::packetDetailsModel() noexcept {
     return &packet_details_model_;
 }
@@ -463,6 +467,9 @@ bool MainController::attachSourceCapture(const QString& path) {
     }
 
     setLastDirectoryFromPath(filesystemPath);
+    if (selected_flow_index_ >= 0) {
+        stream_model_.refresh(session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_)));
+    }
     reloadSelectedPacketDetails();
     emit stateChanged();
     emit sourceAvailabilityChanged();
@@ -621,8 +628,10 @@ void MainController::setSelectedFlowIndex(const int index) {
 
     if (selected_flow_index_ >= 0) {
         packet_model_.refresh(session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_)));
+        stream_model_.refresh(session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_)));
     } else {
         packet_model_.clear();
+        stream_model_.clear();
     }
 
     clearPacketSelection();
@@ -670,6 +679,7 @@ void MainController::clearFlowSelection() {
     const bool flowChanged = selected_flow_index_ != -1;
     selected_flow_index_ = -1;
     packet_model_.clear();
+    stream_model_.clear();
     clearPacketSelection();
 
     if (flowChanged) {
@@ -691,6 +701,7 @@ void MainController::resetLoadedState() {
     flow_model_.resetViewState();
     flow_model_.clear();
     packet_model_.clear();
+    stream_model_.clear();
     packet_details_model_.clear();
     top_endpoints_model_.clear();
     top_ports_model_.clear();
@@ -850,6 +861,9 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
 
 
 

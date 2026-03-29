@@ -337,6 +337,93 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
     };
 }
 
+struct StreamPacketCandidate {
+    PacketRef packet {};
+    std::string_view direction_text {};
+    ProtocolId protocol {ProtocolId::unknown};
+};
+
+bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
+    return text.find(needle) != std::string_view::npos;
+}
+
+std::string fallback_stream_label(const ProtocolId protocol) {
+    switch (protocol) {
+    case ProtocolId::tcp:
+        return "TCP Payload";
+    case ProtocolId::udp:
+        return "UDP Payload";
+    default:
+        return "Payload";
+    }
+}
+
+std::string classify_stream_label(
+    const std::vector<std::uint8_t>& packet_bytes,
+    const std::uint32_t data_link_type,
+    const ProtocolId protocol,
+    const bool deep_protocol_details_enabled
+) {
+    if (deep_protocol_details_enabled) {
+        TlsPacketProtocolAnalyzer tls_analyzer {};
+        if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
+            const auto text = std::string_view(*tls_details);
+            if (contains_text(text, "Handshake Type: ClientHello")) {
+                return "TLS ClientHello";
+            }
+            if (contains_text(text, "Handshake Type: ServerHello")) {
+                return "TLS ServerHello";
+            }
+            if (contains_text(text, "Record Type: ApplicationData")) {
+                return "TLS AppData";
+            }
+            return "TLS Payload";
+        }
+
+        HttpPacketProtocolAnalyzer http_analyzer {};
+        if (const auto http_details = http_analyzer.analyze(packet_bytes, data_link_type); http_details.has_value()) {
+            const auto text = std::string_view(*http_details);
+            if (contains_text(text, "Message Type: Request")) {
+                return "HTTP Request";
+            }
+            if (contains_text(text, "Message Type: Response")) {
+                return "HTTP Response";
+            }
+            return "HTTP Payload";
+        }
+
+        DnsPacketProtocolAnalyzer dns_analyzer {};
+        if (const auto dns_details = dns_analyzer.analyze(packet_bytes, data_link_type); dns_details.has_value()) {
+            const auto text = std::string_view(*dns_details);
+            if (contains_text(text, "Message Type: Query")) {
+                return "DNS Query";
+            }
+            if (contains_text(text, "Message Type: Response")) {
+                return "DNS Response";
+            }
+            return "DNS Payload";
+        }
+    }
+
+    return fallback_stream_label(protocol);
+}
+
+StreamItemRow make_stream_item_row(
+    const std::uint64_t stream_item_index,
+    const std::string_view direction_text,
+    const std::string& label,
+    const std::size_t byte_count,
+    const PacketRef& packet
+) {
+    return StreamItemRow {
+        .stream_item_index = stream_item_index,
+        .direction_text = std::string {direction_text},
+        .label = label,
+        .byte_count = static_cast<std::uint32_t>(byte_count),
+        .packet_count = 1,
+        .packet_indices = {packet.packet_index},
+    };
+}
 std::optional<PacketRef> find_packet_in_connection(const ConnectionV4& connection, std::uint64_t packet_index) {
     for (const auto& packet : connection.flow_a.packets) {
         if (packet.packet_index == packet_index) {
@@ -763,6 +850,95 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_
     return rows;
 }
 
+std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::size_t flow_index) const {
+    if (!has_source_capture()) {
+        return {};
+    }
+
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return {};
+    }
+
+    const auto flow_protocol = protocol_id(connections[flow_index]);
+    if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp) {
+        return {};
+    }
+
+    std::vector<StreamPacketCandidate> candidates {};
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        const auto& connection = *connections[flow_index].ipv4;
+        candidates.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+
+        for (const auto& packet : connection.flow_a.packets) {
+            candidates.push_back(StreamPacketCandidate {
+                .packet = packet,
+                .direction_text = kDirectionAToB,
+                .protocol = flow_protocol,
+            });
+        }
+        for (const auto& packet : connection.flow_b.packets) {
+            candidates.push_back(StreamPacketCandidate {
+                .packet = packet,
+                .direction_text = kDirectionBToA,
+                .protocol = flow_protocol,
+            });
+        }
+    } else {
+        const auto& connection = *connections[flow_index].ipv6;
+        candidates.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+
+        for (const auto& packet : connection.flow_a.packets) {
+            candidates.push_back(StreamPacketCandidate {
+                .packet = packet,
+                .direction_text = kDirectionAToB,
+                .protocol = flow_protocol,
+            });
+        }
+        for (const auto& packet : connection.flow_b.packets) {
+            candidates.push_back(StreamPacketCandidate {
+                .packet = packet,
+                .direction_text = kDirectionBToA,
+                .protocol = flow_protocol,
+            });
+        }
+    }
+
+    std::sort(candidates.begin(), candidates.end(), [](const StreamPacketCandidate& left, const StreamPacketCandidate& right) {
+        return left.packet.packet_index < right.packet.packet_index;
+    });
+
+    PacketPayloadService payload_service {};
+    std::vector<StreamItemRow> rows {};
+    rows.reserve(candidates.size());
+
+    for (const auto& candidate : candidates) {
+        if (candidate.packet.payload_length == 0U) {
+            continue;
+        }
+
+        const auto packet_bytes = read_packet_data(candidate.packet);
+        if (packet_bytes.empty()) {
+            continue;
+        }
+
+        const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, candidate.packet.data_link_type);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto label = classify_stream_label(packet_bytes, candidate.packet.data_link_type, candidate.protocol, deep_protocol_details_enabled_);
+        rows.push_back(make_stream_item_row(
+            static_cast<std::uint64_t>(rows.size() + 1U),
+            candidate.direction_text,
+            label,
+            payload_bytes.size(),
+            candidate.packet
+        ));
+    }
+
+    return rows;
+}
 std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t flow_index) const {
     const auto connections = list_connections(state_);
     if (flow_index >= connections.size()) {
@@ -817,6 +993,9 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
 
 
 

@@ -136,6 +136,7 @@ ApplicationWindow {
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel
+                streamModel: mainController.streamModel
                 selectedPacketIndex: mainController.selectedPacketIndex
                 packetDetailsModel: mainController.packetDetailsModel
                 onFlowSelected: function(flowIndex) {
@@ -187,3 +188,4 @@ ApplicationWindow {
         }
     }
 }
+

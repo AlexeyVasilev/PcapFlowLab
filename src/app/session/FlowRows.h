@@ -48,6 +48,15 @@ struct PacketRow {
     std::string tcp_flags_text {};
 };
 
+
+struct StreamItemRow {
+    std::uint64_t stream_item_index {0};
+    std::string direction_text {};
+    std::string label {};
+    std::uint32_t byte_count {0};
+    std::uint32_t packet_count {0};
+    std::vector<std::uint64_t> packet_indices {};
+};
 struct ProtocolStats {
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
@@ -80,4 +89,5 @@ struct CaptureTopSummary {
 };
 
 }  // namespace pfl
+
 

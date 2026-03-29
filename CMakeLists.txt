@@ -116,6 +116,8 @@ if(PFL_BUILD_UI)
             src/ui/app/PacketListModel.h
             src/ui/app/PacketDetailsViewModel.cpp
             src/ui/app/PacketDetailsViewModel.h
+            src/ui/app/StreamListModel.cpp
+            src/ui/app/StreamListModel.h
         )
 
         qt_add_qml_module(
@@ -132,6 +134,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/FlowTable.qml
                 src/ui/qml/components/PacketList.qml
                 src/ui/qml/components/PacketDetailsPane.qml
+                src/ui/qml/components/StreamView.qml
                 src/ui/qml/components/SettingsPane.qml
         )
 
@@ -156,6 +159,7 @@ if(PFL_BUILD_UI)
                 src/ui/app/TopSummaryListModel.cpp
                 src/ui/app/PacketListModel.cpp
                 src/ui/app/PacketDetailsViewModel.cpp
+                src/ui/app/StreamListModel.cpp
             )
 
             target_link_libraries(
@@ -196,6 +200,7 @@ if(BUILD_TESTING)
         tests/unit/PacketProtocolDetailsTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
+        tests/unit/StreamQueryTests.cpp
         tests/unit/ProtocolSummaryTests.cpp
         tests/unit/TopSummaryTests.cpp
         tests/unit/VlanTests.cpp
@@ -223,6 +228,7 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
 
 
 

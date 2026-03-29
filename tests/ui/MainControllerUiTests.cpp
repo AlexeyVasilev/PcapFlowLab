@@ -14,6 +14,7 @@
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/StreamListModel.h"
 
 namespace {
 
@@ -82,6 +83,17 @@ std::vector<std::uint8_t> make_classic_pcap_with_lengths(
 }
 
 #define UI_EXPECT(expr) expect_true((expr), #expr, __FILE__, __LINE__)
+
+int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::ProtocolHintRole).toString() == hint) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
 
 }  // namespace
 
@@ -331,6 +343,34 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(settings_flow_model->rowCount() == 1);
     UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("/fallback/ui"));
 
+    MainController stream_controller {};
+    UI_EXPECT(stream_controller.openCaptureFile(QString::fromStdWString(moved_capture_path.wstring())));
+    auto* stream_flow_model = qobject_cast<FlowListModel*>(stream_controller.flowModel());
+    auto* stream_model = qobject_cast<StreamListModel*>(stream_controller.streamModel());
+    UI_EXPECT(stream_flow_model != nullptr);
+    UI_EXPECT(stream_model != nullptr);
+    UI_EXPECT(stream_model->rowCount() == 0);
+
+    const int http_stream_flow_index = find_flow_index_by_protocol_hint(stream_flow_model, QStringLiteral("HTTP"));
+    const int dns_stream_flow_index = find_flow_index_by_protocol_hint(stream_flow_model, QStringLiteral("DNS"));
+    UI_EXPECT(http_stream_flow_index >= 0);
+    UI_EXPECT(dns_stream_flow_index >= 0);
+
+    stream_controller.setSelectedFlowIndex(http_stream_flow_index);
+    UI_EXPECT(stream_model->rowCount() == 1);
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TCP Payload"));
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_http_request_payload().size());
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::PacketCountRole).toUInt() == 1U);
+
+    stream_controller.setSelectedFlowIndex(dns_stream_flow_index);
+    UI_EXPECT(stream_model->rowCount() == 1);
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("UDP Payload"));
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_dns_query_payload().size());
+
+    stream_controller.setSelectedFlowIndex(-1);
+    UI_EXPECT(stream_model->rowCount() == 0);
+
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
     MainController deep_controller {};
     deep_controller.setCaptureOpenMode(kCliDeepImportModeIndex);
@@ -410,4 +450,5 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <filesystem>
 #include <optional>
@@ -37,6 +37,7 @@ public:
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(const ReassemblyRequest& request) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
+    [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
@@ -58,6 +59,3 @@ private:
 };
 
 }  // namespace pfl
-
-
-
