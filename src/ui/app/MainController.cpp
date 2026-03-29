@@ -889,6 +889,21 @@ void MainController::reloadSelectedStreamDetails() {
     packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt));
 
+    if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {
+        packet_details_model_.setHexText(QStringLiteral("Raw packet hex is not available for this stream item."));
+        packet_details_model_.setPayloadText(
+            itemIt->payload_hex_text.empty()
+                ? QStringLiteral("Transport payload is not available for this stream item.")
+                : QString::fromStdString(itemIt->payload_hex_text)
+        );
+        packet_details_model_.setProtocolText(
+            itemIt->protocol_text.empty()
+                ? QStringLiteral("No protocol-specific details available for this stream item.")
+                : QString::fromStdString(itemIt->protocol_text)
+        );
+        return;
+    }
+
     if (itemIt->packet_indices.size() == 1U) {
         const auto packet = session_.find_packet(itemIt->packet_indices.front());
         if (packet.has_value()) {
@@ -1001,13 +1016,4 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
-
-
-
-
-
-
-
-
-
 

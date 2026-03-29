@@ -4,7 +4,9 @@
 #include <array>
 #include <iomanip>
 #include <map>
+#include <span>
 #include <sstream>
+#include <string_view>
 
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
@@ -343,8 +345,104 @@ struct StreamPacketCandidate {
     ProtocolId protocol {ProtocolId::unknown};
 };
 
+constexpr std::size_t kTlsRecordHeaderSize = 5U;
+
 bool contains_text(const std::string_view text, const std::string_view needle) noexcept {
     return text.find(needle) != std::string_view::npos;
+}
+
+std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) noexcept {
+    return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
+                                      static_cast<std::uint16_t>(bytes[offset + 1U]));
+}
+
+bool looks_like_tls_record_prefix(std::span<const std::uint8_t> payload, const std::size_t offset = 0U) noexcept {
+    if (offset > payload.size() || payload.size() - offset < kTlsRecordHeaderSize) {
+        return false;
+    }
+
+    const auto content_type = payload[offset];
+    if (content_type < 20U || content_type > 23U) {
+        return false;
+    }
+
+    return payload[offset + 1U] == 0x03U && payload[offset + 2U] <= 0x04U;
+}
+
+std::optional<std::size_t> tls_record_size(std::span<const std::uint8_t> payload, const std::size_t offset = 0U) noexcept {
+    if (!looks_like_tls_record_prefix(payload, offset)) {
+        return std::nullopt;
+    }
+
+    const auto record_body_length = static_cast<std::size_t>(read_be16(payload, offset + 3U));
+    const auto record_size = kTlsRecordHeaderSize + record_body_length;
+    if (payload.size() - offset < record_size) {
+        return std::nullopt;
+    }
+
+    return record_size;
+}
+
+std::string tls_record_version_text(const std::uint16_t version) {
+    switch (version) {
+    case 0x0301U:
+        return "TLS 1.0 (0x0301)";
+    case 0x0302U:
+        return "TLS 1.1 (0x0302)";
+    case 0x0303U:
+        return "TLS 1.2 (0x0303)";
+    case 0x0304U:
+        return "TLS 1.3 (0x0304)";
+    default: {
+        std::ostringstream builder {};
+        builder << "0x" << std::hex << version;
+        return builder.str();
+    }
+    }
+}
+
+const char* tls_record_type_text(const std::uint8_t content_type) noexcept {
+    switch (content_type) {
+    case 20U:
+        return "ChangeCipherSpec";
+    case 21U:
+        return "Alert";
+    case 22U:
+        return "Handshake";
+    case 23U:
+        return "ApplicationData";
+    default:
+        return "Unknown";
+    }
+}
+
+const char* tls_handshake_type_text(const std::uint8_t handshake_type) noexcept {
+    switch (handshake_type) {
+    case 1U:
+        return "ClientHello";
+    case 2U:
+        return "ServerHello";
+    case 4U:
+        return "NewSessionTicket";
+    case 8U:
+        return "EncryptedExtensions";
+    case 11U:
+        return "Certificate";
+    case 12U:
+        return "ServerKeyExchange";
+    case 13U:
+        return "CertificateRequest";
+    case 14U:
+        return "ServerHelloDone";
+    case 15U:
+        return "CertificateVerify";
+    case 16U:
+        return "ClientKeyExchange";
+    case 20U:
+        return "Finished";
+    default:
+        return "Unknown";
+    }
 }
 
 std::string fallback_stream_label(const ProtocolId protocol) {
@@ -356,6 +454,141 @@ std::string fallback_stream_label(const ProtocolId protocol) {
     default:
         return "Payload";
     }
+}
+
+std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
+    if (record_bytes.size() < kTlsRecordHeaderSize) {
+        return "TLS Payload";
+    }
+
+    const auto content_type = record_bytes[0];
+    switch (content_type) {
+    case 20U:
+        return "TLS ChangeCipherSpec";
+    case 22U:
+        if (record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
+            switch (record_bytes[kTlsRecordHeaderSize]) {
+            case 1U:
+                return "TLS ClientHello";
+            case 2U:
+                return "TLS ServerHello";
+            default:
+                return "TLS Handshake";
+            }
+        }
+        return "TLS Handshake";
+    case 23U:
+        return "TLS AppData";
+    default:
+        return "TLS Record";
+    }
+}
+
+std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes) {
+    if (record_bytes.size() < kTlsRecordHeaderSize) {
+        return "TLS\n  Record details unavailable for this stream item.";
+    }
+
+    const auto content_type = record_bytes[0];
+    const auto version = read_be16(record_bytes, 1);
+    const auto record_length = static_cast<std::size_t>(read_be16(record_bytes, 3));
+
+    std::ostringstream text {};
+    text << "TLS\n"
+         << "  Record Type: " << tls_record_type_text(content_type) << "\n"
+         << "  Record Version: " << tls_record_version_text(version) << "\n"
+         << "  Record Length: " << record_length;
+
+    if (content_type == 22U && record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
+        const auto handshake_type = record_bytes[kTlsRecordHeaderSize];
+        text << "\n"
+             << "  Handshake Type: " << tls_handshake_type_text(handshake_type);
+    }
+
+    return text.str();
+}
+
+StreamItemRow make_stream_item_row(
+    const std::uint64_t stream_item_index,
+    const std::string_view direction_text,
+    const std::string& label,
+    const std::size_t byte_count,
+    const PacketRef& packet,
+    const std::string& payload_hex_text = {},
+    const std::string& protocol_text = {}
+) {
+    return StreamItemRow {
+        .stream_item_index = stream_item_index,
+        .direction_text = std::string {direction_text},
+        .label = label,
+        .byte_count = static_cast<std::uint32_t>(byte_count),
+        .packet_count = 1,
+        .packet_indices = {packet.packet_index},
+        .payload_hex_text = payload_hex_text,
+        .protocol_text = protocol_text,
+    };
+}
+
+bool append_tls_stream_items(
+    std::vector<StreamItemRow>& rows,
+    const StreamPacketCandidate& candidate,
+    std::span<const std::uint8_t> payload_bytes
+) {
+    if (!looks_like_tls_record_prefix(payload_bytes)) {
+        return false;
+    }
+
+    HexDumpService hex_dump_service {};
+    std::size_t offset = 0;
+    bool emitted_any = false;
+
+    while (offset < payload_bytes.size()) {
+        if (!looks_like_tls_record_prefix(payload_bytes, offset)) {
+            const auto trailing = payload_bytes.subspan(offset);
+            if (!trailing.empty()) {
+                rows.push_back(make_stream_item_row(
+                    static_cast<std::uint64_t>(rows.size() + 1U),
+                    candidate.direction_text,
+                    "TLS Payload",
+                    trailing.size(),
+                    candidate.packet,
+                    hex_dump_service.format(trailing),
+                    "TLS\n  Remaining bytes do not form a complete TLS record in this packet."
+                ));
+            }
+            return true;
+        }
+
+        const auto record_size = tls_record_size(payload_bytes, offset);
+        if (!record_size.has_value()) {
+            const auto trailing = payload_bytes.subspan(offset);
+            rows.push_back(make_stream_item_row(
+                static_cast<std::uint64_t>(rows.size() + 1U),
+                candidate.direction_text,
+                "TLS Record Fragment",
+                trailing.size(),
+                candidate.packet,
+                hex_dump_service.format(trailing),
+                "TLS\n  Record header is present but the full TLS record body is not available in this packet."
+            ));
+            return true;
+        }
+
+        const auto record_bytes = payload_bytes.subspan(offset, *record_size);
+        rows.push_back(make_stream_item_row(
+            static_cast<std::uint64_t>(rows.size() + 1U),
+            candidate.direction_text,
+            tls_stream_label(record_bytes),
+            record_bytes.size(),
+            candidate.packet,
+            hex_dump_service.format(record_bytes),
+            tls_record_protocol_text(record_bytes)
+        ));
+        emitted_any = true;
+        offset += *record_size;
+    }
+
+    return emitted_any;
 }
 
 std::string classify_stream_label(
@@ -374,8 +607,14 @@ std::string classify_stream_label(
             if (contains_text(text, "Handshake Type: ServerHello")) {
                 return "TLS ServerHello";
             }
+            if (contains_text(text, "Record Type: ChangeCipherSpec")) {
+                return "TLS ChangeCipherSpec";
+            }
             if (contains_text(text, "Record Type: ApplicationData")) {
                 return "TLS AppData";
+            }
+            if (contains_text(text, "Record Type: Handshake")) {
+                return "TLS Handshake";
             }
             return "TLS Payload";
         }
@@ -408,22 +647,6 @@ std::string classify_stream_label(
     return fallback_stream_label(protocol);
 }
 
-StreamItemRow make_stream_item_row(
-    const std::uint64_t stream_item_index,
-    const std::string_view direction_text,
-    const std::string& label,
-    const std::size_t byte_count,
-    const PacketRef& packet
-) {
-    return StreamItemRow {
-        .stream_item_index = stream_item_index,
-        .direction_text = std::string {direction_text},
-        .label = label,
-        .byte_count = static_cast<std::uint32_t>(byte_count),
-        .packet_count = 1,
-        .packet_indices = {packet.packet_index},
-    };
-}
 std::optional<PacketRef> find_packet_in_connection(const ConnectionV4& connection, std::uint64_t packet_index) {
     for (const auto& packet : connection.flow_a.packets) {
         if (packet.packet_index == packet_index) {
@@ -927,6 +1150,13 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::siz
             continue;
         }
 
+        if (candidate.protocol == ProtocolId::tcp && deep_protocol_details_enabled_) {
+            const auto payload_span = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+            if (append_tls_stream_items(rows, candidate, payload_span)) {
+                continue;
+            }
+        }
+
         const auto label = classify_stream_label(packet_bytes, candidate.packet.data_link_type, candidate.protocol, deep_protocol_details_enabled_);
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
@@ -993,20 +1223,5 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
