@@ -358,13 +358,33 @@ int main(int argc, char* argv[]) {
 
     stream_controller.setSelectedFlowIndex(http_stream_flow_index);
     UI_EXPECT(stream_model->rowCount() == 1);
+    UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TCP Payload"));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_http_request_payload().size());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::PacketCountRole).toUInt() == 1U);
 
+    const auto http_stream_item_index = stream_model->data(stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong();
+    stream_controller.setSelectedStreamItemIndex(http_stream_item_index);
+    UI_EXPECT(stream_controller.selectedStreamItemIndex() == http_stream_item_index);
+    auto* stream_details_model = qobject_cast<PacketDetailsViewModel*>(stream_controller.packetDetailsModel());
+    UI_EXPECT(stream_details_model != nullptr);
+    UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
+    UI_EXPECT(stream_details_model->summaryText().contains(QString::fromUtf8("Direction: A\xE2\x86\x92" "B")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: TCP Payload")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet Count: 1")));
+    UI_EXPECT(stream_details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
+    UI_EXPECT(stream_details_model->protocolText() == QStringLiteral("Protocol details are only available in Deep mode."));
+
+    stream_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(stream_controller.selectedPacketIndex() == 0U);
+    UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Packet Details"));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet index in file: 0")));
+
     stream_controller.setSelectedFlowIndex(dns_stream_flow_index);
     UI_EXPECT(stream_model->rowCount() == 1);
+    UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
+    UI_EXPECT(stream_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("UDP Payload"));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_dns_query_payload().size());
 

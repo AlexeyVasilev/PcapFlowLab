@@ -7,9 +7,21 @@ Frame {
 
     property var packetDetailsModel: null
 
+    function detailsTitle() {
+        if (!root.packetDetailsModel) {
+            return "Packet Details"
+        }
+
+        return root.packetDetailsModel.detailsTitle
+    }
+
+    function emptyText() {
+        return "No details selected"
+    }
+
     function summaryText() {
         if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
-            return "No packet selected"
+            return root.emptyText()
         }
 
         return root.packetDetailsModel.summaryText
@@ -79,7 +91,7 @@ Frame {
         spacing: 10
 
         Label {
-            text: "Packet Details"
+            text: root.detailsTitle()
             font.pixelSize: 18
             font.bold: true
         }
@@ -182,14 +194,14 @@ Frame {
                             monospace: true
                             viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
                                 ? root.packetDetailsModel.hexText
-                                : "No packet selected"
+                                : root.emptyText()
                         }
 
                         TextPane {
                             monospace: true
                             viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
                                 ? root.packetDetailsModel.payloadText
-                                : "No packet selected"
+                                : root.emptyText()
                         }
                     }
                 }
@@ -198,7 +210,7 @@ Frame {
             TextPane {
                 viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
                     ? root.packetDetailsModel.protocolText
-                    : "No packet selected"
+                    : root.emptyText()
             }
         }
     }

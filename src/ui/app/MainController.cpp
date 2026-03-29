@@ -1,5 +1,6 @@
 #include "ui/app/MainController.h"
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <limits>
@@ -14,6 +15,7 @@ namespace pfl {
 namespace {
 
 constexpr qulonglong kInvalidPacketSelection = std::numeric_limits<qulonglong>::max();
+constexpr qulonglong kInvalidStreamSelection = std::numeric_limits<qulonglong>::max();
 constexpr int kFlowTabIndex = 0;
 constexpr int kStatsTabIndex = 1;
 constexpr int kSettingsTabIndex = 2;
@@ -186,6 +188,30 @@ QString buildPayloadText(const PacketDetails& details, const std::string& payloa
     return QStringLiteral("Transport payload not available for this packet");
 }
 
+QString formatPacketIndices(const std::vector<std::uint64_t>& packetIndices) {
+    QStringList values {};
+    values.reserve(static_cast<qsizetype>(packetIndices.size()));
+
+    for (const auto packetIndex : packetIndices) {
+        values.push_back(QString::number(packetIndex));
+    }
+
+    return values.join(QStringLiteral(", "));
+}
+
+QString buildStreamItemSummary(const StreamItemRow& item) {
+    QStringList lines {};
+
+    appendSection(lines, QStringLiteral("Stream Item"), {
+        QStringLiteral("Direction: %1").arg(QString::fromStdString(item.direction_text)),
+        QStringLiteral("Label: %1").arg(QString::fromStdString(item.label)),
+        QStringLiteral("Byte Count: %1").arg(item.byte_count),
+        QStringLiteral("Packet Count: %1").arg(item.packet_count),
+        QStringLiteral("Contributing Packets: %1").arg(formatPacketIndices(item.packet_indices)),
+    });
+
+    return lines.join(QLatin1Char('\n'));
+}
 QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet) {
     QStringList lines {};
 
@@ -428,6 +454,10 @@ qulonglong MainController::selectedPacketIndex() const noexcept {
     return selected_packet_index_;
 }
 
+qulonglong MainController::selectedStreamItemIndex() const noexcept {
+    return selected_stream_item_index_;
+}
+
 QString MainController::flowFilterText() const {
     return flow_model_.filterText();
 }
@@ -468,9 +498,10 @@ bool MainController::attachSourceCapture(const QString& path) {
 
     setLastDirectoryFromPath(filesystemPath);
     if (selected_flow_index_ >= 0) {
-        stream_model_.refresh(session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_)));
+        current_stream_items_ = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_));
+        stream_model_.refresh(current_stream_items_);
     }
-    reloadSelectedPacketDetails();
+    reloadActiveDetails();
     emit stateChanged();
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
@@ -625,16 +656,19 @@ void MainController::setSelectedFlowIndex(const int index) {
     }
 
     selected_flow_index_ = index;
+    clearPacketSelection();
+    clearStreamSelection();
 
     if (selected_flow_index_ >= 0) {
         packet_model_.refresh(session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_)));
-        stream_model_.refresh(session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_)));
+        current_stream_items_ = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_));
+        stream_model_.refresh(current_stream_items_);
     } else {
         packet_model_.clear();
+        current_stream_items_.clear();
         stream_model_.clear();
     }
 
-    clearPacketSelection();
     emit selectedFlowIndexChanged();
     emit actionAvailabilityChanged();
 }
@@ -646,13 +680,37 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
 
     selected_packet_index_ = packetIndex;
     if (selected_packet_index_ == kInvalidPacketSelection) {
-        packet_details_model_.clear();
+        if (details_selection_context_ == DetailsSelectionContext::packet) {
+            details_selection_context_ = DetailsSelectionContext::none;
+            packet_details_model_.clear();
+        }
         emit selectedPacketIndexChanged();
         return;
     }
 
+    details_selection_context_ = DetailsSelectionContext::packet;
     reloadSelectedPacketDetails();
     emit selectedPacketIndexChanged();
+}
+
+void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex) {
+    if (selected_stream_item_index_ == streamItemIndex) {
+        return;
+    }
+
+    selected_stream_item_index_ = streamItemIndex;
+    if (selected_stream_item_index_ == kInvalidStreamSelection) {
+        if (details_selection_context_ == DetailsSelectionContext::stream) {
+            details_selection_context_ = DetailsSelectionContext::none;
+            packet_details_model_.clear();
+        }
+        emit selectedStreamItemIndexChanged();
+        return;
+    }
+
+    details_selection_context_ = DetailsSelectionContext::stream;
+    reloadSelectedStreamDetails();
+    emit selectedStreamItemIndexChanged();
 }
 
 void MainController::setFlowFilterText(const QString& text) {
@@ -667,11 +725,31 @@ void MainController::setFlowFilterText(const QString& text) {
 
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
+    const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
     selected_packet_index_ = kInvalidPacketSelection;
-    packet_details_model_.clear();
+
+    if (wasActive) {
+        details_selection_context_ = DetailsSelectionContext::none;
+        packet_details_model_.clear();
+    }
 
     if (selectionChanged) {
         emit selectedPacketIndexChanged();
+    }
+}
+
+void MainController::clearStreamSelection() {
+    const bool selectionChanged = selected_stream_item_index_ != kInvalidStreamSelection;
+    const bool wasActive = details_selection_context_ == DetailsSelectionContext::stream;
+    selected_stream_item_index_ = kInvalidStreamSelection;
+
+    if (wasActive) {
+        details_selection_context_ = DetailsSelectionContext::none;
+        packet_details_model_.clear();
+    }
+
+    if (selectionChanged) {
+        emit selectedStreamItemIndexChanged();
     }
 }
 
@@ -679,8 +757,10 @@ void MainController::clearFlowSelection() {
     const bool flowChanged = selected_flow_index_ != -1;
     selected_flow_index_ = -1;
     packet_model_.clear();
+    current_stream_items_.clear();
     stream_model_.clear();
     clearPacketSelection();
+    clearStreamSelection();
 
     if (flowChanged) {
         emit selectedFlowIndexChanged();
@@ -701,12 +781,15 @@ void MainController::resetLoadedState() {
     flow_model_.resetViewState();
     flow_model_.clear();
     packet_model_.clear();
+    current_stream_items_.clear();
     stream_model_.clear();
     packet_details_model_.clear();
     top_endpoints_model_.clear();
     top_ports_model_.clear();
     selected_flow_index_ = -1;
     selected_packet_index_ = kInvalidPacketSelection;
+    selected_stream_item_index_ = kInvalidStreamSelection;
+    details_selection_context_ = DetailsSelectionContext::none;
 }
 
 void MainController::applyLoadedState(const QString& path) {
@@ -766,6 +849,8 @@ void MainController::reloadSelectedPacketDetails() {
         return;
     }
 
+    packet_details_model_.setDetailsTitle(QStringLiteral("Packet Details"));
+
     const auto packet = session_.find_packet(static_cast<std::uint64_t>(selected_packet_index_));
     if (!packet.has_value()) {
         packet_details_model_.clear();
@@ -786,6 +871,61 @@ void MainController::reloadSelectedPacketDetails() {
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
     packet_details_model_.setProtocolText(QString::fromStdString(protocolText));
+}
+
+void MainController::reloadSelectedStreamDetails() {
+    if (selected_stream_item_index_ == kInvalidStreamSelection) {
+        return;
+    }
+
+    const auto itemIt = std::find_if(current_stream_items_.begin(), current_stream_items_.end(), [&](const StreamItemRow& item) {
+        return item.stream_item_index == static_cast<std::uint64_t>(selected_stream_item_index_);
+    });
+    if (itemIt == current_stream_items_.end()) {
+        packet_details_model_.clear();
+        return;
+    }
+
+    packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
+    packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt));
+
+    if (itemIt->packet_indices.size() == 1U) {
+        const auto packet = session_.find_packet(itemIt->packet_indices.front());
+        if (packet.has_value()) {
+            const auto details = session_.read_packet_details(*packet);
+            const auto hexDump = session_.read_packet_hex_dump(*packet);
+            const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
+            const auto protocolText = session_.read_packet_protocol_details_text(*packet);
+
+            packet_details_model_.setHexText(QString::fromStdString(hexDump));
+            if (details.has_value()) {
+                packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
+            } else if (!payloadHexDump.empty()) {
+                packet_details_model_.setPayloadText(QString::fromStdString(payloadHexDump));
+            } else {
+                packet_details_model_.setPayloadText(QStringLiteral("Transport payload not available for this stream item."));
+            }
+            packet_details_model_.setProtocolText(QString::fromStdString(protocolText));
+            return;
+        }
+    }
+
+    packet_details_model_.setHexText(QStringLiteral("Raw packet hex is not available for this stream item."));
+    packet_details_model_.setPayloadText(QStringLiteral("Transport payload is not available for this stream item."));
+    packet_details_model_.setProtocolText(QStringLiteral("No protocol-specific details available for this stream item."));
+}
+
+void MainController::reloadActiveDetails() {
+    switch (details_selection_context_) {
+    case DetailsSelectionContext::packet:
+        reloadSelectedPacketDetails();
+        break;
+    case DetailsSelectionContext::stream:
+        reloadSelectedStreamDetails();
+        break;
+    case DetailsSelectionContext::none:
+        break;
+    }
 }
 
 void MainController::setOpenErrorText(const QString& text) {

@@ -138,6 +138,7 @@ ApplicationWindow {
                 packetModel: mainController.packetModel
                 streamModel: mainController.streamModel
                 selectedPacketIndex: mainController.selectedPacketIndex
+                selectedStreamItemIndex: mainController.selectedStreamItemIndex
                 packetDetailsModel: mainController.packetDetailsModel
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
@@ -150,6 +151,9 @@ ApplicationWindow {
                 }
                 onPacketSelected: function(packetIndex) {
                     mainController.selectedPacketIndex = packetIndex
+                }
+                onStreamItemSelected: function(streamItemIndex) {
+                    mainController.selectedStreamItemIndex = streamItemIndex
                 }
             }
 

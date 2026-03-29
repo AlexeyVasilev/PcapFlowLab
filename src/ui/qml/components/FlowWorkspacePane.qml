@@ -14,11 +14,13 @@ Item {
     property var streamModel: null
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
+    property var selectedStreamItemIndex: 0
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
     signal sortRequested(int column)
     signal packetSelected(var packetIndex)
+    signal streamItemSelected(var streamItemIndex)
 
     SplitView {
         anchors.fill: parent
@@ -86,6 +88,10 @@ Item {
 
                         StreamView {
                             streamModel: root.streamModel
+                            selectedStreamItemIndex: root.selectedStreamItemIndex
+                            onStreamItemSelected: function(streamItemIndex) {
+                                root.streamItemSelected(streamItemIndex)
+                            }
                         }
                     }
                 }

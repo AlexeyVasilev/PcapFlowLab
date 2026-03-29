@@ -6,18 +6,31 @@ Frame {
     id: root
 
     property var streamModel: null
+    property var selectedStreamItemIndex: 0
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
+
+    signal streamItemSelected(var streamItemIndex)
 
     function isForward(directionText) {
         return directionText === root.forwardDirection
     }
 
-    function bubbleColor(directionText) {
+    function isSelected(streamItemIndex) {
+        return streamItemIndex === root.selectedStreamItemIndex
+    }
+
+    function bubbleColor(directionText, selected) {
+        if (selected) {
+            return isForward(directionText) ? "#dcecff" : "#dcf4e4"
+        }
         return isForward(directionText) ? "#eef6ff" : "#eefaf2"
     }
 
-    function bubbleBorderColor(directionText) {
+    function bubbleBorderColor(directionText, selected) {
+        if (selected) {
+            return isForward(directionText) ? "#7ca9de" : "#79b38a"
+        }
         return isForward(directionText) ? "#c8dbf2" : "#c9e7d1"
     }
 
@@ -73,6 +86,8 @@ Frame {
                     width: streamListView.width
                     height: bubble.implicitHeight
 
+                    readonly property bool selected: root.isSelected(streamItemIndex)
+
                     RowLayout {
                         anchors.fill: parent
                         spacing: 0
@@ -87,8 +102,9 @@ Frame {
                             Layout.preferredWidth: Math.min(streamListView.width * 0.78, 320)
                             implicitHeight: contentColumn.implicitHeight + 18
                             radius: 10
-                            color: root.bubbleColor(directionText)
-                            border.color: root.bubbleBorderColor(directionText)
+                            color: root.bubbleColor(directionText, selected)
+                            border.color: root.bubbleBorderColor(directionText, selected)
+                            border.width: selected ? 2 : 1
 
                             ColumnLayout {
                                 id: contentColumn
@@ -129,6 +145,10 @@ Frame {
                                     text: byteCount + " bytes" + (packetCount > 1 ? " • " + packetCount + " packets" : " • 1 packet")
                                     color: "#475569"
                                 }
+                            }
+
+                            TapHandler {
+                                onTapped: root.streamItemSelected(streamItemIndex)
                             }
                         }
 

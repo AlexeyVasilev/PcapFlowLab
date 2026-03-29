@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
 #include <QObject>
 #include <QString>
@@ -52,6 +53,7 @@ class MainController final : public QObject {
     Q_PROPERTY(QObject* packetDetailsModel READ packetDetailsModel CONSTANT)
     Q_PROPERTY(int selectedFlowIndex READ selectedFlowIndex WRITE setSelectedFlowIndex NOTIFY selectedFlowIndexChanged)
     Q_PROPERTY(qulonglong selectedPacketIndex READ selectedPacketIndex WRITE setSelectedPacketIndex NOTIFY selectedPacketIndexChanged)
+    Q_PROPERTY(qulonglong selectedStreamItemIndex READ selectedStreamItemIndex WRITE setSelectedStreamItemIndex NOTIFY selectedStreamItemIndexChanged)
     Q_PROPERTY(QString flowFilterText READ flowFilterText WRITE setFlowFilterText NOTIFY flowFilterTextChanged)
     Q_PROPERTY(int flowSortColumn READ flowSortColumn NOTIFY flowSortChanged)
     Q_PROPERTY(bool flowSortAscending READ flowSortAscending NOTIFY flowSortChanged)
@@ -94,6 +96,7 @@ public:
     [[nodiscard]] QObject* packetDetailsModel() noexcept;
     [[nodiscard]] int selectedFlowIndex() const noexcept;
     [[nodiscard]] qulonglong selectedPacketIndex() const noexcept;
+    [[nodiscard]] qulonglong selectedStreamItemIndex() const noexcept;
     [[nodiscard]] QString flowFilterText() const;
     [[nodiscard]] int flowSortColumn() const noexcept;
     [[nodiscard]] bool flowSortAscending() const noexcept;
@@ -118,6 +121,7 @@ public:
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
+    void setSelectedStreamItemIndex(qulonglong streamItemIndex);
     void setFlowFilterText(const QString& text);
 
 signals:
@@ -131,13 +135,23 @@ signals:
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void selectedPacketIndexChanged();
+    void selectedStreamItemIndexChanged();
     void flowFilterTextChanged();
     void flowSortChanged();
 
 private:
+    enum class DetailsSelectionContext {
+        none,
+        packet,
+        stream,
+    };
+
     bool openPath(const QString& path, bool asIndex);
     void reloadSelectedPacketDetails();
+    void reloadSelectedStreamDetails();
+    void reloadActiveDetails();
     void clearPacketSelection();
+    void clearStreamSelection();
     void clearFlowSelection();
     void synchronizeFlowSelection();
     void resetLoadedState();
@@ -157,6 +171,7 @@ private:
     PacketListModel packet_model_ {};
     StreamListModel stream_model_ {};
     PacketDetailsViewModel packet_details_model_ {};
+    std::vector<StreamItemRow> current_stream_items_ {};
     QString current_input_path_ {};
     QString open_error_text_ {};
     QString status_text_ {};
@@ -166,7 +181,9 @@ private:
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
+    qulonglong selected_stream_item_index_ {0};
     bool status_is_error_ {false};
+    DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };
 
 }  // namespace pfl
