@@ -199,7 +199,42 @@ QString formatPacketIndices(const std::vector<std::uint64_t>& packetIndices) {
     return values.join(QStringLiteral(", "));
 }
 
-QString buildStreamItemSummary(const StreamItemRow& item) {
+QString formatFlowPacketNumbers(
+    const std::vector<std::uint64_t>& packetIndices,
+    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
+) {
+    QStringList values {};
+
+    for (const auto packetIndex : packetIndices) {
+        const auto flowIt = flowPacketNumbers.find(packetIndex);
+        if (flowIt == flowPacketNumbers.end()) {
+            continue;
+        }
+
+        values.push_back(QStringLiteral("#%1").arg(flowIt->second));
+    }
+
+    return values.join(QStringLiteral(", "));
+}
+
+QString formatContributingPackets(
+    const StreamItemRow& item,
+    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
+) {
+    const QString fileIndices = formatPacketIndices(item.packet_indices);
+    const QString flowNumbers = formatFlowPacketNumbers(item.packet_indices, flowPacketNumbers);
+
+    if (!flowNumbers.isEmpty()) {
+        return QStringLiteral("flow %1 (file %2)").arg(flowNumbers, fileIndices);
+    }
+
+    return QStringLiteral("(file %1)").arg(fileIndices);
+}
+
+QString buildStreamItemSummary(
+    const StreamItemRow& item,
+    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
+) {
     QStringList lines {};
 
     appendSection(lines, QStringLiteral("Stream Item"), {
@@ -207,7 +242,7 @@ QString buildStreamItemSummary(const StreamItemRow& item) {
         QStringLiteral("Label: %1").arg(QString::fromStdString(item.label)),
         QStringLiteral("Byte Count: %1").arg(item.byte_count),
         QStringLiteral("Packet Count: %1").arg(item.packet_count),
-        QStringLiteral("Contributing Packets: %1").arg(formatPacketIndices(item.packet_indices)),
+        QStringLiteral("Contributing Packets: %1").arg(formatContributingPackets(item, flowPacketNumbers)),
     });
 
     return lines.join(QLatin1Char('\n'));
@@ -659,8 +694,13 @@ void MainController::setSelectedFlowIndex(const int index) {
     clearPacketSelection();
     clearStreamSelection();
 
+    current_flow_packet_numbers_.clear();
     if (selected_flow_index_ >= 0) {
-        packet_model_.refresh(session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_)));
+        const auto flowPackets = session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_));
+        packet_model_.refresh(flowPackets);
+        for (const auto& packetRow : flowPackets) {
+            current_flow_packet_numbers_.insert_or_assign(packetRow.packet_index, packetRow.row_number);
+        }
         current_stream_items_ = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_));
         stream_model_.refresh(current_stream_items_);
     } else {
@@ -758,6 +798,7 @@ void MainController::clearFlowSelection() {
     selected_flow_index_ = -1;
     packet_model_.clear();
     current_stream_items_.clear();
+    current_flow_packet_numbers_.clear();
     stream_model_.clear();
     clearPacketSelection();
     clearStreamSelection();
@@ -782,6 +823,7 @@ void MainController::resetLoadedState() {
     flow_model_.clear();
     packet_model_.clear();
     current_stream_items_.clear();
+    current_flow_packet_numbers_.clear();
     stream_model_.clear();
     packet_details_model_.clear();
     top_endpoints_model_.clear();
@@ -887,7 +929,7 @@ void MainController::reloadSelectedStreamDetails() {
     }
 
     packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
-    packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt));
+    packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
 
     if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {
         packet_details_model_.setHexText(QStringLiteral("Raw packet hex is not available for this stream item."));

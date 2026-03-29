@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <vector>
 
 #include <QObject>
@@ -173,6 +174,7 @@ private:
     PacketDetailsViewModel packet_details_model_ {};
     // Flow-local, ephemeral stream projection for the currently selected flow only.
     std::vector<StreamItemRow> current_stream_items_ {};
+    std::map<std::uint64_t, std::uint64_t> current_flow_packet_numbers_ {};
     QString current_input_path_ {};
     QString open_error_text_ {};
     QString status_text_ {};

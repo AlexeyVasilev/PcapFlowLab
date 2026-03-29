@@ -60,6 +60,29 @@ std::vector<std::uint8_t> make_dns_query_payload() {
     pfl::tests::append_be16(payload, 1);
     return payload;
 }
+void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+std::vector<std::uint8_t> make_tls_handshake_record(
+    const std::uint8_t handshake_type,
+    const std::vector<std::uint8_t>& body,
+    const std::uint16_t version = 0x0303U
+) {
+    std::vector<std::uint8_t> handshake {};
+    handshake.push_back(handshake_type);
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+
+    std::vector<std::uint8_t> record {};
+    record.push_back(0x16U);
+    pfl::tests::append_be16(record, version);
+    pfl::tests::append_be16(record, static_cast<std::uint16_t>(handshake.size()));
+    record.insert(record.end(), handshake.begin(), handshake.end());
+    return record;
+}
 
 std::vector<std::uint8_t> make_classic_pcap_with_lengths(
     const std::uint32_t ts_usec,
@@ -373,6 +396,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model->summaryText().contains(QString::fromUtf8("Direction: A\xE2\x86\x92" "B")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: TCP Payload")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet Count: 1")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Contributing Packets: flow #1 (file 0)")));
     UI_EXPECT(stream_details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(stream_details_model->protocolText() == QStringLiteral("Protocol details are only available in Deep mode."));
 
@@ -390,6 +414,31 @@ int main(int argc, char* argv[]) {
 
     stream_controller.setSelectedFlowIndex(-1);
     UI_EXPECT(stream_model->rowCount() == 0);
+
+    const auto split_tls_record = make_tls_handshake_record(0x02U, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06});
+    const auto split_tls_payload_a = std::vector<std::uint8_t>(split_tls_record.begin(), split_tls_record.begin() + 7);
+    const auto split_tls_payload_b = std::vector<std::uint8_t>(split_tls_record.begin() + 7, split_tls_record.end());
+    const auto split_tls_capture_path = write_temp_pcap(
+        "pfl_ui_stream_split_tls.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), 54000, 443, split_tls_payload_a, 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload(ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), 54000, 443, split_tls_payload_b, 0x18)},
+        })
+    );
+
+    MainController split_tls_controller {};
+    UI_EXPECT(split_tls_controller.openCaptureFile(QString::fromStdWString(split_tls_capture_path.wstring())));
+    split_tls_controller.setSelectedFlowIndex(0);
+    auto* split_tls_stream_model = qobject_cast<StreamListModel*>(split_tls_controller.streamModel());
+    UI_EXPECT(split_tls_stream_model != nullptr);
+    UI_EXPECT(split_tls_stream_model->rowCount() == 1);
+    const auto split_tls_stream_item_index = split_tls_stream_model->data(split_tls_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong();
+    split_tls_controller.setSelectedStreamItemIndex(split_tls_stream_item_index);
+    auto* split_tls_details_model = qobject_cast<PacketDetailsViewModel*>(split_tls_controller.packetDetailsModel());
+    UI_EXPECT(split_tls_details_model != nullptr);
+    UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Label: TLS ServerHello")));
+    UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Packet Count: 2")));
+    UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Contributing Packets: flow #1, #2 (file 0, 1)")));
 
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
     MainController deep_controller {};
