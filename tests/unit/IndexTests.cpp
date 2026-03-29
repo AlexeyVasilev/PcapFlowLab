@@ -34,6 +34,41 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
     }
 }
 
+void expect_matching_stream_rows(const std::vector<StreamItemRow>& left, const std::vector<StreamItemRow>& right) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        PFL_EXPECT(left[index].direction_text == right[index].direction_text);
+        PFL_EXPECT(left[index].label == right[index].label);
+        PFL_EXPECT(left[index].byte_count == right[index].byte_count);
+        PFL_EXPECT(left[index].packet_count == right[index].packet_count);
+        PFL_EXPECT(left[index].packet_indices == right[index].packet_indices);
+    }
+}
+
+void append_be16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+std::vector<std::uint8_t> make_tls_handshake_record_for_index_test(const std::uint8_t handshake_type, const std::vector<std::uint8_t>& body) {
+    std::vector<std::uint8_t> handshake {};
+    handshake.push_back(handshake_type);
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+
+    std::vector<std::uint8_t> record {};
+    record.push_back(0x16U);
+    append_be16(record, 0x0303U);
+    append_be16(record, static_cast<std::uint16_t>(handshake.size()));
+    record.insert(record.end(), handshake.begin(), handshake.end());
+    return record;
+}
 }  // namespace
 
 void run_index_tests() {
@@ -237,9 +272,39 @@ void run_index_tests() {
         PFL_EXPECT(loaded_session.export_flow_to_pcap(0, should_not_export_path));
         PFL_EXPECT(loaded_session.save_index(std::filesystem::temp_directory_path() / "pfl_attached_source_save.idx"));
     }
+
+    {
+        const auto tls_record = make_tls_handshake_record_for_index_test(0x02U, {0x10, 0x11, 0x12, 0x13, 0x14, 0x15});
+        const auto packet_a_payload = std::vector<std::uint8_t>(tls_record.begin(), tls_record.begin() + 7);
+        const auto packet_b_payload = std::vector<std::uint8_t>(tls_record.begin() + 7, tls_record.end());
+        const auto source_stream_path = write_temp_pcap(
+            "pfl_index_stream_roundtrip_source.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 53000, 443, packet_a_payload, 0x18)},
+                {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload(ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 53000, 443, packet_b_payload, 0x18)},
+            })
+        );
+        const auto stream_index_path = std::filesystem::temp_directory_path() / "pfl_index_stream_roundtrip.idx";
+        std::filesystem::remove(stream_index_path);
+
+        CaptureSession original_stream_session {};
+        PFL_EXPECT(original_stream_session.open_capture(source_stream_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        const auto original_stream_rows = original_stream_session.list_flow_stream_items(0);
+        const auto expected_stream_packet_indices = std::vector<std::uint64_t> {0, 1};
+        PFL_EXPECT(original_stream_rows.size() == 1);
+        PFL_EXPECT(original_stream_rows[0].label == "TLS ServerHello");
+        PFL_EXPECT(original_stream_rows[0].packet_indices == expected_stream_packet_indices);
+        PFL_EXPECT(original_stream_session.save_index(stream_index_path));
+
+        CaptureSession loaded_stream_session {};
+        PFL_EXPECT(loaded_stream_session.load_index(stream_index_path));
+        PFL_EXPECT(loaded_stream_session.has_source_capture());
+        const auto loaded_stream_rows = loaded_stream_session.list_flow_stream_items(0);
+        expect_matching_stream_rows(loaded_stream_rows, original_stream_rows);
+        PFL_EXPECT(loaded_stream_session.summary().packet_count == original_stream_session.summary().packet_count);
+        PFL_EXPECT(loaded_stream_session.summary().flow_count == original_stream_session.summary().flow_count);
+        PFL_EXPECT(loaded_stream_session.summary().total_bytes == original_stream_session.summary().total_bytes);
+    }
 }
 
 }  // namespace pfl::tests
-
-
-

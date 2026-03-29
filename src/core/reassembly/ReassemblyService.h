@@ -10,9 +10,9 @@ class CaptureSession;
 
 class ReassemblyService {
 public:
-    // Deep-only v1 helper for bounded TCP payload concatenation in packet order.
-    // This intentionally produces analyzer-oriented best-effort data rather than
-    // transport-correct TCP stream reconstruction.
+    // Bounded v1 helper for interactive or analyzer-driven TCP payload concatenation
+    // in packet order. This intentionally produces best-effort derived data rather
+    // than transport-correct TCP stream reconstruction.
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_tcp_payload(
         const CaptureSession& session,
         const ReassemblyRequest& request
@@ -20,4 +20,3 @@ public:
 };
 
 }  // namespace pfl
-

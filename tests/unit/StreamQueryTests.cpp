@@ -144,9 +144,10 @@ void run_stream_query_tests() {
     );
 
     CaptureSession tls_multi_session {};
-    CaptureImportOptions deep_options {};
-    deep_options.mode = ImportMode::deep;
-    PFL_EXPECT(tls_multi_session.open_capture(tls_multi_path, deep_options));
+    CaptureImportOptions fast_options {};
+    fast_options.mode = ImportMode::fast;
+    PFL_EXPECT(tls_multi_session.open_capture(tls_multi_path, fast_options));
+    const auto tls_multi_summary_before = tls_multi_session.summary();
 
     const auto tls_multi_rows = tls_multi_session.list_flow_stream_items(0);
     PFL_EXPECT(tls_multi_rows.size() == 2);
@@ -162,6 +163,9 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_multi_rows[1].protocol_text.find("Record Type: ChangeCipherSpec") != std::string::npos);
     PFL_EXPECT(!tls_multi_rows[0].payload_hex_text.empty());
     PFL_EXPECT(!tls_multi_rows[1].payload_hex_text.empty());
+    PFL_EXPECT(tls_multi_session.summary().packet_count == tls_multi_summary_before.packet_count);
+    PFL_EXPECT(tls_multi_session.summary().flow_count == tls_multi_summary_before.flow_count);
+    PFL_EXPECT(tls_multi_session.summary().total_bytes == tls_multi_summary_before.total_bytes);
 
     const auto tls_ccs_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(10, 43, 0, 1), ipv4(10, 43, 0, 2), 52001, 443, make_tls_change_cipher_spec_record(), 0x18);
@@ -171,7 +175,7 @@ void run_stream_query_tests() {
     );
 
     CaptureSession tls_ccs_session {};
-    PFL_EXPECT(tls_ccs_session.open_capture(tls_ccs_path, deep_options));
+    PFL_EXPECT(tls_ccs_session.open_capture(tls_ccs_path, fast_options));
     const auto tls_ccs_rows = tls_ccs_session.list_flow_stream_items(0);
     PFL_EXPECT(tls_ccs_rows.size() == 1);
     PFL_EXPECT(tls_ccs_rows[0].label == "TLS ChangeCipherSpec");
@@ -189,7 +193,7 @@ void run_stream_query_tests() {
     );
 
     CaptureSession tls_partial_session {};
-    PFL_EXPECT(tls_partial_session.open_capture(tls_partial_path, deep_options));
+    PFL_EXPECT(tls_partial_session.open_capture(tls_partial_path, fast_options));
     const auto tls_partial_rows = tls_partial_session.list_flow_stream_items(0);
     PFL_EXPECT(tls_partial_rows.size() == 2);
     PFL_EXPECT(tls_partial_rows[0].label == "TLS ServerHello");
@@ -198,7 +202,33 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_partial_rows[1].byte_count == incomplete_tls_record.size());
     PFL_EXPECT(tls_partial_rows[1].protocol_text.find("full TLS record body is not available") != std::string::npos);
     PFL_EXPECT(tls_partial_rows[1].protocol_text.find("ServerHello") == std::string::npos);
+
+    const auto split_server_hello_record = make_tls_handshake_record(0x02U, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06});
+    const auto split_packet_payload_a = std::vector<std::uint8_t>(split_server_hello_record.begin(), split_server_hello_record.begin() + 7);
+    const auto split_packet_payload_b = std::vector<std::uint8_t>(split_server_hello_record.begin() + 7, split_server_hello_record.end());
+    const auto split_tls_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 45, 0, 1), ipv4(10, 45, 0, 2), 52003, 443, split_packet_payload_a, 0x18);
+    const auto split_tls_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 45, 0, 1), ipv4(10, 45, 0, 2), 52003, 443, split_packet_payload_b, 0x18);
+    const auto split_tls_path = write_temp_pcap(
+        "pfl_stream_query_tls_split_record.pcap",
+        make_classic_pcap({
+            {100, split_tls_packet_a},
+            {200, split_tls_packet_b},
+        })
+    );
+
+    CaptureSession split_tls_session {};
+    PFL_EXPECT(split_tls_session.open_capture(split_tls_path, fast_options));
+    const auto split_tls_rows = split_tls_session.list_flow_stream_items(0);
+    PFL_EXPECT(split_tls_rows.size() == 1);
+    PFL_EXPECT(split_tls_rows[0].label == "TLS ServerHello");
+    PFL_EXPECT(split_tls_rows[0].byte_count == split_server_hello_record.size());
+    PFL_EXPECT(split_tls_rows[0].packet_count == 2);
+    const auto expected_split_packet_indices = std::vector<std::uint64_t> {0, 1};
+    PFL_EXPECT(split_tls_rows[0].packet_indices == expected_split_packet_indices);
+    PFL_EXPECT(split_tls_rows[0].protocol_text.find("Handshake Type: ServerHello") != std::string::npos);
+    PFL_EXPECT(!split_tls_rows[0].payload_hex_text.empty());
 }
 
 }  // namespace pfl::tests
-

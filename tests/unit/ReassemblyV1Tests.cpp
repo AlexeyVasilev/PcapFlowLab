@@ -117,8 +117,18 @@ void run_reassembly_v1_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
-        const auto result = session.reassemble_flow_direction(ReassemblyRequest {.flow_index = 0});
-        PFL_EXPECT(!result.has_value());
+        const auto direction = direction_for_packet(session, 0, 0);
+        const auto result = session.reassemble_flow_direction(ReassemblyRequest {
+            .flow_index = 0,
+            .direction = direction,
+            .max_packets = 16,
+            .max_bytes = 1024,
+        });
+        const auto expected_fast_bytes = std::vector<std::uint8_t> {'G', 'E', 'T', ' ', '/', 'v', '1', '\r', '\n'};
+        const auto expected_fast_packet_indices = std::vector<std::uint64_t> {0, 2, 3};
+        PFL_EXPECT(result.has_value());
+        PFL_EXPECT(result->bytes == expected_fast_bytes);
+        PFL_EXPECT(result->packet_indices == expected_fast_packet_indices);
     }
 
     {

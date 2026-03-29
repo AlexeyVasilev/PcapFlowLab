@@ -142,7 +142,7 @@ Frame {
 
                                 Label {
                                     Layout.fillWidth: true
-                                    text: byteCount + " bytes" + (packetCount > 1 ? " • " + packetCount + " packets" : " • 1 packet")
+                                    text: byteCount + " bytes | " + (packetCount > 1 ? packetCount + " packets" : "1 packet")
                                     color: "#475569"
                                 }
                             }

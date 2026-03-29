@@ -13,7 +13,7 @@ Practical examples in this project:
 - TLS ClientHello metadata such as SNI may be present only after concatenating multiple TCP payload segments.
 - QUIC Initial crypto data may require combining multiple packets before protocol-specific fields are available.
 
-Reassembly in this project should solve a narrow problem first: improve deep-mode protocol analysis on realistic captures when single-packet decoding is insufficient, while keeping fast browsing predictable and cheap.
+Reassembly in this project should solve a narrow problem first: improve persisted deep-analysis outputs and support interactive selected-flow stream inspection when single-packet decoding is insufficient, while keeping fast browsing predictable and cheap.
 
 ## Non-goals
 
@@ -81,7 +81,7 @@ Recommended first scope:
 - TCP payload concatenation in packet index order
 - best-effort analyzer input only, not transport-correct byte-stream reconstruction
 - bounded byte budget and/or packet budget per request
-- analyzer-driven invocation from deep mode only
+- analyzer-driven invocation for deep analysis and selected-flow interactive stream inspection
 - reassembly must always be bounded by explicit limits such as `max_packets` and `max_bytes`
 - those limits must be enforced for both open-time analysis and interactive stream reconstruction
 - reassembly must never be allowed to become unbounded in memory use or latency
@@ -124,9 +124,9 @@ The important boundary is that reassembly should produce derived artifacts for a
 - diagnostic flags should represent uncertainty, approximation, or reconstruction limitations
 - diagnostic flags must not be treated as ground truth about the network
 
-Reassembly-derived outputs are used in two distinct ways:
+Reassembly-derived outputs are used in two distinct ways, and those concerns must remain separate:
 - during deep analysis on open, to improve small persisted analysis results such as `service_hint`, `protocol_hint`, `deep_analysis_used_reassembly`, `tcp_reordering_detected`, and `stream_reconstruction_incomplete`
-- during interactive viewing, to build temporary stream-view data for the currently selected connection
+- during interactive viewing, to build temporary stream-view data for the currently selected connection, independent of the original Fast or Deep open mode
 
 The persistence policy is explicit: the project stores the value of reassembly-derived analysis, not the full reconstructed stream. Reassembled byte buffers, packet contribution lists, payload previews, stream items shown in the UI, and other large temporary artifacts should not be persisted in indexes or checkpoints.
 - persisted deep-analysis outputs and interactive stream artifacts are intentionally separate layers
@@ -147,7 +147,7 @@ Deep path requirements:
 - buffering must be bounded by policy, for example max packets per request and max reassembled bytes per request
 - byte and packet budgets should be defined centrally as policy, not hardcoded independently inside analyzers
 - v1 must not introduce persistent or session-wide reassembly caches; only request-scoped or per-selected-flow temporary buffering is allowed
-- stream-view data should be rebuilt on demand for the selected connection
+- stream-view data should be rebuilt on demand for the selected connection and only for the currently selected flow
 - only an ephemeral cache for the currently selected connection is allowed in v1; once the user switches connections, the old stream cache may be discarded
 - no persistent stream cache and no multi-connection LRU cache in v1, so temporary stream artifacts do not pollute `CaptureState` or saved indexes
 - the ephemeral cache is scoped strictly to the currently selected connection
@@ -181,6 +181,7 @@ This keeps the design aligned with current project priorities:
 - conservative correctness
 - explicit deep-only cost
 - bounded memory behavior
+
 
 
 

@@ -47,7 +47,9 @@ void run_reassembly_architecture_tests() {
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
         const auto initial_summary = session.summary();
         const auto result = session.reassemble_flow_direction(ReassemblyRequest {.flow_index = 0});
-        PFL_EXPECT(!result.has_value());
+        PFL_EXPECT(result.has_value());
+        PFL_EXPECT(result->bytes == make_reassembly_test_payload());
+        PFL_EXPECT(result->packet_indices == std::vector<std::uint64_t> {0});
         PFL_EXPECT(session.summary().packet_count == initial_summary.packet_count);
         PFL_EXPECT(session.summary().flow_count == initial_summary.flow_count);
         PFL_EXPECT(session.summary().total_bytes == initial_summary.total_bytes);
