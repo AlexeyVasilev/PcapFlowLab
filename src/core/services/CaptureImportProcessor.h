@@ -9,6 +9,8 @@
 #include "core/services/AnalysisSettings.h"
 #include "core/services/FlowHintService.h"
 
+struct OpenContext;
+
 namespace pfl {
 
 class CaptureImportProcessor {
@@ -22,8 +24,9 @@ private:
     FlowHintService hint_service_ {};
 };
 
-[[nodiscard]] bool import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor);
-[[nodiscard]] bool import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor);
-[[nodiscard]] bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor);
+[[nodiscard]] bool import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
+[[nodiscard]] bool import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
+[[nodiscard]] bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
 
 }  // namespace pfl
+

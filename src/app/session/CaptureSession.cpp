@@ -1301,10 +1301,18 @@ void CaptureSession::reset_runtime_state() noexcept {
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
-    return open_capture(path, CaptureImportOptions {});
+    return open_capture(path, CaptureImportOptions {}, nullptr);
+}
+
+bool CaptureSession::open_capture(const std::filesystem::path& path, OpenContext* ctx) {
+    return open_capture(path, CaptureImportOptions {}, ctx);
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options) {
+    return open_capture(path, options, nullptr);
+}
+
+bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options, OpenContext* ctx) {
     const auto started_at = std::chrono::steady_clock::now();
     PerfOpenLogger perf_logger {};
     const auto operation_type = (options.mode == ImportMode::deep)
@@ -1314,7 +1322,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     CaptureImporter importer {};
     CaptureState imported_state {};
 
-    if (!importer.import_capture(path, imported_state, options)) {
+    if (!importer.import_capture(path, imported_state, options, ctx)) {
         reset_runtime_state();
         log_open_result(perf_logger, operation_type, path, false, started_at, *this);
         return false;
@@ -1338,11 +1346,15 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 }
 
 bool CaptureSession::open_input(const std::filesystem::path& path) {
+    return open_input(path, nullptr);
+}
+
+bool CaptureSession::open_input(const std::filesystem::path& path, OpenContext* ctx) {
     if (looks_like_index_file(path)) {
         return load_index(path);
     }
 
-    return open_capture(path);
+    return open_capture(path, ctx);
 }
 
 bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
@@ -1903,4 +1915,5 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
 

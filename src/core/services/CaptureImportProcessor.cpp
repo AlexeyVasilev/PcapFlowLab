@@ -1,7 +1,9 @@
-﻿#include "core/services/CaptureImportProcessor.h"
+#include "core/services/CaptureImportProcessor.h"
 
 #include <span>
+#include <system_error>
 
+#include "../../../core/open_context.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketIngestor.h"
@@ -11,8 +13,13 @@ namespace pfl {
 namespace {
 
 template <typename Reader>
-bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor) {
+bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     while (const auto packet = reader.read_next()) {
+        if (ctx != nullptr) {
+            ++ctx->progress.packets_processed;
+            ctx->progress.bytes_processed += static_cast<std::uint64_t>(packet->bytes.size());
+        }
+
         processor.process_packet(*packet, state);
     }
 
@@ -49,19 +56,28 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     }
 }
 
-bool import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor) {
+bool import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     if (!is_supported_capture_link_type(reader.data_link_type())) {
         return false;
     }
 
-    return import_packets(reader, state, processor);
+    return import_packets(reader, state, processor, ctx);
 }
 
-bool import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor) {
-    return import_packets(reader, state, processor);
+bool import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
+    return import_packets(reader, state, processor, ctx);
 }
 
-bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor) {
+bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
+    if (ctx != nullptr) {
+        ctx->progress = {};
+        std::error_code error {};
+        const auto size = std::filesystem::file_size(path, error);
+        if (!error) {
+            ctx->progress.total_bytes = static_cast<std::uint64_t>(size);
+        }
+    }
+
     switch (detect_capture_source_format(path)) {
     case CaptureSourceFormat::classic_pcap: {
         PcapReader reader {};
@@ -69,7 +85,7 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
             return false;
         }
 
-        return import_capture_from_reader(reader, state, processor);
+        return import_capture_from_reader(reader, state, processor, ctx);
     }
     case CaptureSourceFormat::pcapng: {
         PcapNgReader reader {};
@@ -77,7 +93,7 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
             return false;
         }
 
-        return import_capture_from_reader(reader, state, processor);
+        return import_capture_from_reader(reader, state, processor, ctx);
     }
     default:
         return false;
@@ -85,3 +101,5 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
 }
 
 }  // namespace pfl
+
+
