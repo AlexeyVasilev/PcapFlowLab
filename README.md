@@ -2,11 +2,11 @@
 
 Flow-centric PCAP analyzer for large network captures.
 
-Pcap Flow Lab is a new open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and initial PCAPNG, and the current decode path supports Ethernet II frames, Linux cooked captures (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, conservative traversal of common IPv6 extension headers, and always-on IP fragmentation detection as diagnostic metadata.
+Pcap Flow Lab is an open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and current PCAPNG support, and the decode path supports Ethernet II, Linux cooked captures (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, conservative traversal of common IPv6 extension headers, and always-on IP fragmentation detection as diagnostic metadata.
 
 ## Project status
 
-Architecture bootstrap in progress.
+Usable prototype with flow browsing, packet inspection, saved analysis indexes, and on-demand Stream analysis for selected flows.
 
 ## CLI
 
@@ -40,18 +40,30 @@ Examples:
 
 ## Desktop UI
 
-The CLI remains the primary interface today. The Qt Quick desktop UI can already open captures or analysis indexes via native file dialogs, save the current analysis state back to an index, export the currently selected flow to classic PCAP, choose `Fast` or `Deep` mode when opening captures, show summary data, show protocol and top-talker statistics on a dedicated Statistics tab, drill down from top endpoints and top ports into the Flow tab by reusing the existing flow filter, browse flows with separate address and port columns plus protocol and service hints when available, show fragmented-packet counts in a compact `Frag` flow column with subtle warning highlighting, apply basic flow filtering and sorting, browse packets for the selected flow, switch between a packet-level Packets tab and a higher-level payload-oriented Stream tab for the selected flow, inspect packet details in a Summary view plus a Raw view that combines Hex and transport Payload sub-tabs, and show local packet numbering within the selected flow, packet direction, transport payload length, and TCP flags directly in the packet list, with fragmented packets softly highlighted in the packet list and truncated or IP-fragmented packets grouped in a warning block inside packet details. In Deep mode, the Protocol tab now shows richer single-packet TLS, DNS, HTTP, ARP, ICMP, and ICMPv6 details when they are available. A temporary Settings tab now exposes the first analysis setting: falling back to the HTTP request path as a service hint when the Host header is missing. Analysis indexes can also be opened without the original capture, with explicit index-only UI feedback and a follow-up action to attach the matching source capture later and restore raw packet features. The Packet Details structure is also prepared for future protocol-aware decoding. The current Stream tab is intentionally conservative and does not yet perform full application-message reconstruction. Stream items are selectable and can be inspected through the existing details pane. For TLS and HTTP traffic, the Stream tab now uses on-demand bounded directional reassembly so TLS records and complete HTTP header blocks spanning multiple TCP packets can appear as one logical stream item when the available heuristic buffer is sufficient.
+The Qt Quick desktop UI can:
 
+- open captures and analysis indexes via native file dialogs
+- save the current analysis state back to an index
+- export the currently selected flow to classic PCAP
+- browse flows, packets, protocol statistics, top endpoints, and top ports
+- show fragmented packets and flows as diagnostic metadata
+- open indexes in explicit index-only mode and attach the matching source capture later
+- inspect packet details in Summary, Raw, and Protocol views
+- show a payload-oriented Stream tab for the selected flow
 
+### Stream tab
 
+The Stream tab is on-demand, flow-local, and ephemeral.
 
+- It runs only for the currently selected flow.
+- It requires source capture access because raw packet bytes are still read lazily from the original capture.
+- It does not store stream items in indexes or checkpoints.
+- TLS parsing uses bounded directional reassembly, so TLS records spanning multiple TCP packets can appear as one logical stream item when enough bytes are available.
+- HTTP parsing uses bounded directional reassembly for complete request/response header blocks.
+- This remains heuristic analysis, not full TCP-correct stream reconstruction.
 
+Deep mode remains available as a separate open path for richer packet-level protocol details. Fast mode remains the default browsing path and does not perform global reassembly during open.
 
+## Developer note
 
-
-Deep mode already exists as a separate import path, but Fast mode remains optimized for quick browsing. Deep mode currently exposes richer TLS, DNS, and HTTP packet-level details in the Protocol tab when they are available from a single packet.
-
-
-Developer note: creating a local perf-open.enabled file next to the executable or in the current working directory enables append-only open-time CSV logging to perf_open_log.csv for capture/index opens. This is intended only for local regression tracking during development and is not part of normal user-facing behavior.
-
-
+Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is intended only for local regression tracking during development and has no effect in normal usage.
