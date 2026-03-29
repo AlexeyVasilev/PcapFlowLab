@@ -750,6 +750,368 @@ std::string limited_quality_tls_protocol_text(const bool record_fragment) {
     return "TLS\n  Reassembled bytes suggest a TLS record, but stream reconstruction quality is limited for this direction.";
 }
 
+std::string_view bytes_as_text(std::span<const std::uint8_t> bytes) {
+    return std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+
+bool ascii_iequals(const char left, const char right) noexcept {
+    return std::tolower(static_cast<unsigned char>(left)) == std::tolower(static_cast<unsigned char>(right));
+}
+
+bool starts_with_ascii_case_insensitive(const std::string_view value, const std::string_view prefix) noexcept {
+    if (value.size() < prefix.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < prefix.size(); ++index) {
+        if (!ascii_iequals(value[index], prefix[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string trim_ascii(const std::string_view value) {
+    std::size_t begin = 0U;
+    std::size_t end = value.size();
+
+    while (begin < end && (value[begin] == ' ' || value[begin] == '\t' || value[begin] == '\r' || value[begin] == '\n')) {
+        ++begin;
+    }
+
+    while (end > begin && (value[end - 1U] == ' ' || value[end - 1U] == '\t' || value[end - 1U] == '\r' || value[end - 1U] == '\n')) {
+        --end;
+    }
+
+    return std::string {value.substr(begin, end - begin)};
+}
+
+bool is_http_token_char(const char value) noexcept {
+    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '-' || value == '_' || value == '.' || value == '/';
+}
+
+bool is_plausible_host_char(const char value) noexcept {
+    return std::isalnum(static_cast<unsigned char>(value)) != 0 || value == '.' || value == '-' || value == '_';
+}
+
+bool is_plausible_host(const std::string_view value) noexcept {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const auto character : value) {
+        if (!is_plausible_host_char(character)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::size_t http_line_end(const std::string_view text, const std::size_t offset) noexcept {
+    const auto crlf = text.find("\r\n", offset);
+    const auto lf = text.find('\n', offset);
+    if (crlf == std::string_view::npos) {
+        return lf;
+    }
+    if (lf == std::string_view::npos) {
+        return crlf;
+    }
+    return (crlf < lf) ? crlf : lf;
+}
+
+std::size_t http_next_line_offset(const std::string_view text, const std::size_t end) noexcept {
+    if (end == std::string_view::npos || end >= text.size()) {
+        return text.size();
+    }
+
+    if (text[end] == '\r' && (end + 1U) < text.size() && text[end + 1U] == '\n') {
+        return end + 2U;
+    }
+
+    return end + 1U;
+}
+
+std::optional<std::size_t> http_header_block_size(std::string_view payload_text, const std::size_t offset) noexcept {
+    if (offset >= payload_text.size()) {
+        return std::nullopt;
+    }
+
+    const auto subtext = payload_text.substr(offset);
+    const auto crlfcrlf = subtext.find("\r\n\r\n");
+    const auto lflf = subtext.find("\n\n");
+    if (crlfcrlf == std::string_view::npos && lflf == std::string_view::npos) {
+        return std::nullopt;
+    }
+
+    if (crlfcrlf != std::string_view::npos && (lflf == std::string_view::npos || crlfcrlf < lflf)) {
+        return crlfcrlf + 4U;
+    }
+
+    return lflf + 2U;
+}
+
+bool looks_like_http_request_line(const std::string_view line) noexcept {
+    constexpr std::array<std::string_view, 9> methods {
+        "GET ", "POST ", "PUT ", "HEAD ", "OPTIONS ", "DELETE ", "PATCH ", "CONNECT ", "TRACE ",
+    };
+
+    for (const auto method : methods) {
+        if (line.starts_with(method)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool looks_like_http_response_line(const std::string_view line) noexcept {
+    return line.starts_with("HTTP/1.");
+}
+
+std::optional<std::string> extract_http_host_header(const std::string_view headers) {
+    std::size_t offset = 0U;
+    while (offset < headers.size()) {
+        const auto end = http_line_end(headers, offset);
+        const auto line = headers.substr(offset, ((end == std::string_view::npos) ? headers.size() : end) - offset);
+        if (line.empty()) {
+            break;
+        }
+
+        if (starts_with_ascii_case_insensitive(line, "Host:")) {
+            const auto host = trim_ascii(line.substr(5U));
+            if (is_plausible_host(host)) {
+                return host;
+            }
+            return std::nullopt;
+        }
+
+        if (end == std::string_view::npos) {
+            break;
+        }
+        offset = http_next_line_offset(headers, end);
+    }
+
+    return std::nullopt;
+}
+
+struct ParsedHttpHeaderBlock {
+    std::size_t size {0U};
+    std::string label {};
+    std::string protocol_text {};
+};
+
+std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
+    std::span<const std::uint8_t> payload_bytes,
+    const std::size_t offset
+) {
+    const auto payload_text = bytes_as_text(payload_bytes);
+    const auto header_size = http_header_block_size(payload_text, offset);
+    if (!header_size.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto header_text = payload_text.substr(offset, *header_size);
+    const auto first_line_end = http_line_end(header_text, 0U);
+    const auto first_line = header_text.substr(0U, (first_line_end == std::string_view::npos) ? header_text.size() : first_line_end);
+    if (first_line.empty()) {
+        return std::nullopt;
+    }
+
+    std::ostringstream text {};
+    text << "HTTP\n";
+
+    if (looks_like_http_request_line(first_line)) {
+        const auto method_end = first_line.find(' ');
+        if (method_end == std::string_view::npos) {
+            return std::nullopt;
+        }
+
+        const auto path_start = method_end + 1U;
+        const auto path_end = first_line.find(' ', path_start);
+        if (path_end == std::string_view::npos || path_end <= path_start) {
+            return std::nullopt;
+        }
+
+        const auto method = first_line.substr(0U, method_end);
+        const auto path = first_line.substr(path_start, path_end - path_start);
+        const auto version = first_line.substr(path_end + 1U);
+        if (!version.starts_with("HTTP/1.") || path.empty()) {
+            return std::nullopt;
+        }
+
+        for (const auto character : method) {
+            if (!std::isupper(static_cast<unsigned char>(character))) {
+                return std::nullopt;
+            }
+        }
+        for (const auto character : version) {
+            if (!(is_http_token_char(character) || character == ' ')) {
+                return std::nullopt;
+            }
+        }
+
+        text << "  Message Type: Request\n"
+             << "  Method: " << method << "\n"
+             << "  Path: " << path << "\n"
+             << "  Version: " << version;
+
+        const auto host = extract_http_host_header(header_text.substr(http_next_line_offset(header_text, first_line_end)));
+        if (host.has_value()) {
+            text << "\n"
+                 << "  Host: " << *host;
+        }
+
+        return ParsedHttpHeaderBlock {
+            .size = *header_size,
+            .label = "HTTP Request",
+            .protocol_text = text.str(),
+        };
+    }
+
+    if (looks_like_http_response_line(first_line)) {
+        const auto version_end = first_line.find(' ');
+        if (version_end == std::string_view::npos) {
+            return std::nullopt;
+        }
+
+        const auto code_start = version_end + 1U;
+        if (code_start + 3U > first_line.size()) {
+            return std::nullopt;
+        }
+
+        const auto version = first_line.substr(0U, version_end);
+        const auto code = first_line.substr(code_start, 3U);
+        for (const auto character : code) {
+            if (!std::isdigit(static_cast<unsigned char>(character))) {
+                return std::nullopt;
+            }
+        }
+
+        text << "  Message Type: Response\n"
+             << "  Version: " << version << "\n"
+             << "  Status Code: " << code;
+
+        const auto reason_start = code_start + 3U;
+        if (reason_start < first_line.size() && first_line[reason_start] == ' ') {
+            const auto reason = trim_ascii(first_line.substr(reason_start + 1U));
+            if (!reason.empty()) {
+                text << "\n"
+                     << "  Reason: " << reason;
+            }
+        }
+
+        return ParsedHttpHeaderBlock {
+            .size = *header_size,
+            .label = "HTTP Response",
+            .protocol_text = text.str(),
+        };
+    }
+
+    return std::nullopt;
+}
+
+std::string limited_quality_http_protocol_text() {
+    return "HTTP\n  Reassembled bytes do not contain a complete HTTP header block in this direction.";
+}
+
+bool append_http_stream_items_from_reassembly(
+    std::vector<StreamItemRow>& rows,
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::string_view direction_text,
+    const Direction direction
+) {
+    const auto result = session.reassemble_flow_direction(ReassemblyRequest {
+        .flow_index = flow_index,
+        .direction = direction,
+        .max_packets = 256U,
+        .max_bytes = 256U * 1024U,
+    });
+    if (!result.has_value() || result->bytes.empty()) {
+        return false;
+    }
+
+    if (has_reassembly_flag(*result, ReassemblyQualityFlag::may_contain_transport_gaps)) {
+        return false;
+    }
+
+    const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
+    const auto payload_text = bytes_as_text(payload_bytes);
+    const auto chunks = build_reassembled_payload_chunks(session, *result);
+    if (!chunks.has_value() || chunks->empty()) {
+        return false;
+    }
+
+    HexDumpService hex_dump_service {};
+    std::size_t offset = 0U;
+    std::size_t chunk_index = 0U;
+    std::size_t chunk_offset = 0U;
+    bool emitted_any = false;
+
+    while (offset < payload_bytes.size()) {
+        const auto parsed = parse_http_header_block(payload_bytes, offset);
+        if (!parsed.has_value()) {
+            if (offset == 0U) {
+                return false;
+            }
+
+            const auto trailing = payload_bytes.subspan(offset);
+            if (!trailing.empty()) {
+                const auto packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset);
+                rows.push_back(make_stream_item_row(
+                    static_cast<std::uint64_t>(rows.size() + 1U),
+                    direction_text,
+                    "HTTP Payload",
+                    trailing.size(),
+                    packet_indices,
+                    hex_dump_service.format(trailing),
+                    limited_quality_http_protocol_text()
+                ));
+            }
+            return true;
+        }
+
+        const auto block_bytes = payload_bytes.subspan(offset, parsed->size);
+        const auto packet_indices = consume_reassembled_packet_indices(*chunks, block_bytes.size(), chunk_index, chunk_offset);
+        rows.push_back(make_stream_item_row(
+            static_cast<std::uint64_t>(rows.size() + 1U),
+            direction_text,
+            parsed->label,
+            block_bytes.size(),
+            packet_indices,
+            hex_dump_service.format(block_bytes),
+            parsed->protocol_text
+        ));
+        emitted_any = true;
+        offset += parsed->size;
+
+        if (offset < payload_text.size()) {
+            const auto next_line_end = http_line_end(payload_text, offset);
+            const auto next_line = payload_text.substr(offset, ((next_line_end == std::string_view::npos) ? payload_text.size() : next_line_end) - offset);
+            if (!looks_like_http_request_line(next_line) && !looks_like_http_response_line(next_line)) {
+                const auto trailing = payload_bytes.subspan(offset);
+                if (!trailing.empty()) {
+                    const auto packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset);
+                    rows.push_back(make_stream_item_row(
+                        static_cast<std::uint64_t>(rows.size() + 1U),
+                        direction_text,
+                        "HTTP Payload",
+                        trailing.size(),
+                        packet_indices,
+                        hex_dump_service.format(trailing),
+                        limited_quality_http_protocol_text()
+                    ));
+                }
+                return true;
+            }
+        }
+    }
+
+    return emitted_any;
+}
+
 bool append_tls_stream_items_from_reassembly(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
@@ -1396,6 +1758,8 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::siz
 
     bool used_directional_tls_reassembly_a_to_b = false;
     bool used_directional_tls_reassembly_b_to_a = false;
+    bool used_directional_http_reassembly_a_to_b = false;
+    bool used_directional_http_reassembly_b_to_a = false;
     if (flow_protocol == ProtocolId::tcp) {
         used_directional_tls_reassembly_a_to_b = append_tls_stream_items_from_reassembly(
             rows,
@@ -1411,13 +1775,33 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::siz
             kDirectionBToA,
             Direction::b_to_a
         );
+        if (!used_directional_tls_reassembly_a_to_b) {
+            used_directional_http_reassembly_a_to_b = append_http_stream_items_from_reassembly(
+                rows,
+                *this,
+                flow_index,
+                kDirectionAToB,
+                Direction::a_to_b
+            );
+        }
+        if (!used_directional_tls_reassembly_b_to_a) {
+            used_directional_http_reassembly_b_to_a = append_http_stream_items_from_reassembly(
+                rows,
+                *this,
+                flow_index,
+                kDirectionBToA,
+                Direction::b_to_a
+            );
+        }
     }
 
     for (const auto& candidate : candidates) {
         if (candidate.protocol == ProtocolId::tcp) {
             const auto candidate_direction = direction_from_text(candidate.direction_text);
             if ((candidate_direction == Direction::a_to_b && used_directional_tls_reassembly_a_to_b) ||
-                (candidate_direction == Direction::b_to_a && used_directional_tls_reassembly_b_to_a)) {
+                (candidate_direction == Direction::b_to_a && used_directional_tls_reassembly_b_to_a) ||
+                (candidate_direction == Direction::a_to_b && used_directional_http_reassembly_a_to_b) ||
+                (candidate_direction == Direction::b_to_a && used_directional_http_reassembly_b_to_a)) {
                 continue;
             }
         }
@@ -1519,3 +1903,4 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+

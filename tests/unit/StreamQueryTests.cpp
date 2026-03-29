@@ -1,5 +1,6 @@
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
@@ -61,6 +62,10 @@ std::vector<std::uint8_t> concat_bytes(
     combined.insert(combined.end(), first.begin(), first.end());
     combined.insert(combined.end(), second.begin(), second.end());
     return combined;
+}
+
+std::vector<std::uint8_t> make_text_bytes(const std::string_view text) {
+    return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
 std::string direction_for_packet(const std::vector<PacketRow>& packet_rows, const std::uint64_t packet_index) {
@@ -147,6 +152,165 @@ void run_stream_query_tests() {
     CaptureSession tls_multi_session {};
     CaptureImportOptions fast_options {};
     fast_options.mode = ImportMode::fast;
+
+    constexpr std::string_view split_http_request_text =
+        "GET /split HTTP/1.1\r\n"
+        "Host: split.example\r\n"
+        "User-Agent: test\r\n"
+        "\r\n";
+    const auto split_http_request = make_text_bytes(split_http_request_text);
+    const auto split_http_request_a = std::vector<std::uint8_t>(
+        split_http_request.begin(),
+        split_http_request.begin() + 18
+    );
+    const auto split_http_request_b = std::vector<std::uint8_t>(
+        split_http_request.begin() + 18,
+        split_http_request.end()
+    );
+    const auto split_http_request_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 1, 1), ipv4(10, 41, 1, 2), 53010, 80, split_http_request_a, 0x18);
+    const auto split_http_request_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 1, 1), ipv4(10, 41, 1, 2), 53010, 80, split_http_request_b, 0x18);
+    const auto split_http_request_path = write_temp_pcap(
+        "pfl_stream_query_http_split_request.pcap",
+        make_classic_pcap({
+            {100, split_http_request_packet_a},
+            {200, split_http_request_packet_b},
+        })
+    );
+
+    CaptureSession split_http_request_session {};
+    PFL_EXPECT(split_http_request_session.open_capture(split_http_request_path, fast_options));
+    const auto split_http_request_rows = split_http_request_session.list_flow_stream_items(0);
+    PFL_EXPECT(split_http_request_rows.size() == 1);
+    PFL_EXPECT(split_http_request_rows[0].label == "HTTP Request");
+    PFL_EXPECT(split_http_request_rows[0].byte_count == split_http_request.size());
+    PFL_EXPECT(split_http_request_rows[0].packet_count == 2);
+    const auto expected_http_split_packet_indices = std::vector<std::uint64_t> {0, 1};
+    PFL_EXPECT(split_http_request_rows[0].packet_indices == expected_http_split_packet_indices);
+    PFL_EXPECT(split_http_request_rows[0].protocol_text.find("Method: GET") != std::string::npos);
+    PFL_EXPECT(split_http_request_rows[0].protocol_text.find("Path: /split") != std::string::npos);
+    PFL_EXPECT(split_http_request_rows[0].protocol_text.find("Host: split.example") != std::string::npos);
+
+    constexpr std::string_view split_http_response_text =
+        "HTTP/1.1 200 OK\r\n"
+        "Server: test\r\n"
+        "\r\n";
+    const auto split_http_response = make_text_bytes(split_http_response_text);
+    const auto split_http_response_a = std::vector<std::uint8_t>(
+        split_http_response.begin(),
+        split_http_response.begin() + 12
+    );
+    const auto split_http_response_b = std::vector<std::uint8_t>(
+        split_http_response.begin() + 12,
+        split_http_response.end()
+    );
+    const auto split_http_response_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 2, 2), ipv4(10, 41, 2, 1), 80, 53011, split_http_response_a, 0x18);
+    const auto split_http_response_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 2, 2), ipv4(10, 41, 2, 1), 80, 53011, split_http_response_b, 0x18);
+    const auto split_http_response_path = write_temp_pcap(
+        "pfl_stream_query_http_split_response.pcap",
+        make_classic_pcap({
+            {100, split_http_response_packet_a},
+            {200, split_http_response_packet_b},
+        })
+    );
+
+    CaptureSession split_http_response_session {};
+    PFL_EXPECT(split_http_response_session.open_capture(split_http_response_path, fast_options));
+    const auto split_http_response_rows = split_http_response_session.list_flow_stream_items(0);
+    PFL_EXPECT(split_http_response_rows.size() == 1);
+    PFL_EXPECT(split_http_response_rows[0].label == "HTTP Response");
+    PFL_EXPECT(split_http_response_rows[0].byte_count == split_http_response.size());
+    PFL_EXPECT(split_http_response_rows[0].packet_count == 2);
+    PFL_EXPECT(split_http_response_rows[0].packet_indices == expected_http_split_packet_indices);
+    PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Status Code: 200") != std::string::npos);
+    PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Reason: OK") != std::string::npos);
+
+    constexpr std::string_view http_request_one_text =
+        "GET /one HTTP/1.1\r\n"
+        "Host: one.example\r\n"
+        "\r\n";
+    constexpr std::string_view http_request_two_text =
+        "GET /two HTTP/1.1\r\n"
+        "Host: two.example\r\n"
+        "\r\n";
+    const auto http_request_one = make_text_bytes(http_request_one_text);
+    const auto http_request_two = make_text_bytes(http_request_two_text);
+    const auto http_multi_payload = concat_bytes(http_request_one, http_request_two);
+    const auto http_multi_split = static_cast<std::ptrdiff_t>(http_request_one.size() + 10U);
+    const auto http_multi_payload_a = std::vector<std::uint8_t>(
+        http_multi_payload.begin(),
+        http_multi_payload.begin() + http_multi_split
+    );
+    const auto http_multi_payload_b = std::vector<std::uint8_t>(
+        http_multi_payload.begin() + http_multi_split,
+        http_multi_payload.end()
+    );
+    const auto http_multi_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 3, 1), ipv4(10, 41, 3, 2), 53012, 80, http_multi_payload_a, 0x18);
+    const auto http_multi_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 3, 1), ipv4(10, 41, 3, 2), 53012, 80, http_multi_payload_b, 0x18);
+    const auto http_multi_path = write_temp_pcap(
+        "pfl_stream_query_http_multi_headers.pcap",
+        make_classic_pcap({
+            {100, http_multi_packet_a},
+            {200, http_multi_packet_b},
+        })
+    );
+
+    CaptureSession http_multi_session {};
+    PFL_EXPECT(http_multi_session.open_capture(http_multi_path, fast_options));
+    const auto http_multi_rows = http_multi_session.list_flow_stream_items(0);
+    PFL_EXPECT(http_multi_rows.size() == 2);
+    PFL_EXPECT(http_multi_rows[0].label == "HTTP Request");
+    PFL_EXPECT(http_multi_rows[1].label == "HTTP Request");
+    PFL_EXPECT(http_multi_rows[0].byte_count == http_request_one.size());
+    PFL_EXPECT(http_multi_rows[1].byte_count == http_request_two.size());
+    PFL_EXPECT(http_multi_rows[0].packet_indices == std::vector<std::uint64_t> {0});
+    PFL_EXPECT(http_multi_rows[1].packet_indices == expected_http_split_packet_indices);
+    PFL_EXPECT(http_multi_rows[0].protocol_text.find("Path: /one") != std::string::npos);
+    PFL_EXPECT(http_multi_rows[1].protocol_text.find("Path: /two") != std::string::npos);
+
+    constexpr std::string_view http_partial_request_text =
+        "GET /ok HTTP/1.1\r\n"
+        "Host: ok.example\r\n"
+        "\r\n"
+        "GET /partial HTTP/1.1\r\n"
+        "Host: partial.example\r\n";
+    const auto http_partial_payload = make_text_bytes(http_partial_request_text);
+    const auto http_partial_split = static_cast<std::ptrdiff_t>(39);
+    const auto http_partial_payload_a = std::vector<std::uint8_t>(
+        http_partial_payload.begin(),
+        http_partial_payload.begin() + http_partial_split
+    );
+    const auto http_partial_payload_b = std::vector<std::uint8_t>(
+        http_partial_payload.begin() + http_partial_split,
+        http_partial_payload.end()
+    );
+    const auto http_partial_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 4, 1), ipv4(10, 41, 4, 2), 53013, 80, http_partial_payload_a, 0x18);
+    const auto http_partial_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 41, 4, 1), ipv4(10, 41, 4, 2), 53013, 80, http_partial_payload_b, 0x18);
+    const auto http_partial_path = write_temp_pcap(
+        "pfl_stream_query_http_partial_headers.pcap",
+        make_classic_pcap({
+            {100, http_partial_packet_a},
+            {200, http_partial_packet_b},
+        })
+    );
+
+    CaptureSession http_partial_session {};
+    PFL_EXPECT(http_partial_session.open_capture(http_partial_path, fast_options));
+    const auto http_partial_rows = http_partial_session.list_flow_stream_items(0);
+    PFL_EXPECT(http_partial_rows.size() == 2);
+    PFL_EXPECT(http_partial_rows[0].label == "HTTP Request");
+    PFL_EXPECT(http_partial_rows[1].label == "HTTP Payload");
+    PFL_EXPECT(http_partial_rows[1].packet_indices == expected_http_split_packet_indices);
+    PFL_EXPECT(http_partial_rows[1].protocol_text.find("complete HTTP header block") != std::string::npos);
+    PFL_EXPECT(http_partial_rows[1].protocol_text.find("Message Type: Request") == std::string::npos);
+
     PFL_EXPECT(tls_multi_session.open_capture(tls_multi_path, fast_options));
     const auto tls_multi_summary_before = tls_multi_session.summary();
 
@@ -345,6 +509,8 @@ void run_stream_query_tests() {
 }
 
 }  // namespace pfl::tests
+
+
 
 
 
