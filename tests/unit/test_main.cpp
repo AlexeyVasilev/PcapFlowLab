@@ -37,6 +37,7 @@ void run_linux_cooked_tests();
 void run_fragmentation_tests();
 void run_reassembly_architecture_tests();
 void run_reassembly_v1_tests();
+void run_perf_open_logger_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -83,6 +84,7 @@ int main() {
         pfl::tests::run_fragmentation_tests();
         pfl::tests::run_reassembly_architecture_tests();
         pfl::tests::run_reassembly_v1_tests();
+        pfl::tests::run_perf_open_logger_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
         return 1;

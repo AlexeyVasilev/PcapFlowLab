@@ -51,3 +51,5 @@ The CLI remains the primary interface today. The Qt Quick desktop UI can already
 
 Deep mode already exists as a separate import path, but Fast mode remains optimized for quick browsing. Deep mode currently exposes richer TLS, DNS, and HTTP packet-level details in the Protocol tab when they are available from a single packet.
 
+
+Developer note: creating a local perf-open.enabled file next to the executable or in the current working directory enables append-only open-time CSV logging to perf_open_log.csv for capture/index opens. This is intended only for local regression tracking during development and is not part of normal user-facing behavior.

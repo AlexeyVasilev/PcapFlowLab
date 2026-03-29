@@ -1,6 +1,7 @@
 #include "app/session/CaptureSession.h"
 
 #include <algorithm>
+#include <chrono>
 #include <array>
 #include <iomanip>
 #include <limits>
@@ -21,6 +22,7 @@
 #include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
+#include "core/services/PerfOpenLogger.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -37,6 +39,42 @@ std::string format_ipv4_address(std::uint32_t address);
 std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address);
 std::string format_endpoint(const EndpointKeyV4& endpoint);
 std::string format_endpoint(const EndpointKeyV6& endpoint);
+
+std::uintmax_t file_size_or_zero(const std::filesystem::path& path) {
+    std::error_code error {};
+    const auto size = std::filesystem::file_size(path, error);
+    return error ? 0U : size;
+}
+
+void log_open_result(
+    const PerfOpenLogger& logger,
+    const PerfOpenOperationType operation_type,
+    const std::filesystem::path& input_path,
+    const bool success,
+    const std::chrono::steady_clock::time_point started_at,
+    const CaptureSession& session
+) {
+    if (!logger.enabled()) {
+        return;
+    }
+
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - started_at
+    );
+    logger.append(PerfOpenRecord {
+        .operation_type = operation_type,
+        .input_path = input_path,
+        .input_kind = PerfOpenLogger::detect_input_kind(input_path),
+        .file_size_bytes = file_size_or_zero(input_path),
+        .success = success,
+        .elapsed_ms = static_cast<std::uint64_t>(elapsed.count()),
+        .packet_count = session.summary().packet_count,
+        .flow_count = session.summary().flow_count,
+        .total_bytes = session.summary().total_bytes,
+        .opened_from_index = session.opened_from_index(),
+        .has_source_capture = session.has_source_capture(),
+    });
+}
 
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
@@ -905,11 +943,18 @@ bool CaptureSession::open_capture(const std::filesystem::path& path) {
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options) {
+    const auto started_at = std::chrono::steady_clock::now();
+    PerfOpenLogger perf_logger {};
+    const auto operation_type = (options.mode == ImportMode::deep)
+        ? PerfOpenOperationType::capture_deep
+        : PerfOpenOperationType::capture_fast;
+
     CaptureImporter importer {};
     CaptureState imported_state {};
 
     if (!importer.import_capture(path, imported_state, options)) {
         reset_runtime_state();
+        log_open_result(perf_logger, operation_type, path, false, started_at, *this);
         return false;
     }
 
@@ -925,6 +970,8 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
     }
+
+    log_open_result(perf_logger, operation_type, path, true, started_at, *this);
     return true;
 }
 
@@ -946,6 +993,9 @@ bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
 }
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path) {
+    const auto started_at = std::chrono::steady_clock::now();
+    PerfOpenLogger perf_logger {};
+
     CaptureIndexReader reader {};
     CaptureState loaded_state {};
     std::filesystem::path loaded_capture_path {};
@@ -953,6 +1003,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
 
     if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info)) {
         reset_runtime_state();
+        log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, false, started_at, *this);
         return false;
     }
 
@@ -970,6 +1021,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
         capture_path_ = source_info_.capture_path;
     }
 
+    log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, true, started_at, *this);
     return true;
 }
 

@@ -67,6 +67,7 @@ add_library(
     src/core/services/FlowExportService.cpp
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
+    src/core/services/PerfOpenLogger.cpp
     src/core/services/TlsPacketProtocolAnalyzer.cpp
     src/core/services/DnsPacketProtocolAnalyzer.cpp
     src/core/services/HttpPacketProtocolAnalyzer.cpp
@@ -215,6 +216,7 @@ if(BUILD_TESTING)
         tests/unit/FragmentationTests.cpp
         tests/unit/ReassemblyArchitectureTests.cpp
         tests/unit/ReassemblyV1Tests.cpp
+        tests/unit/PerfOpenLoggerTests.cpp
         tests/unit/FlowHintsTests.cpp
         tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
