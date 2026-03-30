@@ -126,6 +126,11 @@ Frame {
                 onCountChanged: root.resetSelectionIfNeeded()
                 onModelChanged: root.resetSelectionIfNeeded()
 
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    visible: flowListView.contentHeight > flowListView.height
+                }
+
                 delegate: Rectangle {
                     required property int index
                     required property int flowIndex
@@ -206,3 +211,4 @@ Frame {
         }
     }
 }
+

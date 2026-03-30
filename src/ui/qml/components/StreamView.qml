@@ -75,6 +75,11 @@ Frame {
                 spacing: 8
                 model: root.streamModel
 
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    visible: streamListView.contentHeight > streamListView.height
+                }
+
                 delegate: Item {
                     required property int index
                     required property var streamItemIndex
@@ -169,3 +174,4 @@ Frame {
         }
     }
 }
+

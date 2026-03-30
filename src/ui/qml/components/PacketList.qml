@@ -231,6 +231,11 @@ Frame {
                 onCountChanged: root.syncCurrentSelection()
                 onModelChanged: root.syncCurrentSelection()
 
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    visible: packetListView.contentHeight > packetListView.height
+                }
+
                 delegate: Rectangle {
                     required property int index
                     required property var rowNumber
@@ -350,3 +355,4 @@ Frame {
         }
     }
 }
+

@@ -115,6 +115,21 @@ Open-time performance logging is developer-only and off by default.
 - It records application-level timing for `capture_fast`, `capture_deep`, and `index_load` opens.
 - It does not change normal product behavior when disabled.
 
+## UI list surfaces
+
+Current large-list surfaces prefer virtualization-friendly QML views over pagination.
+
+- Flow table uses `ListView` with fixed-height delegates and lazy vertical creation.
+- Packet list uses `ListView` with fixed-height delegates and lazy vertical creation.
+- Stream view uses `ListView`; it is also virtualized, although each delegate is visually heavier than a packet row.
+- Explicit vertical scrollbars are enabled on these surfaces for usability.
+
+Current scalability risks are still worth watching:
+
+- Flow and packet rows use wide delegate trees with several formatted labels per visible row.
+- The current flow table is vertically virtualized, but horizontal overflow is still handled by clipping rather than a dedicated horizontal-scrolling table model.
+- Pagination is intentionally deferred until stronger evidence shows that current virtualization is insufficient.
+
 ## Known limitations
 
 - No full TCP-correct stream reconstruction.
