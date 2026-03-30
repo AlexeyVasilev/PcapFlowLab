@@ -9,6 +9,7 @@
 
 #include "app/session/CaptureSession.h"
 #include "core/services/AnalysisSettings.h"
+#include "../../../core/open_progress.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
@@ -29,6 +30,11 @@ class MainController final : public QObject {
     Q_PROPERTY(bool canAttachSourceCapture READ canAttachSourceCapture NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canSaveIndex READ canSaveIndex NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canExportSelectedFlow READ canExportSelectedFlow NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool isOpening READ isOpening NOTIFY openProgressChanged)
+    Q_PROPERTY(qulonglong openProgressPackets READ openProgressPackets NOTIFY openProgressChanged)
+    Q_PROPERTY(qulonglong openProgressBytes READ openProgressBytes NOTIFY openProgressChanged)
+    Q_PROPERTY(qulonglong openProgressTotalBytes READ openProgressTotalBytes NOTIFY openProgressChanged)
+    Q_PROPERTY(double openProgressPercent READ openProgressPercent NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
@@ -72,6 +78,11 @@ public:
     [[nodiscard]] bool canAttachSourceCapture() const noexcept;
     [[nodiscard]] bool canSaveIndex() const noexcept;
     [[nodiscard]] bool canExportSelectedFlow() const noexcept;
+    [[nodiscard]] bool isOpening() const noexcept;
+    [[nodiscard]] qulonglong openProgressPackets() const noexcept;
+    [[nodiscard]] qulonglong openProgressBytes() const noexcept;
+    [[nodiscard]] qulonglong openProgressTotalBytes() const noexcept;
+    [[nodiscard]] double openProgressPercent() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
@@ -139,6 +150,7 @@ signals:
     void selectedStreamItemIndexChanged();
     void flowFilterTextChanged();
     void flowSortChanged();
+    void openProgressChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -158,6 +170,9 @@ private:
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
+    void beginOpenProgress();
+    void updateOpenProgress(const OpenProgress& progress);
+    void finishOpenProgress();
     void setOpenErrorText(const QString& text);
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
@@ -186,7 +201,16 @@ private:
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
     bool status_is_error_ {false};
+    bool is_opening_ {false};
+    qulonglong open_progress_packets_ {0};
+    qulonglong open_progress_bytes_ {0};
+    qulonglong open_progress_total_bytes_ {0};
+    double open_progress_percent_ {0.0};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };
 
 }  // namespace pfl
+
+
+
+

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
@@ -161,6 +162,40 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
     UI_EXPECT(controller.statusText().isEmpty());
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> progress_packets {};
+    progress_packets.reserve(1001);
+    for (std::uint32_t index = 0; index < 1001U; ++index) {
+        progress_packets.push_back({100U + index, http_flow});
+    }
+    const auto progress_capture_path = write_temp_pcap(
+        "pfl_ui_open_progress.pcap",
+        make_classic_pcap(progress_packets)
+    );
+
+    MainController progress_controller {};
+    bool saw_opening_true = false;
+    qulonglong max_progress_packets = 0U;
+    qulonglong max_progress_bytes = 0U;
+    qulonglong max_progress_total_bytes = 0U;
+    QObject::connect(&progress_controller, &MainController::openProgressChanged, [&]() {
+        if (progress_controller.isOpening()) {
+            saw_opening_true = true;
+        }
+        max_progress_packets = std::max(max_progress_packets, progress_controller.openProgressPackets());
+        max_progress_bytes = std::max(max_progress_bytes, progress_controller.openProgressBytes());
+        max_progress_total_bytes = std::max(max_progress_total_bytes, progress_controller.openProgressTotalBytes());
+    });
+    UI_EXPECT(progress_controller.openCaptureFile(QString::fromStdWString(progress_capture_path.wstring())));
+    UI_EXPECT(saw_opening_true);
+    UI_EXPECT(max_progress_packets >= 1000U);
+    UI_EXPECT(max_progress_bytes > 0U);
+    UI_EXPECT(max_progress_total_bytes == static_cast<qulonglong>(std::filesystem::file_size(progress_capture_path)));
+    UI_EXPECT(!progress_controller.isOpening());
+    UI_EXPECT(progress_controller.openProgressPackets() == 0U);
+    UI_EXPECT(progress_controller.openProgressBytes() == 0U);
+    UI_EXPECT(progress_controller.openProgressTotalBytes() == 0U);
+    UI_EXPECT(progress_controller.openProgressPercent() == 0.0);
 
     const auto saved_index_path = std::filesystem::temp_directory_path() / "pfl_ui_saved_analysis.idx";
     std::error_code remove_error {};
@@ -519,5 +554,10 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
+
+
+
 
 

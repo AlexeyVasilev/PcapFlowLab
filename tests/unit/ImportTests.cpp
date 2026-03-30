@@ -1,6 +1,8 @@
 #include <array>
 #include <cstdint>
+#include <filesystem>
 
+#include "../../core/open_context.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "core/decode/PacketDecoder.h"
@@ -123,7 +125,57 @@ void run_import_tests() {
         PFL_EXPECT(connection->flow_a.packet_count == 1);
         PFL_EXPECT(connection->flow_b.packet_count == 1);
     }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_import_with_null_context.pcap",
+            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
+        );
+
+        CaptureState state {};
+        CaptureImporter importer {};
+        PFL_EXPECT(importer.import_capture(path, state, static_cast<OpenContext*>(nullptr)));
+        PFL_EXPECT(state.summary.packet_count == 2);
+        PFL_EXPECT(state.summary.flow_count == 2);
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+        packets.reserve(1001);
+        for (std::uint32_t index = 0; index < 1001U; ++index) {
+            packets.push_back({100U + index, tcp_packet});
+        }
+
+        const auto path = write_temp_pcap(
+            "pfl_import_progress_context.pcap",
+            make_classic_pcap(packets)
+        );
+
+        CaptureState state {};
+        CaptureImporter importer {};
+        OpenContext ctx {};
+        std::uint32_t callback_count = 0U;
+        OpenProgress last_progress {};
+        ctx.on_progress = [&](const OpenProgress& progress) {
+            ++callback_count;
+            last_progress = progress;
+        };
+
+        PFL_EXPECT(importer.import_capture(path, state, &ctx));
+        PFL_EXPECT(ctx.progress.packets_processed == 1001U);
+        PFL_EXPECT(ctx.progress.bytes_processed == static_cast<std::uint64_t>(tcp_packet.size()) * 1001U);
+        PFL_EXPECT(ctx.progress.total_bytes == static_cast<std::uint64_t>(std::filesystem::file_size(path)));
+        PFL_EXPECT(callback_count == 2U);
+        PFL_EXPECT(last_progress.packets_processed == ctx.progress.packets_processed);
+        PFL_EXPECT(last_progress.bytes_processed == ctx.progress.bytes_processed);
+        PFL_EXPECT(state.summary.packet_count == 1001U);
+        PFL_EXPECT(state.summary.flow_count == 1U);
+    }
 }
 
 }  // namespace pfl::tests
+
+
+
+
 

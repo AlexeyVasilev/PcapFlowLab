@@ -12,15 +12,26 @@ namespace pfl {
 
 namespace {
 
+constexpr std::uint64_t kOpenProgressReportPacketInterval = 1000U;
+
 template <typename Reader>
 bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     while (const auto packet = reader.read_next()) {
         if (ctx != nullptr) {
             ++ctx->progress.packets_processed;
             ctx->progress.bytes_processed += static_cast<std::uint64_t>(packet->bytes.size());
+
+            if (ctx->on_progress && (ctx->progress.packets_processed % kOpenProgressReportPacketInterval) == 0U) {
+                ctx->on_progress(ctx->progress);
+            }
         }
 
         processor.process_packet(*packet, state);
+    }
+
+    if (ctx != nullptr && ctx->on_progress &&
+        (ctx->progress.packets_processed > 0U || ctx->progress.bytes_processed > 0U || ctx->progress.has_total())) {
+        ctx->on_progress(ctx->progress);
     }
 
     return !reader.has_error();
@@ -101,5 +112,6 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
 }
 
 }  // namespace pfl
+
 
 

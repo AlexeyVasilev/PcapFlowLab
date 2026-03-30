@@ -8,6 +8,7 @@
 #include <QFileDialog>
 #include <QStringList>
 
+#include "../../../core/open_context.h"
 #include "cli/CliImportMode.h"
 
 namespace pfl {
@@ -387,6 +388,26 @@ bool MainController::canSaveIndex() const noexcept {
 
 bool MainController::canExportSelectedFlow() const noexcept {
     return session_.has_source_capture() && selected_flow_index_ >= 0;
+}
+
+bool MainController::isOpening() const noexcept {
+    return is_opening_;
+}
+
+qulonglong MainController::openProgressPackets() const noexcept {
+    return open_progress_packets_;
+}
+
+qulonglong MainController::openProgressBytes() const noexcept {
+    return open_progress_bytes_;
+}
+
+qulonglong MainController::openProgressTotalBytes() const noexcept {
+    return open_progress_total_bytes_;
+}
+
+double MainController::openProgressPercent() const noexcept {
+    return open_progress_percent_;
 }
 
 qulonglong MainController::packetCount() const noexcept {
@@ -817,6 +838,7 @@ void MainController::synchronizeFlowSelection() {
 
 void MainController::resetLoadedState() {
     current_input_path_.clear();
+    finishOpenProgress();
     session_ = {};
     protocol_summary_ = {};
     flow_model_.resetViewState();
@@ -862,6 +884,7 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     }
 
     resetLoadedState();
+    beginOpenProgress();
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
     setLastDirectoryFromPath(filesystemPath);
@@ -872,8 +895,14 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     } else {
         auto importOptions = capture_import_options_for_ui_index(capture_open_mode_);
         importOptions.settings = pending_analysis_settings_;
-        opened = session_.open_capture(filesystemPath, importOptions);
+        OpenContext context {};
+        context.on_progress = [this](const OpenProgress& progress) {
+            updateOpenProgress(progress);
+        };
+        opened = session_.open_capture(filesystemPath, importOptions, &context);
     }
+
+    finishOpenProgress();
 
     if (!opened) {
         setOpenErrorText(asIndex
@@ -985,6 +1014,51 @@ void MainController::reloadActiveDetails() {
     }
 }
 
+void MainController::beginOpenProgress() {
+    const bool changed = !is_opening_ || open_progress_packets_ != 0U || open_progress_bytes_ != 0U ||
+        open_progress_total_bytes_ != 0U || open_progress_percent_ != 0.0;
+    is_opening_ = true;
+    open_progress_packets_ = 0;
+    open_progress_bytes_ = 0;
+    open_progress_total_bytes_ = 0;
+    open_progress_percent_ = 0.0;
+    if (changed) {
+        emit openProgressChanged();
+    }
+}
+
+void MainController::updateOpenProgress(const OpenProgress& progress) {
+    const auto packets = static_cast<qulonglong>(progress.packets_processed);
+    const auto bytes = static_cast<qulonglong>(progress.bytes_processed);
+    const auto totalBytes = static_cast<qulonglong>(progress.total_bytes);
+    const auto percent = std::clamp(progress.percent(), 0.0, 1.0);
+
+    if (is_opening_ && open_progress_packets_ == packets && open_progress_bytes_ == bytes &&
+        open_progress_total_bytes_ == totalBytes && open_progress_percent_ == percent) {
+        return;
+    }
+
+    is_opening_ = true;
+    open_progress_packets_ = packets;
+    open_progress_bytes_ = bytes;
+    open_progress_total_bytes_ = totalBytes;
+    open_progress_percent_ = percent;
+    emit openProgressChanged();
+}
+
+void MainController::finishOpenProgress() {
+    const bool changed = is_opening_ || open_progress_packets_ != 0U || open_progress_bytes_ != 0U ||
+        open_progress_total_bytes_ != 0U || open_progress_percent_ != 0.0;
+    is_opening_ = false;
+    open_progress_packets_ = 0;
+    open_progress_bytes_ = 0;
+    open_progress_total_bytes_ = 0;
+    open_progress_percent_ = 0.0;
+    if (changed) {
+        emit openProgressChanged();
+    }
+}
+
 void MainController::setOpenErrorText(const QString& text) {
     if (open_error_text_ == text) {
         return;
@@ -1058,4 +1132,10 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
+
 

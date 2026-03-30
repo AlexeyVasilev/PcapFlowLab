@@ -105,6 +105,44 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.isOpening
+            color: "#f8fafc"
+            border.color: "#cbd5e1"
+            radius: 6
+            implicitHeight: openProgressLayout.implicitHeight + 16
+
+            ColumnLayout {
+                id: openProgressLayout
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 6
+
+                Label {
+                    Layout.fillWidth: true
+                    text: mainController.openProgressTotalBytes > 0
+                        ? "Opening capture: %1 packets, %2 / %3 bytes"
+                            .arg(mainController.openProgressPackets)
+                            .arg(mainController.openProgressBytes)
+                            .arg(mainController.openProgressTotalBytes)
+                        : "Opening capture: %1 packets, %2 bytes"
+                            .arg(mainController.openProgressPackets)
+                            .arg(mainController.openProgressBytes)
+                    color: "#334155"
+                    wrapMode: Text.WordWrap
+                }
+
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 1
+                    value: mainController.openProgressPercent
+                    indeterminate: mainController.openProgressTotalBytes === 0
+                }
+            }
+        }
+
         TabBar {
             id: mainTabs
             Layout.fillWidth: true
@@ -192,4 +230,5 @@ ApplicationWindow {
         }
     }
 }
+
 
