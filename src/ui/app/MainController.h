@@ -16,6 +16,8 @@
 #include "ui/app/StreamListModel.h"
 #include "ui/app/TopSummaryListModel.h"
 
+class QThread;
+
 namespace pfl {
 
 class MainController final : public QObject {
@@ -67,6 +69,7 @@ class MainController final : public QObject {
 
 public:
     explicit MainController(QObject* parent = nullptr);
+    ~MainController() override;
 
     [[nodiscard]] QString currentInputPath() const;
     [[nodiscard]] QString openErrorText() const;
@@ -170,6 +173,8 @@ private:
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
+    void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, CaptureSession session);
+    void cleanupOpenThread();
     void beginOpenProgress();
     void updateOpenProgress(const OpenProgress& progress);
     void finishOpenProgress();
@@ -206,10 +211,17 @@ private:
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
     double open_progress_percent_ {0.0};
+    qulonglong active_open_job_id_ {0};
+    QThread* open_thread_ {nullptr};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };
 
 }  // namespace pfl
+
+
+
+
+
 
 
 

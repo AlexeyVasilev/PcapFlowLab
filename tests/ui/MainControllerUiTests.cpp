@@ -1,12 +1,17 @@
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include <QApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
@@ -26,7 +31,6 @@ void expect_true(const bool condition, const char* expression, const char* file,
 
     throw std::runtime_error(std::string(file) + ':' + std::to_string(line) + " expectation failed: " + expression);
 }
-
 std::vector<std::uint8_t> make_http_request_payload() {
     constexpr char request[] =
         "GET / HTTP/1.1\r\n"
@@ -108,6 +112,45 @@ std::vector<std::uint8_t> make_classic_pcap_with_lengths(
 
 #define UI_EXPECT(expr) expect_true((expr), #expr, __FILE__, __LINE__)
 
+bool wait_until(QApplication& app, const std::function<bool()>& predicate, const int timeoutMs = 10000) {
+    QElapsedTimer timer {};
+    timer.start();
+
+    while (!predicate()) {
+        if (timer.elapsed() >= timeoutMs) {
+            return false;
+        }
+
+        app.processEvents(QEventLoop::AllEvents, 25);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    app.processEvents(QEventLoop::AllEvents, 25);
+    return true;
+}
+
+bool wait_for_open_to_finish(QApplication& app, pfl::MainController& controller, const int timeoutMs = 10000) {
+    return wait_until(app, [&controller]() {
+        return !controller.isOpening();
+    }, timeoutMs);
+}
+
+bool open_capture_and_wait(QApplication& app, pfl::MainController& controller, const std::filesystem::path& path) {
+    if (!controller.openCaptureFile(QString::fromStdWString(path.wstring()))) {
+        return false;
+    }
+
+    return wait_for_open_to_finish(app, controller) && controller.openErrorText().isEmpty();
+}
+
+bool open_index_and_wait(QApplication& app, pfl::MainController& controller, const std::filesystem::path& path) {
+    if (!controller.openIndexFile(QString::fromStdWString(path.wstring()))) {
+        return false;
+    }
+
+    return wait_for_open_to_finish(app, controller) && controller.openErrorText().isEmpty();
+}
+
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -153,7 +196,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.captureOpenMode() == kCliFastImportModeIndex);
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
-    UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, controller, capture_path));
     UI_EXPECT(controller.canSaveIndex());
     UI_EXPECT(controller.hasSourceCapture());
     UI_EXPECT(!controller.openedFromIndex());
@@ -187,6 +230,9 @@ int main(int argc, char* argv[]) {
         max_progress_total_bytes = std::max(max_progress_total_bytes, progress_controller.openProgressTotalBytes());
     });
     UI_EXPECT(progress_controller.openCaptureFile(QString::fromStdWString(progress_capture_path.wstring())));
+    UI_EXPECT(progress_controller.isOpening());
+    UI_EXPECT(!progress_controller.openCaptureFile(QString::fromStdWString(progress_capture_path.wstring())));
+    UI_EXPECT(wait_for_open_to_finish(app, progress_controller));
     UI_EXPECT(saw_opening_true);
     UI_EXPECT(max_progress_packets >= 1000U);
     UI_EXPECT(max_progress_bytes > 0U);
@@ -225,7 +271,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::rename(capture_path, moved_capture_path);
 
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
-    UI_EXPECT(controller.openIndexFile(QString::fromStdWString(index_path.wstring())));
+    UI_EXPECT(open_index_and_wait(app, controller, index_path));
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
     UI_EXPECT(controller.openedFromIndex());
     UI_EXPECT(!controller.hasSourceCapture());
@@ -258,7 +304,18 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.canSaveIndex());
     UI_EXPECT(!controller.statusIsError());
 
-    UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(moved_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, controller, moved_capture_path));
+
+    const auto preserved_input_path = controller.currentInputPath();
+    const auto preserved_flow_count = controller.flowCount();
+    const auto missing_capture_path = std::filesystem::temp_directory_path() / "pfl_ui_missing_open_capture.pcap";
+    std::filesystem::remove(missing_capture_path, remove_error);
+    UI_EXPECT(controller.openCaptureFile(QString::fromStdWString(missing_capture_path.wstring())));
+    UI_EXPECT(wait_for_open_to_finish(app, controller));
+    UI_EXPECT(controller.hasCapture());
+    UI_EXPECT(controller.flowCount() == preserved_flow_count);
+    UI_EXPECT(controller.currentInputPath() == preserved_input_path);
+    UI_EXPECT(controller.openErrorText() == QStringLiteral("Failed to open capture file."));
 
     auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(flow_model != nullptr);
@@ -387,7 +444,7 @@ int main(int argc, char* argv[]) {
 
     MainController settings_controller {};
     UI_EXPECT(!settings_controller.httpUsePathAsServiceHint());
-    UI_EXPECT(settings_controller.openCaptureFile(QString::fromStdWString(hostless_http_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, settings_controller, hostless_http_capture_path));
     auto* settings_flow_model = qobject_cast<FlowListModel*>(settings_controller.flowModel());
     UI_EXPECT(settings_flow_model != nullptr);
     UI_EXPECT(settings_flow_model->rowCount() == 1);
@@ -397,12 +454,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(settings_controller.httpUsePathAsServiceHint());
     UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
 
-    UI_EXPECT(settings_controller.openCaptureFile(QString::fromStdWString(hostless_http_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, settings_controller, hostless_http_capture_path));
     UI_EXPECT(settings_flow_model->rowCount() == 1);
     UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("/fallback/ui"));
 
     MainController stream_controller {};
-    UI_EXPECT(stream_controller.openCaptureFile(QString::fromStdWString(moved_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, stream_controller, moved_capture_path));
     auto* stream_flow_model = qobject_cast<FlowListModel*>(stream_controller.flowModel());
     auto* stream_model = qobject_cast<StreamListModel*>(stream_controller.streamModel());
     UI_EXPECT(stream_flow_model != nullptr);
@@ -462,7 +519,7 @@ int main(int argc, char* argv[]) {
     );
 
     MainController split_tls_controller {};
-    UI_EXPECT(split_tls_controller.openCaptureFile(QString::fromStdWString(split_tls_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, split_tls_controller, split_tls_capture_path));
     split_tls_controller.setSelectedFlowIndex(0);
     auto* split_tls_stream_model = qobject_cast<StreamListModel*>(split_tls_controller.streamModel());
     UI_EXPECT(split_tls_stream_model != nullptr);
@@ -478,7 +535,7 @@ int main(int argc, char* argv[]) {
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
     MainController deep_controller {};
     deep_controller.setCaptureOpenMode(kCliDeepImportModeIndex);
-    UI_EXPECT(deep_controller.openCaptureFile(QString::fromStdWString(tls_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, deep_controller, tls_capture_path));
     deep_controller.setSelectedFlowIndex(0);
     deep_controller.setSelectedPacketIndex(0);
     auto* deep_details_model = qobject_cast<PacketDetailsViewModel*>(deep_controller.packetDetailsModel());
@@ -495,7 +552,7 @@ int main(int argc, char* argv[]) {
     );
 
     MainController truncated_controller {};
-    UI_EXPECT(truncated_controller.openCaptureFile(QString::fromStdWString(truncated_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, truncated_controller, truncated_capture_path));
     truncated_controller.setSelectedFlowIndex(0);
     auto* truncated_packet_model = qobject_cast<PacketListModel*>(truncated_controller.packetModel());
     UI_EXPECT(truncated_packet_model != nullptr);
@@ -522,7 +579,7 @@ int main(int argc, char* argv[]) {
     );
 
     MainController fragmented_controller {};
-    UI_EXPECT(fragmented_controller.openCaptureFile(QString::fromStdWString(fragmented_capture_path.wstring())));
+    UI_EXPECT(open_capture_and_wait(app, fragmented_controller, fragmented_capture_path));
     auto* fragmented_flow_model = qobject_cast<FlowListModel*>(fragmented_controller.flowModel());
     UI_EXPECT(fragmented_flow_model != nullptr);
     UI_EXPECT(fragmented_flow_model->rowCount() == 2);
@@ -554,6 +611,13 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
+
+
+
+
+
 
 
 

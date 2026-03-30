@@ -7,6 +7,7 @@
 
 #include <QFileDialog>
 #include <QStringList>
+#include <QThread>
 
 #include "../../../core/open_context.h"
 #include "cli/CliImportMode.h"
@@ -20,6 +21,13 @@ constexpr qulonglong kInvalidStreamSelection = std::numeric_limits<qulonglong>::
 constexpr int kFlowTabIndex = 0;
 constexpr int kStatsTabIndex = 1;
 constexpr int kSettingsTabIndex = 2;
+
+struct OpenJobResult {
+    bool opened {false};
+    bool as_index {false};
+    QString input_path {};
+    CaptureSession session {};
+};
 
 FlowListModel::SortKey sort_key_from_column(const int column) {
     switch (column) {
@@ -350,6 +358,10 @@ MainController::MainController(QObject* parent)
     , selected_packet_index_(kInvalidPacketSelection) {
 }
 
+MainController::~MainController() {
+    cleanupOpenThread();
+}
+
 QString MainController::currentInputPath() const {
     return current_input_path_;
 }
@@ -379,15 +391,15 @@ bool MainController::openedFromIndex() const noexcept {
 }
 
 bool MainController::canAttachSourceCapture() const noexcept {
-    return session_.opened_from_index() && !session_.has_source_capture();
+    return !is_opening_ && session_.opened_from_index() && !session_.has_source_capture();
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return session_.has_capture() && session_.has_source_capture();
+    return !is_opening_ && session_.has_capture() && session_.has_source_capture();
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return session_.has_source_capture() && selected_flow_index_ >= 0;
+    return !is_opening_ && session_.has_source_capture() && selected_flow_index_ >= 0;
 }
 
 bool MainController::isOpening() const noexcept {
@@ -883,36 +895,96 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         return false;
     }
 
-    resetLoadedState();
+    if (is_opening_ || open_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Another open request is already in progress."), true);
+        return false;
+    }
+
+    setOpenErrorText({});
+    setStatusText({});
     beginOpenProgress();
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
     setLastDirectoryFromPath(filesystemPath);
 
-    bool opened = false;
-    if (asIndex) {
-        opened = session_.load_index(filesystemPath);
-    } else {
-        auto importOptions = capture_import_options_for_ui_index(capture_open_mode_);
-        importOptions.settings = pending_analysis_settings_;
-        OpenContext context {};
-        context.on_progress = [this](const OpenProgress& progress) {
-            updateOpenProgress(progress);
-        };
-        opened = session_.open_capture(filesystemPath, importOptions, &context);
+    ++active_open_job_id_;
+    const qulonglong jobId = active_open_job_id_;
+    auto importOptions = capture_import_options_for_ui_index(capture_open_mode_);
+    importOptions.settings = pending_analysis_settings_;
+
+    open_thread_ = QThread::create([this, jobId, trimmedPath, filesystemPath, asIndex, importOptions]() mutable {
+        OpenJobResult result {};
+        result.as_index = asIndex;
+        result.input_path = trimmedPath;
+
+        CaptureSession workerSession {};
+        if (asIndex) {
+            result.opened = workerSession.load_index(filesystemPath);
+        } else {
+            OpenContext context {};
+            context.on_progress = [this, jobId](const OpenProgress& progress) {
+                QMetaObject::invokeMethod(this, [this, jobId, progress]() {
+                    if (active_open_job_id_ != jobId || !is_opening_) {
+                        return;
+                    }
+
+                    updateOpenProgress(progress);
+                }, Qt::QueuedConnection);
+            };
+
+            result.opened = workerSession.open_capture(filesystemPath, importOptions, &context);
+        }
+
+        if (result.opened) {
+            result.session = std::move(workerSession);
+        }
+
+        QMetaObject::invokeMethod(this, [this, jobId, result = std::move(result)]() mutable {
+            completeOpenJob(jobId, result.input_path, result.as_index, result.opened, std::move(result.session));
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(open_thread_, &QThread::finished, open_thread_, &QObject::deleteLater);
+    open_thread_->start();
+    return true;
+}
+
+void MainController::completeOpenJob(
+    const qulonglong jobId,
+    const QString& path,
+    const bool asIndex,
+    const bool opened,
+    CaptureSession session
+) {
+    if (jobId != active_open_job_id_) {
+        return;
     }
 
+    active_open_job_id_ = 0;
+    cleanupOpenThread();
     finishOpenProgress();
 
     if (!opened) {
         setOpenErrorText(asIndex
             ? QStringLiteral("Failed to open analysis index.")
             : QStringLiteral("Failed to open capture file."));
-        return false;
+        return;
     }
 
-    applyLoadedState(trimmedPath);
-    return true;
+    session_ = std::move(session);
+    applyLoadedState(path);
+}
+
+void MainController::cleanupOpenThread() {
+    if (open_thread_ == nullptr) {
+        return;
+    }
+
+    if (open_thread_->isRunning()) {
+        open_thread_->wait();
+    }
+
+    open_thread_ = nullptr;
 }
 
 void MainController::reloadSelectedPacketDetails() {
@@ -1024,6 +1096,7 @@ void MainController::beginOpenProgress() {
     open_progress_percent_ = 0.0;
     if (changed) {
         emit openProgressChanged();
+        emit actionAvailabilityChanged();
     }
 }
 
@@ -1056,6 +1129,7 @@ void MainController::finishOpenProgress() {
     open_progress_percent_ = 0.0;
     if (changed) {
         emit openProgressChanged();
+        emit actionAvailabilityChanged();
     }
 }
 
@@ -1132,6 +1206,13 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
 
 
 
