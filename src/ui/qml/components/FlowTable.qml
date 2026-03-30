@@ -161,11 +161,11 @@ Frame {
                         anchors.rightMargin: 10
                         spacing: 10
 
-                        Label { text: flowIndex; Layout.preferredWidth: 46; horizontalAlignment: Text.AlignRight }
-                        Label { text: family; Layout.preferredWidth: 58 }
-                        Label { text: protocol; Layout.preferredWidth: 66 }
-                        Label { text: protocolHint; Layout.preferredWidth: 78; elide: Text.ElideRight }
-                        Label { text: serviceHint; Layout.fillWidth: true; Layout.preferredWidth: 220; elide: Text.ElideRight }
+                        Text { text: flowIndex; Layout.preferredWidth: 46; horizontalAlignment: Text.AlignRight }
+                        Text { text: family; Layout.preferredWidth: 58 }
+                        Text { text: protocol; Layout.preferredWidth: 66 }
+                        Text { text: protocolHint; Layout.preferredWidth: 78; elide: Text.ElideRight }
+                        Text { text: serviceHint; Layout.fillWidth: true; Layout.preferredWidth: 220; elide: Text.ElideRight }
 
                         Rectangle {
                             Layout.preferredWidth: 48
@@ -175,8 +175,9 @@ Frame {
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
-                            Label {
-                                anchors.fill: parent
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 text: fragmentedPacketCount
@@ -184,12 +185,12 @@ Frame {
                             }
                         }
 
-                        Label { text: addressA; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
-                        Label { text: portA; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
-                        Label { text: addressB; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
-                        Label { text: portB; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
-                        Label { text: packets; Layout.preferredWidth: 68; horizontalAlignment: Text.AlignRight }
-                        Label { text: bytes; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
+                        Text { text: addressA; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
+                        Text { text: portA; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
+                        Text { text: addressB; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
+                        Text { text: portB; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
+                        Text { text: packets; Layout.preferredWidth: 68; horizontalAlignment: Text.AlignRight }
+                        Text { text: bytes; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
                     }
 
                     MouseArea {
@@ -211,4 +212,3 @@ Frame {
         }
     }
 }
-

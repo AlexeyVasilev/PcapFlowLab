@@ -24,6 +24,7 @@ Frame {
         if (selected) {
             return isForward(directionText) ? "#dcecff" : "#dcf4e4"
         }
+
         return isForward(directionText) ? "#eef6ff" : "#eefaf2"
     }
 
@@ -31,6 +32,7 @@ Frame {
         if (selected) {
             return isForward(directionText) ? "#7ca9de" : "#79b38a"
         }
+
         return isForward(directionText) ? "#c8dbf2" : "#c9e7d1"
     }
 
@@ -88,78 +90,66 @@ Frame {
                     required property int byteCount
                     required property int packetCount
 
+                    readonly property bool selected: root.isSelected(streamItemIndex)
+                    readonly property bool forward: root.isForward(directionText)
+                    readonly property string metadataText: byteCount + " bytes | " + (packetCount > 1 ? packetCount + " packets" : "1 packet")
+
                     width: streamListView.width
                     height: bubble.implicitHeight
 
-                    readonly property bool selected: root.isSelected(streamItemIndex)
+                    Rectangle {
+                        id: bubble
+                        x: forward ? 0 : parent.width - width
+                        width: Math.min(streamListView.width * 0.78, 320)
+                        implicitHeight: metadataTextItem.y + metadataTextItem.implicitHeight + 9
+                        radius: 10
+                        color: root.bubbleColor(directionText, selected)
+                        border.color: root.bubbleBorderColor(directionText, selected)
+                        border.width: selected ? 2 : 1
 
-                    RowLayout {
-                        anchors.fill: parent
-                        spacing: 0
-
-                        Item {
-                            Layout.fillWidth: !root.isForward(directionText)
-                            implicitWidth: 0
+                        Text {
+                            id: directionTextItem
+                            x: 9
+                            y: 9
+                            text: directionText
+                            color: root.bubbleTextColor(directionText)
+                            font.family: "Consolas"
                         }
 
-                        Rectangle {
-                            id: bubble
-                            Layout.preferredWidth: Math.min(streamListView.width * 0.78, 320)
-                            implicitHeight: contentColumn.implicitHeight + 18
-                            radius: 10
-                            color: root.bubbleColor(directionText, selected)
-                            border.color: root.bubbleBorderColor(directionText, selected)
-                            border.width: selected ? 2 : 1
-
-                            ColumnLayout {
-                                id: contentColumn
-                                anchors.fill: parent
-                                anchors.margins: 9
-                                spacing: 4
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-
-                                    Label {
-                                        text: directionText
-                                        color: root.bubbleTextColor(directionText)
-                                        font.family: "Consolas"
-                                    }
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Label {
-                                        text: "#" + streamItemIndex
-                                        color: "#64748b"
-                                        font.family: "Consolas"
-                                    }
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: label
-                                    font.bold: true
-                                    color: "#0f172a"
-                                    elide: Text.ElideRight
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: byteCount + " bytes | " + (packetCount > 1 ? packetCount + " packets" : "1 packet")
-                                    color: "#475569"
-                                }
-                            }
-
-                            TapHandler {
-                                onTapped: root.streamItemSelected(streamItemIndex)
-                            }
+                        Text {
+                            id: itemIndexText
+                            anchors.top: parent.top
+                            anchors.topMargin: 9
+                            anchors.right: parent.right
+                            anchors.rightMargin: 9
+                            text: "#" + streamItemIndex
+                            color: "#64748b"
+                            font.family: "Consolas"
                         }
 
-                        Item {
-                            Layout.fillWidth: root.isForward(directionText)
-                            implicitWidth: 0
+                        Text {
+                            id: labelTextItem
+                            x: 9
+                            y: directionTextItem.y + directionTextItem.implicitHeight + 4
+                            width: parent.width - 18
+                            text: label
+                            font.bold: true
+                            color: "#0f172a"
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            id: metadataTextItem
+                            x: 9
+                            y: labelTextItem.y + labelTextItem.implicitHeight + 4
+                            width: parent.width - 18
+                            text: metadataText
+                            color: "#475569"
+                            elide: Text.ElideRight
+                        }
+
+                        TapHandler {
+                            onTapped: root.streamItemSelected(streamItemIndex)
                         }
                     }
                 }
@@ -174,4 +164,3 @@ Frame {
         }
     }
 }
-

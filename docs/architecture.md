@@ -117,7 +117,7 @@ Open-time performance logging is developer-only and off by default.
 
 ## UI list surfaces
 
-Current large-list surfaces prefer virtualization-friendly QML views over pagination.
+Current large-list surfaces prefer virtualization-friendly QML views and comparatively lightweight delegates over pagination.
 
 - Flow table uses `ListView` with fixed-height delegates and lazy vertical creation.
 - Packet list uses `ListView` with fixed-height delegates and lazy vertical creation.
@@ -138,3 +138,4 @@ Current scalability risks are still worth watching:
 - Bounded reassembly may truncate long streams.
 - Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
 - Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
+

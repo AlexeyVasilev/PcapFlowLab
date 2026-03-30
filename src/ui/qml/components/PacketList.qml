@@ -260,7 +260,7 @@ Frame {
                         anchors.rightMargin: 10
                         spacing: 12
 
-                        Label {
+                        Text {
                             text: rowNumber
                             Layout.preferredWidth: 50
                             horizontalAlignment: Text.AlignRight
@@ -274,8 +274,9 @@ Frame {
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
-                            Label {
-                                anchors.fill: parent
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 text: directionText
@@ -284,7 +285,7 @@ Frame {
                             }
                         }
 
-                        Label {
+                        Text {
                             text: timestamp
                             Layout.preferredWidth: 126
                             font.family: "Consolas"
@@ -298,10 +299,9 @@ Frame {
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
-                            Label {
-                                anchors.fill: parent
-                                anchors.leftMargin: 6
-                                anchors.rightMargin: 6
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width - 12
                                 horizontalAlignment: Text.AlignRight
                                 verticalAlignment: Text.AlignVCenter
                                 text: capturedLength
@@ -309,7 +309,7 @@ Frame {
                             }
                         }
 
-                        Label {
+                        Text {
                             text: payloadLength
                             Layout.preferredWidth: 68
                             horizontalAlignment: Text.AlignRight
@@ -323,11 +323,12 @@ Frame {
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
-                            Label {
-                                anchors.fill: parent
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
                                 anchors.leftMargin: 8
+                                anchors.right: parent.right
                                 anchors.rightMargin: 8
-                                verticalAlignment: Text.AlignVCenter
                                 text: tcpFlagsText
                                 font.family: "Consolas"
                                 color: root.flagTextColor(tcpFlagsText, payloadLength, selected)
@@ -355,4 +356,3 @@ Frame {
         }
     }
 }
-
