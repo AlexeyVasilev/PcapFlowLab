@@ -193,6 +193,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!controller.openedFromIndex());
     UI_EXPECT(!controller.canAttachSourceCapture());
     UI_EXPECT(controller.statusText().isEmpty());
+
+    MainController idle_cancel_controller {};
+    idle_cancel_controller.cancelOpen();
+    UI_EXPECT(!idle_cancel_controller.isOpening());
+    UI_EXPECT(idle_cancel_controller.statusText().isEmpty());
     UI_EXPECT(controller.captureOpenMode() == kCliFastImportModeIndex);
     controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
@@ -243,6 +248,36 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(progress_controller.openProgressTotalBytes() == 0U);
     UI_EXPECT(progress_controller.openProgressPercent() == 0.0);
 
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> cancel_packets {};
+    cancel_packets.reserve(50000);
+    for (std::uint32_t index = 0; index < 50000U; ++index) {
+        cancel_packets.push_back({100U + index, http_flow});
+    }
+    const auto cancel_capture_path = write_temp_pcap(
+        "pfl_ui_open_cancel.pcap",
+        make_classic_pcap(cancel_packets)
+    );
+
+    MainController cancel_controller {};
+    UI_EXPECT(open_capture_and_wait(app, cancel_controller, capture_path));
+    const auto preserved_cancel_input_path = cancel_controller.currentInputPath();
+    const auto preserved_cancel_flow_count = cancel_controller.flowCount();
+    UI_EXPECT(cancel_controller.openCaptureFile(QString::fromStdWString(cancel_capture_path.wstring())));
+    UI_EXPECT(cancel_controller.isOpening());
+    cancel_controller.cancelOpen();
+    UI_EXPECT(!cancel_controller.openCaptureFile(QString::fromStdWString(cancel_capture_path.wstring())));
+    UI_EXPECT(wait_for_open_to_finish(app, cancel_controller, 20000));
+    UI_EXPECT(cancel_controller.hasCapture());
+    UI_EXPECT(cancel_controller.currentInputPath() == preserved_cancel_input_path);
+    UI_EXPECT(cancel_controller.flowCount() == preserved_cancel_flow_count);
+    UI_EXPECT(cancel_controller.statusText() == QStringLiteral("Open cancelled."));
+    UI_EXPECT(!cancel_controller.statusIsError());
+    UI_EXPECT(cancel_controller.openErrorText().isEmpty());
+    UI_EXPECT(!cancel_controller.isOpening());
+    UI_EXPECT(cancel_controller.openProgressPackets() == 0U);
+    UI_EXPECT(cancel_controller.openProgressBytes() == 0U);
+    UI_EXPECT(cancel_controller.openProgressTotalBytes() == 0U);
+    UI_EXPECT(cancel_controller.openProgressPercent() == 0.0);
     const auto saved_index_path = std::filesystem::temp_directory_path() / "pfl_ui_saved_analysis.idx";
     std::error_code remove_error {};
     std::filesystem::remove(saved_index_path, remove_error);
@@ -611,6 +646,11 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
+
+
+
 
 
 

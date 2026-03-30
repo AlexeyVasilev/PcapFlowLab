@@ -125,23 +125,34 @@ ApplicationWindow {
                 Label {
                     Layout.fillWidth: true
                     text: mainController.openProgressTotalBytes > 0
-                        ? "Opening capture: %1 packets, %2 / %3 bytes"
+                        ? "Opening file: %1 packets, %2 / %3 bytes"
                             .arg(mainController.openProgressPackets)
                             .arg(mainController.openProgressBytes)
                             .arg(mainController.openProgressTotalBytes)
-                        : "Opening capture: %1 packets, %2 bytes"
+                        : "Opening file: %1 packets, %2 bytes"
                             .arg(mainController.openProgressPackets)
                             .arg(mainController.openProgressBytes)
                     color: "#334155"
                     wrapMode: Text.WordWrap
                 }
 
-                ProgressBar {
+                RowLayout {
                     Layout.fillWidth: true
-                    from: 0
-                    to: 1
-                    value: mainController.openProgressPercent
-                    indeterminate: mainController.openProgressTotalBytes === 0
+                    spacing: 8
+
+                    ProgressBar {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 1
+                        value: mainController.openProgressPercent
+                        indeterminate: mainController.openProgressTotalBytes === 0
+                    }
+
+                    Button {
+                        text: "Cancel"
+                        enabled: mainController.isOpening
+                        onClicked: mainController.cancelOpen()
+                    }
                 }
             }
         }
@@ -233,6 +244,7 @@ ApplicationWindow {
         }
     }
 }
+
 
 
 

@@ -171,9 +171,40 @@ void run_import_tests() {
         PFL_EXPECT(state.summary.packet_count == 1001U);
         PFL_EXPECT(state.summary.flow_count == 1U);
     }
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+        packets.reserve(5000);
+        for (std::uint32_t index = 0; index < 5000U; ++index) {
+            packets.push_back({100U + index, tcp_packet});
+        }
+
+        const auto path = write_temp_pcap(
+            "pfl_import_cancelled_context.pcap",
+            make_classic_pcap(packets)
+        );
+
+        CaptureState state {};
+        CaptureImporter importer {};
+        OpenContext ctx {};
+        std::uint32_t callback_count = 0U;
+        ctx.on_progress = [&](const OpenProgress&) {
+            ++callback_count;
+        };
+        ctx.request_cancel();
+
+        PFL_EXPECT(!importer.import_capture(path, state, &ctx));
+        PFL_EXPECT(ctx.progress.packets_processed == 0U);
+        PFL_EXPECT(ctx.progress.bytes_processed == 0U);
+        PFL_EXPECT(ctx.progress.total_bytes == static_cast<std::uint64_t>(std::filesystem::file_size(path)));
+        PFL_EXPECT(callback_count == 1U);
+        PFL_EXPECT(state.summary.packet_count == 0U);
+        PFL_EXPECT(state.summary.flow_count == 0U);
+    }
 }
 
 }  // namespace pfl::tests
+
+
 
 
 

@@ -1351,7 +1351,7 @@ bool CaptureSession::open_input(const std::filesystem::path& path) {
 
 bool CaptureSession::open_input(const std::filesystem::path& path, OpenContext* ctx) {
     if (looks_like_index_file(path)) {
-        return load_index(path);
+        return load_index(path, ctx);
     }
 
     return open_capture(path, ctx);
@@ -1367,6 +1367,10 @@ bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
 }
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path) {
+    return load_index(index_path, nullptr);
+}
+
+bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenContext* ctx) {
     const auto started_at = std::chrono::steady_clock::now();
     PerfOpenLogger perf_logger {};
 
@@ -1375,7 +1379,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
     std::filesystem::path loaded_capture_path {};
     CaptureSourceInfo loaded_source_info {};
 
-    if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info)) {
+    if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info, ctx)) {
         reset_runtime_state();
         log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, false, started_at, *this);
         return false;
@@ -1915,5 +1919,8 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
 
 

@@ -43,6 +43,7 @@ Examples:
 The Qt Quick desktop UI can:
 
 - open captures and analysis indexes via native file dialogs
+- show non-modal open progress and allow cooperative cancellation while preserving the previous valid session if the open is cancelled
 - save the current analysis state back to an index
 - export the currently selected flow to classic PCAP
 - browse flows, packets, protocol statistics, top endpoints, and top ports
@@ -67,3 +68,4 @@ Deep mode remains available as a separate open path for richer packet-level prot
 ## Developer note
 
 Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is intended only for local regression tracking during development and has no effect in normal usage.
+

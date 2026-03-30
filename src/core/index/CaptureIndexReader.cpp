@@ -4,13 +4,24 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
+#include "../../../core/open_context.h"
 #include "core/index/Serialization.h"
 
 namespace pfl {
 
 namespace {
+
+[[nodiscard]] std::uint64_t current_offset(std::ifstream& stream) {
+    const auto current = stream.tellg();
+    if (current < 0) {
+        return 0;
+    }
+
+    return static_cast<std::uint64_t>(current);
+}
 
 [[nodiscard]] std::uint64_t remaining_bytes(std::ifstream& stream) {
     const auto current = stream.tellg();
@@ -26,6 +37,21 @@ namespace {
     }
 
     return static_cast<std::uint64_t>(end - current);
+}
+
+void report_index_progress(OpenContext* ctx, std::ifstream& stream) {
+    if (ctx == nullptr) {
+        return;
+    }
+
+    ctx->progress.bytes_processed = current_offset(stream);
+    if (ctx->on_progress) {
+        ctx->on_progress(ctx->progress);
+    }
+}
+
+[[nodiscard]] bool should_cancel(const OpenContext* ctx) noexcept {
+    return ctx != nullptr && ctx->is_cancel_requested();
 }
 
 template <typename Parser>
@@ -44,15 +70,38 @@ bool parse_section_payload(const std::vector<std::uint8_t>& payload, Parser&& pa
 bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                               CaptureState& out_state,
                               std::filesystem::path& out_source_capture_path,
-                              CaptureSourceInfo* out_source_info) const {
+                              CaptureSourceInfo* out_source_info,
+                              OpenContext* ctx) const {
     out_state = {};
     out_source_capture_path.clear();
     if (out_source_info != nullptr) {
         *out_source_info = {};
     }
 
+    if (ctx != nullptr) {
+        ctx->progress = {};
+        std::error_code error {};
+        const auto file_size = std::filesystem::file_size(index_path, error);
+        if (!error) {
+            ctx->progress.total_bytes = static_cast<std::uint64_t>(file_size);
+        }
+    }
+
+    if (should_cancel(ctx)) {
+        if (ctx != nullptr && ctx->on_progress) {
+            ctx->on_progress(ctx->progress);
+        }
+        return false;
+    }
+
     std::ifstream stream(index_path, std::ios::binary);
     if (!stream.is_open()) {
+        return false;
+    }
+
+    report_index_progress(ctx, stream);
+    if (should_cancel(ctx)) {
+        report_index_progress(ctx, stream);
         return false;
     }
 
@@ -74,7 +123,14 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         return false;
     }
 
+    report_index_progress(ctx, stream);
+
     while (stream.peek() != std::char_traits<char>::eof()) {
+        if (should_cancel(ctx)) {
+            report_index_progress(ctx, stream);
+            return false;
+        }
+
         std::uint32_t raw_section_id {0};
         std::uint64_t payload_size {0};
         if (!detail::read_section_header(stream, raw_section_id, payload_size)) {
@@ -88,6 +144,12 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
 
         std::vector<std::uint8_t> payload {};
         if (!detail::read_section_payload(stream, payload_size, payload)) {
+            return false;
+        }
+
+        report_index_progress(ctx, stream);
+        if (should_cancel(ctx)) {
+            report_index_progress(ctx, stream);
             return false;
         }
 
@@ -129,6 +191,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         }
     }
 
+    if (should_cancel(ctx)) {
+        report_index_progress(ctx, stream);
+        return false;
+    }
+
     if (!has_source_info || !has_summary || !has_ipv4_connections || !has_ipv6_connections) {
         return false;
     }
@@ -139,6 +206,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         *out_source_info = source_info;
     }
 
+    report_index_progress(ctx, stream);
     return true;
 }
 

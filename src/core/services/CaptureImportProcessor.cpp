@@ -14,9 +14,24 @@ namespace {
 
 constexpr std::uint64_t kOpenProgressReportPacketInterval = 1000U;
 
+void report_open_progress(OpenContext* ctx) {
+    if (ctx != nullptr && ctx->on_progress) {
+        ctx->on_progress(ctx->progress);
+    }
+}
+
+[[nodiscard]] bool should_cancel(const OpenContext* ctx) noexcept {
+    return ctx != nullptr && ctx->is_cancel_requested();
+}
+
 template <typename Reader>
 bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     while (const auto packet = reader.read_next()) {
+        if (should_cancel(ctx)) {
+            report_open_progress(ctx);
+            return false;
+        }
+
         if (ctx != nullptr) {
             ++ctx->progress.packets_processed;
             ctx->progress.bytes_processed += static_cast<std::uint64_t>(packet->bytes.size());
@@ -27,11 +42,20 @@ bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProc
         }
 
         processor.process_packet(*packet, state);
+
+        if (should_cancel(ctx)) {
+            report_open_progress(ctx);
+            return false;
+        }
     }
 
     if (ctx != nullptr && ctx->on_progress &&
         (ctx->progress.packets_processed > 0U || ctx->progress.bytes_processed > 0U || ctx->progress.has_total())) {
         ctx->on_progress(ctx->progress);
+    }
+
+    if (should_cancel(ctx)) {
+        return false;
     }
 
     return !reader.has_error();
@@ -89,6 +113,11 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
         }
     }
 
+    if (should_cancel(ctx)) {
+        report_open_progress(ctx);
+        return false;
+    }
+
     switch (detect_capture_source_format(path)) {
     case CaptureSourceFormat::classic_pcap: {
         PcapReader reader {};
@@ -112,6 +141,3 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
 }
 
 }  // namespace pfl
-
-
-

@@ -4,6 +4,7 @@
 #include <array>
 #include <filesystem>
 #include <limits>
+#include <memory>
 
 #include <QFileDialog>
 #include <QStringList>
@@ -24,6 +25,7 @@ constexpr int kSettingsTabIndex = 2;
 
 struct OpenJobResult {
     bool opened {false};
+    bool cancelled {false};
     bool as_index {false};
     QString input_path {};
     CaptureSession session {};
@@ -577,6 +579,15 @@ bool MainController::attachSourceCapture(const QString& path) {
     return true;
 }
 
+void MainController::cancelOpen() {
+    if (active_open_context_ == nullptr || !is_opening_) {
+        return;
+    }
+
+    active_open_context_->request_cancel();
+    setStatusText(QStringLiteral("Cancelling open operation..."));
+}
+
 bool MainController::saveAnalysisIndex(const QString& path) {
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
@@ -911,36 +922,37 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
     const qulonglong jobId = active_open_job_id_;
     auto importOptions = capture_import_options_for_ui_index(capture_open_mode_);
     importOptions.settings = pending_analysis_settings_;
+    active_open_context_ = std::make_shared<OpenContext>();
+    active_open_context_->on_progress = [this, jobId](const OpenProgress& progress) {
+        QMetaObject::invokeMethod(this, [this, jobId, progress]() {
+            if (active_open_job_id_ != jobId || !is_opening_) {
+                return;
+            }
 
-    open_thread_ = QThread::create([this, jobId, trimmedPath, filesystemPath, asIndex, importOptions]() mutable {
+            updateOpenProgress(progress);
+        }, Qt::QueuedConnection);
+    };
+
+    const auto context = active_open_context_;
+    open_thread_ = QThread::create([this, jobId, trimmedPath, filesystemPath, asIndex, importOptions, context]() mutable {
         OpenJobResult result {};
         result.as_index = asIndex;
         result.input_path = trimmedPath;
 
         CaptureSession workerSession {};
         if (asIndex) {
-            result.opened = workerSession.load_index(filesystemPath);
+            result.opened = workerSession.load_index(filesystemPath, context.get());
         } else {
-            OpenContext context {};
-            context.on_progress = [this, jobId](const OpenProgress& progress) {
-                QMetaObject::invokeMethod(this, [this, jobId, progress]() {
-                    if (active_open_job_id_ != jobId || !is_opening_) {
-                        return;
-                    }
-
-                    updateOpenProgress(progress);
-                }, Qt::QueuedConnection);
-            };
-
-            result.opened = workerSession.open_capture(filesystemPath, importOptions, &context);
+            result.opened = workerSession.open_capture(filesystemPath, importOptions, context.get());
         }
 
-        if (result.opened) {
+        result.cancelled = context->is_cancel_requested();
+        if (result.opened && !result.cancelled) {
             result.session = std::move(workerSession);
         }
 
         QMetaObject::invokeMethod(this, [this, jobId, result = std::move(result)]() mutable {
-            completeOpenJob(jobId, result.input_path, result.as_index, result.opened, std::move(result.session));
+            completeOpenJob(jobId, result.input_path, result.as_index, result.opened, result.cancelled, std::move(result.session));
         }, Qt::QueuedConnection);
     });
 
@@ -954,15 +966,24 @@ void MainController::completeOpenJob(
     const QString& path,
     const bool asIndex,
     const bool opened,
+    const bool cancelled,
     CaptureSession session
 ) {
     if (jobId != active_open_job_id_) {
         return;
     }
 
+    const bool cancellationWon = cancelled || (active_open_context_ != nullptr && active_open_context_->is_cancel_requested());
     active_open_job_id_ = 0;
     cleanupOpenThread();
+    releaseOpenContext();
     finishOpenProgress();
+
+    if (cancellationWon) {
+        setOpenErrorText({});
+        setStatusText(QStringLiteral("Open cancelled."));
+        return;
+    }
 
     if (!opened) {
         setOpenErrorText(asIndex
@@ -985,6 +1006,10 @@ void MainController::cleanupOpenThread() {
     }
 
     open_thread_ = nullptr;
+}
+
+void MainController::releaseOpenContext() {
+    active_open_context_.reset();
 }
 
 void MainController::reloadSelectedPacketDetails() {
@@ -1206,6 +1231,10 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
 
 
 

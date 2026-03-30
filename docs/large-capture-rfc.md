@@ -6,9 +6,7 @@ Pcap Flow Lab already has a workable architecture for capture import, saved inde
 
 Problems visible today:
 
-- opening a large capture is effectively a black-box operation
-- the UI has no explicit progress model for long opens
-- the user cannot cancel an open in progress
+- large opens now have observable progress and cooperative cancellation, but that model still needs to scale cleanly to larger workloads and future open backends
 - console logging is not clearly separated into normal runtime output vs developer diagnostics
 - UI behavior for very large flow and packet lists is not yet an explicit architectural concern
 
@@ -109,6 +107,7 @@ Requirements:
 
 - cancellation must leave the application in a valid state
 - partially opened captures are discarded unless a future feature explicitly supports partial retention
+- the current desktop implementation keeps the previous valid state active until a new open completes successfully
 - cancellation should transition through `cancelling` to `cancelled`
 - cancellation must not corrupt in-memory state, indexes, or checkpoints
 - cancellation must not leave partially visible or inconsistent data in UI-visible collections
@@ -221,5 +220,8 @@ This RFC is intentionally aligned with the current system boundaries.
 - index-based workflows remain the durable path for reused analysis state
 
 Large-capture support should improve observability, cancellation, and scalability without changing those core boundaries.
+
+
+
 
 

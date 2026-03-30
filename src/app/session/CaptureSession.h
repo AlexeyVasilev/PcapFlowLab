@@ -26,6 +26,7 @@ public:
     bool open_input(const std::filesystem::path& path, OpenContext* ctx);
     bool save_index(const std::filesystem::path& index_path) const;
     bool load_index(const std::filesystem::path& index_path);
+    bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] bool has_source_capture() const noexcept;
     [[nodiscard]] bool opened_from_index() const noexcept;
@@ -64,4 +65,5 @@ private:
 };
 
 }  // namespace pfl
+
 

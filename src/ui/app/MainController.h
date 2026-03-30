@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <vector>
 
 #include <QObject>
@@ -119,6 +120,7 @@ public:
     Q_INVOKABLE bool openCaptureFile(const QString& path);
     Q_INVOKABLE bool openIndexFile(const QString& path);
     Q_INVOKABLE bool attachSourceCapture(const QString& path);
+    Q_INVOKABLE void cancelOpen();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
     Q_INVOKABLE bool exportSelectedFlow(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
@@ -173,8 +175,9 @@ private:
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
-    void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, CaptureSession session);
+    void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, CaptureSession session);
     void cleanupOpenThread();
+    void releaseOpenContext();
     void beginOpenProgress();
     void updateOpenProgress(const OpenProgress& progress);
     void finishOpenProgress();
@@ -213,10 +216,12 @@ private:
     double open_progress_percent_ {0.0};
     qulonglong active_open_job_id_ {0};
     QThread* open_thread_ {nullptr};
+    std::shared_ptr<OpenContext> active_open_context_ {};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };
 
 }  // namespace pfl
+
 
 
 

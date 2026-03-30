@@ -2,6 +2,7 @@
 #include <variant>
 #include <vector>
 
+#include "../../core/open_context.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "core/index/CaptureIndex.h"
@@ -183,6 +184,27 @@ void run_index_tests() {
         mismatched_info.file_size += 1;
         PFL_EXPECT(!validate_capture_source(mismatched_info, source_path));
     }
+    {
+        OpenContext ctx {};
+        std::uint32_t callback_count = 0U;
+        ctx.on_progress = [&](const OpenProgress&) {
+            ++callback_count;
+        };
+        ctx.request_cancel();
+
+        CaptureSession cancelled_session {};
+        PFL_EXPECT(!cancelled_session.load_index(index_path, &ctx));
+        PFL_EXPECT(!cancelled_session.has_capture());
+        PFL_EXPECT(ctx.progress.total_bytes == static_cast<std::uint64_t>(std::filesystem::file_size(index_path)));
+        PFL_EXPECT(callback_count >= 1U);
+
+        CaptureIndexReader cancelled_reader {};
+        CaptureState cancelled_state {};
+        std::filesystem::path cancelled_capture_path {};
+        PFL_EXPECT(!cancelled_reader.read(index_path, cancelled_state, cancelled_capture_path, nullptr, &ctx));
+        PFL_EXPECT(cancelled_state.summary.packet_count == 0U);
+        PFL_EXPECT(cancelled_capture_path.empty());
+    }
 
     {
         const auto truncated_index_path = write_temp_binary_file("pfl_capture_state_truncated.idx", {0x50, 0x46, 0x4c});
@@ -308,3 +330,5 @@ void run_index_tests() {
 }
 
 }  // namespace pfl::tests
+
+
