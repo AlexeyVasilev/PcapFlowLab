@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <array>
+#include <iostream>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -10,6 +11,7 @@
 #include <sstream>
 #include <string_view>
 
+#include "core/debug_logging.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
@@ -1313,6 +1315,10 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options, OpenContext* ctx) {
+    debug::log_if<debug::kDebugOpen>([&]() {
+        std::clog << "open_capture: " << path.string() << " mode="
+                  << ((options.mode == ImportMode::deep) ? "deep" : "fast") << '\n';
+    });
     const auto started_at = std::chrono::steady_clock::now();
     PerfOpenLogger perf_logger {};
     const auto operation_type = (options.mode == ImportMode::deep)
@@ -1323,6 +1329,9 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     CaptureState imported_state {};
 
     if (!importer.import_capture(path, imported_state, options, ctx)) {
+        debug::log_if<debug::kDebugOpen>([&]() {
+            std::clog << "open_capture failed: " << path.string() << '\n';
+        });
         reset_runtime_state();
         log_open_result(perf_logger, operation_type, path, false, started_at, *this);
         return false;
@@ -1341,6 +1350,9 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
         source_info_.capture_path = path;
     }
 
+    debug::log_if<debug::kDebugOpen>([&]() {
+        std::clog << "open_capture succeeded: " << path.string() << '\n';
+    });
     log_open_result(perf_logger, operation_type, path, true, started_at, *this);
     return true;
 }
@@ -1371,6 +1383,9 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
 }
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenContext* ctx) {
+    debug::log_if<debug::kDebugIndexLoad>([&]() {
+        std::clog << "load_index: " << index_path.string() << '\n';
+    });
     const auto started_at = std::chrono::steady_clock::now();
     PerfOpenLogger perf_logger {};
 
@@ -1380,6 +1395,9 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     CaptureSourceInfo loaded_source_info {};
 
     if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info, ctx)) {
+        debug::log_if<debug::kDebugIndexLoad>([&]() {
+            std::clog << "load_index failed: " << index_path.string() << '\n';
+        });
         reset_runtime_state();
         log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, false, started_at, *this);
         return false;
@@ -1399,6 +1417,9 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
         capture_path_ = source_info_.capture_path;
     }
 
+    debug::log_if<debug::kDebugIndexLoad>([&]() {
+        std::clog << "load_index succeeded: " << index_path.string() << '\n';
+    });
     log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, true, started_at, *this);
     return true;
 }
@@ -1919,6 +1940,7 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
 
 
 
