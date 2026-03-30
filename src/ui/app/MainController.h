@@ -175,7 +175,7 @@ private:
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
-    void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, CaptureSession session);
+    void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
     void cleanupOpenThread();
     void releaseOpenContext();
     void beginOpenProgress();
@@ -221,6 +221,7 @@ private:
 };
 
 }  // namespace pfl
+
 
 
 

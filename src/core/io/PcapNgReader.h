@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/io/PcapReader.h"
+#include "core/open_failure_info.h"
 
 namespace pfl {
 
@@ -28,6 +29,7 @@ public:
     bool open(const std::filesystem::path& path, std::uint64_t next_input_offset, std::uint64_t next_packet_index);
     [[nodiscard]] bool is_open() const noexcept;
     [[nodiscard]] bool has_error() const noexcept;
+    [[nodiscard]] const OpenFailureInfo& last_error() const noexcept;
     [[nodiscard]] bool at_eof();
     [[nodiscard]] std::uint64_t next_input_offset() const noexcept;
     std::optional<RawPcapPacket> read_next();
@@ -36,6 +38,9 @@ private:
     bool parse_section_header();
     bool parse_interface_description(std::span<const std::uint8_t> body);
     bool seek_to_offset(std::uint64_t target_offset);
+    void clear_error();
+    void set_error_context(std::uint64_t file_offset, const char* reason, bool include_packet_index = false);
+    void set_error_context(const char* reason);
 
     std::ifstream stream_ {};
     std::vector<PcapNgInterfaceInfo> interfaces_ {};
@@ -43,6 +48,8 @@ private:
     std::uint64_t next_input_offset_ {0};
     bool has_error_ {false};
     bool little_endian_ {true};
+    OpenFailureInfo last_error_ {};
 };
 
 }  // namespace pfl
+

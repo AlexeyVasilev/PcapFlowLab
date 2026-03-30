@@ -92,20 +92,32 @@ ApplicationWindow {
             }
         }
 
-        Label {
+        TextEdit {
             Layout.fillWidth: true
             visible: mainController.openErrorText.length > 0
+            readOnly: true
+            selectByMouse: true
+            selectByKeyboard: true
+            cursorVisible: false
             text: mainController.openErrorText
             color: "#b91c1c"
-            wrapMode: Text.WordWrap
+            wrapMode: TextEdit.Wrap
+            textFormat: TextEdit.PlainText
+            Layout.preferredHeight: contentHeight
         }
 
-        Label {
+        TextEdit {
             Layout.fillWidth: true
             visible: mainController.statusText.length > 0
+            readOnly: true
+            selectByMouse: true
+            selectByKeyboard: true
+            cursorVisible: false
             text: mainController.statusText
             color: mainController.statusIsError ? "#b91c1c" : "#1f2937"
-            wrapMode: Text.WordWrap
+            wrapMode: TextEdit.Wrap
+            textFormat: TextEdit.PlainText
+            Layout.preferredHeight: contentHeight
         }
 
         Rectangle {

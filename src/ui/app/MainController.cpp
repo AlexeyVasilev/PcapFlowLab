@@ -28,6 +28,7 @@ struct OpenJobResult {
     bool cancelled {false};
     bool as_index {false};
     QString input_path {};
+    QString error_text {};
     CaptureSession session {};
 };
 
@@ -947,12 +948,13 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         }
 
         result.cancelled = context->is_cancel_requested();
+        result.error_text = QString::fromStdString(workerSession.last_open_error_text());
         if (result.opened && !result.cancelled) {
             result.session = std::move(workerSession);
         }
 
         QMetaObject::invokeMethod(this, [this, jobId, result = std::move(result)]() mutable {
-            completeOpenJob(jobId, result.input_path, result.as_index, result.opened, result.cancelled, std::move(result.session));
+            completeOpenJob(jobId, result.input_path, result.as_index, result.opened, result.cancelled, result.error_text, std::move(result.session));
         }, Qt::QueuedConnection);
     });
 
@@ -967,6 +969,7 @@ void MainController::completeOpenJob(
     const bool asIndex,
     const bool opened,
     const bool cancelled,
+    const QString& errorText,
     CaptureSession session
 ) {
     if (jobId != active_open_job_id_) {
@@ -986,9 +989,11 @@ void MainController::completeOpenJob(
     }
 
     if (!opened) {
-        setOpenErrorText(asIndex
+        const QString genericError = asIndex
             ? QStringLiteral("Failed to open analysis index.")
-            : QStringLiteral("Failed to open capture file."));
+            : QStringLiteral("Failed to open capture file.");
+        setOpenErrorText(genericError);
+        setStatusText(errorText.isEmpty() ? genericError : errorText, true);
         return;
     }
 
@@ -1231,6 +1236,8 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
 
 
 

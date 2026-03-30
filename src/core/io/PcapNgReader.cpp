@@ -90,6 +90,29 @@ std::pair<std::uint32_t, std::uint32_t> normalize_timestamp(
 
 }  // namespace
 
+void PcapNgReader::clear_error() {
+    has_error_ = false;
+    last_error_ = {};
+}
+
+void PcapNgReader::set_error_context(std::uint64_t file_offset, const char* reason, const bool include_packet_index) {
+    has_error_ = true;
+    last_error_ = {};
+    last_error_.has_file_offset = true;
+    last_error_.file_offset = file_offset;
+    last_error_.reason = reason;
+    if (include_packet_index) {
+        last_error_.has_packet_index = true;
+        last_error_.packet_index = next_packet_index_;
+    }
+}
+
+void PcapNgReader::set_error_context(const char* reason) {
+    has_error_ = true;
+    last_error_ = {};
+    last_error_.reason = reason;
+}
+
 bool PcapNgReader::open(const std::filesystem::path& path) {
     return open(path, 0, 0);
 }
@@ -99,10 +122,11 @@ bool PcapNgReader::open(const std::filesystem::path& path, std::uint64_t next_in
     interfaces_.clear();
     next_packet_index_ = next_packet_index;
     next_input_offset_ = 0;
-    has_error_ = false;
+    clear_error();
     little_endian_ = true;
 
     if (!stream_.is_open()) {
+        set_error_context("file access failed");
         return false;
     }
 
@@ -112,6 +136,9 @@ bool PcapNgReader::open(const std::filesystem::path& path, std::uint64_t next_in
 
     if (next_input_offset != 0 && next_input_offset != next_input_offset_) {
         if (!seek_to_offset(next_input_offset)) {
+            if (!has_error_) {
+                set_error_context(next_input_offset, "invalid resume offset");
+            }
             stream_.close();
             return false;
         }
@@ -126,6 +153,10 @@ bool PcapNgReader::is_open() const noexcept {
 
 bool PcapNgReader::has_error() const noexcept {
     return has_error_;
+}
+
+const OpenFailureInfo& PcapNgReader::last_error() const noexcept {
+    return last_error_;
 }
 
 bool PcapNgReader::at_eof() {
@@ -150,6 +181,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
     while (stream_.is_open()) {
         const auto block_start_position = stream_.tellg();
         if (block_start_position < 0) {
+            set_error_context("stream position unavailable");
             return std::nullopt;
         }
         const auto block_start = static_cast<std::uint64_t>(block_start_position);
@@ -162,7 +194,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         }
 
         if (stream_.gcount() != static_cast<std::streamsize>(header.size())) {
-            has_error_ = true;
+            set_error_context(block_start, "unexpected EOF while reading block header", true);
             return std::nullopt;
         }
 
@@ -170,7 +202,9 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
             stream_.clear();
             stream_.seekg(static_cast<std::streamoff>(block_start), std::ios::beg);
             if (!stream_ || !parse_section_header()) {
-                has_error_ = true;
+                if (!has_error_) {
+                    set_error_context(block_start, "failed to parse section header", true);
+                }
                 return std::nullopt;
             }
             continue;
@@ -179,13 +213,13 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         const auto block_type = read_u32(header, 0, little_endian_);
         const auto block_total_length = read_u32(header, 4, little_endian_);
         if (block_total_length < 12U || (block_total_length % 4U) != 0U) {
-            has_error_ = true;
+            set_error_context(block_start, "invalid block length", true);
             return std::nullopt;
         }
 
         std::vector<std::uint8_t> remaining(block_total_length - header.size());
         if (!read_exact(stream_, std::span<std::uint8_t>(remaining))) {
-            has_error_ = true;
+            set_error_context(block_start + header.size(), "unexpected EOF while reading block payload", true);
             return std::nullopt;
         }
 
@@ -193,14 +227,14 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
 
         const auto trailing_length = read_u32(remaining, remaining.size() - 4U, little_endian_);
         if (trailing_length != block_total_length) {
-            has_error_ = true;
+            set_error_context(block_start, "block length trailer mismatch", true);
             return std::nullopt;
         }
 
         const auto body = std::span<const std::uint8_t>(remaining.data(), remaining.size() - 4U);
         if (block_type == kInterfaceDescriptionBlockType) {
             if (!parse_interface_description(body)) {
-                has_error_ = true;
+                set_error_context(block_start, "invalid interface description block", true);
                 return std::nullopt;
             }
             continue;
@@ -211,7 +245,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         }
 
         if (body.size() < 20U) {
-            has_error_ = true;
+            set_error_context(block_start, "enhanced packet block too short", true);
             return std::nullopt;
         }
 
@@ -224,7 +258,7 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
         const auto original_length = read_u32(body, 16, little_endian_);
         const auto padded_capture_length = padded_length(static_cast<std::size_t>(captured_length));
         if (body.size() < 20U + padded_capture_length) {
-            has_error_ = true;
+            set_error_context(block_start + 20U, "unexpected EOF while reading packet data", true);
             return std::nullopt;
         }
 
@@ -258,15 +292,18 @@ std::optional<RawPcapPacket> PcapNgReader::read_next() {
 }
 
 bool PcapNgReader::parse_section_header() {
-    const auto block_start = static_cast<std::uint64_t>(stream_.tellg());
+    const auto tell = stream_.tellg();
+    const auto block_start = (tell < 0) ? 0U : static_cast<std::uint64_t>(tell);
 
     std::array<std::uint8_t, 12> header {};
     stream_.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
     if (stream_.gcount() != static_cast<std::streamsize>(header.size())) {
+        set_error_context(block_start, "unexpected EOF while reading section header");
         return false;
     }
 
     if (!std::equal(kSectionHeaderBlockBytes.begin(), kSectionHeaderBlockBytes.end(), header.begin())) {
+        set_error_context(block_start, "missing section header block");
         return false;
     }
 
@@ -276,36 +313,37 @@ bool PcapNgReader::parse_section_header() {
     } else if (std::equal(byte_order_magic.begin(), byte_order_magic.end(), kBigEndianByteOrderMagicBytes.begin())) {
         little_endian_ = false;
     } else {
+        set_error_context(block_start, "invalid byte-order magic");
         return false;
     }
 
     const auto block_total_length = read_u32(header, 4, little_endian_);
     if (block_total_length < 28U || (block_total_length % 4U) != 0U) {
-        has_error_ = true;
+        set_error_context(block_start, "invalid section header length");
         return false;
     }
 
     std::vector<std::uint8_t> remaining(block_total_length - header.size());
     if (!read_exact(stream_, std::span<std::uint8_t>(remaining))) {
-        has_error_ = true;
+        set_error_context(block_start + header.size(), "unexpected EOF while reading section header body");
         return false;
     }
 
     const auto trailing_length = read_u32(remaining, remaining.size() - 4U, little_endian_);
     if (trailing_length != block_total_length) {
-        has_error_ = true;
+        set_error_context(block_start, "section header length trailer mismatch");
         return false;
     }
 
     const auto body = std::span<const std::uint8_t>(remaining.data(), remaining.size() - 4U);
     if (body.size() < 12U) {
-        has_error_ = true;
+        set_error_context(block_start, "section header body too short");
         return false;
     }
 
     const auto version_major = read_u16(body, 0, little_endian_);
     if (version_major != 1U) {
-        has_error_ = true;
+        set_error_context(block_start, "unsupported PCAPNG version");
         return false;
     }
 
@@ -359,6 +397,7 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
     while (stream_.is_open()) {
         const auto block_start_position = stream_.tellg();
         if (block_start_position < 0) {
+            set_error_context("stream position unavailable");
             return false;
         }
 
@@ -380,7 +419,7 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
         }
 
         if (stream_.gcount() != static_cast<std::streamsize>(header.size())) {
-            has_error_ = true;
+            set_error_context(block_start, "unexpected EOF while reading block header");
             return false;
         }
 
@@ -388,7 +427,9 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
             stream_.clear();
             stream_.seekg(static_cast<std::streamoff>(block_start), std::ios::beg);
             if (!stream_ || !parse_section_header()) {
-                has_error_ = true;
+                if (!has_error_) {
+                    set_error_context(block_start, "failed to parse section header");
+                }
                 return false;
             }
             if (next_input_offset_ == target_offset) {
@@ -403,7 +444,7 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
         const auto block_type = read_u32(header, 0, little_endian_);
         const auto block_total_length = read_u32(header, 4, little_endian_);
         if (block_total_length < 12U || (block_total_length % 4U) != 0U) {
-            has_error_ = true;
+            set_error_context(block_start, "invalid block length");
             return false;
         }
 
@@ -416,25 +457,25 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
         if (block_type == kInterfaceDescriptionBlockType) {
             std::vector<std::uint8_t> remaining(remaining_size);
             if (!read_exact(stream_, std::span<std::uint8_t>(remaining))) {
-                has_error_ = true;
+                set_error_context(block_start + header.size(), "unexpected EOF while reading block payload");
                 return false;
             }
 
             const auto trailing_length = read_u32(remaining, remaining.size() - 4U, little_endian_);
             if (trailing_length != block_total_length) {
-                has_error_ = true;
+                set_error_context(block_start, "block length trailer mismatch");
                 return false;
             }
 
             const auto body = std::span<const std::uint8_t>(remaining.data(), remaining.size() - 4U);
             if (!parse_interface_description(body)) {
-                has_error_ = true;
+                set_error_context(block_start, "invalid interface description block");
                 return false;
             }
         } else {
             stream_.seekg(static_cast<std::streamoff>(remaining_size), std::ios::cur);
             if (!stream_) {
-                has_error_ = true;
+                set_error_context(block_start + header.size(), "seek failed");
                 return false;
             }
         }
@@ -449,8 +490,4 @@ bool PcapNgReader::seek_to_offset(std::uint64_t target_offset) {
 }
 
 }  // namespace pfl
-
-
-
-
 

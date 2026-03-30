@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string_view>
 
+#include "../../../core/open_context.h"
 #include "core/debug_logging.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
@@ -46,6 +47,58 @@ std::uintmax_t file_size_or_zero(const std::filesystem::path& path) {
     std::error_code error {};
     const auto size = std::filesystem::file_size(path, error);
     return error ? 0U : size;
+}
+
+OpenFailureInfo fallback_open_failure(const char* reason) {
+    OpenFailureInfo failure {};
+    failure.reason = reason;
+    return failure;
+}
+
+std::string format_open_failure_message(const OpenFailureInfo& failure) {
+    std::ostringstream builder {};
+    builder << "Open failed";
+
+    if (failure.has_file_offset) {
+        builder << " at offset " << failure.file_offset;
+    }
+
+    if (failure.has_packet_index) {
+        if (failure.has_file_offset) {
+            builder << " (packet " << failure.packet_index << ')';
+        } else {
+            builder << " at packet " << failure.packet_index;
+        }
+    }
+
+    if (failure.bytes_processed != 0U || failure.packets_processed != 0U) {
+        builder << " after ";
+        bool wrote_part = false;
+        if (failure.bytes_processed != 0U) {
+            builder << failure.bytes_processed << " bytes";
+            wrote_part = true;
+        }
+        if (failure.packets_processed != 0U) {
+            if (wrote_part) {
+                builder << " and ";
+            }
+            builder << failure.packets_processed << " packets";
+        }
+    }
+
+    if (!failure.reason.empty()) {
+        builder << ": " << failure.reason;
+    }
+
+    return builder.str();
+}
+
+std::string build_open_failure_message(const OpenContext* ctx, const OpenFailureInfo& fallback_failure) {
+    if (ctx != nullptr && ctx->failure.has_details()) {
+        return format_open_failure_message(ctx->failure);
+    }
+
+    return format_open_failure_message(fallback_failure);
 }
 
 void log_open_result(
@@ -1300,6 +1353,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     deep_protocol_details_enabled_ = false;
     opened_from_index_ = false;
     has_loaded_state_ = false;
+    last_open_error_text_.clear();
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
@@ -1315,6 +1369,10 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options, OpenContext* ctx) {
+    last_open_error_text_.clear();
+    if (ctx != nullptr) {
+        ctx->clear_failure();
+    }
     debug::log_if<debug::kDebugOpen>([&]() {
         std::clog << "open_capture: " << path.string() << " mode="
                   << ((options.mode == ImportMode::deep) ? "deep" : "fast") << '\n';
@@ -1332,7 +1390,9 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
         debug::log_if<debug::kDebugOpen>([&]() {
             std::clog << "open_capture failed: " << path.string() << '\n';
         });
+        const auto failureText = build_open_failure_message(ctx, fallback_open_failure("capture import failed"));
         reset_runtime_state();
+        last_open_error_text_ = failureText;
         log_open_result(perf_logger, operation_type, path, false, started_at, *this);
         return false;
     }
@@ -1383,6 +1443,10 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
 }
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenContext* ctx) {
+    last_open_error_text_.clear();
+    if (ctx != nullptr) {
+        ctx->clear_failure();
+    }
     debug::log_if<debug::kDebugIndexLoad>([&]() {
         std::clog << "load_index: " << index_path.string() << '\n';
     });
@@ -1398,7 +1462,12 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
         debug::log_if<debug::kDebugIndexLoad>([&]() {
             std::clog << "load_index failed: " << index_path.string() << '\n';
         });
+        const auto fallback_failure = reader.last_error().has_details()
+            ? reader.last_error()
+            : fallback_open_failure("index read failed");
+        const auto failureText = build_open_failure_message(ctx, fallback_failure);
         reset_runtime_state();
+        last_open_error_text_ = failureText;
         log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, false, started_at, *this);
         return false;
     }
@@ -1434,6 +1503,10 @@ bool CaptureSession::has_source_capture() const noexcept {
 
 bool CaptureSession::opened_from_index() const noexcept {
     return opened_from_index_;
+}
+
+const std::string& CaptureSession::last_open_error_text() const noexcept {
+    return last_open_error_text_;
 }
 
 bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
@@ -1940,6 +2013,13 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
 
 
 

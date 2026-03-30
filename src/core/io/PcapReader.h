@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/io/LinkType.h"
+#include "core/open_failure_info.h"
 
 namespace pfl {
 
@@ -44,6 +45,7 @@ public:
     bool open(const std::filesystem::path& path, std::uint64_t next_input_offset, std::uint64_t next_packet_index);
     [[nodiscard]] bool is_open() const noexcept;
     [[nodiscard]] bool has_error() const noexcept;
+    [[nodiscard]] const OpenFailureInfo& last_error() const noexcept;
     [[nodiscard]] bool at_eof();
     [[nodiscard]] const PcapGlobalHeader& global_header() const noexcept;
     [[nodiscard]] std::uint32_t data_link_type() const noexcept;
@@ -51,11 +53,17 @@ public:
     std::optional<RawPcapPacket> read_next();
 
 private:
+    void clear_error();
+    void set_error(std::uint64_t file_offset, const char* reason, bool include_packet_index = false);
+    void set_error(const char* reason);
+
     std::ifstream stream_ {};
     PcapGlobalHeader global_header_ {};
     std::uint64_t next_packet_index_ {0};
     std::uint64_t next_input_offset_ {0};
     bool has_error_ {false};
+    OpenFailureInfo last_error_ {};
 };
 
 }  // namespace pfl
+

@@ -29,4 +29,3 @@ private:
 [[nodiscard]] bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
 
 }  // namespace pfl
-

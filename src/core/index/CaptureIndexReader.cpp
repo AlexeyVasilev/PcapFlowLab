@@ -67,6 +67,26 @@ bool parse_section_payload(const std::vector<std::uint8_t>& payload, Parser&& pa
 
 }  // namespace
 
+const OpenFailureInfo& CaptureIndexReader::last_error() const noexcept {
+    return last_error_;
+}
+
+void CaptureIndexReader::clear_error() const {
+    last_error_ = {};
+}
+
+void CaptureIndexReader::set_error_context(std::uint64_t file_offset, const char* reason) const {
+    last_error_ = {};
+    last_error_.has_file_offset = true;
+    last_error_.file_offset = file_offset;
+    last_error_.reason = reason;
+}
+
+void CaptureIndexReader::set_error_context(const char* reason) const {
+    last_error_ = {};
+    last_error_.reason = reason;
+}
+
 bool CaptureIndexReader::read(const std::filesystem::path& index_path,
                               CaptureState& out_state,
                               std::filesystem::path& out_source_capture_path,
@@ -77,9 +97,11 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
     if (out_source_info != nullptr) {
         *out_source_info = {};
     }
+    clear_error();
 
     if (ctx != nullptr) {
         ctx->progress = {};
+        ctx->clear_failure();
         std::error_code error {};
         const auto file_size = std::filesystem::file_size(index_path, error);
         if (!error) {
@@ -96,6 +118,10 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
 
     std::ifstream stream(index_path, std::ios::binary);
     if (!stream.is_open()) {
+        set_error_context("file access failed");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
         return false;
     }
 
@@ -117,9 +143,27 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
 
     if (!detail::read_u64(stream, magic) ||
         !detail::read_u16(stream, version) ||
-        !detail::read_u16(stream, reserved) ||
-        magic != kCaptureIndexMagic ||
-        version != kCaptureIndexVersion) {
+        !detail::read_u16(stream, reserved)) {
+        set_error_context(current_offset(stream), "unexpected EOF while reading index header");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+
+    if (magic != kCaptureIndexMagic) {
+        set_error_context(0, "invalid index magic");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
+        return false;
+    }
+
+    if (version != kCaptureIndexVersion) {
+        set_error_context(0, "unsupported index version");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
         return false;
     }
 
@@ -134,16 +178,28 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         std::uint32_t raw_section_id {0};
         std::uint64_t payload_size {0};
         if (!detail::read_section_header(stream, raw_section_id, payload_size)) {
+            set_error_context(current_offset(stream), "failed to read section header");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
             return false;
         }
 
         if (payload_size > remaining_bytes(stream) ||
             payload_size > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+            set_error_context(current_offset(stream), "invalid section length");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
             return false;
         }
 
         std::vector<std::uint8_t> payload {};
         if (!detail::read_section_payload(stream, payload_size, payload)) {
+            set_error_context(current_offset(stream), "unexpected EOF while reading section payload");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
             return false;
         }
 
@@ -158,6 +214,10 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             if (has_source_info || !parse_section_payload(payload, [&](std::istream& section_stream) {
                 return detail::read_capture_source_info(section_stream, source_info);
             })) {
+                set_error_context(current_offset(stream), "invalid source-info section");
+                if (ctx != nullptr) {
+                    ctx->set_failure(last_error_);
+                }
                 return false;
             }
             has_source_info = true;
@@ -166,6 +226,10 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             if (has_summary || !parse_section_payload(payload, [&](std::istream& section_stream) {
                 return detail::read_capture_summary(section_stream, state.summary);
             })) {
+                set_error_context(current_offset(stream), "invalid summary section");
+                if (ctx != nullptr) {
+                    ctx->set_failure(last_error_);
+                }
                 return false;
             }
             has_summary = true;
@@ -174,6 +238,10 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             if (has_ipv4_connections || !parse_section_payload(payload, [&](std::istream& section_stream) {
                 return detail::read_connection_table(section_stream, state.ipv4_connections);
             })) {
+                set_error_context(current_offset(stream), "invalid IPv4 connection section");
+                if (ctx != nullptr) {
+                    ctx->set_failure(last_error_);
+                }
                 return false;
             }
             has_ipv4_connections = true;
@@ -182,11 +250,19 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             if (has_ipv6_connections || !parse_section_payload(payload, [&](std::istream& section_stream) {
                 return detail::read_connection_table(section_stream, state.ipv6_connections);
             })) {
+                set_error_context(current_offset(stream), "invalid IPv6 connection section");
+                if (ctx != nullptr) {
+                    ctx->set_failure(last_error_);
+                }
                 return false;
             }
             has_ipv6_connections = true;
             break;
         default:
+            set_error_context(current_offset(stream), "unknown index section");
+            if (ctx != nullptr) {
+                ctx->set_failure(last_error_);
+            }
             return false;
         }
     }
@@ -197,6 +273,10 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
     }
 
     if (!has_source_info || !has_summary || !has_ipv4_connections || !has_ipv6_connections) {
+        set_error_context(current_offset(stream), "missing required index sections");
+        if (ctx != nullptr) {
+            ctx->set_failure(last_error_);
+        }
         return false;
     }
 
@@ -211,3 +291,4 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
 }
 
 }  // namespace pfl
+
