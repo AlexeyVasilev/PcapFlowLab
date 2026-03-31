@@ -38,6 +38,11 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong openProgressBytes READ openProgressBytes NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressTotalBytes READ openProgressTotalBytes NOTIFY openProgressChanged)
     Q_PROPERTY(double openProgressPercent READ openProgressPercent NOTIFY openProgressChanged)
+    Q_PROPERTY(bool packetsLoading READ packetsLoading NOTIFY packetListStateChanged)
+    Q_PROPERTY(bool packetsPartiallyLoaded READ packetsPartiallyLoaded NOTIFY packetListStateChanged)
+    Q_PROPERTY(qulonglong loadedPacketRowCount READ loadedPacketRowCount NOTIFY packetListStateChanged)
+    Q_PROPERTY(qulonglong totalPacketRowCount READ totalPacketRowCount NOTIFY packetListStateChanged)
+    Q_PROPERTY(bool canLoadMorePackets READ canLoadMorePackets NOTIFY packetListStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
@@ -87,6 +92,11 @@ public:
     [[nodiscard]] qulonglong openProgressBytes() const noexcept;
     [[nodiscard]] qulonglong openProgressTotalBytes() const noexcept;
     [[nodiscard]] double openProgressPercent() const noexcept;
+    [[nodiscard]] bool packetsLoading() const noexcept;
+    [[nodiscard]] bool packetsPartiallyLoaded() const noexcept;
+    [[nodiscard]] qulonglong loadedPacketRowCount() const noexcept;
+    [[nodiscard]] qulonglong totalPacketRowCount() const noexcept;
+    [[nodiscard]] bool canLoadMorePackets() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
@@ -121,6 +131,7 @@ public:
     Q_INVOKABLE bool openIndexFile(const QString& path);
     Q_INVOKABLE bool attachSourceCapture(const QString& path);
     Q_INVOKABLE void cancelOpen();
+    Q_INVOKABLE void loadMorePackets();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
     Q_INVOKABLE bool exportSelectedFlow(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
@@ -156,6 +167,7 @@ signals:
     void flowFilterTextChanged();
     void flowSortChanged();
     void openProgressChanged();
+    void packetListStateChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -168,6 +180,8 @@ private:
     void reloadSelectedPacketDetails();
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
+    void refreshSelectedFlowPackets(bool resetRows);
+    void ensureSelectedFlowStreamItemsLoaded();
     void clearPacketSelection();
     void clearStreamSelection();
     void clearFlowSelection();
@@ -210,6 +224,10 @@ private:
     qulonglong selected_stream_item_index_ {0};
     bool status_is_error_ {false};
     bool is_opening_ {false};
+    bool packets_loading_ {false};
+    std::size_t loaded_packet_row_count_ {0};
+    std::size_t total_packet_row_count_ {0};
+    bool stream_items_loaded_for_selected_flow_ {false};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};

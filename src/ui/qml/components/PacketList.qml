@@ -7,10 +7,16 @@ Frame {
 
     property var packetModel: null
     property var selectedPacketIndex: -1
+    property bool packetsLoading: false
+    property bool packetsPartiallyLoaded: false
+    property var loadedPacketRowCount: 0
+    property var totalPacketRowCount: 0
+    property bool canLoadMorePackets: false
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
 
     signal packetSelected(var packetIndex)
+    signal loadMoreRequested()
 
     function syncCurrentSelection() {
         if (!packetListView.model || !root.packetModel) {
@@ -166,6 +172,29 @@ Frame {
             Layout.fillWidth: true
             height: 1
             color: "#e2e8f0"
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.packetsLoading || root.totalPacketRowCount > 0
+            spacing: 8
+
+            Label {
+                Layout.fillWidth: true
+                color: "#64748b"
+                text: root.packetsLoading
+                    ? "Loading packets..."
+                    : root.packetsPartiallyLoaded
+                        ? "Showing %1 of %2 packets".arg(root.loadedPacketRowCount).arg(root.totalPacketRowCount)
+                        : "Showing all %1 packets".arg(root.totalPacketRowCount)
+            }
+
+            Button {
+                text: "Load more"
+                visible: root.canLoadMorePackets
+                enabled: root.canLoadMorePackets && !root.packetsLoading
+                onClicked: root.loadMoreRequested()
+            }
         }
 
         RowLayout {
@@ -349,7 +378,7 @@ Frame {
 
             Label {
                 anchors.centerIn: parent
-                visible: packetListView.count === 0
+                visible: !root.packetsLoading && packetListView.count === 0
                 color: "#64748b"
                 text: "No packets for selected flow"
             }

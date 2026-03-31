@@ -22,6 +22,8 @@ constexpr qulonglong kInvalidStreamSelection = std::numeric_limits<qulonglong>::
 constexpr int kFlowTabIndex = 0;
 constexpr int kStatsTabIndex = 1;
 constexpr int kSettingsTabIndex = 2;
+constexpr std::size_t kInitialPacketRows = 30U;
+constexpr std::size_t kPacketRowBatchSize = 30U;
 
 struct OpenJobResult {
     bool opened {false};
@@ -425,6 +427,27 @@ double MainController::openProgressPercent() const noexcept {
     return open_progress_percent_;
 }
 
+
+bool MainController::packetsLoading() const noexcept {
+    return packets_loading_;
+}
+
+bool MainController::packetsPartiallyLoaded() const noexcept {
+    return total_packet_row_count_ > loaded_packet_row_count_;
+}
+
+qulonglong MainController::loadedPacketRowCount() const noexcept {
+    return static_cast<qulonglong>(loaded_packet_row_count_);
+}
+
+qulonglong MainController::totalPacketRowCount() const noexcept {
+    return static_cast<qulonglong>(total_packet_row_count_);
+}
+
+bool MainController::canLoadMorePackets() const noexcept {
+    return selected_flow_index_ >= 0 && loaded_packet_row_count_ < total_packet_row_count_;
+}
+
 qulonglong MainController::packetCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().packet_count);
 }
@@ -589,6 +612,15 @@ void MainController::cancelOpen() {
     setStatusText(QStringLiteral("Cancelling open operation..."));
 }
 
+
+void MainController::loadMorePackets() {
+    if (!canLoadMorePackets()) {
+        return;
+    }
+
+    refreshSelectedFlowPackets(false);
+}
+
 bool MainController::saveAnalysisIndex(const QString& path) {
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
@@ -738,20 +770,20 @@ void MainController::setSelectedFlowIndex(const int index) {
     selected_flow_index_ = index;
     clearPacketSelection();
     clearStreamSelection();
-
     current_flow_packet_numbers_.clear();
+
     if (selected_flow_index_ >= 0) {
-        const auto flowPackets = session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_));
-        packet_model_.refresh(flowPackets);
-        for (const auto& packetRow : flowPackets) {
-            current_flow_packet_numbers_.insert_or_assign(packetRow.packet_index, packetRow.row_number);
-        }
+        refreshSelectedFlowPackets(true);
         current_stream_items_ = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_));
         stream_model_.refresh(current_stream_items_);
     } else {
         packet_model_.clear();
+        loaded_packet_row_count_ = 0U;
+        total_packet_row_count_ = 0U;
+        packets_loading_ = false;
         current_stream_items_.clear();
         stream_model_.clear();
+        emit packetListStateChanged();
     }
 
     emit selectedFlowIndexChanged();
@@ -808,6 +840,56 @@ void MainController::setFlowFilterText(const QString& text) {
     emit flowFilterTextChanged();
 }
 
+void MainController::refreshSelectedFlowPackets(const bool resetRows) {
+    const bool previousLoading = packets_loading_;
+    const auto previousLoaded = loaded_packet_row_count_;
+    const auto previousTotal = total_packet_row_count_;
+
+    if (selected_flow_index_ < 0) {
+        packet_model_.clear();
+        current_flow_packet_numbers_.clear();
+        loaded_packet_row_count_ = 0U;
+        total_packet_row_count_ = 0U;
+        packets_loading_ = false;
+        if (previousLoading != packets_loading_ || previousLoaded != loaded_packet_row_count_ || previousTotal != total_packet_row_count_) {
+            emit packetListStateChanged();
+        }
+        return;
+    }
+
+    total_packet_row_count_ = session_.flow_packet_count(static_cast<std::size_t>(selected_flow_index_));
+    const auto offset = resetRows ? std::size_t {0U} : loaded_packet_row_count_;
+    const auto batchSize = resetRows
+        ? std::min(kInitialPacketRows, total_packet_row_count_)
+        : std::min(kPacketRowBatchSize, total_packet_row_count_ - offset);
+
+    packets_loading_ = true;
+    const auto rows = session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_), offset, batchSize);
+
+    if (resetRows) {
+        packet_model_.refresh(rows);
+        current_flow_packet_numbers_.clear();
+        loaded_packet_row_count_ = 0U;
+    } else {
+        packet_model_.append(rows);
+    }
+
+    for (const auto& packetRow : rows) {
+        current_flow_packet_numbers_.insert_or_assign(packetRow.packet_index, packetRow.row_number);
+    }
+
+    loaded_packet_row_count_ = std::min(total_packet_row_count_, offset + rows.size());
+    packets_loading_ = false;
+
+    if (selected_packet_index_ != kInvalidPacketSelection && packet_model_.rowForPacketIndex(selected_packet_index_) < 0) {
+        clearPacketSelection();
+    }
+
+    if (previousLoading != packets_loading_ || previousLoaded != loaded_packet_row_count_ || previousTotal != total_packet_row_count_) {
+        emit packetListStateChanged();
+    }
+}
+
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
@@ -840,13 +922,21 @@ void MainController::clearStreamSelection() {
 
 void MainController::clearFlowSelection() {
     const bool flowChanged = selected_flow_index_ != -1;
+    const bool packetStateChanged = packets_loading_ || loaded_packet_row_count_ != 0U || total_packet_row_count_ != 0U;
     selected_flow_index_ = -1;
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     stream_model_.clear();
+    loaded_packet_row_count_ = 0U;
+    total_packet_row_count_ = 0U;
+    packets_loading_ = false;
     clearPacketSelection();
     clearStreamSelection();
+
+    if (packetStateChanged) {
+        emit packetListStateChanged();
+    }
 
     if (flowChanged) {
         emit selectedFlowIndexChanged();
@@ -871,6 +961,9 @@ void MainController::resetLoadedState() {
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     stream_model_.clear();
+    packets_loading_ = false;
+    loaded_packet_row_count_ = 0U;
+    total_packet_row_count_ = 0U;
     packet_details_model_.clear();
     top_endpoints_model_.clear();
     top_ports_model_.clear();

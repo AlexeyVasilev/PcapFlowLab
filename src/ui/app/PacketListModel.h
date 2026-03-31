@@ -36,6 +36,7 @@ public:
     Q_INVOKABLE int rowForPacketIndex(qulonglong packetIndex) const noexcept;
 
     void refresh(const std::vector<PacketRow>& rows);
+    void append(const std::vector<PacketRow>& rows);
     void clear();
 
 private:

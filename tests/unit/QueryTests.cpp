@@ -181,6 +181,42 @@ void run_query_tests() {
         (dns_row->address_a == "8.8.8.8" && dns_row->port_a == 53) ||
         (dns_row->address_b == "8.8.8.8" && dns_row->port_b == 53)
     );
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> heavy_flow_packets {};
+    heavy_flow_packets.reserve(65);
+    for (std::uint32_t index = 0; index < 65U; ++index) {
+        heavy_flow_packets.push_back({100U + index, make_ethernet_ipv4_tcp_packet(ipv4(203, 0, 113, 1), ipv4(203, 0, 113, 2), 50000, 443)});
+    }
+
+    const auto heavy_flow_path = write_temp_pcap(
+        "pfl_query_bounded_flow_packets.pcap",
+        make_classic_pcap(heavy_flow_packets)
+    );
+
+    CaptureSession heavy_flow_session {};
+    PFL_EXPECT(heavy_flow_session.open_capture(heavy_flow_path));
+    PFL_EXPECT(heavy_flow_session.flow_packet_count(0) == 65U);
+
+    const auto initial_rows = heavy_flow_session.list_flow_packets(0, 0U, 30U);
+    PFL_EXPECT(initial_rows.size() == 30U);
+    PFL_EXPECT(initial_rows.front().row_number == 1U);
+    PFL_EXPECT(initial_rows.front().packet_index == 0U);
+    PFL_EXPECT(initial_rows.back().row_number == 30U);
+    PFL_EXPECT(initial_rows.back().packet_index == 29U);
+
+    const auto next_rows = heavy_flow_session.list_flow_packets(0, 30U, 30U);
+    PFL_EXPECT(next_rows.size() == 30U);
+    PFL_EXPECT(next_rows.front().row_number == 31U);
+    PFL_EXPECT(next_rows.front().packet_index == 30U);
+    PFL_EXPECT(next_rows.back().row_number == 60U);
+    PFL_EXPECT(next_rows.back().packet_index == 59U);
+
+    const auto tail_rows = heavy_flow_session.list_flow_packets(0, 60U, 30U);
+    PFL_EXPECT(tail_rows.size() == 5U);
+    PFL_EXPECT(tail_rows.front().row_number == 61U);
+    PFL_EXPECT(tail_rows.front().packet_index == 60U);
+    PFL_EXPECT(tail_rows.back().row_number == 65U);
+    PFL_EXPECT(tail_rows.back().packet_index == 64U);
 }
 
 }  // namespace pfl::tests

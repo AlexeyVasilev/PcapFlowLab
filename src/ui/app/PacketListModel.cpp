@@ -90,6 +90,33 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
     endResetModel();
 }
 
+void PacketListModel::append(const std::vector<PacketRow>& rows) {
+    if (rows.empty()) {
+        return;
+    }
+
+    const auto beginIndex = static_cast<int>(items_.size());
+    const auto endIndex = beginIndex + static_cast<int>(rows.size()) - 1;
+    beginInsertRows(QModelIndex {}, beginIndex, endIndex);
+    items_.reserve(items_.size() + rows.size());
+
+    for (const auto& row : rows) {
+        items_.push_back(Item {
+            .row_number = static_cast<qulonglong>(row.row_number),
+            .packet_index = static_cast<qulonglong>(row.packet_index),
+            .direction_text = QString::fromStdString(row.direction_text),
+            .timestamp = QString::fromStdString(row.timestamp_text),
+            .captured_length = row.captured_length,
+            .original_length = row.original_length,
+            .payload_length = row.payload_length,
+            .is_ip_fragmented = row.is_ip_fragmented,
+            .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
+        });
+    }
+
+    endInsertRows();
+}
+
 void PacketListModel::clear() {
     refresh({});
 }

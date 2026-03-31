@@ -11,6 +11,11 @@ Item {
     property int sortColumn: 0
     property bool sortAscending: true
     property var packetModel: null
+    property bool packetsLoading: false
+    property bool packetsPartiallyLoaded: false
+    property var loadedPacketRowCount: 0
+    property var totalPacketRowCount: 0
+    property bool canLoadMorePackets: false
     property var streamModel: null
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
@@ -20,6 +25,7 @@ Item {
     signal filterTextEdited(string text)
     signal sortRequested(int column)
     signal packetSelected(var packetIndex)
+    signal loadMorePacketsRequested()
     signal streamItemSelected(var streamItemIndex)
 
     SplitView {
@@ -81,8 +87,16 @@ Item {
                         PacketList {
                             packetModel: root.packetModel
                             selectedPacketIndex: root.selectedPacketIndex
+                            packetsLoading: root.packetsLoading
+                            packetsPartiallyLoaded: root.packetsPartiallyLoaded
+                            loadedPacketRowCount: root.loadedPacketRowCount
+                            totalPacketRowCount: root.totalPacketRowCount
+                            canLoadMorePackets: root.canLoadMorePackets
                             onPacketSelected: function(packetIndex) {
                                 root.packetSelected(packetIndex)
+                            }
+                            onLoadMoreRequested: function() {
+                                root.loadMorePacketsRequested()
                             }
                         }
 

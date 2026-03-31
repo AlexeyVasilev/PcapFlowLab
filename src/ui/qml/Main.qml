@@ -200,6 +200,11 @@ ApplicationWindow {
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel
+                packetsLoading: mainController.packetsLoading
+                packetsPartiallyLoaded: mainController.packetsPartiallyLoaded
+                loadedPacketRowCount: mainController.loadedPacketRowCount
+                totalPacketRowCount: mainController.totalPacketRowCount
+                canLoadMorePackets: mainController.canLoadMorePackets
                 streamModel: mainController.streamModel
                 selectedPacketIndex: mainController.selectedPacketIndex
                 selectedStreamItemIndex: mainController.selectedStreamItemIndex
@@ -215,6 +220,9 @@ ApplicationWindow {
                 }
                 onPacketSelected: function(packetIndex) {
                     mainController.selectedPacketIndex = packetIndex
+                }
+                onLoadMorePacketsRequested: function() {
+                    mainController.loadMorePackets()
                 }
                 onStreamItemSelected: function(streamItemIndex) {
                     mainController.selectedStreamItemIndex = streamItemIndex

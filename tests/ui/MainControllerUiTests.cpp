@@ -162,6 +162,17 @@ int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& h
     return -1;
 }
 
+int find_flow_index_by_packet_count(pfl::FlowListModel* model, const qulonglong packetCount) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        const auto index = model->index(row, 0);
+        if (model->data(index, pfl::FlowListModel::PacketsRole).toULongLong() == packetCount) {
+            return model->data(index, pfl::FlowListModel::FlowIndexRole).toInt();
+        }
+    }
+
+    return -1;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -643,6 +654,72 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(fragmented_details_model != nullptr);
     UI_EXPECT(fragmented_details_model->summaryText().contains(QStringLiteral("Warnings")));
     UI_EXPECT(fragmented_details_model->summaryText().contains(QStringLiteral("Packet is IP-fragmented")));
+
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> heavy_selected_flow_packets {};
+    heavy_selected_flow_packets.reserve(66);
+    for (std::uint32_t packetIndex = 0; packetIndex < 65U; ++packetIndex) {
+        heavy_selected_flow_packets.push_back({
+            1000U + packetIndex,
+            make_ethernet_ipv4_tcp_packet(ipv4(198, 51, 100, 1), ipv4(198, 51, 100, 2), 55000, 443)
+        });
+    }
+    heavy_selected_flow_packets.push_back({
+        2000U,
+        make_ethernet_ipv4_udp_packet(ipv4(198, 51, 100, 10), ipv4(198, 51, 100, 20), 53000, 53)
+    });
+
+    const auto heavy_selected_flow_capture_path = write_temp_pcap(
+        "pfl_ui_selected_flow_scalability.pcap",
+        make_classic_pcap(heavy_selected_flow_packets)
+    );
+
+    MainController packet_loading_controller {};
+    UI_EXPECT(open_capture_and_wait(app, packet_loading_controller, heavy_selected_flow_capture_path));
+    auto* packet_loading_flow_model = qobject_cast<FlowListModel*>(packet_loading_controller.flowModel());
+    auto* packet_loading_packet_model = qobject_cast<PacketListModel*>(packet_loading_controller.packetModel());
+    auto* packet_loading_details_model = qobject_cast<PacketDetailsViewModel*>(packet_loading_controller.packetDetailsModel());
+    UI_EXPECT(packet_loading_flow_model != nullptr);
+    UI_EXPECT(packet_loading_packet_model != nullptr);
+    UI_EXPECT(packet_loading_details_model != nullptr);
+
+    const int heavy_flow_index = find_flow_index_by_packet_count(packet_loading_flow_model, 65U);
+    const int small_flow_index = find_flow_index_by_packet_count(packet_loading_flow_model, 1U);
+    UI_EXPECT(heavy_flow_index >= 0);
+    UI_EXPECT(small_flow_index >= 0);
+
+    packet_loading_controller.setSelectedFlowIndex(heavy_flow_index);
+    UI_EXPECT(packet_loading_controller.loadedPacketRowCount() == 30U);
+    UI_EXPECT(packet_loading_controller.totalPacketRowCount() == 65U);
+    UI_EXPECT(packet_loading_controller.packetsPartiallyLoaded());
+    UI_EXPECT(packet_loading_controller.canLoadMorePackets());
+    UI_EXPECT(!packet_loading_controller.packetsLoading());
+    UI_EXPECT(packet_loading_packet_model->rowCount() == 30);
+    UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(0, 0), PacketListModel::RowNumberRole).toUInt() == 1U);
+    UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(29, 0), PacketListModel::RowNumberRole).toUInt() == 30U);
+
+    packet_loading_controller.loadMorePackets();
+    UI_EXPECT(packet_loading_controller.loadedPacketRowCount() == 60U);
+    UI_EXPECT(packet_loading_controller.totalPacketRowCount() == 65U);
+    UI_EXPECT(packet_loading_controller.packetsPartiallyLoaded());
+    UI_EXPECT(packet_loading_controller.canLoadMorePackets());
+    UI_EXPECT(packet_loading_packet_model->rowCount() == 60);
+    UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(30, 0), PacketListModel::RowNumberRole).toUInt() == 31U);
+    UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(59, 0), PacketListModel::RowNumberRole).toUInt() == 60U);
+
+    packet_loading_controller.setSelectedPacketIndex(10U);
+    UI_EXPECT(packet_loading_controller.selectedPacketIndex() == 10U);
+    UI_EXPECT(packet_loading_details_model->summaryText().contains(QStringLiteral("Packet index in file: 10")));
+
+    packet_loading_controller.setSelectedFlowIndex(small_flow_index);
+    UI_EXPECT(packet_loading_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
+    UI_EXPECT(packet_loading_controller.loadedPacketRowCount() == 1U);
+    UI_EXPECT(packet_loading_controller.totalPacketRowCount() == 1U);
+    UI_EXPECT(!packet_loading_controller.packetsPartiallyLoaded());
+    UI_EXPECT(!packet_loading_controller.canLoadMorePackets());
+    UI_EXPECT(packet_loading_packet_model->rowCount() == 1);
+    UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(0, 0), PacketListModel::RowNumberRole).toUInt() == 1U);
+    UI_EXPECT(packet_loading_details_model->summaryText().isEmpty());
 
     return 0;
 }

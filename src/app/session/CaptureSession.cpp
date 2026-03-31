@@ -1341,6 +1341,59 @@ std::optional<PacketRef> find_packet_in_connection(const ConnectionV6& connectio
     return std::nullopt;
 }
 
+template <typename Connection>
+std::size_t connection_packet_count(const Connection& connection) noexcept {
+    return connection.flow_a.packets.size() + connection.flow_b.packets.size();
+}
+
+template <typename Connection>
+std::vector<PacketRow> slice_connection_packets(
+    const Connection& connection,
+    const std::size_t offset,
+    const std::size_t limit
+) {
+    if (limit == 0U) {
+        return {};
+    }
+
+    std::vector<PacketRow> rows {};
+    const auto total = connection_packet_count(connection);
+    if (offset >= total) {
+        return rows;
+    }
+
+    const auto target = std::min(total, offset + limit);
+    rows.reserve(target - offset);
+
+    std::size_t emitted = 0U;
+    std::size_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) && row_number < target) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        const auto direction = use_a ? kDirectionAToB : kDirectionBToA;
+
+        if (row_number >= offset) {
+            auto row = make_packet_row(packet, direction);
+            row.row_number = row_number + 1U;
+            rows.push_back(std::move(row));
+            ++emitted;
+            if (emitted >= limit) {
+                break;
+            }
+        }
+
+        ++row_number;
+    }
+
+    return rows;
+}
+
 }  // namespace
 
 void CaptureSession::reset_runtime_state() noexcept {
@@ -1765,43 +1818,37 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
 }
 
 std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_index) const {
+    return list_flow_packets(flow_index, 0U, flow_packet_count(flow_index));
+}
+
+std::vector<PacketRow> CaptureSession::list_flow_packets(
+    const std::size_t flow_index,
+    const std::size_t offset,
+    const std::size_t limit
+) const {
     const auto connections = list_connections(state_);
     if (flow_index >= connections.size()) {
         return {};
     }
 
-    std::vector<PacketRow> rows {};
     if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        const auto& connection = *connections[flow_index].ipv4;
-        rows.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
-
-        for (const auto& packet : connection.flow_a.packets) {
-            rows.push_back(make_packet_row(packet, kDirectionAToB));
-        }
-        for (const auto& packet : connection.flow_b.packets) {
-            rows.push_back(make_packet_row(packet, kDirectionBToA));
-        }
-    } else {
-        const auto& connection = *connections[flow_index].ipv6;
-        rows.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
-
-        for (const auto& packet : connection.flow_a.packets) {
-            rows.push_back(make_packet_row(packet, kDirectionAToB));
-        }
-        for (const auto& packet : connection.flow_b.packets) {
-            rows.push_back(make_packet_row(packet, kDirectionBToA));
-        }
+        return slice_connection_packets(*connections[flow_index].ipv4, offset, limit);
     }
 
-    std::sort(rows.begin(), rows.end(), [](const PacketRow& left, const PacketRow& right) {
-        return left.packet_index < right.packet_index;
-    });
+    return slice_connection_packets(*connections[flow_index].ipv6, offset, limit);
+}
 
-    for (std::size_t row_index = 0; row_index < rows.size(); ++row_index) {
-        rows[row_index].row_number = row_index + 1;
+std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) const noexcept {
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return 0U;
     }
 
-    return rows;
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        return connection_packet_count(*connections[flow_index].ipv4);
+    }
+
+    return connection_packet_count(*connections[flow_index].ipv6);
 }
 
 std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::size_t flow_index) const {
