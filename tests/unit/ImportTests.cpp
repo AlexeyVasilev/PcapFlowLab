@@ -200,9 +200,40 @@ void run_import_tests() {
         PFL_EXPECT(state.summary.packet_count == 0U);
         PFL_EXPECT(state.summary.flow_count == 0U);
     }
+    {
+        auto truncated_bytes = make_classic_pcap({{100, tcp_packet}, {200, udp_packet}});
+        truncated_bytes.resize(truncated_bytes.size() - 5U);
+        const auto path = write_temp_pcap("pfl_import_partial_success.pcap", truncated_bytes);
+
+        CaptureState state {};
+        CaptureImporter importer {};
+        OpenContext ctx {};
+        const auto result = importer.import_capture_result(path, state, &ctx);
+
+        PFL_EXPECT(result == CaptureImportResult::partial_success_with_warning);
+        PFL_EXPECT(state.summary.packet_count == 1U);
+        PFL_EXPECT(state.summary.flow_count == 1U);
+        PFL_EXPECT(ctx.failure.has_file_offset);
+        PFL_EXPECT(ctx.failure.has_packet_index);
+        PFL_EXPECT(ctx.failure.packet_index == 1U);
+        PFL_EXPECT(ctx.failure.packets_processed == 1U);
+        PFL_EXPECT(!ctx.failure.reason.empty());
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        PFL_EXPECT(session.has_capture());
+        PFL_EXPECT(session.is_partial_open());
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+        PFL_EXPECT(session.partial_open_failure().has_packet_index);
+        PFL_EXPECT(session.partial_open_failure().packet_index == 1U);
+        PFL_EXPECT(session.find_packet(0).has_value());
+        PFL_EXPECT(!session.find_packet(1).has_value());
+    }
 }
 
 }  // namespace pfl::tests
+
 
 
 

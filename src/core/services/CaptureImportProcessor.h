@@ -7,6 +7,7 @@
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"
 #include "core/services/AnalysisSettings.h"
+#include "core/services/CaptureImporter.h"
 #include "core/services/FlowHintService.h"
 
 struct OpenContext;
@@ -24,8 +25,8 @@ private:
     FlowHintService hint_service_ {};
 };
 
-[[nodiscard]] bool import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
-[[nodiscard]] bool import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
-[[nodiscard]] bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
+[[nodiscard]] CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
+[[nodiscard]] CaptureImportResult import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
+[[nodiscard]] CaptureImportResult import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx = nullptr);
 
 }  // namespace pfl

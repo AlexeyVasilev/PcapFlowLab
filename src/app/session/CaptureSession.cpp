@@ -1488,9 +1488,11 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 
 bool CaptureSession::open_capture(const std::filesystem::path& path, const CaptureImportOptions& options, OpenContext* ctx) {
     last_open_error_text_.clear();
-    if (ctx != nullptr) {
-        ctx->clear_failure();
-    }
+    partial_open_ = false;
+    partial_open_failure_ = {};
+    OpenContext local_ctx {};
+    OpenContext* effective_ctx = (ctx != nullptr) ? ctx : &local_ctx;
+    effective_ctx->clear_failure();
     debug::log_if<debug::kDebugOpen>([&]() {
         std::clog << "open_capture: " << path.string() << " mode="
                   << ((options.mode == ImportMode::deep) ? "deep" : "fast") << '\n';
@@ -1503,12 +1505,13 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
 
     CaptureImporter importer {};
     CaptureState imported_state {};
+    const auto import_result = importer.import_capture_result(path, imported_state, options, effective_ctx);
 
-    if (!importer.import_capture(path, imported_state, options, ctx)) {
+    if (import_result == CaptureImportResult::failure) {
         debug::log_if<debug::kDebugOpen>([&]() {
             std::clog << "open_capture failed: " << path.string() << '\n';
         });
-        const auto failureText = build_open_failure_message(ctx, fallback_open_failure("capture import failed"));
+        const auto failureText = build_open_failure_message(effective_ctx, fallback_open_failure("capture import failed"));
         reset_runtime_state();
         last_open_error_text_ = failureText;
         log_open_result(perf_logger, operation_type, path, false, started_at, *this);
@@ -1523,13 +1526,15 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     deep_protocol_details_enabled_ = (options.mode == ImportMode::deep);
     opened_from_index_ = false;
     has_loaded_state_ = true;
+    partial_open_ = (import_result == CaptureImportResult::partial_success_with_warning);
+    partial_open_failure_ = effective_ctx->failure;
     source_info_ = {};
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
     }
 
     debug::log_if<debug::kDebugOpen>([&]() {
-        std::clog << "open_capture succeeded: " << path.string() << '\n';
+        std::clog << (partial_open_ ? "open_capture partial: " : "open_capture succeeded: ") << path.string() << '\n';
     });
     log_open_result(perf_logger, operation_type, path, true, started_at, *this);
     return true;
@@ -1548,7 +1553,7 @@ bool CaptureSession::open_input(const std::filesystem::path& path, OpenContext* 
 }
 
 bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
-    if (!has_source_capture()) {
+    if (partial_open_ || !has_source_capture()) {
         return false;
     }
 
@@ -1562,9 +1567,9 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path) {
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenContext* ctx) {
     last_open_error_text_.clear();
-    if (ctx != nullptr) {
-        ctx->clear_failure();
-    }
+    OpenContext local_ctx {};
+    OpenContext* effective_ctx = (ctx != nullptr) ? ctx : &local_ctx;
+    effective_ctx->clear_failure();
     debug::log_if<debug::kDebugIndexLoad>([&]() {
         std::clog << "load_index: " << index_path.string() << '\n';
     });
@@ -1576,14 +1581,14 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     std::filesystem::path loaded_capture_path {};
     CaptureSourceInfo loaded_source_info {};
 
-    if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info, ctx)) {
+    if (!reader.read(index_path, loaded_state, loaded_capture_path, &loaded_source_info, effective_ctx)) {
         debug::log_if<debug::kDebugIndexLoad>([&]() {
             std::clog << "load_index failed: " << index_path.string() << '\n';
         });
         const auto fallback_failure = reader.last_error().has_details()
             ? reader.last_error()
             : fallback_open_failure("index read failed");
-        const auto failureText = build_open_failure_message(ctx, fallback_failure);
+        const auto failureText = build_open_failure_message(effective_ctx, fallback_failure);
         reset_runtime_state();
         last_open_error_text_ = failureText;
         log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, false, started_at, *this);
@@ -1599,6 +1604,8 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     deep_protocol_details_enabled_ = false;
     opened_from_index_ = true;
     has_loaded_state_ = true;
+    partial_open_ = false;
+    partial_open_failure_ = {};
 
     if (validate_capture_source(source_info_)) {
         capture_path_ = source_info_.capture_path;
@@ -1621,6 +1628,14 @@ bool CaptureSession::has_source_capture() const noexcept {
 
 bool CaptureSession::opened_from_index() const noexcept {
     return opened_from_index_;
+}
+
+bool CaptureSession::is_partial_open() const noexcept {
+    return partial_open_;
+}
+
+const OpenFailureInfo& CaptureSession::partial_open_failure() const noexcept {
+    return partial_open_failure_;
 }
 
 const std::string& CaptureSession::last_open_error_text() const noexcept {
@@ -2093,6 +2108,14 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
+
 
 
 

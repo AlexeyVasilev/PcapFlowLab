@@ -363,6 +363,32 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.currentInputPath() == preserved_input_path);
     UI_EXPECT(controller.openErrorText() == QStringLiteral("Failed to open capture file."));
 
+
+    auto partial_capture_bytes = make_classic_pcap({
+        {100, http_flow},
+        {200, dns_flow},
+    });
+    partial_capture_bytes.resize(partial_capture_bytes.size() - 5U);
+    const auto partial_capture_path = write_temp_pcap("pfl_ui_partial_open_capture.pcap", partial_capture_bytes);
+
+    MainController partial_controller {};
+    UI_EXPECT(open_capture_and_wait(app, partial_controller, partial_capture_path));
+    UI_EXPECT(partial_controller.hasCapture());
+    UI_EXPECT(partial_controller.packetCount() == 1U);
+    UI_EXPECT(partial_controller.flowCount() == 1U);
+    UI_EXPECT(!partial_controller.canSaveIndex());
+    UI_EXPECT(partial_controller.partialOpen());
+    UI_EXPECT(partial_controller.openErrorText().isEmpty());
+    UI_EXPECT(partial_controller.statusText().contains(QStringLiteral("Capture opened partially.")));
+    UI_EXPECT(partial_controller.statusText().contains(QStringLiteral("Results are incomplete.")));
+    UI_EXPECT(partial_controller.partialOpenWarningText().contains(QStringLiteral("Capture opened partially.")));
+    auto* partial_packet_model = qobject_cast<PacketListModel*>(partial_controller.packetModel());
+    UI_EXPECT(partial_packet_model != nullptr);
+    partial_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(partial_packet_model->rowCount() == 1);
+    UI_EXPECT(!partial_controller.saveAnalysisIndex(QString::fromStdWString((std::filesystem::temp_directory_path() / "pfl_ui_partial_should_not_save.idx").wstring())));
+    UI_EXPECT(partial_controller.statusText() == QStringLiteral("Saving an index from a partial capture is not supported yet."));
+    UI_EXPECT(partial_controller.statusIsError());
     auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(flow_model != nullptr);
     UI_EXPECT(flow_model->rowCount() == 3);
@@ -792,6 +818,9 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
+
 
 
 

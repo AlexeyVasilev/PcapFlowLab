@@ -24,6 +24,10 @@ void report_open_progress(OpenContext* ctx) {
     return ctx != nullptr && ctx->is_cancel_requested();
 }
 
+[[nodiscard]] bool is_safe_partial_import(const CaptureState& state, const OpenContext* ctx) noexcept {
+    return !should_cancel(ctx) && state.summary.packet_count > 0U;
+}
+
 template <typename Reader>
 void capture_reader_failure(OpenContext* ctx, const Reader& reader) {
     if (ctx != nullptr && reader.last_error().has_details()) {
@@ -32,11 +36,11 @@ void capture_reader_failure(OpenContext* ctx, const Reader& reader) {
 }
 
 template <typename Reader>
-bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
+CaptureImportResult import_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     while (const auto packet = reader.read_next()) {
         if (should_cancel(ctx)) {
             report_open_progress(ctx);
-            return false;
+            return CaptureImportResult::failure;
         }
 
         if (ctx != nullptr) {
@@ -52,7 +56,7 @@ bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProc
 
         if (should_cancel(ctx)) {
             report_open_progress(ctx);
-            return false;
+            return CaptureImportResult::failure;
         }
     }
 
@@ -62,15 +66,17 @@ bool import_packets(Reader& reader, CaptureState& state, const CaptureImportProc
     }
 
     if (should_cancel(ctx)) {
-        return false;
+        return CaptureImportResult::failure;
     }
 
     if (reader.has_error()) {
         capture_reader_failure(ctx, reader);
-        return false;
+        return is_safe_partial_import(state, ctx)
+            ? CaptureImportResult::partial_success_with_warning
+            : CaptureImportResult::failure;
     }
 
-    return true;
+    return CaptureImportResult::success;
 }
 
 }  // namespace
@@ -103,24 +109,24 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     }
 }
 
-bool import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
+CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     if (!is_supported_capture_link_type(reader.data_link_type())) {
         if (ctx != nullptr) {
             OpenFailureInfo failure {};
             failure.reason = "unsupported capture link type";
             ctx->set_failure(std::move(failure));
         }
-        return false;
+        return CaptureImportResult::failure;
     }
 
     return import_packets(reader, state, processor, ctx);
 }
 
-bool import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
+CaptureImportResult import_capture_from_reader(PcapNgReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     return import_packets(reader, state, processor, ctx);
 }
 
-bool import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
+CaptureImportResult import_capture_from_path(const std::filesystem::path& path, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
     if (ctx != nullptr) {
         ctx->progress = {};
         ctx->clear_failure();
@@ -133,7 +139,7 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
 
     if (should_cancel(ctx)) {
         report_open_progress(ctx);
-        return false;
+        return CaptureImportResult::failure;
     }
 
     switch (detect_capture_source_format(path)) {
@@ -141,7 +147,7 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
         PcapReader reader {};
         if (!reader.open(path)) {
             capture_reader_failure(ctx, reader);
-            return false;
+            return CaptureImportResult::failure;
         }
 
         return import_capture_from_reader(reader, state, processor, ctx);
@@ -150,14 +156,14 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
         PcapNgReader reader {};
         if (!reader.open(path)) {
             capture_reader_failure(ctx, reader);
-            return false;
+            return CaptureImportResult::failure;
         }
 
         return import_capture_from_reader(reader, state, processor, ctx);
     }
     default:
         if (ctx != nullptr) {
-            OpenFailureInfo failure {}; 
+            OpenFailureInfo failure {};
             std::error_code exists_error {};
             if (!std::filesystem::exists(path, exists_error) || exists_error) {
                 failure.reason = "file access failed";
@@ -166,10 +172,8 @@ bool import_capture_from_path(const std::filesystem::path& path, CaptureState& s
             }
             ctx->set_failure(std::move(failure));
         }
-        return false;
+        return CaptureImportResult::failure;
     }
 }
 
 }  // namespace pfl
-
-

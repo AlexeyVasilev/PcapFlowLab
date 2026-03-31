@@ -327,8 +327,21 @@ void run_index_tests() {
         PFL_EXPECT(loaded_stream_session.summary().flow_count == original_stream_session.summary().flow_count);
         PFL_EXPECT(loaded_stream_session.summary().total_bytes == original_stream_session.summary().total_bytes);
     }
+
+    {
+        auto truncated_bytes = make_classic_pcap({{100, forward_packet}, {200, reverse_packet}});
+        truncated_bytes.resize(truncated_bytes.size() - 5U);
+        const auto partial_capture_path = write_temp_pcap("pfl_partial_index_rejected.pcap", truncated_bytes);
+        const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_partial_index_rejected.idx";
+        std::filesystem::remove(partial_index_path);
+
+        CaptureSession partial_session {};
+        PFL_EXPECT(partial_session.open_capture(partial_capture_path));
+        PFL_EXPECT(partial_session.is_partial_open());
+        PFL_EXPECT(!partial_session.save_index(partial_index_path));
+        PFL_EXPECT(!std::filesystem::exists(partial_index_path));
+    }
 }
 
 }  // namespace pfl::tests
-
 

@@ -9,6 +9,7 @@
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
+#include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
 
@@ -30,6 +31,8 @@ public:
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] bool has_source_capture() const noexcept;
     [[nodiscard]] bool opened_from_index() const noexcept;
+    [[nodiscard]] bool is_partial_open() const noexcept;
+    [[nodiscard]] const OpenFailureInfo& partial_open_failure() const noexcept;
     [[nodiscard]] const std::string& last_open_error_text() const noexcept;
     bool attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
@@ -67,11 +70,9 @@ private:
     bool deep_protocol_details_enabled_ {false};
     bool opened_from_index_ {false};
     bool has_loaded_state_ {false};
+    bool partial_open_ {false};
+    OpenFailureInfo partial_open_failure_ {};
     std::string last_open_error_text_ {};
 };
 
 }  // namespace pfl
-
-
-
-

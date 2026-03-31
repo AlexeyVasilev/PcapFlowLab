@@ -4,10 +4,10 @@
 
 namespace pfl {
 
-bool FastCaptureImporter::import_capture(const std::filesystem::path& path,
-                                         CaptureState& state,
-                                         const CaptureImportOptions& options,
-                                         OpenContext* ctx) const {
+CaptureImportResult FastCaptureImporter::import_capture(const std::filesystem::path& path,
+                                                        CaptureState& state,
+                                                        const CaptureImportOptions& options,
+                                                        OpenContext* ctx) const {
     state = {};
 
     CaptureImportProcessor processor {options.settings};
@@ -15,4 +15,3 @@ bool FastCaptureImporter::import_capture(const std::filesystem::path& path,
 }
 
 }  // namespace pfl
-

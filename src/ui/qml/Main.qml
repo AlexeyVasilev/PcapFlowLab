@@ -92,6 +92,29 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.partialOpen
+            color: "#fef3c7"
+            border.color: "#f59e0b"
+            radius: 6
+            implicitHeight: partialWarningText.contentHeight + 16
+
+            TextEdit {
+                id: partialWarningText
+                anchors.fill: parent
+                anchors.margins: 8
+                readOnly: true
+                selectByMouse: true
+                selectByKeyboard: true
+                cursorVisible: false
+                text: mainController.partialOpenWarningText
+                color: "#92400e"
+                wrapMode: TextEdit.Wrap
+                textFormat: TextEdit.PlainText
+            }
+        }
+
         TextEdit {
             Layout.fillWidth: true
             visible: mainController.openErrorText.length > 0
@@ -275,6 +298,8 @@ ApplicationWindow {
         }
     }
 }
+
+
 
 
 

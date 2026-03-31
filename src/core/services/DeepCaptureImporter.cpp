@@ -4,10 +4,10 @@
 
 namespace pfl {
 
-bool DeepCaptureImporter::import_capture(const std::filesystem::path& path,
-                                         CaptureState& state,
-                                         const CaptureImportOptions& options,
-                                         OpenContext* ctx) const {
+CaptureImportResult DeepCaptureImporter::import_capture(const std::filesystem::path& path,
+                                                        CaptureState& state,
+                                                        const CaptureImportOptions& options,
+                                                        OpenContext* ctx) const {
     state = {};
 
     // Deep import currently reuses the same base decode and aggregation path as fast import.
@@ -17,4 +17,3 @@ bool DeepCaptureImporter::import_capture(const std::filesystem::path& path,
 }
 
 }  // namespace pfl
-

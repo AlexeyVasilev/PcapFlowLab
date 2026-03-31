@@ -32,6 +32,8 @@ class MainController final : public QObject {
     Q_PROPERTY(bool openedFromIndex READ openedFromIndex NOTIFY sourceAvailabilityChanged)
     Q_PROPERTY(bool canAttachSourceCapture READ canAttachSourceCapture NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canSaveIndex READ canSaveIndex NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool partialOpen READ partialOpen NOTIFY stateChanged)
+    Q_PROPERTY(QString partialOpenWarningText READ partialOpenWarningText NOTIFY stateChanged)
     Q_PROPERTY(bool canExportSelectedFlow READ canExportSelectedFlow NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool isOpening READ isOpening NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressPackets READ openProgressPackets NOTIFY openProgressChanged)
@@ -91,6 +93,8 @@ public:
     [[nodiscard]] bool openedFromIndex() const noexcept;
     [[nodiscard]] bool canAttachSourceCapture() const noexcept;
     [[nodiscard]] bool canSaveIndex() const noexcept;
+    [[nodiscard]] bool partialOpen() const noexcept;
+    [[nodiscard]] QString partialOpenWarningText() const;
     [[nodiscard]] bool canExportSelectedFlow() const noexcept;
     [[nodiscard]] bool isOpening() const noexcept;
     [[nodiscard]] qulonglong openProgressPackets() const noexcept;
@@ -257,6 +261,7 @@ private:
 };
 
 }  // namespace pfl
+
 
 
 

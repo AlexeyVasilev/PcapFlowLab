@@ -263,6 +263,29 @@ QString buildStreamItemSummary(
 
     return lines.join(QLatin1Char('\n'));
 }
+QString format_partial_open_warning_message(const OpenFailureInfo& failure) {
+    QString message = QStringLiteral("Capture opened partially.");
+
+    if (failure.has_file_offset || failure.has_packet_index || !failure.reason.empty()) {
+        message += QStringLiteral(" Import stopped");
+        if (failure.has_file_offset) {
+            message += QStringLiteral(" at offset %1").arg(failure.file_offset);
+        }
+        if (failure.has_packet_index) {
+            message += failure.has_file_offset
+                ? QStringLiteral(" (packet %1)").arg(failure.packet_index)
+                : QStringLiteral(" at packet %1").arg(failure.packet_index);
+        }
+        if (!failure.reason.empty()) {
+            message += QStringLiteral(": %1").arg(QString::fromStdString(failure.reason));
+        }
+        message += QLatin1Char('.');
+    }
+
+    message += QStringLiteral(" Results are incomplete.");
+    return message;
+}
+
 QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet) {
     QStringList lines {};
 
@@ -402,7 +425,17 @@ bool MainController::canAttachSourceCapture() const noexcept {
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return !is_opening_ && session_.has_capture() && session_.has_source_capture();
+    return !is_opening_ && session_.has_capture() && session_.has_source_capture() && !session_.is_partial_open();
+}
+
+bool MainController::partialOpen() const noexcept {
+    return session_.is_partial_open();
+}
+
+QString MainController::partialOpenWarningText() const {
+    return session_.is_partial_open()
+        ? format_partial_open_warning_message(session_.partial_open_failure())
+        : QString {};
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
@@ -667,6 +700,11 @@ bool MainController::saveAnalysisIndex(const QString& path) {
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
         setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    if (session_.is_partial_open()) {
+        setStatusText(QStringLiteral("Saving an index from a partial capture is not supported yet."), true);
         return false;
     }
 
@@ -1226,6 +1264,9 @@ void MainController::completeOpenJob(
 
     session_ = std::move(session);
     applyLoadedState(path);
+    if (session_.is_partial_open()) {
+        setStatusText(format_partial_open_warning_message(session_.partial_open_failure()));
+    }
 }
 
 void MainController::cleanupOpenThread() {
@@ -1463,6 +1504,15 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
+
+
 
 
 

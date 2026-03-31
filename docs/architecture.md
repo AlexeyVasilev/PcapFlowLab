@@ -25,6 +25,7 @@ The fast path is the default way to open a capture.
 - Does not run directional reassembly.
 - Does not perform deep protocol reconstruction during open.
 - Keeps work packet-oriented and predictable.
+- If import fails after a strictly valid prefix has already been accepted, the session may still open partially with a warning; corrupted trailing data is discarded rather than recovered.
 
 ### Index path
 
@@ -104,6 +105,8 @@ Persisted data:
 Not persisted:
 
 - stream items
+- partial-open session state and failure context
+- corrupted trailing capture data beyond a strict partial-open prefix
 - reassembled byte buffers
 - per-flow temporary stream caches
 - packet contribution maps used only for Stream presentation
@@ -140,6 +143,8 @@ Current scalability risks are still worth watching:
 - Bounded reassembly may truncate long streams.
 - Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
 - Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
+
+
 
 
 
