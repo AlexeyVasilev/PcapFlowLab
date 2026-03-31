@@ -86,6 +86,12 @@ Remaining packet rows or Stream items are prepared later:
 
 This RFC does not require a specific UI control yet. The key rule is that heavy selected-flow work must be incremental and bounded.
 
+Heavy packet or Stream materialization for a selected flow should not block the UI thread.
+
+- the UI thread should observe loading state
+- the UI thread should receive bounded result batches
+- implementation details are intentionally not fixed yet, but responsiveness is a requirement
+
 ## Expected UI behavior for heavy flows
 
 The UI should make long selected-flow work visible instead of looking frozen.
@@ -118,6 +124,11 @@ Required conditions:
 
 If those conditions are not met, open remains a normal fatal failure.
 
+Partial open should be represented explicitly in session and UI state.
+
+- incomplete-capture state must remain visible while working with the imported prefix
+- feature gating may depend on partial-open state
+
 ## Partial-open UX expectations
 
 If partial open is allowed, the UI should present it explicitly.
@@ -131,7 +142,8 @@ Recommended behavior:
 
 Initial restrictions are expected.
 
-A practical first restriction is that saving an index from a partial capture may remain disabled until the policy is defined more fully.
+- saving an index from a partial capture may remain disabled initially
+- other features may remain available only when they operate safely on the imported prefix
 
 ## Observability and loading states
 
@@ -142,6 +154,12 @@ Recommended direction:
 - packet materialization and Stream materialization should expose loading state
 - the UI should be able to show that a large selected flow is still being prepared
 - observability should be lightweight and should not require global precompute
+
+Temporary packet and Stream materialization state should be scoped only to the currently selected flow.
+
+- it may be discarded when selection changes
+- it is ephemeral and not persisted
+- it must not become a hidden global cache
 
 This is about responsiveness and clarity, not about adding deep analysis during selection.
 
