@@ -64,6 +64,29 @@ void StreamListModel::refresh(const std::vector<StreamItemRow>& rows) {
     endResetModel();
 }
 
+void StreamListModel::append(const std::vector<StreamItemRow>& rows) {
+    if (rows.empty()) {
+        return;
+    }
+
+    const auto beginIndex = static_cast<int>(items_.size());
+    const auto endIndex = beginIndex + static_cast<int>(rows.size()) - 1;
+    beginInsertRows(QModelIndex {}, beginIndex, endIndex);
+    items_.reserve(items_.size() + rows.size());
+
+    for (const auto& row : rows) {
+        items_.push_back(Item {
+            .stream_item_index = static_cast<qulonglong>(row.stream_item_index),
+            .direction_text = QString::fromStdString(row.direction_text),
+            .label = QString::fromStdString(row.label),
+            .byte_count = row.byte_count,
+            .packet_count = row.packet_count,
+        });
+    }
+
+    endInsertRows();
+}
+
 void StreamListModel::clear() {
     refresh({});
 }

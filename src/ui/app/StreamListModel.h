@@ -30,6 +30,7 @@ public:
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
     void refresh(const std::vector<StreamItemRow>& rows);
+    void append(const std::vector<StreamItemRow>& rows);
     void clear();
 
 private:

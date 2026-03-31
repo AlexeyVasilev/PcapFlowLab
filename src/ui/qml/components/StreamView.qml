@@ -7,10 +7,16 @@ Frame {
 
     property var streamModel: null
     property var selectedStreamItemIndex: 0
+    property bool streamLoading: false
+    property bool streamPartiallyLoaded: false
+    property var loadedStreamItemCount: 0
+    property var totalStreamItemCount: 0
+    property bool canLoadMoreStreamItems: false
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
 
     signal streamItemSelected(var streamItemIndex)
+    signal loadMoreRequested()
 
     function isForward(directionText) {
         return directionText === root.forwardDirection
@@ -60,6 +66,31 @@ Frame {
             Layout.fillWidth: true
             height: 1
             color: "#e2e8f0"
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.streamLoading || root.loadedStreamItemCount > 0 || root.totalStreamItemCount > 0
+            spacing: 8
+
+            Label {
+                Layout.fillWidth: true
+                color: "#64748b"
+                text: root.streamLoading
+                    ? "Loading stream..."
+                    : root.streamPartiallyLoaded
+                        ? (root.totalStreamItemCount > 0
+                            ? "Showing %1 of %2 stream items".arg(root.loadedStreamItemCount).arg(root.totalStreamItemCount)
+                            : "Showing first %1 stream items".arg(root.loadedStreamItemCount))
+                        : "Showing all %1 stream items".arg(root.totalStreamItemCount > 0 ? root.totalStreamItemCount : root.loadedStreamItemCount)
+            }
+
+            Button {
+                text: "Load more"
+                visible: root.canLoadMoreStreamItems
+                enabled: root.canLoadMoreStreamItems && !root.streamLoading
+                onClicked: root.loadMoreRequested()
+            }
         }
 
         Rectangle {
@@ -157,7 +188,7 @@ Frame {
 
             Label {
                 anchors.centerIn: parent
-                visible: streamListView.count === 0
+                visible: !root.streamLoading && streamListView.count === 0
                 color: "#64748b"
                 text: "No payload-bearing stream items for selected flow"
             }

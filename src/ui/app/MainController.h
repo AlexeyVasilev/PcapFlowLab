@@ -43,6 +43,11 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong loadedPacketRowCount READ loadedPacketRowCount NOTIFY packetListStateChanged)
     Q_PROPERTY(qulonglong totalPacketRowCount READ totalPacketRowCount NOTIFY packetListStateChanged)
     Q_PROPERTY(bool canLoadMorePackets READ canLoadMorePackets NOTIFY packetListStateChanged)
+    Q_PROPERTY(bool streamLoading READ streamLoading NOTIFY streamListStateChanged)
+    Q_PROPERTY(bool streamPartiallyLoaded READ streamPartiallyLoaded NOTIFY streamListStateChanged)
+    Q_PROPERTY(qulonglong loadedStreamItemCount READ loadedStreamItemCount NOTIFY streamListStateChanged)
+    Q_PROPERTY(qulonglong totalStreamItemCount READ totalStreamItemCount NOTIFY streamListStateChanged)
+    Q_PROPERTY(bool canLoadMoreStreamItems READ canLoadMoreStreamItems NOTIFY streamListStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
@@ -97,6 +102,11 @@ public:
     [[nodiscard]] qulonglong loadedPacketRowCount() const noexcept;
     [[nodiscard]] qulonglong totalPacketRowCount() const noexcept;
     [[nodiscard]] bool canLoadMorePackets() const noexcept;
+    [[nodiscard]] bool streamLoading() const noexcept;
+    [[nodiscard]] bool streamPartiallyLoaded() const noexcept;
+    [[nodiscard]] qulonglong loadedStreamItemCount() const noexcept;
+    [[nodiscard]] qulonglong totalStreamItemCount() const noexcept;
+    [[nodiscard]] bool canLoadMoreStreamItems() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
@@ -132,6 +142,7 @@ public:
     Q_INVOKABLE bool attachSourceCapture(const QString& path);
     Q_INVOKABLE void cancelOpen();
     Q_INVOKABLE void loadMorePackets();
+    Q_INVOKABLE void loadMoreStreamItems();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
     Q_INVOKABLE bool exportSelectedFlow(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
@@ -143,6 +154,7 @@ public:
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
     Q_INVOKABLE void drillDownToPort(quint32 port);
+    Q_INVOKABLE void setFlowDetailsTabIndex(int index);
 
     void setCaptureOpenMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
@@ -168,6 +180,7 @@ signals:
     void flowSortChanged();
     void openProgressChanged();
     void packetListStateChanged();
+    void streamListStateChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -181,7 +194,7 @@ private:
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
     void refreshSelectedFlowPackets(bool resetRows);
-    void ensureSelectedFlowStreamItemsLoaded();
+    void refreshSelectedStreamItems(bool resetRows);
     void clearPacketSelection();
     void clearStreamSelection();
     void clearFlowSelection();
@@ -227,7 +240,12 @@ private:
     bool packets_loading_ {false};
     std::size_t loaded_packet_row_count_ {0};
     std::size_t total_packet_row_count_ {0};
-    bool stream_items_loaded_for_selected_flow_ {false};
+    bool stream_loading_ {false};
+    std::size_t loaded_stream_item_count_ {0};
+    std::size_t total_stream_item_count_ {0};
+    bool stream_tab_active_ {false};
+    bool can_load_more_stream_items_ {false};
+    bool stream_state_materialized_for_selected_flow_ {false};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
@@ -239,6 +257,9 @@ private:
 };
 
 }  // namespace pfl
+
+
+
 
 
 

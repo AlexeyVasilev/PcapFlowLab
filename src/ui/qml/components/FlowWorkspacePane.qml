@@ -17,6 +17,11 @@ Item {
     property var totalPacketRowCount: 0
     property bool canLoadMorePackets: false
     property var streamModel: null
+    property bool streamLoading: false
+    property bool streamPartiallyLoaded: false
+    property var loadedStreamItemCount: 0
+    property var totalStreamItemCount: 0
+    property bool canLoadMoreStreamItems: false
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
     property var selectedStreamItemIndex: 0
@@ -27,6 +32,8 @@ Item {
     signal packetSelected(var packetIndex)
     signal loadMorePacketsRequested()
     signal streamItemSelected(var streamItemIndex)
+    signal loadMoreStreamItemsRequested()
+    signal flowDetailsTabChanged(int index)
 
     SplitView {
         anchors.fill: parent
@@ -69,6 +76,7 @@ Item {
                     TabBar {
                         id: flowDetailTabs
                         Layout.fillWidth: true
+                        onCurrentIndexChanged: root.flowDetailsTabChanged(currentIndex)
 
                         TabButton {
                             text: "Packets"
@@ -103,8 +111,16 @@ Item {
                         StreamView {
                             streamModel: root.streamModel
                             selectedStreamItemIndex: root.selectedStreamItemIndex
+                            streamLoading: root.streamLoading
+                            streamPartiallyLoaded: root.streamPartiallyLoaded
+                            loadedStreamItemCount: root.loadedStreamItemCount
+                            totalStreamItemCount: root.totalStreamItemCount
+                            canLoadMoreStreamItems: root.canLoadMoreStreamItems
                             onStreamItemSelected: function(streamItemIndex) {
                                 root.streamItemSelected(streamItemIndex)
+                            }
+                            onLoadMoreRequested: function() {
+                                root.loadMoreStreamItemsRequested()
                             }
                         }
                     }

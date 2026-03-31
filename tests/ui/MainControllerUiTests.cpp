@@ -506,6 +506,7 @@ int main(int argc, char* argv[]) {
 
     MainController stream_controller {};
     UI_EXPECT(open_capture_and_wait(app, stream_controller, moved_capture_path));
+    stream_controller.setFlowDetailsTabIndex(1);
     auto* stream_flow_model = qobject_cast<FlowListModel*>(stream_controller.flowModel());
     auto* stream_model = qobject_cast<StreamListModel*>(stream_controller.streamModel());
     UI_EXPECT(stream_flow_model != nullptr);
@@ -566,6 +567,7 @@ int main(int argc, char* argv[]) {
 
     MainController split_tls_controller {};
     UI_EXPECT(open_capture_and_wait(app, split_tls_controller, split_tls_capture_path));
+    split_tls_controller.setFlowDetailsTabIndex(1);
     split_tls_controller.setSelectedFlowIndex(0);
     auto* split_tls_stream_model = qobject_cast<StreamListModel*>(split_tls_controller.streamModel());
     UI_EXPECT(split_tls_stream_model != nullptr);
@@ -721,8 +723,78 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(0, 0), PacketListModel::RowNumberRole).toUInt() == 1U);
     UI_EXPECT(packet_loading_details_model->summaryText().isEmpty());
 
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> heavy_stream_packets {};
+    heavy_stream_packets.reserve(32);
+    for (std::uint32_t packetIndex = 0; packetIndex < 31U; ++packetIndex) {
+        heavy_stream_packets.push_back({
+            3000U + packetIndex,
+            make_ethernet_ipv4_tcp_packet_with_payload(ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 20), 56000, 8443, 6, 0x18)
+        });
+    }
+    heavy_stream_packets.push_back({
+        4000U,
+        make_ethernet_ipv4_tcp_packet_with_payload(ipv4(203, 0, 113, 30), ipv4(203, 0, 113, 40), 57000, 9443, 6, 0x18)
+    });
+
+    const auto heavy_stream_capture_path = write_temp_pcap(
+        "pfl_ui_stream_scalability.pcap",
+        make_classic_pcap(heavy_stream_packets)
+    );
+
+    MainController stream_loading_controller {};
+    UI_EXPECT(open_capture_and_wait(app, stream_loading_controller, heavy_stream_capture_path));
+    stream_loading_controller.setFlowDetailsTabIndex(1);
+    auto* stream_loading_flow_model = qobject_cast<FlowListModel*>(stream_loading_controller.flowModel());
+    auto* stream_loading_stream_model = qobject_cast<StreamListModel*>(stream_loading_controller.streamModel());
+    auto* stream_loading_details_model = qobject_cast<PacketDetailsViewModel*>(stream_loading_controller.packetDetailsModel());
+    UI_EXPECT(stream_loading_flow_model != nullptr);
+    UI_EXPECT(stream_loading_stream_model != nullptr);
+    UI_EXPECT(stream_loading_details_model != nullptr);
+
+    const int heavy_stream_flow_index = find_flow_index_by_packet_count(stream_loading_flow_model, 31U);
+    const int small_stream_flow_index = find_flow_index_by_packet_count(stream_loading_flow_model, 1U);
+    UI_EXPECT(heavy_stream_flow_index >= 0);
+    UI_EXPECT(small_stream_flow_index >= 0);
+
+    stream_loading_controller.setSelectedFlowIndex(heavy_stream_flow_index);
+    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 15U);
+    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 0U);
+    UI_EXPECT(stream_loading_controller.streamPartiallyLoaded());
+    UI_EXPECT(stream_loading_controller.canLoadMoreStreamItems());
+    UI_EXPECT(!stream_loading_controller.streamLoading());
+    UI_EXPECT(stream_loading_stream_model->rowCount() == 15);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(14, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 15U);
+
+    stream_loading_controller.loadMoreStreamItems();
+    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 30U);
+    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 0U);
+    UI_EXPECT(stream_loading_controller.streamPartiallyLoaded());
+    UI_EXPECT(stream_loading_controller.canLoadMoreStreamItems());
+    UI_EXPECT(stream_loading_stream_model->rowCount() == 30);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(15, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 16U);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(29, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 30U);
+
+    stream_loading_controller.setSelectedStreamItemIndex(5U);
+    UI_EXPECT(stream_loading_controller.selectedStreamItemIndex() == 5U);
+    UI_EXPECT(stream_loading_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
+
+    stream_loading_controller.setSelectedFlowIndex(small_stream_flow_index);
+    UI_EXPECT(stream_loading_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
+    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 1U);
+    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 1U);
+    UI_EXPECT(!stream_loading_controller.streamPartiallyLoaded());
+    UI_EXPECT(!stream_loading_controller.canLoadMoreStreamItems());
+    UI_EXPECT(stream_loading_stream_model->rowCount() == 1);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
+    UI_EXPECT(stream_loading_details_model->summaryText().isEmpty());
+
     return 0;
 }
+
+
+
 
 
 

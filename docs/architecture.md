@@ -53,6 +53,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, transport payload length, TCP flags, link type, and fragmentation metadata.
 - Packet bytes are loaded lazily when details, payload, protocol text, export, or stream analysis needs them.
 - Selected-flow packet lists now use bounded initial materialization in the UI. The first packet rows are loaded immediately, and additional rows are appended only through explicit Load more continuation.
+- Selected-flow Stream items now follow the same pattern: the initial Stream projection is bounded, and additional items are appended only through explicit Load more continuation.
 
 ## Stream items and directional reassembly
 
@@ -139,4 +140,6 @@ Current scalability risks are still worth watching:
 - Bounded reassembly may truncate long streams.
 - Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
 - Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
+
+
 

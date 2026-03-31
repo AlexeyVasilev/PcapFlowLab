@@ -206,6 +206,11 @@ ApplicationWindow {
                 totalPacketRowCount: mainController.totalPacketRowCount
                 canLoadMorePackets: mainController.canLoadMorePackets
                 streamModel: mainController.streamModel
+                streamLoading: mainController.streamLoading
+                streamPartiallyLoaded: mainController.streamPartiallyLoaded
+                loadedStreamItemCount: mainController.loadedStreamItemCount
+                totalStreamItemCount: mainController.totalStreamItemCount
+                canLoadMoreStreamItems: mainController.canLoadMoreStreamItems
                 selectedPacketIndex: mainController.selectedPacketIndex
                 selectedStreamItemIndex: mainController.selectedStreamItemIndex
                 packetDetailsModel: mainController.packetDetailsModel
@@ -226,6 +231,12 @@ ApplicationWindow {
                 }
                 onStreamItemSelected: function(streamItemIndex) {
                     mainController.selectedStreamItemIndex = streamItemIndex
+                }
+                onLoadMoreStreamItemsRequested: function() {
+                    mainController.loadMoreStreamItems()
+                }
+                onFlowDetailsTabChanged: function(index) {
+                    mainController.setFlowDetailsTabIndex(index)
                 }
             }
 

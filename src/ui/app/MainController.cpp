@@ -24,6 +24,8 @@ constexpr int kStatsTabIndex = 1;
 constexpr int kSettingsTabIndex = 2;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
+constexpr std::size_t kInitialStreamItems = 15U;
+constexpr std::size_t kStreamItemBatchSize = 15U;
 
 struct OpenJobResult {
     bool opened {false};
@@ -448,10 +450,31 @@ bool MainController::canLoadMorePackets() const noexcept {
     return selected_flow_index_ >= 0 && loaded_packet_row_count_ < total_packet_row_count_;
 }
 
+
+bool MainController::streamLoading() const noexcept {
+    return stream_loading_;
+}
+
+bool MainController::streamPartiallyLoaded() const noexcept {
+    return can_load_more_stream_items_;
+}
+
+qulonglong MainController::loadedStreamItemCount() const noexcept {
+    return static_cast<qulonglong>(loaded_stream_item_count_);
+}
+
+qulonglong MainController::totalStreamItemCount() const noexcept {
+    return static_cast<qulonglong>(total_stream_item_count_);
+}
+
+bool MainController::canLoadMoreStreamItems() const noexcept {
+    return selected_flow_index_ >= 0 && can_load_more_stream_items_;
+}
+
+
 qulonglong MainController::packetCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().packet_count);
 }
-
 qulonglong MainController::flowCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().flow_count);
 }
@@ -592,8 +615,18 @@ bool MainController::attachSourceCapture(const QString& path) {
 
     setLastDirectoryFromPath(filesystemPath);
     if (selected_flow_index_ >= 0) {
-        current_stream_items_ = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_));
-        stream_model_.refresh(current_stream_items_);
+        current_stream_items_.clear();
+        stream_model_.clear();
+        stream_loading_ = false;
+        loaded_stream_item_count_ = 0U;
+        total_stream_item_count_ = 0U;
+        can_load_more_stream_items_ = false;
+        stream_state_materialized_for_selected_flow_ = false;
+        if (stream_tab_active_) {
+            refreshSelectedStreamItems(true);
+        } else {
+            emit streamListStateChanged();
+        }
     }
     reloadActiveDetails();
     emit stateChanged();
@@ -619,6 +652,15 @@ void MainController::loadMorePackets() {
     }
 
     refreshSelectedFlowPackets(false);
+}
+
+
+void MainController::loadMoreStreamItems() {
+    if (!canLoadMoreStreamItems()) {
+        return;
+    }
+
+    refreshSelectedStreamItems(false);
 }
 
 bool MainController::saveAnalysisIndex(const QString& path) {
@@ -727,6 +769,18 @@ void MainController::drillDownToPort(const quint32 port) {
     drillDownToFlows(QString::number(port));
 }
 
+void MainController::setFlowDetailsTabIndex(const int index) {
+    const bool active = index == 1;
+    if (stream_tab_active_ == active) {
+        return;
+    }
+
+    stream_tab_active_ = active;
+    if (stream_tab_active_ && selected_flow_index_ >= 0 && !stream_state_materialized_for_selected_flow_) {
+        refreshSelectedStreamItems(true);
+    }
+}
+
 void MainController::setCaptureOpenMode(const int mode) {
     const int normalizedMode = (mode == kCliDeepImportModeIndex)
         ? kCliDeepImportModeIndex
@@ -771,19 +825,28 @@ void MainController::setSelectedFlowIndex(const int index) {
     clearPacketSelection();
     clearStreamSelection();
     current_flow_packet_numbers_.clear();
+    current_stream_items_.clear();
+    stream_model_.clear();
+    stream_loading_ = false;
+    loaded_stream_item_count_ = 0U;
+    total_stream_item_count_ = 0U;
+        can_load_more_stream_items_ = false;
+        stream_state_materialized_for_selected_flow_ = false;
 
     if (selected_flow_index_ >= 0) {
         refreshSelectedFlowPackets(true);
-        current_stream_items_ = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_));
-        stream_model_.refresh(current_stream_items_);
+        if (stream_tab_active_) {
+            refreshSelectedStreamItems(true);
+        } else {
+            emit streamListStateChanged();
+        }
     } else {
         packet_model_.clear();
         loaded_packet_row_count_ = 0U;
         total_packet_row_count_ = 0U;
         packets_loading_ = false;
-        current_stream_items_.clear();
-        stream_model_.clear();
         emit packetListStateChanged();
+        emit streamListStateChanged();
     }
 
     emit selectedFlowIndexChanged();
@@ -890,6 +953,63 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     }
 }
 
+void MainController::refreshSelectedStreamItems(const bool resetRows) {
+    const bool previousLoading = stream_loading_;
+    const auto previousLoaded = loaded_stream_item_count_;
+    const auto previousTotal = total_stream_item_count_;
+    const auto previousCanLoadMore = can_load_more_stream_items_;
+
+    if (selected_flow_index_ < 0) {
+        current_stream_items_.clear();
+        stream_model_.clear();
+        stream_loading_ = false;
+        loaded_stream_item_count_ = 0U;
+        total_stream_item_count_ = 0U;
+        can_load_more_stream_items_ = false;
+        stream_state_materialized_for_selected_flow_ = false;
+        if (previousLoading != stream_loading_ || previousLoaded != loaded_stream_item_count_ || previousTotal != total_stream_item_count_ || previousCanLoadMore != can_load_more_stream_items_) {
+            emit streamListStateChanged();
+        }
+        return;
+    }
+
+    stream_loading_ = true;
+    const auto offset = resetRows ? std::size_t {0U} : loaded_stream_item_count_;
+    const auto batchSize = resetRows ? kInitialStreamItems : kStreamItemBatchSize;
+    auto rows = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_), offset, batchSize + 1U);
+    const bool hasMore = rows.size() > batchSize;
+    if (hasMore) {
+        rows.resize(batchSize);
+    }
+
+    if (resetRows) {
+        current_stream_items_ = rows;
+        stream_model_.refresh(current_stream_items_);
+    } else {
+        current_stream_items_.insert(current_stream_items_.end(), rows.begin(), rows.end());
+        stream_model_.append(rows);
+    }
+
+    loaded_stream_item_count_ = current_stream_items_.size();
+    total_stream_item_count_ = hasMore ? 0U : loaded_stream_item_count_;
+    can_load_more_stream_items_ = hasMore;
+    stream_loading_ = false;
+    stream_state_materialized_for_selected_flow_ = true;
+
+    if (selected_stream_item_index_ != kInvalidStreamSelection) {
+        const auto selectedIt = std::find_if(current_stream_items_.begin(), current_stream_items_.end(), [&](const StreamItemRow& item) {
+            return item.stream_item_index == static_cast<std::uint64_t>(selected_stream_item_index_);
+        });
+        if (selectedIt == current_stream_items_.end()) {
+            clearStreamSelection();
+        }
+    }
+
+    if (previousLoading != stream_loading_ || previousLoaded != loaded_stream_item_count_ || previousTotal != total_stream_item_count_ || previousCanLoadMore != can_load_more_stream_items_) {
+        emit streamListStateChanged();
+    }
+}
+
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
@@ -923,6 +1043,7 @@ void MainController::clearStreamSelection() {
 void MainController::clearFlowSelection() {
     const bool flowChanged = selected_flow_index_ != -1;
     const bool packetStateChanged = packets_loading_ || loaded_packet_row_count_ != 0U || total_packet_row_count_ != 0U;
+    const bool streamStateChanged = stream_loading_ || loaded_stream_item_count_ != 0U || total_stream_item_count_ != 0U || can_load_more_stream_items_ || stream_state_materialized_for_selected_flow_;
     selected_flow_index_ = -1;
     packet_model_.clear();
     current_stream_items_.clear();
@@ -931,11 +1052,19 @@ void MainController::clearFlowSelection() {
     loaded_packet_row_count_ = 0U;
     total_packet_row_count_ = 0U;
     packets_loading_ = false;
+    loaded_stream_item_count_ = 0U;
+    total_stream_item_count_ = 0U;
+    stream_loading_ = false;
+    can_load_more_stream_items_ = false;
+    stream_state_materialized_for_selected_flow_ = false;
     clearPacketSelection();
     clearStreamSelection();
 
     if (packetStateChanged) {
         emit packetListStateChanged();
+    }
+    if (streamStateChanged) {
+        emit streamListStateChanged();
     }
 
     if (flowChanged) {
@@ -961,6 +1090,11 @@ void MainController::resetLoadedState() {
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     stream_model_.clear();
+    loaded_stream_item_count_ = 0U;
+    total_stream_item_count_ = 0U;
+    stream_loading_ = false;
+    can_load_more_stream_items_ = false;
+    stream_state_materialized_for_selected_flow_ = false;
     packets_loading_ = false;
     loaded_packet_row_count_ = 0U;
     total_packet_row_count_ = 0U;
@@ -1329,6 +1463,12 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
+
 
 
 

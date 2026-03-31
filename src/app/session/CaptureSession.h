@@ -47,6 +47,8 @@ public:
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
     [[nodiscard]] std::size_t flow_packet_count(std::size_t flow_index) const noexcept;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index) const;
+    [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
+    [[nodiscard]] std::size_t flow_stream_item_count(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;

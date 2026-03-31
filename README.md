@@ -52,6 +52,7 @@ The Qt Quick desktop UI can:
 - open indexes in explicit index-only mode and attach the matching source capture later
 - inspect packet details in Summary, Raw, and Protocol views
 - show a payload-oriented Stream tab for the selected flow
+- materialize selected-flow Stream items in bounded initial batches with explicit `Load more` continuation for heavy flows
 
 ### Stream tab
 
@@ -60,6 +61,7 @@ The Stream tab is on-demand, flow-local, and ephemeral.
 - It runs only for the currently selected flow.
 - It requires source capture access because raw packet bytes are still read lazily from the original capture.
 - It does not store stream items in indexes or checkpoints.
+- The Stream view now uses bounded initial materialization for the selected flow and loads additional items only through explicit `Load more` continuation.
 - TLS parsing uses bounded directional reassembly, so TLS records spanning multiple TCP packets can appear as one logical stream item when enough bytes are available.
 - HTTP parsing uses bounded directional reassembly for complete request/response header blocks.
 - This remains heuristic analysis, not full TCP-correct stream reconstruction.
@@ -73,5 +75,7 @@ Creating `perf-open.enabled` next to the executable or in the current working di
 Console logging in open/import paths is intentionally quiet by default. If temporary developer logging is needed there, use the compile-time flags in `src/core/debug_logging.h` so disabled builds stay effectively free of logging overhead.
 
 Current large-list strategy also stays intentionally simple: Flow, Packet, and Stream surfaces use virtualization-friendly `ListView`-based rendering, explicit scrollbars, and lightweight delegates, while pagination remains deferred until there is stronger evidence that the current approach is insufficient. Selected-flow packet lists now use bounded initial materialization with explicit `Load more` continuation so heavy flows do not need to materialize every packet row at selection time.
+
+
 
 

@@ -506,6 +506,38 @@ void run_stream_query_tests() {
     PFL_EXPECT(reassembled_partial_rows[1].packet_indices == expected_split_packet_indices);
     PFL_EXPECT(reassembled_partial_rows[1].protocol_text.find("do not contain a complete TLS record") != std::string::npos);
     PFL_EXPECT(reassembled_partial_rows[1].protocol_text.find("ApplicationData") == std::string::npos);
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> bounded_stream_packets {};
+    bounded_stream_packets.reserve(31);
+    for (std::uint32_t index = 0; index < 31U; ++index) {
+        bounded_stream_packets.push_back({
+            1000U + index,
+            make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 54000, 443, 6, 0x18)
+        });
+    }
+    const auto bounded_stream_path = write_temp_pcap(
+        "pfl_stream_query_bounded_rows.pcap",
+        make_classic_pcap(bounded_stream_packets)
+    );
+
+    CaptureSession bounded_stream_session {};
+    PFL_EXPECT(bounded_stream_session.open_capture(bounded_stream_path, fast_options));
+    PFL_EXPECT(bounded_stream_session.flow_stream_item_count(0) == 31U);
+
+    const auto initial_stream_rows = bounded_stream_session.list_flow_stream_items(0, 0U, 15U);
+    PFL_EXPECT(initial_stream_rows.size() == 15U);
+    PFL_EXPECT(initial_stream_rows.front().stream_item_index == 1U);
+    PFL_EXPECT(initial_stream_rows.back().stream_item_index == 15U);
+    PFL_EXPECT(initial_stream_rows.front().label == "TCP Payload");
+
+    const auto next_stream_rows = bounded_stream_session.list_flow_stream_items(0, 15U, 15U);
+    PFL_EXPECT(next_stream_rows.size() == 15U);
+    PFL_EXPECT(next_stream_rows.front().stream_item_index == 16U);
+    PFL_EXPECT(next_stream_rows.back().stream_item_index == 30U);
+
+    const auto tail_stream_rows = bounded_stream_session.list_flow_stream_items(0, 30U, 15U);
+    PFL_EXPECT(tail_stream_rows.size() == 1U);
+    PFL_EXPECT(tail_stream_rows.front().stream_item_index == 31U);
 }
 
 }  // namespace pfl::tests
