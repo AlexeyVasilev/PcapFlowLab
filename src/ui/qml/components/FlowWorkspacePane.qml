@@ -21,6 +21,8 @@ Item {
     property bool streamPartiallyLoaded: false
     property var loadedStreamItemCount: 0
     property var totalStreamItemCount: 0
+    property var streamPacketWindowCount: 0
+    property bool streamPacketWindowPartial: false
     property bool canLoadMoreStreamItems: false
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
@@ -115,6 +117,8 @@ Item {
                             streamPartiallyLoaded: root.streamPartiallyLoaded
                             loadedStreamItemCount: root.loadedStreamItemCount
                             totalStreamItemCount: root.totalStreamItemCount
+                            streamPacketWindowCount: root.streamPacketWindowCount
+                            streamPacketWindowPartial: root.streamPacketWindowPartial
                             canLoadMoreStreamItems: root.canLoadMoreStreamItems
                             onStreamItemSelected: function(streamItemIndex) {
                                 root.streamItemSelected(streamItemIndex)

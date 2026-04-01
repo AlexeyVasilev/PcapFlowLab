@@ -663,7 +663,7 @@ bool append_tls_stream_items(
                 rows.push_back(make_stream_item_row(
                     static_cast<std::uint64_t>(rows.size() + 1U),
                     candidate.direction_text,
-                    "TLS Payload",
+                    "TLS Payload (partial)",
                     trailing.size(),
                     candidate.packet,
                     hex_dump_service.format(trailing),
@@ -679,7 +679,7 @@ bool append_tls_stream_items(
             rows.push_back(make_stream_item_row(
                 static_cast<std::uint64_t>(rows.size() + 1U),
                 candidate.direction_text,
-                "TLS Record Fragment",
+                "TLS Record Fragment (partial)",
                 trailing.size(),
                 candidate.packet,
                 hex_dump_service.format(trailing),
@@ -1214,7 +1214,7 @@ bool append_http_stream_items_from_reassembly(
                 rows.push_back(make_stream_item_row(
                     static_cast<std::uint64_t>(rows.size() + 1U),
                     direction_text,
-                    "HTTP Payload",
+                    "HTTP Payload (partial)",
                     trailing.size(),
                     packet_indices,
                     hex_dump_service.format(trailing),
@@ -1248,7 +1248,7 @@ bool append_http_stream_items_from_reassembly(
                     rows.push_back(make_stream_item_row(
                         static_cast<std::uint64_t>(rows.size() + 1U),
                         direction_text,
-                        "HTTP Payload",
+                        "HTTP Payload (partial)",
                         trailing.size(),
                         packet_indices,
                         hex_dump_service.format(trailing),
@@ -1305,7 +1305,7 @@ bool append_tls_stream_items_from_reassembly(
                 rows.push_back(make_stream_item_row(
                     static_cast<std::uint64_t>(rows.size() + 1U),
                     direction_text,
-                    "TLS Payload",
+                    "TLS Payload (partial)",
                     trailing.size(),
                     packet_indices,
                     hex_dump_service.format(trailing),
@@ -1322,7 +1322,7 @@ bool append_tls_stream_items_from_reassembly(
             rows.push_back(make_stream_item_row(
                 static_cast<std::uint64_t>(rows.size() + 1U),
                 direction_text,
-                "TLS Record Fragment",
+                "TLS Record Fragment (partial)",
                 trailing.size(),
                 packet_indices,
                 hex_dump_service.format(trailing),

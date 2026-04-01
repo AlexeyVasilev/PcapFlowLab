@@ -233,6 +233,8 @@ ApplicationWindow {
                 streamPartiallyLoaded: mainController.streamPartiallyLoaded
                 loadedStreamItemCount: mainController.loadedStreamItemCount
                 totalStreamItemCount: mainController.totalStreamItemCount
+                streamPacketWindowCount: mainController.streamPacketWindowCount
+                streamPacketWindowPartial: mainController.streamPacketWindowPartial
                 canLoadMoreStreamItems: mainController.canLoadMoreStreamItems
                 selectedPacketIndex: mainController.selectedPacketIndex
                 selectedStreamItemIndex: mainController.selectedStreamItemIndex

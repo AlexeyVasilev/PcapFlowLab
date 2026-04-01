@@ -49,6 +49,8 @@ class MainController final : public QObject {
     Q_PROPERTY(bool streamPartiallyLoaded READ streamPartiallyLoaded NOTIFY streamListStateChanged)
     Q_PROPERTY(qulonglong loadedStreamItemCount READ loadedStreamItemCount NOTIFY streamListStateChanged)
     Q_PROPERTY(qulonglong totalStreamItemCount READ totalStreamItemCount NOTIFY streamListStateChanged)
+    Q_PROPERTY(qulonglong streamPacketWindowCount READ streamPacketWindowCount NOTIFY streamListStateChanged)
+    Q_PROPERTY(bool streamPacketWindowPartial READ streamPacketWindowPartial NOTIFY streamListStateChanged)
     Q_PROPERTY(bool canLoadMoreStreamItems READ canLoadMoreStreamItems NOTIFY streamListStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
@@ -110,6 +112,8 @@ public:
     [[nodiscard]] bool streamPartiallyLoaded() const noexcept;
     [[nodiscard]] qulonglong loadedStreamItemCount() const noexcept;
     [[nodiscard]] qulonglong totalStreamItemCount() const noexcept;
+    [[nodiscard]] qulonglong streamPacketWindowCount() const noexcept;
+    [[nodiscard]] bool streamPacketWindowPartial() const noexcept;
     [[nodiscard]] bool canLoadMoreStreamItems() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;

@@ -502,6 +502,14 @@ qulonglong MainController::totalStreamItemCount() const noexcept {
     return static_cast<qulonglong>(total_stream_item_count_);
 }
 
+qulonglong MainController::streamPacketWindowCount() const noexcept {
+    return static_cast<qulonglong>(stream_packet_window_count_);
+}
+
+bool MainController::streamPacketWindowPartial() const noexcept {
+    return selected_flow_index_ >= 0 && stream_packet_window_count_ > 0U && stream_packet_window_count_ < total_packet_row_count_;
+}
+
 bool MainController::canLoadMoreStreamItems() const noexcept {
     return selected_flow_index_ >= 0 && can_load_more_stream_items_;
 }

@@ -310,7 +310,7 @@ void run_stream_query_tests() {
     const auto http_partial_rows = http_partial_session.list_flow_stream_items(0);
     PFL_EXPECT(http_partial_rows.size() == 2);
     PFL_EXPECT(http_partial_rows[0].label == "HTTP GET /ok");
-    PFL_EXPECT(http_partial_rows[1].label == "HTTP Payload");
+    PFL_EXPECT(http_partial_rows[1].label == "HTTP Payload (partial)");
     PFL_EXPECT(http_partial_rows[1].packet_indices == expected_http_split_packet_indices);
     PFL_EXPECT(http_partial_rows[1].protocol_text.find("complete HTTP header block") != std::string::npos);
     PFL_EXPECT(http_partial_rows[1].protocol_text.find("Message Type: Request") == std::string::npos);
@@ -366,7 +366,7 @@ void run_stream_query_tests() {
     const auto tls_partial_rows = tls_partial_session.list_flow_stream_items(0);
     PFL_EXPECT(tls_partial_rows.size() == 2);
     PFL_EXPECT(tls_partial_rows[0].label == "TLS ServerHello");
-    PFL_EXPECT(tls_partial_rows[1].label == "TLS Record Fragment");
+    PFL_EXPECT(tls_partial_rows[1].label == "TLS Record Fragment (partial)");
     PFL_EXPECT(tls_partial_rows[0].byte_count == server_hello_record.size());
     PFL_EXPECT(tls_partial_rows[1].byte_count == incomplete_tls_record.size());
     PFL_EXPECT(tls_partial_rows[1].protocol_text.find("complete TLS record") != std::string::npos);
@@ -506,7 +506,7 @@ void run_stream_query_tests() {
     const auto reassembled_partial_rows = reassembled_partial_session.list_flow_stream_items(0);
     PFL_EXPECT(reassembled_partial_rows.size() == 2);
     PFL_EXPECT(reassembled_partial_rows[0].label == "TLS ServerHello");
-    PFL_EXPECT(reassembled_partial_rows[1].label == "TLS Record Fragment");
+    PFL_EXPECT(reassembled_partial_rows[1].label == "TLS Record Fragment (partial)");
     PFL_EXPECT(reassembled_partial_rows[1].packet_indices == expected_split_packet_indices);
     PFL_EXPECT(reassembled_partial_rows[1].protocol_text.find("do not contain a complete TLS record") != std::string::npos);
     PFL_EXPECT(reassembled_partial_rows[1].protocol_text.find("ApplicationData") == std::string::npos);

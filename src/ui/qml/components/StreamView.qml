@@ -11,6 +11,8 @@ Frame {
     property bool streamPartiallyLoaded: false
     property var loadedStreamItemCount: 0
     property var totalStreamItemCount: 0
+    property int streamPacketWindowCount: 0
+    property bool streamPacketWindowPartial: false
     property bool canLoadMoreStreamItems: false
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
@@ -70,19 +72,38 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: root.streamLoading || root.loadedStreamItemCount > 0 || root.totalStreamItemCount > 0
+            visible: root.streamLoading || root.loadedStreamItemCount > 0 || root.totalStreamItemCount > 0 || root.streamPacketWindowPartial
             spacing: 8
 
-            Label {
+            ColumnLayout {
                 Layout.fillWidth: true
-                color: "#64748b"
-                text: root.streamLoading
-                    ? "Loading stream..."
-                    : root.streamPartiallyLoaded
-                        ? (root.totalStreamItemCount > 0
-                            ? "Showing %1 of %2 stream items".arg(root.loadedStreamItemCount).arg(root.totalStreamItemCount)
-                            : "Showing first %1 stream items".arg(root.loadedStreamItemCount))
-                        : "Showing all %1 stream items".arg(root.totalStreamItemCount > 0 ? root.totalStreamItemCount : root.loadedStreamItemCount)
+                spacing: 2
+
+                Label {
+                    Layout.fillWidth: true
+                    color: "#64748b"
+                    text: root.streamLoading
+                        ? "Loading stream..."
+                        : root.streamPartiallyLoaded
+                            ? (root.totalStreamItemCount > 0
+                                ? "Showing %1 of %2 stream items".arg(root.loadedStreamItemCount).arg(root.totalStreamItemCount)
+                                : "Showing first %1 stream items".arg(root.loadedStreamItemCount))
+                            : "Showing all %1 stream items".arg(root.totalStreamItemCount > 0 ? root.totalStreamItemCount : root.loadedStreamItemCount)
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: root.streamPacketWindowPartial && !root.streamLoading
+                    color: "#7c5a10"
+                    text: "Showing stream for first %1 packets".arg(root.streamPacketWindowCount)
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: root.canLoadMoreStreamItems && !root.streamLoading
+                    color: "#64748b"
+                    text: "Load more packets to continue analysis"
+                }
             }
 
             Button {
