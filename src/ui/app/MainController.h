@@ -247,6 +247,8 @@ private:
     bool stream_loading_ {false};
     std::size_t loaded_stream_item_count_ {0};
     std::size_t total_stream_item_count_ {0};
+    std::size_t stream_packet_window_count_ {0};
+    std::size_t stream_item_budget_count_ {0};
     bool stream_tab_active_ {false};
     bool can_load_more_stream_items_ {false};
     bool stream_state_materialized_for_selected_flow_ {false};

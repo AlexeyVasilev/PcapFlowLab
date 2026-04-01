@@ -26,6 +26,8 @@ constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
 constexpr std::size_t kStreamItemBatchSize = 15U;
+constexpr std::size_t kInitialStreamPacketBudget = 30U;
+constexpr std::size_t kStreamPacketBatchSize = 30U;
 
 struct OpenJobResult {
     bool opened {false};
@@ -653,8 +655,10 @@ bool MainController::attachSourceCapture(const QString& path) {
         stream_loading_ = false;
         loaded_stream_item_count_ = 0U;
         total_stream_item_count_ = 0U;
-        can_load_more_stream_items_ = false;
-        stream_state_materialized_for_selected_flow_ = false;
+        stream_packet_window_count_ = 0U;
+        stream_item_budget_count_ = 0U;
+    can_load_more_stream_items_ = false;
+    stream_state_materialized_for_selected_flow_ = false;
         if (stream_tab_active_) {
             refreshSelectedStreamItems(true);
         } else {
@@ -868,8 +872,10 @@ void MainController::setSelectedFlowIndex(const int index) {
     stream_loading_ = false;
     loaded_stream_item_count_ = 0U;
     total_stream_item_count_ = 0U;
-        can_load_more_stream_items_ = false;
-        stream_state_materialized_for_selected_flow_ = false;
+    stream_packet_window_count_ = 0U;
+    stream_item_budget_count_ = 0U;
+    can_load_more_stream_items_ = false;
+    stream_state_materialized_for_selected_flow_ = false;
 
     if (selected_flow_index_ >= 0) {
         refreshSelectedFlowPackets(true);
@@ -1003,6 +1009,8 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         stream_loading_ = false;
         loaded_stream_item_count_ = 0U;
         total_stream_item_count_ = 0U;
+        stream_packet_window_count_ = 0U;
+        stream_item_budget_count_ = 0U;
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
         if (previousLoading != stream_loading_ || previousLoaded != loaded_stream_item_count_ || previousTotal != total_stream_item_count_ || previousCanLoadMore != can_load_more_stream_items_) {
@@ -1011,31 +1019,35 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         return;
     }
 
-    stream_loading_ = true;
-    const auto offset = resetRows ? std::size_t {0U} : loaded_stream_item_count_;
-    const auto batchSize = resetRows ? kInitialStreamItems : kStreamItemBatchSize;
-
-    // Stream items can outnumber packets because one payload may split into multiple
-    // higher-level items. A bounded probe keeps heavy flows incremental while small
-    // flows that fit inside the initial budget still materialize fully immediately.
-    const auto requestLimit = batchSize + 1U;
-    auto rows = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_), offset, requestLimit);
-    const bool hasMore = rows.size() > batchSize;
-    if (hasMore) {
-        rows.resize(batchSize);
-    }
-
+    const auto flowIndex = static_cast<std::size_t>(selected_flow_index_);
+    const auto totalFlowPacketCount = session_.flow_packet_count(flowIndex);
     if (resetRows) {
-        current_stream_items_ = rows;
-        stream_model_.refresh(current_stream_items_);
+        stream_packet_window_count_ = std::min(totalFlowPacketCount, kInitialStreamPacketBudget);
+        stream_item_budget_count_ = kInitialStreamItems;
     } else {
-        current_stream_items_.insert(current_stream_items_.end(), rows.begin(), rows.end());
-        stream_model_.append(rows);
+        stream_packet_window_count_ = std::min(totalFlowPacketCount, stream_packet_window_count_ + kStreamPacketBatchSize);
+        stream_item_budget_count_ += kStreamItemBatchSize;
     }
+
+    stream_loading_ = true;
+    const auto requestLimit = stream_item_budget_count_ + 1U;
+    const bool packetBudgetExhausted = stream_packet_window_count_ < totalFlowPacketCount;
+
+    auto rows = packetBudgetExhausted
+        ? session_.list_flow_stream_items_for_packet_prefix(flowIndex, stream_packet_window_count_, requestLimit)
+        : session_.list_flow_stream_items(flowIndex, 0U, requestLimit);
+
+    const bool hasMoreItems = rows.size() > stream_item_budget_count_;
+    if (hasMoreItems) {
+        rows.resize(stream_item_budget_count_);
+    }
+
+    current_stream_items_ = rows;
+    stream_model_.refresh(current_stream_items_);
 
     loaded_stream_item_count_ = current_stream_items_.size();
-    total_stream_item_count_ = hasMore ? 0U : loaded_stream_item_count_;
-    can_load_more_stream_items_ = hasMore;
+    can_load_more_stream_items_ = packetBudgetExhausted || hasMoreItems;
+    total_stream_item_count_ = can_load_more_stream_items_ ? 0U : loaded_stream_item_count_;
     stream_loading_ = false;
     stream_state_materialized_for_selected_flow_ = true;
 
@@ -1086,7 +1098,7 @@ void MainController::clearStreamSelection() {
 void MainController::clearFlowSelection() {
     const bool flowChanged = selected_flow_index_ != -1;
     const bool packetStateChanged = packets_loading_ || loaded_packet_row_count_ != 0U || total_packet_row_count_ != 0U;
-    const bool streamStateChanged = stream_loading_ || loaded_stream_item_count_ != 0U || total_stream_item_count_ != 0U || can_load_more_stream_items_ || stream_state_materialized_for_selected_flow_;
+    const bool streamStateChanged = stream_loading_ || loaded_stream_item_count_ != 0U || total_stream_item_count_ != 0U || stream_packet_window_count_ != 0U || stream_item_budget_count_ != 0U || can_load_more_stream_items_ || stream_state_materialized_for_selected_flow_;
     selected_flow_index_ = -1;
     packet_model_.clear();
     current_stream_items_.clear();
@@ -1097,6 +1109,8 @@ void MainController::clearFlowSelection() {
     packets_loading_ = false;
     loaded_stream_item_count_ = 0U;
     total_stream_item_count_ = 0U;
+    stream_packet_window_count_ = 0U;
+    stream_item_budget_count_ = 0U;
     stream_loading_ = false;
     can_load_more_stream_items_ = false;
     stream_state_materialized_for_selected_flow_ = false;
@@ -1135,6 +1149,8 @@ void MainController::resetLoadedState() {
     stream_model_.clear();
     loaded_stream_item_count_ = 0U;
     total_stream_item_count_ = 0U;
+    stream_packet_window_count_ = 0U;
+    stream_item_budget_count_ = 0U;
     stream_loading_ = false;
     can_load_more_stream_items_ = false;
     stream_state_materialized_for_selected_flow_ = false;

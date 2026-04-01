@@ -548,7 +548,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_model->rowCount() == 1);
     UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
-    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("HTTP Request"));
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("HTTP GET /"));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_http_request_payload().size());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::PacketCountRole).toUInt() == 1U);
 
@@ -559,13 +559,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model != nullptr);
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
     UI_EXPECT(stream_details_model->summaryText().contains(QString::fromUtf8("Direction: A\xE2\x86\x92" "B")));
-    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: HTTP Request")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: HTTP GET /")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet Count: 1")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Contributing Packets: flow #1 (file 0)")));
     UI_EXPECT(stream_details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("HTTP")));
     UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Method: GET")));
     UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Path: /")));
+    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Host:")));
 
     stream_controller.setSelectedPacketIndex(0);
     UI_EXPECT(stream_controller.selectedPacketIndex() == 0U);

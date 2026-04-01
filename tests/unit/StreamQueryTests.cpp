@@ -183,7 +183,7 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_http_request_session.open_capture(split_http_request_path, fast_options));
     const auto split_http_request_rows = split_http_request_session.list_flow_stream_items(0);
     PFL_EXPECT(split_http_request_rows.size() == 1);
-    PFL_EXPECT(split_http_request_rows[0].label == "HTTP Request");
+    PFL_EXPECT(split_http_request_rows[0].label == "HTTP GET /split");
     PFL_EXPECT(split_http_request_rows[0].byte_count == split_http_request.size());
     PFL_EXPECT(split_http_request_rows[0].packet_count == 2);
     const auto expected_http_split_packet_indices = std::vector<std::uint64_t> {0, 1};
@@ -195,6 +195,8 @@ void run_stream_query_tests() {
     constexpr std::string_view split_http_response_text =
         "HTTP/1.1 200 OK\r\n"
         "Server: test\r\n"
+        "Content-Type: text/plain\r\n"
+        "Content-Length: 5\r\n"
         "\r\n";
     const auto split_http_response = make_text_bytes(split_http_response_text);
     const auto split_http_response_a = std::vector<std::uint8_t>(
@@ -221,12 +223,14 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_http_response_session.open_capture(split_http_response_path, fast_options));
     const auto split_http_response_rows = split_http_response_session.list_flow_stream_items(0);
     PFL_EXPECT(split_http_response_rows.size() == 1);
-    PFL_EXPECT(split_http_response_rows[0].label == "HTTP Response");
+    PFL_EXPECT(split_http_response_rows[0].label == "HTTP 200 OK");
     PFL_EXPECT(split_http_response_rows[0].byte_count == split_http_response.size());
     PFL_EXPECT(split_http_response_rows[0].packet_count == 2);
     PFL_EXPECT(split_http_response_rows[0].packet_indices == expected_http_split_packet_indices);
     PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Status Code: 200") != std::string::npos);
     PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Reason: OK") != std::string::npos);
+    PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Content-Type: text/plain") != std::string::npos);
+    PFL_EXPECT(split_http_response_rows[0].protocol_text.find("Content-Length: 5") != std::string::npos);
 
     constexpr std::string_view http_request_one_text =
         "GET /one HTTP/1.1\r\n"
@@ -264,8 +268,8 @@ void run_stream_query_tests() {
     PFL_EXPECT(http_multi_session.open_capture(http_multi_path, fast_options));
     const auto http_multi_rows = http_multi_session.list_flow_stream_items(0);
     PFL_EXPECT(http_multi_rows.size() == 2);
-    PFL_EXPECT(http_multi_rows[0].label == "HTTP Request");
-    PFL_EXPECT(http_multi_rows[1].label == "HTTP Request");
+    PFL_EXPECT(http_multi_rows[0].label == "HTTP GET /one");
+    PFL_EXPECT(http_multi_rows[1].label == "HTTP GET /two");
     PFL_EXPECT(http_multi_rows[0].byte_count == http_request_one.size());
     PFL_EXPECT(http_multi_rows[1].byte_count == http_request_two.size());
     PFL_EXPECT(http_multi_rows[0].packet_indices == std::vector<std::uint64_t> {0});
@@ -305,7 +309,7 @@ void run_stream_query_tests() {
     PFL_EXPECT(http_partial_session.open_capture(http_partial_path, fast_options));
     const auto http_partial_rows = http_partial_session.list_flow_stream_items(0);
     PFL_EXPECT(http_partial_rows.size() == 2);
-    PFL_EXPECT(http_partial_rows[0].label == "HTTP Request");
+    PFL_EXPECT(http_partial_rows[0].label == "HTTP GET /ok");
     PFL_EXPECT(http_partial_rows[1].label == "HTTP Payload");
     PFL_EXPECT(http_partial_rows[1].packet_indices == expected_http_split_packet_indices);
     PFL_EXPECT(http_partial_rows[1].protocol_text.find("complete HTTP header block") != std::string::npos);
@@ -514,6 +518,46 @@ void run_stream_query_tests() {
             1000U + index,
             make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 54000, 443, 6, 0x18)
         });
+    }
+    const auto split_http_request_prefix_rows = split_http_request_session.list_flow_stream_items_for_packet_prefix(0, 30U, 16U);
+    PFL_EXPECT(split_http_request_prefix_rows.size() == 1U);
+    PFL_EXPECT(split_http_request_prefix_rows[0].label == "HTTP GET /split");
+
+    constexpr std::string_view bounded_prefix_http_text =
+        "GET /bounded HTTP/1.1\r\n"
+        "Host: bounded.example\r\n"
+        "User-Agent: split-test\r\n"
+        "Accept: */*\r\n"
+        "Connection: keep-alive\r\n"
+        "X-Debug: 1234567890\r\n"
+        "\r\n";
+    const auto bounded_prefix_http_bytes = make_text_bytes(bounded_prefix_http_text);
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> bounded_prefix_http_packets {};
+    bounded_prefix_http_packets.reserve(40U);
+    const auto chunk_size = (bounded_prefix_http_bytes.size() + 39U) / 40U;
+    for (std::size_t packetIndex = 0; packetIndex < 40U; ++packetIndex) {
+        const auto begin = std::min(packetIndex * chunk_size, bounded_prefix_http_bytes.size());
+        const auto end = std::min(begin + chunk_size, bounded_prefix_http_bytes.size());
+        const auto fragment = std::vector<std::uint8_t>(bounded_prefix_http_bytes.begin() + static_cast<std::ptrdiff_t>(begin), bounded_prefix_http_bytes.begin() + static_cast<std::ptrdiff_t>(end));
+        bounded_prefix_http_packets.push_back({
+            static_cast<std::uint32_t>(2000U + packetIndex),
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(ipv4(10, 61, 0, 1), ipv4(10, 61, 0, 2), 54010, 80, fragment, 0x18)
+        });
+    }
+    const auto bounded_prefix_http_path = write_temp_pcap(
+        "pfl_stream_query_bounded_prefix_http.pcap",
+        make_classic_pcap(bounded_prefix_http_packets)
+    );
+
+    CaptureSession bounded_prefix_http_session {};
+    PFL_EXPECT(bounded_prefix_http_session.open_capture(bounded_prefix_http_path, fast_options));
+    const auto bounded_prefix_rows = bounded_prefix_http_session.list_flow_stream_items_for_packet_prefix(0, 30U, 16U);
+    PFL_EXPECT(!bounded_prefix_rows.empty());
+    PFL_EXPECT(bounded_prefix_rows.size() <= 16U);
+    for (const auto& row : bounded_prefix_rows) {
+        for (const auto packet_index : row.packet_indices) {
+            PFL_EXPECT(packet_index < 30U);
+        }
     }
     const auto bounded_stream_path = write_temp_pcap(
         "pfl_stream_query_bounded_rows.pcap",
