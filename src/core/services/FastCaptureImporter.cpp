@@ -10,7 +10,7 @@ CaptureImportResult FastCaptureImporter::import_capture(const std::filesystem::p
                                                         OpenContext* ctx) const {
     state = {};
 
-    CaptureImportProcessor processor {options.settings};
+    CaptureImportProcessor processor {options.settings, false};
     return import_capture_from_path(path, state, processor, ctx);
 }
 

@@ -1,4 +1,4 @@
-﻿#include "ui/app/FlowListModel.h"
+#include "ui/app/FlowListModel.h"
 
 #include <algorithm>
 
@@ -259,6 +259,17 @@ bool FlowListModel::containsFlowIndex(const int flowIndex) const noexcept {
     });
 }
 
+void FlowListModel::setServiceHintForFlowIndex(const int flowIndex, const QString& serviceHint) {
+    auto itemIt = std::find_if(all_items_.begin(), all_items_.end(), [flowIndex](const Item& item) {
+        return item.flow_index == flowIndex;
+    });
+    if (itemIt == all_items_.end() || itemIt->service_hint == serviceHint) {
+        return;
+    }
+
+    itemIt->service_hint = serviceHint;
+    rebuildVisibleItems();
+}
 void FlowListModel::rebuildVisibleItems() {
     beginResetModel();
     visible_items_.clear();
@@ -285,3 +296,4 @@ void FlowListModel::rebuildVisibleItems() {
 }
 
 }  // namespace pfl
+

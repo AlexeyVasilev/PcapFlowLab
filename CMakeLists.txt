@@ -72,11 +72,16 @@ add_library(
     src/core/services/DnsPacketProtocolAnalyzer.cpp
     src/core/services/HttpPacketProtocolAnalyzer.cpp
     src/core/services/FlowHintService.cpp
+    src/core/services/QuicInitialParser.cpp
     src/core/services/HexDumpService.cpp
     src/app/session/CaptureSession.cpp
 )
 
 target_link_libraries(pcap_flow_lab_core PUBLIC pcap_flow_lab_warnings)
+
+if(WIN32)
+    target_link_libraries(pcap_flow_lab_core PUBLIC bcrypt)
+endif()
 
 target_include_directories(
     pcap_flow_lab_core
@@ -230,6 +235,8 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 
 
 

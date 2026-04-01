@@ -81,8 +81,8 @@ CaptureImportResult import_packets(Reader& reader, CaptureState& state, const Ca
 
 }  // namespace
 
-CaptureImportProcessor::CaptureImportProcessor(const AnalysisSettings settings)
-    : hint_service_(settings) {
+CaptureImportProcessor::CaptureImportProcessor(const AnalysisSettings settings, const bool enable_quic_initial_sni)
+    : hint_service_(settings, enable_quic_initial_sni) {
 }
 
 void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, CaptureState& state) const {
@@ -177,3 +177,6 @@ CaptureImportResult import_capture_from_path(const std::filesystem::path& path, 
 }
 
 }  // namespace pfl
+
+
+

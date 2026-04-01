@@ -16,7 +16,7 @@ namespace pfl {
 
 class CaptureImportProcessor {
 public:
-    explicit CaptureImportProcessor(AnalysisSettings settings = {});
+    explicit CaptureImportProcessor(AnalysisSettings settings = {}, bool enable_quic_initial_sni = false);
 
     void process_packet(const RawPcapPacket& packet, CaptureState& state) const;
 

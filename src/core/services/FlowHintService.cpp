@@ -10,6 +10,7 @@
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketPayloadService.h"
+#include "core/services/QuicInitialParser.h"
 
 namespace pfl {
 
@@ -20,22 +21,27 @@ constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 
+struct FlowHintDetectionSettings {
+    AnalysisSettings analysis_settings {};
+    bool enable_quic_initial_sni {false};
+};
+
 std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
-                                      static_cast<std::uint16_t>(bytes[offset + 1]));
+                                      static_cast<std::uint16_t>(bytes[offset + 1U]));
 }
 
 std::uint32_t read_be24(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return (static_cast<std::uint32_t>(bytes[offset]) << 16U) |
-           (static_cast<std::uint32_t>(bytes[offset + 1]) << 8U) |
-           static_cast<std::uint32_t>(bytes[offset + 2]);
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 2U]);
 }
 
 std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
-           (static_cast<std::uint32_t>(bytes[offset + 1]) << 16U) |
-           (static_cast<std::uint32_t>(bytes[offset + 2]) << 8U) |
-           static_cast<std::uint32_t>(bytes[offset + 3]);
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 3U]);
 }
 
 bool has_port(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port) noexcept {
@@ -202,7 +208,7 @@ bool looks_like_tls_record(std::span<const std::uint8_t> payload) {
         return false;
     }
 
-    const auto record_length = static_cast<std::size_t>(read_be16(payload, 3));
+    const auto record_length = static_cast<std::size_t>(read_be16(payload, 3U));
     return record_length > 0U && record_length <= (payload.size() - kTlsRecordHeaderSize);
 }
 
@@ -211,78 +217,78 @@ std::optional<std::string> extract_tls_sni(std::span<const std::uint8_t> payload
         return std::nullopt;
     }
 
-    const auto record_length = static_cast<std::size_t>(read_be16(payload, 3));
+    const auto record_length = static_cast<std::size_t>(read_be16(payload, 3U));
     const auto record = payload.subspan(kTlsRecordHeaderSize, record_length);
-    if (record.size() < 4 || record[0] != 0x01U) {
+    if (record.size() < 4U || record[0] != 0x01U) {
         return std::nullopt;
     }
 
-    const auto handshake_length = static_cast<std::size_t>(read_be24(record, 1));
+    const auto handshake_length = static_cast<std::size_t>(read_be24(record, 1U));
     if (record.size() < 4U + handshake_length) {
         return std::nullopt;
     }
 
-    auto body = record.subspan(4, handshake_length);
-    std::size_t offset = 0;
-    if (body.size() < 34) {
+    auto body = record.subspan(4U, handshake_length);
+    std::size_t offset = 0U;
+    if (body.size() < 34U) {
         return std::nullopt;
     }
 
-    offset += 2;
-    offset += 32;
+    offset += 2U;
+    offset += 32U;
 
     const auto session_id_length = static_cast<std::size_t>(body[offset]);
     ++offset;
-    if (body.size() < offset + session_id_length + 2) {
+    if (body.size() < offset + session_id_length + 2U) {
         return std::nullopt;
     }
     offset += session_id_length;
 
     const auto cipher_suites_length = static_cast<std::size_t>(read_be16(body, offset));
-    offset += 2;
-    if (cipher_suites_length == 0 || body.size() < offset + cipher_suites_length + 1) {
+    offset += 2U;
+    if (cipher_suites_length == 0U || body.size() < offset + cipher_suites_length + 1U) {
         return std::nullopt;
     }
     offset += cipher_suites_length;
 
     const auto compression_methods_length = static_cast<std::size_t>(body[offset]);
     ++offset;
-    if (body.size() < offset + compression_methods_length + 2) {
+    if (body.size() < offset + compression_methods_length + 2U) {
         return std::nullopt;
     }
     offset += compression_methods_length;
 
     const auto extensions_length = static_cast<std::size_t>(read_be16(body, offset));
-    offset += 2;
+    offset += 2U;
     if (body.size() < offset + extensions_length) {
         return std::nullopt;
     }
 
     const auto extensions_end = offset + extensions_length;
-    while (offset + 4 <= extensions_end) {
+    while (offset + 4U <= extensions_end) {
         const auto extension_type = read_be16(body, offset);
-        const auto extension_length = static_cast<std::size_t>(read_be16(body, offset + 2));
-        offset += 4;
+        const auto extension_length = static_cast<std::size_t>(read_be16(body, offset + 2U));
+        offset += 4U;
         if (offset + extension_length > extensions_end) {
             return std::nullopt;
         }
 
         if (extension_type == 0x0000U) {
             auto server_name_extension = body.subspan(offset, extension_length);
-            if (server_name_extension.size() < 2) {
+            if (server_name_extension.size() < 2U) {
                 return std::nullopt;
             }
 
-            const auto server_name_list_length = static_cast<std::size_t>(read_be16(server_name_extension, 0));
+            const auto server_name_list_length = static_cast<std::size_t>(read_be16(server_name_extension, 0U));
             if (server_name_extension.size() < 2U + server_name_list_length) {
                 return std::nullopt;
             }
 
-            std::size_t name_offset = 2;
-            while (name_offset + 3 <= 2U + server_name_list_length) {
+            std::size_t name_offset = 2U;
+            while (name_offset + 3U <= 2U + server_name_list_length) {
                 const auto name_type = server_name_extension[name_offset];
-                const auto name_length = static_cast<std::size_t>(read_be16(server_name_extension, name_offset + 1));
-                name_offset += 3;
+                const auto name_length = static_cast<std::size_t>(read_be16(server_name_extension, name_offset + 1U));
+                name_offset += 3U;
                 if (name_offset + name_length > 2U + server_name_list_length) {
                     return std::nullopt;
                 }
@@ -309,7 +315,7 @@ std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message,
     std::string name {};
     bool first_label = true;
 
-    for (std::size_t label_count = 0; label_count < 32; ++label_count) {
+    for (std::size_t label_count = 0; label_count < 32U; ++label_count) {
         if (offset >= message.size()) {
             return std::nullopt;
         }
@@ -317,7 +323,7 @@ std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message,
         const auto label_length = static_cast<std::size_t>(message[offset]);
         ++offset;
 
-        if (label_length == 0) {
+        if (label_length == 0U) {
             return name.empty() ? std::optional<std::string> {std::string(".")} : std::optional<std::string> {name};
         }
 
@@ -330,7 +336,7 @@ std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message,
         }
         first_label = false;
 
-        for (std::size_t index = 0; index < label_length; ++index) {
+        for (std::size_t index = 0U; index < label_length; ++index) {
             const auto character = static_cast<char>(message[offset + index]);
             if (!is_plausible_service_name_char(character)) {
                 return std::nullopt;
@@ -346,16 +352,16 @@ std::optional<std::string> parse_dns_name(std::span<const std::uint8_t> message,
 
 std::optional<std::span<const std::uint8_t>> dns_message(std::span<const std::uint8_t> payload, const bool tcp) {
     if (tcp) {
-        if (payload.size() < 2) {
+        if (payload.size() < 2U) {
             return std::nullopt;
         }
 
-        const auto message_length = static_cast<std::size_t>(read_be16(payload, 0));
+        const auto message_length = static_cast<std::size_t>(read_be16(payload, 0U));
         if (message_length < kDnsHeaderSize || payload.size() < 2U + message_length) {
             return std::nullopt;
         }
 
-        return payload.subspan(2, message_length);
+        return payload.subspan(2U, message_length);
     }
 
     if (payload.size() < kDnsHeaderSize) {
@@ -371,7 +377,7 @@ FlowHintUpdate detect_dns_hint(std::span<const std::uint8_t> payload, const bool
         return {};
     }
 
-    const auto qdcount = read_be16(*message, 4);
+    const auto qdcount = read_be16(*message, 4U);
     if (qdcount == 0U) {
         return {};
     }
@@ -432,8 +438,11 @@ FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
     return hint;
 }
 
-FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload) {
-    if (payload.size() < 7) {
+FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload,
+                                const std::uint16_t src_port,
+                                const std::uint16_t dst_port,
+                                const bool enable_quic_initial_sni) {
+    if (payload.size() < 7U) {
         return {};
     }
 
@@ -442,11 +451,11 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload) {
         return {};
     }
 
-    if (read_be32(payload, 1) == 0U) {
+    if (read_be32(payload, 1U) == 0U) {
         return {};
     }
 
-    const auto destination_connection_id_length = static_cast<std::size_t>(payload[5]);
+    const auto destination_connection_id_length = static_cast<std::size_t>(payload[5U]);
     if (payload.size() < 6U + destination_connection_id_length + 1U) {
         return {};
     }
@@ -457,16 +466,26 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload) {
         return {};
     }
 
-    return FlowHintUpdate {
+    FlowHintUpdate hint {
         .protocol_hint = FlowProtocolHint::quic,
     };
+
+    if (enable_quic_initial_sni && src_port != kHttpsPort && dst_port == kHttpsPort) {
+        QuicInitialParser parser {};
+        const auto sni = parser.extract_client_initial_sni(payload);
+        if (sni.has_value()) {
+            hint.service_hint = *sni;
+        }
+    }
+
+    return hint;
 }
 
 template <typename FlowKey>
 FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes,
                                       const std::uint32_t data_link_type,
                                       const FlowKey& flow_key,
-                                      const AnalysisSettings& settings) {
+                                      const FlowHintDetectionSettings& settings) {
     PacketPayloadService payload_service {};
     const auto payload = payload_service.extract_transport_payload(packet_bytes, data_link_type);
     if (payload.empty()) {
@@ -491,7 +510,7 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_http_hint(payload_view, settings);
+        return detect_http_hint(payload_view, settings.analysis_settings);
     case ProtocolId::udp:
         if (has_port(flow_key.src_port, flow_key.dst_port, kDnsPort)) {
             const auto dns_hint = detect_dns_hint(payload_view, false);
@@ -501,7 +520,7 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
         }
 
         if (has_port(flow_key.src_port, flow_key.dst_port, kHttpsPort)) {
-            return detect_quic_hint(payload_view);
+            return detect_quic_hint(payload_view, flow_key.src_port, flow_key.dst_port, settings.enable_quic_initial_sni);
         }
 
         return {};
@@ -512,27 +531,35 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
 
 }  // namespace
 
-FlowHintService::FlowHintService(const AnalysisSettings settings)
-    : settings_(settings) {
+FlowHintService::FlowHintService(const AnalysisSettings settings, const bool enable_quic_initial_sni)
+    : settings_(settings)
+    , enable_quic_initial_sni_(enable_quic_initial_sni) {
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV4& flow_key) const {
     return detect(packet_bytes, kLinkTypeEthernet, flow_key);
 }
 
-FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type, const FlowKeyV4& flow_key) const {
-    return detect_transport_hints(packet_bytes, data_link_type, flow_key, settings_);
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
+                                       const std::uint32_t data_link_type,
+                                       const FlowKeyV4& flow_key) const {
+    return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
+        .analysis_settings = settings_,
+        .enable_quic_initial_sni = enable_quic_initial_sni_,
+    });
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const {
     return detect(packet_bytes, kLinkTypeEthernet, flow_key);
 }
 
-FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type, const FlowKeyV6& flow_key) const {
-    return detect_transport_hints(packet_bytes, data_link_type, flow_key, settings_);
+FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes,
+                                       const std::uint32_t data_link_type,
+                                       const FlowKeyV6& flow_key) const {
+    return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
+        .analysis_settings = settings_,
+        .enable_quic_initial_sni = enable_quic_initial_sni_,
+    });
 }
 
 }  // namespace pfl
-
-
-

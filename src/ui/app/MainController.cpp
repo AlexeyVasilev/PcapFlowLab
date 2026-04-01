@@ -887,6 +887,7 @@ void MainController::setSelectedFlowIndex(const int index) {
 
     if (selected_flow_index_ >= 0) {
         refreshSelectedFlowPackets(true);
+        maybeEnrichSelectedFlowServiceHint();
         if (stream_tab_active_) {
             refreshSelectedStreamItems(true);
         } else {
@@ -953,6 +954,31 @@ void MainController::setFlowFilterText(const QString& text) {
     flow_model_.setFilterText(text);
     synchronizeFlowSelection();
     emit flowFilterTextChanged();
+}
+
+void MainController::maybeEnrichSelectedFlowServiceHint() {
+    if (selected_flow_index_ < 0 || !session_.has_source_capture()) {
+        return;
+    }
+
+    const auto row = flow_model_.rowForFlowIndex(selected_flow_index_);
+    if (row < 0) {
+        return;
+    }
+
+    const auto modelIndex = flow_model_.index(row, 0);
+    const auto protocolHint = flow_model_.data(modelIndex, FlowListModel::ProtocolHintRole).toString();
+    const auto serviceHint = flow_model_.data(modelIndex, FlowListModel::ServiceHintRole).toString();
+    if (protocolHint.compare(QStringLiteral("QUIC"), Qt::CaseInsensitive) != 0 || !serviceHint.isEmpty()) {
+        return;
+    }
+
+    const auto derivedServiceHint = session_.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index_));
+    if (!derivedServiceHint.has_value() || derivedServiceHint->empty()) {
+        return;
+    }
+
+    flow_model_.setServiceHintForFlowIndex(selected_flow_index_, QString::fromStdString(*derivedServiceHint));
 }
 
 void MainController::refreshSelectedFlowPackets(const bool resetRows) {
@@ -1533,6 +1559,8 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
 
 
 

@@ -12,7 +12,7 @@ CaptureImportResult DeepCaptureImporter::import_capture(const std::filesystem::p
 
     // Deep import currently reuses the same base decode and aggregation path as fast import.
     // It remains a distinct integration point for future expensive protocol analyzers and reassembly.
-    CaptureImportProcessor processor {options.settings};
+    CaptureImportProcessor processor {options.settings, true};
     return import_capture_from_path(path, state, processor, ctx);
 }
 

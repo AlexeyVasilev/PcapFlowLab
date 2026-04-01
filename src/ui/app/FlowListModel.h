@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <QAbstractListModel>
 #include <QString>
@@ -59,6 +59,7 @@ public:
     void setFilterText(const QString& text);
     void setSortKey(SortKey key);
     void setSortAscending(bool ascending) noexcept;
+    void setServiceHintForFlowIndex(int flowIndex, const QString& serviceHint);
 
     [[nodiscard]] const QString& filterText() const noexcept;
     [[nodiscard]] SortKey sortKey() const noexcept;
@@ -94,3 +95,6 @@ private:
 };
 
 }  // namespace pfl
+
+
+

@@ -424,6 +424,16 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(sawHttp);
     UI_EXPECT(sawDns);
 
+    const auto quic_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_initial_ch_1.pcap";
+    MainController quic_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_controller, quic_fixture_path));
+    auto* quic_flow_model = qobject_cast<FlowListModel*>(quic_controller.flowModel());
+    UI_EXPECT(quic_flow_model != nullptr);
+    UI_EXPECT(quic_flow_model->rowCount() == 1);
+    UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+    UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+    quic_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("bag.itunes.apple.com"));
     controller.setFlowFilterText(QStringLiteral("ui.example"));
     UI_EXPECT(flow_model->rowCount() == 1);
     UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("HTTP"));
@@ -827,6 +837,8 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
 
 
 

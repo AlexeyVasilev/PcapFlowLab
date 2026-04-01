@@ -1,0 +1,742 @@
+#include "core/services/QuicInitialParser.h"
+
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstddef>
+#include <cwchar>
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#include <bcrypt.h>
+#endif
+
+namespace pfl {
+
+namespace {
+
+constexpr std::uint32_t kQuicVersion1 = 0x00000001U;
+constexpr std::size_t kQuicSampleSize = 16U;
+constexpr std::size_t kQuicTagSize = 16U;
+constexpr std::size_t kQuicInitialSecretSize = 32U;
+constexpr std::size_t kQuicAes128KeySize = 16U;
+constexpr std::size_t kQuicIvSize = 12U;
+
+constexpr std::array<std::uint8_t, 20> kQuicInitialSaltV1 {
+    0x38U, 0x76U, 0x2CU, 0xF7U, 0xF5U, 0x59U, 0x34U, 0xB3U, 0x4DU, 0x17U,
+    0x9AU, 0xE6U, 0xA4U, 0xC8U, 0x0CU, 0xADU, 0xCCU, 0xBBU, 0x7FU, 0x0AU,
+};
+
+std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
+                                      static_cast<std::uint16_t>(bytes[offset + 1U]));
+}
+
+std::uint32_t read_be24(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return (static_cast<std::uint32_t>(bytes[offset]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 2U]);
+}
+
+std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 3U]);
+}
+
+bool is_plausible_service_name_char(const char value) noexcept {
+    const auto byte = static_cast<unsigned char>(value);
+    return std::isalnum(byte) != 0 || value == '.' || value == '-' || value == '_';
+}
+
+bool is_plausible_service_name(const std::string_view value) noexcept {
+    if (value.empty()) {
+        return false;
+    }
+
+    for (const auto character : value) {
+        if (!is_plausible_service_name_char(character)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string_view bytes_as_text(std::span<const std::uint8_t> bytes) {
+    return std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+
+std::optional<std::uint64_t> read_varint(std::span<const std::uint8_t> bytes, std::size_t& offset) {
+    if (offset >= bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto first = bytes[offset];
+    const auto encoded_length = static_cast<std::size_t>(1U << ((first >> 6U) & 0x03U));
+    if (offset + encoded_length > bytes.size()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t value = static_cast<std::uint64_t>(first & 0x3FU);
+    for (std::size_t index = 1U; index < encoded_length; ++index) {
+        value = (value << 8U) | static_cast<std::uint64_t>(bytes[offset + index]);
+    }
+
+    offset += encoded_length;
+    return value;
+}
+
+std::vector<std::uint8_t> tls_hkdf_label(const std::uint16_t length, const std::string_view label) {
+    constexpr std::string_view prefix = "tls13 ";
+
+    std::vector<std::uint8_t> info {};
+    info.reserve(2U + 1U + prefix.size() + label.size() + 1U);
+    info.push_back(static_cast<std::uint8_t>((length >> 8U) & 0xFFU));
+    info.push_back(static_cast<std::uint8_t>(length & 0xFFU));
+    info.push_back(static_cast<std::uint8_t>(prefix.size() + label.size()));
+    info.insert(info.end(), prefix.begin(), prefix.end());
+    info.insert(info.end(), label.begin(), label.end());
+    info.push_back(0x00U);
+    return info;
+}
+
+#ifdef _WIN32
+
+class BCryptAlgorithm final {
+public:
+    BCryptAlgorithm(const wchar_t* algorithm, const ULONG flags = 0) {
+        if (BCryptOpenAlgorithmProvider(&handle_, algorithm, nullptr, flags) < 0) {
+            handle_ = nullptr;
+        }
+    }
+
+    ~BCryptAlgorithm() {
+        if (handle_ != nullptr) {
+            BCryptCloseAlgorithmProvider(handle_, 0);
+        }
+    }
+
+    BCryptAlgorithm(const BCryptAlgorithm&) = delete;
+    BCryptAlgorithm& operator=(const BCryptAlgorithm&) = delete;
+
+    [[nodiscard]] BCRYPT_ALG_HANDLE get() const noexcept {
+        return handle_;
+    }
+
+    [[nodiscard]] bool valid() const noexcept {
+        return handle_ != nullptr;
+    }
+
+private:
+    BCRYPT_ALG_HANDLE handle_ {nullptr};
+};
+
+class BCryptKey final {
+public:
+    BCryptKey(BCRYPT_ALG_HANDLE algorithm, std::span<const std::uint8_t> key_bytes) {
+        if (algorithm == nullptr) {
+            return;
+        }
+
+        ULONG object_length = 0;
+        ULONG result_size = 0;
+        if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&object_length), sizeof(object_length), &result_size, 0) < 0) {
+            return;
+        }
+
+        object_.resize(object_length);
+        if (BCryptGenerateSymmetricKey(
+                algorithm,
+                &handle_,
+                object_.empty() ? nullptr : object_.data(),
+                static_cast<ULONG>(object_.size()),
+                const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(key_bytes.data())),
+                static_cast<ULONG>(key_bytes.size()),
+                0) < 0) {
+            handle_ = nullptr;
+            object_.clear();
+        }
+    }
+
+    ~BCryptKey() {
+        if (handle_ != nullptr) {
+            BCryptDestroyKey(handle_);
+        }
+    }
+
+    BCryptKey(const BCryptKey&) = delete;
+    BCryptKey& operator=(const BCryptKey&) = delete;
+
+    [[nodiscard]] BCRYPT_KEY_HANDLE get() const noexcept {
+        return handle_;
+    }
+
+    [[nodiscard]] bool valid() const noexcept {
+        return handle_ != nullptr;
+    }
+
+private:
+    BCRYPT_KEY_HANDLE handle_ {nullptr};
+    std::vector<std::uint8_t> object_ {};
+};
+
+std::optional<std::vector<std::uint8_t>> hmac_sha256(std::span<const std::uint8_t> key, std::span<const std::uint8_t> data) {
+    BCryptAlgorithm algorithm {BCRYPT_SHA256_ALGORITHM, BCRYPT_ALG_HANDLE_HMAC_FLAG};
+    if (!algorithm.valid()) {
+        return std::nullopt;
+    }
+
+    ULONG object_length = 0;
+    ULONG object_result = 0;
+    if (BCryptGetProperty(algorithm.get(), BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&object_length), sizeof(object_length), &object_result, 0) < 0) {
+        return std::nullopt;
+    }
+
+    ULONG hash_length = 0;
+    ULONG hash_result = 0;
+    if (BCryptGetProperty(algorithm.get(), BCRYPT_HASH_LENGTH, reinterpret_cast<PUCHAR>(&hash_length), sizeof(hash_length), &hash_result, 0) < 0) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> object(object_length);
+    std::vector<std::uint8_t> hash(hash_length);
+    BCRYPT_HASH_HANDLE handle = nullptr;
+    if (BCryptCreateHash(
+            algorithm.get(),
+            &handle,
+            object.empty() ? nullptr : object.data(),
+            static_cast<ULONG>(object.size()),
+            const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(key.data())),
+            static_cast<ULONG>(key.size()),
+            0) < 0) {
+        return std::nullopt;
+    }
+
+    const auto destroy_hash = [&handle]() {
+        if (handle != nullptr) {
+            BCryptDestroyHash(handle);
+            handle = nullptr;
+        }
+    };
+
+    if (!data.empty() && BCryptHashData(handle, const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(data.data())), static_cast<ULONG>(data.size()), 0) < 0) {
+        destroy_hash();
+        return std::nullopt;
+    }
+
+    if (BCryptFinishHash(handle, hash.data(), static_cast<ULONG>(hash.size()), 0) < 0) {
+        destroy_hash();
+        return std::nullopt;
+    }
+
+    destroy_hash();
+    return hash;
+}
+
+std::optional<std::vector<std::uint8_t>> hkdf_extract(std::span<const std::uint8_t> salt, std::span<const std::uint8_t> ikm) {
+    return hmac_sha256(salt, ikm);
+}
+
+std::optional<std::vector<std::uint8_t>> hkdf_expand(std::span<const std::uint8_t> prk,
+                                                     std::span<const std::uint8_t> info,
+                                                     const std::size_t length) {
+    std::vector<std::uint8_t> output {};
+    output.reserve(length);
+    std::vector<std::uint8_t> previous {};
+    std::uint8_t counter = 1U;
+
+    while (output.size() < length) {
+        std::vector<std::uint8_t> input {};
+        input.reserve(previous.size() + info.size() + 1U);
+        input.insert(input.end(), previous.begin(), previous.end());
+        input.insert(input.end(), info.begin(), info.end());
+        input.push_back(counter);
+
+        const auto block = hmac_sha256(prk, input);
+        if (!block.has_value()) {
+            return std::nullopt;
+        }
+
+        previous = *block;
+        const auto bytes_to_copy = std::min(previous.size(), length - output.size());
+        output.insert(output.end(), previous.begin(), previous.begin() + static_cast<std::ptrdiff_t>(bytes_to_copy));
+        ++counter;
+    }
+
+    return output;
+}
+
+std::optional<std::vector<std::uint8_t>> hkdf_expand_label(std::span<const std::uint8_t> secret,
+                                                           const std::string_view label,
+                                                           const std::size_t length) {
+    const auto info = tls_hkdf_label(static_cast<std::uint16_t>(length), label);
+    return hkdf_expand(secret, info, length);
+}
+
+bool set_aes_chaining_mode(BCRYPT_ALG_HANDLE algorithm, const wchar_t* mode) {
+    return BCryptSetProperty(
+        algorithm,
+        BCRYPT_CHAINING_MODE,
+        reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(mode)),
+        static_cast<ULONG>((std::wcslen(mode) + 1U) * sizeof(wchar_t)),
+        0) >= 0;
+}
+
+std::optional<std::array<std::uint8_t, 16>> aes_ecb_encrypt_block(std::span<const std::uint8_t> key,
+                                                                  std::span<const std::uint8_t> block) {
+    if (key.size() != kQuicAes128KeySize || block.size() != 16U) {
+        return std::nullopt;
+    }
+
+    BCryptAlgorithm algorithm {BCRYPT_AES_ALGORITHM};
+    if (!algorithm.valid() || !set_aes_chaining_mode(algorithm.get(), BCRYPT_CHAIN_MODE_ECB)) {
+        return std::nullopt;
+    }
+
+    BCryptKey aes_key {algorithm.get(), key};
+    if (!aes_key.valid()) {
+        return std::nullopt;
+    }
+
+    std::array<std::uint8_t, 16> output {};
+    ULONG bytes_written = 0;
+    if (BCryptEncrypt(
+            aes_key.get(),
+            const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(block.data())),
+            static_cast<ULONG>(block.size()),
+            nullptr,
+            nullptr,
+            0,
+            output.data(),
+            static_cast<ULONG>(output.size()),
+            &bytes_written,
+            0) < 0 || bytes_written != output.size()) {
+        return std::nullopt;
+    }
+
+    return output;
+}
+
+std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std::uint8_t> key,
+                                                             std::span<const std::uint8_t> nonce,
+                                                             std::span<const std::uint8_t> aad,
+                                                             std::span<const std::uint8_t> ciphertext,
+                                                             std::span<const std::uint8_t> tag) {
+    if (key.size() != kQuicAes128KeySize || nonce.size() != kQuicIvSize || tag.size() != kQuicTagSize) {
+        return std::nullopt;
+    }
+
+    BCryptAlgorithm algorithm {BCRYPT_AES_ALGORITHM};
+    if (!algorithm.valid() || !set_aes_chaining_mode(algorithm.get(), BCRYPT_CHAIN_MODE_GCM)) {
+        return std::nullopt;
+    }
+
+    BCryptKey aes_key {algorithm.get(), key};
+    if (!aes_key.valid()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> plaintext(ciphertext.size());
+    BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO auth_info;
+    BCRYPT_INIT_AUTH_MODE_INFO(auth_info);
+    auth_info.pbNonce = const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(nonce.data()));
+    auth_info.cbNonce = static_cast<ULONG>(nonce.size());
+    auth_info.pbAuthData = const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(aad.data()));
+    auth_info.cbAuthData = static_cast<ULONG>(aad.size());
+    auth_info.pbTag = const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(tag.data()));
+    auth_info.cbTag = static_cast<ULONG>(tag.size());
+
+    ULONG bytes_written = 0;
+    if (BCryptDecrypt(
+            aes_key.get(),
+            const_cast<PUCHAR>(reinterpret_cast<const UCHAR*>(ciphertext.data())),
+            static_cast<ULONG>(ciphertext.size()),
+            &auth_info,
+            nullptr,
+            0,
+            plaintext.empty() ? nullptr : plaintext.data(),
+            static_cast<ULONG>(plaintext.size()),
+            &bytes_written,
+            0) < 0 || bytes_written != plaintext.size()) {
+        return std::nullopt;
+    }
+
+    return plaintext;
+}
+
+#else
+
+std::optional<std::vector<std::uint8_t>> hkdf_extract(std::span<const std::uint8_t>, std::span<const std::uint8_t>) {
+    return std::nullopt;
+}
+
+std::optional<std::vector<std::uint8_t>> hkdf_expand_label(std::span<const std::uint8_t>, const std::string_view, const std::size_t) {
+    return std::nullopt;
+}
+
+std::optional<std::array<std::uint8_t, 16>> aes_ecb_encrypt_block(std::span<const std::uint8_t>, std::span<const std::uint8_t>) {
+    return std::nullopt;
+}
+
+std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std::uint8_t>,
+                                                             std::span<const std::uint8_t>,
+                                                             std::span<const std::uint8_t>,
+                                                             std::span<const std::uint8_t>,
+                                                             std::span<const std::uint8_t>) {
+    return std::nullopt;
+}
+
+#endif
+
+struct ParsedClientInitialHeader {
+    std::span<const std::uint8_t> destination_connection_id {};
+    std::size_t packet_number_offset {0U};
+    std::size_t packet_end {0U};
+};
+
+std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<const std::uint8_t> udp_payload) {
+    if (udp_payload.size() < 7U) {
+        return std::nullopt;
+    }
+
+    const auto first_byte = udp_payload[0];
+    if ((first_byte & 0x80U) == 0U || (first_byte & 0x40U) == 0U) {
+        return std::nullopt;
+    }
+
+    if (((first_byte >> 4U) & 0x03U) != 0U) {
+        return std::nullopt;
+    }
+
+    if (read_be32(udp_payload, 1U) != kQuicVersion1) {
+        return std::nullopt;
+    }
+
+    const auto destination_connection_id_length = static_cast<std::size_t>(udp_payload[5U]);
+    if (udp_payload.size() < 6U + destination_connection_id_length + 1U) {
+        return std::nullopt;
+    }
+
+    const auto destination_connection_id = udp_payload.subspan(6U, destination_connection_id_length);
+
+    std::size_t offset = 6U + destination_connection_id_length;
+    const auto source_connection_id_length = static_cast<std::size_t>(udp_payload[offset]);
+    ++offset;
+    if (offset + source_connection_id_length > udp_payload.size()) {
+        return std::nullopt;
+    }
+    offset += source_connection_id_length;
+
+    const auto token_length = read_varint(udp_payload, offset);
+    if (!token_length.has_value() || offset + *token_length > udp_payload.size()) {
+        return std::nullopt;
+    }
+    offset += static_cast<std::size_t>(*token_length);
+
+    const auto length = read_varint(udp_payload, offset);
+    if (!length.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto packet_number_offset = offset;
+    const auto packet_end = packet_number_offset + static_cast<std::size_t>(*length);
+    if (packet_end > udp_payload.size() || packet_end <= packet_number_offset) {
+        return std::nullopt;
+    }
+
+    return ParsedClientInitialHeader {
+        .destination_connection_id = destination_connection_id,
+        .packet_number_offset = packet_number_offset,
+        .packet_end = packet_end,
+    };
+}
+
+struct UnprotectedInitialHeader {
+    std::vector<std::uint8_t> associated_data {};
+    std::uint64_t packet_number {0U};
+    std::size_t packet_number_length {0U};
+};
+
+std::optional<UnprotectedInitialHeader> remove_initial_header_protection(std::span<const std::uint8_t> udp_payload,
+                                                                         const ParsedClientInitialHeader& header,
+                                                                         std::span<const std::uint8_t> hp_key) {
+    if (header.packet_number_offset + 4U + kQuicSampleSize > header.packet_end) {
+        return std::nullopt;
+    }
+
+    const auto sample = udp_payload.subspan(header.packet_number_offset + 4U, kQuicSampleSize);
+    const auto mask_block = aes_ecb_encrypt_block(hp_key, sample);
+    if (!mask_block.has_value()) {
+        return std::nullopt;
+    }
+
+    auto first_byte = static_cast<std::uint8_t>(udp_payload[0] ^ ((*mask_block)[0] & 0x0FU));
+    const auto packet_number_length = static_cast<std::size_t>((first_byte & 0x03U) + 1U);
+    if (header.packet_number_offset + packet_number_length > header.packet_end) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> associated_data(
+        udp_payload.begin(),
+        udp_payload.begin() + static_cast<std::ptrdiff_t>(header.packet_number_offset + packet_number_length));
+    associated_data[0] = first_byte;
+
+    std::uint64_t packet_number = 0U;
+    for (std::size_t index = 0U; index < packet_number_length; ++index) {
+        const auto unmasked = static_cast<std::uint8_t>(associated_data[header.packet_number_offset + index] ^ (*mask_block)[index + 1U]);
+        associated_data[header.packet_number_offset + index] = unmasked;
+        packet_number = (packet_number << 8U) | static_cast<std::uint64_t>(unmasked);
+    }
+
+    return UnprotectedInitialHeader {
+        .associated_data = std::move(associated_data),
+        .packet_number = packet_number,
+        .packet_number_length = packet_number_length,
+    };
+}
+
+std::array<std::uint8_t, kQuicIvSize> build_quic_nonce(std::span<const std::uint8_t> iv, const std::uint64_t packet_number) {
+    std::array<std::uint8_t, kQuicIvSize> nonce {};
+    std::copy(iv.begin(), iv.end(), nonce.begin());
+
+    for (std::size_t index = 0U; index < 8U; ++index) {
+        const auto shift = static_cast<unsigned>((7U - index) * 8U);
+        nonce[kQuicIvSize - 8U + index] ^= static_cast<std::uint8_t>((packet_number >> shift) & 0xFFU);
+    }
+
+    return nonce;
+}
+
+struct CryptoFragment {
+    std::uint64_t offset {0U};
+    std::vector<std::uint8_t> bytes {};
+};
+
+bool collect_crypto_fragments(std::span<const std::uint8_t> plaintext, std::vector<CryptoFragment>& fragments) {
+    std::size_t offset = 0U;
+    while (offset < plaintext.size()) {
+        const auto frame_type = plaintext[offset++];
+        if (frame_type == 0x00U) {
+            continue;
+        }
+
+        if (frame_type == 0x01U) {
+            continue;
+        }
+
+        if (frame_type != 0x06U) {
+            return false;
+        }
+
+        const auto crypto_offset = read_varint(plaintext, offset);
+        const auto crypto_length = read_varint(plaintext, offset);
+        if (!crypto_offset.has_value() || !crypto_length.has_value()) {
+            return false;
+        }
+
+        if (offset + *crypto_length > plaintext.size()) {
+            return false;
+        }
+
+        fragments.push_back(CryptoFragment {
+            .offset = *crypto_offset,
+            .bytes = std::vector<std::uint8_t>(
+                plaintext.begin() + static_cast<std::ptrdiff_t>(offset),
+                plaintext.begin() + static_cast<std::ptrdiff_t>(offset + static_cast<std::size_t>(*crypto_length))),
+        });
+        offset += static_cast<std::size_t>(*crypto_length);
+    }
+
+    return true;
+}
+
+std::vector<std::uint8_t> assemble_crypto_prefix(std::vector<CryptoFragment> fragments) {
+    std::sort(fragments.begin(), fragments.end(), [](const CryptoFragment& left, const CryptoFragment& right) {
+        return left.offset < right.offset;
+    });
+
+    std::vector<std::uint8_t> assembled {};
+    std::uint64_t contiguous_end = 0U;
+
+    for (const auto& fragment : fragments) {
+        if (fragment.offset > contiguous_end) {
+            break;
+        }
+
+        const auto overlap = static_cast<std::size_t>(contiguous_end > fragment.offset ? contiguous_end - fragment.offset : 0U);
+        if (overlap >= fragment.bytes.size()) {
+            continue;
+        }
+
+        assembled.insert(assembled.end(), fragment.bytes.begin() + static_cast<std::ptrdiff_t>(overlap), fragment.bytes.end());
+        contiguous_end = fragment.offset + fragment.bytes.size();
+    }
+
+    return assembled;
+}
+
+std::optional<std::string> extract_tls_client_hello_sni_from_handshake(std::span<const std::uint8_t> handshake_bytes) {
+    if (handshake_bytes.size() < 4U || handshake_bytes[0] != 0x01U) {
+        return std::nullopt;
+    }
+
+    const auto handshake_length = static_cast<std::size_t>(read_be24(handshake_bytes, 1U));
+    if (handshake_bytes.size() < 4U + handshake_length) {
+        return std::nullopt;
+    }
+
+    auto body = handshake_bytes.subspan(4U, handshake_length);
+    std::size_t offset = 0U;
+    if (body.size() < 34U) {
+        return std::nullopt;
+    }
+
+    offset += 2U;
+    offset += 32U;
+
+    const auto session_id_length = static_cast<std::size_t>(body[offset]);
+    ++offset;
+    if (body.size() < offset + session_id_length + 2U) {
+        return std::nullopt;
+    }
+    offset += session_id_length;
+
+    const auto cipher_suites_length = static_cast<std::size_t>(read_be16(body, offset));
+    offset += 2U;
+    if (cipher_suites_length == 0U || body.size() < offset + cipher_suites_length + 1U) {
+        return std::nullopt;
+    }
+    offset += cipher_suites_length;
+
+    const auto compression_methods_length = static_cast<std::size_t>(body[offset]);
+    ++offset;
+    if (body.size() < offset + compression_methods_length + 2U) {
+        return std::nullopt;
+    }
+    offset += compression_methods_length;
+
+    const auto extensions_length = static_cast<std::size_t>(read_be16(body, offset));
+    offset += 2U;
+    if (body.size() < offset + extensions_length) {
+        return std::nullopt;
+    }
+
+    const auto extensions_end = offset + extensions_length;
+    while (offset + 4U <= extensions_end) {
+        const auto extension_type = read_be16(body, offset);
+        const auto extension_length = static_cast<std::size_t>(read_be16(body, offset + 2U));
+        offset += 4U;
+        if (offset + extension_length > extensions_end) {
+            return std::nullopt;
+        }
+
+        if (extension_type == 0x0000U) {
+            const auto extension = body.subspan(offset, extension_length);
+            if (extension.size() < 2U) {
+                return std::nullopt;
+            }
+
+            const auto list_length = static_cast<std::size_t>(read_be16(extension, 0U));
+            if (extension.size() < 2U + list_length) {
+                return std::nullopt;
+            }
+
+            std::size_t name_offset = 2U;
+            while (name_offset + 3U <= 2U + list_length) {
+                const auto name_type = extension[name_offset];
+                const auto name_length = static_cast<std::size_t>(read_be16(extension, name_offset + 1U));
+                name_offset += 3U;
+                if (name_offset + name_length > 2U + list_length) {
+                    return std::nullopt;
+                }
+
+                if (name_type == 0U) {
+                    const auto server_name = bytes_as_text(extension.subspan(name_offset, name_length));
+                    if (is_plausible_service_name(server_name)) {
+                        return std::string(server_name);
+                    }
+                    return std::nullopt;
+                }
+
+                name_offset += name_length;
+            }
+        }
+
+        offset += extension_length;
+    }
+
+    return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::uint8_t> udp_payload) const {
+    const auto header = parse_client_initial_header(udp_payload);
+    if (!header.has_value() || header->destination_connection_id.empty()) {
+        return std::nullopt;
+    }
+
+    const auto initial_secret = hkdf_extract(kQuicInitialSaltV1, header->destination_connection_id);
+    if (!initial_secret.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto client_initial_secret = hkdf_expand_label(*initial_secret, "client in", kQuicInitialSecretSize);
+    if (!client_initial_secret.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto key = hkdf_expand_label(*client_initial_secret, "quic key", kQuicAes128KeySize);
+    const auto iv = hkdf_expand_label(*client_initial_secret, "quic iv", kQuicIvSize);
+    const auto hp = hkdf_expand_label(*client_initial_secret, "quic hp", kQuicAes128KeySize);
+    if (!key.has_value() || !iv.has_value() || !hp.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto unprotected_header = remove_initial_header_protection(udp_payload, *header, *hp);
+    if (!unprotected_header.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto ciphertext_offset = header->packet_number_offset + unprotected_header->packet_number_length;
+    if (ciphertext_offset + kQuicTagSize > header->packet_end) {
+        return std::nullopt;
+    }
+
+    const auto ciphertext_length = header->packet_end - ciphertext_offset - kQuicTagSize;
+    const auto ciphertext = udp_payload.subspan(ciphertext_offset, ciphertext_length);
+    const auto tag = udp_payload.subspan(header->packet_end - kQuicTagSize, kQuicTagSize);
+    const auto nonce = build_quic_nonce(*iv, unprotected_header->packet_number);
+
+    const auto plaintext = aes_128_gcm_decrypt(*key, nonce, unprotected_header->associated_data, ciphertext, tag);
+    if (!plaintext.has_value()) {
+        return std::nullopt;
+    }
+
+    std::vector<CryptoFragment> fragments {};
+    if (!collect_crypto_fragments(*plaintext, fragments) || fragments.empty()) {
+        return std::nullopt;
+    }
+
+    const auto crypto_prefix = assemble_crypto_prefix(std::move(fragments));
+    if (crypto_prefix.empty()) {
+        return std::nullopt;
+    }
+
+    return extract_tls_client_hello_sni_from_handshake(crypto_prefix);
+}
+
+}  // namespace pfl
+
+
+
+

@@ -21,6 +21,7 @@
 #include "core/services/CaptureImporter.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowExportService.h"
+#include "core/services/FlowHintService.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
 #include "core/services/PacketDetailsService.h"
@@ -1979,6 +1980,77 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const 
     ReassemblyService service {};
     return service.reassemble_tcp_payload(*this, request);
 }
+std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(const std::size_t flow_index) const {
+    if (!has_source_capture()) {
+        return std::nullopt;
+    }
+
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    constexpr std::size_t kOnDemandQuicHintPacketBudget = 4U;
+    FlowHintService hint_service {analysis_settings_, true};
+
+    const auto try_direction = [&](const auto& flow_key, const auto& packets) -> std::optional<std::string> {
+        const auto packet_limit = std::min(kOnDemandQuicHintPacketBudget, packets.size());
+        for (std::size_t index = 0U; index < packet_limit; ++index) {
+            const auto& packet = packets[index];
+            if (packet.is_ip_fragmented) {
+                continue;
+            }
+
+            const auto packet_bytes = read_packet_data(packet);
+            if (packet_bytes.empty()) {
+                continue;
+            }
+
+            const auto hint = hint_service.detect(
+                std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+                packet.data_link_type,
+                flow_key);
+            if (!hint.service_hint.empty()) {
+                return hint.service_hint;
+            }
+        }
+
+        return std::nullopt;
+    };
+
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        const auto& connection = *connections[flow_index].ipv4;
+        if (connection.key.protocol != ProtocolId::udp) {
+            return std::nullopt;
+        }
+
+        if (connection.key.first.port != 443 && connection.key.second.port == 443 && connection.has_flow_a) {
+            return try_direction(connection.flow_a.key, connection.flow_a.packets);
+        }
+
+        if (connection.key.first.port == 443 && connection.key.second.port != 443 && connection.has_flow_b) {
+            return try_direction(connection.flow_b.key, connection.flow_b.packets);
+        }
+
+        return std::nullopt;
+    }
+
+    const auto& connection = *connections[flow_index].ipv6;
+    if (connection.key.protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    if (connection.key.first.port != 443 && connection.key.second.port == 443 && connection.has_flow_a) {
+        return try_direction(connection.flow_a.key, connection.flow_a.packets);
+    }
+
+    if (connection.key.first.port == 443 && connection.key.second.port != 443 && connection.has_flow_b) {
+        return try_direction(connection.flow_b.key, connection.flow_b.packets);
+    }
+
+    return std::nullopt;
+}
+
 std::vector<FlowRow> CaptureSession::list_flows() const {
     const auto connections = list_connections(state_);
     std::vector<FlowRow> rows {};
@@ -1990,7 +2062,6 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
 
     return rows;
 }
-
 std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_index) const {
     return list_flow_packets(flow_index, 0U, flow_packet_count(flow_index));
 }
@@ -2269,6 +2340,11 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
+
+
 
 
 

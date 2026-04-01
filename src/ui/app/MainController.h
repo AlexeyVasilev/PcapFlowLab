@@ -201,6 +201,7 @@ private:
     void reloadSelectedPacketDetails();
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
+    void maybeEnrichSelectedFlowServiceHint();
     void refreshSelectedFlowPackets(bool resetRows);
     void refreshSelectedStreamItems(bool resetRows);
     void clearPacketSelection();
@@ -267,6 +268,9 @@ private:
 };
 
 }  // namespace pfl
+
+
+
 
 
 

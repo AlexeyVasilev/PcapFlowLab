@@ -85,6 +85,16 @@ void run_flow_hints_real_fixtures_tests() {
     for (const auto& fixture : fixtures) {
         expect_fixture(fixture);
     }
+    {
+        CaptureImportOptions options {};
+        options.mode = ImportMode::deep;
+
+        CaptureSession deep_quic_session {};
+        PFL_EXPECT(deep_quic_session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), options));
+        const auto rows = deep_quic_session.list_flows();
+        PFL_EXPECT(has_matching_flow(rows, "quic", std::optional<std::string> {"bag.itunes.apple.com"}));
+    }
 }
 
 }  // namespace pfl::tests
+

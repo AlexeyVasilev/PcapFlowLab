@@ -88,9 +88,26 @@ void run_flow_hints_raw_fixtures_tests() {
         {.name = "quic_protected_payload_4", .packet_bytes = &quic_protected_payload_4, .protocol = ProtocolId::udp, .src_port = 443, .dst_port = 54030, .mode = RawFixtureExpectationMode::expect_service_empty_only},
     };
 
+
+    {
+        FlowHintService quic_service {AnalysisSettings {}, true};
+
+        const auto client_hint = quic_service.detect(quic_initial_ch_1(), make_flow_key(ProtocolId::udp, 56567, 443));
+        PFL_EXPECT(client_hint.protocol_hint == FlowProtocolHint::quic);
+        PFL_EXPECT(client_hint.service_hint == "bag.itunes.apple.com");
+
+        const auto server_initial_hint = quic_service.detect(quic_initial_sh_2(), make_flow_key(ProtocolId::udp, 443, 54203));
+        PFL_EXPECT(server_initial_hint.protocol_hint == FlowProtocolHint::quic);
+        PFL_EXPECT(server_initial_hint.service_hint.empty());
+
+        const auto handshake_hint = quic_service.detect(quic_handshake_3(), make_flow_key(ProtocolId::udp, 443, 54030));
+        PFL_EXPECT(handshake_hint.protocol_hint == FlowProtocolHint::quic);
+        PFL_EXPECT(handshake_hint.service_hint.empty());
+    }
     for (const auto& fixture : fixtures) {
         expect_fixture(fixture);
     }
 }
 
 }  // namespace pfl::tests
+
