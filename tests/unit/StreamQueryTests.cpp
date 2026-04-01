@@ -365,7 +365,7 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_partial_rows[1].label == "TLS Record Fragment");
     PFL_EXPECT(tls_partial_rows[0].byte_count == server_hello_record.size());
     PFL_EXPECT(tls_partial_rows[1].byte_count == incomplete_tls_record.size());
-    PFL_EXPECT(tls_partial_rows[1].protocol_text.find("full TLS record body is not available") != std::string::npos);
+    PFL_EXPECT(tls_partial_rows[1].protocol_text.find("complete TLS record") != std::string::npos);
     PFL_EXPECT(tls_partial_rows[1].protocol_text.find("ServerHello") == std::string::npos);
 
     const auto split_server_hello_record = make_tls_handshake_record(0x02U, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06});

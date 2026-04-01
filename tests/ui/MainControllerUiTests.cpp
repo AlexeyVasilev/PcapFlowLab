@@ -548,7 +548,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_model->rowCount() == 1);
     UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
-    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TCP Payload"));
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("HTTP Request"));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_http_request_payload().size());
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::PacketCountRole).toUInt() == 1U);
 
@@ -559,11 +559,13 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_details_model != nullptr);
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
     UI_EXPECT(stream_details_model->summaryText().contains(QString::fromUtf8("Direction: A\xE2\x86\x92" "B")));
-    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: TCP Payload")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: HTTP Request")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet Count: 1")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Contributing Packets: flow #1 (file 0)")));
     UI_EXPECT(stream_details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
-    UI_EXPECT(stream_details_model->protocolText() == QStringLiteral("Protocol details are only available in Deep mode."));
+    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("HTTP")));
+    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Method: GET")));
+    UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("Path: /")));
 
     stream_controller.setSelectedPacketIndex(0);
     UI_EXPECT(stream_controller.selectedPacketIndex() == 0U);
@@ -692,10 +694,12 @@ int main(int argc, char* argv[]) {
             make_ethernet_ipv4_tcp_packet(ipv4(198, 51, 100, 1), ipv4(198, 51, 100, 2), 55000, 443)
         });
     }
-    heavy_selected_flow_packets.push_back({
-        2000U,
-        make_ethernet_ipv4_udp_packet(ipv4(198, 51, 100, 10), ipv4(198, 51, 100, 20), 53000, 53)
-    });
+    for (std::uint32_t packetIndex = 0; packetIndex < 30U; ++packetIndex) {
+        heavy_selected_flow_packets.push_back({
+            2000U + packetIndex,
+            make_ethernet_ipv4_udp_packet(ipv4(198, 51, 100, 10), ipv4(198, 51, 100, 20), 53000, 53)
+        });
+    }
 
     const auto heavy_selected_flow_capture_path = write_temp_pcap(
         "pfl_ui_selected_flow_scalability.pcap",
@@ -712,7 +716,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_loading_details_model != nullptr);
 
     const int heavy_flow_index = find_flow_index_by_packet_count(packet_loading_flow_model, 65U);
-    const int small_flow_index = find_flow_index_by_packet_count(packet_loading_flow_model, 1U);
+    const int small_flow_index = find_flow_index_by_packet_count(packet_loading_flow_model, 30U);
     UI_EXPECT(heavy_flow_index >= 0);
     UI_EXPECT(small_flow_index >= 0);
 
@@ -741,12 +745,13 @@ int main(int argc, char* argv[]) {
 
     packet_loading_controller.setSelectedFlowIndex(small_flow_index);
     UI_EXPECT(packet_loading_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(packet_loading_controller.loadedPacketRowCount() == 1U);
-    UI_EXPECT(packet_loading_controller.totalPacketRowCount() == 1U);
+    UI_EXPECT(packet_loading_controller.loadedPacketRowCount() == 30U);
+    UI_EXPECT(packet_loading_controller.totalPacketRowCount() == 30U);
     UI_EXPECT(!packet_loading_controller.packetsPartiallyLoaded());
     UI_EXPECT(!packet_loading_controller.canLoadMorePackets());
-    UI_EXPECT(packet_loading_packet_model->rowCount() == 1);
+    UI_EXPECT(packet_loading_packet_model->rowCount() == 30);
     UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(0, 0), PacketListModel::RowNumberRole).toUInt() == 1U);
+    UI_EXPECT(packet_loading_packet_model->data(packet_loading_packet_model->index(29, 0), PacketListModel::RowNumberRole).toUInt() == 30U);
     UI_EXPECT(packet_loading_details_model->summaryText().isEmpty());
 
 
@@ -758,10 +763,12 @@ int main(int argc, char* argv[]) {
             make_ethernet_ipv4_tcp_packet_with_payload(ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 20), 56000, 8443, 6, 0x18)
         });
     }
-    heavy_stream_packets.push_back({
-        4000U,
-        make_ethernet_ipv4_tcp_packet_with_payload(ipv4(203, 0, 113, 30), ipv4(203, 0, 113, 40), 57000, 9443, 6, 0x18)
-    });
+    for (std::uint32_t packetIndex = 0; packetIndex < 15U; ++packetIndex) {
+        heavy_stream_packets.push_back({
+            4000U + packetIndex,
+            make_ethernet_ipv4_tcp_packet_with_payload(ipv4(203, 0, 113, 30), ipv4(203, 0, 113, 40), 57000, 9443, 6, 0x18)
+        });
+    }
 
     const auto heavy_stream_capture_path = write_temp_pcap(
         "pfl_ui_stream_scalability.pcap",
@@ -779,7 +786,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_loading_details_model != nullptr);
 
     const int heavy_stream_flow_index = find_flow_index_by_packet_count(stream_loading_flow_model, 31U);
-    const int small_stream_flow_index = find_flow_index_by_packet_count(stream_loading_flow_model, 1U);
+    const int small_stream_flow_index = find_flow_index_by_packet_count(stream_loading_flow_model, 15U);
     UI_EXPECT(heavy_stream_flow_index >= 0);
     UI_EXPECT(small_stream_flow_index >= 0);
 
@@ -808,16 +815,18 @@ int main(int argc, char* argv[]) {
 
     stream_loading_controller.setSelectedFlowIndex(small_stream_flow_index);
     UI_EXPECT(stream_loading_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 1U);
-    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 1U);
+    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 15U);
+    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 15U);
     UI_EXPECT(!stream_loading_controller.streamPartiallyLoaded());
     UI_EXPECT(!stream_loading_controller.canLoadMoreStreamItems());
-    UI_EXPECT(stream_loading_stream_model->rowCount() == 1);
+    UI_EXPECT(stream_loading_stream_model->rowCount() == 15);
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(14, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 15U);
     UI_EXPECT(stream_loading_details_model->summaryText().isEmpty());
 
     return 0;
 }
+
 
 
 

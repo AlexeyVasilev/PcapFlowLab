@@ -1014,7 +1014,12 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     stream_loading_ = true;
     const auto offset = resetRows ? std::size_t {0U} : loaded_stream_item_count_;
     const auto batchSize = resetRows ? kInitialStreamItems : kStreamItemBatchSize;
-    auto rows = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_), offset, batchSize + 1U);
+
+    // Stream items can outnumber packets because one payload may split into multiple
+    // higher-level items. A bounded probe keeps heavy flows incremental while small
+    // flows that fit inside the initial budget still materialize fully immediately.
+    const auto requestLimit = batchSize + 1U;
+    auto rows = session_.list_flow_stream_items(static_cast<std::size_t>(selected_flow_index_), offset, requestLimit);
     const bool hasMore = rows.size() > batchSize;
     if (hasMore) {
         rows.resize(batchSize);
@@ -1504,6 +1509,7 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
 

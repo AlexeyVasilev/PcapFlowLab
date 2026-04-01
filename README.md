@@ -76,7 +76,8 @@ Creating `perf-open.enabled` next to the executable or in the current working di
 
 Console logging in open/import paths is intentionally quiet by default. If temporary developer logging is needed there, use the compile-time flags in `src/core/debug_logging.h` so disabled builds stay effectively free of logging overhead.
 
-Current large-list strategy also stays intentionally simple: Flow, Packet, and Stream surfaces use virtualization-friendly `ListView`-based rendering, explicit scrollbars, and lightweight delegates, while pagination remains deferred until there is stronger evidence that the current approach is insufficient. Selected-flow packet lists now use bounded initial materialization with explicit `Load more` continuation so heavy flows do not need to materialize every packet row at selection time.
+Current large-list strategy also stays intentionally simple: Flow, Packet, and Stream surfaces use virtualization-friendly `ListView`-based rendering, explicit scrollbars, and lightweight delegates, while pagination remains deferred until there is stronger evidence that the current approach is insufficient. Selected-flow packet and Stream loading now stays fully materialized for small flows that fit within the initial budgets, while heavy flows still use bounded initial materialization with explicit `Load more` continuation.
+
 
 
 
