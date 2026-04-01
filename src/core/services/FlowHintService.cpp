@@ -438,7 +438,10 @@ FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
     return hint;
 }
 
+template <typename FlowKey, typename QuicStateMap>
 FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload,
+                                const FlowKey& flow_key,
+                                QuicStateMap& quic_state,
                                 const std::uint16_t src_port,
                                 const std::uint16_t dst_port,
                                 const bool enable_quic_initial_sni) {
@@ -470,22 +473,51 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload,
         .protocol_hint = FlowProtocolHint::quic,
     };
 
-    if (enable_quic_initial_sni && src_port != kHttpsPort && dst_port == kHttpsPort) {
-        QuicInitialParser parser {};
-        const auto sni = parser.extract_client_initial_sni(payload);
-        if (sni.has_value()) {
-            hint.service_hint = *sni;
-        }
+    if (!enable_quic_initial_sni || src_port == kHttpsPort || dst_port != kHttpsPort) {
+        return hint;
+    }
+
+    auto& state = quic_state[flow_key];
+    if (state.exhausted) {
+        return hint;
+    }
+
+    QuicInitialParser parser {};
+    if (!parser.is_client_initial_packet(payload)) {
+        return hint;
+    }
+
+    if (state.initial_payloads.size() >= QuicInitialParser::kMaxInitialPackets) {
+        state.exhausted = true;
+        state.initial_payloads.clear();
+        return hint;
+    }
+
+    state.initial_payloads.emplace_back(payload.begin(), payload.end());
+    const auto sni = parser.extract_client_initial_sni(
+        std::span<const std::vector<std::uint8_t>>(state.initial_payloads.data(), state.initial_payloads.size())
+    );
+    if (sni.has_value()) {
+        hint.service_hint = *sni;
+        state.exhausted = true;
+        state.initial_payloads.clear();
+        return hint;
+    }
+
+    if (state.initial_payloads.size() >= QuicInitialParser::kMaxInitialPackets) {
+        state.exhausted = true;
+        state.initial_payloads.clear();
     }
 
     return hint;
 }
 
-template <typename FlowKey>
+template <typename FlowKey, typename QuicStateMap>
 FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes,
                                       const std::uint32_t data_link_type,
                                       const FlowKey& flow_key,
-                                      const FlowHintDetectionSettings& settings) {
+                                      const FlowHintDetectionSettings& settings,
+                                      QuicStateMap& quic_state) {
     PacketPayloadService payload_service {};
     const auto payload = payload_service.extract_transport_payload(packet_bytes, data_link_type);
     if (payload.empty()) {
@@ -520,7 +552,14 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
         }
 
         if (has_port(flow_key.src_port, flow_key.dst_port, kHttpsPort)) {
-            return detect_quic_hint(payload_view, flow_key.src_port, flow_key.dst_port, settings.enable_quic_initial_sni);
+            return detect_quic_hint(
+                payload_view,
+                flow_key,
+                quic_state,
+                flow_key.src_port,
+                flow_key.dst_port,
+                settings.enable_quic_initial_sni
+            );
         }
 
         return {};
@@ -528,7 +567,6 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
         return {};
     }
 }
-
 }  // namespace
 
 FlowHintService::FlowHintService(const AnalysisSettings settings, const bool enable_quic_initial_sni)
@@ -546,7 +584,7 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
     return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
         .analysis_settings = settings_,
         .enable_quic_initial_sni = enable_quic_initial_sni_,
-    });
+    }, quic_initial_ipv4_states_);
 }
 
 FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_bytes, const FlowKeyV6& flow_key) const {
@@ -559,7 +597,8 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
     return detect_transport_hints(packet_bytes, data_link_type, flow_key, FlowHintDetectionSettings {
         .analysis_settings = settings_,
         .enable_quic_initial_sni = enable_quic_initial_sni_,
-    });
+    }, quic_initial_ipv6_states_);
 }
 
 }  // namespace pfl
+

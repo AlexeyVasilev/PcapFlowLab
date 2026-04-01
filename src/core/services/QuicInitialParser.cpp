@@ -13,7 +13,9 @@
 #include <vector>
 
 #ifdef _WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <bcrypt.h>
 #endif
@@ -679,7 +681,9 @@ std::optional<std::string> extract_tls_client_hello_sni_from_handshake(std::span
 
 }  // namespace
 
-std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::uint8_t> udp_payload) const {
+namespace {
+
+std::optional<std::vector<std::uint8_t>> decrypt_client_initial_plaintext(std::span<const std::uint8_t> udp_payload) {
     const auto header = parse_client_initial_header(udp_payload);
     if (!header.has_value() || header->destination_connection_id.empty()) {
         return std::nullopt;
@@ -717,26 +721,135 @@ std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::sp
     const auto tag = udp_payload.subspan(header->packet_end - kQuicTagSize, kQuicTagSize);
     const auto nonce = build_quic_nonce(*iv, unprotected_header->packet_number);
 
-    const auto plaintext = aes_128_gcm_decrypt(*key, nonce, unprotected_header->associated_data, ciphertext, tag);
-    if (!plaintext.has_value()) {
+    return aes_128_gcm_decrypt(*key, nonce, unprotected_header->associated_data, ciphertext, tag);
+}
+
+void append_bounded_crypto_fragments(std::vector<CryptoFragment>& destination,
+                                     std::vector<CryptoFragment> source,
+                                     std::size_t& frame_count) {
+    for (auto& fragment : source) {
+        if (frame_count >= QuicInitialParser::kMaxCryptoFrames) {
+            break;
+        }
+
+        if (fragment.offset > static_cast<std::uint64_t>(QuicInitialParser::kMaxCryptoBytes)) {
+            continue;
+        }
+
+        const auto remaining_u64 = static_cast<std::uint64_t>(QuicInitialParser::kMaxCryptoBytes) - fragment.offset;
+        const auto remaining = static_cast<std::size_t>(remaining_u64);
+        if (remaining == 0U) {
+            continue;
+        }
+
+        if (fragment.bytes.size() > remaining) {
+            fragment.bytes.resize(remaining);
+        }
+
+        if (fragment.bytes.empty()) {
+            continue;
+        }
+
+        destination.push_back(std::move(fragment));
+        ++frame_count;
+    }
+}
+
+std::optional<std::string> extract_client_initial_sni_from_fragments(std::vector<CryptoFragment> fragments) {
+    if (fragments.empty()) {
         return std::nullopt;
     }
 
-    std::vector<CryptoFragment> fragments {};
-    if (!collect_crypto_fragments(*plaintext, fragments) || fragments.empty()) {
-        return std::nullopt;
-    }
-
-    const auto crypto_prefix = assemble_crypto_prefix(std::move(fragments));
+    auto crypto_prefix = assemble_crypto_prefix(std::move(fragments));
     if (crypto_prefix.empty()) {
         return std::nullopt;
+    }
+
+    if (crypto_prefix.size() > QuicInitialParser::kMaxCryptoBytes) {
+        crypto_prefix.resize(QuicInitialParser::kMaxCryptoBytes);
     }
 
     return extract_tls_client_hello_sni_from_handshake(crypto_prefix);
 }
 
+}  // namespace
+
+bool QuicInitialParser::is_client_initial_packet(std::span<const std::uint8_t> udp_payload) const noexcept {
+    const auto header = parse_client_initial_header(udp_payload);
+    return header.has_value() && !header->destination_connection_id.empty();
+}
+
+std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::uint8_t> udp_payload) const {
+    const auto plaintext = decrypt_client_initial_plaintext(udp_payload);
+    if (!plaintext.has_value()) {
+        return std::nullopt;
+    }
+
+    std::vector<CryptoFragment> packet_fragments {};
+    if (!collect_crypto_fragments(*plaintext, packet_fragments)) {
+        return std::nullopt;
+    }
+
+    std::size_t frame_count = 0U;
+    std::vector<CryptoFragment> bounded_fragments {};
+    bounded_fragments.reserve(std::min(packet_fragments.size(), kMaxCryptoFrames));
+    append_bounded_crypto_fragments(bounded_fragments, std::move(packet_fragments), frame_count);
+    return extract_client_initial_sni_from_fragments(std::move(bounded_fragments));
+}
+
+std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::vector<std::uint8_t>> udp_payloads) const {
+    std::size_t initial_packet_count = 0U;
+    std::size_t frame_count = 0U;
+    std::vector<CryptoFragment> fragments {};
+
+    for (const auto& payload_bytes : udp_payloads) {
+        if (initial_packet_count >= kMaxInitialPackets || frame_count >= kMaxCryptoFrames) {
+            break;
+        }
+
+        const auto payload = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+        if (!is_client_initial_packet(payload)) {
+            continue;
+        }
+
+        ++initial_packet_count;
+
+        const auto plaintext = decrypt_client_initial_plaintext(payload);
+        if (!plaintext.has_value()) {
+            continue;
+        }
+
+        std::vector<CryptoFragment> packet_fragments {};
+        if (!collect_crypto_fragments(*plaintext, packet_fragments)) {
+            continue;
+        }
+
+        append_bounded_crypto_fragments(fragments, std::move(packet_fragments), frame_count);
+    }
+
+    return extract_client_initial_sni_from_fragments(std::move(fragments));
+}
+
+std::optional<std::string> QuicInitialParser::extract_client_initial_sni_from_crypto_payloads(
+    std::span<const std::vector<std::uint8_t>> decrypted_initial_payloads
+) const {
+    std::size_t frame_count = 0U;
+    std::vector<CryptoFragment> fragments {};
+
+    for (const auto& payload : decrypted_initial_payloads) {
+        if (frame_count >= kMaxCryptoFrames) {
+            break;
+        }
+
+        std::vector<CryptoFragment> packet_fragments {};
+        if (!collect_crypto_fragments(std::span<const std::uint8_t>(payload.data(), payload.size()), packet_fragments)) {
+            continue;
+        }
+
+        append_bounded_crypto_fragments(fragments, std::move(packet_fragments), frame_count);
+    }
+
+    return extract_client_initial_sni_from_fragments(std::move(fragments));
+}
 }  // namespace pfl
-
-
-
 

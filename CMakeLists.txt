@@ -222,6 +222,7 @@ if(BUILD_TESTING)
         tests/unit/ReassemblyArchitectureTests.cpp
         tests/unit/ReassemblyV1Tests.cpp
         tests/unit/PerfOpenLoggerTests.cpp
+        tests/unit/QuicInitialParserTests.cpp
         tests/unit/FlowHintsTests.cpp
         tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
