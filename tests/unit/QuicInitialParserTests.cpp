@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -88,6 +89,24 @@ void append_crypto_frame(std::vector<std::uint8_t>& payload, const std::uint64_t
     payload.insert(payload.end(), frame.begin(), frame.end());
 }
 
+void append_ping_frame(std::vector<std::uint8_t>& payload) {
+    payload.push_back(0x01U);
+}
+
+void append_padding(std::vector<std::uint8_t>& payload, const std::size_t count) {
+    for (std::size_t index = 0U; index < count; ++index) {
+        payload.push_back(0x00U);
+    }
+}
+
+void append_ack_frame(std::vector<std::uint8_t>& payload) {
+    payload.push_back(0x02U);
+    append_quic_varint(payload, 0U);  // largest acknowledged
+    append_quic_varint(payload, 0U);  // ack delay
+    append_quic_varint(payload, 0U);  // ack range count
+    append_quic_varint(payload, 0U);  // first ack range
+}
+
 }  // namespace
 
 void run_quic_initial_parser_tests() {
@@ -130,6 +149,82 @@ void run_quic_initial_parser_tests() {
 
         std::vector<std::uint8_t> payload_3 {};
         append_crypto_frame(payload_3, 38U, part_d);
+
+        const std::vector<std::vector<std::uint8_t>> payloads {
+            std::move(payload_1),
+            std::move(payload_2),
+            std::move(payload_3),
+        };
+
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(sni.has_value());
+        PFL_EXPECT(*sni == expected_host);
+    }
+
+    {
+        const std::string expected_host = "ping-mixed.example";
+        const auto handshake = make_client_hello_handshake(expected_host);
+
+        std::vector<std::uint8_t> payload {};
+        append_ping_frame(payload);
+        append_crypto_frame(payload, 0U, std::span<const std::uint8_t>(handshake.data(), handshake.size()));
+
+        const std::vector<std::vector<std::uint8_t>> payloads {payload};
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(sni.has_value());
+        PFL_EXPECT(*sni == expected_host);
+    }
+
+    {
+        const std::string expected_host = "padding-mixed.example";
+        const auto handshake = make_client_hello_handshake(expected_host);
+
+        std::vector<std::uint8_t> payload {};
+        append_padding(payload, 6U);
+        append_crypto_frame(payload, 0U, std::span<const std::uint8_t>(handshake.data(), handshake.size()));
+
+        const std::vector<std::vector<std::uint8_t>> payloads {payload};
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(sni.has_value());
+        PFL_EXPECT(*sni == expected_host);
+    }
+
+    {
+        const std::string expected_host = "ack-mixed.example";
+        const auto handshake = make_client_hello_handshake(expected_host);
+
+        std::vector<std::uint8_t> payload {};
+        append_ack_frame(payload);
+        append_crypto_frame(payload, 0U, std::span<const std::uint8_t>(handshake.data(), handshake.size()));
+
+        const std::vector<std::vector<std::uint8_t>> payloads {payload};
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(sni.has_value());
+        PFL_EXPECT(*sni == expected_host);
+    }
+
+    {
+        const std::string expected_host = "mixed-multipacket.example";
+        const auto handshake = make_client_hello_handshake(expected_host);
+        PFL_EXPECT(handshake.size() > 36U);
+
+        const auto part_a = std::span<const std::uint8_t>(handshake.data(), 16U);
+        const auto part_b = std::span<const std::uint8_t>(handshake.data() + 16U, 10U);
+        const auto part_c = std::span<const std::uint8_t>(handshake.data() + 26U, handshake.size() - 26U);
+
+        std::vector<std::uint8_t> payload_1 {};
+        append_ping_frame(payload_1);
+        append_padding(payload_1, 4U);
+        append_crypto_frame(payload_1, 0U, part_a);
+
+        std::vector<std::uint8_t> payload_2 {};
+        append_ack_frame(payload_2);
+        append_crypto_frame(payload_2, 16U, part_b);
+
+        std::vector<std::uint8_t> payload_3 {};
+        append_ping_frame(payload_3);
+        append_padding(payload_3, 2U);
+        append_crypto_frame(payload_3, 26U, part_c);
 
         const std::vector<std::vector<std::uint8_t>> payloads {
             std::move(payload_1),

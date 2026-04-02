@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cwchar>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
@@ -523,39 +524,185 @@ struct CryptoFragment {
     std::vector<std::uint8_t> bytes {};
 };
 
+std::optional<std::size_t> read_varint_size(std::span<const std::uint8_t> bytes, std::size_t& offset) {
+    const auto value = read_varint(bytes, offset);
+    if (!value.has_value() || *value > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::size_t>(*value);
+}
+
+bool skip_bytes(std::span<const std::uint8_t> bytes, std::size_t& offset, const std::size_t count) {
+    if (offset + count > bytes.size()) {
+        return false;
+    }
+
+    offset += count;
+    return true;
+}
+
+bool skip_ack_frame(std::span<const std::uint8_t> bytes, std::size_t& offset, const bool has_ecn) {
+    const auto largest_ack = read_varint(bytes, offset);
+    const auto ack_delay = read_varint(bytes, offset);
+    const auto ack_range_count = read_varint_size(bytes, offset);
+    const auto first_ack_range = read_varint(bytes, offset);
+    if (!largest_ack.has_value() || !ack_delay.has_value() || !ack_range_count.has_value() || !first_ack_range.has_value()) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < *ack_range_count; ++index) {
+        const auto gap = read_varint(bytes, offset);
+        const auto ack_range_length = read_varint(bytes, offset);
+        if (!gap.has_value() || !ack_range_length.has_value()) {
+            return false;
+        }
+    }
+
+    if (!has_ecn) {
+        return true;
+    }
+
+    const auto ect0_count = read_varint(bytes, offset);
+    const auto ect1_count = read_varint(bytes, offset);
+    const auto ecn_ce_count = read_varint(bytes, offset);
+    return ect0_count.has_value() && ect1_count.has_value() && ecn_ce_count.has_value();
+}
+
+bool skip_stream_frame(std::span<const std::uint8_t> bytes, std::size_t& offset, const std::uint8_t frame_type) {
+    const auto stream_id = read_varint(bytes, offset);
+    if (!stream_id.has_value()) {
+        return false;
+    }
+
+    const bool has_offset = (frame_type & 0x04U) != 0U;
+    const bool has_length = (frame_type & 0x02U) != 0U;
+
+    if (has_offset && !read_varint(bytes, offset).has_value()) {
+        return false;
+    }
+
+    if (!has_length) {
+        offset = bytes.size();
+        return true;
+    }
+
+    const auto length = read_varint_size(bytes, offset);
+    return length.has_value() && skip_bytes(bytes, offset, *length);
+}
+
+bool skip_frame_payload(std::span<const std::uint8_t> bytes, std::size_t& offset, const std::uint8_t frame_type) {
+    switch (frame_type) {
+    case 0x02U:
+        return skip_ack_frame(bytes, offset, false);
+    case 0x03U:
+        return skip_ack_frame(bytes, offset, true);
+    case 0x04U:
+        return read_varint(bytes, offset).has_value() &&
+               read_varint(bytes, offset).has_value() &&
+               read_varint(bytes, offset).has_value();
+    case 0x05U:
+        return read_varint(bytes, offset).has_value() && read_varint(bytes, offset).has_value();
+    case 0x07U: {
+        const auto token_length = read_varint_size(bytes, offset);
+        return token_length.has_value() && skip_bytes(bytes, offset, *token_length);
+    }
+    case 0x08U:
+    case 0x09U:
+    case 0x0AU:
+    case 0x0BU:
+    case 0x0CU:
+    case 0x0DU:
+    case 0x0EU:
+    case 0x0FU:
+        return skip_stream_frame(bytes, offset, frame_type);
+    case 0x10U:
+    case 0x12U:
+    case 0x13U:
+    case 0x14U:
+    case 0x16U:
+    case 0x17U:
+    case 0x19U:
+        return read_varint(bytes, offset).has_value();
+    case 0x11U:
+    case 0x15U:
+        return read_varint(bytes, offset).has_value() && read_varint(bytes, offset).has_value();
+    case 0x18U: {
+        const auto sequence_number = read_varint(bytes, offset);
+        const auto retire_prior_to = read_varint(bytes, offset);
+        if (!sequence_number.has_value() || !retire_prior_to.has_value() || offset >= bytes.size()) {
+            return false;
+        }
+
+        const auto connection_id_length = static_cast<std::size_t>(bytes[offset++]);
+        return skip_bytes(bytes, offset, connection_id_length) && skip_bytes(bytes, offset, 16U);
+    }
+    case 0x1AU:
+    case 0x1BU:
+        return skip_bytes(bytes, offset, 8U);
+    case 0x1CU: {
+        const auto error_code = read_varint(bytes, offset);
+        const auto triggering_frame_type = read_varint(bytes, offset);
+        const auto reason_length = read_varint_size(bytes, offset);
+        return error_code.has_value() && triggering_frame_type.has_value() &&
+               reason_length.has_value() && skip_bytes(bytes, offset, *reason_length);
+    }
+    case 0x1DU: {
+        const auto error_code = read_varint(bytes, offset);
+        const auto reason_length = read_varint_size(bytes, offset);
+        return error_code.has_value() && reason_length.has_value() && skip_bytes(bytes, offset, *reason_length);
+    }
+    case 0x1EU:
+        return true;
+    default: {
+        // Best-effort fallback for extension frame types.
+        const auto extension_length = read_varint_size(bytes, offset);
+        if (extension_length.has_value()) {
+            return skip_bytes(bytes, offset, *extension_length);
+        }
+
+        if (offset < bytes.size()) {
+            ++offset;
+            return true;
+        }
+
+        return false;
+    }
+    }
+}
+
 bool collect_crypto_fragments(std::span<const std::uint8_t> plaintext, std::vector<CryptoFragment>& fragments) {
     std::size_t offset = 0U;
     while (offset < plaintext.size()) {
         const auto frame_type = plaintext[offset++];
-        if (frame_type == 0x00U) {
+        if (frame_type == 0x00U || frame_type == 0x01U) {
             continue;
         }
 
-        if (frame_type == 0x01U) {
+        if (frame_type == 0x06U) {
+            const auto crypto_offset = read_varint(plaintext, offset);
+            const auto crypto_length = read_varint_size(plaintext, offset);
+            if (!crypto_offset.has_value() || !crypto_length.has_value()) {
+                return false;
+            }
+
+            if (!skip_bytes(plaintext, offset, *crypto_length)) {
+                return false;
+            }
+
+            const auto crypto_start = offset - *crypto_length;
+            fragments.push_back(CryptoFragment {
+                .offset = *crypto_offset,
+                .bytes = std::vector<std::uint8_t>(
+                    plaintext.begin() + static_cast<std::ptrdiff_t>(crypto_start),
+                    plaintext.begin() + static_cast<std::ptrdiff_t>(offset)),
+            });
             continue;
         }
 
-        if (frame_type != 0x06U) {
+        if (!skip_frame_payload(plaintext, offset, frame_type)) {
             return false;
         }
-
-        const auto crypto_offset = read_varint(plaintext, offset);
-        const auto crypto_length = read_varint(plaintext, offset);
-        if (!crypto_offset.has_value() || !crypto_length.has_value()) {
-            return false;
-        }
-
-        if (offset + *crypto_length > plaintext.size()) {
-            return false;
-        }
-
-        fragments.push_back(CryptoFragment {
-            .offset = *crypto_offset,
-            .bytes = std::vector<std::uint8_t>(
-                plaintext.begin() + static_cast<std::ptrdiff_t>(offset),
-                plaintext.begin() + static_cast<std::ptrdiff_t>(offset + static_cast<std::size_t>(*crypto_length))),
-        });
-        offset += static_cast<std::size_t>(*crypto_length);
     }
 
     return true;
