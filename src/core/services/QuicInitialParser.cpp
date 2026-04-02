@@ -26,6 +26,7 @@ namespace pfl {
 namespace {
 
 constexpr std::uint32_t kQuicVersion1 = 0x00000001U;
+constexpr std::uint32_t kQuicVersionV2 = 0x6B3343CFU;
 constexpr std::uint32_t kQuicVersionDraft29 = 0xFF00001DU;
 constexpr std::size_t kQuicSampleSize = 16U;
 constexpr std::size_t kQuicTagSize = 16U;
@@ -38,23 +39,56 @@ constexpr std::array<std::uint8_t, 20> kQuicInitialSaltV1 {
     0x9AU, 0xE6U, 0xA4U, 0xC8U, 0x0CU, 0xADU, 0xCCU, 0xBBU, 0x7FU, 0x0AU,
 };
 
+// QUIC v2 Initial salt (RFC 9369).
+constexpr std::array<std::uint8_t, 20> kQuicInitialSaltV2 {
+    0x0DU, 0xEDU, 0xE3U, 0xDEU, 0xF7U, 0x00U, 0xA6U, 0xDBU, 0x81U, 0x93U,
+    0x81U, 0xBEU, 0x6EU, 0x26U, 0x9DU, 0xCBU, 0xF9U, 0xBDU, 0x2EU, 0xD9U,
+};
+
 // QUIC draft-29 Initial salt (version 0xff00001d).
 constexpr std::array<std::uint8_t, 20> kQuicInitialSaltDraft29 {
     0xAFU, 0xBFU, 0xECU, 0x28U, 0x99U, 0x93U, 0xD2U, 0x4CU, 0x9EU, 0x97U,
     0x86U, 0xF1U, 0x9CU, 0x61U, 0x11U, 0xE0U, 0x43U, 0x90U, 0xA8U, 0x99U,
 };
 
-std::optional<std::span<const std::uint8_t>> initial_salt_for_version(const std::uint32_t version) {
+struct QuicInitialVersionParams {
+    std::span<const std::uint8_t> initial_salt {};
+    std::string_view key_label {};
+    std::string_view iv_label {};
+    std::string_view hp_label {};
+    std::uint8_t initial_packet_type_bits {0U};
+};
+
+std::optional<QuicInitialVersionParams> quic_initial_version_params(const std::uint32_t version) {
     switch (version) {
     case kQuicVersion1:
-        return std::span<const std::uint8_t>(kQuicInitialSaltV1.data(), kQuicInitialSaltV1.size());
+        return QuicInitialVersionParams {
+            .initial_salt = std::span<const std::uint8_t>(kQuicInitialSaltV1.data(), kQuicInitialSaltV1.size()),
+            .key_label = "quic key",
+            .iv_label = "quic iv",
+            .hp_label = "quic hp",
+            .initial_packet_type_bits = 0U,
+        };
+    case kQuicVersionV2:
+        return QuicInitialVersionParams {
+            .initial_salt = std::span<const std::uint8_t>(kQuicInitialSaltV2.data(), kQuicInitialSaltV2.size()),
+            .key_label = "quicv2 key",
+            .iv_label = "quicv2 iv",
+            .hp_label = "quicv2 hp",
+            .initial_packet_type_bits = 1U,
+        };
     case kQuicVersionDraft29:
-        return std::span<const std::uint8_t>(kQuicInitialSaltDraft29.data(), kQuicInitialSaltDraft29.size());
+        return QuicInitialVersionParams {
+            .initial_salt = std::span<const std::uint8_t>(kQuicInitialSaltDraft29.data(), kQuicInitialSaltDraft29.size()),
+            .key_label = "quic key",
+            .iv_label = "quic iv",
+            .hp_label = "quic hp",
+            .initial_packet_type_bits = 0U,
+        };
     default:
         return std::nullopt;
     }
 }
-
 std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
                                       static_cast<std::uint16_t>(bytes[offset + 1U]));
@@ -435,12 +469,13 @@ std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<c
         return std::nullopt;
     }
 
-    if (((first_byte >> 4U) & 0x03U) != 0U) {
+    const auto version = read_be32(udp_payload, 1U);
+    const auto version_params = quic_initial_version_params(version);
+    if (!version_params.has_value()) {
         return std::nullopt;
     }
 
-    const auto version = read_be32(udp_payload, 1U);
-    if (!initial_salt_for_version(version).has_value()) {
+    if (((first_byte >> 4U) & 0x03U) != version_params->initial_packet_type_bits) {
         return std::nullopt;
     }
 
@@ -865,12 +900,12 @@ std::optional<std::vector<std::uint8_t>> decrypt_client_initial_plaintext(std::s
         return std::nullopt;
     }
 
-    const auto initial_salt = initial_salt_for_version(header->version);
-    if (!initial_salt.has_value()) {
+    const auto version_params = quic_initial_version_params(header->version);
+    if (!version_params.has_value()) {
         return std::nullopt;
     }
 
-    const auto initial_secret = hkdf_extract(*initial_salt, header->destination_connection_id);
+    const auto initial_secret = hkdf_extract(version_params->initial_salt, header->destination_connection_id);
     if (!initial_secret.has_value()) {
         return std::nullopt;
     }
@@ -880,9 +915,9 @@ std::optional<std::vector<std::uint8_t>> decrypt_client_initial_plaintext(std::s
         return std::nullopt;
     }
 
-    const auto key = hkdf_expand_label(*client_initial_secret, "quic key", kQuicAes128KeySize);
-    const auto iv = hkdf_expand_label(*client_initial_secret, "quic iv", kQuicIvSize);
-    const auto hp = hkdf_expand_label(*client_initial_secret, "quic hp", kQuicAes128KeySize);
+    const auto key = hkdf_expand_label(*client_initial_secret, version_params->key_label, kQuicAes128KeySize);
+    const auto iv = hkdf_expand_label(*client_initial_secret, version_params->iv_label, kQuicIvSize);
+    const auto hp = hkdf_expand_label(*client_initial_secret, version_params->hp_label, kQuicAes128KeySize);
     if (!key.has_value() || !iv.has_value() || !hp.has_value()) {
         return std::nullopt;
     }

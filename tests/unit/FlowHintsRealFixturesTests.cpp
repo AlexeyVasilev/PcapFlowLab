@@ -100,6 +100,19 @@ void run_flow_hints_real_fixtures_tests() {
         const auto draft29_rows = deep_quic_draft29_session.list_flows();
         PFL_EXPECT(has_matching_flow(draft29_rows, "quic", std::optional<std::string> {"log22-normal-useast1a.tiktokv.com"}));
     }
+
+    {
+        CaptureSession fast_quic_draft29_session {};
+        PFL_EXPECT(fast_quic_draft29_session.open_capture(fixture_path("parsing/quic/quic_test_3.pcap")));
+
+        const auto fast_rows = fast_quic_draft29_session.list_flows();
+        PFL_EXPECT(!fast_rows.empty());
+        PFL_EXPECT(fast_rows[0].protocol_hint == "quic");
+
+        const auto derived = fast_quic_draft29_session.derive_quic_service_hint_for_flow(0U);
+        PFL_EXPECT(derived.has_value());
+        PFL_EXPECT(*derived == "log22-normal-useast1a.tiktokv.com");
+    }
 }
 
 }  // namespace pfl::tests

@@ -23,6 +23,13 @@ void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
+void append_be32(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
 void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t value) {
     if (value < 64U) {
         bytes.push_back(static_cast<std::uint8_t>(value));
@@ -37,6 +44,25 @@ void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t va
     }
 
     throw TestFailure("append_quic_varint: unsupported test value");
+}
+
+std::vector<std::uint8_t> make_minimal_initial_packet(const std::uint32_t version,
+                                                      const std::uint8_t initial_packet_type_bits) {
+    std::vector<std::uint8_t> packet {};
+    const auto first_byte = static_cast<std::uint8_t>(0xC0U | ((initial_packet_type_bits & 0x03U) << 4U));
+    packet.push_back(first_byte);
+    append_be32(packet, version);
+
+    packet.push_back(0x08U);
+    packet.insert(packet.end(), {0x11U, 0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U});
+
+    packet.push_back(0x00U);
+    append_quic_varint(packet, 0U);
+
+    append_quic_varint(packet, 17U);
+    packet.push_back(0x00U);
+    packet.insert(packet.end(), 16U, 0x00U);
+    return packet;
 }
 
 std::vector<std::uint8_t> make_client_hello_handshake(const std::string& host) {
@@ -112,6 +138,23 @@ void append_ack_frame(std::vector<std::uint8_t>& payload) {
 void run_quic_initial_parser_tests() {
     QuicInitialParser parser {};
 
+    {
+        constexpr std::uint32_t kVersionV1 = 0x00000001U;
+        constexpr std::uint32_t kVersionV2 = 0x6B3343CFU;
+        constexpr std::uint32_t kVersionDraft29 = 0xFF00001DU;
+        constexpr std::uint32_t kUnsupportedVersion = 0x0A0B0C0DU;
+
+        const auto v1_packet = make_minimal_initial_packet(kVersionV1, 0U);
+        const auto v2_packet = make_minimal_initial_packet(kVersionV2, 1U);
+        const auto draft29_packet = make_minimal_initial_packet(kVersionDraft29, 0U);
+        const auto unsupported_packet = make_minimal_initial_packet(kUnsupportedVersion, 0U);
+
+        PFL_EXPECT(parser.is_client_initial_packet(std::span<const std::uint8_t>(v1_packet.data(), v1_packet.size())));
+        PFL_EXPECT(parser.is_client_initial_packet(std::span<const std::uint8_t>(v2_packet.data(), v2_packet.size())));
+        PFL_EXPECT(parser.is_client_initial_packet(std::span<const std::uint8_t>(draft29_packet.data(), draft29_packet.size())));
+        PFL_EXPECT(!parser.is_client_initial_packet(std::span<const std::uint8_t>(unsupported_packet.data(), unsupported_packet.size())));
+        PFL_EXPECT(!parser.extract_client_initial_sni(std::span<const std::uint8_t>(unsupported_packet.data(), unsupported_packet.size())).has_value());
+    }
     {
         const std::string expected_host = "phase2-split.example";
         const auto handshake = make_client_hello_handshake(expected_host);

@@ -2024,15 +2024,18 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
             return std::nullopt;
         }
 
-        if (connection.key.first.port != 443 && connection.key.second.port == 443 && connection.has_flow_a) {
-            return try_direction(connection.flow_a.key, connection.flow_a.packets);
+        const auto try_flow = [&](const FlowV4& flow, const bool has_flow) -> std::optional<std::string> {
+            if (!has_flow || flow.key.src_port == 443 || flow.key.dst_port != 443) {
+                return std::nullopt;
+            }
+            return try_direction(flow.key, flow.packets);
+        };
+
+        if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a); from_flow_a.has_value()) {
+            return from_flow_a;
         }
 
-        if (connection.key.first.port == 443 && connection.key.second.port != 443 && connection.has_flow_b) {
-            return try_direction(connection.flow_b.key, connection.flow_b.packets);
-        }
-
-        return std::nullopt;
+        return try_flow(connection.flow_b, connection.has_flow_b);
     }
 
     const auto& connection = *connections[flow_index].ipv6;
@@ -2040,15 +2043,18 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
         return std::nullopt;
     }
 
-    if (connection.key.first.port != 443 && connection.key.second.port == 443 && connection.has_flow_a) {
-        return try_direction(connection.flow_a.key, connection.flow_a.packets);
+    const auto try_flow = [&](const FlowV6& flow, const bool has_flow) -> std::optional<std::string> {
+        if (!has_flow || flow.key.src_port == 443 || flow.key.dst_port != 443) {
+            return std::nullopt;
+        }
+        return try_direction(flow.key, flow.packets);
+    };
+
+    if (const auto from_flow_a = try_flow(connection.flow_a, connection.has_flow_a); from_flow_a.has_value()) {
+        return from_flow_a;
     }
 
-    if (connection.key.first.port == 443 && connection.key.second.port != 443 && connection.has_flow_b) {
-        return try_direction(connection.flow_b.key, connection.flow_b.packets);
-    }
-
-    return std::nullopt;
+    return try_flow(connection.flow_b, connection.has_flow_b);
 }
 
 std::vector<FlowRow> CaptureSession::list_flows() const {
@@ -2340,30 +2346,4 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
