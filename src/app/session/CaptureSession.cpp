@@ -710,10 +710,6 @@ bool has_reassembly_flag(const ReassemblyResult& result, const ReassemblyQuality
     return (result.quality_flags & static_cast<std::uint32_t>(flag)) != 0U;
 }
 
-Direction direction_from_text(const std::string_view direction_text) noexcept {
-    return direction_text == kDirectionAToB ? Direction::a_to_b : Direction::b_to_a;
-}
-
 
 struct ReassembledPayloadChunk {
     std::uint64_t packet_index {0};

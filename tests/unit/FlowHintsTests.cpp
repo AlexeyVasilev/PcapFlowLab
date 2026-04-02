@@ -91,6 +91,41 @@ std::vector<std::uint8_t> make_tls_client_hello_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_ssh_banner_payload() {
+    constexpr char banner[] = "SSH-2.0-OpenSSH_9.6\r\n";
+    return std::vector<std::uint8_t>(banner, banner + sizeof(banner) - 1);
+}
+
+std::vector<std::uint8_t> make_stun_binding_request_payload() {
+    std::vector<std::uint8_t> payload {};
+    append_be16(payload, 0x0001U);
+    append_be16(payload, 0x0000U);
+    append_be32(payload, 0x2112A442U);
+    payload.insert(payload.end(), {
+        0x10, 0x11, 0x12, 0x13,
+        0x20, 0x21, 0x22, 0x23,
+        0x30, 0x31, 0x32, 0x33,
+    });
+    return payload;
+}
+
+std::vector<std::uint8_t> make_bittorrent_handshake_payload() {
+    std::vector<std::uint8_t> payload {};
+    payload.push_back(19U);
+    payload.insert(payload.end(), {
+        'B', 'i', 't', 'T', 'o', 'r', 'r', 'e', 'n', 't',
+        ' ', 'p', 'r', 'o', 't', 'o', 'c', 'o', 'l',
+    });
+    payload.insert(payload.end(), 8U, 0x00U);
+    for (std::uint8_t index = 0; index < 20U; ++index) {
+        payload.push_back(index);
+    }
+    for (std::uint8_t index = 0; index < 20U; ++index) {
+        payload.push_back(static_cast<std::uint8_t>(0x41U + index));
+    }
+    return payload;
+}
+
 }  // namespace
 
 void run_flow_hints_tests() {
@@ -163,6 +198,135 @@ void run_flow_hints_tests() {
     }
 
     {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_ssh_positive.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 3, 3, 3), ipv4(10, 3, 3, 4), 53022, 22, make_ssh_banner_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "ssh");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        constexpr char invalid_ssh_banner[] = "SSX-2.0-OpenSSH_9.6\r\n";
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_ssh_negative.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 3, 4, 3), ipv4(10, 3, 4, 4), 53022, 22,
+                    std::vector<std::uint8_t>(invalid_ssh_banner, invalid_ssh_banner + sizeof(invalid_ssh_banner) - 1), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_stun_positive.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 4, 4, 4), ipv4(10, 4, 4, 5), 51000, 3478, make_stun_binding_request_payload())},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "stun");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        auto payload = make_stun_binding_request_payload();
+        payload[7] ^= 0x01U;
+
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_stun_negative.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 4, 5, 4), ipv4(10, 4, 5, 5), 51000, 3478, payload)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_bittorrent_positive.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 5, 5, 5), ipv4(10, 5, 5, 6), 51413, 6881, make_bittorrent_handshake_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "bittorrent");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        auto payload = make_bittorrent_handshake_payload();
+        payload[1] = static_cast<std::uint8_t>('X');
+
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_bittorrent_negative.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 5, 6, 5), ipv4(10, 5, 6, 6), 51413, 6881, payload, 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_precedence_tls_over_cheap.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 6, 6, 6), ipv4(10, 6, 6, 7), 50123, 443, make_tls_client_hello_payload(), 0x18)},
+                {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 6, 6, 6), ipv4(10, 6, 6, 7), 50123, 443, make_ssh_banner_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "tls");
+        PFL_EXPECT(rows[0].service_hint == "example.org");
+    }
+
+    {
         const auto http_capture_path = write_temp_pcap(
             "pfl_flow_hint_roundtrip.pcap",
             make_classic_pcap({
@@ -217,3 +381,4 @@ void run_flow_hints_tests() {
 }
 
 }  // namespace pfl::tests
+

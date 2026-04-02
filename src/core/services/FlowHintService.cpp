@@ -20,6 +20,10 @@ constexpr std::uint16_t kDnsPort = 53;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
+constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
+constexpr std::size_t kStunHeaderSize = 20U;
+constexpr std::string_view kBitTorrentHandshakeProtocol = "BitTorrent protocol";
+constexpr std::size_t kBitTorrentHandshakeSize = 68U;
 
 struct FlowHintDetectionSettings {
     AnalysisSettings analysis_settings {};
@@ -116,6 +120,44 @@ bool looks_like_http_request(const std::string_view payload_text) noexcept {
 
 bool looks_like_http_response(const std::string_view payload_text) noexcept {
     return payload_text.starts_with("HTTP/1.");
+}
+
+bool looks_like_ssh_banner(std::span<const std::uint8_t> payload) noexcept {
+    return payload.size() >= 4U && payload_as_text(payload).starts_with("SSH-");
+}
+
+bool looks_like_stun_message(std::span<const std::uint8_t> payload) {
+    if (payload.size() < kStunHeaderSize) {
+        return false;
+    }
+
+    if ((payload[0] & 0xC0U) != 0U) {
+        return false;
+    }
+
+    const auto message_length = static_cast<std::size_t>(read_be16(payload, 2U));
+    if ((message_length % 4U) != 0U) {
+        return false;
+    }
+
+    if (payload.size() != (kStunHeaderSize + message_length)) {
+        return false;
+    }
+
+    return read_be32(payload, 4U) == kStunMagicCookie;
+}
+
+bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
+    if (payload.size() < kBitTorrentHandshakeSize) {
+        return false;
+    }
+
+    if (payload[0] != static_cast<std::uint8_t>(kBitTorrentHandshakeProtocol.size())) {
+        return false;
+    }
+
+    const auto protocol_name = payload_as_text(payload.subspan(1U, kBitTorrentHandshakeProtocol.size()));
+    return protocol_name == kBitTorrentHandshakeProtocol;
 }
 
 std::optional<std::string> extract_http_host(std::span<const std::uint8_t> payload) {
@@ -421,6 +463,36 @@ FlowHintUpdate detect_http_hint(std::span<const std::uint8_t> payload, const Ana
     return hint;
 }
 
+FlowHintUpdate detect_ssh_hint(std::span<const std::uint8_t> payload) {
+    if (!looks_like_ssh_banner(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::ssh,
+    };
+}
+
+FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
+    if (!looks_like_stun_message(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::stun,
+    };
+}
+
+FlowHintUpdate detect_bittorrent_hint(std::span<const std::uint8_t> payload) {
+    if (!looks_like_bittorrent_handshake(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::bittorrent,
+    };
+}
+
 FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
     if (!looks_like_tls_record(payload)) {
         return {};
@@ -545,7 +617,21 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
-        return detect_http_hint(payload_view, settings.analysis_settings);
+        {
+            const auto http_hint = detect_http_hint(payload_view, settings.analysis_settings);
+            if (http_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return http_hint;
+            }
+        }
+
+        {
+            const auto ssh_hint = detect_ssh_hint(payload_view);
+            if (ssh_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return ssh_hint;
+            }
+        }
+
+        return detect_bittorrent_hint(payload_view);
     case ProtocolId::udp:
         if (has_port(flow_key.src_port, flow_key.dst_port, kDnsPort)) {
             const auto dns_hint = detect_dns_hint(payload_view, false);
@@ -555,7 +641,7 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
         }
 
         if (has_port(flow_key.src_port, flow_key.dst_port, kHttpsPort)) {
-            return detect_quic_hint(
+            const auto quic_hint = detect_quic_hint(
                 payload_view,
                 flow_key,
                 quic_state,
@@ -563,9 +649,12 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
                 flow_key.dst_port,
                 settings.enable_quic_initial_sni
             );
+            if (quic_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return quic_hint;
+            }
         }
 
-        return {};
+        return detect_stun_hint(payload_view);
     default:
         return {};
     }
