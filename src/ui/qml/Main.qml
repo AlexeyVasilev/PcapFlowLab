@@ -281,6 +281,13 @@ ApplicationWindow {
                 otherTotalBytes: mainController.otherTotalBytes
                 ipv4FlowCount: mainController.ipv4FlowCount
                 ipv6FlowCount: mainController.ipv6FlowCount
+                quicTotalFlows: mainController.quicTotalFlows
+                quicWithSni: mainController.quicWithSni
+                quicWithoutSni: mainController.quicWithoutSni
+                quicVersionV1: mainController.quicVersionV1
+                quicVersionDraft29: mainController.quicVersionDraft29
+                quicVersionV2: mainController.quicVersionV2
+                quicVersionUnknown: mainController.quicVersionUnknown
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {
@@ -300,10 +307,4 @@ ApplicationWindow {
         }
     }
 }
-
-
-
-
-
-
 

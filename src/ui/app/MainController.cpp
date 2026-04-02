@@ -570,6 +570,34 @@ qulonglong MainController::ipv6FlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.flow_count);
 }
 
+qulonglong MainController::quicTotalFlows() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.total_flows);
+}
+
+qulonglong MainController::quicWithSni() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.with_sni);
+}
+
+qulonglong MainController::quicWithoutSni() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.without_sni);
+}
+
+qulonglong MainController::quicVersionV1() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.version_v1);
+}
+
+qulonglong MainController::quicVersionDraft29() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.version_draft29);
+}
+
+qulonglong MainController::quicVersionV2() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.version_v2);
+}
+
+qulonglong MainController::quicVersionUnknown() const noexcept {
+    return static_cast<qulonglong>(quic_recognition_stats_.version_unknown);
+}
+
 int MainController::captureOpenMode() const noexcept {
     return capture_open_mode_;
 }
@@ -1175,6 +1203,7 @@ void MainController::resetLoadedState() {
     finishOpenProgress();
     session_ = {};
     protocol_summary_ = {};
+    quic_recognition_stats_ = {};
     flow_model_.resetViewState();
     flow_model_.clear();
     packet_model_.clear();
@@ -1203,6 +1232,7 @@ void MainController::resetLoadedState() {
 void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
+    quic_recognition_stats_ = session_.quic_recognition_stats();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
@@ -1559,41 +1589,4 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

@@ -454,7 +454,8 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload,
         return {};
     }
 
-    if (read_be32(payload, 1U) == 0U) {
+    const auto quic_version = read_be32(payload, 1U);
+    if (quic_version == 0U) {
         return {};
     }
 
@@ -471,6 +472,7 @@ FlowHintUpdate detect_quic_hint(std::span<const std::uint8_t> payload,
 
     FlowHintUpdate hint {
         .protocol_hint = FlowProtocolHint::quic,
+        .quic_version = classify_quic_version(quic_version),
     };
 
     if (!enable_quic_initial_sni || src_port == kHttpsPort || dst_port != kHttpsPort) {

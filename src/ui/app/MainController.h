@@ -66,6 +66,13 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicTotalFlows READ quicTotalFlows NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicWithSni READ quicWithSni NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicWithoutSni READ quicWithoutSni NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicVersionV1 READ quicVersionV1 NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicVersionDraft29 READ quicVersionDraft29 NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicVersionV2 READ quicVersionV2 NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong quicVersionUnknown READ quicVersionUnknown NOTIFY stateChanged)
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
@@ -129,6 +136,13 @@ public:
     [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
+    [[nodiscard]] qulonglong quicTotalFlows() const noexcept;
+    [[nodiscard]] qulonglong quicWithSni() const noexcept;
+    [[nodiscard]] qulonglong quicWithoutSni() const noexcept;
+    [[nodiscard]] qulonglong quicVersionV1() const noexcept;
+    [[nodiscard]] qulonglong quicVersionDraft29() const noexcept;
+    [[nodiscard]] qulonglong quicVersionV2() const noexcept;
+    [[nodiscard]] qulonglong quicVersionUnknown() const noexcept;
     [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] int currentTabIndex() const noexcept;
@@ -225,6 +239,7 @@ private:
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
+    QuicRecognitionStats quic_recognition_stats_ {};
     FlowListModel flow_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
@@ -268,21 +283,4 @@ private:
 };
 
 }  // namespace pfl
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

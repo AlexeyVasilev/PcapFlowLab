@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstdint>
 #include <string>
@@ -24,6 +24,7 @@ struct ConnectionV4 {
     std::uint64_t fragmented_packet_count {0};
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
+    QuicVersionHint quic_version {QuicVersionHint::unknown};
 
     void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet);
     void apply_hints(const FlowHintUpdate& hints);
@@ -44,9 +45,11 @@ struct ConnectionV6 {
     std::uint64_t fragmented_packet_count {0};
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
+    QuicVersionHint quic_version {QuicVersionHint::unknown};
 
     void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet);
     void apply_hints(const FlowHintUpdate& hints);
 };
 
 }  // namespace pfl
+

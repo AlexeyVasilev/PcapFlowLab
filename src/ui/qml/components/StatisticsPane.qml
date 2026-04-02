@@ -20,6 +20,13 @@ Item {
     property var otherTotalBytes: 0
     property var ipv4FlowCount: 0
     property var ipv6FlowCount: 0
+    property var quicTotalFlows: 0
+    property var quicWithSni: 0
+    property var quicWithoutSni: 0
+    property var quicVersionV1: 0
+    property var quicVersionDraft29: 0
+    property var quicVersionV2: 0
+    property var quicVersionUnknown: 0
     property var topEndpointsModel: null
     property var topPortsModel: null
 
@@ -56,6 +63,13 @@ Item {
                 otherTotalBytes: root.otherTotalBytes
                 ipv4FlowCount: root.ipv4FlowCount
                 ipv6FlowCount: root.ipv6FlowCount
+                quicTotalFlows: root.quicTotalFlows
+                quicWithSni: root.quicWithSni
+                quicWithoutSni: root.quicWithoutSni
+                quicVersionV1: root.quicVersionV1
+                quicVersionDraft29: root.quicVersionDraft29
+                quicVersionV2: root.quicVersionV2
+                quicVersionUnknown: root.quicVersionUnknown
             }
 
             TopTalkersPane {
@@ -74,3 +88,4 @@ Item {
         }
     }
 }
+

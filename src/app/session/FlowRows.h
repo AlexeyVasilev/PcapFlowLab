@@ -48,7 +48,6 @@ struct PacketRow {
     std::string tcp_flags_text {};
 };
 
-
 struct StreamItemRow {
     std::uint64_t stream_item_index {0};
     std::string direction_text {};
@@ -59,6 +58,7 @@ struct StreamItemRow {
     std::string payload_hex_text {};
     std::string protocol_text {};
 };
+
 struct ProtocolStats {
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
@@ -83,6 +83,17 @@ struct TopPortRow {
     std::uint16_t port {0};
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+};
+
+struct QuicRecognitionStats {
+    std::uint64_t total_flows {0};
+    std::uint64_t with_sni {0};
+    std::uint64_t without_sni {0};
+
+    std::uint64_t version_v1 {0};
+    std::uint64_t version_draft29 {0};
+    std::uint64_t version_v2 {0};
+    std::uint64_t version_unknown {0};
 };
 
 struct CaptureTopSummary {

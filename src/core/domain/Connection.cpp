@@ -1,4 +1,4 @@
-﻿#include "core/domain/Connection.h"
+#include "core/domain/Connection.h"
 
 namespace pfl {
 
@@ -26,6 +26,10 @@ void apply_hints_to_connection(Connection& connection, const FlowHintUpdate& hin
 
     if (connection.service_hint.empty() && !hints.service_hint.empty()) {
         connection.service_hint = hints.service_hint;
+    }
+
+    if (connection.quic_version == QuicVersionHint::unknown && hints.quic_version != QuicVersionHint::unknown) {
+        connection.quic_version = hints.quic_version;
     }
 }
 
@@ -110,3 +114,4 @@ void ConnectionV6::apply_hints(const FlowHintUpdate& hints) {
 }
 
 }  // namespace pfl
+

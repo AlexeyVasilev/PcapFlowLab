@@ -1,6 +1,7 @@
 #include "app/session/CaptureSession.h"
 
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <array>
 #include <iostream>
@@ -1784,6 +1785,59 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
     }
 
     return summary;
+}
+
+QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
+    QuicRecognitionStats stats {};
+
+    const auto connections = list_connections(state_);
+    for (const auto& connection : connections) {
+        const auto protocol_hint = (connection.family == FlowAddressFamily::ipv4)
+            ? connection.ipv4->protocol_hint
+            : connection.ipv6->protocol_hint;
+        if (protocol_hint != FlowProtocolHint::quic) {
+            continue;
+        }
+
+        ++stats.total_flows;
+
+        const auto& service_hint = (connection.family == FlowAddressFamily::ipv4)
+            ? connection.ipv4->service_hint
+            : connection.ipv6->service_hint;
+        if (service_hint.empty()) {
+            ++stats.without_sni;
+        } else {
+            ++stats.with_sni;
+        }
+
+        const auto version_hint = (connection.family == FlowAddressFamily::ipv4)
+            ? connection.ipv4->quic_version
+            : connection.ipv6->quic_version;
+        switch (version_hint) {
+        case QuicVersionHint::v1:
+            ++stats.version_v1;
+            break;
+        case QuicVersionHint::draft29:
+            ++stats.version_draft29;
+            break;
+        case QuicVersionHint::v2:
+            ++stats.version_v2;
+            break;
+        case QuicVersionHint::unknown:
+        default:
+            ++stats.version_unknown;
+            break;
+        }
+    }
+
+#ifndef NDEBUG
+    const auto sni_sum = stats.with_sni + stats.without_sni;
+    const auto version_sum = stats.version_v1 + stats.version_draft29 + stats.version_v2 + stats.version_unknown;
+    assert(sni_sum == stats.total_flows);
+    assert(version_sum == stats.total_flows);
+#endif
+
+    return stats;
 }
 
 CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {

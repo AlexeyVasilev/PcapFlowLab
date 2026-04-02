@@ -226,6 +226,7 @@ if(BUILD_TESTING)
         tests/unit/FlowHintsTests.cpp
         tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
+        tests/unit/ProtocolRecognitionStatsTests.cpp
     )
 
     target_link_libraries(
@@ -236,31 +237,4 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
