@@ -162,6 +162,61 @@ void run_quic_initial_parser_tests() {
     }
 
     {
+        const std::string expected_host = "single-packet-offset-assembly.example";
+        const auto handshake = make_client_hello_handshake(expected_host);
+        PFL_EXPECT(handshake.size() > 30U);
+
+        const auto part_a = std::span<const std::uint8_t>(handshake.data(), 9U);
+        const auto part_b = std::span<const std::uint8_t>(handshake.data() + 9U, 12U);
+        const auto part_c = std::span<const std::uint8_t>(handshake.data() + 21U, handshake.size() - 21U);
+
+        std::vector<std::uint8_t> payload {};
+        append_crypto_frame(payload, 21U, part_c);
+        append_crypto_frame(payload, 0U, part_a);
+        append_crypto_frame(payload, 9U, part_b);
+
+        const std::vector<std::vector<std::uint8_t>> payloads {payload};
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(sni.has_value());
+        PFL_EXPECT(*sni == expected_host);
+    }
+
+    {
+        const std::string expected_host = "out-of-order-packets.example";
+        const auto handshake = make_client_hello_handshake(expected_host);
+        PFL_EXPECT(handshake.size() > 30U);
+
+        const auto part_a = std::span<const std::uint8_t>(handshake.data(), 11U);
+        const auto part_b = std::span<const std::uint8_t>(handshake.data() + 11U, 12U);
+        const auto part_c = std::span<const std::uint8_t>(handshake.data() + 23U, handshake.size() - 23U);
+
+        const std::vector<std::vector<std::uint8_t>> payloads {
+            make_crypto_frame_payload(23U, part_c),
+            make_crypto_frame_payload(0U, part_a),
+            make_crypto_frame_payload(11U, part_b),
+        };
+
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(sni.has_value());
+        PFL_EXPECT(*sni == expected_host);
+    }
+
+    {
+        const auto handshake = make_client_hello_handshake("gap-in-crypto-stream.example");
+        PFL_EXPECT(handshake.size() > 20U);
+
+        const auto part_a = std::span<const std::uint8_t>(handshake.data(), 8U);
+        const auto part_b = std::span<const std::uint8_t>(handshake.data() + 12U, handshake.size() - 12U);
+
+        const std::vector<std::vector<std::uint8_t>> payloads {
+            make_crypto_frame_payload(0U, part_a),
+            make_crypto_frame_payload(12U, part_b),
+        };
+
+        const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
+        PFL_EXPECT(!sni.has_value());
+    }
+    {
         const std::string expected_host = "ping-mixed.example";
         const auto handshake = make_client_hello_handshake(expected_host);
 
@@ -260,3 +315,4 @@ void run_quic_initial_parser_tests() {
 }
 
 }  // namespace pfl::tests
+

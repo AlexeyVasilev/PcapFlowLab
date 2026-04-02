@@ -708,29 +708,37 @@ bool collect_crypto_fragments(std::span<const std::uint8_t> plaintext, std::vect
     return true;
 }
 
-std::vector<std::uint8_t> assemble_crypto_prefix(std::vector<CryptoFragment> fragments) {
-    std::sort(fragments.begin(), fragments.end(), [](const CryptoFragment& left, const CryptoFragment& right) {
-        return left.offset < right.offset;
-    });
+std::vector<std::uint8_t> assemble_crypto_prefix(const std::vector<CryptoFragment>& fragments) {
+    std::vector<std::uint8_t> stream_buffer(QuicInitialParser::kMaxCryptoBytes, 0U);
+    std::vector<std::uint8_t> covered(QuicInitialParser::kMaxCryptoBytes, 0U);
 
-    std::vector<std::uint8_t> assembled {};
-    std::uint64_t contiguous_end = 0U;
-
+    // First-write-wins policy for overlapping CRYPTO ranges keeps assembly deterministic.
     for (const auto& fragment : fragments) {
-        if (fragment.offset > contiguous_end) {
-            break;
-        }
-
-        const auto overlap = static_cast<std::size_t>(contiguous_end > fragment.offset ? contiguous_end - fragment.offset : 0U);
-        if (overlap >= fragment.bytes.size()) {
+        if (fragment.bytes.empty() ||
+            fragment.offset >= static_cast<std::uint64_t>(QuicInitialParser::kMaxCryptoBytes)) {
             continue;
         }
 
-        assembled.insert(assembled.end(), fragment.bytes.begin() + static_cast<std::ptrdiff_t>(overlap), fragment.bytes.end());
-        contiguous_end = fragment.offset + fragment.bytes.size();
+        const auto start = static_cast<std::size_t>(fragment.offset);
+        const auto writable = std::min(fragment.bytes.size(), QuicInitialParser::kMaxCryptoBytes - start);
+        for (std::size_t index = 0U; index < writable; ++index) {
+            const auto absolute_index = start + index;
+            if (covered[absolute_index] != 0U) {
+                continue;
+            }
+
+            stream_buffer[absolute_index] = fragment.bytes[index];
+            covered[absolute_index] = 1U;
+        }
     }
 
-    return assembled;
+    std::size_t contiguous_prefix = 0U;
+    while (contiguous_prefix < covered.size() && covered[contiguous_prefix] != 0U) {
+        ++contiguous_prefix;
+    }
+
+    stream_buffer.resize(contiguous_prefix);
+    return stream_buffer;
 }
 
 std::optional<std::string> extract_tls_client_hello_sni_from_handshake(std::span<const std::uint8_t> handshake_bytes) {
