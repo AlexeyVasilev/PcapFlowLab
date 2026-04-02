@@ -1,0 +1,35 @@
+QUIC test fixtures notes (from user, April 2, 2026)
+
+This file preserves user-provided stream-item expectations for manual reference.
+These notes are not used by automated tests yet.
+
+quic_test_1.pcap
+- SNI: rr1---sn-ug5on-unxs.googlevideo.com
+- Client Initial packets: #1,#2 (packet #1 has 2 CRYPTO frames, #2 has 1 CRYPTO frame)
+- Stream notes:
+  TLS Client Hello (A->B) (#1,#2)
+  ACK (B->A) (#3)
+  ACK (B->A) (#4)
+  Padding (B->A) (#4)
+  TLS Server Hello (B->A) (#5)
+  QUIC Handshake (B->A) (#5,#6,#7)
+
+quic_test_2.pcap
+- SNI: www.youtube.com
+- Client Initial packets: #1,#2,#3 (CRYPTO frames: #1=2, #2=1, #3=1)
+- Stream notes:
+  TLS Client Hello (A->B) (#1,#2,#3)
+  0-RTT (A->B) (#3,#4,#5)
+
+quic_test_3.pcap
+- SNI: log22-normal-useast1a.tiktokv.com
+- Packet #1: PING*6 + PADDING*2 + CRYPTO*2 (client Initial)
+- Stream notes include mixed PING/PADDING/ACK/HANDSHAKE/Protected Payload items
+
+quic_test_4.pcap
+- No SNI expected (incomplete CRYPTO stream)
+- Stream notes: CRYPTO blocks only
+
+quic_test_5.pcap
+- No SNI expected (Initial decryption failure)
+- Stream notes: Initial + Handshake

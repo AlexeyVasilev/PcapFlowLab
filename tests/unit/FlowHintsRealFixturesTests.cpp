@@ -13,13 +13,18 @@ namespace {
 /*
  * Regression fixtures ported from the old project.
  * The capture files are reused as fixture data only; assertions target the
- * current Pcap Flow Lab API and current single-packet hint extraction limits.
+ * current Pcap Flow Lab API and current bounded QUIC Initial SNI extraction.
  */
 
 struct FixtureExpectation {
     std::filesystem::path relative_path {};
     std::string expected_protocol_hint {};
     std::optional<std::string> expected_service_hint {};
+};
+
+struct QuicSniFixtureExpectation {
+    std::filesystem::path relative_path {};
+    std::optional<std::string> expected_sni {};
 };
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
@@ -44,6 +49,17 @@ bool has_matching_flow(const std::vector<FlowRow>& rows,
     return false;
 }
 
+std::optional<std::size_t> find_flow_index_with_protocol_hint(const std::vector<FlowRow>& rows,
+                                                              const std::string& protocol_hint) {
+    for (std::size_t index = 0U; index < rows.size(); ++index) {
+        if (rows[index].protocol_hint == protocol_hint) {
+            return index;
+        }
+    }
+
+    return std::nullopt;
+}
+
 void expect_fixture(const FixtureExpectation& expectation) {
     CaptureSession session {};
     PFL_EXPECT(session.open_capture(fixture_path(expectation.relative_path)));
@@ -57,6 +73,49 @@ void expect_fixture(const FixtureExpectation& expectation) {
     }
 
     PFL_EXPECT(has_matching_flow(rows, expectation.expected_protocol_hint, expectation.expected_service_hint));
+}
+
+void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
+    CaptureImportOptions deep_options {};
+    deep_options.mode = ImportMode::deep;
+
+    CaptureSession deep_session {};
+    PFL_EXPECT(deep_session.open_capture(fixture_path(expectation.relative_path), deep_options));
+    const auto deep_rows = deep_session.list_flows();
+    PFL_EXPECT(!deep_rows.empty());
+
+    const auto deep_quic_flow_index = find_flow_index_with_protocol_hint(deep_rows, "quic");
+    PFL_EXPECT(deep_quic_flow_index.has_value());
+
+    const auto& deep_quic_row = deep_rows[*deep_quic_flow_index];
+    const auto deep_sni = deep_quic_row.service_hint.empty()
+        ? std::optional<std::string> {}
+        : std::optional<std::string> {deep_quic_row.service_hint};
+
+    if (expectation.expected_sni.has_value()) {
+        PFL_EXPECT(deep_sni.has_value());
+        PFL_EXPECT(*deep_sni == *expectation.expected_sni);
+    } else {
+        PFL_EXPECT(!deep_sni.has_value());
+    }
+
+    CaptureSession fast_session {};
+    PFL_EXPECT(fast_session.open_capture(fixture_path(expectation.relative_path)));
+    const auto fast_rows = fast_session.list_flows();
+    PFL_EXPECT(!fast_rows.empty());
+
+    const auto fast_quic_flow_index = find_flow_index_with_protocol_hint(fast_rows, "quic");
+    PFL_EXPECT(fast_quic_flow_index.has_value());
+
+    const auto fast_sni = fast_session.derive_quic_service_hint_for_flow(*fast_quic_flow_index);
+    if (expectation.expected_sni.has_value()) {
+        PFL_EXPECT(fast_sni.has_value());
+        PFL_EXPECT(*fast_sni == *expectation.expected_sni);
+    } else {
+        PFL_EXPECT(!fast_sni.has_value());
+    }
+
+    PFL_EXPECT(fast_sni == deep_sni);
 }
 
 }  // namespace
@@ -86,34 +145,18 @@ void run_flow_hints_real_fixtures_tests() {
     for (const auto& fixture : fixtures) {
         expect_fixture(fixture);
     }
-    {
-        CaptureImportOptions options {};
-        options.mode = ImportMode::deep;
 
-        CaptureSession deep_quic_session {};
-        PFL_EXPECT(deep_quic_session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), options));
-        const auto rows = deep_quic_session.list_flows();
-        PFL_EXPECT(has_matching_flow(rows, "quic", std::optional<std::string> {"bag.itunes.apple.com"}));
+    const std::vector<QuicSniFixtureExpectation> quic_sni_fixtures {
+        {.relative_path = "parsing/quic/quic_test_1.pcap", .expected_sni = std::optional<std::string> {"rr1---sn-ug5on-unxs.googlevideo.com"}},
+        {.relative_path = "parsing/quic/quic_test_2.pcap", .expected_sni = std::optional<std::string> {"www.youtube.com"}},
+        {.relative_path = "parsing/quic/quic_test_3.pcap", .expected_sni = std::optional<std::string> {"log22-normal-useast1a.tiktokv.com"}},
+        {.relative_path = "parsing/quic/quic_test_4.pcap", .expected_sni = std::nullopt},
+        {.relative_path = "parsing/quic/quic_test_5.pcap", .expected_sni = std::nullopt},
+    };
 
-        CaptureSession deep_quic_draft29_session {};
-        PFL_EXPECT(deep_quic_draft29_session.open_capture(fixture_path("parsing/quic/quic_test_3.pcap"), options));
-        const auto draft29_rows = deep_quic_draft29_session.list_flows();
-        PFL_EXPECT(has_matching_flow(draft29_rows, "quic", std::optional<std::string> {"log22-normal-useast1a.tiktokv.com"}));
-    }
-
-    {
-        CaptureSession fast_quic_draft29_session {};
-        PFL_EXPECT(fast_quic_draft29_session.open_capture(fixture_path("parsing/quic/quic_test_3.pcap")));
-
-        const auto fast_rows = fast_quic_draft29_session.list_flows();
-        PFL_EXPECT(!fast_rows.empty());
-        PFL_EXPECT(fast_rows[0].protocol_hint == "quic");
-
-        const auto derived = fast_quic_draft29_session.derive_quic_service_hint_for_flow(0U);
-        PFL_EXPECT(derived.has_value());
-        PFL_EXPECT(*derived == "log22-normal-useast1a.tiktokv.com");
+    for (const auto& fixture : quic_sni_fixtures) {
+        expect_quic_sni_fixture(fixture);
     }
 }
 
 }  // namespace pfl::tests
-
