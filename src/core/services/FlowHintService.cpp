@@ -19,9 +19,13 @@ namespace {
 constexpr std::uint16_t kDnsPort = 53;
 constexpr std::uint16_t kDhcpServerPort = 67;
 constexpr std::uint16_t kDhcpClientPort = 68;
+constexpr std::uint16_t kMdnsPort = 5353;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
+constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
+constexpr std::array<std::uint8_t, 16> kMdnsIpv6Multicast {0xFF, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                                           0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFB};
 constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
 constexpr std::size_t kStunHeaderSize = 20U;
 constexpr std::size_t kBootpFixedHeaderSize = 236U;
@@ -60,6 +64,14 @@ bool has_port(const std::uint16_t left, const std::uint16_t right, const std::ui
 
 bool has_port_pair(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port_a, const std::uint16_t port_b) noexcept {
     return (left == port_a && right == port_b) || (left == port_b && right == port_a);
+}
+
+bool is_mdns_multicast_destination(const std::uint32_t destination) noexcept {
+    return destination == kMdnsIpv4Multicast;
+}
+
+bool is_mdns_multicast_destination(const std::array<std::uint8_t, 16>& destination) noexcept {
+    return destination == kMdnsIpv6Multicast;
 }
 
 std::string_view payload_as_text(std::span<const std::uint8_t> payload) {
@@ -453,6 +465,32 @@ FlowHintUpdate detect_dns_hint(std::span<const std::uint8_t> payload, const bool
 
     return hint;
 }
+template <typename FlowKey>
+FlowHintUpdate detect_mdns_hint(std::span<const std::uint8_t> payload, const FlowKey& flow_key) {
+    if (!has_port(flow_key.src_port, flow_key.dst_port, kMdnsPort)) {
+        return {};
+    }
+
+    if (!is_mdns_multicast_destination(flow_key.dst_addr)) {
+        return {};
+    }
+
+    if (payload.size() < kDnsHeaderSize) {
+        return {};
+    }
+
+    const auto question_count = read_be16(payload, 4U);
+    const auto answer_count = read_be16(payload, 6U);
+    const auto authority_count = read_be16(payload, 8U);
+    const auto additional_count = read_be16(payload, 10U);
+    if (question_count == 0U && answer_count == 0U && authority_count == 0U && additional_count == 0U) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::mdns,
+    };
+}
 
 FlowHintUpdate detect_http_hint(std::span<const std::uint8_t> payload, const AnalysisSettings& settings) {
     const auto payload_text = payload_as_text(payload);
@@ -665,6 +703,13 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
 
         return detect_bittorrent_hint(payload_view);
     case ProtocolId::udp:
+        {
+            const auto mdns_hint = detect_mdns_hint(payload_view, flow_key);
+            if (mdns_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return mdns_hint;
+            }
+        }
+
         if (has_port(flow_key.src_port, flow_key.dst_port, kDnsPort)) {
             const auto dns_hint = detect_dns_hint(payload_view, false);
             if (dns_hint.protocol_hint != FlowProtocolHint::unknown) {
@@ -732,4 +777,3 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 }
 
 }  // namespace pfl
-

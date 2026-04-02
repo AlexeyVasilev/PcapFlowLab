@@ -150,6 +150,16 @@ std::vector<std::uint8_t> make_dual_stun_and_dhcp_payload() {
     payload[7] = 0x42U;
     return payload;
 }
+std::vector<std::uint8_t> make_mdns_payload() {
+    std::vector<std::uint8_t> payload {};
+    append_be16(payload, 0x0000U);
+    append_be16(payload, 0x0000U);
+    append_be16(payload, 0x0001U);
+    append_be16(payload, 0x0000U);
+    append_be16(payload, 0x0000U);
+    append_be16(payload, 0x0000U);
+    return payload;
+}
 
 }  // namespace
 
@@ -387,6 +397,58 @@ void run_flow_hints_tests() {
     }
     {
         const auto path = write_temp_pcap(
+            "pfl_flow_hint_mdns_positive.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 8, 8, 8), ipv4(224, 0, 0, 251), 5353, 5353, make_mdns_payload())},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "mdns");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        std::vector<std::uint8_t> invalid_payload(12U, 0U);
+
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_mdns_negative_invalid_payload.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 8, 9, 8), ipv4(224, 0, 0, 251), 5353, 5353, invalid_payload)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_mdns_negative_unicast_destination.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 8, 10, 8), ipv4(10, 8, 10, 9), 5353, 5353, make_mdns_payload())},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+    {
+        const auto path = write_temp_pcap(
             "pfl_flow_hint_precedence_tls_over_cheap.pcap",
             make_classic_pcap({
                 {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
@@ -459,4 +521,3 @@ void run_flow_hints_tests() {
 }
 
 }  // namespace pfl::tests
-
