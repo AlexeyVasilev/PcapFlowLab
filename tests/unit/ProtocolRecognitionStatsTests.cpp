@@ -86,6 +86,78 @@ void run_protocol_recognition_stats_tests() {
         PFL_EXPECT(stats.version_v2 == 0U);
         PFL_EXPECT(stats.version_unknown == 0U);
     }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+
+        auto& tls12 = state.ipv4_connections.get_or_create(ConnectionKeyV4 {
+            .first = EndpointKeyV4 {.addr = 0x0A020001U, .port = 5100U},
+            .second = EndpointKeyV4 {.addr = 0x0A020002U, .port = 443U},
+            .protocol = ProtocolId::tcp,
+        });
+        tls12.protocol_hint = FlowProtocolHint::tls;
+        tls12.service_hint = "tls12.example";
+        tls12.tls_version = TlsVersionHint::tls12;
+
+        auto& tls13 = state.ipv4_connections.get_or_create(ConnectionKeyV4 {
+            .first = EndpointKeyV4 {.addr = 0x0A020003U, .port = 5101U},
+            .second = EndpointKeyV4 {.addr = 0x0A020004U, .port = 443U},
+            .protocol = ProtocolId::tcp,
+        });
+        tls13.protocol_hint = FlowProtocolHint::tls;
+        tls13.service_hint.clear();
+        tls13.tls_version = TlsVersionHint::tls13;
+
+        auto& tls_unknown = state.ipv6_connections.get_or_create(ConnectionKeyV6 {
+            .first = EndpointKeyV6 {.addr = std::array<std::uint8_t, 16> {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10}, .port = 5102U},
+            .second = EndpointKeyV6 {.addr = std::array<std::uint8_t, 16> {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11}, .port = 443U},
+            .protocol = ProtocolId::tcp,
+        });
+        tls_unknown.protocol_hint = FlowProtocolHint::tls;
+        tls_unknown.service_hint.clear();
+        tls_unknown.tls_version = TlsVersionHint::unknown;
+
+        auto& non_tls = state.ipv4_connections.get_or_create(ConnectionKeyV4 {
+            .first = EndpointKeyV4 {.addr = 0xC0A80201U, .port = 5200U},
+            .second = EndpointKeyV4 {.addr = 0xC0A80202U, .port = 443U},
+            .protocol = ProtocolId::udp,
+        });
+        non_tls.protocol_hint = FlowProtocolHint::quic;
+        non_tls.service_hint = "quic.example";
+        non_tls.tls_version = TlsVersionHint::tls13;
+
+        const auto tls_stats = session.tls_recognition_stats();
+        PFL_EXPECT(tls_stats.total_flows == 3U);
+        PFL_EXPECT(tls_stats.with_sni == 1U);
+        PFL_EXPECT(tls_stats.without_sni == 2U);
+        PFL_EXPECT(tls_stats.version_tls12 == 1U);
+        PFL_EXPECT(tls_stats.version_tls13 == 1U);
+        PFL_EXPECT(tls_stats.version_unknown == 1U);
+        PFL_EXPECT(tls_stats.with_sni + tls_stats.without_sni == tls_stats.total_flows);
+        PFL_EXPECT(tls_stats.version_tls12 + tls_stats.version_tls13 + tls_stats.version_unknown == tls_stats.total_flows);
+    }
+
+    {
+        CaptureSession session {};
+        auto& state = session.state();
+
+        auto& non_tls = state.ipv4_connections.get_or_create(ConnectionKeyV4 {
+            .first = EndpointKeyV4 {.addr = 0x0A030001U, .port = 5300U},
+            .second = EndpointKeyV4 {.addr = 0x0A030002U, .port = 443U},
+            .protocol = ProtocolId::udp,
+        });
+        non_tls.protocol_hint = FlowProtocolHint::quic;
+        non_tls.service_hint = "quic-only.example";
+
+        const auto tls_stats = session.tls_recognition_stats();
+        PFL_EXPECT(tls_stats.total_flows == 0U);
+        PFL_EXPECT(tls_stats.with_sni == 0U);
+        PFL_EXPECT(tls_stats.without_sni == 0U);
+        PFL_EXPECT(tls_stats.version_tls12 == 0U);
+        PFL_EXPECT(tls_stats.version_tls13 == 0U);
+        PFL_EXPECT(tls_stats.version_unknown == 0U);
+    }
 }
 
 }  // namespace pfl::tests

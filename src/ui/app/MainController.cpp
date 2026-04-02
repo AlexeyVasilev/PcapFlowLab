@@ -598,6 +598,30 @@ qulonglong MainController::quicVersionUnknown() const noexcept {
     return static_cast<qulonglong>(quic_recognition_stats_.version_unknown);
 }
 
+qulonglong MainController::tlsTotalFlows() const noexcept {
+    return static_cast<qulonglong>(tls_recognition_stats_.total_flows);
+}
+
+qulonglong MainController::tlsWithSni() const noexcept {
+    return static_cast<qulonglong>(tls_recognition_stats_.with_sni);
+}
+
+qulonglong MainController::tlsWithoutSni() const noexcept {
+    return static_cast<qulonglong>(tls_recognition_stats_.without_sni);
+}
+
+qulonglong MainController::tlsVersion12() const noexcept {
+    return static_cast<qulonglong>(tls_recognition_stats_.version_tls12);
+}
+
+qulonglong MainController::tlsVersion13() const noexcept {
+    return static_cast<qulonglong>(tls_recognition_stats_.version_tls13);
+}
+
+qulonglong MainController::tlsVersionUnknown() const noexcept {
+    return static_cast<qulonglong>(tls_recognition_stats_.version_unknown);
+}
+
 int MainController::captureOpenMode() const noexcept {
     return capture_open_mode_;
 }
@@ -1204,6 +1228,7 @@ void MainController::resetLoadedState() {
     session_ = {};
     protocol_summary_ = {};
     quic_recognition_stats_ = {};
+    tls_recognition_stats_ = {};
     flow_model_.resetViewState();
     flow_model_.clear();
     packet_model_.clear();
@@ -1233,6 +1258,7 @@ void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
     quic_recognition_stats_ = session_.quic_recognition_stats();
+    tls_recognition_stats_ = session_.tls_recognition_stats();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();

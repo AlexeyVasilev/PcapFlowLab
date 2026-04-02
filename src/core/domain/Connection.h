@@ -25,6 +25,7 @@ struct ConnectionV4 {
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
     QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
 
     void add_packet(const FlowKeyV4& packet_key, const PacketRef& packet);
     void apply_hints(const FlowHintUpdate& hints);
@@ -46,6 +47,7 @@ struct ConnectionV6 {
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
     QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
 
     void add_packet(const FlowKeyV6& packet_key, const PacketRef& packet);
     void apply_hints(const FlowHintUpdate& hints);

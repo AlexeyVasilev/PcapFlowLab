@@ -31,6 +31,10 @@ void apply_hints_to_connection(Connection& connection, const FlowHintUpdate& hin
     if (connection.quic_version == QuicVersionHint::unknown && hints.quic_version != QuicVersionHint::unknown) {
         connection.quic_version = hints.quic_version;
     }
+
+    if (connection.tls_version == TlsVersionHint::unknown && hints.tls_version != TlsVersionHint::unknown) {
+        connection.tls_version = hints.tls_version;
+    }
 }
 
 template <typename Connection>

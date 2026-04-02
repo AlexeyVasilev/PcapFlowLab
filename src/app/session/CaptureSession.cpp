@@ -1840,6 +1840,56 @@ QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
     return stats;
 }
 
+TlsRecognitionStats CaptureSession::tls_recognition_stats() const noexcept {
+    TlsRecognitionStats stats {};
+
+    const auto connections = list_connections(state_);
+    for (const auto& connection : connections) {
+        const auto protocol_hint = (connection.family == FlowAddressFamily::ipv4)
+            ? connection.ipv4->protocol_hint
+            : connection.ipv6->protocol_hint;
+        if (protocol_hint != FlowProtocolHint::tls) {
+            continue;
+        }
+
+        ++stats.total_flows;
+
+        const auto& service_hint = (connection.family == FlowAddressFamily::ipv4)
+            ? connection.ipv4->service_hint
+            : connection.ipv6->service_hint;
+        if (service_hint.empty()) {
+            ++stats.without_sni;
+        } else {
+            ++stats.with_sni;
+        }
+
+        const auto version_hint = (connection.family == FlowAddressFamily::ipv4)
+            ? connection.ipv4->tls_version
+            : connection.ipv6->tls_version;
+        switch (version_hint) {
+        case TlsVersionHint::tls12:
+            ++stats.version_tls12;
+            break;
+        case TlsVersionHint::tls13:
+            ++stats.version_tls13;
+            break;
+        case TlsVersionHint::unknown:
+        default:
+            ++stats.version_unknown;
+            break;
+        }
+    }
+
+#ifndef NDEBUG
+    const auto sni_sum = stats.with_sni + stats.without_sni;
+    const auto version_sum = stats.version_tls12 + stats.version_tls13 + stats.version_unknown;
+    assert(sni_sum == stats.total_flows);
+    assert(version_sum == stats.total_flows);
+#endif
+
+    return stats;
+}
+
 CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
     std::map<std::string, TopEndpointRow> endpoints {};
     std::map<std::uint16_t, TopPortRow> ports {};

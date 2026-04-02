@@ -288,6 +288,12 @@ ApplicationWindow {
                 quicVersionDraft29: mainController.quicVersionDraft29
                 quicVersionV2: mainController.quicVersionV2
                 quicVersionUnknown: mainController.quicVersionUnknown
+                tlsTotalFlows: mainController.tlsTotalFlows
+                tlsWithSni: mainController.tlsWithSni
+                tlsWithoutSni: mainController.tlsWithoutSni
+                tlsVersion12: mainController.tlsVersion12
+                tlsVersion13: mainController.tlsVersion13
+                tlsVersionUnknown: mainController.tlsVersionUnknown
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {

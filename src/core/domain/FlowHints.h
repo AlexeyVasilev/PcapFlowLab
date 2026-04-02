@@ -20,6 +20,12 @@ enum class QuicVersionHint : std::uint8_t {
     v2 = 3,
 };
 
+enum class TlsVersionHint : std::uint8_t {
+    unknown = 0,
+    tls12 = 1,
+    tls13 = 2,
+};
+
 [[nodiscard]] constexpr QuicVersionHint classify_quic_version(const std::uint32_t version) noexcept {
     switch (version) {
     case 0x00000001U:
@@ -33,10 +39,22 @@ enum class QuicVersionHint : std::uint8_t {
     }
 }
 
+[[nodiscard]] constexpr TlsVersionHint classify_tls_version(const std::uint16_t version) noexcept {
+    switch (version) {
+    case 0x0303U:
+        return TlsVersionHint::tls12;
+    case 0x0304U:
+        return TlsVersionHint::tls13;
+    default:
+        return TlsVersionHint::unknown;
+    }
+}
+
 struct FlowHintUpdate {
     FlowProtocolHint protocol_hint {FlowProtocolHint::unknown};
     std::string service_hint {};
     QuicVersionHint quic_version {QuicVersionHint::unknown};
+    TlsVersionHint tls_version {TlsVersionHint::unknown};
 };
 
 [[nodiscard]] constexpr const char* flow_protocol_hint_text(const FlowProtocolHint hint) noexcept {

@@ -23,6 +23,12 @@ Frame {
     property var quicVersionDraft29: 0
     property var quicVersionV2: 0
     property var quicVersionUnknown: 0
+    property var tlsTotalFlows: 0
+    property var tlsWithSni: 0
+    property var tlsWithoutSni: 0
+    property var tlsVersion12: 0
+    property var tlsVersion13: 0
+    property var tlsVersionUnknown: 0
     property bool hasCapture: false
 
     function formatPercentageAndCount(part, total) {
@@ -178,6 +184,64 @@ Frame {
 
                 Label {
                     text: root.hasCapture ? "unknown: " + root.quicVersionUnknown : "unknown: -"
+                }
+            }
+        }
+
+        Frame {
+            Layout.fillWidth: true
+
+            background: Rectangle {
+                color: "#ffffff"
+                border.color: "#d8dee9"
+                radius: 6
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 6
+
+                Label {
+                    text: "TLS"
+                    font.bold: true
+                }
+
+                Label {
+                    text: root.hasCapture ? "Flows: " + root.tlsTotalFlows : "Flows: -"
+                }
+
+                Label {
+                    text: "SNI:"
+                    font.bold: true
+                }
+
+                Label {
+                    text: root.hasCapture
+                        ? "With SNI: " + root.formatPercentageAndCount(root.tlsWithSni, root.tlsTotalFlows)
+                        : "With SNI: -"
+                }
+
+                Label {
+                    text: root.hasCapture
+                        ? "Without SNI: " + root.formatPercentageAndCount(root.tlsWithoutSni, root.tlsTotalFlows)
+                        : "Without SNI: -"
+                }
+
+                Label {
+                    text: "Version:"
+                    font.bold: true
+                }
+
+                Label {
+                    text: root.hasCapture ? "TLS 1.2: " + root.tlsVersion12 : "TLS 1.2: -"
+                }
+
+                Label {
+                    text: root.hasCapture ? "TLS 1.3: " + root.tlsVersion13 : "TLS 1.3: -"
+                }
+
+                Label {
+                    text: root.hasCapture ? "unknown: " + root.tlsVersionUnknown : "unknown: -"
                 }
             }
         }

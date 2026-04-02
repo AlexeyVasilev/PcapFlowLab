@@ -40,6 +40,7 @@ public:
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
     [[nodiscard]] QuicRecognitionStats quic_recognition_stats() const noexcept;
+    [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_packet_data(const PacketRef& packet) const;
     [[nodiscard]] std::optional<PacketDetails> read_packet_details(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_hex_dump(const PacketRef& packet) const;

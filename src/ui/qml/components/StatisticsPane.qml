@@ -27,6 +27,12 @@ Item {
     property var quicVersionDraft29: 0
     property var quicVersionV2: 0
     property var quicVersionUnknown: 0
+    property var tlsTotalFlows: 0
+    property var tlsWithSni: 0
+    property var tlsWithoutSni: 0
+    property var tlsVersion12: 0
+    property var tlsVersion13: 0
+    property var tlsVersionUnknown: 0
     property var topEndpointsModel: null
     property var topPortsModel: null
 
@@ -70,6 +76,12 @@ Item {
                 quicVersionDraft29: root.quicVersionDraft29
                 quicVersionV2: root.quicVersionV2
                 quicVersionUnknown: root.quicVersionUnknown
+                tlsTotalFlows: root.tlsTotalFlows
+                tlsWithSni: root.tlsWithSni
+                tlsWithoutSni: root.tlsWithoutSni
+                tlsVersion12: root.tlsVersion12
+                tlsVersion13: root.tlsVersion13
+                tlsVersionUnknown: root.tlsVersionUnknown
             }
 
             TopTalkersPane {

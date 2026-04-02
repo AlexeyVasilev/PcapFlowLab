@@ -96,6 +96,16 @@ struct QuicRecognitionStats {
     std::uint64_t version_unknown {0};
 };
 
+struct TlsRecognitionStats {
+    std::uint64_t total_flows {0};
+    std::uint64_t with_sni {0};
+    std::uint64_t without_sni {0};
+
+    std::uint64_t version_tls12 {0};
+    std::uint64_t version_tls13 {0};
+    std::uint64_t version_unknown {0};
+};
+
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};

@@ -73,6 +73,12 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong quicVersionDraft29 READ quicVersionDraft29 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicVersionV2 READ quicVersionV2 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicVersionUnknown READ quicVersionUnknown NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tlsTotalFlows READ tlsTotalFlows NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tlsWithSni READ tlsWithSni NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tlsWithoutSni READ tlsWithoutSni NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tlsVersion12 READ tlsVersion12 NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tlsVersion13 READ tlsVersion13 NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong tlsVersionUnknown READ tlsVersionUnknown NOTIFY stateChanged)
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
@@ -143,6 +149,12 @@ public:
     [[nodiscard]] qulonglong quicVersionDraft29() const noexcept;
     [[nodiscard]] qulonglong quicVersionV2() const noexcept;
     [[nodiscard]] qulonglong quicVersionUnknown() const noexcept;
+    [[nodiscard]] qulonglong tlsTotalFlows() const noexcept;
+    [[nodiscard]] qulonglong tlsWithSni() const noexcept;
+    [[nodiscard]] qulonglong tlsWithoutSni() const noexcept;
+    [[nodiscard]] qulonglong tlsVersion12() const noexcept;
+    [[nodiscard]] qulonglong tlsVersion13() const noexcept;
+    [[nodiscard]] qulonglong tlsVersionUnknown() const noexcept;
     [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] int currentTabIndex() const noexcept;
@@ -240,6 +252,7 @@ private:
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
+    TlsRecognitionStats tls_recognition_stats_ {};
     FlowListModel flow_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};

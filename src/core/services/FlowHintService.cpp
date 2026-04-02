@@ -428,6 +428,7 @@ FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
 
     FlowHintUpdate hint {
         .protocol_hint = FlowProtocolHint::tls,
+        .tls_version = classify_tls_version(read_be16(payload, 1U)),
     };
 
     const auto sni = extract_tls_sni(payload);
