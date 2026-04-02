@@ -71,6 +71,14 @@ struct CaptureProtocolSummary {
     ProtocolStats other {};
     ProtocolStats ipv4 {};
     ProtocolStats ipv6 {};
+    ProtocolStats hint_http {};
+    ProtocolStats hint_tls {};
+    ProtocolStats hint_dns {};
+    ProtocolStats hint_quic {};
+    ProtocolStats hint_ssh {};
+    ProtocolStats hint_stun {};
+    ProtocolStats hint_bittorrent {};
+    ProtocolStats hint_unknown {};
 };
 
 struct TopEndpointRow {

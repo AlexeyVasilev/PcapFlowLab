@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 
 #include "app/session/CaptureSession.h"
 #include "core/services/AnalysisSettings.h"
@@ -55,6 +56,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList protocolHintDistribution READ protocolHintDistribution NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpFlowCount READ tcpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpPacketCount READ tcpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpTotalBytes READ tcpTotalBytes NOTIFY stateChanged)
@@ -136,6 +138,7 @@ public:
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
+    [[nodiscard]] QVariantList protocolHintDistribution() const;
     [[nodiscard]] qulonglong tcpFlowCount() const noexcept;
     [[nodiscard]] qulonglong tcpPacketCount() const noexcept;
     [[nodiscard]] qulonglong tcpTotalBytes() const noexcept;

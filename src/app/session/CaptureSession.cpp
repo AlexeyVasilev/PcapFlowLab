@@ -144,6 +144,10 @@ std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
 ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->key.protocol : connection.ipv6->key.protocol;
 }
+
+FlowProtocolHint protocol_hint(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->protocol_hint : connection.ipv6->protocol_hint;
+}
 std::string protocol_text(const ProtocolId protocol) {
     switch (protocol) {
     case ProtocolId::arp:
@@ -1776,6 +1780,34 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
             break;
         default:
             add_protocol_stats(summary.other, connection);
+            break;
+        }
+
+        switch (protocol_hint(connection)) {
+        case FlowProtocolHint::http:
+            add_protocol_stats(summary.hint_http, connection);
+            break;
+        case FlowProtocolHint::tls:
+            add_protocol_stats(summary.hint_tls, connection);
+            break;
+        case FlowProtocolHint::dns:
+            add_protocol_stats(summary.hint_dns, connection);
+            break;
+        case FlowProtocolHint::quic:
+            add_protocol_stats(summary.hint_quic, connection);
+            break;
+        case FlowProtocolHint::ssh:
+            add_protocol_stats(summary.hint_ssh, connection);
+            break;
+        case FlowProtocolHint::stun:
+            add_protocol_stats(summary.hint_stun, connection);
+            break;
+        case FlowProtocolHint::bittorrent:
+            add_protocol_stats(summary.hint_bittorrent, connection);
+            break;
+        case FlowProtocolHint::unknown:
+        default:
+            add_protocol_stats(summary.hint_unknown, connection);
             break;
         }
     }

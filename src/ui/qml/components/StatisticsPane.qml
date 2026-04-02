@@ -37,6 +37,7 @@ Item {
     property var tlsVersion12: 0
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
+    property var protocolHintDistribution: []
     property int statisticsMode: 0
     property var topEndpointsModel: null
     property var topPortsModel: null
@@ -110,6 +111,7 @@ Item {
                 tlsVersion12: root.tlsVersion12
                 tlsVersion13: root.tlsVersion13
                 tlsVersionUnknown: root.tlsVersionUnknown
+                protocolHintDistribution: root.protocolHintDistribution
                 statisticsMode: root.statisticsMode
             }
 

@@ -9,6 +9,7 @@
 #include <QFileDialog>
 #include <QStringList>
 #include <QThread>
+#include <QVariantMap>
 
 #include "../../../core/open_context.h"
 #include "cli/CliImportMode.h"
@@ -527,6 +528,29 @@ qulonglong MainController::flowCount() const noexcept {
 
 qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
+}
+
+QVariantList MainController::protocolHintDistribution() const {
+    auto makeRow = [](const char* label, const ProtocolStats& stats) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("title"), QString::fromUtf8(label));
+        row.insert(QStringLiteral("flows"), static_cast<qulonglong>(stats.flow_count));
+        row.insert(QStringLiteral("packets"), static_cast<qulonglong>(stats.packet_count));
+        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.total_bytes));
+        return row;
+    };
+
+    QVariantList rows {};
+    rows.reserve(8);
+    rows.push_back(makeRow("HTTP", protocol_summary_.hint_http));
+    rows.push_back(makeRow("TLS", protocol_summary_.hint_tls));
+    rows.push_back(makeRow("DNS", protocol_summary_.hint_dns));
+    rows.push_back(makeRow("QUIC", protocol_summary_.hint_quic));
+    rows.push_back(makeRow("SSH", protocol_summary_.hint_ssh));
+    rows.push_back(makeRow("STUN", protocol_summary_.hint_stun));
+    rows.push_back(makeRow("BitTorrent", protocol_summary_.hint_bittorrent));
+    rows.push_back(makeRow("Unknown", protocol_summary_.hint_unknown));
+    return rows;
 }
 
 qulonglong MainController::tcpFlowCount() const noexcept {

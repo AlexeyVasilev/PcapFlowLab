@@ -33,6 +33,7 @@ Frame {
     property var tlsVersion12: 0
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
+    property var protocolHintDistribution: []
     property int statisticsMode: 0
     property bool hasCapture: false
 
@@ -51,6 +52,8 @@ Frame {
         : (statisticsMode === modeBytes
             ? (ipv4TotalBytes + ipv6TotalBytes)
             : (ipv4FlowCount + ipv6FlowCount))
+
+    readonly property var selectedHintTotal: hintMetricTotal()
 
     function formatBytes(value) {
         if (value < 1024)
@@ -90,6 +93,19 @@ Frame {
             return "0% (0 connections)"
         const percent = Math.round((part * 100) / total)
         return percent + "% (" + part + " connections)"
+    }
+
+    function hintMetricTotal() {
+        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
+            return 0
+
+        let total = 0
+        for (let index = 0; index < protocolHintDistribution.length; ++index) {
+            const row = protocolHintDistribution[index]
+            total += metricValue(row.flows || 0, row.packets || 0, row.bytes || 0)
+        }
+
+        return total
     }
 
     background: Rectangle {
@@ -190,6 +206,39 @@ Frame {
                           root.selectedIpTotal
                       )
                     : "IPv6: -"
+            }
+        }
+
+        Frame {
+            Layout.fillWidth: true
+
+            background: Rectangle {
+                color: "#ffffff"
+                border.color: "#d8dee9"
+                radius: 6
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 6
+
+                Label {
+                    text: "Detected Protocol Hints"
+                    font.bold: true
+                }
+
+                Repeater {
+                    model: root.protocolHintDistribution
+
+                    delegate: Label {
+                        text: root.hasCapture
+                            ? modelData.title + ": " + root.formatPercentageAndMetric(
+                                  root.metricValue(modelData.flows || 0, modelData.packets || 0, modelData.bytes || 0),
+                                  root.selectedHintTotal
+                              )
+                            : modelData.title + ": -"
+                    }
+                }
             }
         }
 
@@ -314,3 +363,4 @@ Frame {
         }
     }
 }
+

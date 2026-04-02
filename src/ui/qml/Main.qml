@@ -298,6 +298,7 @@ ApplicationWindow {
                 tlsVersion12: mainController.tlsVersion12
                 tlsVersion13: mainController.tlsVersion13
                 tlsVersionUnknown: mainController.tlsVersionUnknown
+                protocolHintDistribution: mainController.protocolHintDistribution
                 statisticsMode: mainController.statisticsMode
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
