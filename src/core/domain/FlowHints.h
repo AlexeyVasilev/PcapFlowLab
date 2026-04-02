@@ -14,6 +14,7 @@ enum class FlowProtocolHint : std::uint8_t {
     ssh = 5,
     stun = 6,
     bittorrent = 7,
+    dhcp = 8,
 };
 
 enum class QuicVersionHint : std::uint8_t {
@@ -76,6 +77,8 @@ struct FlowHintUpdate {
         return "stun";
     case FlowProtocolHint::bittorrent:
         return "bittorrent";
+    case FlowProtocolHint::dhcp:
+        return "dhcp";
     default:
         return "unknown";
     }

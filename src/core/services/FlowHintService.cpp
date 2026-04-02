@@ -17,11 +17,17 @@ namespace pfl {
 namespace {
 
 constexpr std::uint16_t kDnsPort = 53;
+constexpr std::uint16_t kDhcpServerPort = 67;
+constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kStunMagicCookie = 0x2112A442U;
 constexpr std::size_t kStunHeaderSize = 20U;
+constexpr std::size_t kBootpFixedHeaderSize = 236U;
+constexpr std::size_t kDhcpMagicCookieOffset = kBootpFixedHeaderSize;
+constexpr std::size_t kDhcpMinPayloadSize = kDhcpMagicCookieOffset + 4U;
+constexpr std::uint32_t kDhcpMagicCookie = 0x63825363U;
 constexpr std::string_view kBitTorrentHandshakeProtocol = "BitTorrent protocol";
 constexpr std::size_t kBitTorrentHandshakeSize = 68U;
 
@@ -50,6 +56,10 @@ std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t o
 
 bool has_port(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port) noexcept {
     return left == port || right == port;
+}
+
+bool has_port_pair(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port_a, const std::uint16_t port_b) noexcept {
+    return (left == port_a && right == port_b) || (left == port_b && right == port_a);
 }
 
 std::string_view payload_as_text(std::span<const std::uint8_t> payload) {
@@ -158,6 +168,13 @@ bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
 
     const auto protocol_name = payload_as_text(payload.subspan(1U, kBitTorrentHandshakeProtocol.size()));
     return protocol_name == kBitTorrentHandshakeProtocol;
+}
+bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
+    if (payload.size() < kDhcpMinPayloadSize) {
+        return false;
+    }
+
+    return read_be32(payload, kDhcpMagicCookieOffset) == kDhcpMagicCookie;
 }
 
 std::optional<std::string> extract_http_host(std::span<const std::uint8_t> payload) {
@@ -482,6 +499,21 @@ FlowHintUpdate detect_stun_hint(std::span<const std::uint8_t> payload) {
         .protocol_hint = FlowProtocolHint::stun,
     };
 }
+FlowHintUpdate detect_dhcp_hint(std::span<const std::uint8_t> payload,
+                                const std::uint16_t src_port,
+                                const std::uint16_t dst_port) {
+    if (!has_port_pair(src_port, dst_port, kDhcpClientPort, kDhcpServerPort)) {
+        return {};
+    }
+
+    if (!looks_like_dhcp_message(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::dhcp,
+    };
+}
 
 FlowHintUpdate detect_bittorrent_hint(std::span<const std::uint8_t> payload) {
     if (!looks_like_bittorrent_handshake(payload)) {
@@ -651,6 +683,13 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             );
             if (quic_hint.protocol_hint != FlowProtocolHint::unknown) {
                 return quic_hint;
+            }
+        }
+
+        {
+            const auto dhcp_hint = detect_dhcp_hint(payload_view, flow_key.src_port, flow_key.dst_port);
+            if (dhcp_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return dhcp_hint;
             }
         }
 

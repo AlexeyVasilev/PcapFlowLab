@@ -125,6 +125,31 @@ std::vector<std::uint8_t> make_bittorrent_handshake_payload() {
     }
     return payload;
 }
+std::vector<std::uint8_t> make_dhcp_payload() {
+    std::vector<std::uint8_t> payload(240U, 0U);
+    payload[0] = 0x01U; // BOOTREQUEST
+    payload[1] = 0x01U; // Ethernet
+    payload[2] = 0x06U; // MAC length
+    payload[236] = 0x63U;
+    payload[237] = 0x82U;
+    payload[238] = 0x53U;
+    payload[239] = 0x63U;
+    return payload;
+}
+
+std::vector<std::uint8_t> make_dual_stun_and_dhcp_payload() {
+    auto payload = make_dhcp_payload();
+    // Also satisfy the STUN cheap detector shape: 20 + message_length == 240.
+    payload[0] = 0x00U;
+    payload[1] = 0x01U;
+    payload[2] = 0x00U;
+    payload[3] = 0xDCU; // 220 bytes, divisible by 4.
+    payload[4] = 0x21U;
+    payload[5] = 0x12U;
+    payload[6] = 0xA4U;
+    payload[7] = 0x42U;
+    return payload;
+}
 
 }  // namespace
 
@@ -307,6 +332,59 @@ void run_flow_hints_tests() {
         PFL_EXPECT(rows[0].service_hint.empty());
     }
 
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_dhcp_positive.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 7, 7, 7), ipv4(10, 7, 7, 8), 68, 67, make_dhcp_payload())},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "dhcp");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        auto payload = make_dhcp_payload();
+        payload[239] ^= 0x01U;
+
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_dhcp_negative_bad_cookie.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 7, 8, 7), ipv4(10, 7, 8, 8), 68, 67, payload)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_precedence_dhcp_over_stun.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 7, 9, 7), ipv4(10, 7, 9, 8), 68, 67, make_dual_stun_and_dhcp_payload())},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "dhcp");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
     {
         const auto path = write_temp_pcap(
             "pfl_flow_hint_precedence_tls_over_cheap.pcap",
