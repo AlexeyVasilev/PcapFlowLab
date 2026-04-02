@@ -22,6 +22,9 @@ constexpr qulonglong kInvalidStreamSelection = std::numeric_limits<qulonglong>::
 constexpr int kFlowTabIndex = 0;
 constexpr int kStatsTabIndex = 1;
 constexpr int kSettingsTabIndex = 2;
+constexpr int kStatisticsModeFlows = 0;
+constexpr int kStatisticsModePackets = 1;
+constexpr int kStatisticsModeBytes = 2;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
@@ -566,8 +569,24 @@ qulonglong MainController::ipv4FlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv4.flow_count);
 }
 
+qulonglong MainController::ipv4PacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv4.packet_count);
+}
+
+qulonglong MainController::ipv4TotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv4.total_bytes);
+}
+
 qulonglong MainController::ipv6FlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.flow_count);
+}
+
+qulonglong MainController::ipv6PacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv6.packet_count);
+}
+
+qulonglong MainController::ipv6TotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv6.total_bytes);
 }
 
 qulonglong MainController::quicTotalFlows() const noexcept {
@@ -620,6 +639,10 @@ qulonglong MainController::tlsVersion13() const noexcept {
 
 qulonglong MainController::tlsVersionUnknown() const noexcept {
     return static_cast<qulonglong>(tls_recognition_stats_.version_unknown);
+}
+
+int MainController::statisticsMode() const noexcept {
+    return statistics_mode_;
 }
 
 int MainController::captureOpenMode() const noexcept {
@@ -894,6 +917,19 @@ void MainController::setCaptureOpenMode(const int mode) {
 
     capture_open_mode_ = normalizedMode;
     emit captureOpenModeChanged();
+}
+
+void MainController::setStatisticsMode(const int mode) {
+    const int normalizedMode = (mode == kStatisticsModePackets)
+        ? kStatisticsModePackets
+        : (mode == kStatisticsModeBytes ? kStatisticsModeBytes : kStatisticsModeFlows);
+
+    if (statistics_mode_ == normalizedMode) {
+        return;
+    }
+
+    statistics_mode_ = normalizedMode;
+    emit statisticsModeChanged();
 }
 
 void MainController::setHttpUsePathAsServiceHint(const bool enabled) {

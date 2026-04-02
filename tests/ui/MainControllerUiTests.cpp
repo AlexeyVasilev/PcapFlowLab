@@ -203,6 +203,21 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!controller.hasSourceCapture());
     UI_EXPECT(!controller.openedFromIndex());
     UI_EXPECT(!controller.canAttachSourceCapture());
+    UI_EXPECT(controller.statisticsMode() == 0);
+    controller.setStatisticsMode(1);
+    UI_EXPECT(controller.statisticsMode() == 1);
+    controller.setStatisticsMode(2);
+    UI_EXPECT(controller.statisticsMode() == 2);
+    controller.setStatisticsMode(99);
+    UI_EXPECT(controller.statisticsMode() == 0);
+
+    UI_EXPECT(controller.tcpFlowCount() + controller.udpFlowCount() + controller.otherFlowCount() == controller.flowCount());
+    UI_EXPECT(controller.tcpPacketCount() + controller.udpPacketCount() + controller.otherPacketCount() == controller.packetCount());
+    UI_EXPECT(controller.tcpTotalBytes() + controller.udpTotalBytes() + controller.otherTotalBytes() == controller.totalBytes());
+    UI_EXPECT(controller.ipv4FlowCount() + controller.ipv6FlowCount() == controller.flowCount());
+    UI_EXPECT(controller.ipv4PacketCount() + controller.ipv6PacketCount() == controller.packetCount());
+    UI_EXPECT(controller.ipv4TotalBytes() + controller.ipv6TotalBytes() == controller.totalBytes());
+
     UI_EXPECT(controller.statusText().isEmpty());
 
     MainController idle_cancel_controller {};
@@ -220,6 +235,21 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!controller.canExportSelectedFlow());
     UI_EXPECT(controller.flowFilterText().isEmpty());
     UI_EXPECT(controller.currentTabIndex() == 0);
+    UI_EXPECT(controller.statisticsMode() == 0);
+    controller.setStatisticsMode(1);
+    UI_EXPECT(controller.statisticsMode() == 1);
+    controller.setStatisticsMode(2);
+    UI_EXPECT(controller.statisticsMode() == 2);
+    controller.setStatisticsMode(99);
+    UI_EXPECT(controller.statisticsMode() == 0);
+
+    UI_EXPECT(controller.tcpFlowCount() + controller.udpFlowCount() + controller.otherFlowCount() == controller.flowCount());
+    UI_EXPECT(controller.tcpPacketCount() + controller.udpPacketCount() + controller.otherPacketCount() == controller.packetCount());
+    UI_EXPECT(controller.tcpTotalBytes() + controller.udpTotalBytes() + controller.otherTotalBytes() == controller.totalBytes());
+    UI_EXPECT(controller.ipv4FlowCount() + controller.ipv6FlowCount() == controller.flowCount());
+    UI_EXPECT(controller.ipv4PacketCount() + controller.ipv6PacketCount() == controller.packetCount());
+    UI_EXPECT(controller.ipv4TotalBytes() + controller.ipv6TotalBytes() == controller.totalBytes());
+
     UI_EXPECT(controller.statusText().isEmpty());
 
     std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> progress_packets {};

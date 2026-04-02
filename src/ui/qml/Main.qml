@@ -280,7 +280,11 @@ ApplicationWindow {
                 otherPacketCount: mainController.otherPacketCount
                 otherTotalBytes: mainController.otherTotalBytes
                 ipv4FlowCount: mainController.ipv4FlowCount
+                ipv4PacketCount: mainController.ipv4PacketCount
+                ipv4TotalBytes: mainController.ipv4TotalBytes
                 ipv6FlowCount: mainController.ipv6FlowCount
+                ipv6PacketCount: mainController.ipv6PacketCount
+                ipv6TotalBytes: mainController.ipv6TotalBytes
                 quicTotalFlows: mainController.quicTotalFlows
                 quicWithSni: mainController.quicWithSni
                 quicWithoutSni: mainController.quicWithoutSni
@@ -294,6 +298,7 @@ ApplicationWindow {
                 tlsVersion12: mainController.tlsVersion12
                 tlsVersion13: mainController.tlsVersion13
                 tlsVersionUnknown: mainController.tlsVersionUnknown
+                statisticsMode: mainController.statisticsMode
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {
@@ -301,6 +306,9 @@ ApplicationWindow {
                 }
                 onPortActivated: function(port) {
                     mainController.drillDownToPort(port)
+                }
+                onStatisticsModeChangedByUser: function(mode) {
+                    mainController.statisticsMode = mode
                 }
             }
 

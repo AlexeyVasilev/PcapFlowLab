@@ -15,7 +15,11 @@ Frame {
     property var otherPacketCount: 0
     property var otherTotalBytes: 0
     property var ipv4FlowCount: 0
+    property var ipv4PacketCount: 0
+    property var ipv4TotalBytes: 0
     property var ipv6FlowCount: 0
+    property var ipv6PacketCount: 0
+    property var ipv6TotalBytes: 0
     property var quicTotalFlows: 0
     property var quicWithSni: 0
     property var quicWithoutSni: 0
@@ -29,9 +33,59 @@ Frame {
     property var tlsVersion12: 0
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
+    property int statisticsMode: 0
     property bool hasCapture: false
 
-    function formatPercentageAndCount(part, total) {
+    readonly property int modeFlows: 0
+    readonly property int modePackets: 1
+    readonly property int modeBytes: 2
+
+    readonly property var selectedProtocolTotal: statisticsMode === modePackets
+        ? (tcpPacketCount + udpPacketCount + otherPacketCount)
+        : (statisticsMode === modeBytes
+            ? (tcpTotalBytes + udpTotalBytes + otherTotalBytes)
+            : (tcpFlowCount + udpFlowCount + otherFlowCount))
+
+    readonly property var selectedIpTotal: statisticsMode === modePackets
+        ? (ipv4PacketCount + ipv6PacketCount)
+        : (statisticsMode === modeBytes
+            ? (ipv4TotalBytes + ipv6TotalBytes)
+            : (ipv4FlowCount + ipv6FlowCount))
+
+    function formatBytes(value) {
+        if (value < 1024)
+            return value + " B"
+        if (value < 1024 * 1024)
+            return (value / 1024).toFixed(1) + " KB"
+        if (value < 1024 * 1024 * 1024)
+            return (value / (1024 * 1024)).toFixed(1) + " MB"
+        return (value / (1024 * 1024 * 1024)).toFixed(1) + " GB"
+    }
+
+    function metricValue(flows, packets, bytes) {
+        if (statisticsMode === modePackets)
+            return packets
+        if (statisticsMode === modeBytes)
+            return bytes
+        return flows
+    }
+
+    function formatMetric(value) {
+        if (statisticsMode === modeBytes)
+            return formatBytes(value)
+        if (statisticsMode === modePackets)
+            return value + " packets"
+        return value + " flows"
+    }
+
+    function formatPercentageAndMetric(part, total) {
+        if (total <= 0)
+            return "0% (" + formatMetric(0) + ")"
+        const percent = Math.round((part * 100) / total)
+        return percent + "% (" + formatMetric(part) + ")"
+    }
+
+    function formatFlowPercentageAndCount(part, total) {
         if (total <= 0)
             return "0% (0 connections)"
         const percent = Math.round((part * 100) / total)
@@ -98,15 +152,18 @@ Frame {
                         }
 
                         Label {
-                            text: root.hasCapture ? "Flows: " + modelData.flows : "Flows: -"
+                            text: root.hasCapture
+                                ? "Value: " + root.formatMetric(root.metricValue(modelData.flows, modelData.packets, modelData.bytes))
+                                : "Value: -"
                         }
 
                         Label {
-                            text: root.hasCapture ? "Packets: " + modelData.packets : "Packets: -"
-                        }
-
-                        Label {
-                            text: root.hasCapture ? "Bytes: " + modelData.bytes : "Bytes: -"
+                            text: root.hasCapture
+                                ? "Share: " + root.formatPercentageAndMetric(
+                                      root.metricValue(modelData.flows, modelData.packets, modelData.bytes),
+                                      root.selectedProtocolTotal
+                                  )
+                                : "Share: -"
                         }
                     }
                 }
@@ -118,11 +175,21 @@ Frame {
             spacing: 24
 
             Label {
-                text: root.hasCapture ? "IPv4 flows: " + root.ipv4FlowCount : "IPv4 flows: -"
+                text: root.hasCapture
+                    ? "IPv4: " + root.formatPercentageAndMetric(
+                          root.metricValue(root.ipv4FlowCount, root.ipv4PacketCount, root.ipv4TotalBytes),
+                          root.selectedIpTotal
+                      )
+                    : "IPv4: -"
             }
 
             Label {
-                text: root.hasCapture ? "IPv6 flows: " + root.ipv6FlowCount : "IPv6 flows: -"
+                text: root.hasCapture
+                    ? "IPv6: " + root.formatPercentageAndMetric(
+                          root.metricValue(root.ipv6FlowCount, root.ipv6PacketCount, root.ipv6TotalBytes),
+                          root.selectedIpTotal
+                      )
+                    : "IPv6: -"
             }
         }
 
@@ -149,19 +216,19 @@ Frame {
                 }
 
                 Label {
-                    text: "Initial recognising:"
+                    text: "Initial recognising (flow-based):"
                     font.bold: true
                 }
 
                 Label {
                     text: root.hasCapture
-                        ? "Recognised Initial: " + root.formatPercentageAndCount(root.quicWithSni, root.quicTotalFlows)
+                        ? "Recognised Initial: " + root.formatFlowPercentageAndCount(root.quicWithSni, root.quicTotalFlows)
                         : "Recognised Initial: -"
                 }
 
                 Label {
                     text: root.hasCapture
-                        ? "Unrecognised: " + root.formatPercentageAndCount(root.quicWithoutSni, root.quicTotalFlows)
+                        ? "Unrecognised: " + root.formatFlowPercentageAndCount(root.quicWithoutSni, root.quicTotalFlows)
                         : "Unrecognised: -"
                 }
 
@@ -211,19 +278,19 @@ Frame {
                 }
 
                 Label {
-                    text: "SNI:"
+                    text: "SNI (flow-based):"
                     font.bold: true
                 }
 
                 Label {
                     text: root.hasCapture
-                        ? "With SNI: " + root.formatPercentageAndCount(root.tlsWithSni, root.tlsTotalFlows)
+                        ? "With SNI: " + root.formatFlowPercentageAndCount(root.tlsWithSni, root.tlsTotalFlows)
                         : "With SNI: -"
                 }
 
                 Label {
                     text: root.hasCapture
-                        ? "Without SNI: " + root.formatPercentageAndCount(root.tlsWithoutSni, root.tlsTotalFlows)
+                        ? "Without SNI: " + root.formatFlowPercentageAndCount(root.tlsWithoutSni, root.tlsTotalFlows)
                         : "Without SNI: -"
                 }
 
@@ -247,4 +314,3 @@ Frame {
         }
     }
 }
-

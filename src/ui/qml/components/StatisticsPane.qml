@@ -19,7 +19,11 @@ Item {
     property var otherPacketCount: 0
     property var otherTotalBytes: 0
     property var ipv4FlowCount: 0
+    property var ipv4PacketCount: 0
+    property var ipv4TotalBytes: 0
     property var ipv6FlowCount: 0
+    property var ipv6PacketCount: 0
+    property var ipv6TotalBytes: 0
     property var quicTotalFlows: 0
     property var quicWithSni: 0
     property var quicWithoutSni: 0
@@ -33,11 +37,13 @@ Item {
     property var tlsVersion12: 0
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
+    property int statisticsMode: 0
     property var topEndpointsModel: null
     property var topPortsModel: null
 
     signal endpointActivated(string endpointText)
     signal portActivated(int port)
+    signal statisticsModeChangedByUser(int mode)
 
     ScrollView {
         anchors.fill: parent
@@ -55,6 +61,24 @@ Item {
                 hasCapture: root.hasCapture
             }
 
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Label {
+                    text: "Display By:"
+                }
+
+                ComboBox {
+                    model: ["Flows", "Packets", "Bytes"]
+                    currentIndex: root.statisticsMode
+                    onActivated: function(index) {
+                        root.statisticsModeChangedByUser(index)
+                    }
+                    Layout.preferredWidth: 140
+                }
+            }
+
             ProtocolStatsPane {
                 Layout.fillWidth: true
                 hasCapture: root.hasCapture
@@ -68,7 +92,11 @@ Item {
                 otherPacketCount: root.otherPacketCount
                 otherTotalBytes: root.otherTotalBytes
                 ipv4FlowCount: root.ipv4FlowCount
+                ipv4PacketCount: root.ipv4PacketCount
+                ipv4TotalBytes: root.ipv4TotalBytes
                 ipv6FlowCount: root.ipv6FlowCount
+                ipv6PacketCount: root.ipv6PacketCount
+                ipv6TotalBytes: root.ipv6TotalBytes
                 quicTotalFlows: root.quicTotalFlows
                 quicWithSni: root.quicWithSni
                 quicWithoutSni: root.quicWithoutSni
@@ -82,6 +110,7 @@ Item {
                 tlsVersion12: root.tlsVersion12
                 tlsVersion13: root.tlsVersion13
                 tlsVersionUnknown: root.tlsVersionUnknown
+                statisticsMode: root.statisticsMode
             }
 
             TopTalkersPane {

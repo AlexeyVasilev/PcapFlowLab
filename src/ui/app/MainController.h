@@ -65,7 +65,11 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong otherPacketCount READ otherPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherTotalBytes READ otherTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv4FlowCount READ ipv4FlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong ipv4PacketCount READ ipv4PacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong ipv4TotalBytes READ ipv4TotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6FlowCount READ ipv6FlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong ipv6PacketCount READ ipv6PacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong ipv6TotalBytes READ ipv6TotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicTotalFlows READ quicTotalFlows NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicWithSni READ quicWithSni NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicWithoutSni READ quicWithoutSni NOTIFY stateChanged)
@@ -79,6 +83,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong tlsVersion12 READ tlsVersion12 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersion13 READ tlsVersion13 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersionUnknown READ tlsVersionUnknown NOTIFY stateChanged)
+    Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
@@ -141,7 +146,11 @@ public:
     [[nodiscard]] qulonglong otherPacketCount() const noexcept;
     [[nodiscard]] qulonglong otherTotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv4FlowCount() const noexcept;
+    [[nodiscard]] qulonglong ipv4PacketCount() const noexcept;
+    [[nodiscard]] qulonglong ipv4TotalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv6FlowCount() const noexcept;
+    [[nodiscard]] qulonglong ipv6PacketCount() const noexcept;
+    [[nodiscard]] qulonglong ipv6TotalBytes() const noexcept;
     [[nodiscard]] qulonglong quicTotalFlows() const noexcept;
     [[nodiscard]] qulonglong quicWithSni() const noexcept;
     [[nodiscard]] qulonglong quicWithoutSni() const noexcept;
@@ -155,6 +164,7 @@ public:
     [[nodiscard]] qulonglong tlsVersion12() const noexcept;
     [[nodiscard]] qulonglong tlsVersion13() const noexcept;
     [[nodiscard]] qulonglong tlsVersionUnknown() const noexcept;
+    [[nodiscard]] int statisticsMode() const noexcept;
     [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] int currentTabIndex() const noexcept;
@@ -191,6 +201,7 @@ public:
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
 
     void setCaptureOpenMode(int mode);
+    void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
@@ -205,6 +216,7 @@ signals:
     void sourceAvailabilityChanged();
     void actionAvailabilityChanged();
     void captureOpenModeChanged();
+    void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
@@ -267,6 +279,7 @@ private:
     QString status_text_ {};
     QString last_directory_path_ {};
     AnalysisSettings pending_analysis_settings_ {};
+    int statistics_mode_ {0};
     int capture_open_mode_ {0};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
