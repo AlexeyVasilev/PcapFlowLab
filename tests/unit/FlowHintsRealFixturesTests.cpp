@@ -80,6 +80,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/quic/quic_initial_sh_2.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_handshake_3.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_protected_payload_4.pcap", .expected_protocol_hint = ""},
+        {.relative_path = "parsing/quic/quic_test_3.pcap", .expected_protocol_hint = "quic"},
     };
 
     for (const auto& fixture : fixtures) {
@@ -93,6 +94,11 @@ void run_flow_hints_real_fixtures_tests() {
         PFL_EXPECT(deep_quic_session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), options));
         const auto rows = deep_quic_session.list_flows();
         PFL_EXPECT(has_matching_flow(rows, "quic", std::optional<std::string> {"bag.itunes.apple.com"}));
+
+        CaptureSession deep_quic_draft29_session {};
+        PFL_EXPECT(deep_quic_draft29_session.open_capture(fixture_path("parsing/quic/quic_test_3.pcap"), options));
+        const auto draft29_rows = deep_quic_draft29_session.list_flows();
+        PFL_EXPECT(has_matching_flow(draft29_rows, "quic", std::optional<std::string> {"log22-normal-useast1a.tiktokv.com"}));
     }
 }
 

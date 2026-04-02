@@ -26,6 +26,7 @@ namespace pfl {
 namespace {
 
 constexpr std::uint32_t kQuicVersion1 = 0x00000001U;
+constexpr std::uint32_t kQuicVersionDraft29 = 0xFF00001DU;
 constexpr std::size_t kQuicSampleSize = 16U;
 constexpr std::size_t kQuicTagSize = 16U;
 constexpr std::size_t kQuicInitialSecretSize = 32U;
@@ -36,6 +37,23 @@ constexpr std::array<std::uint8_t, 20> kQuicInitialSaltV1 {
     0x38U, 0x76U, 0x2CU, 0xF7U, 0xF5U, 0x59U, 0x34U, 0xB3U, 0x4DU, 0x17U,
     0x9AU, 0xE6U, 0xA4U, 0xC8U, 0x0CU, 0xADU, 0xCCU, 0xBBU, 0x7FU, 0x0AU,
 };
+
+// QUIC draft-29 Initial salt (version 0xff00001d).
+constexpr std::array<std::uint8_t, 20> kQuicInitialSaltDraft29 {
+    0xAFU, 0xBFU, 0xECU, 0x28U, 0x99U, 0x93U, 0xD2U, 0x4CU, 0x9EU, 0x97U,
+    0x86U, 0xF1U, 0x9CU, 0x61U, 0x11U, 0xE0U, 0x43U, 0x90U, 0xA8U, 0x99U,
+};
+
+std::optional<std::span<const std::uint8_t>> initial_salt_for_version(const std::uint32_t version) {
+    switch (version) {
+    case kQuicVersion1:
+        return std::span<const std::uint8_t>(kQuicInitialSaltV1.data(), kQuicInitialSaltV1.size());
+    case kQuicVersionDraft29:
+        return std::span<const std::uint8_t>(kQuicInitialSaltDraft29.data(), kQuicInitialSaltDraft29.size());
+    default:
+        return std::nullopt;
+    }
+}
 
 std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
@@ -401,6 +419,7 @@ std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std
 #endif
 
 struct ParsedClientInitialHeader {
+    std::uint32_t version {0U};
     std::span<const std::uint8_t> destination_connection_id {};
     std::size_t packet_number_offset {0U};
     std::size_t packet_end {0U};
@@ -420,7 +439,8 @@ std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<c
         return std::nullopt;
     }
 
-    if (read_be32(udp_payload, 1U) != kQuicVersion1) {
+    const auto version = read_be32(udp_payload, 1U);
+    if (!initial_salt_for_version(version).has_value()) {
         return std::nullopt;
     }
 
@@ -457,6 +477,7 @@ std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<c
     }
 
     return ParsedClientInitialHeader {
+        .version = version,
         .destination_connection_id = destination_connection_id,
         .packet_number_offset = packet_number_offset,
         .packet_end = packet_end,
@@ -844,7 +865,12 @@ std::optional<std::vector<std::uint8_t>> decrypt_client_initial_plaintext(std::s
         return std::nullopt;
     }
 
-    const auto initial_secret = hkdf_extract(kQuicInitialSaltV1, header->destination_connection_id);
+    const auto initial_salt = initial_salt_for_version(header->version);
+    if (!initial_salt.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto initial_secret = hkdf_extract(*initial_salt, header->destination_connection_id);
     if (!initial_secret.has_value()) {
         return std::nullopt;
     }
