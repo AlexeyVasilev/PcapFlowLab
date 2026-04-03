@@ -136,6 +136,16 @@ std::vector<std::uint8_t> make_smtp_ehlo_payload() {
     return std::vector<std::uint8_t>(ehlo, ehlo + sizeof(ehlo) - 1);
 }
 
+std::vector<std::uint8_t> make_pop3_ok_payload() {
+    constexpr char greeting[] = "+OK POP3 server ready\r\n";
+    return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
+}
+
+std::vector<std::uint8_t> make_pop3_user_payload() {
+    constexpr char user[] = "USER alex\r\n";
+    return std::vector<std::uint8_t>(user, user + sizeof(user) - 1);
+}
+
 std::vector<std::uint8_t> make_dhcp_payload() {
     std::vector<std::uint8_t> payload(240U, 0U);
     payload[0] = 0x01U; // BOOTREQUEST
@@ -412,6 +422,76 @@ void run_flow_hints_tests() {
             make_classic_pcap({
                 {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
                     ipv4(10, 9, 12, 9), ipv4(10, 9, 12, 10), 50123, 587, make_tls_client_hello_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "tls");
+        PFL_EXPECT(rows[0].service_hint == "example.org");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_pop3_positive_ok.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 13, 9), ipv4(10, 9, 13, 10), 110, 40110, make_pop3_ok_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "pop3");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_pop3_positive_user.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 14, 9), ipv4(10, 9, 14, 10), 40110, 110, make_pop3_user_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "pop3");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        constexpr char unrelated_payload[] = "HELLO NOT POP3\r\n";
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_pop3_negative_unrelated_payload.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 15, 9), ipv4(10, 9, 15, 10), 110, 40110,
+                    std::vector<std::uint8_t>(unrelated_payload, unrelated_payload + sizeof(unrelated_payload) - 1), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_precedence_tls_over_pop3.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 16, 9), ipv4(10, 9, 16, 10), 40110, 110, make_tls_client_hello_payload(), 0x18)},
             })
         );
 

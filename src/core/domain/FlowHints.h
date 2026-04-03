@@ -17,6 +17,7 @@ enum class FlowProtocolHint : std::uint8_t {
     dhcp = 8,
     mdns = 9,
     smtp = 10,
+    pop3 = 11,
 };
 
 enum class QuicVersionHint : std::uint8_t {
@@ -85,6 +86,8 @@ struct FlowHintUpdate {
         return "mdns";
     case FlowProtocolHint::smtp:
         return "smtp";
+    case FlowProtocolHint::pop3:
+        return "pop3";
     default:
         return "unknown";
     }

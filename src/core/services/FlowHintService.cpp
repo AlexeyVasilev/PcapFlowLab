@@ -23,6 +23,7 @@ constexpr std::uint16_t kMdnsPort = 5353;
 constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
 constexpr std::uint16_t kSubmissionPort = 587;
+constexpr std::uint16_t kPop3Port = 110;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
@@ -188,6 +189,12 @@ bool looks_like_smtp_payload(std::span<const std::uint8_t> payload) noexcept {
     const auto payload_text = payload_as_text(payload);
     return payload_text.starts_with("220 ") || payload_text.starts_with("HELO ") ||
            payload_text.starts_with("EHLO ") || payload_text.starts_with("MAIL FROM:");
+}
+
+bool looks_like_pop3_payload(std::span<const std::uint8_t> payload) noexcept {
+    const auto payload_text = payload_as_text(payload);
+    return payload_text.starts_with("+OK") || payload_text.starts_with("USER") ||
+           payload_text.starts_with("PASS");
 }
 
 bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
@@ -588,6 +595,22 @@ FlowHintUpdate detect_smtp_hint(std::span<const std::uint8_t> payload,
     };
 }
 
+FlowHintUpdate detect_pop3_hint(std::span<const std::uint8_t> payload,
+                                const std::uint16_t src_port,
+                                const std::uint16_t dst_port) {
+    if (!has_port(src_port, dst_port, kPop3Port)) {
+        return {};
+    }
+
+    if (!looks_like_pop3_payload(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::pop3,
+    };
+}
+
 FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
     if (!looks_like_tls_record(payload)) {
         return {};
@@ -730,6 +753,13 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             const auto smtp_hint = detect_smtp_hint(payload_view, flow_key.src_port, flow_key.dst_port);
             if (smtp_hint.protocol_hint != FlowProtocolHint::unknown) {
                 return smtp_hint;
+            }
+        }
+
+        {
+            const auto pop3_hint = detect_pop3_hint(payload_view, flow_key.src_port, flow_key.dst_port);
+            if (pop3_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return pop3_hint;
             }
         }
 
