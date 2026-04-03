@@ -1805,6 +1805,12 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
         case FlowProtocolHint::bittorrent:
             add_protocol_stats(summary.hint_bittorrent, connection);
             break;
+        case FlowProtocolHint::dhcp:
+            add_protocol_stats(summary.hint_dhcp, connection);
+            break;
+        case FlowProtocolHint::mdns:
+            add_protocol_stats(summary.hint_mdns, connection);
+            break;
         case FlowProtocolHint::smtp:
             add_protocol_stats(summary.hint_smtp, connection);
             add_protocol_stats(summary.hint_mail_protocols, connection);
@@ -2510,5 +2516,6 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
 
 

@@ -78,6 +78,8 @@ struct CaptureProtocolSummary {
     ProtocolStats hint_ssh {};
     ProtocolStats hint_stun {};
     ProtocolStats hint_bittorrent {};
+    ProtocolStats hint_dhcp {};
+    ProtocolStats hint_mdns {};
     ProtocolStats hint_smtp {};
     ProtocolStats hint_pop3 {};
     ProtocolStats hint_imap {};
@@ -124,4 +126,6 @@ struct CaptureTopSummary {
 };
 
 }  // namespace pfl
+
+
 

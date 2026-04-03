@@ -48,7 +48,7 @@ The Qt Quick desktop UI can:
 - export the currently selected flow to classic PCAP
 - browse flows, packets, protocol statistics, top endpoints, and top ports
 - switch Statistics tab protocol presentation between flows, packets, and bytes (presentation only over existing metadata)
-- include SSH, STUN, and BitTorrent in protocol summary/distribution when detected by cheap flow hints
+- include SSH, STUN, BitTorrent, DHCP, and mDNS in protocol summary/distribution when detected by cheap flow hints
 - show QUIC and TLS protocol-recognition statistics aggregated from existing flow metadata only (no extra parsing pass for statistics)
 - materialize selected-flow packet rows in bounded initial batches with explicit Load more continuation for heavy flows
 - show fragmented packets and flows as diagnostic metadata
@@ -80,6 +80,7 @@ Creating `perf-open.enabled` next to the executable or in the current working di
 Console logging in open/import paths is intentionally quiet by default. If temporary developer logging is needed there, use the compile-time flags in `src/core/debug_logging.h` so disabled builds stay effectively free of logging overhead.
 
 Current large-list strategy also stays intentionally simple: Flow, Packet, and Stream surfaces use virtualization-friendly `ListView`-based rendering, explicit scrollbars, and lightweight delegates, while pagination remains deferred until there is stronger evidence that the current approach is insufficient. Selected-flow packet and Stream loading now stays fully materialized for small flows that fit within the initial budgets, while heavy flows still use bounded initial materialization with explicit `Load more` continuation.
+
 
 
 
