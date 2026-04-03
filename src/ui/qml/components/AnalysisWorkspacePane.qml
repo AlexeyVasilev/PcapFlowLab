@@ -22,6 +22,7 @@ Item {
     property var analysisPacketsBToA: 0
     property var analysisBytesAToB: 0
     property var analysisBytesBToA: 0
+    property var analysisInterArrivalHistogram: []
     property var analysisPacketSizeHistogram: []
     property var analysisSequencePreview: []
 
@@ -190,6 +191,7 @@ Item {
             packetsBToA: root.analysisPacketsBToA
             bytesAToB: root.analysisBytesAToB
             bytesBToA: root.analysisBytesBToA
+            interArrivalHistogramModel: root.analysisInterArrivalHistogram
             packetSizeHistogramModel: root.analysisPacketSizeHistogram
             sequencePreviewModel: root.analysisSequencePreview
         }

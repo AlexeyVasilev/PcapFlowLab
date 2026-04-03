@@ -302,6 +302,7 @@ ApplicationWindow {
                 analysisPacketsBToA: mainController.analysisPacketsBToA
                 analysisBytesAToB: mainController.analysisBytesAToB
                 analysisBytesBToA: mainController.analysisBytesBToA
+                analysisInterArrivalHistogram: mainController.analysisInterArrivalHistogram
                 analysisPacketSizeHistogram: mainController.analysisPacketSizeHistogram
                 analysisSequencePreview: mainController.analysisSequencePreview
                 onFlowSelected: function(flowIndex) {

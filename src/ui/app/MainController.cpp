@@ -628,6 +628,23 @@ qulonglong MainController::analysisBytesBToA() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->bytes_b_to_a) : 0U;
 }
 
+QVariantList MainController::analysisInterArrivalHistogram() const {
+    QVariantList rows {};
+    if (!current_flow_analysis_.has_value()) {
+        return rows;
+    }
+
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->inter_arrival_histogram_rows.size()));
+    for (const auto& histogram_row : current_flow_analysis_->inter_arrival_histogram_rows) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
 QVariantList MainController::analysisPacketSizeHistogram() const {
     QVariantList rows {};
     if (!current_flow_analysis_.has_value()) {

@@ -27,6 +27,16 @@ std::uint64_t packet_histogram_count(const FlowAnalysisResult& analysis, const s
     return 0U;
 }
 
+std::uint64_t inter_arrival_histogram_count(const FlowAnalysisResult& analysis, const std::string& bucket_label) {
+    for (const auto& row : analysis.inter_arrival_histogram_rows) {
+        if (row.bucket_label == bucket_label) {
+            return row.packet_count;
+        }
+    }
+
+    return 0U;
+}
+
 }  // namespace
 
 void run_flow_analysis_tests() {
@@ -83,9 +93,16 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->timeline_packet_count_considered == 3U);
     PFL_EXPECT(analysis->protocol_hint == "http");
     PFL_EXPECT(analysis->service_hint == "analysis.example");
+    PFL_EXPECT(analysis->inter_arrival_histogram_rows.size() == 6U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "0-99 us") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "100-999 us") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "1-9.9 ms") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "10-99 ms") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "100-999 ms") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "1 s+") == 2U);
     PFL_EXPECT(analysis->packet_size_histogram_rows.size() == 7U);
-    PFL_EXPECT(packet_histogram_count(*analysis, "0-63") == 1U);
-    PFL_EXPECT(packet_histogram_count(*analysis, "64-127") == 2U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "0-63") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "64-127") == 3U);
     PFL_EXPECT(packet_histogram_count(*analysis, "128-255") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "256-511") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "512-1023") == 0U);
@@ -130,6 +147,7 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(heavy_analysis->total_packets == 25U);
     PFL_EXPECT(heavy_analysis->timeline_packet_count_considered == 25U);
     PFL_EXPECT(heavy_analysis->largest_gap_us > 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*heavy_analysis, "1 s+") == 24U);
     PFL_EXPECT(packet_histogram_count(*heavy_analysis, "64-127") == 25U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.size() == 20U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.front().flow_packet_number == 1U);
@@ -193,6 +211,47 @@ void run_flow_analysis_tests() {
         packet_histogram_count(*histogram_analysis, "512-1023") +
         packet_histogram_count(*histogram_analysis, "1024-1518") +
         packet_histogram_count(*histogram_analysis, "1519+") == histogram_analysis->total_packets
+    );
+
+    const auto inter_arrival_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 42000, 8080, 12, 0x18
+    );
+    const auto inter_arrival_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_inter_arrival_histogram.pcapng",
+        make_pcapng({
+            make_pcapng_section_header_block(),
+            make_pcapng_interface_description_block(),
+            make_pcapng_enhanced_packet_block(0U, 1U, 0U, inter_arrival_packet),
+            make_pcapng_enhanced_packet_block(0U, 1U, 50U, inter_arrival_packet),
+            make_pcapng_enhanced_packet_block(0U, 1U, 550U, inter_arrival_packet),
+            make_pcapng_enhanced_packet_block(0U, 1U, 5550U, inter_arrival_packet),
+            make_pcapng_enhanced_packet_block(0U, 1U, 55550U, inter_arrival_packet),
+            make_pcapng_enhanced_packet_block(0U, 1U, 555550U, inter_arrival_packet),
+            make_pcapng_enhanced_packet_block(0U, 3U, 555550U, inter_arrival_packet),
+        })
+    );
+
+    CaptureSession inter_arrival_session {};
+    PFL_EXPECT(inter_arrival_session.open_capture(inter_arrival_capture_path));
+    const auto inter_arrival_rows = inter_arrival_session.list_flows();
+    PFL_EXPECT(inter_arrival_rows.size() == 1U);
+    const auto inter_arrival_analysis = inter_arrival_session.get_flow_analysis(inter_arrival_rows.front().index);
+    PFL_EXPECT(inter_arrival_analysis.has_value());
+    PFL_EXPECT(inter_arrival_analysis->total_packets == 7U);
+    PFL_EXPECT(inter_arrival_analysis->inter_arrival_histogram_rows.size() == 6U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "0-99 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "1-9.9 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "10-99 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "1 s+") == 1U);
+    PFL_EXPECT(
+        inter_arrival_histogram_count(*inter_arrival_analysis, "0-99 us") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 us") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "1-9.9 ms") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "10-99 ms") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 ms") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "1 s+") == inter_arrival_analysis->total_packets - 1U
     );
 }
 

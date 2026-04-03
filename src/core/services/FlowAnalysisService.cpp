@@ -29,6 +29,21 @@ constexpr std::array<PacketSizeBucketSpec, 7> kPacketSizeBuckets {{
     {"1519+", 1519U, std::nullopt},
 }};
 
+struct InterArrivalBucketSpec {
+    const char* label;
+    std::uint64_t min_delta_us;
+    std::optional<std::uint64_t> max_delta_us;
+};
+
+constexpr std::array<InterArrivalBucketSpec, 6> kInterArrivalBuckets {{
+    {"0-99 us", 0U, 99U},
+    {"100-999 us", 100U, 999U},
+    {"1-9.9 ms", 1000U, 9999U},
+    {"10-99 ms", 10000U, 99999U},
+    {"100-999 ms", 100000U, 999999U},
+    {"1 s+", 1000000U, std::nullopt},
+}};
+
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
     return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
 }
@@ -163,6 +178,21 @@ std::size_t packet_size_bucket_index(const std::uint32_t captured_length) {
     return kPacketSizeBuckets.size() - 1U;
 }
 
+std::size_t inter_arrival_bucket_index(const std::uint64_t delta_us) {
+    for (std::size_t index = 0; index < kInterArrivalBuckets.size(); ++index) {
+        const auto& bucket = kInterArrivalBuckets[index];
+        if (delta_us < bucket.min_delta_us) {
+            continue;
+        }
+
+        if (!bucket.max_delta_us.has_value() || delta_us <= *bucket.max_delta_us) {
+            return index;
+        }
+    }
+
+    return kInterArrivalBuckets.size() - 1U;
+}
+
 template <typename Flow>
 void accumulate_packet_size_histogram(
     const Flow& flow,
@@ -184,6 +214,44 @@ std::vector<FlowAnalysisPacketSizeHistogramRow> build_packet_size_histogram_rows
     for (std::size_t index = 0; index < kPacketSizeBuckets.size(); ++index) {
         rows.push_back(FlowAnalysisPacketSizeHistogramRow {
             .bucket_label = kPacketSizeBuckets[index].label,
+            .packet_count = counts[index],
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FlowAnalysisInterArrivalHistogramRow> build_inter_arrival_histogram_rows(
+    const std::vector<const PacketRef*>& ordered_packets
+) {
+    std::array<std::uint64_t, kInterArrivalBuckets.size()> counts {};
+    if (ordered_packets.size() < 2U) {
+        std::vector<FlowAnalysisInterArrivalHistogramRow> rows {};
+        rows.reserve(kInterArrivalBuckets.size());
+        for (const auto& bucket : kInterArrivalBuckets) {
+            rows.push_back(FlowAnalysisInterArrivalHistogramRow {
+                .bucket_label = bucket.label,
+                .packet_count = 0U,
+            });
+        }
+        return rows;
+    }
+
+    std::uint64_t previous_timestamp_us = packet_timestamp_us(*ordered_packets.front());
+    for (std::size_t index = 1; index < ordered_packets.size(); ++index) {
+        const auto current_timestamp_us = packet_timestamp_us(*ordered_packets[index]);
+        const auto delta_us = current_timestamp_us >= previous_timestamp_us
+            ? current_timestamp_us - previous_timestamp_us
+            : 0U;
+        counts[inter_arrival_bucket_index(delta_us)] += 1U;
+        previous_timestamp_us = current_timestamp_us;
+    }
+
+    std::vector<FlowAnalysisInterArrivalHistogramRow> rows {};
+    rows.reserve(kInterArrivalBuckets.size());
+    for (std::size_t index = 0; index < kInterArrivalBuckets.size(); ++index) {
+        rows.push_back(FlowAnalysisInterArrivalHistogramRow {
+            .bucket_label = kInterArrivalBuckets[index].label,
             .packet_count = counts[index],
         });
     }
@@ -231,6 +299,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
         previous_timestamp_us = current_timestamp_us;
     }
 
+    result.inter_arrival_histogram_rows = build_inter_arrival_histogram_rows(ordered_packets);
     result.packet_size_histogram_rows = build_packet_size_histogram_rows(connection);
     result.sequence_preview_rows = build_sequence_preview_rows(connection);
 

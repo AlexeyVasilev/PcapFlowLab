@@ -59,6 +59,7 @@ The Qt Quick desktop UI can:
 - include a bounded metadata-only Sequence Preview block in Analysis for the first packets of the selected flow
 - include a bounded metadata-only Timeline block in Analysis for selected-flow timing summary
 - include a bounded metadata-only Packet Size Histogram block in Analysis for selected-flow captured-length distribution
+- include a bounded metadata-only Inter-arrival Histogram block in Analysis for selected-flow timing distribution
 - materialize selected-flow Stream items in bounded initial batches with explicit `Load more` continuation for heavy flows
 
 ### Stream tab

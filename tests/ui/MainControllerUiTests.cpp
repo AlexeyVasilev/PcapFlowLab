@@ -223,6 +223,15 @@ qulonglong histogram_packet_count(const QVariantList& histogram, const QString& 
     return 0U;
 }
 
+qulonglong histogram_total_count(const QVariantList& histogram) {
+    qulonglong total = 0U;
+    for (const auto& value : histogram) {
+        total += value.toMap().value(QStringLiteral("packetCount")).toULongLong();
+    }
+
+    return total;
+}
+
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -465,6 +474,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
+    UI_EXPECT(controller.analysisInterArrivalHistogram().size() == 6);
+    UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogram()) == 0U);
     UI_EXPECT(controller.analysisPacketSizeHistogram().size() == 7);
     UI_EXPECT(
         histogram_packet_count(
@@ -490,6 +501,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTimelineLastPacketTime().isEmpty());
     UI_EXPECT(controller.analysisTimelineLargestGapText().isEmpty());
     UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 0U);
+    UI_EXPECT(controller.analysisInterArrivalHistogram().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
 

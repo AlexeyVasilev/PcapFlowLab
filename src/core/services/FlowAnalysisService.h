@@ -22,6 +22,11 @@ struct FlowAnalysisPacketSizeHistogramRow {
     std::uint64_t packet_count {0};
 };
 
+struct FlowAnalysisInterArrivalHistogramRow {
+    std::string bucket_label {};
+    std::uint64_t packet_count {0};
+};
+
 struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
@@ -36,6 +41,7 @@ struct FlowAnalysisResult {
     std::string last_packet_timestamp_text {};
     std::string protocol_hint {};
     std::string service_hint {};
+    std::vector<FlowAnalysisInterArrivalHistogramRow> inter_arrival_histogram_rows {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> packet_size_histogram_rows {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};
 };

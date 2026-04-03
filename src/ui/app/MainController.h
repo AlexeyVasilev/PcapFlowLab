@@ -71,6 +71,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong analysisPacketsBToA READ analysisPacketsBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesAToB READ analysisBytesAToB NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesBToA READ analysisBytesBToA NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisInterArrivalHistogram READ analysisInterArrivalHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogram READ analysisPacketSizeHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisSequencePreview READ analysisSequencePreview NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
@@ -173,6 +174,7 @@ public:
     [[nodiscard]] qulonglong analysisPacketsBToA() const noexcept;
     [[nodiscard]] qulonglong analysisBytesAToB() const noexcept;
     [[nodiscard]] qulonglong analysisBytesBToA() const noexcept;
+    [[nodiscard]] QVariantList analysisInterArrivalHistogram() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogram() const;
     [[nodiscard]] QVariantList analysisSequencePreview() const;
     [[nodiscard]] qulonglong packetCount() const noexcept;
