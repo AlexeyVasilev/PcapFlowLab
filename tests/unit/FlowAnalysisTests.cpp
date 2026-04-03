@@ -92,6 +92,9 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->packets_b_to_a == 1U);
     PFL_EXPECT(analysis->bytes_a_to_b == static_cast<std::uint64_t>(request_packet.size() + follow_up_packet.size()));
     PFL_EXPECT(analysis->bytes_b_to_a == static_cast<std::uint64_t>(response_packet.size()));
+    PFL_EXPECT(analysis->packet_ratio_text == "2 : 1");
+    PFL_EXPECT(analysis->byte_ratio_text == "2.1 : 1");
+    PFL_EXPECT(analysis->dominant_direction_text == "Balanced");
     PFL_EXPECT(analysis->first_packet_timestamp_text == "00:00:01.000100");
     PFL_EXPECT(analysis->last_packet_timestamp_text == "00:00:03.000450");
     PFL_EXPECT(analysis->largest_gap_us == 1000200U);
@@ -292,6 +295,77 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(nearly_equal(single_packet_analysis->average_inter_arrival_us, 0.0));
     PFL_EXPECT(single_packet_analysis->min_packet_size_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->max_packet_size_bytes == request_packet.size());
+    PFL_EXPECT(single_packet_analysis->packet_ratio_text == "1 : 0");
+    PFL_EXPECT(single_packet_analysis->byte_ratio_text == "1 : 0");
+    PFL_EXPECT(single_packet_analysis->dominant_direction_text == "Mostly A->B");
+
+    const auto ratio_packet_a = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 3, 0, 1), ipv4(10, 3, 0, 2), 43000, 443, 40, 0x18
+    );
+    const auto ratio_packet_b = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 3, 0, 2), ipv4(10, 3, 0, 1), 443, 43000, 40, 0x18
+    );
+
+    const auto balanced_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_directional_ratio_balanced.pcap",
+        make_classic_pcap({
+            {100U, ratio_packet_a},
+            {200U, ratio_packet_a},
+            {300U, ratio_packet_b},
+        })
+    );
+
+    CaptureSession balanced_session {};
+    PFL_EXPECT(balanced_session.open_capture(balanced_capture_path));
+    const auto balanced_rows = balanced_session.list_flows();
+    PFL_EXPECT(balanced_rows.size() == 1U);
+    const auto balanced_analysis = balanced_session.get_flow_analysis(balanced_rows.front().index);
+    PFL_EXPECT(balanced_analysis.has_value());
+    PFL_EXPECT(balanced_analysis->packet_ratio_text == "2 : 1");
+    PFL_EXPECT(balanced_analysis->byte_ratio_text == "2 : 1");
+    PFL_EXPECT(balanced_analysis->dominant_direction_text == "Balanced");
+
+    const auto a_dominant_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_directional_ratio_a_dominant.pcap",
+        make_classic_pcap({
+            {100U, ratio_packet_a},
+            {200U, ratio_packet_a},
+            {300U, ratio_packet_a},
+            {400U, ratio_packet_a},
+            {500U, ratio_packet_b},
+        })
+    );
+
+    CaptureSession a_dominant_session {};
+    PFL_EXPECT(a_dominant_session.open_capture(a_dominant_capture_path));
+    const auto a_dominant_rows = a_dominant_session.list_flows();
+    PFL_EXPECT(a_dominant_rows.size() == 1U);
+    const auto a_dominant_analysis = a_dominant_session.get_flow_analysis(a_dominant_rows.front().index);
+    PFL_EXPECT(a_dominant_analysis.has_value());
+    PFL_EXPECT(a_dominant_analysis->packet_ratio_text == "4 : 1");
+    PFL_EXPECT(a_dominant_analysis->byte_ratio_text == "4 : 1");
+    PFL_EXPECT(a_dominant_analysis->dominant_direction_text == "Mostly A->B");
+
+    const auto b_dominant_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_directional_ratio_b_dominant.pcap",
+        make_classic_pcap({
+            {100U, ratio_packet_a},
+            {200U, ratio_packet_b},
+            {300U, ratio_packet_b},
+            {400U, ratio_packet_b},
+            {500U, ratio_packet_b},
+        })
+    );
+
+    CaptureSession b_dominant_session {};
+    PFL_EXPECT(b_dominant_session.open_capture(b_dominant_capture_path));
+    const auto b_dominant_rows = b_dominant_session.list_flows();
+    PFL_EXPECT(b_dominant_rows.size() == 1U);
+    const auto b_dominant_analysis = b_dominant_session.get_flow_analysis(b_dominant_rows.front().index);
+    PFL_EXPECT(b_dominant_analysis.has_value());
+    PFL_EXPECT(b_dominant_analysis->packet_ratio_text == "1 : 4");
+    PFL_EXPECT(b_dominant_analysis->byte_ratio_text == "1 : 4");
+    PFL_EXPECT(b_dominant_analysis->dominant_direction_text == "Mostly B->A");
 }
 
 }  // namespace pfl::tests

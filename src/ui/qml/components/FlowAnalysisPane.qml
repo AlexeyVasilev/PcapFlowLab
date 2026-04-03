@@ -53,6 +53,9 @@ Frame {
     property string averageInterArrivalText: ""
     property string minPacketSizeText: ""
     property string maxPacketSizeText: ""
+    property string packetRatioText: ""
+    property string byteRatioText: ""
+    property string dominantDirectionText: ""
     property string protocolHint: ""
     property string serviceHint: ""
     property var packetsAToB: 0
@@ -258,6 +261,29 @@ Frame {
 
                             Label { text: "Max packet size" }
                             Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Directional Ratio"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+
+                            Label { text: "Packet ratio" }
+                            Label { text: root.packetRatioText.length > 0 ? root.packetRatioText : "-" }
+
+                            Label { text: "Byte ratio" }
+                            Label { text: root.byteRatioText.length > 0 ? root.byteRatioText : "-" }
+
+                            Label { text: "Dominant direction" }
+                            Label { text: root.dominantDirectionText.length > 0 ? root.dominantDirectionText : "-" }
                         }
                     }
 

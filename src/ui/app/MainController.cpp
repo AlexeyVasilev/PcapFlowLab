@@ -649,6 +649,24 @@ QString MainController::analysisMaxPacketSizeText() const {
         : QString {};
 }
 
+QString MainController::analysisPacketRatioText() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->packet_ratio_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->packet_ratio_text)
+        : QString {};
+}
+
+QString MainController::analysisByteRatioText() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->byte_ratio_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->byte_ratio_text)
+        : QString {};
+}
+
+QString MainController::analysisDominantDirectionText() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->dominant_direction_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->dominant_direction_text)
+        : QString {};
+}
+
 QString MainController::analysisProtocolHint() const {
     return current_flow_analysis_.has_value() && !current_flow_analysis_->protocol_hint.empty()
         ? QString::fromStdString(current_flow_analysis_->protocol_hint).toUpper()

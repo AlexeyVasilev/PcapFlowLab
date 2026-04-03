@@ -71,6 +71,9 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisAverageInterArrivalText READ analysisAverageInterArrivalText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMinPacketSizeText READ analysisMinPacketSizeText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeText READ analysisMaxPacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketRatioText READ analysisPacketRatioText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisByteRatioText READ analysisByteRatioText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisDominantDirectionText READ analysisDominantDirectionText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisProtocolHint READ analysisProtocolHint NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisServiceHint READ analysisServiceHint NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsAToB READ analysisPacketsAToB NOTIFY analysisStateChanged)
@@ -180,6 +183,9 @@ public:
     [[nodiscard]] QString analysisAverageInterArrivalText() const;
     [[nodiscard]] QString analysisMinPacketSizeText() const;
     [[nodiscard]] QString analysisMaxPacketSizeText() const;
+    [[nodiscard]] QString analysisPacketRatioText() const;
+    [[nodiscard]] QString analysisByteRatioText() const;
+    [[nodiscard]] QString analysisDominantDirectionText() const;
     [[nodiscard]] QString analysisProtocolHint() const;
     [[nodiscard]] QString analysisServiceHint() const;
     [[nodiscard]] qulonglong analysisPacketsAToB() const noexcept;

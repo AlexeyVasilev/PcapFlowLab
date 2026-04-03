@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <iomanip>
 #include <optional>
 #include <sstream>
@@ -61,6 +62,60 @@ std::string format_packet_timestamp(const PacketRef& packet) {
               << std::setw(2) << seconds << '.'
               << std::setw(6) << packet.ts_usec;
     return timestamp.str();
+}
+
+std::string format_ratio_number(const double value) {
+    std::ostringstream stream {};
+    const double rounded_value = std::round(value * 10.0) / 10.0;
+    if (std::fabs(rounded_value - std::round(rounded_value)) < 0.05) {
+        stream << static_cast<std::uint64_t>(std::llround(rounded_value));
+    } else {
+        stream << std::fixed << std::setprecision(1) << rounded_value;
+    }
+
+    return stream.str();
+}
+
+std::string format_direction_ratio_text(const std::uint64_t a_to_b, const std::uint64_t b_to_a) {
+    if (a_to_b == 0U && b_to_a == 0U) {
+        return "0 : 0";
+    }
+
+    if (a_to_b == 0U) {
+        return "0 : 1";
+    }
+
+    if (b_to_a == 0U) {
+        return "1 : 0";
+    }
+
+    if (a_to_b >= b_to_a) {
+        return format_ratio_number(static_cast<double>(a_to_b) / static_cast<double>(b_to_a)) + " : 1";
+    }
+
+    return "1 : " + format_ratio_number(static_cast<double>(b_to_a) / static_cast<double>(a_to_b));
+}
+
+std::string derive_dominant_direction_text(const std::uint64_t a_to_b_packets, const std::uint64_t b_to_a_packets) {
+    if (a_to_b_packets == 0U && b_to_a_packets == 0U) {
+        return "Balanced";
+    }
+
+    if (a_to_b_packets == 0U) {
+        return "Mostly B->A";
+    }
+
+    if (b_to_a_packets == 0U) {
+        return "Mostly A->B";
+    }
+
+    const auto larger = std::max(a_to_b_packets, b_to_a_packets);
+    const auto smaller = std::min(a_to_b_packets, b_to_a_packets);
+    if (larger <= (smaller * 2U)) {
+        return "Balanced";
+    }
+
+    return a_to_b_packets > b_to_a_packets ? "Mostly A->B" : "Mostly B->A";
 }
 
 struct PacketPreviewCandidate {
@@ -271,6 +326,9 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     result.packets_b_to_a = connection.flow_b.packet_count;
     result.bytes_a_to_b = connection.flow_a.total_bytes;
     result.bytes_b_to_a = connection.flow_b.total_bytes;
+    result.packet_ratio_text = format_direction_ratio_text(result.packets_a_to_b, result.packets_b_to_a);
+    result.byte_ratio_text = format_direction_ratio_text(result.bytes_a_to_b, result.bytes_b_to_a);
+    result.dominant_direction_text = derive_dominant_direction_text(result.packets_a_to_b, result.packets_b_to_a);
     result.protocol_hint = connection.protocol_hint == FlowProtocolHint::unknown
         ? std::string {}
         : std::string {flow_protocol_hint_text(connection.protocol_hint)};

@@ -302,6 +302,9 @@ ApplicationWindow {
                 analysisAverageInterArrivalText: mainController.analysisAverageInterArrivalText
                 analysisMinPacketSizeText: mainController.analysisMinPacketSizeText
                 analysisMaxPacketSizeText: mainController.analysisMaxPacketSizeText
+                analysisPacketRatioText: mainController.analysisPacketRatioText
+                analysisByteRatioText: mainController.analysisByteRatioText
+                analysisDominantDirectionText: mainController.analysisDominantDirectionText
                 analysisProtocolHint: mainController.analysisProtocolHint
                 analysisServiceHint: mainController.analysisServiceHint
                 analysisPacketsAToB: mainController.analysisPacketsAToB

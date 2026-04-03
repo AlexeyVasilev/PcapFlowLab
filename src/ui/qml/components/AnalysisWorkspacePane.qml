@@ -22,6 +22,9 @@ Item {
     property string analysisAverageInterArrivalText: ""
     property string analysisMinPacketSizeText: ""
     property string analysisMaxPacketSizeText: ""
+    property string analysisPacketRatioText: ""
+    property string analysisByteRatioText: ""
+    property string analysisDominantDirectionText: ""
     property string analysisProtocolHint: ""
     property string analysisServiceHint: ""
     property var analysisPacketsAToB: 0
@@ -197,6 +200,9 @@ Item {
             averageInterArrivalText: root.analysisAverageInterArrivalText
             minPacketSizeText: root.analysisMinPacketSizeText
             maxPacketSizeText: root.analysisMaxPacketSizeText
+            packetRatioText: root.analysisPacketRatioText
+            byteRatioText: root.analysisByteRatioText
+            dominantDirectionText: root.analysisDominantDirectionText
             protocolHint: root.analysisProtocolHint
             serviceHint: root.analysisServiceHint
             packetsAToB: root.analysisPacketsAToB
