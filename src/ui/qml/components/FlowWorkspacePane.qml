@@ -24,6 +24,16 @@ Item {
     property var streamPacketWindowCount: 0
     property bool streamPacketWindowPartial: false
     property bool canLoadMoreStreamItems: false
+    property bool analysisAvailable: false
+    property string analysisDurationText: ""
+    property var analysisTotalPackets: 0
+    property var analysisTotalBytes: 0
+    property string analysisProtocolHint: ""
+    property string analysisServiceHint: ""
+    property var analysisPacketsAToB: 0
+    property var analysisPacketsBToA: 0
+    property var analysisBytesAToB: 0
+    property var analysisBytesBToA: 0
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
     property var selectedStreamItemIndex: 0
@@ -87,6 +97,10 @@ Item {
                         TabButton {
                             text: "Stream"
                         }
+
+                        TabButton {
+                            text: "Analysis"
+                        }
                     }
 
                     StackLayout {
@@ -126,6 +140,19 @@ Item {
                             onLoadMoreRequested: function() {
                                 root.loadMoreStreamItemsRequested()
                             }
+                        }
+
+                        FlowAnalysisPane {
+                            analysisAvailable: root.analysisAvailable
+                            durationText: root.analysisDurationText
+                            totalPackets: root.analysisTotalPackets
+                            totalBytes: root.analysisTotalBytes
+                            protocolHint: root.analysisProtocolHint
+                            serviceHint: root.analysisServiceHint
+                            packetsAToB: root.analysisPacketsAToB
+                            packetsBToA: root.analysisPacketsBToA
+                            bytesAToB: root.analysisBytesAToB
+                            bytesBToA: root.analysisBytesBToA
                         }
                     }
                 }

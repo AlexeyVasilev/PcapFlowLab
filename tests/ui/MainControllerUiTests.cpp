@@ -335,6 +335,25 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!std::filesystem::exists(no_selection_export_path));
 
 
+    auto* analysis_flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+    UI_EXPECT(analysis_flow_model != nullptr);
+    const int analysis_http_flow_index = find_flow_index_by_protocol_hint(analysis_flow_model, QStringLiteral("HTTP"));
+    UI_EXPECT(analysis_http_flow_index >= 0);
+    controller.setFlowDetailsTabIndex(2);
+    controller.setSelectedFlowIndex(analysis_http_flow_index);
+    UI_EXPECT(controller.analysisAvailable());
+    UI_EXPECT(controller.analysisTotalPackets() == 1U);
+    UI_EXPECT(controller.analysisTotalBytes() == static_cast<qulonglong>(http_flow.size()));
+    UI_EXPECT(controller.analysisDurationText() == QStringLiteral("0 us"));
+    UI_EXPECT(controller.analysisProtocolHint() == QStringLiteral("HTTP"));
+    UI_EXPECT(controller.analysisServiceHint() == QStringLiteral("ui.example"));
+    UI_EXPECT(controller.analysisPacketsAToB() == 1U);
+    UI_EXPECT(controller.analysisPacketsBToA() == 0U);
+    UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
+    UI_EXPECT(controller.analysisBytesBToA() == 0U);
+    controller.setSelectedFlowIndex(-1);
+    UI_EXPECT(!controller.analysisAvailable());
+
     MainController multi_flow_controller {};
     UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));
     auto* multi_flow_model = qobject_cast<FlowListModel*>(multi_flow_controller.flowModel());

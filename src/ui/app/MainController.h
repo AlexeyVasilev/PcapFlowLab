@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <filesystem>
 #include <map>
@@ -56,6 +56,16 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong streamPacketWindowCount READ streamPacketWindowCount NOTIFY streamListStateChanged)
     Q_PROPERTY(bool streamPacketWindowPartial READ streamPacketWindowPartial NOTIFY streamListStateChanged)
     Q_PROPERTY(bool canLoadMoreStreamItems READ canLoadMoreStreamItems NOTIFY streamListStateChanged)
+    Q_PROPERTY(bool analysisAvailable READ analysisAvailable NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisTotalPackets READ analysisTotalPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisTotalBytes READ analysisTotalBytes NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisProtocolHint READ analysisProtocolHint NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisServiceHint READ analysisServiceHint NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisPacketsAToB READ analysisPacketsAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisPacketsBToA READ analysisPacketsBToA NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisBytesAToB READ analysisBytesAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisBytesBToA READ analysisBytesBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong flowCount READ flowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
@@ -141,6 +151,16 @@ public:
     [[nodiscard]] qulonglong streamPacketWindowCount() const noexcept;
     [[nodiscard]] bool streamPacketWindowPartial() const noexcept;
     [[nodiscard]] bool canLoadMoreStreamItems() const noexcept;
+    [[nodiscard]] bool analysisAvailable() const noexcept;
+    [[nodiscard]] QString analysisDurationText() const;
+    [[nodiscard]] qulonglong analysisTotalPackets() const noexcept;
+    [[nodiscard]] qulonglong analysisTotalBytes() const noexcept;
+    [[nodiscard]] QString analysisProtocolHint() const;
+    [[nodiscard]] QString analysisServiceHint() const;
+    [[nodiscard]] qulonglong analysisPacketsAToB() const noexcept;
+    [[nodiscard]] qulonglong analysisPacketsBToA() const noexcept;
+    [[nodiscard]] qulonglong analysisBytesAToB() const noexcept;
+    [[nodiscard]] qulonglong analysisBytesBToA() const noexcept;
     [[nodiscard]] qulonglong packetCount() const noexcept;
     [[nodiscard]] qulonglong flowCount() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
@@ -242,6 +262,7 @@ signals:
     void openProgressChanged();
     void packetListStateChanged();
     void streamListStateChanged();
+    void analysisStateChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -257,6 +278,8 @@ private:
     void maybeEnrichSelectedFlowServiceHint();
     void refreshSelectedFlowPackets(bool resetRows);
     void refreshSelectedStreamItems(bool resetRows);
+    void refreshSelectedFlowAnalysis();
+    void clearSelectedFlowAnalysis();
     void clearPacketSelection();
     void clearStreamSelection();
     void clearFlowSelection();
@@ -312,8 +335,10 @@ private:
     std::size_t stream_packet_window_count_ {0};
     std::size_t stream_item_budget_count_ {0};
     bool stream_tab_active_ {false};
+    bool analysis_tab_active_ {false};
     bool can_load_more_stream_items_ {false};
     bool stream_state_materialized_for_selected_flow_ {false};
+    std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
@@ -325,5 +350,10 @@ private:
 };
 
 }  // namespace pfl
+
+
+
+
+
 
 

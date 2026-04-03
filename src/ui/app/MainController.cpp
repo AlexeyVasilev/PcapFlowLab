@@ -1,4 +1,4 @@
-#include "ui/app/MainController.h"
+﻿#include "ui/app/MainController.h"
 
 #include <algorithm>
 #include <array>
@@ -251,6 +251,22 @@ QString formatContributingPackets(
     }
 
     return QStringLiteral("(file %1)").arg(fileIndices);
+}
+
+QString format_duration_us(const std::uint64_t duration_us) {
+    if (duration_us == 0U) {
+        return QStringLiteral("0 us");
+    }
+
+    if (duration_us < 1000U) {
+        return QStringLiteral("%1 us").arg(duration_us);
+    }
+
+    if (duration_us < 1000000U) {
+        return QStringLiteral("%1 ms").arg(static_cast<double>(duration_us) / 1000.0, 0, 'f', 3);
+    }
+
+    return QStringLiteral("%1 s").arg(static_cast<double>(duration_us) / 1000000.0, 0, 'f', 3);
 }
 
 QString buildStreamItemSummary(
@@ -534,6 +550,52 @@ bool MainController::canLoadMoreStreamItems() const noexcept {
     return selected_flow_index_ >= 0 && can_load_more_stream_items_;
 }
 
+
+bool MainController::analysisAvailable() const noexcept {
+    return current_flow_analysis_.has_value();
+}
+
+QString MainController::analysisDurationText() const {
+    return current_flow_analysis_.has_value()
+        ? format_duration_us(current_flow_analysis_->duration_us)
+        : QString {};
+}
+
+qulonglong MainController::analysisTotalPackets() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->total_packets) : 0U;
+}
+
+qulonglong MainController::analysisTotalBytes() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->total_bytes) : 0U;
+}
+
+QString MainController::analysisProtocolHint() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->protocol_hint.empty()
+        ? QString::fromStdString(current_flow_analysis_->protocol_hint).toUpper()
+        : QString {};
+}
+
+QString MainController::analysisServiceHint() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->service_hint.empty()
+        ? QString::fromStdString(current_flow_analysis_->service_hint)
+        : QString {};
+}
+
+qulonglong MainController::analysisPacketsAToB() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->packets_a_to_b) : 0U;
+}
+
+qulonglong MainController::analysisPacketsBToA() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->packets_b_to_a) : 0U;
+}
+
+qulonglong MainController::analysisBytesAToB() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->bytes_a_to_b) : 0U;
+}
+
+qulonglong MainController::analysisBytesBToA() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->bytes_b_to_a) : 0U;
+}
 
 qulonglong MainController::packetCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().packet_count);
@@ -1007,14 +1069,19 @@ void MainController::drillDownToPort(const quint32 port) {
 }
 
 void MainController::setFlowDetailsTabIndex(const int index) {
-    const bool active = index == 1;
-    if (stream_tab_active_ == active) {
+    const bool streamActive = index == 1;
+    const bool analysisActive = index == 2;
+    if (stream_tab_active_ == streamActive && analysis_tab_active_ == analysisActive) {
         return;
     }
 
-    stream_tab_active_ = active;
+    stream_tab_active_ = streamActive;
+    analysis_tab_active_ = analysisActive;
     if (stream_tab_active_ && selected_flow_index_ >= 0 && !stream_state_materialized_for_selected_flow_) {
         refreshSelectedStreamItems(true);
+    }
+    if (analysis_tab_active_) {
+        refreshSelectedFlowAnalysis();
     }
 }
 
@@ -1074,6 +1141,8 @@ void MainController::setSelectedFlowIndex(const int index) {
     selected_flow_index_ = index;
     clearPacketSelection();
     clearStreamSelection();
+    clearSelectedFlowAnalysis();
+    clearSelectedFlowAnalysis();
     current_flow_packet_numbers_.clear();
     current_stream_items_.clear();
     stream_model_.clear();
@@ -1092,6 +1161,9 @@ void MainController::setSelectedFlowIndex(const int index) {
             refreshSelectedStreamItems(true);
         } else {
             emit streamListStateChanged();
+        }
+        if (analysis_tab_active_) {
+            refreshSelectedFlowAnalysis();
         }
     } else {
         packet_model_.clear();
@@ -1299,6 +1371,25 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     }
 }
 
+void MainController::refreshSelectedFlowAnalysis() {
+    if (selected_flow_index_ < 0) {
+        clearSelectedFlowAnalysis();
+        return;
+    }
+
+    current_flow_analysis_ = session_.get_flow_analysis(static_cast<std::size_t>(selected_flow_index_));
+    emit analysisStateChanged();
+}
+
+void MainController::clearSelectedFlowAnalysis() {
+    if (!current_flow_analysis_.has_value()) {
+        return;
+    }
+
+    current_flow_analysis_.reset();
+    emit analysisStateChanged();
+}
+
 void MainController::clearPacketSelection() {
     const bool selectionChanged = selected_packet_index_ != kInvalidPacketSelection;
     const bool wasActive = details_selection_context_ == DetailsSelectionContext::packet;
@@ -1350,6 +1441,7 @@ void MainController::clearFlowSelection() {
     stream_state_materialized_for_selected_flow_ = false;
     clearPacketSelection();
     clearStreamSelection();
+    clearSelectedFlowAnalysis();
 
     if (packetStateChanged) {
         emit packetListStateChanged();
@@ -1400,6 +1492,10 @@ void MainController::resetLoadedState() {
     selected_packet_index_ = kInvalidPacketSelection;
     selected_stream_item_index_ = kInvalidStreamSelection;
     details_selection_context_ = DetailsSelectionContext::none;
+    if (current_flow_analysis_.has_value()) {
+        current_flow_analysis_.reset();
+        emit analysisStateChanged();
+    }
 }
 
 void MainController::applyLoadedState(const QString& path) {
@@ -1764,6 +1860,15 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
+
+
 
 
 

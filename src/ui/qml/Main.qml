@@ -248,6 +248,16 @@ ApplicationWindow {
                 streamPacketWindowCount: mainController.streamPacketWindowCount
                 streamPacketWindowPartial: mainController.streamPacketWindowPartial
                 canLoadMoreStreamItems: mainController.canLoadMoreStreamItems
+                analysisAvailable: mainController.analysisAvailable
+                analysisDurationText: mainController.analysisDurationText
+                analysisTotalPackets: mainController.analysisTotalPackets
+                analysisTotalBytes: mainController.analysisTotalBytes
+                analysisProtocolHint: mainController.analysisProtocolHint
+                analysisServiceHint: mainController.analysisServiceHint
+                analysisPacketsAToB: mainController.analysisPacketsAToB
+                analysisPacketsBToA: mainController.analysisPacketsBToA
+                analysisBytesAToB: mainController.analysisBytesAToB
+                analysisBytesBToA: mainController.analysisBytesBToA
                 selectedPacketIndex: mainController.selectedPacketIndex
                 selectedStreamItemIndex: mainController.selectedStreamItemIndex
                 packetDetailsModel: mainController.packetDetailsModel
@@ -334,5 +344,6 @@ ApplicationWindow {
         }
     }
 }
+
 
 

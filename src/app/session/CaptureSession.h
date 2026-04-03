@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <filesystem>
 #include <optional>
@@ -12,6 +12,7 @@
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/FlowAnalysisService.h"
 
 struct OpenContext;
 
@@ -48,6 +49,7 @@ public:
     [[nodiscard]] std::string read_packet_protocol_details_text(const PacketRef& packet) const;
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(const ReassemblyRequest& request) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
+    [[nodiscard]] std::optional<FlowAnalysisResult> get_flow_analysis(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_service_hint_for_flow(std::size_t flow_index) const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
@@ -81,6 +83,9 @@ private:
 };
 
 }  // namespace pfl
+
+
+
 
 
 

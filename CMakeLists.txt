@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+﻿cmake_minimum_required(VERSION 3.24)
 
 project(
     pcap_flow_lab
@@ -65,6 +65,7 @@ add_library(
     src/core/services/CaptureImporter.cpp
     src/core/services/ChunkedCaptureImporter.cpp
     src/core/services/FlowExportService.cpp
+    src/core/services/FlowAnalysisService.cpp
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
     src/core/services/PerfOpenLogger.cpp
@@ -141,6 +142,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/PacketList.qml
                 src/ui/qml/components/PacketDetailsPane.qml
                 src/ui/qml/components/StreamView.qml
+                src/ui/qml/components/FlowAnalysisPane.qml
                 src/ui/qml/components/SettingsPane.qml
         )
 
@@ -199,6 +201,7 @@ if(BUILD_TESTING)
         tests/unit/ImportTests.cpp
         tests/unit/ImportModeTests.cpp
         tests/unit/AnalysisSettingsTests.cpp
+        tests/unit/FlowAnalysisTests.cpp
         tests/unit/CliImportModeTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
@@ -237,4 +240,6 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
+
 

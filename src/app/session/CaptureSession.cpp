@@ -1,4 +1,4 @@
-#include "app/session/CaptureSession.h"
+﻿#include "app/session/CaptureSession.h"
 
 #include <algorithm>
 #include <cassert>
@@ -22,6 +22,7 @@
 #include "core/services/CaptureImporter.h"
 #include "core/services/DnsPacketProtocolAnalyzer.h"
 #include "core/services/FlowExportService.h"
+#include "core/services/FlowAnalysisService.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/HexDumpService.h"
 #include "core/services/HttpPacketProtocolAnalyzer.h"
@@ -2218,6 +2219,21 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
 
     return rows;
 }
+
+std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::size_t flow_index) const {
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    FlowAnalysisService service {};
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        return service.analyze(*connections[flow_index].ipv4);
+    }
+
+    return service.analyze(*connections[flow_index].ipv6);
+}
+
 std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_index) const {
     return list_flow_packets(flow_index, 0U, flow_packet_count(flow_index));
 }
@@ -2516,6 +2532,9 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
 
 
 
