@@ -125,6 +125,17 @@ std::vector<std::uint8_t> make_bittorrent_handshake_payload() {
     }
     return payload;
 }
+
+std::vector<std::uint8_t> make_smtp_greeting_payload() {
+    constexpr char greeting[] = "220 mail.example.org ESMTP ready\r\n";
+    return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
+}
+
+std::vector<std::uint8_t> make_smtp_ehlo_payload() {
+    constexpr char ehlo[] = "EHLO client.example.org\r\n";
+    return std::vector<std::uint8_t>(ehlo, ehlo + sizeof(ehlo) - 1);
+}
+
 std::vector<std::uint8_t> make_dhcp_payload() {
     std::vector<std::uint8_t> payload(240U, 0U);
     payload[0] = 0x01U; // BOOTREQUEST
@@ -344,6 +355,76 @@ void run_flow_hints_tests() {
 
     {
         const auto path = write_temp_pcap(
+            "pfl_flow_hint_smtp_positive_greeting.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 9, 9), ipv4(10, 9, 9, 10), 25, 41234, make_smtp_greeting_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "smtp");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_smtp_positive_ehlo.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 10, 9), ipv4(10, 9, 10, 10), 50123, 587, make_smtp_ehlo_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "smtp");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        constexpr char unrelated_payload[] = "NOOPING BUT NOT SMTP\r\n";
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_smtp_negative_unrelated_payload.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 11, 9), ipv4(10, 9, 11, 10), 25, 41234,
+                    std::vector<std::uint8_t>(unrelated_payload, unrelated_payload + sizeof(unrelated_payload) - 1), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_precedence_tls_over_smtp.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 12, 9), ipv4(10, 9, 12, 10), 50123, 587, make_tls_client_hello_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "tls");
+        PFL_EXPECT(rows[0].service_hint == "example.org");
+    }
+
+    {
+        const auto path = write_temp_pcap(
             "pfl_flow_hint_dhcp_positive.pcap",
             make_classic_pcap({
                 {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
@@ -521,3 +602,4 @@ void run_flow_hints_tests() {
 }
 
 }  // namespace pfl::tests
+

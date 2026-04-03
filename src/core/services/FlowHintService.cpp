@@ -21,6 +21,8 @@ constexpr std::uint16_t kDhcpServerPort = 67;
 constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
 constexpr std::uint16_t kHttpsPort = 443;
+constexpr std::uint16_t kSmtpPort = 25;
+constexpr std::uint16_t kSubmissionPort = 587;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
@@ -181,6 +183,13 @@ bool looks_like_bittorrent_handshake(std::span<const std::uint8_t> payload) {
     const auto protocol_name = payload_as_text(payload.subspan(1U, kBitTorrentHandshakeProtocol.size()));
     return protocol_name == kBitTorrentHandshakeProtocol;
 }
+
+bool looks_like_smtp_payload(std::span<const std::uint8_t> payload) noexcept {
+    const auto payload_text = payload_as_text(payload);
+    return payload_text.starts_with("220 ") || payload_text.starts_with("HELO ") ||
+           payload_text.starts_with("EHLO ") || payload_text.starts_with("MAIL FROM:");
+}
+
 bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
     if (payload.size() < kDhcpMinPayloadSize) {
         return false;
@@ -563,6 +572,22 @@ FlowHintUpdate detect_bittorrent_hint(std::span<const std::uint8_t> payload) {
     };
 }
 
+FlowHintUpdate detect_smtp_hint(std::span<const std::uint8_t> payload,
+                                const std::uint16_t src_port,
+                                const std::uint16_t dst_port) {
+    if (!has_port(src_port, dst_port, kSmtpPort) && !has_port(src_port, dst_port, kSubmissionPort)) {
+        return {};
+    }
+
+    if (!looks_like_smtp_payload(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::smtp,
+    };
+}
+
 FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
     if (!looks_like_tls_record(payload)) {
         return {};
@@ -701,6 +726,13 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             }
         }
 
+        {
+            const auto smtp_hint = detect_smtp_hint(payload_view, flow_key.src_port, flow_key.dst_port);
+            if (smtp_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return smtp_hint;
+            }
+        }
+
         return detect_bittorrent_hint(payload_view);
     case ProtocolId::udp:
         {
@@ -777,3 +809,4 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 }
 
 }  // namespace pfl
+

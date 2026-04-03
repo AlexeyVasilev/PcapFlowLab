@@ -16,6 +16,7 @@ enum class FlowProtocolHint : std::uint8_t {
     bittorrent = 7,
     dhcp = 8,
     mdns = 9,
+    smtp = 10,
 };
 
 enum class QuicVersionHint : std::uint8_t {
@@ -82,9 +83,12 @@ struct FlowHintUpdate {
         return "dhcp";
     case FlowProtocolHint::mdns:
         return "mdns";
+    case FlowProtocolHint::smtp:
+        return "smtp";
     default:
         return "unknown";
     }
 }
 
 }  // namespace pfl
+
