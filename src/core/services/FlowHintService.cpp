@@ -199,7 +199,27 @@ bool looks_like_pop3_payload(std::span<const std::uint8_t> payload) noexcept {
 }
 
 bool looks_like_imap_payload(std::span<const std::uint8_t> payload) noexcept {
-    return payload_as_text(payload).starts_with("* OK");
+    const auto payload_text = payload_as_text(payload);
+    if (payload_text.starts_with("* OK")) {
+        return true;
+    }
+
+    if (payload_text.size() < 5U || payload_text[0] != 'A') {
+        return false;
+    }
+
+    std::size_t index = 1U;
+    while (index < payload_text.size() && payload_text[index] >= '0' && payload_text[index] <= '9') {
+        ++index;
+    }
+
+    if (index == 1U || index >= payload_text.size() || payload_text[index] != ' ') {
+        return false;
+    }
+
+    ++index;
+    const auto command = payload_text.substr(index);
+    return command.starts_with("LOGIN ") || command.starts_with("CAPABILITY") || command == "LOGIN";
 }
 
 bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
@@ -867,4 +887,5 @@ FlowHintUpdate FlowHintService::detect(std::span<const std::uint8_t> packet_byte
 }
 
 }  // namespace pfl
+
 

@@ -541,7 +541,7 @@ QVariantList MainController::protocolHintDistribution() const {
     };
 
     QVariantList rows {};
-    rows.reserve(8);
+    rows.reserve(9);
     rows.push_back(makeRow("HTTP", protocol_summary_.hint_http));
     rows.push_back(makeRow("TLS", protocol_summary_.hint_tls));
     rows.push_back(makeRow("DNS", protocol_summary_.hint_dns));
@@ -549,6 +549,7 @@ QVariantList MainController::protocolHintDistribution() const {
     rows.push_back(makeRow("SSH", protocol_summary_.hint_ssh));
     rows.push_back(makeRow("STUN", protocol_summary_.hint_stun));
     rows.push_back(makeRow("BitTorrent", protocol_summary_.hint_bittorrent));
+    rows.push_back(makeRow("Mail protocols", protocol_summary_.hint_mail_protocols));
     rows.push_back(makeRow("Unknown", protocol_summary_.hint_unknown));
     return rows;
 }

@@ -49,6 +49,21 @@ std::vector<std::uint8_t> make_bittorrent_handshake_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_smtp_payload() {
+    constexpr char greeting[] = "220 mail.example.org ESMTP ready\r\n";
+    return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
+}
+
+std::vector<std::uint8_t> make_pop3_payload() {
+    constexpr char greeting[] = "+OK POP3 server ready\r\n";
+    return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
+}
+
+std::vector<std::uint8_t> make_imap_payload() {
+    constexpr char greeting[] = "* OK IMAP4 ready\r\n";
+    return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
+}
+
 }  // namespace
 
 void run_protocol_summary_tests() {
@@ -133,6 +148,10 @@ void run_protocol_summary_tests() {
         expect_protocol_stats(loaded_summary.hint_ssh, summary.hint_ssh);
         expect_protocol_stats(loaded_summary.hint_stun, summary.hint_stun);
         expect_protocol_stats(loaded_summary.hint_bittorrent, summary.hint_bittorrent);
+        expect_protocol_stats(loaded_summary.hint_smtp, summary.hint_smtp);
+        expect_protocol_stats(loaded_summary.hint_pop3, summary.hint_pop3);
+        expect_protocol_stats(loaded_summary.hint_imap, summary.hint_imap);
+        expect_protocol_stats(loaded_summary.hint_mail_protocols, summary.hint_mail_protocols);
         expect_protocol_stats(loaded_summary.hint_unknown, summary.hint_unknown);
     }
 
@@ -171,13 +190,70 @@ void run_protocol_summary_tests() {
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
-            summary.hint_bittorrent.flow_count + summary.hint_unknown.flow_count;
+            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_unknown.flow_count;
         const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
-            summary.hint_bittorrent.packet_count + summary.hint_unknown.packet_count;
+            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_unknown.packet_count;
         const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
             summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_unknown.total_bytes;
+            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_unknown.total_bytes;
+
+        PFL_EXPECT(hint_flow_total == session.summary().flow_count);
+        PFL_EXPECT(hint_packet_total == session.summary().packet_count);
+        PFL_EXPECT(hint_byte_total == session.summary().total_bytes);
+    }
+
+    {
+        const auto smtp_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 25, 41025, make_smtp_payload(), 0x18
+        );
+        const auto pop3_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 3), ipv4(10, 20, 0, 4), 110, 40110, make_pop3_payload(), 0x18
+        );
+        const auto imap_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 5), ipv4(10, 20, 0, 6), 143, 40143, make_imap_payload(), 0x18
+        );
+        const auto unknown_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 20, 0, 7), ipv4(10, 20, 0, 8), 3333, 4444, 12, 0x18
+        );
+
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_summary_mail_grouping.pcap",
+            make_classic_pcap({
+                {100, smtp_packet},
+                {200, pop3_packet},
+                {300, imap_packet},
+                {400, unknown_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path));
+        const auto summary = session.protocol_summary();
+
+        expect_protocol_stats(summary.hint_smtp, ProtocolStats {1, 1, static_cast<std::uint64_t>(smtp_packet.size())});
+        expect_protocol_stats(summary.hint_pop3, ProtocolStats {1, 1, static_cast<std::uint64_t>(pop3_packet.size())});
+        expect_protocol_stats(summary.hint_imap, ProtocolStats {1, 1, static_cast<std::uint64_t>(imap_packet.size())});
+        expect_protocol_stats(summary.hint_mail_protocols, ProtocolStats {
+            3,
+            3,
+            static_cast<std::uint64_t>(smtp_packet.size() + pop3_packet.size() + imap_packet.size())
+        });
+        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size())});
+
+        PFL_EXPECT(summary.hint_mail_protocols.flow_count == summary.hint_smtp.flow_count + summary.hint_pop3.flow_count + summary.hint_imap.flow_count);
+        PFL_EXPECT(summary.hint_mail_protocols.packet_count == summary.hint_smtp.packet_count + summary.hint_pop3.packet_count + summary.hint_imap.packet_count);
+        PFL_EXPECT(summary.hint_mail_protocols.total_bytes == summary.hint_smtp.total_bytes + summary.hint_pop3.total_bytes + summary.hint_imap.total_bytes);
+
+        const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
+            summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
+            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_unknown.flow_count;
+        const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
+            summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
+            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_unknown.packet_count;
+        const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
+            summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
+            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_unknown.total_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);

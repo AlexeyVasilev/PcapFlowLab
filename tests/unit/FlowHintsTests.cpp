@@ -151,6 +151,11 @@ std::vector<std::uint8_t> make_imap_ok_payload() {
     return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
 }
 
+std::vector<std::uint8_t> make_imap_tagged_login_payload() {
+    constexpr char command[] = "A001 LOGIN alex secret\r\n";
+    return std::vector<std::uint8_t>(command, command + sizeof(command) - 1);
+}
+
 std::vector<std::uint8_t> make_dhcp_payload() {
     std::vector<std::uint8_t> payload(240U, 0U);
     payload[0] = 0x01U; // BOOTREQUEST
@@ -526,6 +531,23 @@ void run_flow_hints_tests() {
     }
 
     {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_imap_positive_tagged_login.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 17, 11), ipv4(10, 9, 17, 12), 40143, 143, make_imap_tagged_login_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "imap");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
         constexpr char unrelated_payload[] = "HELLO NOT IMAP\r\n";
         const auto path = write_temp_pcap(
             "pfl_flow_hint_imap_negative_unrelated_payload.pcap",
@@ -740,4 +762,5 @@ void run_flow_hints_tests() {
 }
 
 }  // namespace pfl::tests
+
 

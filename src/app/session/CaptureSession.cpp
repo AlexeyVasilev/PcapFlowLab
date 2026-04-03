@@ -1805,6 +1805,18 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
         case FlowProtocolHint::bittorrent:
             add_protocol_stats(summary.hint_bittorrent, connection);
             break;
+        case FlowProtocolHint::smtp:
+            add_protocol_stats(summary.hint_smtp, connection);
+            add_protocol_stats(summary.hint_mail_protocols, connection);
+            break;
+        case FlowProtocolHint::pop3:
+            add_protocol_stats(summary.hint_pop3, connection);
+            add_protocol_stats(summary.hint_mail_protocols, connection);
+            break;
+        case FlowProtocolHint::imap:
+            add_protocol_stats(summary.hint_imap, connection);
+            add_protocol_stats(summary.hint_mail_protocols, connection);
+            break;
         case FlowProtocolHint::unknown:
         default:
             add_protocol_stats(summary.hint_unknown, connection);

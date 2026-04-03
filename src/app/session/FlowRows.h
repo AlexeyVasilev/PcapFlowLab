@@ -78,6 +78,10 @@ struct CaptureProtocolSummary {
     ProtocolStats hint_ssh {};
     ProtocolStats hint_stun {};
     ProtocolStats hint_bittorrent {};
+    ProtocolStats hint_smtp {};
+    ProtocolStats hint_pop3 {};
+    ProtocolStats hint_imap {};
+    ProtocolStats hint_mail_protocols {};
     ProtocolStats hint_unknown {};
 };
 
