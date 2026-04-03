@@ -31,12 +31,18 @@ struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
     std::uint64_t duration_us {0};
+    double packets_per_second {0.0};
+    double bytes_per_second {0.0};
+    double average_packet_size_bytes {0.0};
+    double average_inter_arrival_us {0.0};
     std::uint64_t largest_gap_us {0};
     std::uint64_t timeline_packet_count_considered {0};
     std::uint64_t packets_a_to_b {0};
     std::uint64_t packets_b_to_a {0};
     std::uint64_t bytes_a_to_b {0};
     std::uint64_t bytes_b_to_a {0};
+    std::uint32_t min_packet_size_bytes {0};
+    std::uint32_t max_packet_size_bytes {0};
     std::string first_packet_timestamp_text {};
     std::string last_packet_timestamp_text {};
     std::string protocol_hint {};

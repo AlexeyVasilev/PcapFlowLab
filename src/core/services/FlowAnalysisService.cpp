@@ -264,6 +264,9 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     FlowAnalysisResult result {};
     result.total_packets = connection.packet_count;
     result.total_bytes = connection.total_bytes;
+    result.average_packet_size_bytes = result.total_packets > 0U
+        ? static_cast<double>(result.total_bytes) / static_cast<double>(result.total_packets)
+        : 0.0;
     result.packets_a_to_b = connection.flow_a.packet_count;
     result.packets_b_to_a = connection.flow_b.packet_count;
     result.bytes_a_to_b = connection.flow_a.total_bytes;
@@ -287,16 +290,37 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     if (!ordered_packets.empty()) {
         result.first_packet_timestamp_text = format_packet_timestamp(*ordered_packets.front());
         result.last_packet_timestamp_text = format_packet_timestamp(*ordered_packets.back());
+        result.min_packet_size_bytes = ordered_packets.front()->captured_length;
+        result.max_packet_size_bytes = ordered_packets.front()->captured_length;
     }
 
     std::optional<std::uint64_t> previous_timestamp_us {};
+    std::uint64_t inter_arrival_delta_sum_us = 0U;
+    std::uint64_t inter_arrival_delta_count = 0U;
     for (const auto* packet : ordered_packets) {
+        result.min_packet_size_bytes = std::min(result.min_packet_size_bytes, packet->captured_length);
+        result.max_packet_size_bytes = std::max(result.max_packet_size_bytes, packet->captured_length);
         const auto current_timestamp_us = packet_timestamp_us(*packet);
         if (previous_timestamp_us.has_value() && current_timestamp_us >= *previous_timestamp_us) {
-            result.largest_gap_us = std::max(result.largest_gap_us, current_timestamp_us - *previous_timestamp_us);
+            const auto delta_us = current_timestamp_us - *previous_timestamp_us;
+            result.largest_gap_us = std::max(result.largest_gap_us, delta_us);
+            inter_arrival_delta_sum_us += delta_us;
+            inter_arrival_delta_count += 1U;
         }
 
         previous_timestamp_us = current_timestamp_us;
+    }
+
+    if (result.duration_us > 0U) {
+        result.packets_per_second =
+            (static_cast<double>(result.total_packets) * 1000000.0) / static_cast<double>(result.duration_us);
+        result.bytes_per_second =
+            (static_cast<double>(result.total_bytes) * 1000000.0) / static_cast<double>(result.duration_us);
+    }
+
+    if (inter_arrival_delta_count > 0U) {
+        result.average_inter_arrival_us =
+            static_cast<double>(inter_arrival_delta_sum_us) / static_cast<double>(inter_arrival_delta_count);
     }
 
     result.inter_arrival_histogram_rows = build_inter_arrival_histogram_rows(ordered_packets);

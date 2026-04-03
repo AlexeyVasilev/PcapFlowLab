@@ -296,6 +296,12 @@ ApplicationWindow {
                 analysisTimelinePacketCountConsidered: mainController.analysisTimelinePacketCountConsidered
                 analysisTotalPackets: mainController.analysisTotalPackets
                 analysisTotalBytes: mainController.analysisTotalBytes
+                analysisPacketsPerSecondText: mainController.analysisPacketsPerSecondText
+                analysisBytesPerSecondText: mainController.analysisBytesPerSecondText
+                analysisAveragePacketSizeText: mainController.analysisAveragePacketSizeText
+                analysisAverageInterArrivalText: mainController.analysisAverageInterArrivalText
+                analysisMinPacketSizeText: mainController.analysisMinPacketSizeText
+                analysisMaxPacketSizeText: mainController.analysisMaxPacketSizeText
                 analysisProtocolHint: mainController.analysisProtocolHint
                 analysisServiceHint: mainController.analysisServiceHint
                 analysisPacketsAToB: mainController.analysisPacketsAToB

@@ -16,6 +16,12 @@ Item {
     property var analysisTimelinePacketCountConsidered: 0
     property var analysisTotalPackets: 0
     property var analysisTotalBytes: 0
+    property string analysisPacketsPerSecondText: ""
+    property string analysisBytesPerSecondText: ""
+    property string analysisAveragePacketSizeText: ""
+    property string analysisAverageInterArrivalText: ""
+    property string analysisMinPacketSizeText: ""
+    property string analysisMaxPacketSizeText: ""
     property string analysisProtocolHint: ""
     property string analysisServiceHint: ""
     property var analysisPacketsAToB: 0
@@ -185,6 +191,12 @@ Item {
             timelinePacketCountConsidered: root.analysisTimelinePacketCountConsidered
             totalPackets: root.analysisTotalPackets
             totalBytes: root.analysisTotalBytes
+            packetsPerSecondText: root.analysisPacketsPerSecondText
+            bytesPerSecondText: root.analysisBytesPerSecondText
+            averagePacketSizeText: root.analysisAveragePacketSizeText
+            averageInterArrivalText: root.analysisAverageInterArrivalText
+            minPacketSizeText: root.analysisMinPacketSizeText
+            maxPacketSizeText: root.analysisMaxPacketSizeText
             protocolHint: root.analysisProtocolHint
             serviceHint: root.analysisServiceHint
             packetsAToB: root.analysisPacketsAToB

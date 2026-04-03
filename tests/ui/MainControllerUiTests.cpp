@@ -468,6 +468,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTotalPackets() == 1U);
     UI_EXPECT(controller.analysisTotalBytes() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisDurationText() == QStringLiteral("0 us"));
+    UI_EXPECT(controller.analysisPacketsPerSecondText() == QStringLiteral("0.000 pkt/s"));
+    UI_EXPECT(controller.analysisBytesPerSecondText() == QStringLiteral("0.000 B/s"));
+    UI_EXPECT(controller.analysisAveragePacketSizeText() == QStringLiteral("%1 B").arg(static_cast<double>(http_flow.size()), 0, 'f', 1));
+    UI_EXPECT(controller.analysisAverageInterArrivalText() == QStringLiteral("0 us"));
+    UI_EXPECT(controller.analysisMinPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
+    UI_EXPECT(controller.analysisMaxPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisProtocolHint() == QStringLiteral("HTTP"));
     UI_EXPECT(controller.analysisServiceHint() == QStringLiteral("ui.example"));
     UI_EXPECT(controller.analysisPacketsAToB() == 1U);
@@ -501,6 +507,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTimelineLastPacketTime().isEmpty());
     UI_EXPECT(controller.analysisTimelineLargestGapText().isEmpty());
     UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 0U);
+    UI_EXPECT(controller.analysisPacketsPerSecondText().isEmpty());
+    UI_EXPECT(controller.analysisBytesPerSecondText().isEmpty());
+    UI_EXPECT(controller.analysisAveragePacketSizeText().isEmpty());
+    UI_EXPECT(controller.analysisAverageInterArrivalText().isEmpty());
+    UI_EXPECT(controller.analysisMinPacketSizeText().isEmpty());
+    UI_EXPECT(controller.analysisMaxPacketSizeText().isEmpty());
     UI_EXPECT(controller.analysisInterArrivalHistogram().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());

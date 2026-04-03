@@ -47,6 +47,12 @@ Frame {
     property var timelinePacketCountConsidered: 0
     property var totalPackets: 0
     property var totalBytes: 0
+    property string packetsPerSecondText: ""
+    property string bytesPerSecondText: ""
+    property string averagePacketSizeText: ""
+    property string averageInterArrivalText: ""
+    property string minPacketSizeText: ""
+    property string maxPacketSizeText: ""
     property string protocolHint: ""
     property string serviceHint: ""
     property var packetsAToB: 0
@@ -220,6 +226,38 @@ Frame {
 
                             Label { text: "Service hint" }
                             Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Derived Metrics"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+
+                            Label { text: "Packets/sec" }
+                            Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
+
+                            Label { text: "Bytes/sec" }
+                            Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
+
+                            Label { text: "Avg packet size" }
+                            Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
+
+                            Label { text: "Avg inter-arrival" }
+                            Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
+
+                            Label { text: "Min packet size" }
+                            Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
+
+                            Label { text: "Max packet size" }
+                            Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
                         }
                     }
 

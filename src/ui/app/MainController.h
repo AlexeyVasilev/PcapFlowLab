@@ -65,6 +65,12 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong analysisTimelinePacketCountConsidered READ analysisTimelinePacketCountConsidered NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalPackets READ analysisTotalPackets NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalBytes READ analysisTotalBytes NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketsPerSecondText READ analysisPacketsPerSecondText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisBytesPerSecondText READ analysisBytesPerSecondText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisAveragePacketSizeText READ analysisAveragePacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisAverageInterArrivalText READ analysisAverageInterArrivalText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMinPacketSizeText READ analysisMinPacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMaxPacketSizeText READ analysisMaxPacketSizeText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisProtocolHint READ analysisProtocolHint NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisServiceHint READ analysisServiceHint NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsAToB READ analysisPacketsAToB NOTIFY analysisStateChanged)
@@ -168,6 +174,12 @@ public:
     [[nodiscard]] qulonglong analysisTimelinePacketCountConsidered() const noexcept;
     [[nodiscard]] qulonglong analysisTotalPackets() const noexcept;
     [[nodiscard]] qulonglong analysisTotalBytes() const noexcept;
+    [[nodiscard]] QString analysisPacketsPerSecondText() const;
+    [[nodiscard]] QString analysisBytesPerSecondText() const;
+    [[nodiscard]] QString analysisAveragePacketSizeText() const;
+    [[nodiscard]] QString analysisAverageInterArrivalText() const;
+    [[nodiscard]] QString analysisMinPacketSizeText() const;
+    [[nodiscard]] QString analysisMaxPacketSizeText() const;
     [[nodiscard]] QString analysisProtocolHint() const;
     [[nodiscard]] QString analysisServiceHint() const;
     [[nodiscard]] qulonglong analysisPacketsAToB() const noexcept;

@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <cmath>
 #include <vector>
 
 #include "TestSupport.h"
@@ -35,6 +36,10 @@ std::uint64_t inter_arrival_histogram_count(const FlowAnalysisResult& analysis, 
     }
 
     return 0U;
+}
+
+bool nearly_equal(const double left, const double right, const double epsilon = 0.001) {
+    return std::fabs(left - right) <= epsilon;
 }
 
 }  // namespace
@@ -91,6 +96,18 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->last_packet_timestamp_text == "00:00:03.000450");
     PFL_EXPECT(analysis->largest_gap_us == 1000200U);
     PFL_EXPECT(analysis->timeline_packet_count_considered == 3U);
+    PFL_EXPECT(nearly_equal(analysis->packets_per_second, 1.4997375456));
+    PFL_EXPECT(nearly_equal(
+        analysis->bytes_per_second,
+        (static_cast<double>(request_packet.size() + response_packet.size() + follow_up_packet.size()) * 1000000.0) / 2000350.0
+    ));
+    PFL_EXPECT(nearly_equal(
+        analysis->average_packet_size_bytes,
+        static_cast<double>(request_packet.size() + response_packet.size() + follow_up_packet.size()) / 3.0
+    ));
+    PFL_EXPECT(nearly_equal(analysis->average_inter_arrival_us, 1000175.0));
+    PFL_EXPECT(analysis->min_packet_size_bytes == follow_up_packet.size());
+    PFL_EXPECT(analysis->max_packet_size_bytes == request_packet.size());
     PFL_EXPECT(analysis->protocol_hint == "http");
     PFL_EXPECT(analysis->service_hint == "analysis.example");
     PFL_EXPECT(analysis->inter_arrival_histogram_rows.size() == 6U);
@@ -253,6 +270,28 @@ void run_flow_analysis_tests() {
         inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 ms") +
         inter_arrival_histogram_count(*inter_arrival_analysis, "1 s+") == inter_arrival_analysis->total_packets - 1U
     );
+
+    const auto single_packet_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_single_packet_metrics.pcap",
+        make_classic_pcap({
+            {100U, request_packet},
+        })
+    );
+
+    CaptureSession single_packet_session {};
+    PFL_EXPECT(single_packet_session.open_capture(single_packet_capture_path));
+    const auto single_packet_rows = single_packet_session.list_flows();
+    PFL_EXPECT(single_packet_rows.size() == 1U);
+    const auto single_packet_analysis = single_packet_session.get_flow_analysis(single_packet_rows.front().index);
+    PFL_EXPECT(single_packet_analysis.has_value());
+    PFL_EXPECT(single_packet_analysis->total_packets == 1U);
+    PFL_EXPECT(single_packet_analysis->duration_us == 0U);
+    PFL_EXPECT(nearly_equal(single_packet_analysis->packets_per_second, 0.0));
+    PFL_EXPECT(nearly_equal(single_packet_analysis->bytes_per_second, 0.0));
+    PFL_EXPECT(nearly_equal(single_packet_analysis->average_packet_size_bytes, static_cast<double>(request_packet.size())));
+    PFL_EXPECT(nearly_equal(single_packet_analysis->average_inter_arrival_us, 0.0));
+    PFL_EXPECT(single_packet_analysis->min_packet_size_bytes == request_packet.size());
+    PFL_EXPECT(single_packet_analysis->max_packet_size_bytes == request_packet.size());
 }
 
 }  // namespace pfl::tests

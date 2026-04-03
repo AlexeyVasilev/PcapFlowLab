@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -269,6 +270,18 @@ QString format_duration_us(const std::uint64_t duration_us) {
     }
 
     return QStringLiteral("%1 s").arg(static_cast<double>(duration_us) / 1000000.0, 0, 'f', 3);
+}
+
+QString format_rate_value(const double value, const QString& suffix) {
+    return QStringLiteral("%1 %2").arg(value, 0, 'f', 3).arg(suffix);
+}
+
+QString format_size_value(const double value) {
+    return QStringLiteral("%1 B").arg(value, 0, 'f', 1);
+}
+
+QString format_size_value(const std::uint32_t value) {
+    return QStringLiteral("%1 B").arg(value);
 }
 
 QString buildStreamItemSummary(
@@ -598,6 +611,42 @@ qulonglong MainController::analysisTotalPackets() const noexcept {
 
 qulonglong MainController::analysisTotalBytes() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->total_bytes) : 0U;
+}
+
+QString MainController::analysisPacketsPerSecondText() const {
+    return current_flow_analysis_.has_value()
+        ? format_rate_value(current_flow_analysis_->packets_per_second, QStringLiteral("pkt/s"))
+        : QString {};
+}
+
+QString MainController::analysisBytesPerSecondText() const {
+    return current_flow_analysis_.has_value()
+        ? format_rate_value(current_flow_analysis_->bytes_per_second, QStringLiteral("B/s"))
+        : QString {};
+}
+
+QString MainController::analysisAveragePacketSizeText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->average_packet_size_bytes)
+        : QString {};
+}
+
+QString MainController::analysisAverageInterArrivalText() const {
+    return current_flow_analysis_.has_value()
+        ? format_duration_us(static_cast<std::uint64_t>(std::llround(current_flow_analysis_->average_inter_arrival_us)))
+        : QString {};
+}
+
+QString MainController::analysisMinPacketSizeText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->min_packet_size_bytes)
+        : QString {};
+}
+
+QString MainController::analysisMaxPacketSizeText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->max_packet_size_bytes)
+        : QString {};
 }
 
 QString MainController::analysisProtocolHint() const {
