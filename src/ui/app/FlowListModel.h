@@ -16,6 +16,7 @@ class FlowListModel final : public QAbstractListModel {
 public:
     enum Role {
         FlowIndexRole = Qt::UserRole + 1,
+        CheckedRole,
         FamilyRole,
         ProtocolRole,
         ProtocolHintRole,
@@ -52,6 +53,10 @@ public:
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
     Q_INVOKABLE int rowForFlowIndex(int flowIndex) const noexcept;
+    Q_INVOKABLE void setFlowChecked(int flowIndex, bool checked);
+    [[nodiscard]] Q_INVOKABLE bool isFlowChecked(int flowIndex) const noexcept;
+    Q_INVOKABLE void clearCheckedFlows();
+    [[nodiscard]] Q_INVOKABLE int checkedFlowCount() const noexcept;
 
     void refresh(const std::vector<FlowRow>& rows);
     void clear();
@@ -65,9 +70,13 @@ public:
     [[nodiscard]] SortKey sortKey() const noexcept;
     [[nodiscard]] bool sortAscending() const noexcept;
     [[nodiscard]] bool containsFlowIndex(int flowIndex) const noexcept;
+    [[nodiscard]] int totalFlowCount() const noexcept;
+    [[nodiscard]] std::vector<int> checkedFlowIndices() const;
+    [[nodiscard]] std::vector<int> uncheckedFlowIndices() const;
 
     struct Item {
         int flow_index {0};
+        bool checked {false};
         QString family {};
         QString protocol {};
         QString protocol_hint {};
@@ -84,6 +93,9 @@ public:
         qulonglong bytes {0};
     };
 
+signals:
+    void checkedFlowsChanged();
+
 private:
     void rebuildVisibleItems();
 
@@ -95,6 +107,3 @@ private:
 };
 
 }  // namespace pfl
-
-
-

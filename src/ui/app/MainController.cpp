@@ -392,6 +392,10 @@ MainController::MainController(QObject* parent)
     , capture_open_mode_(kCliFastImportModeIndex)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
+    QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
+        emit selectedFlowCountChanged();
+        emit actionAvailabilityChanged();
+    });
 }
 
 MainController::~MainController() {
@@ -446,6 +450,18 @@ QString MainController::partialOpenWarningText() const {
 
 bool MainController::canExportSelectedFlow() const noexcept {
     return !is_opening_ && session_.has_source_capture() && selected_flow_index_ >= 0;
+}
+
+qulonglong MainController::selectedFlowCount() const noexcept {
+    return static_cast<qulonglong>(flow_model_.checkedFlowCount());
+}
+
+bool MainController::canExportSelectedFlows() const noexcept {
+    return !is_opening_ && session_.has_source_capture() && flow_model_.checkedFlowCount() > 0;
+}
+
+bool MainController::canExportUnselectedFlows() const noexcept {
+    return !is_opening_ && session_.has_source_capture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
 }
 
 bool MainController::isOpening() const noexcept {
@@ -832,9 +848,15 @@ bool MainController::saveAnalysisIndex(const QString& path) {
     return true;
 }
 
-bool MainController::exportSelectedFlow(const QString& path) {
-    if (selected_flow_index_ < 0) {
-        setStatusText(QStringLiteral("No flow selected for export."), true);
+bool MainController::exportFlows(
+    const QString& path,
+    const std::vector<int>& flowIndices,
+    const QString& emptySelectionMessage,
+    const QString& failureMessage,
+    const QString& successMessage
+) {
+    if (flowIndices.empty()) {
+        setStatusText(emptySelectionMessage, true);
         return false;
     }
 
@@ -844,16 +866,65 @@ bool MainController::exportSelectedFlow(const QString& path) {
         return false;
     }
 
+    std::vector<std::size_t> exportIndices {};
+    exportIndices.reserve(flowIndices.size());
+    for (const auto flowIndex : flowIndices) {
+        if (flowIndex < 0) {
+            setStatusText(failureMessage, true);
+            return false;
+        }
+        exportIndices.push_back(static_cast<std::size_t>(flowIndex));
+    }
+
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    const bool exported = session_.export_flow_to_pcap(static_cast<std::size_t>(selected_flow_index_), filesystemPath);
+    const bool exported = session_.export_flows_to_pcap(exportIndices, filesystemPath);
     if (!exported) {
-        setStatusText(QStringLiteral("Failed to export selected flow."), true);
+        setStatusText(failureMessage, true);
         return false;
     }
 
     setLastDirectoryFromPath(filesystemPath);
-    setStatusText(QStringLiteral("Flow exported successfully."));
+    setStatusText(successMessage);
     return true;
+}
+
+bool MainController::exportSelectedFlow(const QString& path) {
+    if (selected_flow_index_ < 0) {
+        setStatusText(QStringLiteral("No flow selected for export."), true);
+        return false;
+    }
+
+    return exportFlows(
+        path,
+        {selected_flow_index_},
+        QStringLiteral("No flow selected for export."),
+        QStringLiteral("Failed to export selected flow."),
+        QStringLiteral("Flow exported successfully.")
+    );
+}
+
+void MainController::clearSelectedFlows() {
+    flow_model_.clearCheckedFlows();
+}
+
+bool MainController::exportSelectedFlows(const QString& path) {
+    return exportFlows(
+        path,
+        flow_model_.checkedFlowIndices(),
+        QStringLiteral("No selected flows for export."),
+        QStringLiteral("Failed to export selected flows."),
+        QStringLiteral("Selected flows exported successfully.")
+    );
+}
+
+bool MainController::exportUnselectedFlows(const QString& path) {
+    return exportFlows(
+        path,
+        flow_model_.uncheckedFlowIndices(),
+        QStringLiteral("No unselected flows for export."),
+        QStringLiteral("Failed to export unselected flows."),
+        QStringLiteral("Unselected flows exported successfully.")
+    );
 }
 
 void MainController::browseCaptureFile() {
@@ -888,6 +959,20 @@ void MainController::browseExportSelectedFlow() {
     const QString path = chooseSaveFile(false);
     if (!path.isEmpty()) {
         exportSelectedFlow(path);
+    }
+}
+
+void MainController::browseExportSelectedFlows() {
+    const QString path = chooseSaveFile(false);
+    if (!path.isEmpty()) {
+        exportSelectedFlows(path);
+    }
+}
+
+void MainController::browseExportUnselectedFlows() {
+    const QString path = chooseSaveFile(false);
+    if (!path.isEmpty()) {
+        exportUnselectedFlows(path);
     }
 }
 
@@ -1290,8 +1375,8 @@ void MainController::resetLoadedState() {
     protocol_summary_ = {};
     quic_recognition_stats_ = {};
     tls_recognition_stats_ = {};
-    flow_model_.resetViewState();
     flow_model_.clear();
+    flow_model_.resetViewState();
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
@@ -1320,6 +1405,7 @@ void MainController::applyLoadedState(const QString& path) {
     protocol_summary_ = session_.protocol_summary();
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
+    flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
@@ -1644,7 +1730,7 @@ QString MainController::chooseSaveFile(const bool forIndex) const {
         dialog.setNameFilter(QStringLiteral("Index Files (*.idx);;All Files (*)"));
         dialog.setDefaultSuffix(QStringLiteral("idx"));
     } else {
-        dialog.setWindowTitle(QStringLiteral("Export Selected Flow"));
+        dialog.setWindowTitle(QStringLiteral("Export Flow PCAP"));
         dialog.setNameFilter(QStringLiteral("PCAP Files (*.pcap);;All Files (*)"));
         dialog.setDefaultSuffix(QStringLiteral("pcap"));
     }
@@ -1676,4 +1762,11 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
+
+
 

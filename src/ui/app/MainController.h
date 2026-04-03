@@ -36,6 +36,9 @@ class MainController final : public QObject {
     Q_PROPERTY(bool partialOpen READ partialOpen NOTIFY stateChanged)
     Q_PROPERTY(QString partialOpenWarningText READ partialOpenWarningText NOTIFY stateChanged)
     Q_PROPERTY(bool canExportSelectedFlow READ canExportSelectedFlow NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(qulonglong selectedFlowCount READ selectedFlowCount NOTIFY selectedFlowCountChanged)
+    Q_PROPERTY(bool canExportSelectedFlows READ canExportSelectedFlows NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool canExportUnselectedFlows READ canExportUnselectedFlows NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool isOpening READ isOpening NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressPackets READ openProgressPackets NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressBytes READ openProgressBytes NOTIFY openProgressChanged)
@@ -118,6 +121,9 @@ public:
     [[nodiscard]] bool partialOpen() const noexcept;
     [[nodiscard]] QString partialOpenWarningText() const;
     [[nodiscard]] bool canExportSelectedFlow() const noexcept;
+    [[nodiscard]] qulonglong selectedFlowCount() const noexcept;
+    [[nodiscard]] bool canExportSelectedFlows() const noexcept;
+    [[nodiscard]] bool canExportUnselectedFlows() const noexcept;
     [[nodiscard]] bool isOpening() const noexcept;
     [[nodiscard]] qulonglong openProgressPackets() const noexcept;
     [[nodiscard]] qulonglong openProgressBytes() const noexcept;
@@ -192,11 +198,16 @@ public:
     Q_INVOKABLE void loadMoreStreamItems();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
     Q_INVOKABLE bool exportSelectedFlow(const QString& path);
+    Q_INVOKABLE void clearSelectedFlows();
+    Q_INVOKABLE bool exportSelectedFlows(const QString& path);
+    Q_INVOKABLE bool exportUnselectedFlows(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
     Q_INVOKABLE void browseAttachSourceCapture();
     Q_INVOKABLE void browseSaveAnalysisIndex();
     Q_INVOKABLE void browseExportSelectedFlow();
+    Q_INVOKABLE void browseExportSelectedFlows();
+    Q_INVOKABLE void browseExportUnselectedFlows();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -223,6 +234,7 @@ signals:
     void httpUsePathAsServiceHintChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
+    void selectedFlowCountChanged();
     void selectedPacketIndexChanged();
     void selectedStreamItemIndexChanged();
     void flowFilterTextChanged();
@@ -252,6 +264,7 @@ private:
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
+    bool exportFlows(const QString& path, const std::vector<int>& flowIndices, const QString& emptySelectionMessage, const QString& failureMessage, const QString& successMessage);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
     void cleanupOpenThread();
     void releaseOpenContext();
@@ -312,4 +325,5 @@ private:
 };
 
 }  // namespace pfl
+
 

@@ -1,6 +1,7 @@
 #include "ui/app/FlowListModel.h"
 
 #include <algorithm>
+#include <map>
 
 namespace pfl {
 
@@ -118,6 +119,8 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
     switch (role) {
     case FlowIndexRole:
         return item.flow_index;
+    case CheckedRole:
+        return item.checked;
     case FamilyRole:
         return item.family;
     case ProtocolRole:
@@ -150,6 +153,7 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
 QHash<int, QByteArray> FlowListModel::roleNames() const {
     return {
         {FlowIndexRole, "flowIndex"},
+        {CheckedRole, "flowChecked"},
         {FamilyRole, "family"},
         {ProtocolRole, "protocol"},
         {ProtocolHintRole, "protocolHint"},
@@ -175,13 +179,86 @@ int FlowListModel::rowForFlowIndex(const int flowIndex) const noexcept {
     return -1;
 }
 
+void FlowListModel::setFlowChecked(const int flowIndex, const bool checked) {
+    auto allItemIt = std::find_if(all_items_.begin(), all_items_.end(), [flowIndex](const Item& item) {
+        return item.flow_index == flowIndex;
+    });
+    if (allItemIt == all_items_.end() || allItemIt->checked == checked) {
+        return;
+    }
+
+    allItemIt->checked = checked;
+
+    auto visibleItemIt = std::find_if(visible_items_.begin(), visible_items_.end(), [flowIndex](const Item& item) {
+        return item.flow_index == flowIndex;
+    });
+    if (visibleItemIt != visible_items_.end()) {
+        visibleItemIt->checked = checked;
+        const auto row = static_cast<int>(std::distance(visible_items_.begin(), visibleItemIt));
+        const QModelIndex modelIndex = index(row, 0);
+        emit dataChanged(modelIndex, modelIndex, {CheckedRole});
+    }
+
+    emit checkedFlowsChanged();
+}
+
+bool FlowListModel::isFlowChecked(const int flowIndex) const noexcept {
+    const auto itemIt = std::find_if(all_items_.begin(), all_items_.end(), [flowIndex](const Item& item) {
+        return item.flow_index == flowIndex;
+    });
+    return itemIt != all_items_.end() && itemIt->checked;
+}
+
+void FlowListModel::clearCheckedFlows() {
+    if (all_items_.empty()) {
+        return;
+    }
+
+    bool changed = false;
+    for (auto& item : all_items_) {
+        if (!item.checked) {
+            continue;
+        }
+        item.checked = false;
+        changed = true;
+    }
+
+    if (!changed) {
+        return;
+    }
+
+    for (auto& item : visible_items_) {
+        item.checked = false;
+    }
+
+    if (!visible_items_.empty()) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {CheckedRole});
+    }
+    emit checkedFlowsChanged();
+}
+
+int FlowListModel::checkedFlowCount() const noexcept {
+    return static_cast<int>(std::count_if(all_items_.begin(), all_items_.end(), [](const Item& item) {
+        return item.checked;
+    }));
+}
+
 void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
+    std::map<int, bool> checkedByFlowIndex {};
+    for (const auto& item : all_items_) {
+        if (item.checked) {
+            checkedByFlowIndex[item.flow_index] = true;
+        }
+    }
+
     all_items_.clear();
     all_items_.reserve(rows.size());
 
     for (const auto& row : rows) {
+        const int flowIndex = static_cast<int>(row.index);
         all_items_.push_back(Item {
-            .flow_index = static_cast<int>(row.index),
+            .flow_index = flowIndex,
+            .checked = checkedByFlowIndex.contains(flowIndex),
             .family = (row.family == FlowAddressFamily::ipv4) ? "IPv4" : "IPv6",
             .protocol = to_qstring(row.protocol_text),
             .protocol_hint = format_protocol_hint(row.protocol_hint),
@@ -200,11 +277,21 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
     }
 
     rebuildVisibleItems();
+    emit checkedFlowsChanged();
 }
 
 void FlowListModel::clear() {
+    if (all_items_.empty() && visible_items_.empty()) {
+        return;
+    }
+
+    const bool hadCheckedFlows = checkedFlowCount() > 0;
     all_items_.clear();
     rebuildVisibleItems();
+
+    if (hadCheckedFlows) {
+        emit checkedFlowsChanged();
+    }
 }
 
 void FlowListModel::resetViewState() {
@@ -259,6 +346,36 @@ bool FlowListModel::containsFlowIndex(const int flowIndex) const noexcept {
     });
 }
 
+int FlowListModel::totalFlowCount() const noexcept {
+    return static_cast<int>(all_items_.size());
+}
+
+std::vector<int> FlowListModel::checkedFlowIndices() const {
+    std::vector<int> flowIndices {};
+    flowIndices.reserve(all_items_.size());
+
+    for (const auto& item : all_items_) {
+        if (item.checked) {
+            flowIndices.push_back(item.flow_index);
+        }
+    }
+
+    return flowIndices;
+}
+
+std::vector<int> FlowListModel::uncheckedFlowIndices() const {
+    std::vector<int> flowIndices {};
+    flowIndices.reserve(all_items_.size());
+
+    for (const auto& item : all_items_) {
+        if (!item.checked) {
+            flowIndices.push_back(item.flow_index);
+        }
+    }
+
+    return flowIndices;
+}
+
 void FlowListModel::setServiceHintForFlowIndex(const int flowIndex, const QString& serviceHint) {
     auto itemIt = std::find_if(all_items_.begin(), all_items_.end(), [flowIndex](const Item& item) {
         return item.flow_index == flowIndex;
@@ -270,6 +387,7 @@ void FlowListModel::setServiceHintForFlowIndex(const int flowIndex, const QStrin
     itemIt->service_hint = serviceHint;
     rebuildVisibleItems();
 }
+
 void FlowListModel::rebuildVisibleItems() {
     beginResetModel();
     visible_items_.clear();
@@ -296,4 +414,3 @@ void FlowListModel::rebuildVisibleItems() {
 }
 
 }  // namespace pfl
-

@@ -334,6 +334,65 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.statusIsError());
     UI_EXPECT(!std::filesystem::exists(no_selection_export_path));
 
+
+    MainController multi_flow_controller {};
+    UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));
+    auto* multi_flow_model = qobject_cast<FlowListModel*>(multi_flow_controller.flowModel());
+    auto* multi_packet_model = qobject_cast<PacketListModel*>(multi_flow_controller.packetModel());
+    UI_EXPECT(multi_flow_model != nullptr);
+    UI_EXPECT(multi_packet_model != nullptr);
+    UI_EXPECT(multi_flow_controller.selectedFlowCount() == 0U);
+    UI_EXPECT(!multi_flow_controller.canExportSelectedFlows());
+    UI_EXPECT(multi_flow_controller.canExportUnselectedFlows());
+
+    const int http_selected_flow_index = find_flow_index_by_protocol_hint(multi_flow_model, QStringLiteral("HTTP"));
+    const int dns_selected_flow_index = find_flow_index_by_protocol_hint(multi_flow_model, QStringLiteral("DNS"));
+    UI_EXPECT(http_selected_flow_index >= 0);
+    UI_EXPECT(dns_selected_flow_index >= 0);
+
+    multi_flow_model->setFlowChecked(http_selected_flow_index, true);
+    UI_EXPECT(multi_flow_controller.selectedFlowCount() == 1U);
+    UI_EXPECT(multi_flow_model->isFlowChecked(http_selected_flow_index));
+    UI_EXPECT(multi_flow_controller.canExportSelectedFlows());
+    UI_EXPECT(multi_flow_controller.canExportUnselectedFlows());
+
+    multi_flow_model->setFlowChecked(dns_selected_flow_index, true);
+    UI_EXPECT(multi_flow_controller.selectedFlowCount() == 2U);
+    UI_EXPECT(multi_flow_model->isFlowChecked(dns_selected_flow_index));
+
+    multi_flow_controller.setSelectedFlowIndex(http_selected_flow_index);
+    UI_EXPECT(multi_flow_controller.selectedFlowIndex() == http_selected_flow_index);
+    UI_EXPECT(multi_flow_controller.selectedFlowCount() == 2U);
+    UI_EXPECT(multi_packet_model->rowCount() == 1);
+
+    const auto selected_export_path = std::filesystem::temp_directory_path() / "pfl_ui_export_selected_flows.pcap";
+    std::filesystem::remove(selected_export_path, remove_error);
+    UI_EXPECT(multi_flow_controller.exportSelectedFlows(QString::fromStdWString(selected_export_path.wstring())));
+    CaptureSession selected_export_session {};
+    UI_EXPECT(selected_export_session.open_capture(selected_export_path));
+    UI_EXPECT(selected_export_session.summary().flow_count == 2U);
+    UI_EXPECT(selected_export_session.summary().packet_count == 2U);
+    const auto selected_export_stats = selected_export_session.protocol_summary();
+    UI_EXPECT(selected_export_stats.hint_http.flow_count == 1U);
+    UI_EXPECT(selected_export_stats.hint_dns.flow_count == 1U);
+    UI_EXPECT(selected_export_stats.hint_unknown.flow_count == 0U);
+
+    const auto unselected_export_path = std::filesystem::temp_directory_path() / "pfl_ui_export_unselected_flows.pcap";
+    std::filesystem::remove(unselected_export_path, remove_error);
+    UI_EXPECT(multi_flow_controller.exportUnselectedFlows(QString::fromStdWString(unselected_export_path.wstring())));
+    CaptureSession unselected_export_session {};
+    UI_EXPECT(unselected_export_session.open_capture(unselected_export_path));
+    UI_EXPECT(unselected_export_session.summary().flow_count == 1U);
+    UI_EXPECT(unselected_export_session.summary().packet_count == 1U);
+    UI_EXPECT(unselected_export_session.protocol_summary().hint_unknown.flow_count == 1U);
+
+    multi_flow_controller.clearSelectedFlows();
+    UI_EXPECT(multi_flow_controller.selectedFlowCount() == 0U);
+    UI_EXPECT(!multi_flow_controller.canExportSelectedFlows());
+    UI_EXPECT(multi_flow_controller.canExportUnselectedFlows());
+    UI_EXPECT(multi_flow_controller.selectedFlowIndex() == http_selected_flow_index);
+    UI_EXPECT(multi_packet_model->rowCount() == 1);
+
     CaptureSession index_session {};
     UI_EXPECT(index_session.open_capture(capture_path));
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_ui_mode_test.idx";
@@ -867,6 +926,8 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
 
 
 

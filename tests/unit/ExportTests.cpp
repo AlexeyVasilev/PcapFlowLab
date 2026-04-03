@@ -98,6 +98,50 @@ void run_export_tests() {
         PFL_EXPECT(exported_packets[3].ts_usec == 400);
     }
 
+
+    {
+        const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 12345, 80, std::vector<std::uint8_t>{static_cast<std::uint8_t>('G'), static_cast<std::uint8_t>('E'), static_cast<std::uint8_t>('T'), static_cast<std::uint8_t>(' ')}, 0x18);
+        const auto dns_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 53000, 53, std::vector<std::uint8_t>{0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+        const auto generic_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 3, 0, 1), ipv4(10, 3, 0, 2), 22000, 443);
+
+        const auto source_path = write_temp_pcap(
+            "pfl_export_multi_flow_source.pcap",
+            make_classic_pcap({
+                {100, http_packet},
+                {200, dns_packet},
+                {300, generic_packet},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_export_multi_flow_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 3);
+
+        std::vector<std::size_t> selected_flow_indices {};
+        for (const auto& row : rows) {
+            if (row.protocol_hint == "http" || row.protocol_hint == "dns") {
+                selected_flow_indices.push_back(row.index);
+            }
+        }
+        PFL_EXPECT(selected_flow_indices.size() == 2);
+        PFL_EXPECT(session.export_flows_to_pcap(selected_flow_indices, output_path));
+
+        CaptureSession exported_session {};
+        PFL_EXPECT(exported_session.open_capture(output_path));
+        PFL_EXPECT(exported_session.summary().packet_count == 2);
+        PFL_EXPECT(exported_session.summary().flow_count == 2);
+
+        const auto stats = exported_session.protocol_summary();
+        PFL_EXPECT(stats.hint_http.flow_count == 1);
+        PFL_EXPECT(stats.hint_dns.flow_count == 1);
+        PFL_EXPECT(stats.hint_unknown.flow_count == 0);
+    }
+
     {
         const auto source_path = write_temp_pcap(
             "pfl_export_invalid_source.pcap",
@@ -114,3 +158,5 @@ void run_export_tests() {
 }
 
 }  // namespace pfl::tests
+
+

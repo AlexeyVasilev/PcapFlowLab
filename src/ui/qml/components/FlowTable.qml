@@ -94,6 +94,7 @@ Frame {
             Layout.fillWidth: true
             spacing: 10
 
+            Label { text: "Sel"; Layout.preferredWidth: 42; horizontalAlignment: Text.AlignHCenter }
             Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: 64; onClicked: root.sortRequested(0) }
             Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: 74; onClicked: root.sortRequested(1) }
             Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: 86; onClicked: root.sortRequested(2) }
@@ -132,8 +133,10 @@ Frame {
                 }
 
                 delegate: Rectangle {
+                    id: flowRow
                     required property int index
                     required property int flowIndex
+                    required property bool flowChecked
                     required property string family
                     required property string protocol
                     required property string protocolHint
@@ -149,6 +152,12 @@ Frame {
 
                     readonly property bool selected: index === flowListView.currentIndex
 
+                    onFlowCheckedChanged: {
+                        if (selectionCheckBox.checked !== flowChecked) {
+                            selectionCheckBox.checked = flowChecked
+                        }
+                    }
+
                     width: flowListView.width
                     height: 40
                     color: selected
@@ -160,6 +169,22 @@ Frame {
                         anchors.leftMargin: 10
                         anchors.rightMargin: 10
                         spacing: 10
+
+                        Item {
+                            Layout.preferredWidth: 42
+                            Layout.fillHeight: true
+
+                            CheckBox {
+                                id: selectionCheckBox
+                                anchors.centerIn: parent
+                                checked: flowChecked
+                                onToggled: function() {
+                                    if (root.flowModel && checked !== flowChecked) {
+                                        root.flowModel.setFlowChecked(flowIndex, checked)
+                                    }
+                                }
+                            }
+                        }
 
                         Text { text: flowIndex; Layout.preferredWidth: 46; horizontalAlignment: Text.AlignRight }
                         Text { text: family; Layout.preferredWidth: 58 }
@@ -194,7 +219,11 @@ Frame {
                     }
 
                     MouseArea {
-                        anchors.fill: parent
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: 52
                         onClicked: {
                             flowListView.currentIndex = index
                             root.flowSelected(flowIndex)
@@ -212,3 +241,5 @@ Frame {
         }
     }
 }
+
+

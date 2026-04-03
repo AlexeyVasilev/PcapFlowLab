@@ -2450,17 +2450,37 @@ std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t f
 }
 
 bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const {
-    if (!has_source_capture()) {
+    return export_flows_to_pcap({flow_index}, output_path);
+}
+
+bool CaptureSession::export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const {
+    if (!has_source_capture() || flow_indices.empty()) {
         return false;
     }
 
-    const auto packets = flow_packets(flow_index);
-    if (!packets.has_value()) {
+    std::vector<PacketRef> packets {};
+    for (const auto flow_index : flow_indices) {
+        const auto flowPackets = flow_packets(flow_index);
+        if (!flowPackets.has_value()) {
+            return false;
+        }
+
+        packets.insert(packets.end(), flowPackets->begin(), flowPackets->end());
+    }
+
+    if (packets.empty()) {
         return false;
     }
+
+    std::sort(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
+        return left.packet_index < right.packet_index;
+    });
+    packets.erase(std::unique(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
+        return left.packet_index == right.packet_index;
+    }), packets.end());
 
     FlowExportService service {};
-    return service.export_packets_to_pcap(output_path, *packets, capture_path_);
+    return service.export_packets_to_pcap(output_path, packets, capture_path());
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {
@@ -2490,4 +2510,5 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
 

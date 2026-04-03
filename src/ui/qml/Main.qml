@@ -54,6 +54,18 @@ ApplicationWindow {
                 onClicked: mainController.browseExportSelectedFlow()
             }
 
+            Button {
+                text: "Export Selected"
+                enabled: mainController.canExportSelectedFlows
+                onClicked: mainController.browseExportSelectedFlows()
+            }
+
+            Button {
+                text: "Export Unselected"
+                enabled: mainController.canExportUnselectedFlows
+                onClicked: mainController.browseExportUnselectedFlows()
+            }
+
             TextField {
                 Layout.fillWidth: true
                 readOnly: true
@@ -322,4 +334,5 @@ ApplicationWindow {
         }
     }
 }
+
 
