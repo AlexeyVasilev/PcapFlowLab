@@ -24,6 +24,7 @@ constexpr std::uint16_t kHttpsPort = 443;
 constexpr std::uint16_t kSmtpPort = 25;
 constexpr std::uint16_t kSubmissionPort = 587;
 constexpr std::uint16_t kPop3Port = 110;
+constexpr std::uint16_t kImapPort = 143;
 constexpr std::uint16_t kTlsRecordHeaderSize = 5;
 constexpr std::uint16_t kDnsHeaderSize = 12;
 constexpr std::uint32_t kMdnsIpv4Multicast = 0xE00000FBU;
@@ -195,6 +196,10 @@ bool looks_like_pop3_payload(std::span<const std::uint8_t> payload) noexcept {
     const auto payload_text = payload_as_text(payload);
     return payload_text.starts_with("+OK") || payload_text.starts_with("USER") ||
            payload_text.starts_with("PASS");
+}
+
+bool looks_like_imap_payload(std::span<const std::uint8_t> payload) noexcept {
+    return payload_as_text(payload).starts_with("* OK");
 }
 
 bool looks_like_dhcp_message(std::span<const std::uint8_t> payload) {
@@ -611,6 +616,22 @@ FlowHintUpdate detect_pop3_hint(std::span<const std::uint8_t> payload,
     };
 }
 
+FlowHintUpdate detect_imap_hint(std::span<const std::uint8_t> payload,
+                                const std::uint16_t src_port,
+                                const std::uint16_t dst_port) {
+    if (!has_port(src_port, dst_port, kImapPort)) {
+        return {};
+    }
+
+    if (!looks_like_imap_payload(payload)) {
+        return {};
+    }
+
+    return FlowHintUpdate {
+        .protocol_hint = FlowProtocolHint::imap,
+    };
+}
+
 FlowHintUpdate detect_tls_hint(std::span<const std::uint8_t> payload) {
     if (!looks_like_tls_record(payload)) {
         return {};
@@ -760,6 +781,13 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
             const auto pop3_hint = detect_pop3_hint(payload_view, flow_key.src_port, flow_key.dst_port);
             if (pop3_hint.protocol_hint != FlowProtocolHint::unknown) {
                 return pop3_hint;
+            }
+        }
+
+        {
+            const auto imap_hint = detect_imap_hint(payload_view, flow_key.src_port, flow_key.dst_port);
+            if (imap_hint.protocol_hint != FlowProtocolHint::unknown) {
+                return imap_hint;
             }
         }
 

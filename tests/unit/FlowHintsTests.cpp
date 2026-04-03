@@ -146,6 +146,11 @@ std::vector<std::uint8_t> make_pop3_user_payload() {
     return std::vector<std::uint8_t>(user, user + sizeof(user) - 1);
 }
 
+std::vector<std::uint8_t> make_imap_ok_payload() {
+    constexpr char greeting[] = "* OK IMAP4 ready\r\n";
+    return std::vector<std::uint8_t>(greeting, greeting + sizeof(greeting) - 1);
+}
+
 std::vector<std::uint8_t> make_dhcp_payload() {
     std::vector<std::uint8_t> payload(240U, 0U);
     payload[0] = 0x01U; // BOOTREQUEST
@@ -492,6 +497,59 @@ void run_flow_hints_tests() {
             make_classic_pcap({
                 {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
                     ipv4(10, 9, 16, 9), ipv4(10, 9, 16, 10), 40110, 110, make_tls_client_hello_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "tls");
+        PFL_EXPECT(rows[0].service_hint == "example.org");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_imap_positive_ok.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 17, 9), ipv4(10, 9, 17, 10), 143, 40143, make_imap_ok_payload(), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint == "imap");
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        constexpr char unrelated_payload[] = "HELLO NOT IMAP\r\n";
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_imap_negative_unrelated_payload.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 18, 9), ipv4(10, 9, 18, 10), 143, 40143,
+                    std::vector<std::uint8_t>(unrelated_payload, unrelated_payload + sizeof(unrelated_payload) - 1), 0x18)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_precedence_tls_over_imap.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                    ipv4(10, 9, 19, 9), ipv4(10, 9, 19, 10), 40143, 143, make_tls_client_hello_payload(), 0x18)},
             })
         );
 
