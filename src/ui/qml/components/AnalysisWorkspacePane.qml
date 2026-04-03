@@ -22,6 +22,7 @@ Item {
     property var analysisPacketsBToA: 0
     property var analysisBytesAToB: 0
     property var analysisBytesBToA: 0
+    property var analysisPacketSizeHistogram: []
     property var analysisSequencePreview: []
 
     signal flowSelected(int flowIndex)
@@ -189,6 +190,7 @@ Item {
             packetsBToA: root.analysisPacketsBToA
             bytesAToB: root.analysisBytesAToB
             bytesBToA: root.analysisBytesBToA
+            packetSizeHistogramModel: root.analysisPacketSizeHistogram
             sequencePreviewModel: root.analysisSequencePreview
         }
     }

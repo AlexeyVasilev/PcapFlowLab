@@ -189,6 +189,40 @@ bool item_visible(QObject* root, const char* objectName) {
     return item->property("visible").toBool();
 }
 
+QString packet_size_bucket_label(const std::uint32_t captured_length) {
+    if (captured_length <= 63U) {
+        return QStringLiteral("0-63");
+    }
+    if (captured_length <= 127U) {
+        return QStringLiteral("64-127");
+    }
+    if (captured_length <= 255U) {
+        return QStringLiteral("128-255");
+    }
+    if (captured_length <= 511U) {
+        return QStringLiteral("256-511");
+    }
+    if (captured_length <= 1023U) {
+        return QStringLiteral("512-1023");
+    }
+    if (captured_length <= 1518U) {
+        return QStringLiteral("1024-1518");
+    }
+
+    return QStringLiteral("1519+");
+}
+
+qulonglong histogram_packet_count(const QVariantList& histogram, const QString& bucketLabel) {
+    for (const auto& value : histogram) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("bucketLabel")).toString() == bucketLabel) {
+            return row.value(QStringLiteral("packetCount")).toULongLong();
+        }
+    }
+
+    return 0U;
+}
+
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -431,6 +465,13 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
+    UI_EXPECT(controller.analysisPacketSizeHistogram().size() == 7);
+    UI_EXPECT(
+        histogram_packet_count(
+            controller.analysisPacketSizeHistogram(),
+            packet_size_bucket_label(static_cast<std::uint32_t>(http_flow.size()))
+        ) == 1U
+    );
     UI_EXPECT(controller.analysisSequencePreview().size() == 1);
     const auto first_sequence_row = controller.analysisSequencePreview().front().toMap();
     UI_EXPECT(first_sequence_row.value(QStringLiteral("packetNumber")).toULongLong() == 1U);
@@ -449,6 +490,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTimelineLastPacketTime().isEmpty());
     UI_EXPECT(controller.analysisTimelineLargestGapText().isEmpty());
     UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 0U);
+    UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
 
     MainController multi_flow_controller {};

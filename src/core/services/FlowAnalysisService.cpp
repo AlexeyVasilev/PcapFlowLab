@@ -1,6 +1,7 @@
 #include "core/services/FlowAnalysisService.h"
 
 #include <algorithm>
+#include <array>
 #include <iomanip>
 #include <optional>
 #include <sstream>
@@ -11,6 +12,22 @@ namespace pfl {
 namespace {
 
 constexpr std::size_t kSequencePreviewLimit = 20U;
+
+struct PacketSizeBucketSpec {
+    const char* label;
+    std::uint32_t min_length;
+    std::optional<std::uint32_t> max_length;
+};
+
+constexpr std::array<PacketSizeBucketSpec, 7> kPacketSizeBuckets {{
+    {"0-63", 0U, 63U},
+    {"64-127", 64U, 127U},
+    {"128-255", 128U, 255U},
+    {"256-511", 256U, 511U},
+    {"512-1023", 512U, 1023U},
+    {"1024-1518", 1024U, 1518U},
+    {"1519+", 1519U, std::nullopt},
+}};
 
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
     return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
@@ -131,6 +148,49 @@ std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(const Co
     return rows;
 }
 
+std::size_t packet_size_bucket_index(const std::uint32_t captured_length) {
+    for (std::size_t index = 0; index < kPacketSizeBuckets.size(); ++index) {
+        const auto& bucket = kPacketSizeBuckets[index];
+        if (captured_length < bucket.min_length) {
+            continue;
+        }
+
+        if (!bucket.max_length.has_value() || captured_length <= *bucket.max_length) {
+            return index;
+        }
+    }
+
+    return kPacketSizeBuckets.size() - 1U;
+}
+
+template <typename Flow>
+void accumulate_packet_size_histogram(
+    const Flow& flow,
+    std::array<std::uint64_t, kPacketSizeBuckets.size()>& counts
+) {
+    for (const auto& packet : flow.packets) {
+        counts[packet_size_bucket_index(packet.captured_length)] += 1U;
+    }
+}
+
+template <typename Connection>
+std::vector<FlowAnalysisPacketSizeHistogramRow> build_packet_size_histogram_rows(const Connection& connection) {
+    std::array<std::uint64_t, kPacketSizeBuckets.size()> counts {};
+    accumulate_packet_size_histogram(connection.flow_a, counts);
+    accumulate_packet_size_histogram(connection.flow_b, counts);
+
+    std::vector<FlowAnalysisPacketSizeHistogramRow> rows {};
+    rows.reserve(kPacketSizeBuckets.size());
+    for (std::size_t index = 0; index < kPacketSizeBuckets.size(); ++index) {
+        rows.push_back(FlowAnalysisPacketSizeHistogramRow {
+            .bucket_label = kPacketSizeBuckets[index].label,
+            .packet_count = counts[index],
+        });
+    }
+
+    return rows;
+}
+
 template <typename Connection>
 FlowAnalysisResult analyze_connection(const Connection& connection) {
     FlowAnalysisResult result {};
@@ -171,6 +231,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
         previous_timestamp_us = current_timestamp_us;
     }
 
+    result.packet_size_histogram_rows = build_packet_size_histogram_rows(connection);
     result.sequence_preview_rows = build_sequence_preview_rows(connection);
 
     return result;

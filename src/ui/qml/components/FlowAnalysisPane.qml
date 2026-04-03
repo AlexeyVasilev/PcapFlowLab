@@ -21,6 +21,7 @@ Frame {
     property var packetsBToA: 0
     property var bytesAToB: 0
     property var bytesBToA: 0
+    property var packetSizeHistogramModel: []
     property var sequencePreviewModel: []
 
     background: Rectangle {
@@ -185,6 +186,59 @@ Frame {
 
                             Label { text: "Service hint" }
                             Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
+                        }
+                    }
+                }
+
+                Frame {
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 8
+
+                        Label {
+                            text: "Packet Size Histogram"
+                            font.bold: true
+                        }
+
+                        Repeater {
+                            model: root.packetSizeHistogramModel
+
+                            delegate: RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                Label {
+                                    text: modelData.bucketLabel
+                                    Layout.preferredWidth: 84
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 18
+                                    radius: 4
+                                    color: "#f1f5f9"
+                                    border.color: "#dbe3ee"
+
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width * (root.totalPackets > 0 ? modelData.packetCount / root.totalPackets : 0)
+                                        radius: 4
+                                        color: modelData.packetCount > 0 ? "#60a5fa" : "transparent"
+                                    }
+                                }
+
+                                Label {
+                                    text: modelData.packetCount
+                                    Layout.preferredWidth: 40
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                            }
                         }
                     }
                 }

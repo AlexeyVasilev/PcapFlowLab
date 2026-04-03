@@ -17,6 +17,16 @@ std::vector<std::uint8_t> make_http_request_payload() {
     return std::vector<std::uint8_t>(request, request + sizeof(request) - 1);
 }
 
+std::uint64_t packet_histogram_count(const FlowAnalysisResult& analysis, const std::string& bucket_label) {
+    for (const auto& row : analysis.packet_size_histogram_rows) {
+        if (row.bucket_label == bucket_label) {
+            return row.packet_count;
+        }
+    }
+
+    return 0U;
+}
+
 }  // namespace
 
 void run_flow_analysis_tests() {
@@ -73,6 +83,14 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->timeline_packet_count_considered == 3U);
     PFL_EXPECT(analysis->protocol_hint == "http");
     PFL_EXPECT(analysis->service_hint == "analysis.example");
+    PFL_EXPECT(analysis->packet_size_histogram_rows.size() == 7U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "0-63") == 1U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "64-127") == 2U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "128-255") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "256-511") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "512-1023") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1024-1518") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1519+") == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows.size() == 3U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].flow_packet_number == 1U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].direction_text == "A->B");
@@ -112,9 +130,70 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(heavy_analysis->total_packets == 25U);
     PFL_EXPECT(heavy_analysis->timeline_packet_count_considered == 25U);
     PFL_EXPECT(heavy_analysis->largest_gap_us > 0U);
+    PFL_EXPECT(packet_histogram_count(*heavy_analysis, "64-127") == 25U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.size() == 20U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.front().flow_packet_number == 1U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.back().flow_packet_number == 20U);
+
+    const auto bucket_0_63_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 0, 0x18
+    );
+    const auto bucket_64_127_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 10, 0x18
+    );
+    const auto bucket_128_255_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 80, 0x18
+    );
+    const auto bucket_256_511_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 220, 0x18
+    );
+    const auto bucket_512_1023_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 470, 0x18
+    );
+    const auto bucket_1024_1518_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1000, 0x18
+    );
+    const auto bucket_1519_plus_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1600, 0x18
+    );
+
+    const auto histogram_capture_path = write_temp_pcap(
+        "pfl_flow_analysis_histogram.pcap",
+        make_classic_pcap({
+            {100U, bucket_0_63_packet},
+            {110U, bucket_64_127_packet},
+            {120U, bucket_128_255_packet},
+            {130U, bucket_256_511_packet},
+            {140U, bucket_512_1023_packet},
+            {150U, bucket_1024_1518_packet},
+            {160U, bucket_1519_plus_packet},
+        })
+    );
+
+    CaptureSession histogram_session {};
+    PFL_EXPECT(histogram_session.open_capture(histogram_capture_path));
+    const auto histogram_rows = histogram_session.list_flows();
+    PFL_EXPECT(histogram_rows.size() == 1U);
+    const auto histogram_analysis = histogram_session.get_flow_analysis(histogram_rows.front().index);
+    PFL_EXPECT(histogram_analysis.has_value());
+    PFL_EXPECT(histogram_analysis->total_packets == 7U);
+    PFL_EXPECT(histogram_analysis->packet_size_histogram_rows.size() == 7U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "0-63") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "64-127") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "128-255") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "256-511") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "512-1023") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1024-1518") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1519+") == 1U);
+    PFL_EXPECT(
+        packet_histogram_count(*histogram_analysis, "0-63") +
+        packet_histogram_count(*histogram_analysis, "64-127") +
+        packet_histogram_count(*histogram_analysis, "128-255") +
+        packet_histogram_count(*histogram_analysis, "256-511") +
+        packet_histogram_count(*histogram_analysis, "512-1023") +
+        packet_histogram_count(*histogram_analysis, "1024-1518") +
+        packet_histogram_count(*histogram_analysis, "1519+") == histogram_analysis->total_packets
+    );
 }
 
 }  // namespace pfl::tests
