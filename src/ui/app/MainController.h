@@ -56,6 +56,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong streamPacketWindowCount READ streamPacketWindowCount NOTIFY streamListStateChanged)
     Q_PROPERTY(bool streamPacketWindowPartial READ streamPacketWindowPartial NOTIFY streamListStateChanged)
     Q_PROPERTY(bool canLoadMoreStreamItems READ canLoadMoreStreamItems NOTIFY streamListStateChanged)
+    Q_PROPERTY(bool analysisLoading READ analysisLoading NOTIFY analysisStateChanged)
     Q_PROPERTY(bool analysisAvailable READ analysisAvailable NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalPackets READ analysisTotalPackets NOTIFY analysisStateChanged)
@@ -151,6 +152,7 @@ public:
     [[nodiscard]] qulonglong streamPacketWindowCount() const noexcept;
     [[nodiscard]] bool streamPacketWindowPartial() const noexcept;
     [[nodiscard]] bool canLoadMoreStreamItems() const noexcept;
+    [[nodiscard]] bool analysisLoading() const noexcept;
     [[nodiscard]] bool analysisAvailable() const noexcept;
     [[nodiscard]] QString analysisDurationText() const;
     [[nodiscard]] qulonglong analysisTotalPackets() const noexcept;
@@ -228,6 +230,7 @@ public:
     Q_INVOKABLE void browseExportSelectedFlow();
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
+    Q_INVOKABLE void sendSelectedFlowToAnalysis();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
@@ -338,7 +341,9 @@ private:
     bool analysis_tab_active_ {false};
     bool can_load_more_stream_items_ {false};
     bool stream_state_materialized_for_selected_flow_ {false};
+    bool analysis_loading_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
+    qulonglong active_analysis_request_id_ {0};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};

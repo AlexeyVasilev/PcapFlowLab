@@ -215,6 +215,10 @@ ApplicationWindow {
             }
 
             TabButton {
+                text: "Analysis"
+            }
+
+            TabButton {
                 text: "Statistics"
             }
 
@@ -248,16 +252,6 @@ ApplicationWindow {
                 streamPacketWindowCount: mainController.streamPacketWindowCount
                 streamPacketWindowPartial: mainController.streamPacketWindowPartial
                 canLoadMoreStreamItems: mainController.canLoadMoreStreamItems
-                analysisAvailable: mainController.analysisAvailable
-                analysisDurationText: mainController.analysisDurationText
-                analysisTotalPackets: mainController.analysisTotalPackets
-                analysisTotalBytes: mainController.analysisTotalBytes
-                analysisProtocolHint: mainController.analysisProtocolHint
-                analysisServiceHint: mainController.analysisServiceHint
-                analysisPacketsAToB: mainController.analysisPacketsAToB
-                analysisPacketsBToA: mainController.analysisPacketsBToA
-                analysisBytesAToB: mainController.analysisBytesAToB
-                analysisBytesBToA: mainController.analysisBytesBToA
                 selectedPacketIndex: mainController.selectedPacketIndex
                 selectedStreamItemIndex: mainController.selectedStreamItemIndex
                 packetDetailsModel: mainController.packetDetailsModel
@@ -269,6 +263,9 @@ ApplicationWindow {
                 }
                 onSortRequested: function(column) {
                     mainController.sortFlows(column)
+                }
+                onSendFlowToAnalysisRequested: function() {
+                    mainController.sendSelectedFlowToAnalysis()
                 }
                 onPacketSelected: function(packetIndex) {
                     mainController.selectedPacketIndex = packetIndex
@@ -284,6 +281,25 @@ ApplicationWindow {
                 }
                 onFlowDetailsTabChanged: function(index) {
                     mainController.setFlowDetailsTabIndex(index)
+                }
+            }
+
+            AnalysisWorkspacePane {
+                flowModel: mainController.flowModel
+                selectedFlowIndex: mainController.selectedFlowIndex
+                analysisLoading: mainController.analysisLoading
+                analysisAvailable: mainController.analysisAvailable
+                analysisDurationText: mainController.analysisDurationText
+                analysisTotalPackets: mainController.analysisTotalPackets
+                analysisTotalBytes: mainController.analysisTotalBytes
+                analysisProtocolHint: mainController.analysisProtocolHint
+                analysisServiceHint: mainController.analysisServiceHint
+                analysisPacketsAToB: mainController.analysisPacketsAToB
+                analysisPacketsBToA: mainController.analysisPacketsBToA
+                analysisBytesAToB: mainController.analysisBytesAToB
+                analysisBytesBToA: mainController.analysisBytesBToA
+                onFlowSelected: function(flowIndex) {
+                    mainController.selectedFlowIndex = flowIndex
                 }
             }
 

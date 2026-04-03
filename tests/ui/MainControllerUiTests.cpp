@@ -339,9 +339,20 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(analysis_flow_model != nullptr);
     const int analysis_http_flow_index = find_flow_index_by_protocol_hint(analysis_flow_model, QStringLiteral("HTTP"));
     UI_EXPECT(analysis_http_flow_index >= 0);
-    controller.setFlowDetailsTabIndex(2);
+    bool saw_analysis_loading = false;
+    QObject::connect(&controller, &MainController::analysisStateChanged, [&]() {
+        if (controller.analysisLoading()) {
+            saw_analysis_loading = true;
+        }
+    });
     controller.setSelectedFlowIndex(analysis_http_flow_index);
-    UI_EXPECT(controller.analysisAvailable());
+    controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(controller.currentTabIndex() == 1);
+    UI_EXPECT(controller.analysisLoading());
+    UI_EXPECT(wait_until(app, [&controller]() {
+        return !controller.analysisLoading() && controller.analysisAvailable();
+    }));
+    UI_EXPECT(saw_analysis_loading);
     UI_EXPECT(controller.analysisTotalPackets() == 1U);
     UI_EXPECT(controller.analysisTotalBytes() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisDurationText() == QStringLiteral("0 us"));
@@ -351,7 +362,13 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
+    auto* controller_packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+    UI_EXPECT(controller_packet_model != nullptr);
+    UI_EXPECT(controller_packet_model->rowCount() == 1);
+    controller.setCurrentTabIndex(0);
+    UI_EXPECT(controller.currentTabIndex() == 0);
     controller.setSelectedFlowIndex(-1);
+    UI_EXPECT(!controller.analysisLoading());
     UI_EXPECT(!controller.analysisAvailable());
 
     MainController multi_flow_controller {};
@@ -605,7 +622,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(!details_model->protocolText().isEmpty());
 
-    controller.setCurrentTabIndex(1);
+    controller.setCurrentTabIndex(2);
     controller.drillDownToEndpoint(QStringLiteral("10.0.0.1:1111"));
 
     UI_EXPECT(controller.currentTabIndex() == 0);
@@ -616,7 +633,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model->payloadText().isEmpty());
     UI_EXPECT(flow_model->rowCount() == 1);
 
-    controller.setCurrentTabIndex(1);
+    controller.setCurrentTabIndex(2);
     controller.drillDownToPort(53U);
 
     UI_EXPECT(controller.currentTabIndex() == 0);

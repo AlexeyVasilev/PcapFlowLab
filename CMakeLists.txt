@@ -142,6 +142,7 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/PacketList.qml
                 src/ui/qml/components/PacketDetailsPane.qml
                 src/ui/qml/components/StreamView.qml
+                src/ui/qml/components/AnalysisWorkspacePane.qml
                 src/ui/qml/components/FlowAnalysisPane.qml
                 src/ui/qml/components/SettingsPane.qml
         )

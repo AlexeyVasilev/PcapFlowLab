@@ -5,6 +5,8 @@ import QtQuick.Layouts
 Frame {
     id: root
 
+    property bool hasActiveFlow: false
+    property bool analysisLoading: false
     property bool analysisAvailable: false
     property string durationText: ""
     property var totalPackets: 0
@@ -34,13 +36,25 @@ Frame {
         }
 
         Label {
-            visible: !root.analysisAvailable
+            visible: !root.hasActiveFlow && !root.analysisLoading
             text: "Select a flow to view analysis."
             color: "#64748b"
         }
 
+        Label {
+            visible: root.analysisLoading
+            text: "Loading analysis..."
+            color: "#334155"
+        }
+
+        Label {
+            visible: root.hasActiveFlow && !root.analysisLoading && !root.analysisAvailable
+            text: "Analysis is unavailable for the selected flow."
+            color: "#64748b"
+        }
+
         ColumnLayout {
-            visible: root.analysisAvailable
+            visible: root.analysisAvailable && !root.analysisLoading
             Layout.fillWidth: true
             spacing: 12
 

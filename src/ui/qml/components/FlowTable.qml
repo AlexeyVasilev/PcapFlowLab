@@ -14,6 +14,7 @@ Frame {
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
     signal sortRequested(int column)
+    signal sendFlowToAnalysisRequested()
 
     function sortIndicator(column) {
         if (root.sortColumn !== column) {
@@ -64,13 +65,24 @@ Frame {
             font.bold: true
         }
 
-        TextField {
-            id: filterField
+        RowLayout {
             Layout.fillWidth: true
-            placeholderText: "Filter by protocol, hint, service, address, or port"
-            text: root.filterText
-            onTextEdited: function() {
-                root.filterTextEdited(text)
+            spacing: 8
+
+            TextField {
+                id: filterField
+                Layout.fillWidth: true
+                placeholderText: "Filter by protocol, hint, service, address, or port"
+                text: root.filterText
+                onTextEdited: function() {
+                    root.filterTextEdited(text)
+                }
+            }
+
+            Button {
+                text: "Send flow to Analysis"
+                enabled: root.selectedFlowIndex >= 0
+                onClicked: root.sendFlowToAnalysisRequested()
             }
         }
 

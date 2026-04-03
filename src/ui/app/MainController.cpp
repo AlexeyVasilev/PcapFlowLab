@@ -9,6 +9,7 @@
 #include <QFileDialog>
 #include <QStringList>
 #include <QThread>
+#include <QTimer>
 #include <QVariantMap>
 
 #include "../../../core/open_context.h"
@@ -21,8 +22,9 @@ namespace {
 constexpr qulonglong kInvalidPacketSelection = std::numeric_limits<qulonglong>::max();
 constexpr qulonglong kInvalidStreamSelection = std::numeric_limits<qulonglong>::max();
 constexpr int kFlowTabIndex = 0;
-constexpr int kStatsTabIndex = 1;
-constexpr int kSettingsTabIndex = 2;
+constexpr int kAnalysisTabIndex = 1;
+constexpr int kStatsTabIndex = 2;
+constexpr int kSettingsTabIndex = 3;
 constexpr int kStatisticsModeFlows = 0;
 constexpr int kStatisticsModePackets = 1;
 constexpr int kStatisticsModeBytes = 2;
@@ -551,6 +553,11 @@ bool MainController::canLoadMoreStreamItems() const noexcept {
 }
 
 
+bool MainController::analysisLoading() const noexcept {
+    return analysis_loading_;
+}
+
+
 bool MainController::analysisAvailable() const noexcept {
     return current_flow_analysis_.has_value();
 }
@@ -888,6 +895,15 @@ void MainController::loadMoreStreamItems() {
     refreshSelectedStreamItems(false);
 }
 
+void MainController::sendSelectedFlowToAnalysis() {
+    if (selected_flow_index_ < 0) {
+        return;
+    }
+
+    setCurrentTabIndex(kAnalysisTabIndex);
+    refreshSelectedFlowAnalysis();
+}
+
 bool MainController::saveAnalysisIndex(const QString& path) {
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
@@ -1070,18 +1086,13 @@ void MainController::drillDownToPort(const quint32 port) {
 
 void MainController::setFlowDetailsTabIndex(const int index) {
     const bool streamActive = index == 1;
-    const bool analysisActive = index == 2;
-    if (stream_tab_active_ == streamActive && analysis_tab_active_ == analysisActive) {
+    if (stream_tab_active_ == streamActive) {
         return;
     }
 
     stream_tab_active_ = streamActive;
-    analysis_tab_active_ = analysisActive;
     if (stream_tab_active_ && selected_flow_index_ >= 0 && !stream_state_materialized_for_selected_flow_) {
         refreshSelectedStreamItems(true);
-    }
-    if (analysis_tab_active_) {
-        refreshSelectedFlowAnalysis();
     }
 }
 
@@ -1121,7 +1132,7 @@ void MainController::setHttpUsePathAsServiceHint(const bool enabled) {
 }
 
 void MainController::setCurrentTabIndex(const int index) {
-    const int normalizedIndex = (index == kStatsTabIndex || index == kSettingsTabIndex)
+    const int normalizedIndex = (index == kAnalysisTabIndex || index == kStatsTabIndex || index == kSettingsTabIndex)
         ? index
         : kFlowTabIndex;
 
@@ -1130,6 +1141,17 @@ void MainController::setCurrentTabIndex(const int index) {
     }
 
     current_tab_index_ = normalizedIndex;
+    const bool analysisActive = current_tab_index_ == kAnalysisTabIndex;
+    if (analysis_tab_active_ != analysisActive) {
+        analysis_tab_active_ = analysisActive;
+        if (analysis_tab_active_ && selected_flow_index_ >= 0) {
+            refreshSelectedFlowAnalysis();
+        } else if (!analysis_tab_active_ && analysis_loading_) {
+            ++active_analysis_request_id_;
+            analysis_loading_ = false;
+            emit analysisStateChanged();
+        }
+    }
     emit currentTabIndexChanged();
 }
 
@@ -1377,17 +1399,35 @@ void MainController::refreshSelectedFlowAnalysis() {
         return;
     }
 
-    current_flow_analysis_ = session_.get_flow_analysis(static_cast<std::size_t>(selected_flow_index_));
-    emit analysisStateChanged();
+    ++active_analysis_request_id_;
+    const qulonglong requestId = active_analysis_request_id_;
+    const int flowIndex = selected_flow_index_;
+    const bool stateChanged = !analysis_loading_ || current_flow_analysis_.has_value();
+    analysis_loading_ = true;
+    current_flow_analysis_.reset();
+    if (stateChanged) {
+        emit analysisStateChanged();
+    }
+
+    QTimer::singleShot(0, this, [this, requestId, flowIndex]() {
+        if (requestId != active_analysis_request_id_ || !analysis_tab_active_ || selected_flow_index_ != flowIndex) {
+            return;
+        }
+
+        current_flow_analysis_ = session_.get_flow_analysis(static_cast<std::size_t>(flowIndex));
+        analysis_loading_ = false;
+        emit analysisStateChanged();
+    });
 }
 
 void MainController::clearSelectedFlowAnalysis() {
-    if (!current_flow_analysis_.has_value()) {
-        return;
-    }
-
+    const bool hadState = analysis_loading_ || current_flow_analysis_.has_value();
+    ++active_analysis_request_id_;
+    analysis_loading_ = false;
     current_flow_analysis_.reset();
-    emit analysisStateChanged();
+    if (hadState) {
+        emit analysisStateChanged();
+    }
 }
 
 void MainController::clearPacketSelection() {
@@ -1492,10 +1532,10 @@ void MainController::resetLoadedState() {
     selected_packet_index_ = kInvalidPacketSelection;
     selected_stream_item_index_ = kInvalidStreamSelection;
     details_selection_context_ = DetailsSelectionContext::none;
-    if (current_flow_analysis_.has_value()) {
-        current_flow_analysis_.reset();
-        emit analysisStateChanged();
-    }
+    ++active_analysis_request_id_;
+    analysis_loading_ = false;
+    emit analysisStateChanged();
+    current_flow_analysis_.reset();
 }
 
 void MainController::applyLoadedState(const QString& path) {
