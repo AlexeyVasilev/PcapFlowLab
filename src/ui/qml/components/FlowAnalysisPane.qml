@@ -5,6 +5,38 @@ import QtQuick.Layouts
 Frame {
     id: root
 
+    readonly property int blockPadding: 12
+    readonly property int blockSpacing: 12
+    readonly property int sectionSpacing: 8
+    readonly property int rowSpacing: 8
+    readonly property int histogramRowSpacing: 8
+    readonly property int histogramColumnSpacing: 8
+    readonly property int histogramBarHeight: 18
+
+    component AnalysisSectionFrame: Frame {
+        id: sectionFrame
+
+        default property alias sectionContent: sectionLayout.data
+
+        Layout.fillWidth: true
+        padding: 0
+        implicitHeight: sectionLayout.implicitHeight + (root.blockPadding * 3)
+
+        background: Rectangle {
+            color: "#ffffff"
+            border.color: "#d8dee9"
+            radius: 6
+        }
+
+        ColumnLayout {
+            id: sectionLayout
+            x: root.blockPadding
+            y: root.blockPadding
+            width: Math.max(0, parent.width - (root.blockPadding * 2))
+            spacing: root.sectionSpacing
+        }
+    }
+
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
@@ -34,7 +66,7 @@ Frame {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 12
-        spacing: 12
+        spacing: root.blockSpacing
 
         Label {
             text: "Analysis"
@@ -160,274 +192,228 @@ Frame {
 
                 ColumnLayout {
                     width: analysisResultScroll.availableWidth
-                    spacing: 12
+                    spacing: root.blockSpacing
 
-                    Frame {
-                        Layout.fillWidth: true
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Overview"
+                            font.bold: true
+                        }
 
-                        padding: 16
-
-                        ColumnLayout {
+                        GridLayout {
                             width: parent.width
-                            spacing: 8
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
 
-                            Label {
-                                text: "Overview"
-                                font.bold: true
-                            }
+                            Label { text: "Duration" }
+                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
 
-                            GridLayout {
-                                width: parent.width
-                                columns: 2
-                                columnSpacing: 16
-                                rowSpacing: 6
+                            Label { text: "Total packets" }
+                            Label { text: root.totalPackets }
 
-                                Label { text: "Duration" }
-                                Label { text: root.durationText.length > 0 ? root.durationText : "-" }
+                            Label { text: "Total bytes" }
+                            Label { text: root.totalBytes }
 
-                                Label { text: "Total packets" }
-                                Label { text: root.totalPackets }
+                            Label { text: "Protocol hint" }
+                            Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
 
-                                Label { text: "Total bytes" }
-                                Label { text: root.totalBytes }
-
-                                Label { text: "Protocol hint" }
-                                Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
-
-                                Label { text: "Service hint" }
-                                Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
-                            }
+                            Label { text: "Service hint" }
+                            Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
                         }
                     }
 
-                    Frame {
-                        Layout.fillWidth: true
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Inter-arrival Histogram"
+                            font.bold: true
+                        }
 
-                        padding: 16
+                        Repeater {
+                            model: root.interArrivalHistogramModel
 
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 8
+                            delegate: RowLayout {
+                                required property var modelData
+                                width: parent.width
+                                spacing: root.histogramColumnSpacing
 
-                            Label {
-                                text: "Inter-arrival Histogram"
-                                font.bold: true
-                            }
+                                Label {
+                                    text: modelData.bucketLabel
+                                    Layout.preferredWidth: 84
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
 
-                            Repeater {
-                                model: root.interArrivalHistogramModel
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    width: parent.width
-                                    spacing: 10
-
-                                    Label {
-                                        text: modelData.bucketLabel
-                                        Layout.preferredWidth: 84
-                                    }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 2
+                                    Layout.bottomMargin: 2
+                                    implicitHeight: root.histogramBarHeight
+                                    radius: 4
+                                    color: "#f8fafc"
+                                    border.color: "#dbe3ee"
 
                                     Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 18
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width * (root.totalPackets > 1 ? modelData.packetCount / (root.totalPackets - 1) : 0)
                                         radius: 4
-                                        color: "#f8fafc"
-                                        border.color: "#dbe3ee"
-
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            width: parent.width * (root.totalPackets > 1 ? modelData.packetCount / (root.totalPackets - 1) : 0)
-                                            radius: 4
-                                            color: modelData.packetCount > 0 ? "#38bdf8" : "transparent"
-                                        }
+                                        color: modelData.packetCount > 0 ? "#38bdf8" : "transparent"
                                     }
+                                }
 
-                                    Label {
-                                        text: modelData.packetCount
-                                        Layout.preferredWidth: 40
-                                        horizontalAlignment: Text.AlignRight
-                                    }
+                                Label {
+                                    text: modelData.packetCount
+                                    Layout.preferredWidth: 40
+                                    Layout.alignment: Qt.AlignVCenter
+                                    horizontalAlignment: Text.AlignRight
                                 }
                             }
                         }
                     }
 
-                    Frame {
-                        Layout.fillWidth: true
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Packet Size Histogram"
+                            font.bold: true
+                        }
 
-                        padding: 16
+                        Repeater {
+                            model: root.packetSizeHistogramModel
 
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 8
+                            delegate: RowLayout {
+                                required property var modelData
+                                width: parent.width
+                                spacing: root.histogramColumnSpacing
 
-                            Label {
-                                text: "Packet Size Histogram"
-                                font.bold: true
-                            }
+                                Label {
+                                    text: modelData.bucketLabel
+                                    Layout.preferredWidth: 84
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
 
-                            Repeater {
-                                model: root.packetSizeHistogramModel
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    width: parent.width
-                                    spacing: 10
-
-                                    Label {
-                                        text: modelData.bucketLabel
-                                        Layout.preferredWidth: 84
-                                    }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 2
+                                    Layout.bottomMargin: 2
+                                    implicitHeight: root.histogramBarHeight
+                                    radius: 4
+                                    color: "#f1f5f9"
+                                    border.color: "#dbe3ee"
 
                                     Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 18
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width * (root.totalPackets > 0 ? modelData.packetCount / root.totalPackets : 0)
                                         radius: 4
-                                        color: "#f1f5f9"
-                                        border.color: "#dbe3ee"
-
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.top: parent.top
-                                            anchors.bottom: parent.bottom
-                                            width: parent.width * (root.totalPackets > 0 ? modelData.packetCount / root.totalPackets : 0)
-                                            radius: 4
-                                            color: modelData.packetCount > 0 ? "#60a5fa" : "transparent"
-                                        }
+                                        color: modelData.packetCount > 0 ? "#60a5fa" : "transparent"
                                     }
+                                }
 
-                                    Label {
-                                        text: modelData.packetCount
-                                        Layout.preferredWidth: 40
-                                        horizontalAlignment: Text.AlignRight
-                                    }
+                                Label {
+                                    text: modelData.packetCount
+                                    Layout.preferredWidth: 40
+                                    Layout.alignment: Qt.AlignVCenter
+                                    horizontalAlignment: Text.AlignRight
                                 }
                             }
                         }
                     }
 
-                    Frame {
-                        Layout.fillWidth: true
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Timeline"
+                            font.bold: true
+                        }
 
-                        padding: 16
-
-                        ColumnLayout {
+                        GridLayout {
                             width: parent.width
-                            spacing: 8
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
 
-                            Label {
-                                text: "Timeline"
-                                font.bold: true
-                            }
+                            Label { text: "First packet" }
+                            Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
 
-                            GridLayout {
-                                width: parent.width
-                                columns: 2
-                                columnSpacing: 16
-                                rowSpacing: 6
+                            Label { text: "Last packet" }
+                            Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
 
-                                Label { text: "First packet" }
-                                Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
+                            Label { text: "Duration" }
+                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
 
-                                Label { text: "Last packet" }
-                                Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
+                            Label { text: "Largest gap" }
+                            Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
 
-                                Label { text: "Duration" }
-                                Label { text: root.durationText.length > 0 ? root.durationText : "-" }
-
-                                Label { text: "Largest gap" }
-                                Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
-
-                                Label { text: "Packets considered" }
-                                Label { text: root.timelinePacketCountConsidered }
-                            }
+                            Label { text: "Packets considered" }
+                            Label { text: root.timelinePacketCountConsidered }
                         }
                     }
 
-                    Frame {
-                        Layout.fillWidth: true
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Directional"
+                            font.bold: true
+                        }
 
-                        padding: 16
-
-                        ColumnLayout {
+                        GridLayout {
                             width: parent.width
-                            spacing: 8
+                            columns: 3
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
 
-                            Label {
-                                text: "Directional"
-                                font.bold: true
-                            }
+                            Label { text: "" }
+                            Label { text: "A>B" }
+                            Label { text: "B>A" }
 
-                            GridLayout {
-                                width: parent.width
-                                columns: 3
-                                columnSpacing: 16
-                                rowSpacing: 6
+                            Label { text: "Packets" }
+                            Label { text: root.packetsAToB }
+                            Label { text: root.packetsBToA }
 
-                                Label { text: "" }
-                                Label { text: "A>B" }
-                                Label { text: "B>A" }
-
-                                Label { text: "Packets" }
-                                Label { text: root.packetsAToB }
-                                Label { text: root.packetsBToA }
-
-                                Label { text: "Bytes" }
-                                Label { text: root.bytesAToB }
-                                Label { text: root.bytesBToA }
-                            }
+                            Label { text: "Bytes" }
+                            Label { text: root.bytesAToB }
+                            Label { text: root.bytesBToA }
                         }
                     }
 
-                    Frame {
-                        Layout.fillWidth: true
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Sequence Preview"
+                            font.bold: true
+                        }
 
-                        padding: 16
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: root.histogramColumnSpacing
 
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 8
+                            Label { text: "#"; Layout.preferredWidth: 34 }
+                            Label { text: "Dir"; Layout.preferredWidth: 48 }
+                            Label { text: "Delta"; Layout.preferredWidth: 90 }
+                            Label { text: "Captured"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Payload"; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Time"; Layout.fillWidth: true }
+                        }
 
-                            Label {
-                                text: "Sequence Preview"
-                                font.bold: true
-                            }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#e2e8f0"
+                        }
 
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
+                        Repeater {
+                            model: root.sequencePreviewModel
 
-                                Label { text: "#"; Layout.preferredWidth: 34 }
-                                Label { text: "Dir"; Layout.preferredWidth: 48 }
-                                Label { text: "Delta"; Layout.preferredWidth: 90 }
-                                Label { text: "Captured"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
-                                Label { text: "Payload"; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
-                                Label { text: "Time"; Layout.fillWidth: true }
-                            }
+                            delegate: RowLayout {
+                                required property var modelData
+                                width: parent.width
+                                spacing: root.histogramColumnSpacing
 
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 1
-                                color: "#e2e8f0"
-                            }
-
-                            Repeater {
-                                model: root.sequencePreviewModel
-
-                                delegate: RowLayout {
-                                    required property var modelData
-                                    width: parent.width
-                                    spacing: 12
-
-                                    Label { text: modelData.packetNumber; Layout.preferredWidth: 34 }
-                                    Label { text: modelData.direction; Layout.preferredWidth: 48 }
-                                    Label { text: modelData.deltaTimeText; Layout.preferredWidth: 90 }
-                                    Label { text: modelData.capturedLength; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
-                                    Label { text: modelData.payloadLength; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
-                                    Label { text: modelData.timestampText; Layout.fillWidth: true; color: "#475569" }
-                                }
+                                Label { text: modelData.packetNumber; Layout.preferredWidth: 34 }
+                                Label { text: modelData.direction; Layout.preferredWidth: 48 }
+                                Label { text: modelData.deltaTimeText; Layout.preferredWidth: 90 }
+                                Label { text: modelData.capturedLength; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
+                                Label { text: modelData.payloadLength; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
+                                Label { text: modelData.timestampText; Layout.fillWidth: true; color: "#475569" }
                             }
                         }
                     }
