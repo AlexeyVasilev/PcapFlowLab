@@ -107,10 +107,13 @@ Item {
                             color: selected
                                 ? "#dbeafe"
                                 : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
+                            border.color: selected ? "#60a5fa" : "transparent"
+                            border.width: selected ? 1 : 0
+                            radius: 6
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 10
+                                anchors.leftMargin: 12
                                 anchors.rightMargin: 10
                                 anchors.topMargin: 8
                                 anchors.bottomMargin: 8
@@ -133,6 +136,16 @@ Item {
                                     color: "#475569"
                                     elide: Text.ElideMiddle
                                 }
+                            }
+
+                            Rectangle {
+                                visible: selected
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 4
+                                color: "#2563eb"
+                                radius: 2
                             }
 
                             MouseArea {

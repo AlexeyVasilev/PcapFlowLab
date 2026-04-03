@@ -12,6 +12,10 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QQmlComponent>
+#include <QQmlEngine>
+#include <QQuickItem>
+#include <QQuickStyle>
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
@@ -151,6 +155,40 @@ bool open_index_and_wait(QApplication& app, pfl::MainController& controller, con
     return wait_for_open_to_finish(app, controller) && controller.openErrorText().isEmpty();
 }
 
+struct LoadedQmlObject {
+    std::unique_ptr<QQmlEngine> engine {};
+    std::unique_ptr<QObject> object {};
+};
+
+LoadedQmlObject load_flow_analysis_pane_component() {
+    auto engine = std::make_unique<QQmlEngine>();
+    const auto project_root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
+    const auto component_path = project_root / "src" / "ui" / "qml" / "components" / "FlowAnalysisPane.qml";
+    QQmlComponent component(engine.get(), QUrl::fromLocalFile(QString::fromStdWString(component_path.wstring())));
+    if (component.status() != QQmlComponent::Ready) {
+        throw std::runtime_error(component.errorString().toStdString());
+    }
+
+    QObject* object = component.create();
+    if (object == nullptr) {
+        throw std::runtime_error("Failed to create FlowAnalysisPane component");
+    }
+
+    return LoadedQmlObject {
+        .engine = std::move(engine),
+        .object = std::unique_ptr<QObject>(object),
+    };
+}
+
+bool item_visible(QObject* root, const char* objectName) {
+    auto* item = root->findChild<QQuickItem*>(QString::fromLatin1(objectName));
+    if (item == nullptr) {
+        return false;
+    }
+
+    return item->property("visible").toBool();
+}
+
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -176,6 +214,7 @@ int find_flow_index_by_packet_count(pfl::FlowListModel* model, const qulonglong 
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc, argv);
 
     using namespace pfl;
@@ -219,6 +258,32 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.ipv4TotalBytes() + controller.ipv6TotalBytes() == controller.totalBytes());
 
     UI_EXPECT(controller.statusText().isEmpty());
+
+    {
+        auto pane = load_flow_analysis_pane_component();
+        pane.object->setProperty("hasActiveFlow", false);
+        pane.object->setProperty("analysisLoading", false);
+        pane.object->setProperty("analysisAvailable", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(pane.object.get(), "analysisEmptyState"));
+        UI_EXPECT(!item_visible(pane.object.get(), "analysisLoadingState"));
+        UI_EXPECT(!item_visible(pane.object.get(), "analysisResultContent"));
+
+        pane.object->setProperty("hasActiveFlow", true);
+        pane.object->setProperty("analysisLoading", true);
+        pane.object->setProperty("analysisAvailable", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(pane.object.get(), "analysisEmptyState"));
+        UI_EXPECT(item_visible(pane.object.get(), "analysisLoadingState"));
+        UI_EXPECT(!item_visible(pane.object.get(), "analysisResultContent"));
+
+        pane.object->setProperty("analysisLoading", false);
+        pane.object->setProperty("analysisAvailable", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(pane.object.get(), "analysisEmptyState"));
+        UI_EXPECT(!item_visible(pane.object.get(), "analysisLoadingState"));
+        UI_EXPECT(item_visible(pane.object.get(), "analysisResultContent"));
+    }
 
     MainController idle_cancel_controller {};
     idle_cancel_controller.cancelOpen();

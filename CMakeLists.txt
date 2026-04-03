@@ -175,6 +175,9 @@ if(PFL_BUILD_UI)
                 pcap_flow_lab_ui_tests
                 PRIVATE
                     pcap_flow_lab_core
+                    Qt6::Quick
+                    Qt6::Qml
+                    Qt6::QuickControls2
                     Qt6::Widgets
             )
 
