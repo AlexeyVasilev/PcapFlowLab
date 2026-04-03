@@ -67,6 +67,10 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->packets_b_to_a == 1U);
     PFL_EXPECT(analysis->bytes_a_to_b == static_cast<std::uint64_t>(request_packet.size() + follow_up_packet.size()));
     PFL_EXPECT(analysis->bytes_b_to_a == static_cast<std::uint64_t>(response_packet.size()));
+    PFL_EXPECT(analysis->first_packet_timestamp_text == "00:00:01.000100");
+    PFL_EXPECT(analysis->last_packet_timestamp_text == "00:00:03.000450");
+    PFL_EXPECT(analysis->largest_gap_us == 1000200U);
+    PFL_EXPECT(analysis->timeline_packet_count_considered == 3U);
     PFL_EXPECT(analysis->protocol_hint == "http");
     PFL_EXPECT(analysis->service_hint == "analysis.example");
     PFL_EXPECT(analysis->sequence_preview_rows.size() == 3U);
@@ -106,6 +110,8 @@ void run_flow_analysis_tests() {
     const auto heavy_analysis = heavy_session.get_flow_analysis(heavy_rows.front().index);
     PFL_EXPECT(heavy_analysis.has_value());
     PFL_EXPECT(heavy_analysis->total_packets == 25U);
+    PFL_EXPECT(heavy_analysis->timeline_packet_count_considered == 25U);
+    PFL_EXPECT(heavy_analysis->largest_gap_us > 0U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.size() == 20U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.front().flow_packet_number == 1U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.back().flow_packet_number == 20U);

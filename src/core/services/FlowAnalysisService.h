@@ -21,10 +21,14 @@ struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
     std::uint64_t duration_us {0};
+    std::uint64_t largest_gap_us {0};
+    std::uint64_t timeline_packet_count_considered {0};
     std::uint64_t packets_a_to_b {0};
     std::uint64_t packets_b_to_a {0};
     std::uint64_t bytes_a_to_b {0};
     std::uint64_t bytes_b_to_a {0};
+    std::string first_packet_timestamp_text {};
+    std::string last_packet_timestamp_text {};
     std::string protocol_hint {};
     std::string service_hint {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};

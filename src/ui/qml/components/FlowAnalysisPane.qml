@@ -9,6 +9,10 @@ Frame {
     property bool analysisLoading: false
     property bool analysisAvailable: false
     property string durationText: ""
+    property string timelineFirstPacketTime: ""
+    property string timelineLastPacketTime: ""
+    property string timelineLargestGapText: ""
+    property var timelinePacketCountConsidered: 0
     property var totalPackets: 0
     property var totalBytes: 0
     property string protocolHint: ""
@@ -181,6 +185,42 @@ Frame {
 
                             Label { text: "Service hint" }
                             Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
+                        }
+                    }
+                }
+
+                Frame {
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 8
+
+                        Label {
+                            text: "Timeline"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: 6
+
+                            Label { text: "First packet" }
+                            Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
+
+                            Label { text: "Last packet" }
+                            Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
+
+                            Label { text: "Duration" }
+                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
+
+                            Label { text: "Largest gap" }
+                            Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
+
+                            Label { text: "Packets considered" }
+                            Label { text: root.timelinePacketCountConsidered }
                         }
                     }
                 }

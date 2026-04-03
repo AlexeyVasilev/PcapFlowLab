@@ -59,6 +59,10 @@ class MainController final : public QObject {
     Q_PROPERTY(bool analysisLoading READ analysisLoading NOTIFY analysisStateChanged)
     Q_PROPERTY(bool analysisAvailable READ analysisAvailable NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTimelineFirstPacketTime READ analysisTimelineFirstPacketTime NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTimelineLastPacketTime READ analysisTimelineLastPacketTime NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTimelineLargestGapText READ analysisTimelineLargestGapText NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisTimelinePacketCountConsidered READ analysisTimelinePacketCountConsidered NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalPackets READ analysisTotalPackets NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalBytes READ analysisTotalBytes NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisProtocolHint READ analysisProtocolHint NOTIFY analysisStateChanged)
@@ -156,6 +160,10 @@ public:
     [[nodiscard]] bool analysisLoading() const noexcept;
     [[nodiscard]] bool analysisAvailable() const noexcept;
     [[nodiscard]] QString analysisDurationText() const;
+    [[nodiscard]] QString analysisTimelineFirstPacketTime() const;
+    [[nodiscard]] QString analysisTimelineLastPacketTime() const;
+    [[nodiscard]] QString analysisTimelineLargestGapText() const;
+    [[nodiscard]] qulonglong analysisTimelinePacketCountConsidered() const noexcept;
     [[nodiscard]] qulonglong analysisTotalPackets() const noexcept;
     [[nodiscard]] qulonglong analysisTotalBytes() const noexcept;
     [[nodiscard]] QString analysisProtocolHint() const;

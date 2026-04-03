@@ -36,6 +36,32 @@ struct PacketPreviewCandidate {
     const char* direction_text {""};
 };
 
+template <typename Connection>
+std::vector<const PacketRef*> build_time_ordered_packet_refs(const Connection& connection) {
+    std::vector<const PacketRef*> ordered_packets {};
+    ordered_packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+
+    for (const auto& packet : connection.flow_a.packets) {
+        ordered_packets.push_back(&packet);
+    }
+
+    for (const auto& packet : connection.flow_b.packets) {
+        ordered_packets.push_back(&packet);
+    }
+
+    std::stable_sort(ordered_packets.begin(), ordered_packets.end(), [](const PacketRef* left, const PacketRef* right) {
+        const auto left_timestamp = packet_timestamp_us(*left);
+        const auto right_timestamp = packet_timestamp_us(*right);
+        if (left_timestamp != right_timestamp) {
+            return left_timestamp < right_timestamp;
+        }
+
+        return left->packet_index < right->packet_index;
+    });
+
+    return ordered_packets;
+}
+
 template <typename Flow>
 void update_time_bounds(const Flow& flow, std::optional<std::uint64_t>& first_us, std::optional<std::uint64_t>& last_us) {
     for (const auto& packet : flow.packets) {
@@ -126,6 +152,23 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
 
     if (first_us.has_value() && last_us.has_value() && *last_us >= *first_us) {
         result.duration_us = *last_us - *first_us;
+    }
+
+    const auto ordered_packets = build_time_ordered_packet_refs(connection);
+    result.timeline_packet_count_considered = static_cast<std::uint64_t>(ordered_packets.size());
+    if (!ordered_packets.empty()) {
+        result.first_packet_timestamp_text = format_packet_timestamp(*ordered_packets.front());
+        result.last_packet_timestamp_text = format_packet_timestamp(*ordered_packets.back());
+    }
+
+    std::optional<std::uint64_t> previous_timestamp_us {};
+    for (const auto* packet : ordered_packets) {
+        const auto current_timestamp_us = packet_timestamp_us(*packet);
+        if (previous_timestamp_us.has_value() && current_timestamp_us >= *previous_timestamp_us) {
+            result.largest_gap_us = std::max(result.largest_gap_us, current_timestamp_us - *previous_timestamp_us);
+        }
+
+        previous_timestamp_us = current_timestamp_us;
     }
 
     result.sequence_preview_rows = build_sequence_preview_rows(connection);

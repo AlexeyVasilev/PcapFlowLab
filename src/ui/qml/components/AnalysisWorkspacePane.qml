@@ -10,6 +10,10 @@ Item {
     property bool analysisLoading: false
     property bool analysisAvailable: false
     property string analysisDurationText: ""
+    property string analysisTimelineFirstPacketTime: ""
+    property string analysisTimelineLastPacketTime: ""
+    property string analysisTimelineLargestGapText: ""
+    property var analysisTimelinePacketCountConsidered: 0
     property var analysisTotalPackets: 0
     property var analysisTotalBytes: 0
     property string analysisProtocolHint: ""
@@ -173,6 +177,10 @@ Item {
             analysisLoading: root.analysisLoading
             analysisAvailable: root.analysisAvailable
             durationText: root.analysisDurationText
+            timelineFirstPacketTime: root.analysisTimelineFirstPacketTime
+            timelineLastPacketTime: root.analysisTimelineLastPacketTime
+            timelineLargestGapText: root.analysisTimelineLargestGapText
+            timelinePacketCountConsidered: root.analysisTimelinePacketCountConsidered
             totalPackets: root.analysisTotalPackets
             totalBytes: root.analysisTotalBytes
             protocolHint: root.analysisProtocolHint

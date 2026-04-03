@@ -290,6 +290,10 @@ ApplicationWindow {
                 analysisLoading: mainController.analysisLoading
                 analysisAvailable: mainController.analysisAvailable
                 analysisDurationText: mainController.analysisDurationText
+                analysisTimelineFirstPacketTime: mainController.analysisTimelineFirstPacketTime
+                analysisTimelineLastPacketTime: mainController.analysisTimelineLastPacketTime
+                analysisTimelineLargestGapText: mainController.analysisTimelineLargestGapText
+                analysisTimelinePacketCountConsidered: mainController.analysisTimelinePacketCountConsidered
                 analysisTotalPackets: mainController.analysisTotalPackets
                 analysisTotalBytes: mainController.analysisTotalBytes
                 analysisProtocolHint: mainController.analysisProtocolHint

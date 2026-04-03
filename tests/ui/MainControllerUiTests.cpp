@@ -418,6 +418,10 @@ int main(int argc, char* argv[]) {
         return !controller.analysisLoading() && controller.analysisAvailable();
     }));
     UI_EXPECT(saw_analysis_loading);
+    UI_EXPECT(controller.analysisTimelineFirstPacketTime() == QStringLiteral("00:00:01.000100"));
+    UI_EXPECT(controller.analysisTimelineLastPacketTime() == QStringLiteral("00:00:01.000100"));
+    UI_EXPECT(controller.analysisTimelineLargestGapText() == QStringLiteral("0 us"));
+    UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 1U);
     UI_EXPECT(controller.analysisTotalPackets() == 1U);
     UI_EXPECT(controller.analysisTotalBytes() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisDurationText() == QStringLiteral("0 us"));
@@ -441,6 +445,10 @@ int main(int argc, char* argv[]) {
     controller.setSelectedFlowIndex(-1);
     UI_EXPECT(!controller.analysisLoading());
     UI_EXPECT(!controller.analysisAvailable());
+    UI_EXPECT(controller.analysisTimelineFirstPacketTime().isEmpty());
+    UI_EXPECT(controller.analysisTimelineLastPacketTime().isEmpty());
+    UI_EXPECT(controller.analysisTimelineLargestGapText().isEmpty());
+    UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 0U);
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
 
     MainController multi_flow_controller {};

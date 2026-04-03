@@ -46,6 +46,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - Builds ephemeral derived artifacts only for the active flow.
 - Current user-facing use is the Stream tab.
 - Analysis tab now also includes a bounded metadata-only Sequence Preview block for the selected flow.
+- Analysis tab now also includes a bounded metadata-only Timeline block for the selected flow.
 - Never runs globally across all flows during open.
 
 ## Flow aggregation and packet model

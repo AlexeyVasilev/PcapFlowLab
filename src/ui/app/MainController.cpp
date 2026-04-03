@@ -568,6 +568,30 @@ QString MainController::analysisDurationText() const {
         : QString {};
 }
 
+QString MainController::analysisTimelineFirstPacketTime() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->first_packet_timestamp_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->first_packet_timestamp_text)
+        : QString {};
+}
+
+QString MainController::analysisTimelineLastPacketTime() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->last_packet_timestamp_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->last_packet_timestamp_text)
+        : QString {};
+}
+
+QString MainController::analysisTimelineLargestGapText() const {
+    return current_flow_analysis_.has_value()
+        ? format_duration_us(current_flow_analysis_->largest_gap_us)
+        : QString {};
+}
+
+qulonglong MainController::analysisTimelinePacketCountConsidered() const noexcept {
+    return current_flow_analysis_.has_value()
+        ? static_cast<qulonglong>(current_flow_analysis_->timeline_packet_count_considered)
+        : 0U;
+}
+
 qulonglong MainController::analysisTotalPackets() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->total_packets) : 0U;
 }
