@@ -56,6 +56,7 @@ The Qt Quick desktop UI can:
 - inspect packet details in Summary, Raw, and Protocol views
 - show a payload-oriented Stream tab for the selected flow
 - expose Analysis as a dedicated selected-flow workspace with compact flow selection and MVP overview and directional stats only
+- include a bounded metadata-only Sequence Preview block in Analysis for the first packets of the selected flow
 - materialize selected-flow Stream items in bounded initial batches with explicit `Load more` continuation for heavy flows
 
 ### Stream tab

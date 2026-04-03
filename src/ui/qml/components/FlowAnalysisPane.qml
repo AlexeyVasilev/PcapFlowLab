@@ -17,6 +17,7 @@ Frame {
     property var packetsBToA: 0
     property var bytesAToB: 0
     property var bytesBToA: 0
+    property var sequencePreviewModel: []
 
     background: Rectangle {
         color: "#ffffff"
@@ -213,6 +214,56 @@ Frame {
                             Label { text: "Bytes" }
                             Label { text: root.bytesAToB }
                             Label { text: root.bytesBToA }
+                        }
+                    }
+                }
+
+                Frame {
+                    Layout.fillWidth: true
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 8
+
+                        Label {
+                            text: "Sequence Preview"
+                            font.bold: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            Label { text: "#"; Layout.preferredWidth: 34 }
+                            Label { text: "Dir"; Layout.preferredWidth: 48 }
+                            Label { text: "Delta"; Layout.preferredWidth: 90 }
+                            Label { text: "Captured"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Payload"; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Time"; Layout.fillWidth: true }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#e2e8f0"
+                        }
+
+                        Repeater {
+                            model: root.sequencePreviewModel
+
+                            delegate: RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                Label { text: modelData.packetNumber; Layout.preferredWidth: 34 }
+                                Label { text: modelData.direction; Layout.preferredWidth: 48 }
+                                Label { text: modelData.deltaTimeText; Layout.preferredWidth: 90 }
+                                Label { text: modelData.capturedLength; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
+                                Label { text: modelData.payloadLength; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
+                                Label { text: modelData.timestampText; Layout.fillWidth: true; color: "#475569" }
+                            }
                         }
                     }
                 }

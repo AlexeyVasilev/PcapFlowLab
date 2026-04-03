@@ -604,6 +604,27 @@ qulonglong MainController::analysisBytesBToA() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->bytes_b_to_a) : 0U;
 }
 
+QVariantList MainController::analysisSequencePreview() const {
+    QVariantList rows {};
+    if (!current_flow_analysis_.has_value()) {
+        return rows;
+    }
+
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->sequence_preview_rows.size()));
+    for (const auto& preview_row : current_flow_analysis_->sequence_preview_rows) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("packetNumber"), static_cast<qulonglong>(preview_row.flow_packet_number));
+        row.insert(QStringLiteral("direction"), QString::fromStdString(preview_row.direction_text));
+        row.insert(QStringLiteral("deltaTimeText"), format_duration_us(preview_row.delta_time_us));
+        row.insert(QStringLiteral("capturedLength"), preview_row.captured_length);
+        row.insert(QStringLiteral("payloadLength"), preview_row.payload_length);
+        row.insert(QStringLiteral("timestampText"), QString::fromStdString(preview_row.timestamp_text));
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
 qulonglong MainController::packetCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().packet_count);
 }

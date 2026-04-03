@@ -298,6 +298,7 @@ ApplicationWindow {
                 analysisPacketsBToA: mainController.analysisPacketsBToA
                 analysisBytesAToB: mainController.analysisBytesAToB
                 analysisBytesBToA: mainController.analysisBytesBToA
+                analysisSequencePreview: mainController.analysisSequencePreview
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
                 }

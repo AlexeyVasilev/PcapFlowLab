@@ -427,6 +427,12 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
+    UI_EXPECT(controller.analysisSequencePreview().size() == 1);
+    const auto first_sequence_row = controller.analysisSequencePreview().front().toMap();
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("packetNumber")).toULongLong() == 1U);
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("direction")).toString() == QStringLiteral("A->B"));
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("deltaTimeText")).toString() == QStringLiteral("0 us"));
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("capturedLength")).toUInt() == static_cast<uint>(http_flow.size()));
     auto* controller_packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
     UI_EXPECT(controller_packet_model != nullptr);
     UI_EXPECT(controller_packet_model->rowCount() == 1);
@@ -435,6 +441,7 @@ int main(int argc, char* argv[]) {
     controller.setSelectedFlowIndex(-1);
     UI_EXPECT(!controller.analysisLoading());
     UI_EXPECT(!controller.analysisAvailable());
+    UI_EXPECT(controller.analysisSequencePreview().isEmpty());
 
     MainController multi_flow_controller {};
     UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));

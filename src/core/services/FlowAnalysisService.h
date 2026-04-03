@@ -2,10 +2,20 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "core/domain/Connection.h"
 
 namespace pfl {
+
+struct FlowAnalysisSequencePreviewRow {
+    std::uint64_t flow_packet_number {0};
+    std::string direction_text {};
+    std::uint64_t delta_time_us {0};
+    std::uint32_t captured_length {0};
+    std::uint32_t payload_length {0};
+    std::string timestamp_text {};
+};
 
 struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
@@ -17,6 +27,7 @@ struct FlowAnalysisResult {
     std::uint64_t bytes_b_to_a {0};
     std::string protocol_hint {};
     std::string service_hint {};
+    std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};
 };
 
 class FlowAnalysisService {
