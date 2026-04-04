@@ -12,6 +12,7 @@ Frame {
     readonly property int histogramRowSpacing: 8
     readonly property int histogramColumnSpacing: 8
     readonly property int histogramBarHeight: 18
+    readonly property int groupBreakSpacing: 10
 
     component AnalysisSectionFrame: Frame {
         id: sectionFrame
@@ -246,38 +247,6 @@ Frame {
 
                     AnalysisSectionFrame {
                         Label {
-                            text: "Derived Metrics"
-                            font.bold: true
-                        }
-
-                        GridLayout {
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
-
-                            Label { text: "Packets/sec" }
-                            Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
-
-                            Label { text: "Bytes/sec" }
-                            Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
-
-                            Label { text: "Avg packet size" }
-                            Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
-
-                            Label { text: "Avg inter-arrival" }
-                            Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
-
-                            Label { text: "Min packet size" }
-                            Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
-
-                            Label { text: "Max packet size" }
-                            Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
-                        }
-                    }
-
-                    AnalysisSectionFrame {
-                        Label {
                             text: "Protocol Panel"
                             font.bold: true
                         }
@@ -338,6 +307,64 @@ Frame {
 
                     AnalysisSectionFrame {
                         Label {
+                            text: "Derived Metrics"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+
+                            Label { text: "Packets/sec" }
+                            Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
+
+                            Label { text: "Bytes/sec" }
+                            Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
+
+                            Label { text: "Avg packet size" }
+                            Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
+
+                            Label { text: "Avg inter-arrival" }
+                            Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
+
+                            Label { text: "Min packet size" }
+                            Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
+
+                            Label { text: "Max packet size" }
+                            Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Directional"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 3
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+
+                            Label { text: "" }
+                            Label { text: "A>B" }
+                            Label { text: "B>A" }
+
+                            Label { text: "Packets" }
+                            Label { text: root.packetsAToB }
+                            Label { text: root.packetsBToA }
+
+                            Label { text: "Bytes" }
+                            Label { text: root.bytesAToB }
+                            Label { text: root.bytesBToA }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
+                        Label {
                             text: "Directional Ratio"
                             font.bold: true
                         }
@@ -390,51 +417,36 @@ Frame {
 
                     AnalysisSectionFrame {
                         Label {
-                            text: "Inter-arrival Histogram"
+                            text: "Timeline"
                             font.bold: true
                         }
 
-                        Repeater {
-                            model: root.interArrivalHistogramModel
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
 
-                            delegate: RowLayout {
-                                required property var modelData
-                                width: parent.width
-                                spacing: root.histogramColumnSpacing
+                            Label { text: "First packet" }
+                            Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
 
-                                Label {
-                                    text: modelData.bucketLabel
-                                    Layout.preferredWidth: 84
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
+                            Label { text: "Last packet" }
+                            Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
 
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.topMargin: 2
-                                    Layout.bottomMargin: 2
-                                    implicitHeight: root.histogramBarHeight
-                                    radius: 4
-                                    color: "#f8fafc"
-                                    border.color: "#dbe3ee"
+                            Label { text: "Duration" }
+                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
 
-                                    Rectangle {
-                                        anchors.left: parent.left
-                                        anchors.top: parent.top
-                                        anchors.bottom: parent.bottom
-                                        width: parent.width * (root.totalPackets > 1 ? modelData.packetCount / (root.totalPackets - 1) : 0)
-                                        radius: 4
-                                        color: modelData.packetCount > 0 ? "#38bdf8" : "transparent"
-                                    }
-                                }
+                            Label { text: "Largest gap" }
+                            Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
 
-                                Label {
-                                    text: modelData.packetCount
-                                    Layout.preferredWidth: 40
-                                    Layout.alignment: Qt.AlignVCenter
-                                    horizontalAlignment: Text.AlignRight
-                                }
-                            }
+                            Label { text: "Packets considered" }
+                            Label { text: root.timelinePacketCountConsidered }
                         }
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                        implicitHeight: root.groupBreakSpacing
                     }
 
                     AnalysisSectionFrame {
@@ -488,56 +500,50 @@ Frame {
 
                     AnalysisSectionFrame {
                         Label {
-                            text: "Timeline"
+                            text: "Inter-arrival Histogram"
                             font.bold: true
                         }
 
-                        GridLayout {
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
+                        Repeater {
+                            model: root.interArrivalHistogramModel
 
-                            Label { text: "First packet" }
-                            Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
+                            delegate: RowLayout {
+                                required property var modelData
+                                width: parent.width
+                                spacing: root.histogramColumnSpacing
 
-                            Label { text: "Last packet" }
-                            Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
+                                Label {
+                                    text: modelData.bucketLabel
+                                    Layout.preferredWidth: 84
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
 
-                            Label { text: "Duration" }
-                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.topMargin: 2
+                                    Layout.bottomMargin: 2
+                                    implicitHeight: root.histogramBarHeight
+                                    radius: 4
+                                    color: "#f8fafc"
+                                    border.color: "#dbe3ee"
 
-                            Label { text: "Largest gap" }
-                            Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
+                                    Rectangle {
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width * (root.totalPackets > 1 ? modelData.packetCount / (root.totalPackets - 1) : 0)
+                                        radius: 4
+                                        color: modelData.packetCount > 0 ? "#38bdf8" : "transparent"
+                                    }
+                                }
 
-                            Label { text: "Packets considered" }
-                            Label { text: root.timelinePacketCountConsidered }
-                        }
-                    }
-
-                    AnalysisSectionFrame {
-                        Label {
-                            text: "Directional"
-                            font.bold: true
-                        }
-
-                        GridLayout {
-                            width: parent.width
-                            columns: 3
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
-
-                            Label { text: "" }
-                            Label { text: "A>B" }
-                            Label { text: "B>A" }
-
-                            Label { text: "Packets" }
-                            Label { text: root.packetsAToB }
-                            Label { text: root.packetsBToA }
-
-                            Label { text: "Bytes" }
-                            Label { text: root.bytesAToB }
-                            Label { text: root.bytesBToA }
+                                Label {
+                                    text: modelData.packetCount
+                                    Layout.preferredWidth: 40
+                                    Layout.alignment: Qt.AlignVCenter
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                            }
                         }
                     }
 

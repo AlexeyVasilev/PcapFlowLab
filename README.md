@@ -62,6 +62,7 @@ The Qt Quick desktop UI can:
 - include a bounded metadata-only Inter-arrival Histogram block in Analysis for selected-flow timing distribution
 - include a bounded metadata-only Derived Metrics block in Analysis for selected-flow summary rates and averages
 - include a bounded metadata-only Directional Ratio block in Analysis for selected-flow directional imbalance summary
+- keep the Analysis tab organized with summary-first blocks followed by histogram/detail evidence blocks for readability only; this step does not add new analysis logic
 - materialize selected-flow Stream items in bounded initial batches with explicit `Load more` continuation for heavy flows
 
 ### Stream tab

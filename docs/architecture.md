@@ -51,6 +51,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - Analysis tab now also includes a bounded metadata-only Inter-arrival Histogram block for the selected flow.
 - Analysis tab now also includes a bounded metadata-only Derived Metrics block for the selected flow.
 - Analysis tab now also includes a bounded metadata-only Directional Ratio block for the selected flow.
+- Analysis tab block order is periodically reorganized for readability, with summary/interpretation blocks ahead of evidence/detail blocks; this does not change analysis logic.
 - Never runs globally across all flows during open.
 
 ## Flow aggregation and packet model
