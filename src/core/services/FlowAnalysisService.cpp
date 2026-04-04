@@ -118,6 +118,32 @@ std::string derive_dominant_direction_text(const std::uint64_t a_to_b_packets, c
     return a_to_b_packets > b_to_a_packets ? "Mostly A->B" : "Mostly B->A";
 }
 
+const char* quic_version_hint_text(const QuicVersionHint hint) noexcept {
+    switch (hint) {
+    case QuicVersionHint::v1:
+        return "QUIC v1";
+    case QuicVersionHint::draft29:
+        return "QUIC draft-29";
+    case QuicVersionHint::v2:
+        return "QUIC v2";
+    case QuicVersionHint::unknown:
+    default:
+        return "unknown";
+    }
+}
+
+const char* tls_version_hint_text(const TlsVersionHint hint) noexcept {
+    switch (hint) {
+    case TlsVersionHint::tls12:
+        return "TLS 1.2";
+    case TlsVersionHint::tls13:
+        return "TLS 1.3";
+    case TlsVersionHint::unknown:
+    default:
+        return "unknown";
+    }
+}
+
 struct PacketPreviewCandidate {
     const PacketRef* packet {nullptr};
     const char* direction_text {""};
@@ -258,6 +284,60 @@ void accumulate_packet_size_histogram(
     }
 }
 
+template <typename Flow>
+void accumulate_tcp_control_counts(
+    const Flow& flow,
+    std::uint64_t& syn_packets,
+    std::uint64_t& fin_packets,
+    std::uint64_t& rst_packets
+) {
+    for (const auto& packet : flow.packets) {
+        if ((packet.tcp_flags & 0x02U) != 0U) {
+            syn_packets += 1U;
+        }
+
+        if ((packet.tcp_flags & 0x01U) != 0U) {
+            fin_packets += 1U;
+        }
+
+        if ((packet.tcp_flags & 0x04U) != 0U) {
+            rst_packets += 1U;
+        }
+    }
+}
+
+template <typename Connection>
+void populate_protocol_panel(const Connection& connection, FlowAnalysisResult& result) {
+    switch (connection.protocol_hint) {
+    case FlowProtocolHint::tls:
+        result.protocol_panel_version_text = tls_version_hint_text(connection.tls_version);
+        if (!connection.service_hint.empty()) {
+            result.protocol_panel_service_text = connection.service_hint;
+        }
+        break;
+    case FlowProtocolHint::quic:
+        result.protocol_panel_version_text = quic_version_hint_text(connection.quic_version);
+        if (!connection.service_hint.empty()) {
+            result.protocol_panel_service_text = connection.service_hint;
+        }
+        break;
+    default:
+        break;
+    }
+
+    if (connection.key.protocol == ProtocolId::tcp) {
+        result.has_tcp_control_counts = true;
+        accumulate_tcp_control_counts(connection.flow_a, result.tcp_syn_packets, result.tcp_fin_packets, result.tcp_rst_packets);
+        accumulate_tcp_control_counts(connection.flow_b, result.tcp_syn_packets, result.tcp_fin_packets, result.tcp_rst_packets);
+    }
+
+    if (result.protocol_panel_version_text.empty()
+        && result.protocol_panel_service_text.empty()
+        && !result.has_tcp_control_counts) {
+        result.protocol_panel_fallback_text = "No protocol-specific metadata available";
+    }
+}
+
 template <typename Connection>
 std::vector<FlowAnalysisPacketSizeHistogramRow> build_packet_size_histogram_rows(const Connection& connection) {
     std::array<std::uint64_t, kPacketSizeBuckets.size()> counts {};
@@ -333,6 +413,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
         ? std::string {}
         : std::string {flow_protocol_hint_text(connection.protocol_hint)};
     result.service_hint = connection.service_hint;
+    populate_protocol_panel(connection, result);
 
     std::optional<std::uint64_t> first_us {};
     std::optional<std::uint64_t> last_us {};

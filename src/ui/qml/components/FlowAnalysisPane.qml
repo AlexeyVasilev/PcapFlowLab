@@ -58,6 +58,13 @@ Frame {
     property string dominantDirectionText: ""
     property string protocolHint: ""
     property string serviceHint: ""
+    property string protocolVersionText: ""
+    property string protocolServiceText: ""
+    property string protocolFallbackText: ""
+    property bool hasTcpControlCounts: false
+    property var tcpSynPackets: 0
+    property var tcpFinPackets: 0
+    property var tcpRstPackets: 0
     property var packetsAToB: 0
     property var packetsBToA: 0
     property var bytesAToB: 0
@@ -261,6 +268,66 @@ Frame {
 
                             Label { text: "Max packet size" }
                             Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Protocol Panel"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+                            visible: root.protocolHint === "TLS" || root.protocolHint === "QUIC"
+
+                            Label {
+                                text: root.protocolHint === "TLS" ? "TLS version" : "QUIC version"
+                            }
+                            Label {
+                                text: root.protocolVersionText.length > 0 ? root.protocolVersionText : "unknown"
+                            }
+
+                            Label { text: "SNI / service" }
+                            Label {
+                                text: root.protocolServiceText.length > 0 ? root.protocolServiceText : "unknown"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Rectangle {
+                            visible: (root.protocolHint === "TLS" || root.protocolHint === "QUIC") && root.hasTcpControlCounts
+                            width: parent.width
+                            height: 1
+                            color: "#e2e8f0"
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+                            visible: root.hasTcpControlCounts
+
+                            Label { text: "SYN packets" }
+                            Label { text: root.tcpSynPackets }
+
+                            Label { text: "FIN packets" }
+                            Label { text: root.tcpFinPackets }
+
+                            Label { text: "RST packets" }
+                            Label { text: root.tcpRstPackets }
+                        }
+
+                        Label {
+                            visible: !((root.protocolHint === "TLS" || root.protocolHint === "QUIC") || root.hasTcpControlCounts)
+                            text: root.protocolFallbackText.length > 0 ? root.protocolFallbackText : "No protocol-specific metadata available"
+                            color: "#475569"
+                            wrapMode: Text.WordWrap
                         }
                     }
 

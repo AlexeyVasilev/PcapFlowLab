@@ -307,6 +307,13 @@ ApplicationWindow {
                 analysisDominantDirectionText: mainController.analysisDominantDirectionText
                 analysisProtocolHint: mainController.analysisProtocolHint
                 analysisServiceHint: mainController.analysisServiceHint
+                analysisProtocolVersionText: mainController.analysisProtocolVersionText
+                analysisProtocolServiceText: mainController.analysisProtocolServiceText
+                analysisProtocolFallbackText: mainController.analysisProtocolFallbackText
+                analysisHasTcpControlCounts: mainController.analysisHasTcpControlCounts
+                analysisTcpSynPackets: mainController.analysisTcpSynPackets
+                analysisTcpFinPackets: mainController.analysisTcpFinPackets
+                analysisTcpRstPackets: mainController.analysisTcpRstPackets
                 analysisPacketsAToB: mainController.analysisPacketsAToB
                 analysisPacketsBToA: mainController.analysisPacketsBToA
                 analysisBytesAToB: mainController.analysisBytesAToB

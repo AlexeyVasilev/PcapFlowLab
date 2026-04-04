@@ -27,6 +27,13 @@ Item {
     property string analysisDominantDirectionText: ""
     property string analysisProtocolHint: ""
     property string analysisServiceHint: ""
+    property string analysisProtocolVersionText: ""
+    property string analysisProtocolServiceText: ""
+    property string analysisProtocolFallbackText: ""
+    property bool analysisHasTcpControlCounts: false
+    property var analysisTcpSynPackets: 0
+    property var analysisTcpFinPackets: 0
+    property var analysisTcpRstPackets: 0
     property var analysisPacketsAToB: 0
     property var analysisPacketsBToA: 0
     property var analysisBytesAToB: 0
@@ -205,6 +212,13 @@ Item {
             dominantDirectionText: root.analysisDominantDirectionText
             protocolHint: root.analysisProtocolHint
             serviceHint: root.analysisServiceHint
+            protocolVersionText: root.analysisProtocolVersionText
+            protocolServiceText: root.analysisProtocolServiceText
+            protocolFallbackText: root.analysisProtocolFallbackText
+            hasTcpControlCounts: root.analysisHasTcpControlCounts
+            tcpSynPackets: root.analysisTcpSynPackets
+            tcpFinPackets: root.analysisTcpFinPackets
+            tcpRstPackets: root.analysisTcpRstPackets
             packetsAToB: root.analysisPacketsAToB
             packetsBToA: root.analysisPacketsBToA
             bytesAToB: root.analysisBytesAToB

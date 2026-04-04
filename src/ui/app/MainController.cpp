@@ -128,6 +128,19 @@ QString formatProtocol(const std::uint8_t protocol) {
     }
 }
 
+QString selected_flow_service_hint(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return {};
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return {};
+    }
+
+    return flow_model.data(flow_model.index(row, 0), FlowListModel::ServiceHintRole).toString();
+}
+
 QString formatIpv4Address(const std::uint32_t address) {
     return QStringLiteral("%1.%2.%3.%4")
         .arg((address >> 24U) & 0xFFU)
@@ -677,6 +690,65 @@ QString MainController::analysisServiceHint() const {
     return current_flow_analysis_.has_value() && !current_flow_analysis_->service_hint.empty()
         ? QString::fromStdString(current_flow_analysis_->service_hint)
         : QString {};
+}
+
+QString MainController::analysisProtocolVersionText() const {
+    if (!current_flow_analysis_.has_value()) {
+        return {};
+    }
+
+    if (!current_flow_analysis_->protocol_panel_version_text.empty()) {
+        return QString::fromStdString(current_flow_analysis_->protocol_panel_version_text);
+    }
+
+    const auto protocol_hint = QString::fromStdString(current_flow_analysis_->protocol_hint);
+    if (protocol_hint.compare(QStringLiteral("tls"), Qt::CaseInsensitive) == 0
+        || protocol_hint.compare(QStringLiteral("quic"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("unknown");
+    }
+
+    return {};
+}
+
+QString MainController::analysisProtocolServiceText() const {
+    if (!current_flow_analysis_.has_value()) {
+        return {};
+    }
+
+    if (!current_flow_analysis_->protocol_panel_service_text.empty()) {
+        return QString::fromStdString(current_flow_analysis_->protocol_panel_service_text);
+    }
+
+    const auto protocol_hint = QString::fromStdString(current_flow_analysis_->protocol_hint);
+    if (protocol_hint.compare(QStringLiteral("tls"), Qt::CaseInsensitive) == 0
+        || protocol_hint.compare(QStringLiteral("quic"), Qt::CaseInsensitive) == 0) {
+        const auto service_hint = selected_flow_service_hint(flow_model_, selected_flow_index_);
+        return service_hint.isEmpty() ? QStringLiteral("unknown") : service_hint;
+    }
+
+    return {};
+}
+
+QString MainController::analysisProtocolFallbackText() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->protocol_panel_fallback_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->protocol_panel_fallback_text)
+        : QString {};
+}
+
+bool MainController::analysisHasTcpControlCounts() const noexcept {
+    return current_flow_analysis_.has_value() && current_flow_analysis_->has_tcp_control_counts;
+}
+
+qulonglong MainController::analysisTcpSynPackets() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_syn_packets) : 0U;
+}
+
+qulonglong MainController::analysisTcpFinPackets() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_fin_packets) : 0U;
+}
+
+qulonglong MainController::analysisTcpRstPackets() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_rst_packets) : 0U;
 }
 
 qulonglong MainController::analysisPacketsAToB() const noexcept {

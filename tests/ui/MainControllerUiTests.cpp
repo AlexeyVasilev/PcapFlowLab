@@ -479,6 +479,13 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisDominantDirectionText() == QStringLiteral("Mostly A->B"));
     UI_EXPECT(controller.analysisProtocolHint() == QStringLiteral("HTTP"));
     UI_EXPECT(controller.analysisServiceHint() == QStringLiteral("ui.example"));
+    UI_EXPECT(controller.analysisHasTcpControlCounts());
+    UI_EXPECT(controller.analysisTcpSynPackets() == 1U);
+    UI_EXPECT(controller.analysisTcpFinPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpRstPackets() == 0U);
+    UI_EXPECT(controller.analysisProtocolVersionText().isEmpty());
+    UI_EXPECT(controller.analysisProtocolServiceText().isEmpty());
+    UI_EXPECT(controller.analysisProtocolFallbackText().isEmpty());
     UI_EXPECT(controller.analysisPacketsAToB() == 1U);
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
@@ -519,9 +526,51 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisPacketRatioText().isEmpty());
     UI_EXPECT(controller.analysisByteRatioText().isEmpty());
     UI_EXPECT(controller.analysisDominantDirectionText().isEmpty());
+    UI_EXPECT(controller.analysisProtocolVersionText().isEmpty());
+    UI_EXPECT(controller.analysisProtocolServiceText().isEmpty());
+    UI_EXPECT(controller.analysisProtocolFallbackText().isEmpty());
+    UI_EXPECT(!controller.analysisHasTcpControlCounts());
+    UI_EXPECT(controller.analysisTcpSynPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpFinPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpRstPackets() == 0U);
     UI_EXPECT(controller.analysisInterArrivalHistogram().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
+
+    const int analysis_dns_flow_index = find_flow_index_by_protocol_hint(analysis_flow_model, QStringLiteral("DNS"));
+    UI_EXPECT(analysis_dns_flow_index >= 0);
+    controller.setSelectedFlowIndex(analysis_dns_flow_index);
+    controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&controller]() {
+        return !controller.analysisLoading() && controller.analysisAvailable();
+    }));
+    UI_EXPECT(controller.analysisProtocolHint() == QStringLiteral("DNS"));
+    UI_EXPECT(controller.analysisProtocolFallbackText() == QStringLiteral("No protocol-specific metadata available"));
+    UI_EXPECT(!controller.analysisHasTcpControlCounts());
+
+    const auto tls_analysis_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
+    MainController tls_analysis_controller {};
+    UI_EXPECT(open_capture_and_wait(app, tls_analysis_controller, tls_analysis_fixture_path));
+    tls_analysis_controller.setSelectedFlowIndex(0);
+    tls_analysis_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&tls_analysis_controller]() {
+        return !tls_analysis_controller.analysisLoading() && tls_analysis_controller.analysisAvailable();
+    }));
+    UI_EXPECT(tls_analysis_controller.analysisProtocolHint() == QStringLiteral("TLS"));
+    UI_EXPECT(!tls_analysis_controller.analysisProtocolVersionText().isEmpty());
+    UI_EXPECT(tls_analysis_controller.analysisProtocolServiceText() == QStringLiteral("auth.split.io"));
+
+    const auto quic_analysis_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_initial_ch_1.pcap";
+    MainController quic_analysis_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_analysis_controller, quic_analysis_fixture_path));
+    quic_analysis_controller.setSelectedFlowIndex(0);
+    quic_analysis_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&quic_analysis_controller]() {
+        return !quic_analysis_controller.analysisLoading() && quic_analysis_controller.analysisAvailable();
+    }));
+    UI_EXPECT(quic_analysis_controller.analysisProtocolHint() == QStringLiteral("QUIC"));
+    UI_EXPECT(!quic_analysis_controller.analysisProtocolVersionText().isEmpty());
+    UI_EXPECT(quic_analysis_controller.analysisProtocolServiceText() == QStringLiteral("bag.itunes.apple.com"));
 
     MainController multi_flow_controller {};
     UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));

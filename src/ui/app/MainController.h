@@ -76,6 +76,13 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisDominantDirectionText READ analysisDominantDirectionText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisProtocolHint READ analysisProtocolHint NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisServiceHint READ analysisServiceHint NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisProtocolVersionText READ analysisProtocolVersionText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisProtocolServiceText READ analysisProtocolServiceText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisProtocolFallbackText READ analysisProtocolFallbackText NOTIFY analysisStateChanged)
+    Q_PROPERTY(bool analysisHasTcpControlCounts READ analysisHasTcpControlCounts NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisTcpSynPackets READ analysisTcpSynPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisTcpFinPackets READ analysisTcpFinPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisTcpRstPackets READ analysisTcpRstPackets NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsAToB READ analysisPacketsAToB NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsBToA READ analysisPacketsBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesAToB READ analysisBytesAToB NOTIFY analysisStateChanged)
@@ -188,6 +195,13 @@ public:
     [[nodiscard]] QString analysisDominantDirectionText() const;
     [[nodiscard]] QString analysisProtocolHint() const;
     [[nodiscard]] QString analysisServiceHint() const;
+    [[nodiscard]] QString analysisProtocolVersionText() const;
+    [[nodiscard]] QString analysisProtocolServiceText() const;
+    [[nodiscard]] QString analysisProtocolFallbackText() const;
+    [[nodiscard]] bool analysisHasTcpControlCounts() const noexcept;
+    [[nodiscard]] qulonglong analysisTcpSynPackets() const noexcept;
+    [[nodiscard]] qulonglong analysisTcpFinPackets() const noexcept;
+    [[nodiscard]] qulonglong analysisTcpRstPackets() const noexcept;
     [[nodiscard]] qulonglong analysisPacketsAToB() const noexcept;
     [[nodiscard]] qulonglong analysisPacketsBToA() const noexcept;
     [[nodiscard]] qulonglong analysisBytesAToB() const noexcept;

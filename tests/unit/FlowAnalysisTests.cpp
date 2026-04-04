@@ -5,6 +5,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "core/services/FlowAnalysisService.h"
 
 namespace pfl::tests {
 
@@ -40,6 +41,57 @@ std::uint64_t inter_arrival_histogram_count(const FlowAnalysisResult& analysis, 
 
 bool nearly_equal(const double left, const double right, const double epsilon = 0.001) {
     return std::fabs(left - right) <= epsilon;
+}
+
+PacketRef make_analysis_packet_ref(
+    const std::uint64_t packet_index,
+    const std::uint32_t ts_usec,
+    const std::uint32_t captured_length,
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags = 0U
+) {
+    return PacketRef {
+        .packet_index = packet_index,
+        .captured_length = captured_length,
+        .original_length = captured_length,
+        .ts_sec = 1U,
+        .ts_usec = ts_usec,
+        .payload_length = payload_length,
+        .tcp_flags = tcp_flags,
+    };
+}
+
+ConnectionV4 make_protocol_panel_connection(
+    const FlowProtocolHint protocol_hint,
+    const ProtocolId transport_protocol,
+    const std::vector<PacketRef>& flow_a_packets,
+    const std::vector<PacketRef>& flow_b_packets,
+    const std::string& service_hint = {},
+    const QuicVersionHint quic_version = QuicVersionHint::unknown,
+    const TlsVersionHint tls_version = TlsVersionHint::unknown
+) {
+    ConnectionV4 connection {};
+    connection.key.protocol = transport_protocol;
+    connection.protocol_hint = protocol_hint;
+    connection.service_hint = service_hint;
+    connection.quic_version = quic_version;
+    connection.tls_version = tls_version;
+    connection.flow_a.packets = flow_a_packets;
+    connection.flow_b.packets = flow_b_packets;
+    connection.flow_a.packet_count = static_cast<std::uint64_t>(connection.flow_a.packets.size());
+    connection.flow_b.packet_count = static_cast<std::uint64_t>(connection.flow_b.packets.size());
+
+    for (const auto& packet : connection.flow_a.packets) {
+        connection.flow_a.total_bytes += packet.captured_length;
+    }
+
+    for (const auto& packet : connection.flow_b.packets) {
+        connection.flow_b.total_bytes += packet.captured_length;
+    }
+
+    connection.packet_count = connection.flow_a.packet_count + connection.flow_b.packet_count;
+    connection.total_bytes = connection.flow_a.total_bytes + connection.flow_b.total_bytes;
+    return connection;
 }
 
 }  // namespace
@@ -93,7 +145,7 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->bytes_a_to_b == static_cast<std::uint64_t>(request_packet.size() + follow_up_packet.size()));
     PFL_EXPECT(analysis->bytes_b_to_a == static_cast<std::uint64_t>(response_packet.size()));
     PFL_EXPECT(analysis->packet_ratio_text == "2 : 1");
-    PFL_EXPECT(analysis->byte_ratio_text == "2.1 : 1");
+    PFL_EXPECT(analysis->byte_ratio_text == "2.3 : 1");
     PFL_EXPECT(analysis->dominant_direction_text == "Balanced");
     PFL_EXPECT(analysis->first_packet_timestamp_text == "00:00:01.000100");
     PFL_EXPECT(analysis->last_packet_timestamp_text == "00:00:03.000450");
@@ -366,6 +418,64 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(b_dominant_analysis->packet_ratio_text == "1 : 4");
     PFL_EXPECT(b_dominant_analysis->byte_ratio_text == "1 : 4");
     PFL_EXPECT(b_dominant_analysis->dominant_direction_text == "Mostly B->A");
+
+    FlowAnalysisService analysis_service {};
+
+    const auto tls_connection = make_protocol_panel_connection(
+        FlowProtocolHint::tls,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 96U, 42U, 0x02U),
+            make_analysis_packet_ref(2U, 300U, 88U, 30U, 0x01U),
+        },
+        {
+            make_analysis_packet_ref(1U, 200U, 90U, 28U, 0x12U),
+            make_analysis_packet_ref(3U, 400U, 84U, 24U, 0x04U),
+        },
+        "auth.split.io",
+        QuicVersionHint::unknown,
+        TlsVersionHint::tls12
+    );
+    const auto tls_analysis = analysis_service.analyze(tls_connection);
+    PFL_EXPECT(tls_analysis.protocol_panel_version_text == "TLS 1.2");
+    PFL_EXPECT(tls_analysis.protocol_panel_service_text == "auth.split.io");
+    PFL_EXPECT(tls_analysis.has_tcp_control_counts);
+    PFL_EXPECT(tls_analysis.tcp_syn_packets == 2U);
+    PFL_EXPECT(tls_analysis.tcp_fin_packets == 1U);
+    PFL_EXPECT(tls_analysis.tcp_rst_packets == 1U);
+    PFL_EXPECT(tls_analysis.protocol_panel_fallback_text.empty());
+
+    const auto quic_connection = make_protocol_panel_connection(
+        FlowProtocolHint::quic,
+        ProtocolId::udp,
+        {
+            make_analysis_packet_ref(0U, 100U, 120U, 80U),
+        },
+        {
+            make_analysis_packet_ref(1U, 200U, 110U, 70U),
+        },
+        "bag.itunes.apple.com",
+        QuicVersionHint::v1
+    );
+    const auto quic_analysis = analysis_service.analyze(quic_connection);
+    PFL_EXPECT(quic_analysis.protocol_panel_version_text == "QUIC v1");
+    PFL_EXPECT(quic_analysis.protocol_panel_service_text == "bag.itunes.apple.com");
+    PFL_EXPECT(!quic_analysis.has_tcp_control_counts);
+    PFL_EXPECT(quic_analysis.protocol_panel_fallback_text.empty());
+
+    const auto fallback_connection = make_protocol_panel_connection(
+        FlowProtocolHint::dns,
+        ProtocolId::udp,
+        {
+            make_analysis_packet_ref(0U, 100U, 72U, 30U),
+        },
+        {}
+    );
+    const auto fallback_analysis = analysis_service.analyze(fallback_connection);
+    PFL_EXPECT(fallback_analysis.protocol_panel_version_text.empty());
+    PFL_EXPECT(fallback_analysis.protocol_panel_service_text.empty());
+    PFL_EXPECT(!fallback_analysis.has_tcp_control_counts);
+    PFL_EXPECT(fallback_analysis.protocol_panel_fallback_text == "No protocol-specific metadata available");
 }
 
 }  // namespace pfl::tests

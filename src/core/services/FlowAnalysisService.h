@@ -50,6 +50,13 @@ struct FlowAnalysisResult {
     std::string last_packet_timestamp_text {};
     std::string protocol_hint {};
     std::string service_hint {};
+    std::string protocol_panel_version_text {};
+    std::string protocol_panel_service_text {};
+    std::string protocol_panel_fallback_text {};
+    std::uint64_t tcp_syn_packets {0};
+    std::uint64_t tcp_fin_packets {0};
+    std::uint64_t tcp_rst_packets {0};
+    bool has_tcp_control_counts {false};
     std::vector<FlowAnalysisInterArrivalHistogramRow> inter_arrival_histogram_rows {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> packet_size_histogram_rows {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};
