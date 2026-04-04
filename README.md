@@ -61,6 +61,7 @@ The Qt Quick desktop UI can:
 - include a bounded metadata-only Timeline block in Analysis for selected-flow timing summary
 - include a bounded metadata-only Packet Size Histogram block in Analysis for selected-flow captured-length distribution
 - include a bounded metadata-only Inter-arrival Histogram block in Analysis for selected-flow timing distribution
+- explain directional histogram modes inline in Analysis so packet-size filtering and inter-arrival attribution stay understandable without changing analysis logic
 - include a bounded metadata-only Derived Metrics block in Analysis for selected-flow summary rates and averages
 - include a bounded metadata-only Directional Ratio block in Analysis for selected-flow directional imbalance summary
 - keep the Analysis tab organized with summary-first blocks followed by histogram/detail evidence blocks for readability only; this step does not add new analysis logic

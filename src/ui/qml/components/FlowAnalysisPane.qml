@@ -50,6 +50,26 @@ Frame {
         implicitHeight: 28
     }
 
+    component HistogramInfoHint: Label {
+        color: "#64748b"
+        text: "ⓘ"
+        font.pixelSize: 13
+
+        ToolTip.visible: hintArea.containsMouse
+        ToolTip.delay: 250
+        ToolTip.timeout: 8000
+        ToolTip.text: tooltipText
+
+        required property string tooltipText
+
+        MouseArea {
+            id: hintArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+        }
+    }
+
     function selectHistogramModel(mode, allModel, aToBModel, bToAModel) {
         if (mode === root.histogramModeAToB) {
             return aToBModel
@@ -598,6 +618,10 @@ Frame {
                                 font.bold: true
                             }
 
+                            HistogramInfoHint {
+                                tooltipText: "Shows packet size distribution. Directional modes filter packets by flow direction."
+                            }
+
                             Item {
                                 Layout.fillWidth: true
                             }
@@ -697,6 +721,10 @@ Frame {
                             Label {
                                 text: "Inter-arrival Histogram"
                                 font.bold: true
+                            }
+
+                            HistogramInfoHint {
+                                tooltipText: "Inter-arrival times use the full packet timeline. Each interval follows the direction of the later packet."
                             }
 
                             Item {
