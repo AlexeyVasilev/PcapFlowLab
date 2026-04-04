@@ -13,6 +13,8 @@ namespace pfl {
 namespace {
 
 constexpr std::size_t kSequencePreviewLimit = 20U;
+constexpr std::uint64_t kBurstThresholdUs = 1000U;
+constexpr std::uint64_t kIdleGapThresholdUs = 100000U;
 
 struct PacketSizeBucketSpec {
     const char* label;
@@ -338,6 +340,21 @@ void populate_protocol_panel(const Connection& connection, FlowAnalysisResult& r
     }
 }
 
+void finalize_burst(
+    const bool has_burst,
+    const std::uint64_t burst_packet_count,
+    const std::uint64_t burst_bytes,
+    FlowAnalysisResult& result
+) {
+    if (!has_burst) {
+        return;
+    }
+
+    result.burst_count += 1U;
+    result.longest_burst_packet_count = std::max(result.longest_burst_packet_count, burst_packet_count);
+    result.largest_burst_bytes = std::max(result.largest_burst_bytes, burst_bytes);
+}
+
 template <typename Connection>
 std::vector<FlowAnalysisPacketSizeHistogramRow> build_packet_size_histogram_rows(const Connection& connection) {
     std::array<std::uint64_t, kPacketSizeBuckets.size()> counts {};
@@ -436,19 +453,46 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     std::optional<std::uint64_t> previous_timestamp_us {};
     std::uint64_t inter_arrival_delta_sum_us = 0U;
     std::uint64_t inter_arrival_delta_count = 0U;
+    std::uint64_t current_burst_packet_count = 0U;
+    std::uint64_t current_burst_bytes = 0U;
+    bool current_run_is_burst = false;
     for (const auto* packet : ordered_packets) {
         result.min_packet_size_bytes = std::min(result.min_packet_size_bytes, packet->captured_length);
         result.max_packet_size_bytes = std::max(result.max_packet_size_bytes, packet->captured_length);
+
+        if (current_burst_packet_count == 0U) {
+            current_burst_packet_count = 1U;
+            current_burst_bytes = packet->captured_length;
+        }
+
         const auto current_timestamp_us = packet_timestamp_us(*packet);
         if (previous_timestamp_us.has_value() && current_timestamp_us >= *previous_timestamp_us) {
             const auto delta_us = current_timestamp_us - *previous_timestamp_us;
             result.largest_gap_us = std::max(result.largest_gap_us, delta_us);
             inter_arrival_delta_sum_us += delta_us;
             inter_arrival_delta_count += 1U;
+
+            if (delta_us < kBurstThresholdUs) {
+                current_burst_packet_count += 1U;
+                current_burst_bytes += packet->captured_length;
+                current_run_is_burst = true;
+            } else {
+                finalize_burst(current_run_is_burst, current_burst_packet_count, current_burst_bytes, result);
+                current_burst_packet_count = 1U;
+                current_burst_bytes = packet->captured_length;
+                current_run_is_burst = false;
+            }
+
+            if (delta_us >= kIdleGapThresholdUs) {
+                result.idle_gap_count += 1U;
+                result.largest_idle_gap_us = std::max(result.largest_idle_gap_us, delta_us);
+            }
         }
 
         previous_timestamp_us = current_timestamp_us;
     }
+
+    finalize_burst(current_run_is_burst, current_burst_packet_count, current_burst_bytes, result);
 
     if (result.duration_us > 0U) {
         result.packets_per_second =

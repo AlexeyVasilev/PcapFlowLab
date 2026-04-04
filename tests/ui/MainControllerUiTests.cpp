@@ -486,6 +486,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisProtocolVersionText().isEmpty());
     UI_EXPECT(controller.analysisProtocolServiceText().isEmpty());
     UI_EXPECT(controller.analysisProtocolFallbackText().isEmpty());
+    UI_EXPECT(controller.analysisBurstCount() == 0U);
+    UI_EXPECT(controller.analysisLongestBurstPacketCount() == 0U);
+    UI_EXPECT(controller.analysisLargestBurstBytesText() == QStringLiteral("0 B"));
+    UI_EXPECT(controller.analysisIdleGapCount() == 0U);
+    UI_EXPECT(controller.analysisLargestIdleGapText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisPacketsAToB() == 1U);
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
@@ -533,6 +538,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTcpSynPackets() == 0U);
     UI_EXPECT(controller.analysisTcpFinPackets() == 0U);
     UI_EXPECT(controller.analysisTcpRstPackets() == 0U);
+    UI_EXPECT(controller.analysisBurstCount() == 0U);
+    UI_EXPECT(controller.analysisLongestBurstPacketCount() == 0U);
+    UI_EXPECT(controller.analysisLargestBurstBytesText().isEmpty());
+    UI_EXPECT(controller.analysisIdleGapCount() == 0U);
+    UI_EXPECT(controller.analysisLargestIdleGapText().isEmpty());
     UI_EXPECT(controller.analysisInterArrivalHistogram().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
@@ -571,6 +581,51 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_analysis_controller.analysisProtocolHint() == QStringLiteral("QUIC"));
     UI_EXPECT(!quic_analysis_controller.analysisProtocolVersionText().isEmpty());
     UI_EXPECT(quic_analysis_controller.analysisProtocolServiceText() == QStringLiteral("bag.itunes.apple.com"));
+
+    const auto burst_packet_a = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 55000, 443, 10, 0x18
+    );
+    const auto burst_packet_b = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 60, 0, 2), ipv4(10, 60, 0, 1), 443, 55000, 20, 0x18
+    );
+    const auto burst_packet_c = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 55000, 443, 30, 0x18
+    );
+    const auto burst_packet_d = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 60, 0, 2), ipv4(10, 60, 0, 1), 443, 55000, 40, 0x18
+    );
+    const auto burst_packet_e = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 55000, 443, 50, 0x18
+    );
+    const auto burst_packet_f = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 60, 0, 2), ipv4(10, 60, 0, 1), 443, 55000, 5, 0x18
+    );
+    const auto burst_capture_path = write_temp_pcap(
+        "pfl_ui_burst_idle_summary.pcapng",
+        make_pcapng({
+            make_pcapng_section_header_block(),
+            make_pcapng_interface_description_block(),
+            make_pcapng_enhanced_packet_block(0U, 1U, 0U, burst_packet_a),
+            make_pcapng_enhanced_packet_block(0U, 1U, 400U, burst_packet_b),
+            make_pcapng_enhanced_packet_block(0U, 1U, 800U, burst_packet_c),
+            make_pcapng_enhanced_packet_block(0U, 1U, 200000U, burst_packet_d),
+            make_pcapng_enhanced_packet_block(0U, 1U, 200500U, burst_packet_e),
+            make_pcapng_enhanced_packet_block(0U, 1U, 400000U, burst_packet_f),
+        })
+    );
+
+    MainController burst_analysis_controller {};
+    UI_EXPECT(open_capture_and_wait(app, burst_analysis_controller, burst_capture_path));
+    burst_analysis_controller.setSelectedFlowIndex(0);
+    burst_analysis_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&burst_analysis_controller]() {
+        return !burst_analysis_controller.analysisLoading() && burst_analysis_controller.analysisAvailable();
+    }));
+    UI_EXPECT(burst_analysis_controller.analysisBurstCount() == 2U);
+    UI_EXPECT(burst_analysis_controller.analysisLongestBurstPacketCount() == 3U);
+    UI_EXPECT(burst_analysis_controller.analysisLargestBurstBytesText() == QStringLiteral("222 B"));
+    UI_EXPECT(burst_analysis_controller.analysisIdleGapCount() == 2U);
+    UI_EXPECT(burst_analysis_controller.analysisLargestIdleGapText() == QStringLiteral("199.500 ms"));
 
     MainController multi_flow_controller {};
     UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));

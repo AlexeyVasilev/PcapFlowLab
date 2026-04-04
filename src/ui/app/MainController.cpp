@@ -297,6 +297,10 @@ QString format_size_value(const std::uint32_t value) {
     return QStringLiteral("%1 B").arg(value);
 }
 
+QString format_size_value(const std::uint64_t value) {
+    return QStringLiteral("%1 B").arg(value);
+}
+
 QString buildStreamItemSummary(
     const StreamItemRow& item,
     const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
@@ -749,6 +753,32 @@ qulonglong MainController::analysisTcpFinPackets() const noexcept {
 
 qulonglong MainController::analysisTcpRstPackets() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_rst_packets) : 0U;
+}
+
+qulonglong MainController::analysisBurstCount() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->burst_count) : 0U;
+}
+
+qulonglong MainController::analysisLongestBurstPacketCount() const noexcept {
+    return current_flow_analysis_.has_value()
+        ? static_cast<qulonglong>(current_flow_analysis_->longest_burst_packet_count)
+        : 0U;
+}
+
+QString MainController::analysisLargestBurstBytesText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->largest_burst_bytes)
+        : QString {};
+}
+
+qulonglong MainController::analysisIdleGapCount() const noexcept {
+    return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->idle_gap_count) : 0U;
+}
+
+QString MainController::analysisLargestIdleGapText() const {
+    return current_flow_analysis_.has_value()
+        ? format_duration_us(current_flow_analysis_->largest_idle_gap_us)
+        : QString {};
 }
 
 qulonglong MainController::analysisPacketsAToB() const noexcept {

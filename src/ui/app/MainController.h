@@ -83,6 +83,11 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong analysisTcpSynPackets READ analysisTcpSynPackets NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTcpFinPackets READ analysisTcpFinPackets NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTcpRstPackets READ analysisTcpRstPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisBurstCount READ analysisBurstCount NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisLongestBurstPacketCount READ analysisLongestBurstPacketCount NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisLargestBurstBytesText READ analysisLargestBurstBytesText NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisIdleGapCount READ analysisIdleGapCount NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisLargestIdleGapText READ analysisLargestIdleGapText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsAToB READ analysisPacketsAToB NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsBToA READ analysisPacketsBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesAToB READ analysisBytesAToB NOTIFY analysisStateChanged)
@@ -202,6 +207,11 @@ public:
     [[nodiscard]] qulonglong analysisTcpSynPackets() const noexcept;
     [[nodiscard]] qulonglong analysisTcpFinPackets() const noexcept;
     [[nodiscard]] qulonglong analysisTcpRstPackets() const noexcept;
+    [[nodiscard]] qulonglong analysisBurstCount() const noexcept;
+    [[nodiscard]] qulonglong analysisLongestBurstPacketCount() const noexcept;
+    [[nodiscard]] QString analysisLargestBurstBytesText() const;
+    [[nodiscard]] qulonglong analysisIdleGapCount() const noexcept;
+    [[nodiscard]] QString analysisLargestIdleGapText() const;
     [[nodiscard]] qulonglong analysisPacketsAToB() const noexcept;
     [[nodiscard]] qulonglong analysisPacketsBToA() const noexcept;
     [[nodiscard]] qulonglong analysisBytesAToB() const noexcept;

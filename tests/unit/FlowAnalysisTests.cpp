@@ -94,6 +94,13 @@ ConnectionV4 make_protocol_panel_connection(
     return connection;
 }
 
+ConnectionV4 make_burst_summary_connection(
+    const std::vector<PacketRef>& flow_a_packets,
+    const std::vector<PacketRef>& flow_b_packets
+) {
+    return make_protocol_panel_connection(FlowProtocolHint::unknown, ProtocolId::tcp, flow_a_packets, flow_b_packets);
+}
+
 }  // namespace
 
 void run_flow_analysis_tests() {
@@ -476,6 +483,47 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(fallback_analysis.protocol_panel_service_text.empty());
     PFL_EXPECT(!fallback_analysis.has_tcp_control_counts);
     PFL_EXPECT(fallback_analysis.protocol_panel_fallback_text == "No protocol-specific metadata available");
+
+    const auto burst_connection = make_burst_summary_connection(
+        {
+            make_analysis_packet_ref(0U, 100U, 80U, 10U),
+            make_analysis_packet_ref(2U, 800U, 100U, 30U),
+            make_analysis_packet_ref(4U, 200500U, 120U, 50U),
+        },
+        {
+            make_analysis_packet_ref(1U, 500U, 90U, 20U),
+            make_analysis_packet_ref(3U, 200000U, 110U, 40U),
+            make_analysis_packet_ref(5U, 400000U, 70U, 12U),
+        }
+    );
+    const auto burst_analysis = analysis_service.analyze(burst_connection);
+    PFL_EXPECT(burst_analysis.burst_count == 2U);
+    PFL_EXPECT(burst_analysis.longest_burst_packet_count == 3U);
+    PFL_EXPECT(burst_analysis.largest_burst_bytes == 270U);
+    PFL_EXPECT(burst_analysis.idle_gap_count == 2U);
+    PFL_EXPECT(burst_analysis.largest_idle_gap_us == 199500U);
+
+    const auto single_burst_packet_connection = make_burst_summary_connection(
+        {
+            make_analysis_packet_ref(0U, 100U, 64U, 10U),
+        },
+        {}
+    );
+    const auto single_burst_packet_analysis = analysis_service.analyze(single_burst_packet_connection);
+    PFL_EXPECT(single_burst_packet_analysis.burst_count == 0U);
+    PFL_EXPECT(single_burst_packet_analysis.longest_burst_packet_count == 0U);
+    PFL_EXPECT(single_burst_packet_analysis.largest_burst_bytes == 0U);
+    PFL_EXPECT(single_burst_packet_analysis.idle_gap_count == 0U);
+    PFL_EXPECT(single_burst_packet_analysis.largest_idle_gap_us == 0U);
+
+    const auto empty_connection = make_burst_summary_connection({}, {});
+    const auto empty_analysis = analysis_service.analyze(empty_connection);
+    PFL_EXPECT(empty_analysis.total_packets == 0U);
+    PFL_EXPECT(empty_analysis.burst_count == 0U);
+    PFL_EXPECT(empty_analysis.longest_burst_packet_count == 0U);
+    PFL_EXPECT(empty_analysis.largest_burst_bytes == 0U);
+    PFL_EXPECT(empty_analysis.idle_gap_count == 0U);
+    PFL_EXPECT(empty_analysis.largest_idle_gap_us == 0U);
 }
 
 }  // namespace pfl::tests

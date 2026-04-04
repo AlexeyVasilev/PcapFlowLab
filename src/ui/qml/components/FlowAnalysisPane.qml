@@ -65,6 +65,11 @@ Frame {
     property var tcpSynPackets: 0
     property var tcpFinPackets: 0
     property var tcpRstPackets: 0
+    property var burstCount: 0
+    property var longestBurstPacketCount: 0
+    property string largestBurstBytesText: ""
+    property var idleGapCount: 0
+    property string largestIdleGapText: ""
     property var packetsAToB: 0
     property var packetsBToA: 0
     property var bytesAToB: 0
@@ -351,6 +356,35 @@ Frame {
 
                             Label { text: "Dominant direction" }
                             Label { text: root.dominantDirectionText.length > 0 ? root.dominantDirectionText : "-" }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
+                        Label {
+                            text: "Burst / Idle Summary"
+                            font.bold: true
+                        }
+
+                        GridLayout {
+                            width: parent.width
+                            columns: 2
+                            columnSpacing: 16
+                            rowSpacing: root.rowSpacing
+
+                            Label { text: "Burst count" }
+                            Label { text: root.burstCount }
+
+                            Label { text: "Longest burst" }
+                            Label { text: root.longestBurstPacketCount }
+
+                            Label { text: "Largest burst bytes" }
+                            Label { text: root.largestBurstBytesText.length > 0 ? root.largestBurstBytesText : "0 B" }
+
+                            Label { text: "Idle gap count" }
+                            Label { text: root.idleGapCount }
+
+                            Label { text: "Largest idle gap" }
+                            Label { text: root.largestIdleGapText.length > 0 ? root.largestIdleGapText : "0 us" }
                         }
                     }
 

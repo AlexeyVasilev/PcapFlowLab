@@ -314,6 +314,11 @@ ApplicationWindow {
                 analysisTcpSynPackets: mainController.analysisTcpSynPackets
                 analysisTcpFinPackets: mainController.analysisTcpFinPackets
                 analysisTcpRstPackets: mainController.analysisTcpRstPackets
+                analysisBurstCount: mainController.analysisBurstCount
+                analysisLongestBurstPacketCount: mainController.analysisLongestBurstPacketCount
+                analysisLargestBurstBytesText: mainController.analysisLargestBurstBytesText
+                analysisIdleGapCount: mainController.analysisIdleGapCount
+                analysisLargestIdleGapText: mainController.analysisLargestIdleGapText
                 analysisPacketsAToB: mainController.analysisPacketsAToB
                 analysisPacketsBToA: mainController.analysisPacketsBToA
                 analysisBytesAToB: mainController.analysisBytesAToB

@@ -34,6 +34,11 @@ Item {
     property var analysisTcpSynPackets: 0
     property var analysisTcpFinPackets: 0
     property var analysisTcpRstPackets: 0
+    property var analysisBurstCount: 0
+    property var analysisLongestBurstPacketCount: 0
+    property string analysisLargestBurstBytesText: ""
+    property var analysisIdleGapCount: 0
+    property string analysisLargestIdleGapText: ""
     property var analysisPacketsAToB: 0
     property var analysisPacketsBToA: 0
     property var analysisBytesAToB: 0
@@ -219,6 +224,11 @@ Item {
             tcpSynPackets: root.analysisTcpSynPackets
             tcpFinPackets: root.analysisTcpFinPackets
             tcpRstPackets: root.analysisTcpRstPackets
+            burstCount: root.analysisBurstCount
+            longestBurstPacketCount: root.analysisLongestBurstPacketCount
+            largestBurstBytesText: root.analysisLargestBurstBytesText
+            idleGapCount: root.analysisIdleGapCount
+            largestIdleGapText: root.analysisLargestIdleGapText
             packetsAToB: root.analysisPacketsAToB
             packetsBToA: root.analysisPacketsBToA
             bytesAToB: root.analysisBytesAToB
