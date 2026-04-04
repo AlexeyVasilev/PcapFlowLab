@@ -27,6 +27,18 @@ struct FlowAnalysisInterArrivalHistogramRow {
     std::uint64_t packet_count {0};
 };
 
+struct FlowAnalysisPacketSizeHistogramSet {
+    std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_all {};
+    std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_a_to_b {};
+    std::vector<FlowAnalysisPacketSizeHistogramRow> histogram_b_to_a {};
+};
+
+struct FlowAnalysisInterArrivalHistogramSet {
+    std::vector<FlowAnalysisInterArrivalHistogramRow> histogram_all {};
+    std::vector<FlowAnalysisInterArrivalHistogramRow> histogram_a_to_b {};
+    std::vector<FlowAnalysisInterArrivalHistogramRow> histogram_b_to_a {};
+};
+
 struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
@@ -62,6 +74,8 @@ struct FlowAnalysisResult {
     std::uint64_t idle_gap_count {0};
     std::uint64_t largest_idle_gap_us {0};
     bool has_tcp_control_counts {false};
+    FlowAnalysisInterArrivalHistogramSet inter_arrival_histograms {};
+    FlowAnalysisPacketSizeHistogramSet packet_size_histograms {};
     std::vector<FlowAnalysisInterArrivalHistogramRow> inter_arrival_histogram_rows {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> packet_size_histogram_rows {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};

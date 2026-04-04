@@ -13,6 +13,9 @@ Frame {
     readonly property int histogramBarHeight: 18
     readonly property int groupBreakSpacing: 10
     readonly property int twoColumnMinWidth: 880
+    readonly property int histogramModeAll: 0
+    readonly property int histogramModeAToB: 1
+    readonly property int histogramModeBToA: 2
 
     signal openInFlowsRequested()
     signal exportFlowSequenceRequested()
@@ -39,6 +42,30 @@ Frame {
             width: Math.max(0, parent.width - (root.blockPadding * 2))
             spacing: root.sectionSpacing
         }
+    }
+
+    component HistogramModeButton: Button {
+        checkable: true
+        implicitWidth: 64
+        implicitHeight: 28
+    }
+
+    function selectHistogramModel(mode, allModel, aToBModel, bToAModel) {
+        if (mode === root.histogramModeAToB) {
+            return aToBModel
+        }
+        if (mode === root.histogramModeBToA) {
+            return bToAModel
+        }
+        return allModel
+    }
+
+    function histogramTotalCount(model) {
+        var total = 0
+        for (var index = 0; index < model.length; ++index) {
+            total += model[index].packetCount
+        }
+        return total
     }
 
     property bool hasActiveFlow: false
@@ -95,9 +122,31 @@ Frame {
     property string bytesAToBText: ""
     property var bytesBToA: 0
     property string bytesBToAText: ""
+    property var interArrivalHistogramAllModel: []
+    property var interArrivalHistogramAToBModel: []
+    property var interArrivalHistogramBToAModel: []
     property var interArrivalHistogramModel: []
+    property var packetSizeHistogramAllModel: []
+    property var packetSizeHistogramAToBModel: []
+    property var packetSizeHistogramBToAModel: []
     property var packetSizeHistogramModel: []
     property var sequencePreviewModel: []
+    property int packetSizeHistogramMode: histogramModeAll
+    property int interArrivalHistogramMode: histogramModeAll
+    readonly property var displayedPacketSizeHistogramModel: selectHistogramModel(
+        packetSizeHistogramMode,
+        packetSizeHistogramAllModel.length > 0 ? packetSizeHistogramAllModel : packetSizeHistogramModel,
+        packetSizeHistogramAToBModel,
+        packetSizeHistogramBToAModel
+    )
+    readonly property var displayedInterArrivalHistogramModel: selectHistogramModel(
+        interArrivalHistogramMode,
+        interArrivalHistogramAllModel.length > 0 ? interArrivalHistogramAllModel : interArrivalHistogramModel,
+        interArrivalHistogramAToBModel,
+        interArrivalHistogramBToAModel
+    )
+    readonly property int displayedPacketSizeHistogramTotal: histogramTotalCount(displayedPacketSizeHistogramModel)
+    readonly property int displayedInterArrivalHistogramTotal: histogramTotalCount(displayedInterArrivalHistogramModel)
 
     background: Rectangle {
         color: "#ffffff"
@@ -540,13 +589,65 @@ Frame {
                     }
 
                     AnalysisSectionFrame {
-                        Label {
-                            text: "Packet Size Histogram"
-                            font.bold: true
+                        RowLayout {
+                            width: parent.width
+                            spacing: 12
+
+                            Label {
+                                text: "Packet Size Histogram"
+                                font.bold: true
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: packetSizeModeLayout.implicitHeight + 4
+                                implicitWidth: packetSizeModeLayout.implicitWidth + 8
+
+                                RowLayout {
+                                    id: packetSizeModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
+
+                                    ButtonGroup {
+                                        id: packetSizeHistogramModeGroup
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeHistogramModeAllButton"
+                                        text: "All"
+                                        checked: root.packetSizeHistogramMode === root.histogramModeAll
+                                        ButtonGroup.group: packetSizeHistogramModeGroup
+                                        onClicked: root.packetSizeHistogramMode = root.histogramModeAll
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeHistogramModeAToBButton"
+                                        text: "A→B"
+                                        checked: root.packetSizeHistogramMode === root.histogramModeAToB
+                                        ButtonGroup.group: packetSizeHistogramModeGroup
+                                        onClicked: root.packetSizeHistogramMode = root.histogramModeAToB
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "packetSizeHistogramModeBToAButton"
+                                        text: "B→A"
+                                        checked: root.packetSizeHistogramMode === root.histogramModeBToA
+                                        ButtonGroup.group: packetSizeHistogramModeGroup
+                                        onClicked: root.packetSizeHistogramMode = root.histogramModeBToA
+                                    }
+                                }
+                            }
                         }
 
                         Repeater {
-                            model: root.packetSizeHistogramModel
+                            model: root.displayedPacketSizeHistogramModel
 
                             delegate: RowLayout {
                                 required property var modelData
@@ -555,7 +656,7 @@ Frame {
 
                                 Label {
                                     text: modelData.bucketLabel
-                                    Layout.preferredWidth: 84
+                                    Layout.preferredWidth: 94
                                     Layout.alignment: Qt.AlignVCenter
                                 }
 
@@ -572,7 +673,7 @@ Frame {
                                         anchors.left: parent.left
                                         anchors.top: parent.top
                                         anchors.bottom: parent.bottom
-                                        width: parent.width * (root.totalPackets > 0 ? modelData.packetCount / root.totalPackets : 0)
+                                        width: parent.width * (root.displayedPacketSizeHistogramTotal > 0 ? modelData.packetCount / root.displayedPacketSizeHistogramTotal : 0)
                                         radius: 4
                                         color: modelData.packetCount > 0 ? "#60a5fa" : "transparent"
                                     }
@@ -589,13 +690,65 @@ Frame {
                     }
 
                     AnalysisSectionFrame {
-                        Label {
-                            text: "Inter-arrival Histogram"
-                            font.bold: true
+                        RowLayout {
+                            width: parent.width
+                            spacing: 12
+
+                            Label {
+                                text: "Inter-arrival Histogram"
+                                font.bold: true
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: interArrivalModeLayout.implicitHeight + 4
+                                implicitWidth: interArrivalModeLayout.implicitWidth + 8
+
+                                RowLayout {
+                                    id: interArrivalModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
+
+                                    ButtonGroup {
+                                        id: interArrivalHistogramModeGroup
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "interArrivalHistogramModeAllButton"
+                                        text: "All"
+                                        checked: root.interArrivalHistogramMode === root.histogramModeAll
+                                        ButtonGroup.group: interArrivalHistogramModeGroup
+                                        onClicked: root.interArrivalHistogramMode = root.histogramModeAll
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "interArrivalHistogramModeAToBButton"
+                                        text: "A→B"
+                                        checked: root.interArrivalHistogramMode === root.histogramModeAToB
+                                        ButtonGroup.group: interArrivalHistogramModeGroup
+                                        onClicked: root.interArrivalHistogramMode = root.histogramModeAToB
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "interArrivalHistogramModeBToAButton"
+                                        text: "B→A"
+                                        checked: root.interArrivalHistogramMode === root.histogramModeBToA
+                                        ButtonGroup.group: interArrivalHistogramModeGroup
+                                        onClicked: root.interArrivalHistogramMode = root.histogramModeBToA
+                                    }
+                                }
+                            }
                         }
 
                         Repeater {
-                            model: root.interArrivalHistogramModel
+                            model: root.displayedInterArrivalHistogramModel
 
                             delegate: RowLayout {
                                 required property var modelData
@@ -604,7 +757,7 @@ Frame {
 
                                 Label {
                                     text: modelData.bucketLabel
-                                    Layout.preferredWidth: 84
+                                    Layout.preferredWidth: 94
                                     Layout.alignment: Qt.AlignVCenter
                                 }
 
@@ -621,7 +774,7 @@ Frame {
                                         anchors.left: parent.left
                                         anchors.top: parent.top
                                         anchors.bottom: parent.bottom
-                                        width: parent.width * (root.totalPackets > 1 ? modelData.packetCount / (root.totalPackets - 1) : 0)
+                                        width: parent.width * (root.displayedInterArrivalHistogramTotal > 0 ? modelData.packetCount / root.displayedInterArrivalHistogramTotal : 0)
                                         radius: 4
                                         color: modelData.packetCount > 0 ? "#38bdf8" : "transparent"
                                     }

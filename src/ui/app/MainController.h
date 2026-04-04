@@ -109,7 +109,13 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisBytesAToBText READ analysisBytesAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesBToA READ analysisBytesBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisBytesBToAText READ analysisBytesBToAText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisInterArrivalHistogramAll READ analysisInterArrivalHistogramAll NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisInterArrivalHistogramAToB READ analysisInterArrivalHistogramAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisInterArrivalHistogramBToA READ analysisInterArrivalHistogramBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisInterArrivalHistogram READ analysisInterArrivalHistogram NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisPacketSizeHistogramAll READ analysisPacketSizeHistogramAll NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisPacketSizeHistogramAToB READ analysisPacketSizeHistogramAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisPacketSizeHistogramBToA READ analysisPacketSizeHistogramBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogram READ analysisPacketSizeHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisSequencePreview READ analysisSequencePreview NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong packetCount READ packetCount NOTIFY stateChanged)
@@ -250,7 +256,13 @@ public:
     [[nodiscard]] QString analysisBytesAToBText() const;
     [[nodiscard]] qulonglong analysisBytesBToA() const noexcept;
     [[nodiscard]] QString analysisBytesBToAText() const;
+    [[nodiscard]] QVariantList analysisInterArrivalHistogramAll() const;
+    [[nodiscard]] QVariantList analysisInterArrivalHistogramAToB() const;
+    [[nodiscard]] QVariantList analysisInterArrivalHistogramBToA() const;
     [[nodiscard]] QVariantList analysisInterArrivalHistogram() const;
+    [[nodiscard]] QVariantList analysisPacketSizeHistogramAll() const;
+    [[nodiscard]] QVariantList analysisPacketSizeHistogramAToB() const;
+    [[nodiscard]] QVariantList analysisPacketSizeHistogramBToA() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogram() const;
     [[nodiscard]] QVariantList analysisSequencePreview() const;
     [[nodiscard]] qulonglong packetCount() const noexcept;

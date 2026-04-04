@@ -340,7 +340,13 @@ ApplicationWindow {
                 analysisBytesAToBText: mainController.analysisBytesAToBText
                 analysisBytesBToA: mainController.analysisBytesBToA
                 analysisBytesBToAText: mainController.analysisBytesBToAText
+                analysisInterArrivalHistogramAll: mainController.analysisInterArrivalHistogramAll
+                analysisInterArrivalHistogramAToB: mainController.analysisInterArrivalHistogramAToB
+                analysisInterArrivalHistogramBToA: mainController.analysisInterArrivalHistogramBToA
                 analysisInterArrivalHistogram: mainController.analysisInterArrivalHistogram
+                analysisPacketSizeHistogramAll: mainController.analysisPacketSizeHistogramAll
+                analysisPacketSizeHistogramAToB: mainController.analysisPacketSizeHistogramAToB
+                analysisPacketSizeHistogramBToA: mainController.analysisPacketSizeHistogramBToA
                 analysisPacketSizeHistogram: mainController.analysisPacketSizeHistogram
                 analysisSequencePreview: mainController.analysisSequencePreview
                 onFlowSelected: function(flowIndex) {

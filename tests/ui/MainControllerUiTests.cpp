@@ -190,6 +190,10 @@ bool item_visible(QObject* root, const char* objectName) {
     return item->property("visible").toBool();
 }
 
+QObject* named_object(QObject* root, const char* objectName) {
+    return root->findChild<QObject*>(QString::fromLatin1(objectName));
+}
+
 QString packet_size_bucket_label(const std::uint32_t captured_length) {
     if (captured_length <= 63U) {
         return QStringLiteral("0-63");
@@ -206,11 +210,20 @@ QString packet_size_bucket_label(const std::uint32_t captured_length) {
     if (captured_length <= 1023U) {
         return QStringLiteral("512-1023");
     }
-    if (captured_length <= 1518U) {
-        return QStringLiteral("1024-1518");
+    if (captured_length <= 1399U) {
+        return QStringLiteral("1024-1399");
+    }
+    if (captured_length <= 1499U) {
+        return QStringLiteral("1400-1499");
+    }
+    if (captured_length <= 2499U) {
+        return QStringLiteral("1500-2499");
+    }
+    if (captured_length <= 5000U) {
+        return QStringLiteral("2500-5000");
     }
 
-    return QStringLiteral("1519+");
+    return QStringLiteral("5001+");
 }
 
 qulonglong histogram_packet_count(const QVariantList& histogram, const QString& bucketLabel) {
@@ -374,10 +387,39 @@ int main(int argc, char* argv[]) {
 
         pane.object->setProperty("analysisLoading", false);
         pane.object->setProperty("analysisAvailable", true);
+        pane.object->setProperty("packetSizeHistogramAllModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("all")}, {QStringLiteral("packetCount"), 3U}, {QStringLiteral("packetCountText"), QStringLiteral("3")}},
+        });
+        pane.object->setProperty("packetSizeHistogramAToBModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("a")}, {QStringLiteral("packetCount"), 2U}, {QStringLiteral("packetCountText"), QStringLiteral("2")}},
+        });
+        pane.object->setProperty("packetSizeHistogramBToAModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("b")}, {QStringLiteral("packetCount"), 1U}, {QStringLiteral("packetCountText"), QStringLiteral("1")}},
+        });
+        pane.object->setProperty("interArrivalHistogramAllModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("all")}, {QStringLiteral("packetCount"), 4U}, {QStringLiteral("packetCountText"), QStringLiteral("4")}},
+        });
+        pane.object->setProperty("interArrivalHistogramAToBModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("a")}, {QStringLiteral("packetCount"), 3U}, {QStringLiteral("packetCountText"), QStringLiteral("3")}},
+        });
+        pane.object->setProperty("interArrivalHistogramBToAModel", QVariantList {
+            QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("b")}, {QStringLiteral("packetCount"), 1U}, {QStringLiteral("packetCountText"), QStringLiteral("1")}},
+        });
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(!item_visible(pane.object.get(), "analysisEmptyState"));
         UI_EXPECT(!item_visible(pane.object.get(), "analysisLoadingState"));
         UI_EXPECT(item_visible(pane.object.get(), "analysisResultContent"));
+        UI_EXPECT(pane.object->property("packetSizeHistogramMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("interArrivalHistogramMode").toInt() == 0);
+        UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramModeAllButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramModeAllButton") != nullptr);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 3);
+        UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 4);
+        pane.object->setProperty("packetSizeHistogramMode", 1);
+        pane.object->setProperty("interArrivalHistogramMode", 2);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 2);
+        UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);
     }
 
     MainController idle_cancel_controller {};
@@ -560,15 +602,27 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisBytesAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
     UI_EXPECT(controller.analysisBytesBToAText() == QStringLiteral("0 B"));
-    UI_EXPECT(controller.analysisInterArrivalHistogram().size() == 6);
+    UI_EXPECT(controller.analysisInterArrivalHistogram().size() == 9);
     UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogram()) == 0U);
-    UI_EXPECT(controller.analysisPacketSizeHistogram().size() == 7);
+    UI_EXPECT(controller.analysisInterArrivalHistogramAll().size() == 9);
+    UI_EXPECT(controller.analysisInterArrivalHistogramAToB().size() == 9);
+    UI_EXPECT(controller.analysisInterArrivalHistogramBToA().size() == 9);
+    UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogramAll()) == 0U);
+    UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogramAToB()) == 0U);
+    UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogramBToA()) == 0U);
+    UI_EXPECT(controller.analysisPacketSizeHistogram().size() == 10);
+    UI_EXPECT(controller.analysisPacketSizeHistogramAll().size() == 10);
+    UI_EXPECT(controller.analysisPacketSizeHistogramAToB().size() == 10);
+    UI_EXPECT(controller.analysisPacketSizeHistogramBToA().size() == 10);
     UI_EXPECT(
         histogram_packet_count(
             controller.analysisPacketSizeHistogram(),
             packet_size_bucket_label(static_cast<std::uint32_t>(http_flow.size()))
         ) == 1U
     );
+    UI_EXPECT(histogram_total_count(controller.analysisPacketSizeHistogramAll()) == 1U);
+    UI_EXPECT(histogram_total_count(controller.analysisPacketSizeHistogramAToB()) == 1U);
+    UI_EXPECT(histogram_total_count(controller.analysisPacketSizeHistogramBToA()) == 0U);
     UI_EXPECT(controller.analysisSequencePreview().size() == 1);
     const auto first_sequence_row = controller.analysisSequencePreview().front().toMap();
     UI_EXPECT(first_sequence_row.value(QStringLiteral("packetNumber")).toULongLong() == 1U);
@@ -622,7 +676,13 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisBytesAToBText().isEmpty());
     UI_EXPECT(controller.analysisBytesBToAText().isEmpty());
     UI_EXPECT(controller.analysisInterArrivalHistogram().isEmpty());
+    UI_EXPECT(controller.analysisInterArrivalHistogramAll().isEmpty());
+    UI_EXPECT(controller.analysisInterArrivalHistogramAToB().isEmpty());
+    UI_EXPECT(controller.analysisInterArrivalHistogramBToA().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
+    UI_EXPECT(controller.analysisPacketSizeHistogramAll().isEmpty());
+    UI_EXPECT(controller.analysisPacketSizeHistogramAToB().isEmpty());
+    UI_EXPECT(controller.analysisPacketSizeHistogramBToA().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
 
     const int analysis_dns_flow_index = find_flow_index_by_protocol_hint(analysis_flow_model, QStringLiteral("DNS"));
@@ -749,6 +809,85 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(formatting_controller.analysisMaxPacketSizeText() == QStringLiteral("1 KB"));
     UI_EXPECT(formatting_controller.analysisBytesAToBText() == QStringLiteral("1.5 KB"));
     UI_EXPECT(formatting_controller.analysisBytesBToAText() == QStringLiteral("0 B"));
+
+    const auto directional_a_small = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 71, 0, 1), ipv4(10, 71, 0, 2), 56100, 443, 0, 0x18
+    );
+    const auto directional_b_large = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 71, 0, 2), ipv4(10, 71, 0, 1), 443, 56100, 2476, 0x18
+    );
+    const auto directional_a_mid = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 71, 0, 1), ipv4(10, 71, 0, 2), 56100, 443, 1376, 0x18
+    );
+    const auto directional_b_huge = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 71, 0, 2), ipv4(10, 71, 0, 1), 443, 56100, 5000, 0x18
+    );
+    const auto directional_capture_path = write_temp_pcap(
+        "pfl_ui_analysis_directional_histograms.pcapng",
+        make_pcapng({
+            make_pcapng_section_header_block(),
+            make_pcapng_interface_description_block(),
+            make_pcapng_enhanced_packet_block(0U, 1U, 0U, directional_a_small),
+            make_pcapng_enhanced_packet_block(0U, 1U, 9U, directional_b_large),
+            make_pcapng_enhanced_packet_block(0U, 1U, 99U, directional_a_mid),
+            make_pcapng_enhanced_packet_block(0U, 1U, 999U, directional_b_huge),
+        })
+    );
+
+    MainController directional_histogram_controller {};
+    UI_EXPECT(open_capture_and_wait(app, directional_histogram_controller, directional_capture_path));
+    directional_histogram_controller.setSelectedFlowIndex(0);
+    directional_histogram_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&directional_histogram_controller]() {
+        return !directional_histogram_controller.analysisLoading() && directional_histogram_controller.analysisAvailable();
+    }));
+    UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramAll()) == 4U);
+    UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramAToB()) == 2U);
+    UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramBToA()) == 2U);
+    UI_EXPECT(
+        histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramAll()) ==
+        histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramAToB()) +
+        histogram_total_count(directional_histogram_controller.analysisPacketSizeHistogramBToA())
+    );
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramAToB(), "0-63") == 1U);
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramAToB(), "1400-1499") == 1U);
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramBToA(), "2500-5000") == 1U);
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisPacketSizeHistogramBToA(), "5001+") == 1U);
+    UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramAll()) == 3U);
+    UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramAToB()) == 1U);
+    UI_EXPECT(histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramBToA()) == 2U);
+    UI_EXPECT(
+        histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramAll()) ==
+        histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramAToB()) +
+        histogram_total_count(directional_histogram_controller.analysisInterArrivalHistogramBToA())
+    );
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisInterArrivalHistogramBToA(), "0-9 us") == 1U);
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisInterArrivalHistogramAToB(), "10-99 us") == 1U);
+    UI_EXPECT(histogram_packet_count(directional_histogram_controller.analysisInterArrivalHistogramBToA(), "100-999 us") == 1U);
+    int analysis_state_change_count = 0;
+    QObject::connect(&directional_histogram_controller, &MainController::analysisStateChanged, [&]() {
+        ++analysis_state_change_count;
+    });
+    {
+        auto pane = load_flow_analysis_pane_component();
+        pane.object->setProperty("analysisAvailable", true);
+        pane.object->setProperty("hasActiveFlow", true);
+        pane.object->setProperty("packetSizeHistogramAllModel", directional_histogram_controller.analysisPacketSizeHistogramAll());
+        pane.object->setProperty("packetSizeHistogramAToBModel", directional_histogram_controller.analysisPacketSizeHistogramAToB());
+        pane.object->setProperty("packetSizeHistogramBToAModel", directional_histogram_controller.analysisPacketSizeHistogramBToA());
+        pane.object->setProperty("interArrivalHistogramAllModel", directional_histogram_controller.analysisInterArrivalHistogramAll());
+        pane.object->setProperty("interArrivalHistogramAToBModel", directional_histogram_controller.analysisInterArrivalHistogramAToB());
+        pane.object->setProperty("interArrivalHistogramBToAModel", directional_histogram_controller.analysisInterArrivalHistogramBToA());
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("packetSizeHistogramMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("interArrivalHistogramMode").toInt() == 0);
+        pane.object->setProperty("packetSizeHistogramMode", 2);
+        pane.object->setProperty("interArrivalHistogramMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 2);
+        UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);
+    }
+    UI_EXPECT(analysis_state_change_count == 0);
 
     std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> grouped_packets {};
     grouped_packets.reserve(1024);

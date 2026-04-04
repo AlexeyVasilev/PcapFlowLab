@@ -60,7 +60,13 @@ Item {
     property string analysisBytesAToBText: ""
     property var analysisBytesBToA: 0
     property string analysisBytesBToAText: ""
+    property var analysisInterArrivalHistogramAll: []
+    property var analysisInterArrivalHistogramAToB: []
+    property var analysisInterArrivalHistogramBToA: []
     property var analysisInterArrivalHistogram: []
+    property var analysisPacketSizeHistogramAll: []
+    property var analysisPacketSizeHistogramAToB: []
+    property var analysisPacketSizeHistogramBToA: []
     property var analysisPacketSizeHistogram: []
     property var analysisSequencePreview: []
 
@@ -269,7 +275,13 @@ Item {
             bytesAToBText: root.analysisBytesAToBText
             bytesBToA: root.analysisBytesBToA
             bytesBToAText: root.analysisBytesBToAText
+            interArrivalHistogramAllModel: root.analysisInterArrivalHistogramAll
+            interArrivalHistogramAToBModel: root.analysisInterArrivalHistogramAToB
+            interArrivalHistogramBToAModel: root.analysisInterArrivalHistogramBToA
             interArrivalHistogramModel: root.analysisInterArrivalHistogram
+            packetSizeHistogramAllModel: root.analysisPacketSizeHistogramAll
+            packetSizeHistogramAToBModel: root.analysisPacketSizeHistogramAToB
+            packetSizeHistogramBToAModel: root.analysisPacketSizeHistogramBToA
             packetSizeHistogramModel: root.analysisPacketSizeHistogram
             sequencePreviewModel: root.analysisSequencePreview
             onOpenInFlowsRequested: root.openInFlowsRequested()

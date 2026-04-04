@@ -1103,13 +1103,53 @@ QString MainController::analysisBytesBToAText() const {
 }
 
 QVariantList MainController::analysisInterArrivalHistogram() const {
+    return analysisInterArrivalHistogramAll();
+}
+
+QVariantList MainController::analysisInterArrivalHistogramAll() const {
     QVariantList rows {};
     if (!current_flow_analysis_.has_value()) {
         return rows;
     }
 
-    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->inter_arrival_histogram_rows.size()));
-    for (const auto& histogram_row : current_flow_analysis_->inter_arrival_histogram_rows) {
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->inter_arrival_histograms.histogram_all.size()));
+    for (const auto& histogram_row : current_flow_analysis_->inter_arrival_histograms.histogram_all) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), format_grouped_integer(histogram_row.packet_count));
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList MainController::analysisInterArrivalHistogramAToB() const {
+    QVariantList rows {};
+    if (!current_flow_analysis_.has_value()) {
+        return rows;
+    }
+
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->inter_arrival_histograms.histogram_a_to_b.size()));
+    for (const auto& histogram_row : current_flow_analysis_->inter_arrival_histograms.histogram_a_to_b) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), format_grouped_integer(histogram_row.packet_count));
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList MainController::analysisInterArrivalHistogramBToA() const {
+    QVariantList rows {};
+    if (!current_flow_analysis_.has_value()) {
+        return rows;
+    }
+
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->inter_arrival_histograms.histogram_b_to_a.size()));
+    for (const auto& histogram_row : current_flow_analysis_->inter_arrival_histograms.histogram_b_to_a) {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
@@ -1121,13 +1161,53 @@ QVariantList MainController::analysisInterArrivalHistogram() const {
 }
 
 QVariantList MainController::analysisPacketSizeHistogram() const {
+    return analysisPacketSizeHistogramAll();
+}
+
+QVariantList MainController::analysisPacketSizeHistogramAll() const {
     QVariantList rows {};
     if (!current_flow_analysis_.has_value()) {
         return rows;
     }
 
-    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histogram_rows.size()));
-    for (const auto& histogram_row : current_flow_analysis_->packet_size_histogram_rows) {
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.histogram_all.size()));
+    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.histogram_all) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), format_grouped_integer(histogram_row.packet_count));
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList MainController::analysisPacketSizeHistogramAToB() const {
+    QVariantList rows {};
+    if (!current_flow_analysis_.has_value()) {
+        return rows;
+    }
+
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.histogram_a_to_b.size()));
+    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.histogram_a_to_b) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
+        row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), format_grouped_integer(histogram_row.packet_count));
+        rows.push_back(row);
+    }
+
+    return rows;
+}
+
+QVariantList MainController::analysisPacketSizeHistogramBToA() const {
+    QVariantList rows {};
+    if (!current_flow_analysis_.has_value()) {
+        return rows;
+    }
+
+    rows.reserve(static_cast<qsizetype>(current_flow_analysis_->packet_size_histograms.histogram_b_to_a.size()));
+    for (const auto& histogram_row : current_flow_analysis_->packet_size_histograms.histogram_b_to_a) {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));

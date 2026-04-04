@@ -19,8 +19,22 @@ std::vector<std::uint8_t> make_http_request_payload() {
     return std::vector<std::uint8_t>(request, request + sizeof(request) - 1);
 }
 
+std::uint64_t packet_histogram_count(const std::vector<FlowAnalysisPacketSizeHistogramRow>& rows, const std::string& bucket_label) {
+    for (const auto& row : rows) {
+        if (row.bucket_label == bucket_label) {
+            return row.packet_count;
+        }
+    }
+
+    return 0U;
+}
+
 std::uint64_t packet_histogram_count(const FlowAnalysisResult& analysis, const std::string& bucket_label) {
-    for (const auto& row : analysis.packet_size_histogram_rows) {
+    return packet_histogram_count(analysis.packet_size_histogram_rows, bucket_label);
+}
+
+std::uint64_t inter_arrival_histogram_count(const std::vector<FlowAnalysisInterArrivalHistogramRow>& rows, const std::string& bucket_label) {
+    for (const auto& row : rows) {
         if (row.bucket_label == bucket_label) {
             return row.packet_count;
         }
@@ -30,13 +44,16 @@ std::uint64_t packet_histogram_count(const FlowAnalysisResult& analysis, const s
 }
 
 std::uint64_t inter_arrival_histogram_count(const FlowAnalysisResult& analysis, const std::string& bucket_label) {
-    for (const auto& row : analysis.inter_arrival_histogram_rows) {
-        if (row.bucket_label == bucket_label) {
-            return row.packet_count;
-        }
-    }
+    return inter_arrival_histogram_count(analysis.inter_arrival_histogram_rows, bucket_label);
+}
 
-    return 0U;
+template <typename Row>
+std::uint64_t histogram_total_count(const std::vector<Row>& rows) {
+    std::uint64_t total = 0U;
+    for (const auto& row : rows) {
+        total += row.packet_count;
+    }
+    return total;
 }
 
 bool nearly_equal(const double left, const double right, const double epsilon = 0.001) {
@@ -56,6 +73,24 @@ PacketRef make_analysis_packet_ref(
         .original_length = captured_length,
         .ts_sec = 1U,
         .ts_usec = ts_usec,
+        .payload_length = payload_length,
+        .tcp_flags = tcp_flags,
+    };
+}
+
+PacketRef make_analysis_packet_ref_at(
+    const std::uint64_t packet_index,
+    const std::uint64_t timestamp_us,
+    const std::uint32_t captured_length,
+    const std::uint32_t payload_length,
+    const std::uint8_t tcp_flags = 0U
+) {
+    return PacketRef {
+        .packet_index = packet_index,
+        .captured_length = captured_length,
+        .original_length = captured_length,
+        .ts_sec = static_cast<std::uint32_t>(1U + (timestamp_us / 1000000ULL)),
+        .ts_usec = static_cast<std::uint32_t>(timestamp_us % 1000000ULL),
         .payload_length = payload_length,
         .tcp_flags = tcp_flags,
     };
@@ -172,21 +207,27 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->max_packet_size_bytes == request_packet.size());
     PFL_EXPECT(analysis->protocol_hint == "http");
     PFL_EXPECT(analysis->service_hint == "analysis.example");
-    PFL_EXPECT(analysis->inter_arrival_histogram_rows.size() == 6U);
-    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "0-99 us") == 0U);
+    PFL_EXPECT(analysis->inter_arrival_histogram_rows.size() == 9U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "0-9 us") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "10-99 us") == 0U);
     PFL_EXPECT(inter_arrival_histogram_count(*analysis, "100-999 us") == 0U);
     PFL_EXPECT(inter_arrival_histogram_count(*analysis, "1-9.9 ms") == 0U);
     PFL_EXPECT(inter_arrival_histogram_count(*analysis, "10-99 ms") == 0U);
-    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "100-999 ms") == 0U);
-    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "1 s+") == 2U);
-    PFL_EXPECT(analysis->packet_size_histogram_rows.size() == 7U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "100-499 ms") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "500-999 ms") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "1-8 s") == 2U);
+    PFL_EXPECT(inter_arrival_histogram_count(*analysis, "8 s+") == 0U);
+    PFL_EXPECT(analysis->packet_size_histogram_rows.size() == 10U);
     PFL_EXPECT(packet_histogram_count(*analysis, "0-63") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "64-127") == 3U);
     PFL_EXPECT(packet_histogram_count(*analysis, "128-255") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "256-511") == 0U);
     PFL_EXPECT(packet_histogram_count(*analysis, "512-1023") == 0U);
-    PFL_EXPECT(packet_histogram_count(*analysis, "1024-1518") == 0U);
-    PFL_EXPECT(packet_histogram_count(*analysis, "1519+") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1024-1399") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1400-1499") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "1500-2499") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "2500-5000") == 0U);
+    PFL_EXPECT(packet_histogram_count(*analysis, "5001+") == 0U);
     PFL_EXPECT(analysis->sequence_preview_rows.size() == 3U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].flow_packet_number == 1U);
     PFL_EXPECT(analysis->sequence_preview_rows[0].direction_text == "A->B");
@@ -226,7 +267,7 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(heavy_analysis->total_packets == 25U);
     PFL_EXPECT(heavy_analysis->timeline_packet_count_considered == 25U);
     PFL_EXPECT(heavy_analysis->largest_gap_us > 0U);
-    PFL_EXPECT(inter_arrival_histogram_count(*heavy_analysis, "1 s+") == 24U);
+    PFL_EXPECT(inter_arrival_histogram_count(*heavy_analysis, "1-8 s") == 24U);
     PFL_EXPECT(packet_histogram_count(*heavy_analysis, "64-127") == 25U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.size() == 20U);
     PFL_EXPECT(heavy_analysis->sequence_preview_rows.front().flow_packet_number == 1U);
@@ -247,11 +288,20 @@ void run_flow_analysis_tests() {
     const auto bucket_512_1023_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 470, 0x18
     );
-    const auto bucket_1024_1518_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+    const auto bucket_1024_1399_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1000, 0x18
     );
-    const auto bucket_1519_plus_packet = make_ethernet_ipv4_tcp_packet_with_payload(
-        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1600, 0x18
+    const auto bucket_1400_1499_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1376, 0x18
+    );
+    const auto bucket_1500_2499_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 1476, 0x18
+    );
+    const auto bucket_2500_5000_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 2476, 0x18
+    );
+    const auto bucket_5001_plus_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 41000, 443, 5000, 0x18
     );
 
     const auto histogram_capture_path = write_temp_pcap(
@@ -262,8 +312,11 @@ void run_flow_analysis_tests() {
             {120U, bucket_128_255_packet},
             {130U, bucket_256_511_packet},
             {140U, bucket_512_1023_packet},
-            {150U, bucket_1024_1518_packet},
-            {160U, bucket_1519_plus_packet},
+            {150U, bucket_1024_1399_packet},
+            {160U, bucket_1400_1499_packet},
+            {170U, bucket_1500_2499_packet},
+            {180U, bucket_2500_5000_packet},
+            {190U, bucket_5001_plus_packet},
         })
     );
 
@@ -273,23 +326,29 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(histogram_rows.size() == 1U);
     const auto histogram_analysis = histogram_session.get_flow_analysis(histogram_rows.front().index);
     PFL_EXPECT(histogram_analysis.has_value());
-    PFL_EXPECT(histogram_analysis->total_packets == 7U);
-    PFL_EXPECT(histogram_analysis->packet_size_histogram_rows.size() == 7U);
+    PFL_EXPECT(histogram_analysis->total_packets == 10U);
+    PFL_EXPECT(histogram_analysis->packet_size_histogram_rows.size() == 10U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "0-63") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "64-127") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "128-255") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "256-511") == 1U);
     PFL_EXPECT(packet_histogram_count(*histogram_analysis, "512-1023") == 1U);
-    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1024-1518") == 1U);
-    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1519+") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1024-1399") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1400-1499") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "1500-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "2500-5000") == 1U);
+    PFL_EXPECT(packet_histogram_count(*histogram_analysis, "5001+") == 1U);
     PFL_EXPECT(
         packet_histogram_count(*histogram_analysis, "0-63") +
         packet_histogram_count(*histogram_analysis, "64-127") +
         packet_histogram_count(*histogram_analysis, "128-255") +
         packet_histogram_count(*histogram_analysis, "256-511") +
         packet_histogram_count(*histogram_analysis, "512-1023") +
-        packet_histogram_count(*histogram_analysis, "1024-1518") +
-        packet_histogram_count(*histogram_analysis, "1519+") == histogram_analysis->total_packets
+        packet_histogram_count(*histogram_analysis, "1024-1399") +
+        packet_histogram_count(*histogram_analysis, "1400-1499") +
+        packet_histogram_count(*histogram_analysis, "1500-2499") +
+        packet_histogram_count(*histogram_analysis, "2500-5000") +
+        packet_histogram_count(*histogram_analysis, "5001+") == histogram_analysis->total_packets
     );
 
     const auto inter_arrival_packet = make_ethernet_ipv4_tcp_packet_with_payload(
@@ -317,20 +376,89 @@ void run_flow_analysis_tests() {
     const auto inter_arrival_analysis = inter_arrival_session.get_flow_analysis(inter_arrival_rows.front().index);
     PFL_EXPECT(inter_arrival_analysis.has_value());
     PFL_EXPECT(inter_arrival_analysis->total_packets == 7U);
-    PFL_EXPECT(inter_arrival_analysis->inter_arrival_histogram_rows.size() == 6U);
-    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "0-99 us") == 1U);
+    PFL_EXPECT(inter_arrival_analysis->inter_arrival_histogram_rows.size() == 9U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "0-9 us") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "10-99 us") == 1U);
     PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 us") == 1U);
     PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "1-9.9 ms") == 1U);
     PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "10-99 ms") == 1U);
-    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 ms") == 1U);
-    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "1 s+") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "100-499 ms") == 0U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "500-999 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "1-8 s") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(*inter_arrival_analysis, "8 s+") == 0U);
     PFL_EXPECT(
-        inter_arrival_histogram_count(*inter_arrival_analysis, "0-99 us") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "0-9 us") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "10-99 us") +
         inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 us") +
         inter_arrival_histogram_count(*inter_arrival_analysis, "1-9.9 ms") +
         inter_arrival_histogram_count(*inter_arrival_analysis, "10-99 ms") +
-        inter_arrival_histogram_count(*inter_arrival_analysis, "100-999 ms") +
-        inter_arrival_histogram_count(*inter_arrival_analysis, "1 s+") == inter_arrival_analysis->total_packets - 1U
+        inter_arrival_histogram_count(*inter_arrival_analysis, "100-499 ms") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "500-999 ms") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "1-8 s") +
+        inter_arrival_histogram_count(*inter_arrival_analysis, "8 s+") == inter_arrival_analysis->total_packets - 1U
+    );
+
+    const auto directional_histogram_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref_at(0U, 0U, 63U, 0U),
+            make_analysis_packet_ref_at(2U, 99U, 1400U, 0U),
+            make_analysis_packet_ref_at(4U, 9999U, 5001U, 0U),
+            make_analysis_packet_ref_at(6U, 499999U, 1500U, 0U),
+            make_analysis_packet_ref_at(8U, 7999999U, 1024U, 0U),
+        },
+        {
+            make_analysis_packet_ref_at(1U, 9U, 64U, 0U),
+            make_analysis_packet_ref_at(3U, 999U, 2500U, 0U),
+            make_analysis_packet_ref_at(5U, 99999U, 512U, 0U),
+            make_analysis_packet_ref_at(7U, 999999U, 128U, 0U),
+            make_analysis_packet_ref_at(9U, 16000000U, 5000U, 0U),
+        }
+    );
+    FlowAnalysisService directional_histogram_service {};
+    const auto directional_histogram_analysis = directional_histogram_service.analyze(directional_histogram_connection);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_all.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b.size() == 10U);
+    PFL_EXPECT(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a.size() == 10U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "0-63") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1400-1499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1500-2499") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "1024-1399") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b, "5001+") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "64-127") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "128-255") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "512-1023") == 1U);
+    PFL_EXPECT(packet_histogram_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a, "2500-5000") == 2U);
+    PFL_EXPECT(histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_all) == 10U);
+    PFL_EXPECT(
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_all) ==
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_a_to_b) +
+        histogram_total_count(directional_histogram_analysis.packet_size_histograms.histogram_b_to_a)
+    );
+    PFL_EXPECT(directional_histogram_analysis.inter_arrival_histograms.histogram_all.size() == 9U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "0-9 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "10-99 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "100-999 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "1-9.9 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "10-99 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "100-499 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "500-999 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "1-8 s") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all, "8 s+") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_a_to_b, "10-99 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_a_to_b, "1-9.9 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_a_to_b, "100-499 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_a_to_b, "1-8 s") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_b_to_a, "0-9 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_b_to_a, "100-999 us") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_b_to_a, "10-99 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_b_to_a, "500-999 ms") == 1U);
+    PFL_EXPECT(inter_arrival_histogram_count(directional_histogram_analysis.inter_arrival_histograms.histogram_b_to_a, "8 s+") == 1U);
+    PFL_EXPECT(
+        histogram_total_count(directional_histogram_analysis.inter_arrival_histograms.histogram_all) ==
+        histogram_total_count(directional_histogram_analysis.inter_arrival_histograms.histogram_a_to_b) +
+        histogram_total_count(directional_histogram_analysis.inter_arrival_histograms.histogram_b_to_a)
     );
 
     const auto single_packet_capture_path = write_temp_pcap(
