@@ -14,8 +14,11 @@ Item {
     property string analysisTimelineLastPacketTime: ""
     property string analysisTimelineLargestGapText: ""
     property var analysisTimelinePacketCountConsidered: 0
+    property string analysisTimelinePacketCountConsideredText: ""
     property var analysisTotalPackets: 0
+    property string analysisTotalPacketsText: ""
     property var analysisTotalBytes: 0
+    property string analysisTotalBytesText: ""
     property string analysisPacketsPerSecondText: ""
     property string analysisBytesPerSecondText: ""
     property string analysisAveragePacketSizeText: ""
@@ -32,17 +35,27 @@ Item {
     property string analysisProtocolFallbackText: ""
     property bool analysisHasTcpControlCounts: false
     property var analysisTcpSynPackets: 0
+    property string analysisTcpSynPacketsText: ""
     property var analysisTcpFinPackets: 0
+    property string analysisTcpFinPacketsText: ""
     property var analysisTcpRstPackets: 0
+    property string analysisTcpRstPacketsText: ""
     property var analysisBurstCount: 0
+    property string analysisBurstCountText: ""
     property var analysisLongestBurstPacketCount: 0
+    property string analysisLongestBurstPacketCountText: ""
     property string analysisLargestBurstBytesText: ""
     property var analysisIdleGapCount: 0
+    property string analysisIdleGapCountText: ""
     property string analysisLargestIdleGapText: ""
     property var analysisPacketsAToB: 0
+    property string analysisPacketsAToBText: ""
     property var analysisPacketsBToA: 0
+    property string analysisPacketsBToAText: ""
     property var analysisBytesAToB: 0
+    property string analysisBytesAToBText: ""
     property var analysisBytesBToA: 0
+    property string analysisBytesBToAText: ""
     property var analysisInterArrivalHistogram: []
     property var analysisPacketSizeHistogram: []
     property var analysisSequencePreview: []
@@ -205,8 +218,11 @@ Item {
             timelineLastPacketTime: root.analysisTimelineLastPacketTime
             timelineLargestGapText: root.analysisTimelineLargestGapText
             timelinePacketCountConsidered: root.analysisTimelinePacketCountConsidered
+            timelinePacketCountConsideredText: root.analysisTimelinePacketCountConsideredText
             totalPackets: root.analysisTotalPackets
+            totalPacketsText: root.analysisTotalPacketsText
             totalBytes: root.analysisTotalBytes
+            totalBytesText: root.analysisTotalBytesText
             packetsPerSecondText: root.analysisPacketsPerSecondText
             bytesPerSecondText: root.analysisBytesPerSecondText
             averagePacketSizeText: root.analysisAveragePacketSizeText
@@ -223,17 +239,27 @@ Item {
             protocolFallbackText: root.analysisProtocolFallbackText
             hasTcpControlCounts: root.analysisHasTcpControlCounts
             tcpSynPackets: root.analysisTcpSynPackets
+            tcpSynPacketsText: root.analysisTcpSynPacketsText
             tcpFinPackets: root.analysisTcpFinPackets
+            tcpFinPacketsText: root.analysisTcpFinPacketsText
             tcpRstPackets: root.analysisTcpRstPackets
+            tcpRstPacketsText: root.analysisTcpRstPacketsText
             burstCount: root.analysisBurstCount
+            burstCountText: root.analysisBurstCountText
             longestBurstPacketCount: root.analysisLongestBurstPacketCount
+            longestBurstPacketCountText: root.analysisLongestBurstPacketCountText
             largestBurstBytesText: root.analysisLargestBurstBytesText
             idleGapCount: root.analysisIdleGapCount
+            idleGapCountText: root.analysisIdleGapCountText
             largestIdleGapText: root.analysisLargestIdleGapText
             packetsAToB: root.analysisPacketsAToB
+            packetsAToBText: root.analysisPacketsAToBText
             packetsBToA: root.analysisPacketsBToA
+            packetsBToAText: root.analysisPacketsBToAText
             bytesAToB: root.analysisBytesAToB
+            bytesAToBText: root.analysisBytesAToBText
             bytesBToA: root.analysisBytesBToA
+            bytesBToAText: root.analysisBytesBToAText
             interArrivalHistogramModel: root.analysisInterArrivalHistogram
             packetSizeHistogramModel: root.analysisPacketSizeHistogram
             sequencePreviewModel: root.analysisSequencePreview

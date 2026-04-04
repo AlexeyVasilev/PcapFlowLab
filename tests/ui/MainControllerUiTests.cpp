@@ -232,6 +232,17 @@ qulonglong histogram_total_count(const QVariantList& histogram) {
     return total;
 }
 
+QString histogram_packet_count_text(const QVariantList& histogram, const QString& bucketLabel) {
+    for (const auto& value : histogram) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("bucketLabel")).toString() == bucketLabel) {
+            return row.value(QStringLiteral("packetCountText")).toString();
+        }
+    }
+
+    return {};
+}
+
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
     for (int row = 0; row < model->rowCount(); ++row) {
         const auto index = model->index(row, 0);
@@ -465,12 +476,15 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTimelineLastPacketTime() == QStringLiteral("00:00:01.000100"));
     UI_EXPECT(controller.analysisTimelineLargestGapText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 1U);
+    UI_EXPECT(controller.analysisTimelinePacketCountConsideredText() == QStringLiteral("1"));
     UI_EXPECT(controller.analysisTotalPackets() == 1U);
+    UI_EXPECT(controller.analysisTotalPacketsText() == QStringLiteral("1"));
     UI_EXPECT(controller.analysisTotalBytes() == static_cast<qulonglong>(http_flow.size()));
+    UI_EXPECT(controller.analysisTotalBytesText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisDurationText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisPacketsPerSecondText() == QStringLiteral("0.000 pkt/s"));
-    UI_EXPECT(controller.analysisBytesPerSecondText() == QStringLiteral("0.000 B/s"));
-    UI_EXPECT(controller.analysisAveragePacketSizeText() == QStringLiteral("%1 B").arg(static_cast<double>(http_flow.size()), 0, 'f', 1));
+    UI_EXPECT(controller.analysisBytesPerSecondText() == QStringLiteral("0 B/s"));
+    UI_EXPECT(controller.analysisAveragePacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisAverageInterArrivalText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisMinPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMaxPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
@@ -481,20 +495,30 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisServiceHint() == QStringLiteral("ui.example"));
     UI_EXPECT(controller.analysisHasTcpControlCounts());
     UI_EXPECT(controller.analysisTcpSynPackets() == 1U);
+    UI_EXPECT(controller.analysisTcpSynPacketsText() == QStringLiteral("1"));
     UI_EXPECT(controller.analysisTcpFinPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpFinPacketsText() == QStringLiteral("0"));
     UI_EXPECT(controller.analysisTcpRstPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpRstPacketsText() == QStringLiteral("0"));
     UI_EXPECT(controller.analysisProtocolVersionText().isEmpty());
     UI_EXPECT(controller.analysisProtocolServiceText().isEmpty());
     UI_EXPECT(controller.analysisProtocolFallbackText().isEmpty());
     UI_EXPECT(controller.analysisBurstCount() == 0U);
+    UI_EXPECT(controller.analysisBurstCountText() == QStringLiteral("0"));
     UI_EXPECT(controller.analysisLongestBurstPacketCount() == 0U);
+    UI_EXPECT(controller.analysisLongestBurstPacketCountText() == QStringLiteral("0"));
     UI_EXPECT(controller.analysisLargestBurstBytesText() == QStringLiteral("0 B"));
     UI_EXPECT(controller.analysisIdleGapCount() == 0U);
+    UI_EXPECT(controller.analysisIdleGapCountText() == QStringLiteral("0"));
     UI_EXPECT(controller.analysisLargestIdleGapText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisPacketsAToB() == 1U);
+    UI_EXPECT(controller.analysisPacketsAToBText() == QStringLiteral("1"));
     UI_EXPECT(controller.analysisPacketsBToA() == 0U);
+    UI_EXPECT(controller.analysisPacketsBToAText() == QStringLiteral("0"));
     UI_EXPECT(controller.analysisBytesAToB() == static_cast<qulonglong>(http_flow.size()));
+    UI_EXPECT(controller.analysisBytesAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
+    UI_EXPECT(controller.analysisBytesBToAText() == QStringLiteral("0 B"));
     UI_EXPECT(controller.analysisInterArrivalHistogram().size() == 6);
     UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogram()) == 0U);
     UI_EXPECT(controller.analysisPacketSizeHistogram().size() == 7);
@@ -522,6 +546,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisTimelineLastPacketTime().isEmpty());
     UI_EXPECT(controller.analysisTimelineLargestGapText().isEmpty());
     UI_EXPECT(controller.analysisTimelinePacketCountConsidered() == 0U);
+    UI_EXPECT(controller.analysisTimelinePacketCountConsideredText().isEmpty());
+    UI_EXPECT(controller.analysisTotalPacketsText().isEmpty());
+    UI_EXPECT(controller.analysisTotalBytesText().isEmpty());
     UI_EXPECT(controller.analysisPacketsPerSecondText().isEmpty());
     UI_EXPECT(controller.analysisBytesPerSecondText().isEmpty());
     UI_EXPECT(controller.analysisAveragePacketSizeText().isEmpty());
@@ -536,13 +563,23 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisProtocolFallbackText().isEmpty());
     UI_EXPECT(!controller.analysisHasTcpControlCounts());
     UI_EXPECT(controller.analysisTcpSynPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpSynPacketsText().isEmpty());
     UI_EXPECT(controller.analysisTcpFinPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpFinPacketsText().isEmpty());
     UI_EXPECT(controller.analysisTcpRstPackets() == 0U);
+    UI_EXPECT(controller.analysisTcpRstPacketsText().isEmpty());
     UI_EXPECT(controller.analysisBurstCount() == 0U);
+    UI_EXPECT(controller.analysisBurstCountText().isEmpty());
     UI_EXPECT(controller.analysisLongestBurstPacketCount() == 0U);
+    UI_EXPECT(controller.analysisLongestBurstPacketCountText().isEmpty());
     UI_EXPECT(controller.analysisLargestBurstBytesText().isEmpty());
     UI_EXPECT(controller.analysisIdleGapCount() == 0U);
+    UI_EXPECT(controller.analysisIdleGapCountText().isEmpty());
     UI_EXPECT(controller.analysisLargestIdleGapText().isEmpty());
+    UI_EXPECT(controller.analysisPacketsAToBText().isEmpty());
+    UI_EXPECT(controller.analysisPacketsBToAText().isEmpty());
+    UI_EXPECT(controller.analysisBytesAToBText().isEmpty());
+    UI_EXPECT(controller.analysisBytesBToAText().isEmpty());
     UI_EXPECT(controller.analysisInterArrivalHistogram().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogram().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
@@ -622,10 +659,81 @@ int main(int argc, char* argv[]) {
         return !burst_analysis_controller.analysisLoading() && burst_analysis_controller.analysisAvailable();
     }));
     UI_EXPECT(burst_analysis_controller.analysisBurstCount() == 2U);
+    UI_EXPECT(burst_analysis_controller.analysisBurstCountText() == QStringLiteral("2"));
     UI_EXPECT(burst_analysis_controller.analysisLongestBurstPacketCount() == 3U);
+    UI_EXPECT(burst_analysis_controller.analysisLongestBurstPacketCountText() == QStringLiteral("3"));
     UI_EXPECT(burst_analysis_controller.analysisLargestBurstBytesText() == QStringLiteral("222 B"));
     UI_EXPECT(burst_analysis_controller.analysisIdleGapCount() == 2U);
+    UI_EXPECT(burst_analysis_controller.analysisIdleGapCountText() == QStringLiteral("2"));
     UI_EXPECT(burst_analysis_controller.analysisLargestIdleGapText() == QStringLiteral("199.500 ms"));
+
+    const auto format_base_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 56000, 443, 0, 0x18
+    );
+    UI_EXPECT(format_base_packet.size() < 512U);
+    const auto format_base_packet_size = static_cast<std::uint32_t>(format_base_packet.size());
+    const auto payload_1kb = static_cast<std::uint16_t>(1024U - format_base_packet_size);
+    const auto payload_512b = static_cast<std::uint16_t>(512U - format_base_packet_size);
+    const auto packet_1kb = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 56000, 443, payload_1kb, 0x18
+    );
+    const auto packet_512b = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 56000, 443, payload_512b, 0x18
+    );
+    UI_EXPECT(packet_1kb.size() == 1024U);
+    UI_EXPECT(packet_512b.size() == 512U);
+
+    const auto formatting_capture_path = write_temp_pcap(
+        "pfl_ui_analysis_formatting.pcapng",
+        make_pcapng({
+            make_pcapng_section_header_block(),
+            make_pcapng_interface_description_block(),
+            make_pcapng_enhanced_packet_block(0U, 1U, 0U, packet_1kb),
+            make_pcapng_enhanced_packet_block(0U, 1U, 1000000U, packet_512b),
+        })
+    );
+
+    MainController formatting_controller {};
+    UI_EXPECT(open_capture_and_wait(app, formatting_controller, formatting_capture_path));
+    formatting_controller.setSelectedFlowIndex(0);
+    formatting_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&formatting_controller]() {
+        return !formatting_controller.analysisLoading() && formatting_controller.analysisAvailable();
+    }));
+    UI_EXPECT(formatting_controller.analysisTotalPacketsText() == QStringLiteral("2"));
+    UI_EXPECT(formatting_controller.analysisTotalBytesText() == QStringLiteral("1.5 KB"));
+    UI_EXPECT(formatting_controller.analysisBytesPerSecondText() == QStringLiteral("1.5 KB/s"));
+    UI_EXPECT(formatting_controller.analysisAveragePacketSizeText() == QStringLiteral("768 B"));
+    UI_EXPECT(formatting_controller.analysisMinPacketSizeText() == QStringLiteral("512 B"));
+    UI_EXPECT(formatting_controller.analysisMaxPacketSizeText() == QStringLiteral("1 KB"));
+    UI_EXPECT(formatting_controller.analysisBytesAToBText() == QStringLiteral("1.5 KB"));
+    UI_EXPECT(formatting_controller.analysisBytesBToAText() == QStringLiteral("0 B"));
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> grouped_packets {};
+    grouped_packets.reserve(1024);
+    for (std::uint32_t index = 0; index < 1024U; ++index) {
+        grouped_packets.push_back({100U + index, http_flow});
+    }
+    const auto grouped_capture_path = write_temp_pcap(
+        "pfl_ui_analysis_grouped_counts.pcap",
+        make_classic_pcap(grouped_packets)
+    );
+
+    MainController grouped_controller {};
+    UI_EXPECT(open_capture_and_wait(app, grouped_controller, grouped_capture_path));
+    grouped_controller.setSelectedFlowIndex(0);
+    grouped_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&grouped_controller]() {
+        return !grouped_controller.analysisLoading() && grouped_controller.analysisAvailable();
+    }));
+    UI_EXPECT(grouped_controller.analysisTotalPacketsText() == QStringLiteral("1 024"));
+    UI_EXPECT(grouped_controller.analysisTimelinePacketCountConsideredText() == QStringLiteral("1 024"));
+    UI_EXPECT(
+        histogram_packet_count_text(
+            grouped_controller.analysisPacketSizeHistogram(),
+            packet_size_bucket_label(static_cast<std::uint32_t>(http_flow.size()))
+        ) == QStringLiteral("1 024")
+    );
 
     MainController multi_flow_controller {};
     UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));

@@ -63,8 +63,11 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisTimelineLastPacketTime READ analysisTimelineLastPacketTime NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineLargestGapText READ analysisTimelineLargestGapText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTimelinePacketCountConsidered READ analysisTimelinePacketCountConsidered NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTimelinePacketCountConsideredText READ analysisTimelinePacketCountConsideredText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalPackets READ analysisTotalPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTotalPacketsText READ analysisTotalPacketsText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalBytes READ analysisTotalBytes NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTotalBytesText READ analysisTotalBytesText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketsPerSecondText READ analysisPacketsPerSecondText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisBytesPerSecondText READ analysisBytesPerSecondText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisAveragePacketSizeText READ analysisAveragePacketSizeText NOTIFY analysisStateChanged)
@@ -81,17 +84,27 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisProtocolFallbackText READ analysisProtocolFallbackText NOTIFY analysisStateChanged)
     Q_PROPERTY(bool analysisHasTcpControlCounts READ analysisHasTcpControlCounts NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTcpSynPackets READ analysisTcpSynPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTcpSynPacketsText READ analysisTcpSynPacketsText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTcpFinPackets READ analysisTcpFinPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTcpFinPacketsText READ analysisTcpFinPacketsText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTcpRstPackets READ analysisTcpRstPackets NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisTcpRstPacketsText READ analysisTcpRstPacketsText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBurstCount READ analysisBurstCount NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisBurstCountText READ analysisBurstCountText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisLongestBurstPacketCount READ analysisLongestBurstPacketCount NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisLongestBurstPacketCountText READ analysisLongestBurstPacketCountText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisLargestBurstBytesText READ analysisLargestBurstBytesText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisIdleGapCount READ analysisIdleGapCount NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisIdleGapCountText READ analysisIdleGapCountText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisLargestIdleGapText READ analysisLargestIdleGapText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsAToB READ analysisPacketsAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketsAToBText READ analysisPacketsAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisPacketsBToA READ analysisPacketsBToA NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketsBToAText READ analysisPacketsBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesAToB READ analysisBytesAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisBytesAToBText READ analysisBytesAToBText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisBytesBToA READ analysisBytesBToA NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisBytesBToAText READ analysisBytesBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisInterArrivalHistogram READ analysisInterArrivalHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisPacketSizeHistogram READ analysisPacketSizeHistogram NOTIFY analysisStateChanged)
     Q_PROPERTY(QVariantList analysisSequencePreview READ analysisSequencePreview NOTIFY analysisStateChanged)
@@ -187,8 +200,11 @@ public:
     [[nodiscard]] QString analysisTimelineLastPacketTime() const;
     [[nodiscard]] QString analysisTimelineLargestGapText() const;
     [[nodiscard]] qulonglong analysisTimelinePacketCountConsidered() const noexcept;
+    [[nodiscard]] QString analysisTimelinePacketCountConsideredText() const;
     [[nodiscard]] qulonglong analysisTotalPackets() const noexcept;
+    [[nodiscard]] QString analysisTotalPacketsText() const;
     [[nodiscard]] qulonglong analysisTotalBytes() const noexcept;
+    [[nodiscard]] QString analysisTotalBytesText() const;
     [[nodiscard]] QString analysisPacketsPerSecondText() const;
     [[nodiscard]] QString analysisBytesPerSecondText() const;
     [[nodiscard]] QString analysisAveragePacketSizeText() const;
@@ -205,17 +221,27 @@ public:
     [[nodiscard]] QString analysisProtocolFallbackText() const;
     [[nodiscard]] bool analysisHasTcpControlCounts() const noexcept;
     [[nodiscard]] qulonglong analysisTcpSynPackets() const noexcept;
+    [[nodiscard]] QString analysisTcpSynPacketsText() const;
     [[nodiscard]] qulonglong analysisTcpFinPackets() const noexcept;
+    [[nodiscard]] QString analysisTcpFinPacketsText() const;
     [[nodiscard]] qulonglong analysisTcpRstPackets() const noexcept;
+    [[nodiscard]] QString analysisTcpRstPacketsText() const;
     [[nodiscard]] qulonglong analysisBurstCount() const noexcept;
+    [[nodiscard]] QString analysisBurstCountText() const;
     [[nodiscard]] qulonglong analysisLongestBurstPacketCount() const noexcept;
+    [[nodiscard]] QString analysisLongestBurstPacketCountText() const;
     [[nodiscard]] QString analysisLargestBurstBytesText() const;
     [[nodiscard]] qulonglong analysisIdleGapCount() const noexcept;
+    [[nodiscard]] QString analysisIdleGapCountText() const;
     [[nodiscard]] QString analysisLargestIdleGapText() const;
     [[nodiscard]] qulonglong analysisPacketsAToB() const noexcept;
+    [[nodiscard]] QString analysisPacketsAToBText() const;
     [[nodiscard]] qulonglong analysisPacketsBToA() const noexcept;
+    [[nodiscard]] QString analysisPacketsBToAText() const;
     [[nodiscard]] qulonglong analysisBytesAToB() const noexcept;
+    [[nodiscard]] QString analysisBytesAToBText() const;
     [[nodiscard]] qulonglong analysisBytesBToA() const noexcept;
+    [[nodiscard]] QString analysisBytesBToAText() const;
     [[nodiscard]] QVariantList analysisInterArrivalHistogram() const;
     [[nodiscard]] QVariantList analysisPacketSizeHistogram() const;
     [[nodiscard]] QVariantList analysisSequencePreview() const;

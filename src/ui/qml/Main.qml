@@ -294,8 +294,11 @@ ApplicationWindow {
                 analysisTimelineLastPacketTime: mainController.analysisTimelineLastPacketTime
                 analysisTimelineLargestGapText: mainController.analysisTimelineLargestGapText
                 analysisTimelinePacketCountConsidered: mainController.analysisTimelinePacketCountConsidered
+                analysisTimelinePacketCountConsideredText: mainController.analysisTimelinePacketCountConsideredText
                 analysisTotalPackets: mainController.analysisTotalPackets
+                analysisTotalPacketsText: mainController.analysisTotalPacketsText
                 analysisTotalBytes: mainController.analysisTotalBytes
+                analysisTotalBytesText: mainController.analysisTotalBytesText
                 analysisPacketsPerSecondText: mainController.analysisPacketsPerSecondText
                 analysisBytesPerSecondText: mainController.analysisBytesPerSecondText
                 analysisAveragePacketSizeText: mainController.analysisAveragePacketSizeText
@@ -312,17 +315,27 @@ ApplicationWindow {
                 analysisProtocolFallbackText: mainController.analysisProtocolFallbackText
                 analysisHasTcpControlCounts: mainController.analysisHasTcpControlCounts
                 analysisTcpSynPackets: mainController.analysisTcpSynPackets
+                analysisTcpSynPacketsText: mainController.analysisTcpSynPacketsText
                 analysisTcpFinPackets: mainController.analysisTcpFinPackets
+                analysisTcpFinPacketsText: mainController.analysisTcpFinPacketsText
                 analysisTcpRstPackets: mainController.analysisTcpRstPackets
+                analysisTcpRstPacketsText: mainController.analysisTcpRstPacketsText
                 analysisBurstCount: mainController.analysisBurstCount
+                analysisBurstCountText: mainController.analysisBurstCountText
                 analysisLongestBurstPacketCount: mainController.analysisLongestBurstPacketCount
+                analysisLongestBurstPacketCountText: mainController.analysisLongestBurstPacketCountText
                 analysisLargestBurstBytesText: mainController.analysisLargestBurstBytesText
                 analysisIdleGapCount: mainController.analysisIdleGapCount
+                analysisIdleGapCountText: mainController.analysisIdleGapCountText
                 analysisLargestIdleGapText: mainController.analysisLargestIdleGapText
                 analysisPacketsAToB: mainController.analysisPacketsAToB
+                analysisPacketsAToBText: mainController.analysisPacketsAToBText
                 analysisPacketsBToA: mainController.analysisPacketsBToA
+                analysisPacketsBToAText: mainController.analysisPacketsBToAText
                 analysisBytesAToB: mainController.analysisBytesAToB
+                analysisBytesAToBText: mainController.analysisBytesAToBText
                 analysisBytesBToA: mainController.analysisBytesBToA
+                analysisBytesBToAText: mainController.analysisBytesBToAText
                 analysisInterArrivalHistogram: mainController.analysisInterArrivalHistogram
                 analysisPacketSizeHistogram: mainController.analysisPacketSizeHistogram
                 analysisSequencePreview: mainController.analysisSequencePreview

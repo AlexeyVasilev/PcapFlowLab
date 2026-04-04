@@ -48,8 +48,11 @@ Frame {
     property string timelineLastPacketTime: ""
     property string timelineLargestGapText: ""
     property var timelinePacketCountConsidered: 0
+    property string timelinePacketCountConsideredText: ""
     property var totalPackets: 0
+    property string totalPacketsText: ""
     property var totalBytes: 0
+    property string totalBytesText: ""
     property string packetsPerSecondText: ""
     property string bytesPerSecondText: ""
     property string averagePacketSizeText: ""
@@ -66,17 +69,27 @@ Frame {
     property string protocolFallbackText: ""
     property bool hasTcpControlCounts: false
     property var tcpSynPackets: 0
+    property string tcpSynPacketsText: ""
     property var tcpFinPackets: 0
+    property string tcpFinPacketsText: ""
     property var tcpRstPackets: 0
+    property string tcpRstPacketsText: ""
     property var burstCount: 0
+    property string burstCountText: ""
     property var longestBurstPacketCount: 0
+    property string longestBurstPacketCountText: ""
     property string largestBurstBytesText: ""
     property var idleGapCount: 0
+    property string idleGapCountText: ""
     property string largestIdleGapText: ""
     property var packetsAToB: 0
+    property string packetsAToBText: ""
     property var packetsBToA: 0
+    property string packetsBToAText: ""
     property var bytesAToB: 0
+    property string bytesAToBText: ""
     property var bytesBToA: 0
+    property string bytesBToAText: ""
     property var interArrivalHistogramModel: []
     property var packetSizeHistogramModel: []
     property var sequencePreviewModel: []
@@ -251,10 +264,10 @@ Frame {
                                 rowSpacing: root.rowSpacing
 
                                 Label { text: "Total packets" }
-                                Label { text: root.totalPackets }
+                                Label { text: root.totalPacketsText.length > 0 ? root.totalPacketsText : "0" }
 
                                 Label { text: "Total bytes" }
-                                Label { text: root.totalBytes }
+                                Label { text: root.totalBytesText.length > 0 ? root.totalBytesText : "0 B" }
 
                                 Label { text: "Protocol hint" }
                                 Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
@@ -288,7 +301,7 @@ Frame {
                                 Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
 
                                 Label { text: "Packets considered" }
-                                Label { text: root.timelinePacketCountConsidered }
+                                Label { text: root.timelinePacketCountConsideredText.length > 0 ? root.timelinePacketCountConsideredText : "0" }
                             }
                         }
                     }
@@ -336,13 +349,13 @@ Frame {
                             visible: root.hasTcpControlCounts
 
                             Label { text: "SYN packets" }
-                            Label { text: root.tcpSynPackets }
+                            Label { text: root.tcpSynPacketsText.length > 0 ? root.tcpSynPacketsText : "0" }
 
                             Label { text: "FIN packets" }
-                            Label { text: root.tcpFinPackets }
+                            Label { text: root.tcpFinPacketsText.length > 0 ? root.tcpFinPacketsText : "0" }
 
                             Label { text: "RST packets" }
-                            Label { text: root.tcpRstPackets }
+                            Label { text: root.tcpRstPacketsText.length > 0 ? root.tcpRstPacketsText : "0" }
                         }
 
                         Label {
@@ -374,7 +387,7 @@ Frame {
                                 Label { text: "Packets/sec" }
                                 Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
 
-                                Label { text: "Bytes/sec" }
+                                Label { text: "Data rate" }
                                 Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
 
                                 Label { text: "Avg packet size" }
@@ -404,16 +417,16 @@ Frame {
                                 rowSpacing: root.rowSpacing
 
                                 Label { text: "Burst count" }
-                                Label { text: root.burstCount }
+                                Label { text: root.burstCountText.length > 0 ? root.burstCountText : "0" }
 
                                 Label { text: "Longest burst" }
-                                Label { text: root.longestBurstPacketCount }
+                                Label { text: root.longestBurstPacketCountText.length > 0 ? root.longestBurstPacketCountText : "0" }
 
                                 Label { text: "Largest burst bytes" }
                                 Label { text: root.largestBurstBytesText.length > 0 ? root.largestBurstBytesText : "0 B" }
 
                                 Label { text: "Idle gap count" }
-                                Label { text: root.idleGapCount }
+                                Label { text: root.idleGapCountText.length > 0 ? root.idleGapCountText : "0" }
 
                                 Label { text: "Largest idle gap" }
                                 Label { text: root.largestIdleGapText.length > 0 ? root.largestIdleGapText : "0 us" }
@@ -451,12 +464,12 @@ Frame {
                                     Label { text: "B->A" }
 
                                     Label { text: "Packets" }
-                                    Label { text: root.packetsAToB }
-                                    Label { text: root.packetsBToA }
+                                    Label { text: root.packetsAToBText.length > 0 ? root.packetsAToBText : "0" }
+                                    Label { text: root.packetsBToAText.length > 0 ? root.packetsBToAText : "0" }
 
                                     Label { text: "Bytes" }
-                                    Label { text: root.bytesAToB }
-                                    Label { text: root.bytesBToA }
+                                    Label { text: root.bytesAToBText.length > 0 ? root.bytesAToBText : "0 B" }
+                                    Label { text: root.bytesBToAText.length > 0 ? root.bytesBToAText : "0 B" }
                                 }
                             }
 
@@ -539,8 +552,8 @@ Frame {
                                 }
 
                                 Label {
-                                    text: modelData.packetCount
-                                    Layout.preferredWidth: 40
+                                    text: modelData.packetCountText
+                                    Layout.preferredWidth: 64
                                     Layout.alignment: Qt.AlignVCenter
                                     horizontalAlignment: Text.AlignRight
                                 }
@@ -588,8 +601,8 @@ Frame {
                                 }
 
                                 Label {
-                                    text: modelData.packetCount
-                                    Layout.preferredWidth: 40
+                                    text: modelData.packetCountText
+                                    Layout.preferredWidth: 64
                                     Layout.alignment: Qt.AlignVCenter
                                     horizontalAlignment: Text.AlignRight
                                 }

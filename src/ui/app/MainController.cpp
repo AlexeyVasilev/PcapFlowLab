@@ -285,20 +285,93 @@ QString format_duration_us(const std::uint64_t duration_us) {
     return QStringLiteral("%1 s").arg(static_cast<double>(duration_us) / 1000000.0, 0, 'f', 3);
 }
 
+QString trim_trailing_zeros(QString text) {
+    const auto decimal_index = text.indexOf(QLatin1Char('.'));
+    if (decimal_index < 0) {
+        return text;
+    }
+
+    while (text.endsWith(QLatin1Char('0'))) {
+        text.chop(1);
+    }
+    if (text.endsWith(QLatin1Char('.'))) {
+        text.chop(1);
+    }
+
+    return text;
+}
+
+QString group_integer_part(QString text) {
+    const auto decimal_index = text.indexOf(QLatin1Char('.'));
+    const QString fraction = decimal_index >= 0 ? text.mid(decimal_index) : QString {};
+    QString integer_part = decimal_index >= 0 ? text.left(decimal_index) : text;
+
+    const bool negative = integer_part.startsWith(QLatin1Char('-'));
+    if (negative) {
+        integer_part.remove(0, 1);
+    }
+
+    for (qsizetype index = integer_part.size() - 3; index > 0; index -= 3) {
+        integer_part.insert(index, QLatin1Char(' '));
+    }
+
+    if (negative) {
+        integer_part.prepend(QLatin1Char('-'));
+    }
+
+    return integer_part + fraction;
+}
+
+QString format_grouped_integer(const std::uint64_t value) {
+    return group_integer_part(QString::number(value));
+}
+
+QString format_grouped_decimal(const double value, const int decimals) {
+    return group_integer_part(trim_trailing_zeros(QString::number(value, 'f', decimals)));
+}
+
 QString format_rate_value(const double value, const QString& suffix) {
     return QStringLiteral("%1 %2").arg(value, 0, 'f', 3).arg(suffix);
 }
 
+QString format_human_readable_bytes(const double value, const QString& suffix = QString {}) {
+    static const std::array<const char*, 5> units = {"B", "KB", "MB", "GB", "TB"};
+
+    double scaled_value = std::max(0.0, value);
+    std::size_t unit_index = 0;
+    while (scaled_value >= 1024.0 && unit_index + 1 < units.size()) {
+        scaled_value /= 1024.0;
+        ++unit_index;
+    }
+
+    QString numeric_text {};
+    if (unit_index == 0) {
+        const auto rounded_value = std::round(scaled_value);
+        numeric_text = std::fabs(scaled_value - rounded_value) < 0.05
+            ? format_grouped_integer(static_cast<std::uint64_t>(std::llround(rounded_value)))
+            : format_grouped_decimal(scaled_value, 1);
+    } else {
+        numeric_text = format_grouped_decimal(scaled_value, 1);
+    }
+
+    return QStringLiteral("%1 %2%3")
+        .arg(numeric_text, QString::fromLatin1(units[unit_index]), suffix);
+}
+
+QString format_byte_rate_value(const double value) {
+    return format_human_readable_bytes(value, QStringLiteral("/s"));
+}
+
 QString format_size_value(const double value) {
-    return QStringLiteral("%1 B").arg(value, 0, 'f', 1);
+    return format_human_readable_bytes(value);
 }
 
 QString format_size_value(const std::uint32_t value) {
-    return QStringLiteral("%1 B").arg(value);
+    return format_human_readable_bytes(value);
 }
 
 QString format_size_value(const std::uint64_t value) {
-    return QStringLiteral("%1 B").arg(value);
+    return format_human_readable_bytes(static_cast<double>(value));
 }
 
 QString buildStreamItemSummary(
@@ -622,12 +695,30 @@ qulonglong MainController::analysisTimelinePacketCountConsidered() const noexcep
         : 0U;
 }
 
+QString MainController::analysisTimelinePacketCountConsideredText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->timeline_packet_count_considered)
+        : QString {};
+}
+
 qulonglong MainController::analysisTotalPackets() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->total_packets) : 0U;
 }
 
+QString MainController::analysisTotalPacketsText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->total_packets)
+        : QString {};
+}
+
 qulonglong MainController::analysisTotalBytes() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->total_bytes) : 0U;
+}
+
+QString MainController::analysisTotalBytesText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->total_bytes)
+        : QString {};
 }
 
 QString MainController::analysisPacketsPerSecondText() const {
@@ -638,7 +729,7 @@ QString MainController::analysisPacketsPerSecondText() const {
 
 QString MainController::analysisBytesPerSecondText() const {
     return current_flow_analysis_.has_value()
-        ? format_rate_value(current_flow_analysis_->bytes_per_second, QStringLiteral("B/s"))
+    ? format_byte_rate_value(current_flow_analysis_->bytes_per_second)
         : QString {};
 }
 
@@ -747,22 +838,52 @@ qulonglong MainController::analysisTcpSynPackets() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_syn_packets) : 0U;
 }
 
+QString MainController::analysisTcpSynPacketsText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->tcp_syn_packets)
+        : QString {};
+}
+
 qulonglong MainController::analysisTcpFinPackets() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_fin_packets) : 0U;
+}
+
+QString MainController::analysisTcpFinPacketsText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->tcp_fin_packets)
+        : QString {};
 }
 
 qulonglong MainController::analysisTcpRstPackets() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->tcp_rst_packets) : 0U;
 }
 
+QString MainController::analysisTcpRstPacketsText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->tcp_rst_packets)
+        : QString {};
+}
+
 qulonglong MainController::analysisBurstCount() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->burst_count) : 0U;
+}
+
+QString MainController::analysisBurstCountText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->burst_count)
+        : QString {};
 }
 
 qulonglong MainController::analysisLongestBurstPacketCount() const noexcept {
     return current_flow_analysis_.has_value()
         ? static_cast<qulonglong>(current_flow_analysis_->longest_burst_packet_count)
         : 0U;
+}
+
+QString MainController::analysisLongestBurstPacketCountText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->longest_burst_packet_count)
+        : QString {};
 }
 
 QString MainController::analysisLargestBurstBytesText() const {
@@ -775,6 +896,12 @@ qulonglong MainController::analysisIdleGapCount() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->idle_gap_count) : 0U;
 }
 
+QString MainController::analysisIdleGapCountText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->idle_gap_count)
+        : QString {};
+}
+
 QString MainController::analysisLargestIdleGapText() const {
     return current_flow_analysis_.has_value()
         ? format_duration_us(current_flow_analysis_->largest_idle_gap_us)
@@ -785,16 +912,40 @@ qulonglong MainController::analysisPacketsAToB() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->packets_a_to_b) : 0U;
 }
 
+QString MainController::analysisPacketsAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->packets_a_to_b)
+        : QString {};
+}
+
 qulonglong MainController::analysisPacketsBToA() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->packets_b_to_a) : 0U;
+}
+
+QString MainController::analysisPacketsBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_grouped_integer(current_flow_analysis_->packets_b_to_a)
+        : QString {};
 }
 
 qulonglong MainController::analysisBytesAToB() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->bytes_a_to_b) : 0U;
 }
 
+QString MainController::analysisBytesAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->bytes_a_to_b)
+        : QString {};
+}
+
 qulonglong MainController::analysisBytesBToA() const noexcept {
     return current_flow_analysis_.has_value() ? static_cast<qulonglong>(current_flow_analysis_->bytes_b_to_a) : 0U;
+}
+
+QString MainController::analysisBytesBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(current_flow_analysis_->bytes_b_to_a)
+        : QString {};
 }
 
 QVariantList MainController::analysisInterArrivalHistogram() const {
@@ -808,6 +959,7 @@ QVariantList MainController::analysisInterArrivalHistogram() const {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), format_grouped_integer(histogram_row.packet_count));
         rows.push_back(row);
     }
 
@@ -825,6 +977,7 @@ QVariantList MainController::analysisPacketSizeHistogram() const {
         QVariantMap row {};
         row.insert(QStringLiteral("bucketLabel"), QString::fromStdString(histogram_row.bucket_label));
         row.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(histogram_row.packet_count));
+        row.insert(QStringLiteral("packetCountText"), format_grouped_integer(histogram_row.packet_count));
         rows.push_back(row);
     }
 
