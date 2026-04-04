@@ -240,26 +240,56 @@ Frame {
                             font.bold: true
                         }
 
-                        GridLayout {
+                        RowLayout {
                             width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
+                            spacing: root.blockSpacing
 
-                            Label { text: "Duration" }
-                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: root.rowSpacing
 
-                            Label { text: "Total packets" }
-                            Label { text: root.totalPackets }
+                                Label { text: "Total packets" }
+                                Label { text: root.totalPackets }
 
-                            Label { text: "Total bytes" }
-                            Label { text: root.totalBytes }
+                                Label { text: "Total bytes" }
+                                Label { text: root.totalBytes }
 
-                            Label { text: "Protocol hint" }
-                            Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
+                                Label { text: "Protocol hint" }
+                                Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
 
-                            Label { text: "Service hint" }
-                            Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Label { text: "Service hint" }
+                                Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+
+                            Rectangle {
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                color: "#e2e8f0"
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: root.rowSpacing
+
+                                Label { text: "First packet" }
+                                Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
+
+                                Label { text: "Last packet" }
+                                Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
+
+                                Label { text: "Duration" }
+                                Label { text: root.durationText.length > 0 ? root.durationText : "-" }
+
+                                Label { text: "Largest gap" }
+                                Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
+
+                                Label { text: "Packets considered" }
+                                Label { text: root.timelinePacketCountConsidered }
+                            }
                         }
                     }
 
@@ -461,35 +491,6 @@ Frame {
                                     Label { text: root.dominantDirectionText.length > 0 ? root.dominantDirectionText : "-" }
                                 }
                             }
-                        }
-                    }
-
-                    AnalysisSectionFrame {
-                        Label {
-                            text: "Timeline"
-                            font.bold: true
-                        }
-
-                        GridLayout {
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
-
-                            Label { text: "First packet" }
-                            Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
-
-                            Label { text: "Last packet" }
-                            Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
-
-                            Label { text: "Duration" }
-                            Label { text: root.durationText.length > 0 ? root.durationText : "-" }
-
-                            Label { text: "Largest gap" }
-                            Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
-
-                            Label { text: "Packets considered" }
-                            Label { text: root.timelinePacketCountConsidered }
                         }
                     }
 
