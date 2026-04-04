@@ -9,10 +9,12 @@ Frame {
     readonly property int blockSpacing: 12
     readonly property int sectionSpacing: 8
     readonly property int rowSpacing: 8
-    readonly property int histogramRowSpacing: 8
     readonly property int histogramColumnSpacing: 8
     readonly property int histogramBarHeight: 18
     readonly property int groupBreakSpacing: 10
+    readonly property int twoColumnMinWidth: 880
+
+    signal openInFlowsRequested()
 
     component AnalysisSectionFrame: Frame {
         id: sectionFrame
@@ -90,10 +92,26 @@ Frame {
         anchors.margins: 12
         spacing: root.blockSpacing
 
-        Label {
-            text: "Analysis"
-            font.pixelSize: 18
-            font.bold: true
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+
+            Label {
+                text: "Analysis"
+                font.pixelSize: 18
+                font.bold: true
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            Button {
+                objectName: "analysisOpenInFlowsButton"
+                text: "Open in Flows"
+                enabled: root.hasActiveFlow
+                onClicked: root.openInFlowsRequested()
+            }
         }
 
         Item {
@@ -305,35 +323,71 @@ Frame {
                         }
                     }
 
-                    AnalysisSectionFrame {
-                        Label {
-                            text: "Derived Metrics"
-                            font.bold: true
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= root.twoColumnMinWidth ? 2 : 1
+                        columnSpacing: root.blockSpacing
+                        rowSpacing: root.blockSpacing
+
+                        AnalysisSectionFrame {
+                            Label {
+                                text: "Derived Metrics"
+                                font.bold: true
+                            }
+
+                            GridLayout {
+                                width: parent.width
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: root.rowSpacing
+
+                                Label { text: "Packets/sec" }
+                                Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
+
+                                Label { text: "Bytes/sec" }
+                                Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
+
+                                Label { text: "Avg packet size" }
+                                Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
+
+                                Label { text: "Avg inter-arrival" }
+                                Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
+
+                                Label { text: "Min packet size" }
+                                Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
+
+                                Label { text: "Max packet size" }
+                                Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
+                            }
                         }
 
-                        GridLayout {
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
+                        AnalysisSectionFrame {
+                            Label {
+                                text: "Burst / Idle Summary"
+                                font.bold: true
+                            }
 
-                            Label { text: "Packets/sec" }
-                            Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
+                            GridLayout {
+                                width: parent.width
+                                columns: 2
+                                columnSpacing: 16
+                                rowSpacing: root.rowSpacing
 
-                            Label { text: "Bytes/sec" }
-                            Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
+                                Label { text: "Burst count" }
+                                Label { text: root.burstCount }
 
-                            Label { text: "Avg packet size" }
-                            Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
+                                Label { text: "Longest burst" }
+                                Label { text: root.longestBurstPacketCount }
 
-                            Label { text: "Avg inter-arrival" }
-                            Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
+                                Label { text: "Largest burst bytes" }
+                                Label { text: root.largestBurstBytesText.length > 0 ? root.largestBurstBytesText : "0 B" }
 
-                            Label { text: "Min packet size" }
-                            Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
+                                Label { text: "Idle gap count" }
+                                Label { text: root.idleGapCount }
 
-                            Label { text: "Max packet size" }
-                            Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
+                                Label { text: "Largest idle gap" }
+                                Label { text: root.largestIdleGapText.length > 0 ? root.largestIdleGapText : "0 us" }
+                            }
                         }
                     }
 
@@ -343,75 +397,70 @@ Frame {
                             font.bold: true
                         }
 
-                        GridLayout {
+                        RowLayout {
                             width: parent.width
-                            columns: 3
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
+                            spacing: root.blockSpacing
 
-                            Label { text: "" }
-                            Label { text: "A>B" }
-                            Label { text: "B>A" }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.sectionSpacing
 
-                            Label { text: "Packets" }
-                            Label { text: root.packetsAToB }
-                            Label { text: root.packetsBToA }
+                                Label {
+                                    text: "Directional"
+                                    color: "#475569"
+                                }
 
-                            Label { text: "Bytes" }
-                            Label { text: root.bytesAToB }
-                            Label { text: root.bytesBToA }
-                        }
-                    }
+                                GridLayout {
+                                    width: parent.width
+                                    columns: 3
+                                    columnSpacing: 16
+                                    rowSpacing: root.rowSpacing
 
-                    AnalysisSectionFrame {
-                        Label {
-                            text: "Directional Ratio"
-                            font.bold: true
-                        }
+                                    Label { text: "" }
+                                    Label { text: "A->B" }
+                                    Label { text: "B->A" }
 
-                        GridLayout {
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
+                                    Label { text: "Packets" }
+                                    Label { text: root.packetsAToB }
+                                    Label { text: root.packetsBToA }
 
-                            Label { text: "Packet ratio" }
-                            Label { text: root.packetRatioText.length > 0 ? root.packetRatioText : "-" }
+                                    Label { text: "Bytes" }
+                                    Label { text: root.bytesAToB }
+                                    Label { text: root.bytesBToA }
+                                }
+                            }
 
-                            Label { text: "Byte ratio" }
-                            Label { text: root.byteRatioText.length > 0 ? root.byteRatioText : "-" }
+                            Rectangle {
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                color: "#e2e8f0"
+                            }
 
-                            Label { text: "Dominant direction" }
-                            Label { text: root.dominantDirectionText.length > 0 ? root.dominantDirectionText : "-" }
-                        }
-                    }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.sectionSpacing
 
-                    AnalysisSectionFrame {
-                        Label {
-                            text: "Burst / Idle Summary"
-                            font.bold: true
-                        }
+                                Label {
+                                    text: "Ratios"
+                                    color: "#475569"
+                                }
 
-                        GridLayout {
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: 16
-                            rowSpacing: root.rowSpacing
+                                GridLayout {
+                                    width: parent.width
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: root.rowSpacing
 
-                            Label { text: "Burst count" }
-                            Label { text: root.burstCount }
+                                    Label { text: "Packet ratio" }
+                                    Label { text: root.packetRatioText.length > 0 ? root.packetRatioText : "-" }
 
-                            Label { text: "Longest burst" }
-                            Label { text: root.longestBurstPacketCount }
+                                    Label { text: "Byte ratio" }
+                                    Label { text: root.byteRatioText.length > 0 ? root.byteRatioText : "-" }
 
-                            Label { text: "Largest burst bytes" }
-                            Label { text: root.largestBurstBytesText.length > 0 ? root.largestBurstBytesText : "0 B" }
-
-                            Label { text: "Idle gap count" }
-                            Label { text: root.idleGapCount }
-
-                            Label { text: "Largest idle gap" }
-                            Label { text: root.largestIdleGapText.length > 0 ? root.largestIdleGapText : "0 us" }
+                                    Label { text: "Dominant direction" }
+                                    Label { text: root.dominantDirectionText.length > 0 ? root.dominantDirectionText : "-" }
+                                }
+                            }
                         }
                     }
 

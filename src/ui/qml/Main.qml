@@ -329,6 +329,9 @@ ApplicationWindow {
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
                 }
+                onOpenInFlowsRequested: function() {
+                    mainController.currentTabIndex = 0
+                }
             }
 
             StatisticsPane {

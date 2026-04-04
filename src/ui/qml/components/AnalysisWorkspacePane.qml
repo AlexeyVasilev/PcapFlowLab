@@ -48,6 +48,7 @@ Item {
     property var analysisSequencePreview: []
 
     signal flowSelected(int flowIndex)
+    signal openInFlowsRequested()
 
     SplitView {
         anchors.fill: parent
@@ -236,6 +237,7 @@ Item {
             interArrivalHistogramModel: root.analysisInterArrivalHistogram
             packetSizeHistogramModel: root.analysisPacketSizeHistogram
             sequencePreviewModel: root.analysisSequencePreview
+            onOpenInFlowsRequested: root.openInFlowsRequested()
         }
     }
 }

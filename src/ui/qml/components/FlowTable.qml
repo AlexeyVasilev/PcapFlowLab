@@ -24,10 +24,24 @@ Frame {
         return root.sortAscending ? " ^" : " v"
     }
 
-    function resetSelectionIfNeeded() {
-        if (!flowListView.model || flowListView.count === 0 || root.selectedFlowIndex < 0) {
+    function syncSelectedFlowRow() {
+        if (!flowListView.model || flowListView.count === 0 || root.selectedFlowIndex < 0 || !root.flowModel) {
             flowListView.currentIndex = -1
+            return
         }
+
+        const selectedRow = root.flowModel.rowForFlowIndex(root.selectedFlowIndex)
+        flowListView.currentIndex = selectedRow
+
+        if (selectedRow < 0 || !root.visible) {
+            return
+        }
+
+        Qt.callLater(function() {
+            if (root.visible && flowListView.currentIndex === selectedRow) {
+                flowListView.positionViewAtIndex(selectedRow, ListView.Contain)
+            }
+        })
     }
 
     function fragBackgroundColor(hasFragmentedPackets, isSelected) {
@@ -52,8 +66,13 @@ Frame {
         radius: 8
     }
 
-    onFlowModelChanged: resetSelectionIfNeeded()
-    onSelectedFlowIndexChanged: resetSelectionIfNeeded()
+    onFlowModelChanged: syncSelectedFlowRow()
+    onSelectedFlowIndexChanged: syncSelectedFlowRow()
+    onVisibleChanged: {
+        if (visible) {
+            syncSelectedFlowRow()
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -136,8 +155,8 @@ Frame {
                 clip: true
                 model: root.flowModel
                 currentIndex: -1
-                onCountChanged: root.resetSelectionIfNeeded()
-                onModelChanged: root.resetSelectionIfNeeded()
+                onCountChanged: root.syncSelectedFlowRow()
+                onModelChanged: root.syncSelectedFlowRow()
 
                 ScrollBar.vertical: ScrollBar {
                     policy: ScrollBar.AsNeeded
