@@ -46,6 +46,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - Builds ephemeral derived artifacts only for the active flow.
 - Current user-facing use is the Stream tab.
 - Analysis tab now also includes a bounded metadata-only Sequence Preview block for the selected flow.
+- Analysis can also export the full selected-flow packet sequence to CSV as a metadata-only artifact without payload bytes.
 - Analysis tab now also includes a bounded metadata-only Timeline block for the selected flow.
 - Analysis tab now also includes a bounded metadata-only Packet Size Histogram block for the selected flow.
 - Analysis tab now also includes a bounded metadata-only Inter-arrival Histogram block for the selected flow.

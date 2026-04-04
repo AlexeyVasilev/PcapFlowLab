@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <stdexcept>
@@ -241,6 +242,46 @@ QString histogram_packet_count_text(const QVariantList& histogram, const QString
     }
 
     return {};
+}
+
+std::vector<std::string> read_text_file_lines(const std::filesystem::path& path) {
+    std::ifstream stream {path};
+    std::vector<std::string> lines {};
+    std::string line {};
+    while (std::getline(stream, line)) {
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> fields {};
+    std::string current {};
+    bool in_quotes = false;
+
+    for (std::size_t index = 0; index < line.size(); ++index) {
+        const auto ch = line[index];
+        if (ch == '"') {
+            if (in_quotes && index + 1U < line.size() && line[index + 1U] == '"') {
+                current.push_back('"');
+                ++index;
+            } else {
+                in_quotes = !in_quotes;
+            }
+            continue;
+        }
+
+        if (ch == ',' && !in_quotes) {
+            fields.push_back(current);
+            current.clear();
+            continue;
+        }
+
+        current.push_back(ch);
+    }
+
+    fields.push_back(current);
+    return fields;
 }
 
 int find_flow_index_by_protocol_hint(pfl::FlowListModel* model, const QString& hint) {
@@ -734,6 +775,107 @@ int main(int argc, char* argv[]) {
             packet_size_bucket_label(static_cast<std::uint32_t>(http_flow.size()))
         ) == QStringLiteral("1 024")
     );
+
+    const auto sequence_packet_a = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 80, 0, 1), ipv4(10, 80, 0, 2), 57000, 443, 12, 0x02
+    );
+    const auto sequence_packet_b = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 80, 0, 2), ipv4(10, 80, 0, 1), 443, 57000, 8, 0x12
+    );
+    const auto sequence_packet_c = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 80, 0, 1), ipv4(10, 80, 0, 2), 57000, 443, 4, 0x18
+    );
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> sequence_packets {};
+    sequence_packets.reserve(25);
+    sequence_packets.push_back({100U, sequence_packet_a});
+    sequence_packets.push_back({250U, sequence_packet_b});
+    sequence_packets.push_back({500U, sequence_packet_c});
+    for (std::uint32_t index = 3U; index < 25U; ++index) {
+        sequence_packets.push_back({500U + (index * 100U), (index % 2U == 0U) ? sequence_packet_a : sequence_packet_b});
+    }
+    const auto sequence_capture_path = write_temp_pcap(
+        "pfl_ui_analysis_sequence_export.pcap",
+        make_classic_pcap(sequence_packets)
+    );
+
+    MainController sequence_export_controller {};
+    UI_EXPECT(!sequence_export_controller.canExportAnalysisSequence());
+    const auto no_selection_sequence_export_path = std::filesystem::temp_directory_path() / "pfl_ui_no_selection_sequence.csv";
+    std::filesystem::remove(no_selection_sequence_export_path, remove_error);
+    UI_EXPECT(!sequence_export_controller.exportSelectedFlowSequenceCsv(QString::fromStdWString(no_selection_sequence_export_path.wstring())));
+    UI_EXPECT(sequence_export_controller.analysisSequenceExportStatusText() == QStringLiteral("No flow selected for sequence export."));
+    UI_EXPECT(sequence_export_controller.analysisSequenceExportStatusIsError());
+    UI_EXPECT(open_capture_and_wait(app, sequence_export_controller, sequence_capture_path));
+    sequence_export_controller.setSelectedFlowIndex(0);
+    sequence_export_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&sequence_export_controller]() {
+        return !sequence_export_controller.analysisLoading() && sequence_export_controller.analysisAvailable();
+    }));
+    UI_EXPECT(sequence_export_controller.canExportAnalysisSequence());
+    UI_EXPECT(sequence_export_controller.analysisSequencePreview().size() == 20);
+
+    bool saw_sequence_export_in_progress = false;
+    QObject::connect(&sequence_export_controller, &MainController::analysisSequenceExportStateChanged, [&]() {
+        if (sequence_export_controller.analysisSequenceExportInProgress()) {
+            saw_sequence_export_in_progress = true;
+        }
+    });
+
+    const auto sequence_export_path = std::filesystem::temp_directory_path() / "pfl_ui_selected_flow_sequence.csv";
+    std::filesystem::remove(sequence_export_path, remove_error);
+    UI_EXPECT(sequence_export_controller.exportSelectedFlowSequenceCsv(QString::fromStdWString(sequence_export_path.wstring())));
+    UI_EXPECT(wait_until(app, [&sequence_export_controller]() {
+        return !sequence_export_controller.analysisSequenceExportInProgress();
+    }));
+    UI_EXPECT(saw_sequence_export_in_progress);
+    UI_EXPECT(sequence_export_controller.analysisSequenceExportStatusText().contains(QStringLiteral("Flow sequence CSV exported:")));
+    UI_EXPECT(!sequence_export_controller.analysisSequenceExportStatusIsError());
+    UI_EXPECT(std::filesystem::exists(sequence_export_path));
+
+    const auto sequence_csv_lines = read_text_file_lines(sequence_export_path);
+    UI_EXPECT(sequence_csv_lines.size() == 26U);
+    UI_EXPECT(sequence_csv_lines.front() == "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,payload_length,tcp_flags,protocol_hint");
+
+    const auto first_export_row = split_csv_line(sequence_csv_lines[1]);
+    UI_EXPECT(first_export_row.size() == 9U);
+    UI_EXPECT(first_export_row[0] == "1");
+    UI_EXPECT(first_export_row[1] == "0");
+    UI_EXPECT(first_export_row[2] == "A->B");
+    UI_EXPECT(first_export_row[3] == "00:00:01.000100");
+    UI_EXPECT(first_export_row[4] == "0");
+    UI_EXPECT(first_export_row[5] == std::to_string(sequence_packet_a.size()));
+    UI_EXPECT(first_export_row[6] == "12");
+    UI_EXPECT(first_export_row[7] == "SYN");
+    UI_EXPECT(first_export_row[8].empty());
+
+    const auto second_export_row = split_csv_line(sequence_csv_lines[2]);
+    UI_EXPECT(second_export_row.size() == 9U);
+    UI_EXPECT(second_export_row[0] == "2");
+    UI_EXPECT(second_export_row[1] == "1");
+    UI_EXPECT(second_export_row[2] == "B->A");
+    UI_EXPECT(second_export_row[3] == "00:00:02.000250");
+    UI_EXPECT(second_export_row[4] == "1000150");
+    UI_EXPECT(second_export_row[7] == "ACK|SYN");
+    UI_EXPECT(second_export_row[8].empty());
+
+    const auto third_export_row = split_csv_line(sequence_csv_lines[3]);
+    UI_EXPECT(third_export_row.size() == 9U);
+    UI_EXPECT(third_export_row[0] == "3");
+    UI_EXPECT(third_export_row[1] == "2");
+    UI_EXPECT(third_export_row[2] == "A->B");
+    UI_EXPECT(third_export_row[3] == "00:00:03.000500");
+    UI_EXPECT(third_export_row[4] == "1000250");
+    UI_EXPECT(third_export_row[7] == "ACK|PSH");
+    UI_EXPECT(third_export_row[8].empty());
+
+    const auto invalid_sequence_export_path = std::filesystem::temp_directory_path() / "pfl_missing_sequence_export_dir" / "selected_flow_sequence.csv";
+    std::filesystem::remove(invalid_sequence_export_path, remove_error);
+    UI_EXPECT(sequence_export_controller.exportSelectedFlowSequenceCsv(QString::fromStdWString(invalid_sequence_export_path.wstring())));
+    UI_EXPECT(wait_until(app, [&sequence_export_controller]() {
+        return !sequence_export_controller.analysisSequenceExportInProgress()
+            && sequence_export_controller.analysisSequenceExportStatusIsError();
+    }));
+    UI_EXPECT(sequence_export_controller.analysisSequenceExportStatusText() == QStringLiteral("Failed to open output CSV file."));
 
     MainController multi_flow_controller {};
     UI_EXPECT(open_capture_and_wait(app, multi_flow_controller, capture_path));

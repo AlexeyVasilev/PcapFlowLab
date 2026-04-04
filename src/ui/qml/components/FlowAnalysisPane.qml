@@ -15,6 +15,7 @@ Frame {
     readonly property int twoColumnMinWidth: 880
 
     signal openInFlowsRequested()
+    signal exportFlowSequenceRequested()
 
     component AnalysisSectionFrame: Frame {
         id: sectionFrame
@@ -43,6 +44,10 @@ Frame {
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
+    property bool canExportAnalysisSequence: false
+    property bool sequenceExportInProgress: false
+    property string sequenceExportStatusText: ""
+    property bool sequenceExportStatusIsError: false
     property string durationText: ""
     property string timelineFirstPacketTime: ""
     property string timelineLastPacketTime: ""
@@ -124,6 +129,28 @@ Frame {
                 text: "Open in Flows"
                 enabled: root.hasActiveFlow
                 onClicked: root.openInFlowsRequested()
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            visible: root.sequenceExportInProgress || root.sequenceExportStatusText.length > 0
+
+            BusyIndicator {
+                running: root.sequenceExportInProgress
+                visible: root.sequenceExportInProgress
+                implicitWidth: 20
+                implicitHeight: 20
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: root.sequenceExportInProgress
+                    ? "Exporting flow sequence..."
+                    : root.sequenceExportStatusText
+                color: root.sequenceExportStatusIsError ? "#b91c1c" : "#475569"
+                wrapMode: Text.WordWrap
             }
         }
 
@@ -611,9 +638,25 @@ Frame {
                     }
 
                     AnalysisSectionFrame {
-                        Label {
-                            text: "Sequence Preview"
-                            font.bold: true
+                        RowLayout {
+                            width: parent.width
+                            spacing: 12
+
+                            Label {
+                                text: "Sequence Preview"
+                                font.bold: true
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            Button {
+                                objectName: "analysisExportFlowSequenceButton"
+                                text: "Export flow sequence"
+                                enabled: root.canExportAnalysisSequence && !root.sequenceExportInProgress
+                                onClicked: root.exportFlowSequenceRequested()
+                            }
                         }
 
                         RowLayout {

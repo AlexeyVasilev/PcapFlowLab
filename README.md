@@ -57,6 +57,7 @@ The Qt Quick desktop UI can:
 - show a payload-oriented Stream tab for the selected flow
 - expose Analysis as a dedicated selected-flow workspace with compact flow selection and MVP overview and directional stats only
 - include a bounded metadata-only Sequence Preview block in Analysis for the first packets of the selected flow
+- export the full selected-flow sequence from Analysis to CSV using existing packet metadata only, without payload bytes
 - include a bounded metadata-only Timeline block in Analysis for selected-flow timing summary
 - include a bounded metadata-only Packet Size Histogram block in Analysis for selected-flow captured-length distribution
 - include a bounded metadata-only Inter-arrival Histogram block in Analysis for selected-flow timing distribution

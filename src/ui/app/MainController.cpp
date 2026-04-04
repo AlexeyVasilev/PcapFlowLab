@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <memory>
 
@@ -43,6 +44,18 @@ struct OpenJobResult {
     QString input_path {};
     QString error_text {};
     CaptureSession session {};
+};
+
+struct AnalysisSequenceExportRow {
+    std::uint64_t flow_packet_index {0};
+    std::uint64_t packet_index {0};
+    std::string direction_text {};
+    std::string timestamp_text {};
+    std::uint64_t delta_us {0};
+    std::uint32_t captured_length {0};
+    std::uint32_t payload_length {0};
+    std::string tcp_flags_text {};
+    std::string protocol_hint_text {};
 };
 
 FlowListModel::SortKey sort_key_from_column(const int column) {
@@ -139,6 +152,130 @@ QString selected_flow_service_hint(const FlowListModel& flow_model, const int se
     }
 
     return flow_model.data(flow_model.index(row, 0), FlowListModel::ServiceHintRole).toString();
+}
+
+QString selected_flow_protocol_hint(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return {};
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return {};
+    }
+
+    return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolHintRole).toString();
+}
+
+std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
+    return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+std::string normalize_sequence_direction(const std::string& direction_text) {
+    if (direction_text == "A\xE2\x86\x92" "B") {
+        return "A->B";
+    }
+    if (direction_text == "B\xE2\x86\x92" "A") {
+        return "B->A";
+    }
+
+    return direction_text;
+}
+
+std::string escape_csv_field(const std::string& field) {
+    if (field.find_first_of(",\"\r\n") == std::string::npos) {
+        return field;
+    }
+
+    std::string escaped {};
+    escaped.reserve(field.size() + 2U);
+    escaped.push_back('"');
+    for (const auto ch : field) {
+        if (ch == '"') {
+            escaped.push_back('"');
+        }
+        escaped.push_back(ch);
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const QString& protocol_hint
+) {
+    const auto packet_rows = session.list_flow_packets(flow_index);
+    const auto packets = session.flow_packets(flow_index);
+    if (!packets.has_value() || packet_rows.size() != packets->size()) {
+        return std::nullopt;
+    }
+
+    std::vector<AnalysisSequenceExportRow> rows {};
+    rows.reserve(packet_rows.size());
+
+    const auto protocol_hint_text = protocol_hint.toStdString();
+    std::optional<std::uint64_t> previous_timestamp_us {};
+    for (std::size_t index = 0; index < packet_rows.size(); ++index) {
+        const auto& packet_row = packet_rows[index];
+        const auto& packet = packets->at(index);
+        if (packet_row.packet_index != packet.packet_index) {
+            return std::nullopt;
+        }
+
+        const auto timestamp_us = packet_timestamp_us(packet);
+        const auto delta_us = previous_timestamp_us.has_value() && timestamp_us >= *previous_timestamp_us
+            ? timestamp_us - *previous_timestamp_us
+            : 0U;
+
+        rows.push_back(AnalysisSequenceExportRow {
+            .flow_packet_index = packet_row.row_number,
+            .packet_index = packet.packet_index,
+            .direction_text = normalize_sequence_direction(packet_row.direction_text),
+            .timestamp_text = packet_row.timestamp_text,
+            .delta_us = delta_us,
+            .captured_length = packet.captured_length,
+            .payload_length = packet.payload_length,
+            .tcp_flags_text = packet_row.tcp_flags_text,
+            .protocol_hint_text = protocol_hint_text,
+        });
+
+        previous_timestamp_us = timestamp_us;
+    }
+
+    return rows;
+}
+
+bool write_analysis_sequence_csv(const std::vector<AnalysisSequenceExportRow>& rows, const std::filesystem::path& output_path, QString* error_text) {
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        if (error_text != nullptr) {
+            *error_text = QStringLiteral("Failed to open output CSV file.");
+        }
+        return false;
+    }
+
+    stream << "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,payload_length,tcp_flags,protocol_hint\n";
+    for (const auto& row : rows) {
+        stream << row.flow_packet_index << ','
+               << row.packet_index << ','
+               << escape_csv_field(row.direction_text) << ','
+               << escape_csv_field(row.timestamp_text) << ','
+               << row.delta_us << ','
+               << row.captured_length << ','
+               << row.payload_length << ','
+               << escape_csv_field(row.tcp_flags_text) << ','
+               << escape_csv_field(row.protocol_hint_text) << '\n';
+    }
+
+    if (!stream.good()) {
+        if (error_text != nullptr) {
+            *error_text = QStringLiteral("Failed to write flow sequence CSV.");
+        }
+        return false;
+    }
+
+    return true;
 }
 
 QString formatIpv4Address(const std::uint32_t address) {
@@ -520,6 +657,7 @@ MainController::MainController(QObject* parent)
 }
 
 MainController::~MainController() {
+    cleanupAnalysisSequenceExportThread();
     cleanupOpenThread();
 }
 
@@ -663,6 +801,22 @@ bool MainController::analysisLoading() const noexcept {
 
 bool MainController::analysisAvailable() const noexcept {
     return current_flow_analysis_.has_value();
+}
+
+bool MainController::canExportAnalysisSequence() const noexcept {
+    return selected_flow_index_ >= 0 && !analysis_sequence_export_in_progress_;
+}
+
+bool MainController::analysisSequenceExportInProgress() const noexcept {
+    return analysis_sequence_export_in_progress_;
+}
+
+QString MainController::analysisSequenceExportStatusText() const {
+    return analysis_sequence_export_status_text_;
+}
+
+bool MainController::analysisSequenceExportStatusIsError() const noexcept {
+    return analysis_sequence_export_status_is_error_;
 }
 
 QString MainController::analysisDurationText() const {
@@ -1384,6 +1538,50 @@ bool MainController::exportSelectedFlow(const QString& path) {
     );
 }
 
+bool MainController::exportSelectedFlowSequenceCsv(const QString& path) {
+    if (selected_flow_index_ < 0) {
+        setAnalysisSequenceExportState(false, QStringLiteral("No flow selected for sequence export."), true);
+        return false;
+    }
+
+    if (analysis_sequence_export_in_progress_ || analysis_sequence_export_thread_ != nullptr) {
+        setAnalysisSequenceExportState(true, QStringLiteral("Exporting flow sequence..."), false);
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setAnalysisSequenceExportState(false, QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    setAnalysisSequenceExportState(true, QStringLiteral("Exporting flow sequence..."), false);
+
+    const auto flow_index = static_cast<std::size_t>(selected_flow_index_);
+    const auto rows = build_analysis_sequence_export_rows(session_, flow_index, selected_flow_protocol_hint(flow_model_, selected_flow_index_));
+    if (!rows.has_value()) {
+        setAnalysisSequenceExportState(false, QStringLiteral("Failed to prepare flow sequence export."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+
+    ++active_analysis_sequence_export_job_id_;
+    const auto job_id = active_analysis_sequence_export_job_id_;
+    analysis_sequence_export_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath, rows = std::move(*rows)]() mutable {
+        QString error_text {};
+        const bool exported = write_analysis_sequence_csv(rows, filesystemPath, &error_text);
+        QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, error_text]() {
+            completeAnalysisSequenceExport(job_id, trimmedPath, exported, error_text);
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(analysis_sequence_export_thread_, &QThread::finished, analysis_sequence_export_thread_, &QObject::deleteLater);
+    analysis_sequence_export_thread_->start();
+    return true;
+}
+
 void MainController::clearSelectedFlows() {
     flow_model_.clearCheckedFlows();
 }
@@ -1440,6 +1638,13 @@ void MainController::browseExportSelectedFlow() {
     const QString path = chooseSaveFile(false);
     if (!path.isEmpty()) {
         exportSelectedFlow(path);
+    }
+}
+
+void MainController::browseExportSelectedFlowSequenceCsv() {
+    const QString path = chooseSequenceCsvSaveFile();
+    if (!path.isEmpty()) {
+        exportSelectedFlowSequenceCsv(path);
     }
 }
 
@@ -1559,6 +1764,10 @@ void MainController::setCurrentTabIndex(const int index) {
 void MainController::setSelectedFlowIndex(const int index) {
     if (selected_flow_index_ == index) {
         return;
+    }
+
+    if (!analysis_sequence_export_in_progress_ && (!analysis_sequence_export_status_text_.isEmpty() || analysis_sequence_export_status_is_error_)) {
+        setAnalysisSequenceExportState(false, {}, false);
     }
 
     selected_flow_index_ = index;
@@ -1883,6 +2092,9 @@ void MainController::clearFlowSelection() {
     clearPacketSelection();
     clearStreamSelection();
     clearSelectedFlowAnalysis();
+    if (!analysis_sequence_export_in_progress_ && (!analysis_sequence_export_status_text_.isEmpty() || analysis_sequence_export_status_is_error_)) {
+        setAnalysisSequenceExportState(false, {}, false);
+    }
 
     if (packetStateChanged) {
         emit packetListStateChanged();
@@ -1937,6 +2149,7 @@ void MainController::resetLoadedState() {
     analysis_loading_ = false;
     emit analysisStateChanged();
     current_flow_analysis_.reset();
+    setAnalysisSequenceExportState(false, {}, false);
 }
 
 void MainController::applyLoadedState(const QString& path) {
@@ -2064,6 +2277,42 @@ void MainController::completeOpenJob(
     if (session_.is_partial_open()) {
         setStatusText(format_partial_open_warning_message(session_.partial_open_failure()));
     }
+}
+
+void MainController::completeAnalysisSequenceExport(
+    const qulonglong jobId,
+    const QString& outputPath,
+    const bool exported,
+    const QString& errorText
+) {
+    if (jobId != active_analysis_sequence_export_job_id_) {
+        return;
+    }
+
+    active_analysis_sequence_export_job_id_ = 0;
+    cleanupAnalysisSequenceExportThread();
+
+    if (!exported) {
+        const auto message = errorText.isEmpty()
+            ? QStringLiteral("Failed to export flow sequence CSV.")
+            : errorText;
+        setAnalysisSequenceExportState(false, message, true);
+        return;
+    }
+
+    setAnalysisSequenceExportState(false, QStringLiteral("Flow sequence CSV exported: %1").arg(outputPath), false);
+}
+
+void MainController::cleanupAnalysisSequenceExportThread() {
+    if (analysis_sequence_export_thread_ == nullptr) {
+        return;
+    }
+
+    if (analysis_sequence_export_thread_->isRunning()) {
+        analysis_sequence_export_thread_->wait();
+    }
+
+    analysis_sequence_export_thread_ = nullptr;
 }
 
 void MainController::cleanupOpenThread() {
@@ -2237,6 +2486,21 @@ void MainController::setOpenErrorText(const QString& text) {
     emit openErrorTextChanged();
 }
 
+void MainController::setAnalysisSequenceExportState(const bool inProgress, const QString& statusText, const bool statusIsError) {
+    const bool progressChanged = analysis_sequence_export_in_progress_ != inProgress;
+    if (!progressChanged && analysis_sequence_export_status_text_ == statusText && analysis_sequence_export_status_is_error_ == statusIsError) {
+        return;
+    }
+
+    analysis_sequence_export_in_progress_ = inProgress;
+    analysis_sequence_export_status_text_ = statusText;
+    analysis_sequence_export_status_is_error_ = statusIsError;
+    emit analysisSequenceExportStateChanged();
+    if (progressChanged) {
+        emit actionAvailabilityChanged();
+    }
+}
+
 void MainController::setStatusText(const QString& text, const bool isError) {
     if (status_text_ == text && status_is_error_ == isError) {
         return;
@@ -2273,6 +2537,24 @@ QString MainController::chooseSaveFile(const bool forIndex) const {
         dialog.setNameFilter(QStringLiteral("PCAP Files (*.pcap);;All Files (*)"));
         dialog.setDefaultSuffix(QStringLiteral("pcap"));
     }
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseSequenceCsvSaveFile() const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(QStringLiteral("Export Flow Sequence CSV"));
+    dialog.setNameFilter(QStringLiteral("CSV Files (*.csv);;All Files (*)"));
+    dialog.setDefaultSuffix(QStringLiteral("csv"));
 
     if (dialog.exec() != QFileDialog::Accepted) {
         return {};

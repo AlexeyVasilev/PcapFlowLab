@@ -289,6 +289,10 @@ ApplicationWindow {
                 selectedFlowIndex: mainController.selectedFlowIndex
                 analysisLoading: mainController.analysisLoading
                 analysisAvailable: mainController.analysisAvailable
+                canExportAnalysisSequence: mainController.canExportAnalysisSequence
+                analysisSequenceExportInProgress: mainController.analysisSequenceExportInProgress
+                analysisSequenceExportStatusText: mainController.analysisSequenceExportStatusText
+                analysisSequenceExportStatusIsError: mainController.analysisSequenceExportStatusIsError
                 analysisDurationText: mainController.analysisDurationText
                 analysisTimelineFirstPacketTime: mainController.analysisTimelineFirstPacketTime
                 analysisTimelineLastPacketTime: mainController.analysisTimelineLastPacketTime
@@ -344,6 +348,9 @@ ApplicationWindow {
                 }
                 onOpenInFlowsRequested: function() {
                     mainController.currentTabIndex = 0
+                }
+                onExportFlowSequenceRequested: function() {
+                    mainController.browseExportSelectedFlowSequenceCsv()
                 }
             }
 

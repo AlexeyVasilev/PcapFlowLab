@@ -9,6 +9,10 @@ Item {
     property int selectedFlowIndex: -1
     property bool analysisLoading: false
     property bool analysisAvailable: false
+    property bool canExportAnalysisSequence: false
+    property bool analysisSequenceExportInProgress: false
+    property string analysisSequenceExportStatusText: ""
+    property bool analysisSequenceExportStatusIsError: false
     property string analysisDurationText: ""
     property string analysisTimelineFirstPacketTime: ""
     property string analysisTimelineLastPacketTime: ""
@@ -62,6 +66,7 @@ Item {
 
     signal flowSelected(int flowIndex)
     signal openInFlowsRequested()
+    signal exportFlowSequenceRequested()
 
     SplitView {
         anchors.fill: parent
@@ -213,6 +218,10 @@ Item {
             hasActiveFlow: root.selectedFlowIndex >= 0
             analysisLoading: root.analysisLoading
             analysisAvailable: root.analysisAvailable
+            canExportAnalysisSequence: root.canExportAnalysisSequence
+            sequenceExportInProgress: root.analysisSequenceExportInProgress
+            sequenceExportStatusText: root.analysisSequenceExportStatusText
+            sequenceExportStatusIsError: root.analysisSequenceExportStatusIsError
             durationText: root.analysisDurationText
             timelineFirstPacketTime: root.analysisTimelineFirstPacketTime
             timelineLastPacketTime: root.analysisTimelineLastPacketTime
@@ -264,6 +273,7 @@ Item {
             packetSizeHistogramModel: root.analysisPacketSizeHistogram
             sequencePreviewModel: root.analysisSequencePreview
             onOpenInFlowsRequested: root.openInFlowsRequested()
+            onExportFlowSequenceRequested: root.exportFlowSequenceRequested()
         }
     }
 }

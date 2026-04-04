@@ -58,6 +58,10 @@ class MainController final : public QObject {
     Q_PROPERTY(bool canLoadMoreStreamItems READ canLoadMoreStreamItems NOTIFY streamListStateChanged)
     Q_PROPERTY(bool analysisLoading READ analysisLoading NOTIFY analysisStateChanged)
     Q_PROPERTY(bool analysisAvailable READ analysisAvailable NOTIFY analysisStateChanged)
+    Q_PROPERTY(bool canExportAnalysisSequence READ canExportAnalysisSequence NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool analysisSequenceExportInProgress READ analysisSequenceExportInProgress NOTIFY analysisSequenceExportStateChanged)
+    Q_PROPERTY(QString analysisSequenceExportStatusText READ analysisSequenceExportStatusText NOTIFY analysisSequenceExportStateChanged)
+    Q_PROPERTY(bool analysisSequenceExportStatusIsError READ analysisSequenceExportStatusIsError NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineFirstPacketTime READ analysisTimelineFirstPacketTime NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineLastPacketTime READ analysisTimelineLastPacketTime NOTIFY analysisStateChanged)
@@ -195,6 +199,10 @@ public:
     [[nodiscard]] bool canLoadMoreStreamItems() const noexcept;
     [[nodiscard]] bool analysisLoading() const noexcept;
     [[nodiscard]] bool analysisAvailable() const noexcept;
+    [[nodiscard]] bool canExportAnalysisSequence() const noexcept;
+    [[nodiscard]] bool analysisSequenceExportInProgress() const noexcept;
+    [[nodiscard]] QString analysisSequenceExportStatusText() const;
+    [[nodiscard]] bool analysisSequenceExportStatusIsError() const noexcept;
     [[nodiscard]] QString analysisDurationText() const;
     [[nodiscard]] QString analysisTimelineFirstPacketTime() const;
     [[nodiscard]] QString analysisTimelineLastPacketTime() const;
@@ -302,6 +310,7 @@ public:
     Q_INVOKABLE void loadMoreStreamItems();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
     Q_INVOKABLE bool exportSelectedFlow(const QString& path);
+    Q_INVOKABLE bool exportSelectedFlowSequenceCsv(const QString& path);
     Q_INVOKABLE void clearSelectedFlows();
     Q_INVOKABLE bool exportSelectedFlows(const QString& path);
     Q_INVOKABLE bool exportUnselectedFlows(const QString& path);
@@ -310,6 +319,7 @@ public:
     Q_INVOKABLE void browseAttachSourceCapture();
     Q_INVOKABLE void browseSaveAnalysisIndex();
     Q_INVOKABLE void browseExportSelectedFlow();
+    Q_INVOKABLE void browseExportSelectedFlowSequenceCsv();
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
@@ -348,6 +358,7 @@ signals:
     void packetListStateChanged();
     void streamListStateChanged();
     void analysisStateChanged();
+    void analysisSequenceExportStateChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -373,16 +384,20 @@ private:
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
     bool exportFlows(const QString& path, const std::vector<int>& flowIndices, const QString& emptySelectionMessage, const QString& failureMessage, const QString& successMessage);
+    void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
+    void cleanupAnalysisSequenceExportThread();
     void cleanupOpenThread();
     void releaseOpenContext();
     void beginOpenProgress();
     void updateOpenProgress(const OpenProgress& progress);
     void finishOpenProgress();
     void setOpenErrorText(const QString& text);
+    void setAnalysisSequenceExportState(bool inProgress, const QString& statusText, bool statusIsError);
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
+    QString chooseSequenceCsvSaveFile() const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
     CaptureSession session_ {};
@@ -424,13 +439,18 @@ private:
     bool can_load_more_stream_items_ {false};
     bool stream_state_materialized_for_selected_flow_ {false};
     bool analysis_loading_ {false};
+    bool analysis_sequence_export_in_progress_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
+    QString analysis_sequence_export_status_text_ {};
+    bool analysis_sequence_export_status_is_error_ {false};
     qulonglong active_analysis_request_id_ {0};
+    qulonglong active_analysis_sequence_export_job_id_ {0};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
     double open_progress_percent_ {0.0};
     qulonglong active_open_job_id_ {0};
+    QThread* analysis_sequence_export_thread_ {nullptr};
     QThread* open_thread_ {nullptr};
     std::shared_ptr<OpenContext> active_open_context_ {};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
