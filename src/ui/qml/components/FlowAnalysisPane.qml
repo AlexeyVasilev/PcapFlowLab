@@ -192,6 +192,72 @@ Frame {
     function rateGraphMaxYValue(seriesA, seriesB) {
         return Math.max(rateSeriesMaxValue(seriesA), rateSeriesMaxValue(seriesB))
     }
+
+    function ratePointIsZero(point) {
+        return point.dataPerSecond === 0 && point.packetsPerSecond === 0
+    }
+
+    function rateGraphTrimmedPointCount(seriesA, seriesB) {
+        var countA = seriesA.length
+        var countB = seriesB.length
+        var count = Math.max(countA, countB)
+        var index = count - 1
+        while (index >= 0) {
+            var pointA = index < countA ? seriesA[index] : null
+            var pointB = index < countB ? seriesB[index] : null
+            var zeroA = pointA === null || ratePointIsZero(pointA)
+            var zeroB = pointB === null || ratePointIsZero(pointB)
+            if (!zeroA || !zeroB) {
+                return index + 1
+            }
+            index -= 1
+        }
+        return 0
+    }
+
+    function rateSeriesPrefix(series, count) {
+        var limit = Math.min(series.length, count)
+        var points = []
+        for (var index = 0; index < limit; ++index) {
+            points.push(series[index])
+        }
+        return points
+    }
+
+    function formatRateNumber(value, decimals) {
+        var text = value.toFixed(decimals)
+        text = text.replace(/\.?0+$/, "")
+        return text
+    }
+
+    function rateUnitForValue(maxValue) {
+        if (rateMetricMode === rateMetricPackets) {
+            return "pkt/s"
+        }
+        if (maxValue >= 1024 * 1024) {
+            return "MB/s"
+        }
+        if (maxValue >= 1024) {
+            return "KB/s"
+        }
+        return "B/s"
+    }
+
+    function scaledRateValue(value, unit) {
+        if (unit === "MB/s") {
+            return value / (1024 * 1024)
+        }
+        if (unit === "KB/s") {
+            return value / 1024
+        }
+        return value
+    }
+
+    function formatPeakRateValue(value, unit) {
+        var scaled = scaledRateValue(value, unit)
+        var decimals = unit === "B/s" || unit === "pkt/s" ? 0 : 2
+        return formatRateNumber(scaled, decimals) + " " + unit
+    }
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
@@ -204,7 +270,16 @@ Frame {
     property int rateDirectionMode: rateDirectionBoth
     readonly property var renderedRateSeriesAToB: (rateDirectionMode === rateDirectionAToB || rateDirectionMode === rateDirectionBoth) ? rateSeriesAToBModel : []
     readonly property var renderedRateSeriesBToA: (rateDirectionMode === rateDirectionBToA || rateDirectionMode === rateDirectionBoth) ? rateSeriesBToAModel : []
-    readonly property bool rateGraphHasVisibleSeries: renderedRateSeriesAToB.length > 0 || renderedRateSeriesBToA.length > 0
+    readonly property int rateGraphPointCount: rateGraphTrimmedPointCount(rateSeriesAToBModel, rateSeriesBToAModel)
+    readonly property var graphSeriesAToB: (rateDirectionMode === rateDirectionAToB || rateDirectionMode === rateDirectionBoth) ? rateSeriesPrefix(rateSeriesAToBModel, rateGraphPointCount) : []
+    readonly property var graphSeriesBToA: (rateDirectionMode === rateDirectionBToA || rateDirectionMode === rateDirectionBoth) ? rateSeriesPrefix(rateSeriesBToAModel, rateGraphPointCount) : []
+    readonly property bool rateGraphHasVisibleSeries: graphSeriesAToB.length > 0 || graphSeriesBToA.length > 0
+    readonly property real rateGraphPeakRawValue: rateGraphMaxYValue(graphSeriesAToB, graphSeriesBToA)
+    readonly property string rateGraphUnit: rateUnitForValue(rateGraphPeakRawValue)
+    readonly property string rateGraphMetricLabel: rateMetricMode === rateMetricData ? "Data rate (" + rateGraphUnit + ")" : "Packets rate (pkt/s)"
+    readonly property string rateGraphPeakText: "Peak: " + formatPeakRateValue(rateGraphPeakRawValue, rateGraphUnit)
+    readonly property string rateGraphContextText: "Duration: " + (durationText.length > 0 ? durationText : "-")
+        + " \u2022 " + (rateGraphWindowText.length > 0 ? rateGraphWindowText : "Window: -")
     property bool canExportAnalysisSequence: false
     property bool sequenceExportInProgress: false
     property string sequenceExportStatusText: ""
@@ -304,6 +379,8 @@ Frame {
 
     onRenderedRateSeriesAToBChanged: requestRateGraphRepaint()
     onRenderedRateSeriesBToAChanged: requestRateGraphRepaint()
+    onGraphSeriesAToBChanged: requestRateGraphRepaint()
+    onGraphSeriesBToAChanged: requestRateGraphRepaint()
     onRateMetricModeChanged: requestRateGraphRepaint()
     onRateDirectionModeChanged: requestRateGraphRepaint()
     onRateGraphAvailableChanged: requestRateGraphRepaint()
@@ -712,16 +789,71 @@ Frame {
                                 text: "Flow Rate"
                                 font.bold: true
                             }
+                            Label {
+                                objectName: "analysisRateUnitLabel"
+                                text: root.rateGraphMetricLabel
+                                color: "#475569"
+                            }
+
+                            Label {
+                                objectName: "analysisRatePeakLabel"
+                                text: root.rateGraphPeakText
+                                visible: root.rateGraphAvailable && root.rateGraphHasVisibleSeries
+                                color: "#475569"
+                            }
 
                             Item {
                                 Layout.fillWidth: true
                             }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Label {
+                                objectName: "analysisRateContextLabel"
+                                Layout.fillWidth: true
+                                text: root.rateGraphContextText
+                                color: "#64748b"
+                                wrapMode: Text.WordWrap
+                            }
 
                             Label {
                                 objectName: "analysisRateWindowLabel"
+                                visible: false
                                 text: root.rateGraphWindowText
-                                visible: root.rateGraphWindowText.length > 0
-                                color: "#475569"
+                            }
+
+                            RowLayout {
+                                visible: root.rateDirectionMode === root.rateDirectionBoth && root.rateGraphAvailable && root.rateGraphHasVisibleSeries
+                                spacing: 8
+
+                                Rectangle {
+                                    implicitWidth: 10
+                                    implicitHeight: 10
+                                    radius: 2
+                                    color: "#22c55e"
+                                }
+
+                                Label {
+                                    objectName: "analysisRateLegendAToB"
+                                    text: "A\u2192B"
+                                    color: "#2f6f4f"
+                                }
+
+                                Rectangle {
+                                    implicitWidth: 10
+                                    implicitHeight: 10
+                                    radius: 2
+                                    color: "#3b82f6"
+                                }
+
+                                Label {
+                                    objectName: "analysisRateLegendBToA"
+                                    text: "B\u2192A"
+                                    color: "#315b91"
+                                }
                             }
                         }
 
@@ -846,8 +978,8 @@ Frame {
                                         return
                                     }
 
-                                    var seriesA = root.renderedRateSeriesAToB
-                                    var seriesB = root.renderedRateSeriesBToA
+                                    var seriesA = root.graphSeriesAToB
+                                    var seriesB = root.graphSeriesBToA
                                     if (seriesA.length === 0 && seriesB.length === 0) {
                                         return
                                     }
@@ -1319,3 +1451,4 @@ Frame {
         }
     }
 }
+

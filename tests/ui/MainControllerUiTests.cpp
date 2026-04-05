@@ -486,10 +486,11 @@ int main(int argc, char* argv[]) {
         analysisPaneItem->setWidth(900);
         analysisPaneItem->setHeight(700);
         app.processEvents(QEventLoop::AllEvents, 25);
+        const auto initialSurfaceWidth = rateGraphSurface->width();
         analysisPaneItem->setWidth(1200);
         app.processEvents(QEventLoop::AllEvents, 25);
         const auto widenedSurfaceWidth = rateGraphSurface->width();
-        UI_EXPECT(widenedSurfaceWidth > 900.0);
+        UI_EXPECT(widenedSurfaceWidth > initialSurfaceWidth + 1.0);
         UI_EXPECT(pane.object->property("rateMetricMode").toInt() == 0);
         UI_EXPECT(pane.object->property("rateDirectionMode").toInt() == 2);
         UI_EXPECT(pane.object->property("renderedRateSeriesAToB").toList().size() == 2);
