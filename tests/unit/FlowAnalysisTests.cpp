@@ -188,7 +188,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(analysis->bytes_b_to_a == static_cast<std::uint64_t>(response_packet.size()));
     PFL_EXPECT(analysis->packet_ratio_text == "2 : 1");
     PFL_EXPECT(analysis->byte_ratio_text == "2.3 : 1");
-    PFL_EXPECT(analysis->dominant_direction_text == "Balanced");
+    PFL_EXPECT(analysis->packet_direction_text == "Balanced");
+    PFL_EXPECT(analysis->data_direction_text == "Mostly A->B");
     PFL_EXPECT(analysis->first_packet_timestamp_text == "00:00:01.000100");
     PFL_EXPECT(analysis->last_packet_timestamp_text == "00:00:03.000450");
     PFL_EXPECT(analysis->largest_gap_us == 1000200U);
@@ -484,7 +485,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(single_packet_analysis->max_packet_size_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->packet_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->byte_ratio_text == "1 : 0");
-    PFL_EXPECT(single_packet_analysis->dominant_direction_text == "Mostly A->B");
+    PFL_EXPECT(single_packet_analysis->packet_direction_text == "Mostly A->B");
+    PFL_EXPECT(single_packet_analysis->data_direction_text == "Mostly A->B");
 
     const auto ratio_packet_a = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 3, 0, 1), ipv4(10, 3, 0, 2), 43000, 443, 40, 0x18
@@ -510,7 +512,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(balanced_analysis.has_value());
     PFL_EXPECT(balanced_analysis->packet_ratio_text == "2 : 1");
     PFL_EXPECT(balanced_analysis->byte_ratio_text == "2 : 1");
-    PFL_EXPECT(balanced_analysis->dominant_direction_text == "Balanced");
+    PFL_EXPECT(balanced_analysis->packet_direction_text == "Balanced");
+    PFL_EXPECT(balanced_analysis->data_direction_text == "Balanced");
 
     const auto a_dominant_capture_path = write_temp_pcap(
         "pfl_flow_analysis_directional_ratio_a_dominant.pcap",
@@ -531,7 +534,8 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(a_dominant_analysis.has_value());
     PFL_EXPECT(a_dominant_analysis->packet_ratio_text == "4 : 1");
     PFL_EXPECT(a_dominant_analysis->byte_ratio_text == "4 : 1");
-    PFL_EXPECT(a_dominant_analysis->dominant_direction_text == "Mostly A->B");
+    PFL_EXPECT(a_dominant_analysis->packet_direction_text == "Mostly A->B");
+    PFL_EXPECT(a_dominant_analysis->data_direction_text == "Mostly A->B");
 
     const auto b_dominant_capture_path = write_temp_pcap(
         "pfl_flow_analysis_directional_ratio_b_dominant.pcap",
@@ -552,7 +556,64 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(b_dominant_analysis.has_value());
     PFL_EXPECT(b_dominant_analysis->packet_ratio_text == "1 : 4");
     PFL_EXPECT(b_dominant_analysis->byte_ratio_text == "1 : 4");
-    PFL_EXPECT(b_dominant_analysis->dominant_direction_text == "Mostly B->A");
+    PFL_EXPECT(b_dominant_analysis->packet_direction_text == "Mostly B->A");
+    PFL_EXPECT(b_dominant_analysis->data_direction_text == "Mostly B->A");
+
+    const auto packet_balanced_byte_skewed_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 1200U, 0U),
+            make_analysis_packet_ref(2U, 300U, 1200U, 0U),
+        },
+        {
+            make_analysis_packet_ref(1U, 200U, 100U, 0U),
+            make_analysis_packet_ref(3U, 400U, 100U, 0U),
+        }
+    );
+    FlowAnalysisService direction_summary_service {};
+    const auto packet_balanced_byte_skewed_analysis = direction_summary_service.analyze(packet_balanced_byte_skewed_connection);
+    PFL_EXPECT(packet_balanced_byte_skewed_analysis.packet_direction_text == "Balanced");
+    PFL_EXPECT(packet_balanced_byte_skewed_analysis.data_direction_text == "Mostly A->B");
+
+    const auto byte_balanced_packet_skewed_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref(0U, 100U, 100U, 0U),
+            make_analysis_packet_ref(2U, 300U, 100U, 0U),
+            make_analysis_packet_ref(4U, 500U, 100U, 0U),
+            make_analysis_packet_ref(6U, 700U, 100U, 0U),
+        },
+        {
+            make_analysis_packet_ref(1U, 200U, 400U, 0U),
+        }
+    );
+    const auto byte_balanced_packet_skewed_analysis = direction_summary_service.analyze(byte_balanced_packet_skewed_connection);
+    PFL_EXPECT(byte_balanced_packet_skewed_analysis.packet_direction_text == "Mostly A->B");
+    PFL_EXPECT(byte_balanced_packet_skewed_analysis.data_direction_text == "Balanced");
+
+    const auto zero_direction_analysis = direction_summary_service.analyze(make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {},
+        {}
+    ));
+    PFL_EXPECT(zero_direction_analysis.packet_direction_text == "Balanced");
+    PFL_EXPECT(zero_direction_analysis.data_direction_text == "Balanced");
+
+    const auto b_only_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {},
+        {
+            make_analysis_packet_ref(0U, 100U, 256U, 0U),
+            make_analysis_packet_ref(1U, 200U, 256U, 0U),
+        }
+    );
+    const auto b_only_analysis = direction_summary_service.analyze(b_only_connection);
+    PFL_EXPECT(b_only_analysis.packet_direction_text == "Mostly B->A");
+    PFL_EXPECT(b_only_analysis.data_direction_text == "Mostly B->A");
 
     FlowAnalysisService analysis_service {};
 

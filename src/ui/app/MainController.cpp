@@ -923,9 +923,15 @@ QString MainController::analysisByteRatioText() const {
         : QString {};
 }
 
-QString MainController::analysisDominantDirectionText() const {
-    return current_flow_analysis_.has_value() && !current_flow_analysis_->dominant_direction_text.empty()
-        ? QString::fromStdString(current_flow_analysis_->dominant_direction_text)
+QString MainController::analysisPacketDirectionText() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->packet_direction_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->packet_direction_text)
+        : QString {};
+}
+
+QString MainController::analysisDataDirectionText() const {
+    return current_flow_analysis_.has_value() && !current_flow_analysis_->data_direction_text.empty()
+        ? QString::fromStdString(current_flow_analysis_->data_direction_text)
         : QString {};
 }
 

@@ -55,7 +55,8 @@ struct FlowAnalysisResult {
     std::uint64_t bytes_b_to_a {0};
     std::string packet_ratio_text {};
     std::string byte_ratio_text {};
-    std::string dominant_direction_text {};
+    std::string packet_direction_text {};
+    std::string data_direction_text {};
     std::uint32_t min_packet_size_bytes {0};
     std::uint32_t max_packet_size_bytes {0};
     std::string first_packet_timestamp_text {};

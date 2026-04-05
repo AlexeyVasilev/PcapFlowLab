@@ -311,7 +311,8 @@ ApplicationWindow {
                 analysisMaxPacketSizeText: mainController.analysisMaxPacketSizeText
                 analysisPacketRatioText: mainController.analysisPacketRatioText
                 analysisByteRatioText: mainController.analysisByteRatioText
-                analysisDominantDirectionText: mainController.analysisDominantDirectionText
+                analysisPacketDirectionText: mainController.analysisPacketDirectionText
+                analysisDataDirectionText: mainController.analysisDataDirectionText
                 analysisProtocolHint: mainController.analysisProtocolHint
                 analysisServiceHint: mainController.analysisServiceHint
                 analysisProtocolVersionText: mainController.analysisProtocolVersionText

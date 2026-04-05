@@ -109,26 +109,26 @@ std::string format_direction_ratio_text(const std::uint64_t a_to_b, const std::u
     return "1 : " + format_ratio_number(static_cast<double>(b_to_a) / static_cast<double>(a_to_b));
 }
 
-std::string derive_dominant_direction_text(const std::uint64_t a_to_b_packets, const std::uint64_t b_to_a_packets) {
-    if (a_to_b_packets == 0U && b_to_a_packets == 0U) {
+std::string derive_direction_summary_text(const std::uint64_t a_to_b_value, const std::uint64_t b_to_a_value) {
+    if (a_to_b_value == 0U && b_to_a_value == 0U) {
         return "Balanced";
     }
 
-    if (a_to_b_packets == 0U) {
+    if (a_to_b_value == 0U) {
         return "Mostly B->A";
     }
 
-    if (b_to_a_packets == 0U) {
+    if (b_to_a_value == 0U) {
         return "Mostly A->B";
     }
 
-    const auto larger = std::max(a_to_b_packets, b_to_a_packets);
-    const auto smaller = std::min(a_to_b_packets, b_to_a_packets);
+    const auto larger = std::max(a_to_b_value, b_to_a_value);
+    const auto smaller = std::min(a_to_b_value, b_to_a_value);
     if (larger <= (smaller * 2U)) {
         return "Balanced";
     }
 
-    return a_to_b_packets > b_to_a_packets ? "Mostly A->B" : "Mostly B->A";
+    return a_to_b_value > b_to_a_value ? "Mostly A->B" : "Mostly B->A";
 }
 
 const char* quic_version_hint_text(const QuicVersionHint hint) noexcept {
@@ -431,7 +431,8 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     result.bytes_b_to_a = connection.flow_b.total_bytes;
     result.packet_ratio_text = format_direction_ratio_text(result.packets_a_to_b, result.packets_b_to_a);
     result.byte_ratio_text = format_direction_ratio_text(result.bytes_a_to_b, result.bytes_b_to_a);
-    result.dominant_direction_text = derive_dominant_direction_text(result.packets_a_to_b, result.packets_b_to_a);
+    result.packet_direction_text = derive_direction_summary_text(result.packets_a_to_b, result.packets_b_to_a);
+    result.data_direction_text = derive_direction_summary_text(result.bytes_a_to_b, result.bytes_b_to_a);
     result.protocol_hint = connection.protocol_hint == FlowProtocolHint::unknown
         ? std::string {}
         : std::string {flow_protocol_hint_text(connection.protocol_hint)};

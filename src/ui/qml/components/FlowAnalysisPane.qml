@@ -113,7 +113,8 @@ Frame {
     property string maxPacketSizeText: ""
     property string packetRatioText: ""
     property string byteRatioText: ""
-    property string dominantDirectionText: ""
+    property string packetDirectionText: ""
+    property string dataDirectionText: ""
     property string protocolHint: ""
     property string serviceHint: ""
     property string protocolVersionText: ""
@@ -596,8 +597,11 @@ Frame {
                                     Label { text: "Byte ratio" }
                                     Label { text: root.byteRatioText.length > 0 ? root.byteRatioText : "-" }
 
-                                    Label { text: "Dominant direction" }
-                                    Label { text: root.dominantDirectionText.length > 0 ? root.dominantDirectionText : "-" }
+                                    Label { text: "Packet direction" }
+                                    Label { text: root.packetDirectionText.length > 0 ? root.packetDirectionText : "-" }
+
+                                    Label { text: "Data direction" }
+                                    Label { text: root.dataDirectionText.length > 0 ? root.dataDirectionText : "-" }
                                 }
                             }
                         }

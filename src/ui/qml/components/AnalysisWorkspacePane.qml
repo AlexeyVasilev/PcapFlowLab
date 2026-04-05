@@ -31,7 +31,8 @@ Item {
     property string analysisMaxPacketSizeText: ""
     property string analysisPacketRatioText: ""
     property string analysisByteRatioText: ""
-    property string analysisDominantDirectionText: ""
+    property string analysisPacketDirectionText: ""
+    property string analysisDataDirectionText: ""
     property string analysisProtocolHint: ""
     property string analysisServiceHint: ""
     property string analysisProtocolVersionText: ""
@@ -246,7 +247,8 @@ Item {
             maxPacketSizeText: root.analysisMaxPacketSizeText
             packetRatioText: root.analysisPacketRatioText
             byteRatioText: root.analysisByteRatioText
-            dominantDirectionText: root.analysisDominantDirectionText
+            packetDirectionText: root.analysisPacketDirectionText
+            dataDirectionText: root.analysisDataDirectionText
             protocolHint: root.analysisProtocolHint
             serviceHint: root.analysisServiceHint
             protocolVersionText: root.analysisProtocolVersionText

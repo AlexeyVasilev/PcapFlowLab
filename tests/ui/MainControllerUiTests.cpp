@@ -573,7 +573,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisMaxPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisPacketRatioText() == QStringLiteral("1 : 0"));
     UI_EXPECT(controller.analysisByteRatioText() == QStringLiteral("1 : 0"));
-    UI_EXPECT(controller.analysisDominantDirectionText() == QStringLiteral("Mostly A->B"));
+    UI_EXPECT(controller.analysisPacketDirectionText() == QStringLiteral("Mostly A->B"));
+    UI_EXPECT(controller.analysisDataDirectionText() == QStringLiteral("Mostly A->B"));
     UI_EXPECT(controller.analysisProtocolHint() == QStringLiteral("HTTP"));
     UI_EXPECT(controller.analysisServiceHint() == QStringLiteral("ui.example"));
     UI_EXPECT(controller.analysisHasTcpControlCounts());
@@ -652,7 +653,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisMaxPacketSizeText().isEmpty());
     UI_EXPECT(controller.analysisPacketRatioText().isEmpty());
     UI_EXPECT(controller.analysisByteRatioText().isEmpty());
-    UI_EXPECT(controller.analysisDominantDirectionText().isEmpty());
+    UI_EXPECT(controller.analysisPacketDirectionText().isEmpty());
+    UI_EXPECT(controller.analysisDataDirectionText().isEmpty());
     UI_EXPECT(controller.analysisProtocolVersionText().isEmpty());
     UI_EXPECT(controller.analysisProtocolServiceText().isEmpty());
     UI_EXPECT(controller.analysisProtocolFallbackText().isEmpty());
@@ -888,6 +890,59 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);
     }
     UI_EXPECT(analysis_state_change_count == 0);
+
+    const auto packet_balanced_large_a = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 72, 0, 1), ipv4(10, 72, 0, 2), 56200, 443, 1100, 0x18
+    );
+    const auto packet_balanced_small_b = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 72, 0, 2), ipv4(10, 72, 0, 1), 443, 56200, 0, 0x18
+    );
+    const auto packet_balanced_byte_skew_capture = write_temp_pcap(
+        "pfl_ui_analysis_packet_balanced_byte_skew.pcap",
+        make_classic_pcap({
+            {100U, packet_balanced_large_a},
+            {200U, packet_balanced_small_b},
+            {300U, packet_balanced_large_a},
+            {400U, packet_balanced_small_b},
+        })
+    );
+
+    MainController packet_balanced_byte_skew_controller {};
+    UI_EXPECT(open_capture_and_wait(app, packet_balanced_byte_skew_controller, packet_balanced_byte_skew_capture));
+    packet_balanced_byte_skew_controller.setSelectedFlowIndex(0);
+    packet_balanced_byte_skew_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&packet_balanced_byte_skew_controller]() {
+        return !packet_balanced_byte_skew_controller.analysisLoading() && packet_balanced_byte_skew_controller.analysisAvailable();
+    }));
+    UI_EXPECT(packet_balanced_byte_skew_controller.analysisPacketDirectionText() == QStringLiteral("Balanced"));
+    UI_EXPECT(packet_balanced_byte_skew_controller.analysisDataDirectionText() == QStringLiteral("Mostly A->B"));
+
+    const auto many_small_a = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 73, 0, 1), ipv4(10, 73, 0, 2), 56300, 443, 0, 0x18
+    );
+    const auto one_large_b = make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 73, 0, 2), ipv4(10, 73, 0, 1), 443, 56300, 300, 0x18
+    );
+    const auto byte_balanced_packet_skew_capture = write_temp_pcap(
+        "pfl_ui_analysis_byte_balanced_packet_skew.pcap",
+        make_classic_pcap({
+            {100U, many_small_a},
+            {200U, many_small_a},
+            {300U, many_small_a},
+            {400U, many_small_a},
+            {500U, one_large_b},
+        })
+    );
+
+    MainController byte_balanced_packet_skew_controller {};
+    UI_EXPECT(open_capture_and_wait(app, byte_balanced_packet_skew_controller, byte_balanced_packet_skew_capture));
+    byte_balanced_packet_skew_controller.setSelectedFlowIndex(0);
+    byte_balanced_packet_skew_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&byte_balanced_packet_skew_controller]() {
+        return !byte_balanced_packet_skew_controller.analysisLoading() && byte_balanced_packet_skew_controller.analysisAvailable();
+    }));
+    UI_EXPECT(byte_balanced_packet_skew_controller.analysisPacketDirectionText() == QStringLiteral("Mostly A->B"));
+    UI_EXPECT(byte_balanced_packet_skew_controller.analysisDataDirectionText() == QStringLiteral("Balanced"));
 
     std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> grouped_packets {};
     grouped_packets.reserve(1024);
