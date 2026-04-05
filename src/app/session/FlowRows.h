@@ -84,6 +84,8 @@ struct CaptureProtocolSummary {
     ProtocolStats hint_pop3 {};
     ProtocolStats hint_imap {};
     ProtocolStats hint_mail_protocols {};
+    ProtocolStats hint_possible_tls {};
+    ProtocolStats hint_possible_quic {};
     ProtocolStats hint_unknown {};
 };
 
@@ -126,6 +128,7 @@ struct CaptureTopSummary {
 };
 
 }  // namespace pfl
+
 
 
 

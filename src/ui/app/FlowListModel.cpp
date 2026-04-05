@@ -12,7 +12,15 @@ QString to_qstring(const std::string& value) {
 }
 
 QString format_protocol_hint(const std::string& value) {
-    return QString::fromStdString(value).toUpper();
+    const auto hint = QString::fromStdString(value);
+    if (hint == QStringLiteral("possible_tls")) {
+        return QStringLiteral("Possible TLS");
+    }
+    if (hint == QStringLiteral("possible_quic")) {
+        return QStringLiteral("Possible QUIC");
+    }
+
+    return hint.toUpper();
 }
 
 QString format_fragmented_packet_count(const FlowListModel::Item& item) {

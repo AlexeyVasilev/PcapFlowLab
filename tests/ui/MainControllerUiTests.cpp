@@ -17,6 +17,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickStyle>
+#include <QVariantMap>
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
@@ -332,6 +333,17 @@ int find_flow_index_by_packet_count(pfl::FlowListModel* model, const qulonglong 
     }
 
     return -1;
+}
+
+QVariantMap find_protocol_distribution_row(const QVariantList& rows, const QString& title) {
+    for (const auto& value : rows) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("title")).toString() == title) {
+            return row;
+        }
+    }
+
+    return {};
 }
 
 }  // namespace
@@ -1545,6 +1557,48 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(open_capture_and_wait(app, settings_controller, hostless_http_capture_path));
     UI_EXPECT(settings_flow_model->rowCount() == 1);
     UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("/fallback/ui"));
+
+    const auto possible_hint_capture_path = write_temp_pcap(
+        "pfl_ui_possible_tls_quic_settings.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 21, 0, 1), ipv4(10, 21, 0, 2), 43001, 443, 24, 0x18)},
+            {200, make_ethernet_ipv4_udp_packet_with_payload(ipv4(10, 21, 0, 3), ipv4(10, 21, 0, 4), 43002, 443, 24)},
+            {300, make_ethernet_ipv4_tcp_packet_with_payload(ipv4(10, 21, 0, 5), ipv4(10, 21, 0, 6), 43003, 444, 24, 0x18)},
+        })
+    );
+
+    MainController possible_hint_controller {};
+    UI_EXPECT(!possible_hint_controller.usePossibleTlsQuic());
+    UI_EXPECT(open_capture_and_wait(app, possible_hint_controller, possible_hint_capture_path));
+    auto* possible_hint_flow_model = qobject_cast<FlowListModel*>(possible_hint_controller.flowModel());
+    UI_EXPECT(possible_hint_flow_model != nullptr);
+    UI_EXPECT(possible_hint_flow_model->rowCount() == 3);
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) < 0);
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) < 0);
+    auto possible_tls_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible TLS"));
+    auto possible_quic_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible QUIC"));
+    auto unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
+    UI_EXPECT(possible_tls_row.value(QStringLiteral("flows")).toULongLong() == 0U);
+    UI_EXPECT(possible_quic_row.value(QStringLiteral("flows")).toULongLong() == 0U);
+    UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
+
+    possible_hint_controller.setUsePossibleTlsQuic(true);
+    UI_EXPECT(possible_hint_controller.usePossibleTlsQuic());
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) >= 0);
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) >= 0);
+    possible_tls_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible TLS"));
+    possible_quic_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Possible QUIC"));
+    unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
+    UI_EXPECT(possible_tls_row.value(QStringLiteral("flows")).toULongLong() == 1U);
+    UI_EXPECT(possible_quic_row.value(QStringLiteral("flows")).toULongLong() == 1U);
+    UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 1U);
+
+    possible_hint_controller.setUsePossibleTlsQuic(false);
+    UI_EXPECT(!possible_hint_controller.usePossibleTlsQuic());
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible TLS")) < 0);
+    UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) < 0);
+    unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
+    UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
 
     MainController stream_controller {};
     UI_EXPECT(open_capture_and_wait(app, stream_controller, moved_capture_path));

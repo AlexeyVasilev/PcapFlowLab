@@ -22,6 +22,7 @@ The fast path is the default way to open a capture.
 - Parses PCAP / PCAPNG packets and decodes packet metadata.
 - Aggregates packets into bidirectional connections and per-direction flows.
 - Populates summaries, flow rows, packet rows, cheap hints, fragmentation flags, and packet references.
+- Optional weak fallback hints may classify otherwise unresolved TCP/UDP port 443 flows as `Possible TLS` / `Possible QUIC`; these remain presentation-level buckets distinct from confirmed TLS/QUIC detection.
 - Does not run directional reassembly.
 - Does not perform deep protocol reconstruction during open.
 - Keeps work packet-oriented and predictable.

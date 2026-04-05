@@ -427,8 +427,12 @@ ApplicationWindow {
 
             SettingsPane {
                 httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
+                usePossibleTlsQuic: mainController.usePossibleTlsQuic
                 onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
                     mainController.httpUsePathAsServiceHint = enabled
+                }
+                onUsePossibleTlsQuicChangedByUser: function(enabled) {
+                    mainController.usePossibleTlsQuic = enabled
                 }
             }
         }

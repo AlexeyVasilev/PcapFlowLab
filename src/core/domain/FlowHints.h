@@ -19,6 +19,8 @@ enum class FlowProtocolHint : std::uint8_t {
     smtp = 10,
     pop3 = 11,
     imap = 12,
+    possible_tls = 13,
+    possible_quic = 14,
 };
 
 enum class QuicVersionHint : std::uint8_t {
@@ -91,10 +93,16 @@ struct FlowHintUpdate {
         return "pop3";
     case FlowProtocolHint::imap:
         return "imap";
+    case FlowProtocolHint::possible_tls:
+        return "possible_tls";
+    case FlowProtocolHint::possible_quic:
+        return "possible_quic";
     default:
         return "unknown";
     }
 }
 
 }  // namespace pfl
+
+
 

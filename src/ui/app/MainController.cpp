@@ -167,6 +167,17 @@ QString selected_flow_protocol_hint(const FlowListModel& flow_model, const int s
     return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolHintRole).toString();
 }
 
+QString format_protocol_hint_display(const QString& protocol_hint) {
+    if (protocol_hint.compare(QStringLiteral("possible_tls"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("Possible TLS");
+    }
+    if (protocol_hint.compare(QStringLiteral("possible_quic"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("Possible QUIC");
+    }
+
+    return protocol_hint.toUpper();
+}
+
 QString selected_flow_endpoint_summary(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -183,7 +194,7 @@ QString selected_flow_endpoint_summary(const FlowListModel& flow_model, const in
     const auto address_b = flow_model.data(index, FlowListModel::AddressBRole).toString();
     const auto port_b = flow_model.data(index, FlowListModel::PortBRole).toInt();
     const auto protocol = flow_model.data(index, FlowListModel::ProtocolRole).toString();
-    return QStringLiteral("%1:%2 > %3:%4 %5")
+    return QStringLiteral("%1:%2 \u2192 %3:%4 %5")
         .arg(address_a)
         .arg(port_a)
         .arg(address_b)
@@ -1116,7 +1127,7 @@ QString MainController::analysisDataDirectionText() const {
 
 QString MainController::analysisProtocolHint() const {
     return current_flow_analysis_.has_value() && !current_flow_analysis_->protocol_hint.empty()
-        ? QString::fromStdString(current_flow_analysis_->protocol_hint).toUpper()
+        ? format_protocol_hint_display(QString::fromStdString(current_flow_analysis_->protocol_hint))
         : QString {};
 }
 
@@ -1456,11 +1467,13 @@ QVariantList MainController::protocolHintDistribution() const {
     };
 
     QVariantList rows {};
-    rows.reserve(11);
+    rows.reserve(13);
     rows.push_back(makeRow("HTTP", protocol_summary_.hint_http));
     rows.push_back(makeRow("TLS", protocol_summary_.hint_tls));
+    rows.push_back(makeRow("Possible TLS", protocol_summary_.hint_possible_tls));
     rows.push_back(makeRow("DNS", protocol_summary_.hint_dns));
     rows.push_back(makeRow("QUIC", protocol_summary_.hint_quic));
+    rows.push_back(makeRow("Possible QUIC", protocol_summary_.hint_possible_quic));
     rows.push_back(makeRow("SSH", protocol_summary_.hint_ssh));
     rows.push_back(makeRow("STUN", protocol_summary_.hint_stun));
     rows.push_back(makeRow("BitTorrent", protocol_summary_.hint_bittorrent));
@@ -1593,6 +1606,10 @@ int MainController::captureOpenMode() const noexcept {
 
 bool MainController::httpUsePathAsServiceHint() const noexcept {
     return pending_analysis_settings_.http_use_path_as_service_hint;
+}
+
+bool MainController::usePossibleTlsQuic() const noexcept {
+    return pending_analysis_settings_.use_possible_tls_quic;
 }
 
 int MainController::currentTabIndex() const noexcept {
@@ -2010,6 +2027,24 @@ void MainController::setHttpUsePathAsServiceHint(const bool enabled) {
 
     pending_analysis_settings_.http_use_path_as_service_hint = enabled;
     emit httpUsePathAsServiceHintChanged();
+}
+
+void MainController::setUsePossibleTlsQuic(const bool enabled) {
+    if (pending_analysis_settings_.use_possible_tls_quic == enabled) {
+        return;
+    }
+
+    pending_analysis_settings_.use_possible_tls_quic = enabled;
+    session_.set_analysis_settings(pending_analysis_settings_);
+    if (session_.has_capture()) {
+        protocol_summary_ = session_.protocol_summary();
+        flow_model_.refresh(session_.list_flows());
+        if (analysis_tab_active_ && selected_flow_index_ >= 0) {
+            refreshSelectedFlowAnalysis();
+        }
+        emit stateChanged();
+    }
+    emit usePossibleTlsQuicChanged();
 }
 
 void MainController::setCurrentTabIndex(const int index) {

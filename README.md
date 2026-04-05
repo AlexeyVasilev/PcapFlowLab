@@ -49,6 +49,7 @@ The Qt Quick desktop UI can:
 - browse flows, packets, protocol statistics, top endpoints, and top ports
 - switch Statistics tab protocol presentation between flows, packets, and bytes (presentation only over existing metadata)
 - include SSH, STUN, BitTorrent, DHCP, and mDNS in protocol summary/distribution when detected by cheap flow hints
+- optionally classify unresolved TCP/UDP port 443 flows as Possible TLS / Possible QUIC with a user setting; these remain separate from confirmed protocol detection
 - show QUIC and TLS protocol-recognition statistics aggregated from existing flow metadata only (no extra parsing pass for statistics)
 - materialize selected-flow packet rows in bounded initial batches with explicit Load more continuation for heavy flows
 - show fragmented packets and flows as diagnostic metadata

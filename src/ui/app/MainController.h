@@ -170,6 +170,7 @@ class MainController final : public QObject {
     Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
+    Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
     Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
@@ -334,6 +335,7 @@ public:
     [[nodiscard]] int statisticsMode() const noexcept;
     [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
+    [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
     [[nodiscard]] int currentTabIndex() const noexcept;
     [[nodiscard]] QObject* topEndpointsModel() noexcept;
     [[nodiscard]] QObject* topPortsModel() noexcept;
@@ -378,6 +380,7 @@ public:
     void setCaptureOpenMode(int mode);
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
+    void setUsePossibleTlsQuic(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
@@ -393,6 +396,7 @@ signals:
     void captureOpenModeChanged();
     void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
+    void usePossibleTlsQuicChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void selectedFlowCountChanged();

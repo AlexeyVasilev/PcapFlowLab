@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <filesystem>
 #include <optional>
@@ -39,6 +39,7 @@ public:
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
+    void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
     [[nodiscard]] QuicRecognitionStats quic_recognition_stats() const noexcept;
     [[nodiscard]] TlsRecognitionStats tls_recognition_stats() const noexcept;
@@ -83,6 +84,7 @@ private:
 };
 
 }  // namespace pfl
+
 
 
 

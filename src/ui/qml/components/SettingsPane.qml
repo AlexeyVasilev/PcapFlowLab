@@ -6,8 +6,10 @@ Frame {
     id: root
 
     property bool httpUsePathAsServiceHint: false
+    property bool usePossibleTlsQuic: false
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
+    signal usePossibleTlsQuicChangedByUser(bool enabled)
 
     background: Rectangle {
         color: "#ffffff"
@@ -34,13 +36,19 @@ Frame {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 color: "#475569"
-                text: "Settings are applied when opening a capture. They do not retroactively reanalyze the current capture or index."
+                text: "Most settings are applied when opening a capture. Possible TLS/QUIC fallback updates the current view immediately because it only uses existing flow metadata."
             }
 
             CheckBox {
                 text: "HTTP: use request path as service hint when Host is missing"
                 checked: root.httpUsePathAsServiceHint
                 onToggled: root.httpUsePathAsServiceHintChangedByUser(checked)
+            }
+
+            CheckBox {
+                text: "Use possible TLS/QUIC"
+                checked: root.usePossibleTlsQuic
+                onToggled: root.usePossibleTlsQuicChangedByUser(checked)
             }
 
             Item {

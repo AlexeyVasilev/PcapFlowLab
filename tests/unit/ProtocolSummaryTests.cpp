@@ -85,6 +85,58 @@ std::vector<std::uint8_t> make_mdns_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_quic_initial_like_payload() {
+    return {
+        0xC3, 0x00, 0x00, 0x00, 0x01,
+        0x08,
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+        0x08,
+        0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+        0x00,
+    };
+}
+
+std::vector<std::uint8_t> make_tls_client_hello_payload() {
+    const std::vector<std::uint8_t> server_name {'e', 'x', 'a', 'm', 'p', 'l', 'e', '.', 'o', 'r', 'g'};
+
+    std::vector<std::uint8_t> extension_data {};
+    append_be16(extension_data, static_cast<std::uint16_t>(server_name.size() + 3));
+    extension_data.push_back(0x00);
+    append_be16(extension_data, static_cast<std::uint16_t>(server_name.size()));
+    extension_data.insert(extension_data.end(), server_name.begin(), server_name.end());
+
+    std::vector<std::uint8_t> extensions {};
+    append_be16(extensions, 0x0000);
+    append_be16(extensions, static_cast<std::uint16_t>(extension_data.size()));
+    extensions.insert(extensions.end(), extension_data.begin(), extension_data.end());
+
+    std::vector<std::uint8_t> body {};
+    body.push_back(0x03);
+    body.push_back(0x03);
+    for (std::uint8_t index = 0; index < 32; ++index) {
+        body.push_back(index);
+    }
+    body.push_back(0x00);
+    append_be16(body, 0x0002);
+    append_be16(body, 0x1301);
+    body.push_back(0x01);
+    body.push_back(0x00);
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+
+    std::vector<std::uint8_t> payload {};
+    payload.push_back(0x16);
+    payload.push_back(0x03);
+    payload.push_back(0x03);
+    append_be16(payload, static_cast<std::uint16_t>(body.size() + 4));
+    payload.push_back(0x01);
+    payload.push_back(static_cast<std::uint8_t>((body.size() >> 16U) & 0xFFU));
+    payload.push_back(static_cast<std::uint8_t>((body.size() >> 8U) & 0xFFU));
+    payload.push_back(static_cast<std::uint8_t>(body.size() & 0xFFU));
+    payload.insert(payload.end(), body.begin(), body.end());
+    return payload;
+}
+
 }  // namespace
 
 void run_protocol_summary_tests() {
@@ -175,6 +227,8 @@ void run_protocol_summary_tests() {
         expect_protocol_stats(loaded_summary.hint_pop3, summary.hint_pop3);
         expect_protocol_stats(loaded_summary.hint_imap, summary.hint_imap);
         expect_protocol_stats(loaded_summary.hint_mail_protocols, summary.hint_mail_protocols);
+        expect_protocol_stats(loaded_summary.hint_possible_tls, summary.hint_possible_tls);
+        expect_protocol_stats(loaded_summary.hint_possible_quic, summary.hint_possible_quic);
         expect_protocol_stats(loaded_summary.hint_unknown, summary.hint_unknown);
     }
 
@@ -213,13 +267,13 @@ void run_protocol_summary_tests() {
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
-            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_dhcp.flow_count + summary.hint_mdns.flow_count + summary.hint_unknown.flow_count;
+            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_dhcp.flow_count + summary.hint_mdns.flow_count + summary.hint_possible_tls.flow_count + summary.hint_possible_quic.flow_count + summary.hint_unknown.flow_count;
         const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
-            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count + summary.hint_mdns.packet_count + summary.hint_unknown.packet_count;
+            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count + summary.hint_mdns.packet_count + summary.hint_possible_tls.packet_count + summary.hint_possible_quic.packet_count + summary.hint_unknown.packet_count;
         const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
             summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes + summary.hint_mdns.total_bytes + summary.hint_unknown.total_bytes;
+            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes + summary.hint_mdns.total_bytes + summary.hint_possible_tls.total_bytes + summary.hint_possible_quic.total_bytes + summary.hint_unknown.total_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);
@@ -270,13 +324,13 @@ void run_protocol_summary_tests() {
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
-            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_dhcp.flow_count + summary.hint_mdns.flow_count + summary.hint_unknown.flow_count;
+            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_dhcp.flow_count + summary.hint_mdns.flow_count + summary.hint_possible_tls.flow_count + summary.hint_possible_quic.flow_count + summary.hint_unknown.flow_count;
         const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
-            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count + summary.hint_mdns.packet_count + summary.hint_unknown.packet_count;
+            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count + summary.hint_mdns.packet_count + summary.hint_possible_tls.packet_count + summary.hint_possible_quic.packet_count + summary.hint_unknown.packet_count;
         const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
             summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes + summary.hint_mdns.total_bytes + summary.hint_unknown.total_bytes;
+            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes + summary.hint_mdns.total_bytes + summary.hint_possible_tls.total_bytes + summary.hint_possible_quic.total_bytes + summary.hint_unknown.total_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);
@@ -322,6 +376,65 @@ void run_protocol_summary_tests() {
             summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
             summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes +
             summary.hint_mdns.total_bytes + summary.hint_unknown.total_bytes;
+
+        PFL_EXPECT(hint_flow_total == session.summary().flow_count);
+        PFL_EXPECT(hint_packet_total == session.summary().packet_count);
+        PFL_EXPECT(hint_byte_total == session.summary().total_bytes);
+    }
+
+    {
+        const auto confirmed_tls_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 40, 0, 1), ipv4(10, 40, 0, 2), 50001, 443, make_tls_client_hello_payload(), 0x18
+        );
+        const auto confirmed_quic_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 40, 0, 3), ipv4(10, 40, 0, 4), 50002, 443, make_quic_initial_like_payload()
+        );
+        const auto possible_tls_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 40, 0, 5), ipv4(10, 40, 0, 6), 50003, 443, 24, 0x18
+        );
+        const auto possible_quic_packet = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 40, 0, 7), ipv4(10, 40, 0, 8), 50004, 443, 24
+        );
+        const auto unknown_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 40, 0, 9), ipv4(10, 40, 0, 10), 50005, 444, 24, 0x18
+        );
+
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_summary_possible_tls_quic.pcap",
+            make_classic_pcap({
+                {100, confirmed_tls_packet},
+                {200, confirmed_quic_packet},
+                {300, possible_tls_packet},
+                {400, possible_quic_packet},
+                {500, unknown_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
+            .mode = ImportMode::fast,
+            .settings = AnalysisSettings {.use_possible_tls_quic = true},
+        }));
+        const auto summary = session.protocol_summary();
+
+        expect_protocol_stats(summary.hint_tls, ProtocolStats {1, 1, static_cast<std::uint64_t>(confirmed_tls_packet.size())});
+        expect_protocol_stats(summary.hint_quic, ProtocolStats {1, 1, static_cast<std::uint64_t>(confirmed_quic_packet.size())});
+        expect_protocol_stats(summary.hint_possible_tls, ProtocolStats {1, 1, static_cast<std::uint64_t>(possible_tls_packet.size())});
+        expect_protocol_stats(summary.hint_possible_quic, ProtocolStats {1, 1, static_cast<std::uint64_t>(possible_quic_packet.size())});
+        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size())});
+
+        const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
+            summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
+            summary.hint_bittorrent.flow_count + summary.hint_mail_protocols.flow_count + summary.hint_dhcp.flow_count +
+            summary.hint_mdns.flow_count + summary.hint_possible_tls.flow_count + summary.hint_possible_quic.flow_count + summary.hint_unknown.flow_count;
+        const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
+            summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
+            summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count +
+            summary.hint_mdns.packet_count + summary.hint_possible_tls.packet_count + summary.hint_possible_quic.packet_count + summary.hint_unknown.packet_count;
+        const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
+            summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
+            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes +
+            summary.hint_mdns.total_bytes + summary.hint_possible_tls.total_bytes + summary.hint_possible_quic.total_bytes + summary.hint_unknown.total_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);

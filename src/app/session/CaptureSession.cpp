@@ -1,4 +1,4 @@
-﻿#include "app/session/CaptureSession.h"
+#include "app/session/CaptureSession.h"
 
 #include <algorithm>
 #include <cassert>
@@ -149,6 +149,34 @@ ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
 FlowProtocolHint protocol_hint(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->protocol_hint : connection.ipv6->protocol_hint;
 }
+
+bool has_port_443(const ListedConnectionRef& connection) noexcept {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return connection.ipv4->key.first.port == 443U || connection.ipv4->key.second.port == 443U;
+    }
+
+    return connection.ipv6->key.first.port == 443U || connection.ipv6->key.second.port == 443U;
+}
+
+FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept {
+    const auto confirmed_hint = protocol_hint(connection);
+    if (confirmed_hint != FlowProtocolHint::unknown) {
+        return confirmed_hint;
+    }
+
+    if (!settings.use_possible_tls_quic || !has_port_443(connection)) {
+        return FlowProtocolHint::unknown;
+    }
+
+    switch (protocol_id(connection)) {
+    case ProtocolId::tcp:
+        return FlowProtocolHint::possible_tls;
+    case ProtocolId::udp:
+        return FlowProtocolHint::possible_quic;
+    default:
+        return FlowProtocolHint::unknown;
+    }
+}
 std::string protocol_text(const ProtocolId protocol) {
     switch (protocol) {
     case ProtocolId::arp:
@@ -239,7 +267,10 @@ std::vector<PacketRef> collect_packets(const ConnectionV6& connection) {
     return packets;
 }
 
-FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) {
+FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings) {
+    const auto hint = effective_protocol_hint(connection, settings);
+    const auto hint_text = hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(hint)};
+
     if (connection.family == FlowAddressFamily::ipv4) {
         const auto& key = connection.ipv4->key;
         return FlowRow {
@@ -247,7 +278,7 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
             .family = FlowAddressFamily::ipv4,
             .key = key,
             .protocol_text = protocol_text(key.protocol),
-            .protocol_hint = connection.ipv4->protocol_hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(connection.ipv4->protocol_hint)},
+            .protocol_hint = hint_text,
             .service_hint = connection.ipv4->service_hint,
             .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
             .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
@@ -268,7 +299,7 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection) 
         .family = FlowAddressFamily::ipv6,
         .key = key,
         .protocol_text = protocol_text(key.protocol),
-        .protocol_hint = connection.ipv6->protocol_hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(connection.ipv6->protocol_hint)},
+        .protocol_hint = hint_text,
         .service_hint = connection.ipv6->service_hint,
         .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
         .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
@@ -1784,7 +1815,7 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
             break;
         }
 
-        switch (protocol_hint(connection)) {
+        switch (effective_protocol_hint(connection, analysis_settings_)) {
         case FlowProtocolHint::http:
             add_protocol_stats(summary.hint_http, connection);
             break;
@@ -1824,6 +1855,12 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
             add_protocol_stats(summary.hint_imap, connection);
             add_protocol_stats(summary.hint_mail_protocols, connection);
             break;
+        case FlowProtocolHint::possible_tls:
+            add_protocol_stats(summary.hint_possible_tls, connection);
+            break;
+        case FlowProtocolHint::possible_quic:
+            add_protocol_stats(summary.hint_possible_quic, connection);
+            break;
         case FlowProtocolHint::unknown:
         default:
             add_protocol_stats(summary.hint_unknown, connection);
@@ -1832,6 +1869,10 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
     }
 
     return summary;
+}
+
+void CaptureSession::set_analysis_settings(const AnalysisSettings& settings) noexcept {
+    analysis_settings_ = settings;
 }
 
 QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
@@ -2214,7 +2255,7 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
     rows.reserve(connections.size());
 
     for (std::size_t index = 0; index < connections.size(); ++index) {
-        rows.push_back(make_flow_row(index, connections[index]));
+        rows.push_back(make_flow_row(index, connections[index], analysis_settings_));
     }
 
     return rows;
@@ -2227,11 +2268,12 @@ std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::s
     }
 
     FlowAnalysisService service {};
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        return service.analyze(*connections[flow_index].ipv4);
-    }
-
-    return service.analyze(*connections[flow_index].ipv6);
+    auto result = connections[flow_index].family == FlowAddressFamily::ipv4
+        ? service.analyze(*connections[flow_index].ipv4)
+        : service.analyze(*connections[flow_index].ipv6);
+    const auto hint = effective_protocol_hint(connections[flow_index], analysis_settings_);
+    result.protocol_hint = hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(hint)};
+    return result;
 }
 
 std::vector<PacketRow> CaptureSession::list_flow_packets(const std::size_t flow_index) const {
