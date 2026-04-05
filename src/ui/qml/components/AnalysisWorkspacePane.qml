@@ -23,12 +23,23 @@ Item {
     property string analysisTotalPacketsText: ""
     property var analysisTotalBytes: 0
     property string analysisTotalBytesText: ""
+    property string analysisEndpointSummaryText: ""
     property string analysisPacketsPerSecondText: ""
+    property string analysisPacketsPerSecondAToBText: ""
+    property string analysisPacketsPerSecondBToAText: ""
     property string analysisBytesPerSecondText: ""
+    property string analysisBytesPerSecondAToBText: ""
+    property string analysisBytesPerSecondBToAText: ""
     property string analysisAveragePacketSizeText: ""
+    property string analysisAveragePacketSizeAToBText: ""
+    property string analysisAveragePacketSizeBToAText: ""
     property string analysisAverageInterArrivalText: ""
     property string analysisMinPacketSizeText: ""
+    property string analysisMinPacketSizeAToBText: ""
+    property string analysisMinPacketSizeBToAText: ""
     property string analysisMaxPacketSizeText: ""
+    property string analysisMaxPacketSizeAToBText: ""
+    property string analysisMaxPacketSizeBToAText: ""
     property string analysisPacketRatioText: ""
     property string analysisByteRatioText: ""
     property string analysisPacketDirectionText: ""
@@ -239,12 +250,23 @@ Item {
             totalPacketsText: root.analysisTotalPacketsText
             totalBytes: root.analysisTotalBytes
             totalBytesText: root.analysisTotalBytesText
+            endpointSummaryText: root.analysisEndpointSummaryText
             packetsPerSecondText: root.analysisPacketsPerSecondText
+            packetsPerSecondAToBText: root.analysisPacketsPerSecondAToBText
+            packetsPerSecondBToAText: root.analysisPacketsPerSecondBToAText
             bytesPerSecondText: root.analysisBytesPerSecondText
+            bytesPerSecondAToBText: root.analysisBytesPerSecondAToBText
+            bytesPerSecondBToAText: root.analysisBytesPerSecondBToAText
             averagePacketSizeText: root.analysisAveragePacketSizeText
+            averagePacketSizeAToBText: root.analysisAveragePacketSizeAToBText
+            averagePacketSizeBToAText: root.analysisAveragePacketSizeBToAText
             averageInterArrivalText: root.analysisAverageInterArrivalText
             minPacketSizeText: root.analysisMinPacketSizeText
+            minPacketSizeAToBText: root.analysisMinPacketSizeAToBText
+            minPacketSizeBToAText: root.analysisMinPacketSizeBToAText
             maxPacketSizeText: root.analysisMaxPacketSizeText
+            maxPacketSizeAToBText: root.analysisMaxPacketSizeAToBText
+            maxPacketSizeBToAText: root.analysisMaxPacketSizeBToAText
             packetRatioText: root.analysisPacketRatioText
             byteRatioText: root.analysisByteRatioText
             packetDirectionText: root.analysisPacketDirectionText

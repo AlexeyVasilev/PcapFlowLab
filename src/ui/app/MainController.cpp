@@ -167,6 +167,30 @@ QString selected_flow_protocol_hint(const FlowListModel& flow_model, const int s
     return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolHintRole).toString();
 }
 
+QString selected_flow_endpoint_summary(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return {};
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return {};
+    }
+
+    const auto index = flow_model.index(row, 0);
+    const auto address_a = flow_model.data(index, FlowListModel::AddressARole).toString();
+    const auto port_a = flow_model.data(index, FlowListModel::PortARole).toInt();
+    const auto address_b = flow_model.data(index, FlowListModel::AddressBRole).toString();
+    const auto port_b = flow_model.data(index, FlowListModel::PortBRole).toInt();
+    const auto protocol = flow_model.data(index, FlowListModel::ProtocolRole).toString();
+    return QStringLiteral("%1:%2 → %3:%4 %5")
+        .arg(address_a)
+        .arg(port_a)
+        .arg(address_b)
+        .arg(port_b)
+        .arg(protocol);
+}
+
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
     return (static_cast<std::uint64_t>(packet.ts_sec) * 1000000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
 }
@@ -509,6 +533,27 @@ QString format_size_value(const std::uint32_t value) {
 
 QString format_size_value(const std::uint64_t value) {
     return format_human_readable_bytes(static_cast<double>(value));
+}
+
+QString format_packet_rate_for_duration(const std::uint64_t packet_count, const std::uint64_t duration_us) {
+    const auto packets_per_second = duration_us > 0U
+        ? (static_cast<double>(packet_count) * 1000000.0) / static_cast<double>(duration_us)
+        : 0.0;
+    return format_rate_value(packets_per_second, QStringLiteral("pkt/s"));
+}
+
+QString format_data_rate_for_duration(const std::uint64_t byte_count, const std::uint64_t duration_us) {
+    const auto bytes_per_second = duration_us > 0U
+        ? (static_cast<double>(byte_count) * 1000000.0) / static_cast<double>(duration_us)
+        : 0.0;
+    return format_byte_rate_value(bytes_per_second);
+}
+
+QString format_average_packet_size_for_direction(const std::uint64_t byte_count, const std::uint64_t packet_count) {
+    const auto average_packet_size = packet_count > 0U
+        ? static_cast<double>(byte_count) / static_cast<double>(packet_count)
+        : 0.0;
+    return format_size_value(average_packet_size);
 }
 
 QString buildStreamItemSummary(
@@ -875,9 +920,27 @@ QString MainController::analysisTotalBytesText() const {
         : QString {};
 }
 
+QString MainController::analysisEndpointSummaryText() const {
+    return current_flow_analysis_.has_value()
+        ? selected_flow_endpoint_summary(flow_model_, selected_flow_index_)
+        : QString {};
+}
+
 QString MainController::analysisPacketsPerSecondText() const {
     return current_flow_analysis_.has_value()
         ? format_rate_value(current_flow_analysis_->packets_per_second, QStringLiteral("pkt/s"))
+        : QString {};
+}
+
+QString MainController::analysisPacketsPerSecondAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_packet_rate_for_duration(current_flow_analysis_->packets_a_to_b, current_flow_analysis_->duration_us)
+        : QString {};
+}
+
+QString MainController::analysisPacketsPerSecondBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_packet_rate_for_duration(current_flow_analysis_->packets_b_to_a, current_flow_analysis_->duration_us)
         : QString {};
 }
 
@@ -887,9 +950,33 @@ QString MainController::analysisBytesPerSecondText() const {
         : QString {};
 }
 
+QString MainController::analysisBytesPerSecondAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_data_rate_for_duration(current_flow_analysis_->bytes_a_to_b, current_flow_analysis_->duration_us)
+        : QString {};
+}
+
+QString MainController::analysisBytesPerSecondBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_data_rate_for_duration(current_flow_analysis_->bytes_b_to_a, current_flow_analysis_->duration_us)
+        : QString {};
+}
+
 QString MainController::analysisAveragePacketSizeText() const {
     return current_flow_analysis_.has_value()
         ? format_size_value(current_flow_analysis_->average_packet_size_bytes)
+        : QString {};
+}
+
+QString MainController::analysisAveragePacketSizeAToBText() const {
+    return current_flow_analysis_.has_value()
+        ? format_average_packet_size_for_direction(current_flow_analysis_->bytes_a_to_b, current_flow_analysis_->packets_a_to_b)
+        : QString {};
+}
+
+QString MainController::analysisAveragePacketSizeBToAText() const {
+    return current_flow_analysis_.has_value()
+        ? format_average_packet_size_for_direction(current_flow_analysis_->bytes_b_to_a, current_flow_analysis_->packets_b_to_a)
         : QString {};
 }
 
@@ -905,9 +992,33 @@ QString MainController::analysisMinPacketSizeText() const {
         : QString {};
 }
 
+QString MainController::analysisMinPacketSizeAToBText() const {
+    return current_flow_analysis_.has_value() && current_flow_analysis_->packets_a_to_b > 0U
+        ? format_size_value(current_flow_analysis_->min_packet_size_a_to_b_bytes)
+        : QString {};
+}
+
+QString MainController::analysisMinPacketSizeBToAText() const {
+    return current_flow_analysis_.has_value() && current_flow_analysis_->packets_b_to_a > 0U
+        ? format_size_value(current_flow_analysis_->min_packet_size_b_to_a_bytes)
+        : QString {};
+}
+
 QString MainController::analysisMaxPacketSizeText() const {
     return current_flow_analysis_.has_value()
         ? format_size_value(current_flow_analysis_->max_packet_size_bytes)
+        : QString {};
+}
+
+QString MainController::analysisMaxPacketSizeAToBText() const {
+    return current_flow_analysis_.has_value() && current_flow_analysis_->packets_a_to_b > 0U
+        ? format_size_value(current_flow_analysis_->max_packet_size_a_to_b_bytes)
+        : QString {};
+}
+
+QString MainController::analysisMaxPacketSizeBToAText() const {
+    return current_flow_analysis_.has_value() && current_flow_analysis_->packets_b_to_a > 0U
+        ? format_size_value(current_flow_analysis_->max_packet_size_b_to_a_bytes)
         : QString {};
 }
 
@@ -942,9 +1053,19 @@ QString MainController::analysisProtocolHint() const {
 }
 
 QString MainController::analysisServiceHint() const {
-    return current_flow_analysis_.has_value() && !current_flow_analysis_->service_hint.empty()
-        ? QString::fromStdString(current_flow_analysis_->service_hint)
-        : QString {};
+    if (!current_flow_analysis_.has_value()) {
+        return {};
+    }
+
+    if (!current_flow_analysis_->service_hint.empty()) {
+        return QString::fromStdString(current_flow_analysis_->service_hint);
+    }
+
+    if (!current_flow_analysis_->protocol_panel_service_text.empty()) {
+        return QString::fromStdString(current_flow_analysis_->protocol_panel_service_text);
+    }
+
+    return selected_flow_service_hint(flow_model_, selected_flow_index_);
 }
 
 QString MainController::analysisProtocolVersionText() const {

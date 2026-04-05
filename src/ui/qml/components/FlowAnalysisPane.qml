@@ -16,6 +16,8 @@ Frame {
     readonly property int histogramModeAll: 0
     readonly property int histogramModeAToB: 1
     readonly property int histogramModeBToA: 2
+    readonly property string forwardDirection: "A->B"
+    readonly property string reverseDirection: "B->A"
 
     signal openInFlowsRequested()
     signal exportFlowSequenceRequested()
@@ -88,6 +90,30 @@ Frame {
         return total
     }
 
+    function sequenceDirectionBackgroundColor(directionText) {
+        if (directionText === root.forwardDirection || directionText === "A→B") {
+            return "#e8f5ee"
+        }
+
+        if (directionText === root.reverseDirection || directionText === "B→A") {
+            return "#eaf2ff"
+        }
+
+        return "transparent"
+    }
+
+    function sequenceDirectionTextColor(directionText) {
+        if (directionText === root.forwardDirection || directionText === "A→B") {
+            return "#2f6f4f"
+        }
+
+        if (directionText === root.reverseDirection || directionText === "B→A") {
+            return "#315b91"
+        }
+
+        return "#0f172a"
+    }
+
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
@@ -105,12 +131,23 @@ Frame {
     property string totalPacketsText: ""
     property var totalBytes: 0
     property string totalBytesText: ""
+    property string endpointSummaryText: ""
     property string packetsPerSecondText: ""
+    property string packetsPerSecondAToBText: ""
+    property string packetsPerSecondBToAText: ""
     property string bytesPerSecondText: ""
+    property string bytesPerSecondAToBText: ""
+    property string bytesPerSecondBToAText: ""
     property string averagePacketSizeText: ""
+    property string averagePacketSizeAToBText: ""
+    property string averagePacketSizeBToAText: ""
     property string averageInterArrivalText: ""
     property string minPacketSizeText: ""
+    property string minPacketSizeAToBText: ""
+    property string minPacketSizeBToAText: ""
     property string maxPacketSizeText: ""
+    property string maxPacketSizeAToBText: ""
+    property string maxPacketSizeBToAText: ""
     property string packetRatioText: ""
     property string byteRatioText: ""
     property string packetDirectionText: ""
@@ -350,6 +387,15 @@ Frame {
                             font.bold: true
                         }
 
+                        Label {
+                            objectName: "analysisEndpointSummaryLabel"
+                            visible: root.endpointSummaryText.length > 0
+                            text: root.endpointSummaryText
+                            color: "#334155"
+                            font.bold: true
+                            wrapMode: Text.WordWrap
+                        }
+
                         RowLayout {
                             width: parent.width
                             spacing: root.blockSpacing
@@ -477,27 +523,44 @@ Frame {
 
                             GridLayout {
                                 width: parent.width
-                                columns: 2
+                                columns: 4
                                 columnSpacing: 16
                                 rowSpacing: root.rowSpacing
 
+                                Label { text: "Metric"; color: "#475569" }
+                                Label { text: "All"; color: "#475569" }
+                                Label { text: "A→B"; color: "#475569" }
+                                Label { text: "B→A"; color: "#475569" }
+
                                 Label { text: "Packets/sec" }
                                 Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
+                                Label { text: root.packetsPerSecondAToBText.length > 0 ? root.packetsPerSecondAToBText : "-" }
+                                Label { text: root.packetsPerSecondBToAText.length > 0 ? root.packetsPerSecondBToAText : "-" }
 
                                 Label { text: "Data rate" }
                                 Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
+                                Label { text: root.bytesPerSecondAToBText.length > 0 ? root.bytesPerSecondAToBText : "-" }
+                                Label { text: root.bytesPerSecondBToAText.length > 0 ? root.bytesPerSecondBToAText : "-" }
 
                                 Label { text: "Avg packet size" }
                                 Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
+                                Label { text: root.averagePacketSizeAToBText.length > 0 ? root.averagePacketSizeAToBText : "-" }
+                                Label { text: root.averagePacketSizeBToAText.length > 0 ? root.averagePacketSizeBToAText : "-" }
 
                                 Label { text: "Avg inter-arrival" }
                                 Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
+                                Label { text: "—" }
+                                Label { text: "—" }
 
                                 Label { text: "Min packet size" }
                                 Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
+                                Label { text: root.minPacketSizeAToBText.length > 0 ? root.minPacketSizeAToBText : "—" }
+                                Label { text: root.minPacketSizeBToAText.length > 0 ? root.minPacketSizeBToAText : "—" }
 
                                 Label { text: "Max packet size" }
                                 Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
+                                Label { text: root.maxPacketSizeAToBText.length > 0 ? root.maxPacketSizeAToBText : "—" }
+                                Label { text: root.maxPacketSizeBToAText.length > 0 ? root.maxPacketSizeBToAText : "—" }
                             }
                         }
 
@@ -871,7 +934,21 @@ Frame {
                                 spacing: root.histogramColumnSpacing
 
                                 Label { text: modelData.packetNumber; Layout.preferredWidth: 34 }
-                                Label { text: modelData.direction; Layout.preferredWidth: 48 }
+                                Rectangle {
+                                    objectName: "analysisSequenceDirectionChip" + parseInt(modelData.packetNumber, 10)
+                                    Layout.preferredWidth: 56
+                                    Layout.alignment: Qt.AlignVCenter
+                                    implicitHeight: 22
+                                    radius: 4
+                                    color: root.sequenceDirectionBackgroundColor(modelData.direction)
+                                    border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                                    Label {
+                                        anchors.centerIn: parent
+                                        text: modelData.direction
+                                        color: root.sequenceDirectionTextColor(modelData.direction)
+                                    }
+                                }
                                 Label { text: modelData.deltaTimeText; Layout.preferredWidth: 90 }
                                 Label { text: modelData.capturedLength; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
                                 Label { text: modelData.payloadLength; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }

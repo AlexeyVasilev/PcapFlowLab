@@ -206,6 +206,10 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(nearly_equal(analysis->average_inter_arrival_us, 1000175.0));
     PFL_EXPECT(analysis->min_packet_size_bytes == follow_up_packet.size());
     PFL_EXPECT(analysis->max_packet_size_bytes == request_packet.size());
+    PFL_EXPECT(analysis->min_packet_size_a_to_b_bytes == follow_up_packet.size());
+    PFL_EXPECT(analysis->max_packet_size_a_to_b_bytes == request_packet.size());
+    PFL_EXPECT(analysis->min_packet_size_b_to_a_bytes == response_packet.size());
+    PFL_EXPECT(analysis->max_packet_size_b_to_a_bytes == response_packet.size());
     PFL_EXPECT(analysis->protocol_hint == "http");
     PFL_EXPECT(analysis->service_hint == "analysis.example");
     PFL_EXPECT(analysis->inter_arrival_histogram_rows.size() == 9U);
@@ -483,6 +487,10 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(nearly_equal(single_packet_analysis->average_inter_arrival_us, 0.0));
     PFL_EXPECT(single_packet_analysis->min_packet_size_bytes == request_packet.size());
     PFL_EXPECT(single_packet_analysis->max_packet_size_bytes == request_packet.size());
+    PFL_EXPECT(single_packet_analysis->min_packet_size_a_to_b_bytes == request_packet.size());
+    PFL_EXPECT(single_packet_analysis->max_packet_size_a_to_b_bytes == request_packet.size());
+    PFL_EXPECT(single_packet_analysis->min_packet_size_b_to_a_bytes == 0U);
+    PFL_EXPECT(single_packet_analysis->max_packet_size_b_to_a_bytes == 0U);
     PFL_EXPECT(single_packet_analysis->packet_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->byte_ratio_text == "1 : 0");
     PFL_EXPECT(single_packet_analysis->packet_direction_text == "Mostly A->B");

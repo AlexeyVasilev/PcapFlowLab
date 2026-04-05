@@ -303,12 +303,23 @@ ApplicationWindow {
                 analysisTotalPacketsText: mainController.analysisTotalPacketsText
                 analysisTotalBytes: mainController.analysisTotalBytes
                 analysisTotalBytesText: mainController.analysisTotalBytesText
+                analysisEndpointSummaryText: mainController.analysisEndpointSummaryText
                 analysisPacketsPerSecondText: mainController.analysisPacketsPerSecondText
+                analysisPacketsPerSecondAToBText: mainController.analysisPacketsPerSecondAToBText
+                analysisPacketsPerSecondBToAText: mainController.analysisPacketsPerSecondBToAText
                 analysisBytesPerSecondText: mainController.analysisBytesPerSecondText
+                analysisBytesPerSecondAToBText: mainController.analysisBytesPerSecondAToBText
+                analysisBytesPerSecondBToAText: mainController.analysisBytesPerSecondBToAText
                 analysisAveragePacketSizeText: mainController.analysisAveragePacketSizeText
+                analysisAveragePacketSizeAToBText: mainController.analysisAveragePacketSizeAToBText
+                analysisAveragePacketSizeBToAText: mainController.analysisAveragePacketSizeBToAText
                 analysisAverageInterArrivalText: mainController.analysisAverageInterArrivalText
                 analysisMinPacketSizeText: mainController.analysisMinPacketSizeText
+                analysisMinPacketSizeAToBText: mainController.analysisMinPacketSizeAToBText
+                analysisMinPacketSizeBToAText: mainController.analysisMinPacketSizeBToAText
                 analysisMaxPacketSizeText: mainController.analysisMaxPacketSizeText
+                analysisMaxPacketSizeAToBText: mainController.analysisMaxPacketSizeAToBText
+                analysisMaxPacketSizeBToAText: mainController.analysisMaxPacketSizeBToAText
                 analysisPacketRatioText: mainController.analysisPacketRatioText
                 analysisByteRatioText: mainController.analysisByteRatioText
                 analysisPacketDirectionText: mainController.analysisPacketDirectionText

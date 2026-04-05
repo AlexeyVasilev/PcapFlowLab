@@ -72,12 +72,23 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisTotalPacketsText READ analysisTotalPacketsText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalBytes READ analysisTotalBytes NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTotalBytesText READ analysisTotalBytesText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisEndpointSummaryText READ analysisEndpointSummaryText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketsPerSecondText READ analysisPacketsPerSecondText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketsPerSecondAToBText READ analysisPacketsPerSecondAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisPacketsPerSecondBToAText READ analysisPacketsPerSecondBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisBytesPerSecondText READ analysisBytesPerSecondText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisBytesPerSecondAToBText READ analysisBytesPerSecondAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisBytesPerSecondBToAText READ analysisBytesPerSecondBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisAveragePacketSizeText READ analysisAveragePacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisAveragePacketSizeAToBText READ analysisAveragePacketSizeAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisAveragePacketSizeBToAText READ analysisAveragePacketSizeBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisAverageInterArrivalText READ analysisAverageInterArrivalText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMinPacketSizeText READ analysisMinPacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMinPacketSizeAToBText READ analysisMinPacketSizeAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMinPacketSizeBToAText READ analysisMinPacketSizeBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisMaxPacketSizeText READ analysisMaxPacketSizeText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMaxPacketSizeAToBText READ analysisMaxPacketSizeAToBText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisMaxPacketSizeBToAText READ analysisMaxPacketSizeBToAText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketRatioText READ analysisPacketRatioText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisByteRatioText READ analysisByteRatioText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketDirectionText READ analysisPacketDirectionText NOTIFY analysisStateChanged)
@@ -220,12 +231,23 @@ public:
     [[nodiscard]] QString analysisTotalPacketsText() const;
     [[nodiscard]] qulonglong analysisTotalBytes() const noexcept;
     [[nodiscard]] QString analysisTotalBytesText() const;
+    [[nodiscard]] QString analysisEndpointSummaryText() const;
     [[nodiscard]] QString analysisPacketsPerSecondText() const;
+    [[nodiscard]] QString analysisPacketsPerSecondAToBText() const;
+    [[nodiscard]] QString analysisPacketsPerSecondBToAText() const;
     [[nodiscard]] QString analysisBytesPerSecondText() const;
+    [[nodiscard]] QString analysisBytesPerSecondAToBText() const;
+    [[nodiscard]] QString analysisBytesPerSecondBToAText() const;
     [[nodiscard]] QString analysisAveragePacketSizeText() const;
+    [[nodiscard]] QString analysisAveragePacketSizeAToBText() const;
+    [[nodiscard]] QString analysisAveragePacketSizeBToAText() const;
     [[nodiscard]] QString analysisAverageInterArrivalText() const;
     [[nodiscard]] QString analysisMinPacketSizeText() const;
+    [[nodiscard]] QString analysisMinPacketSizeAToBText() const;
+    [[nodiscard]] QString analysisMinPacketSizeBToAText() const;
     [[nodiscard]] QString analysisMaxPacketSizeText() const;
+    [[nodiscard]] QString analysisMaxPacketSizeAToBText() const;
+    [[nodiscard]] QString analysisMaxPacketSizeBToAText() const;
     [[nodiscard]] QString analysisPacketRatioText() const;
     [[nodiscard]] QString analysisByteRatioText() const;
     [[nodiscard]] QString analysisPacketDirectionText() const;

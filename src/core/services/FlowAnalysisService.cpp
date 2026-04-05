@@ -448,6 +448,24 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
         result.duration_us = *last_us - *first_us;
     }
 
+    if (!connection.flow_a.packets.empty()) {
+        result.min_packet_size_a_to_b_bytes = connection.flow_a.packets.front().captured_length;
+        result.max_packet_size_a_to_b_bytes = connection.flow_a.packets.front().captured_length;
+        for (const auto& packet : connection.flow_a.packets) {
+            result.min_packet_size_a_to_b_bytes = std::min(result.min_packet_size_a_to_b_bytes, packet.captured_length);
+            result.max_packet_size_a_to_b_bytes = std::max(result.max_packet_size_a_to_b_bytes, packet.captured_length);
+        }
+    }
+
+    if (!connection.flow_b.packets.empty()) {
+        result.min_packet_size_b_to_a_bytes = connection.flow_b.packets.front().captured_length;
+        result.max_packet_size_b_to_a_bytes = connection.flow_b.packets.front().captured_length;
+        for (const auto& packet : connection.flow_b.packets) {
+            result.min_packet_size_b_to_a_bytes = std::min(result.min_packet_size_b_to_a_bytes, packet.captured_length);
+            result.max_packet_size_b_to_a_bytes = std::max(result.max_packet_size_b_to_a_bytes, packet.captured_length);
+        }
+    }
+
     const auto ordered_packets = build_time_ordered_packet_refs(connection);
     result.timeline_packet_count_considered = static_cast<std::uint64_t>(ordered_packets.size());
     if (!ordered_packets.empty()) {
