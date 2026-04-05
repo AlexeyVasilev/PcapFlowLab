@@ -421,11 +421,12 @@ int main(int argc, char* argv[]) {
             QVariantMap {{QStringLiteral("bucketLabel"), QStringLiteral("b")}, {QStringLiteral("packetCount"), 1U}, {QStringLiteral("packetCountText"), QStringLiteral("1")}},
         });
         pane.object->setProperty("endpointSummaryText", QString::fromUtf8("10.0.0.1:40000 \xE2\x86\x92 10.0.0.2:80 TCP"));
+        pane.object->setProperty("protocolHint", QStringLiteral("HTTP"));
         pane.object->setProperty("sequencePreviewModel", QVariantList {
             QVariantMap {
                 {QStringLiteral("packetNumber"), 1U},
                 {QStringLiteral("direction"), QStringLiteral("A->B")},
-                {QStringLiteral("deltaTimeText"), QStringLiteral("0 us")},
+                {QStringLiteral("deltaTimeText"), QStringLiteral("0.000 ms")},
                 {QStringLiteral("capturedLength"), 100U},
                 {QStringLiteral("payloadLength"), 46U},
                 {QStringLiteral("timestampText"), QStringLiteral("00:00:01.000000")},
@@ -444,7 +445,13 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(!item_visible(pane.object.get(), "analysisLoadingState"));
         UI_EXPECT(item_visible(pane.object.get(), "analysisResultContent"));
         UI_EXPECT(named_object(pane.object.get(), "analysisEndpointSummaryLabel") != nullptr);
-        UI_EXPECT(named_object(pane.object.get(), "analysisEndpointSummaryLabel")->property("text").toString() == QString::fromUtf8("10.0.0.1:40000 \xE2\x86\x92 10.0.0.2:80 TCP"));
+        UI_EXPECT(named_object(pane.object.get(), "analysisEndpointSummaryLabel")->property("text").toString() == QString::fromUtf8("10.0.0.1:40000 \xE2\x86\x92 10.0.0.2:80"));
+        UI_EXPECT(named_object(pane.object.get(), "analysisProtocolSummaryLabel") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisProtocolSummaryLabel")->property("text").toString() == QStringLiteral("Protocol: TCP (HTTP)"));
+        UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMaxLabel") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 3"));
+        UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramMaxLabel")->property("text").toString() == QStringLiteral("max: 4"));
         UI_EXPECT(pane.object->property("packetSizeHistogramMode").toInt() == 0);
         UI_EXPECT(pane.object->property("interArrivalHistogramMode").toInt() == 0);
         UI_EXPECT(named_object(pane.object.get(), "packetSizeHistogramModeAllButton") != nullptr);
@@ -614,10 +621,10 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisAverageInterArrivalText() == QStringLiteral("0 us"));
     UI_EXPECT(controller.analysisMinPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMinPacketSizeAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
-    UI_EXPECT(controller.analysisMinPacketSizeBToAText() == QStringLiteral("0 B"));
+    UI_EXPECT(controller.analysisMinPacketSizeBToAText().isEmpty());
     UI_EXPECT(controller.analysisMaxPacketSizeText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisMaxPacketSizeAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
-    UI_EXPECT(controller.analysisMaxPacketSizeBToAText() == QStringLiteral("0 B"));
+    UI_EXPECT(controller.analysisMaxPacketSizeBToAText().isEmpty());
     UI_EXPECT(controller.analysisPacketRatioText() == QStringLiteral("1 : 0"));
     UI_EXPECT(controller.analysisByteRatioText() == QStringLiteral("1 : 0"));
     UI_EXPECT(controller.analysisPacketDirectionText() == QStringLiteral("Mostly A->B"));
@@ -675,7 +682,7 @@ int main(int argc, char* argv[]) {
     const auto first_sequence_row = controller.analysisSequencePreview().front().toMap();
     UI_EXPECT(first_sequence_row.value(QStringLiteral("packetNumber")).toULongLong() == 1U);
     UI_EXPECT(first_sequence_row.value(QStringLiteral("direction")).toString() == QStringLiteral("A->B"));
-    UI_EXPECT(first_sequence_row.value(QStringLiteral("deltaTimeText")).toString() == QStringLiteral("0 us"));
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("deltaTimeText")).toString() == QStringLiteral("0.000 ms"));
     UI_EXPECT(first_sequence_row.value(QStringLiteral("capturedLength")).toUInt() == static_cast<uint>(http_flow.size()));
     auto* controller_packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
     UI_EXPECT(controller_packet_model != nullptr);

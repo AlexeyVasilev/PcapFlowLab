@@ -114,6 +114,51 @@ Frame {
         return "#0f172a"
     }
 
+    function endpointLineText(summaryText) {
+        var separatorIndex = summaryText.lastIndexOf(" ")
+        return separatorIndex >= 0 ? summaryText.slice(0, separatorIndex) : summaryText
+    }
+
+    function endpointTransportText(summaryText) {
+        var separatorIndex = summaryText.lastIndexOf(" ")
+        return separatorIndex >= 0 ? summaryText.slice(separatorIndex + 1) : ""
+    }
+
+    function protocolLineText() {
+        var transportText = root.endpointTransportText(root.endpointSummaryText)
+        if (transportText.length > 0 && root.protocolHint.length > 0) {
+            return "Protocol: " + transportText + " (" + root.protocolHint + ")"
+        }
+
+        if (transportText.length > 0) {
+            return "Protocol: " + transportText
+        }
+
+        if (root.protocolHint.length > 0) {
+            return "Protocol: " + root.protocolHint
+        }
+
+        return ""
+    }
+
+    function histogramMaxCountText(model) {
+        var maxIndex = -1
+        var maxCount = -1
+        for (var index = 0; index < model.length; ++index) {
+            var count = model[index].packetCount
+            if (count > maxCount) {
+                maxCount = count
+                maxIndex = index
+            }
+        }
+
+        if (maxIndex < 0) {
+            return "max: 0"
+        }
+
+        return "max: " + model[maxIndex].packetCountText
+    }
+
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
@@ -205,6 +250,8 @@ Frame {
     )
     readonly property int displayedPacketSizeHistogramTotal: histogramTotalCount(displayedPacketSizeHistogramModel)
     readonly property int displayedInterArrivalHistogramTotal: histogramTotalCount(displayedInterArrivalHistogramModel)
+    readonly property real derivedMetricsMetricColumnWidth: 150
+    readonly property real derivedMetricsValueColumnWidth: 104
 
     background: Rectangle {
         color: "#ffffff"
@@ -390,9 +437,17 @@ Frame {
                         Label {
                             objectName: "analysisEndpointSummaryLabel"
                             visible: root.endpointSummaryText.length > 0
-                            text: root.endpointSummaryText
+                            text: root.endpointLineText(root.endpointSummaryText)
                             color: "#334155"
                             font.bold: true
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Label {
+                            objectName: "analysisProtocolSummaryLabel"
+                            visible: root.protocolLineText().length > 0
+                            text: root.protocolLineText()
+                            color: "#475569"
                             wrapMode: Text.WordWrap
                         }
 
@@ -528,39 +583,39 @@ Frame {
                                 rowSpacing: root.rowSpacing
 
                                 Label { text: "Metric"; color: "#475569" }
-                                Label { text: "All"; color: "#475569" }
-                                Label { text: "A→B"; color: "#475569" }
-                                Label { text: "B→A"; color: "#475569" }
+                                Label { text: "All"; color: "#475569"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: "A→B"; color: "#475569"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: "B→A"; color: "#475569"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Packets/sec" }
-                                Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-" }
-                                Label { text: root.packetsPerSecondAToBText.length > 0 ? root.packetsPerSecondAToBText : "-" }
-                                Label { text: root.packetsPerSecondBToAText.length > 0 ? root.packetsPerSecondBToAText : "-" }
+                                Label { text: "Packets/sec"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: root.packetsPerSecondText.length > 0 ? root.packetsPerSecondText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.packetsPerSecondAToBText.length > 0 ? root.packetsPerSecondAToBText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.packetsPerSecondBToAText.length > 0 ? root.packetsPerSecondBToAText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Data rate" }
-                                Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-" }
-                                Label { text: root.bytesPerSecondAToBText.length > 0 ? root.bytesPerSecondAToBText : "-" }
-                                Label { text: root.bytesPerSecondBToAText.length > 0 ? root.bytesPerSecondBToAText : "-" }
+                                Label { text: "Data rate"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: root.bytesPerSecondText.length > 0 ? root.bytesPerSecondText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.bytesPerSecondAToBText.length > 0 ? root.bytesPerSecondAToBText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.bytesPerSecondBToAText.length > 0 ? root.bytesPerSecondBToAText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Avg packet size" }
-                                Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-" }
-                                Label { text: root.averagePacketSizeAToBText.length > 0 ? root.averagePacketSizeAToBText : "-" }
-                                Label { text: root.averagePacketSizeBToAText.length > 0 ? root.averagePacketSizeBToAText : "-" }
+                                Label { text: "Avg packet size"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: root.averagePacketSizeText.length > 0 ? root.averagePacketSizeText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.averagePacketSizeAToBText.length > 0 ? root.averagePacketSizeAToBText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.averagePacketSizeBToAText.length > 0 ? root.averagePacketSizeBToAText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Avg inter-arrival" }
-                                Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-" }
-                                Label { text: "—" }
-                                Label { text: "—" }
+                                Label { text: "Avg inter-arrival"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: root.averageInterArrivalText.length > 0 ? root.averageInterArrivalText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: "—"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: "—"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Min packet size" }
-                                Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-" }
-                                Label { text: root.minPacketSizeAToBText.length > 0 ? root.minPacketSizeAToBText : "—" }
-                                Label { text: root.minPacketSizeBToAText.length > 0 ? root.minPacketSizeBToAText : "—" }
+                                Label { text: "Min packet size"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: root.minPacketSizeText.length > 0 ? root.minPacketSizeText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.minPacketSizeAToBText.length > 0 ? root.minPacketSizeAToBText : "—"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.minPacketSizeBToAText.length > 0 ? root.minPacketSizeBToAText : "—"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
 
-                                Label { text: "Max packet size" }
-                                Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-" }
-                                Label { text: root.maxPacketSizeAToBText.length > 0 ? root.maxPacketSizeAToBText : "—" }
-                                Label { text: root.maxPacketSizeBToAText.length > 0 ? root.maxPacketSizeBToAText : "—" }
+                                Label { text: "Max packet size"; Layout.preferredWidth: root.derivedMetricsMetricColumnWidth }
+                                Label { text: root.maxPacketSizeText.length > 0 ? root.maxPacketSizeText : "-"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.maxPacketSizeAToBText.length > 0 ? root.maxPacketSizeAToBText : "—"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
+                                Label { text: root.maxPacketSizeBToAText.length > 0 ? root.maxPacketSizeBToAText : "—"; horizontalAlignment: Text.AlignRight; Layout.preferredWidth: root.derivedMetricsValueColumnWidth }
                             }
                         }
 
@@ -609,7 +664,7 @@ Frame {
                                 spacing: root.sectionSpacing
 
                                 Label {
-                                    text: "Directional"
+                                    text: "Counts"
                                     color: "#475569"
                                 }
 
@@ -659,6 +714,29 @@ Frame {
 
                                     Label { text: "Byte ratio" }
                                     Label { text: root.byteRatioText.length > 0 ? root.byteRatioText : "-" }
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                color: "#e2e8f0"
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.sectionSpacing
+
+                                Label {
+                                    text: "Dominance"
+                                    color: "#475569"
+                                }
+
+                                GridLayout {
+                                    width: parent.width
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: root.rowSpacing
 
                                     Label { text: "Packet direction" }
                                     Label { text: root.packetDirectionText.length > 0 ? root.packetDirectionText : "-" }
@@ -691,6 +769,12 @@ Frame {
 
                             Item {
                                 Layout.fillWidth: true
+                            }
+
+                            Label {
+                                objectName: "packetSizeHistogramMaxLabel"
+                                text: root.histogramMaxCountText(root.displayedPacketSizeHistogramModel)
+                                color: "#475569"
                             }
 
                             Rectangle {
@@ -796,6 +880,12 @@ Frame {
 
                             Item {
                                 Layout.fillWidth: true
+                            }
+
+                            Label {
+                                objectName: "interArrivalHistogramMaxLabel"
+                                text: root.histogramMaxCountText(root.displayedInterArrivalHistogramModel)
+                                color: "#475569"
                             }
 
                             Rectangle {

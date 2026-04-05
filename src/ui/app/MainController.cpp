@@ -446,6 +446,10 @@ QString format_duration_us(const std::uint64_t duration_us) {
     return QStringLiteral("%1 s").arg(static_cast<double>(duration_us) / 1000000.0, 0, 'f', 3);
 }
 
+QString format_duration_ms(const std::uint64_t duration_us) {
+    return QStringLiteral("%1 ms").arg(static_cast<double>(duration_us) / 1000.0, 0, 'f', 3);
+}
+
 QString trim_trailing_zeros(QString text) {
     const auto decimal_index = text.indexOf(QLatin1Char('.'));
     if (decimal_index < 0) {
@@ -1356,7 +1360,7 @@ QVariantList MainController::analysisSequencePreview() const {
         QVariantMap row {};
         row.insert(QStringLiteral("packetNumber"), static_cast<qulonglong>(preview_row.flow_packet_number));
         row.insert(QStringLiteral("direction"), QString::fromStdString(preview_row.direction_text));
-        row.insert(QStringLiteral("deltaTimeText"), format_duration_us(preview_row.delta_time_us));
+        row.insert(QStringLiteral("deltaTimeText"), format_duration_ms(preview_row.delta_time_us));
         row.insert(QStringLiteral("capturedLength"), preview_row.captured_length);
         row.insert(QStringLiteral("payloadLength"), preview_row.payload_length);
         row.insert(QStringLiteral("timestampText"), QString::fromStdString(preview_row.timestamp_text));
