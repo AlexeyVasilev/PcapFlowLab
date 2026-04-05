@@ -59,6 +59,49 @@ std::uint64_t histogram_total_count(const std::vector<Row>& rows) {
 bool nearly_equal(const double left, const double right, const double epsilon = 0.001) {
     return std::fabs(left - right) <= epsilon;
 }
+const FlowAnalysisRatePoint* rate_point_at(const std::vector<FlowAnalysisRatePoint>& points, const std::uint64_t x_us) {
+    for (const auto& point : points) {
+        if (point.relative_time_us == x_us) {
+            return &point;
+        }
+    }
+
+    return nullptr;
+}
+
+bool has_constant_window_spacing(const std::vector<FlowAnalysisRatePoint>& points, const std::uint64_t window_us) {
+    if (points.size() < 2U) {
+        return true;
+    }
+
+    for (std::size_t index = 1; index < points.size(); ++index) {
+        if (points[index].relative_time_us - points[index - 1U].relative_time_us != window_us) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+double total_packets_from_rate_series(const std::vector<FlowAnalysisRatePoint>& points, const std::uint64_t window_us) {
+    const auto window_seconds = static_cast<double>(window_us) / 1000000.0;
+    double total_packets = 0.0;
+    for (const auto& point : points) {
+        total_packets += point.packets_per_second * window_seconds;
+    }
+
+    return total_packets;
+}
+
+double total_bytes_from_rate_series(const std::vector<FlowAnalysisRatePoint>& points, const std::uint64_t window_us) {
+    const auto window_seconds = static_cast<double>(window_us) / 1000000.0;
+    double total_bytes = 0.0;
+    for (const auto& point : points) {
+        total_bytes += point.data_per_second * window_seconds;
+    }
+
+    return total_bytes;
+}
 
 PacketRef make_analysis_packet_ref(
     const std::uint64_t packet_index,
@@ -713,6 +756,98 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(single_burst_packet_analysis.idle_gap_count == 0U);
     PFL_EXPECT(single_burst_packet_analysis.largest_idle_gap_us == 0U);
 
+    const auto rate_graph_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref_at(0U, 0U, 100U, 0U),
+            make_analysis_packet_ref_at(1U, 5000U, 200U, 0U),
+            make_analysis_packet_ref_at(3U, 41000U, 300U, 0U),
+        },
+        {
+            make_analysis_packet_ref_at(2U, 25000U, 400U, 0U),
+        }
+    );
+    const auto rate_graph_analysis = analysis_service.analyze(rate_graph_connection);
+    PFL_EXPECT(rate_graph_analysis.rate_graph.available);
+    PFL_EXPECT(rate_graph_analysis.rate_graph.status_text.empty());
+    PFL_EXPECT(rate_graph_analysis.rate_graph.window_us == 10000U);
+    PFL_EXPECT(rate_graph_analysis.rate_graph.points_a_to_b.size() == rate_graph_analysis.rate_graph.points_b_to_a.size());
+    PFL_EXPECT(rate_graph_analysis.rate_graph.points_a_to_b.size() == 5U);
+    PFL_EXPECT(has_constant_window_spacing(rate_graph_analysis.rate_graph.points_a_to_b, rate_graph_analysis.rate_graph.window_us));
+    PFL_EXPECT(has_constant_window_spacing(rate_graph_analysis.rate_graph.points_b_to_a, rate_graph_analysis.rate_graph.window_us));
+
+    const auto* a_start_point = rate_point_at(rate_graph_analysis.rate_graph.points_a_to_b, 0U);
+    PFL_EXPECT(a_start_point != nullptr);
+    PFL_EXPECT(nearly_equal(a_start_point->packets_per_second, 200.0));
+    PFL_EXPECT(nearly_equal(a_start_point->data_per_second, 30000.0));
+
+    const auto* b_mid_point = rate_point_at(rate_graph_analysis.rate_graph.points_b_to_a, 20000U);
+    PFL_EXPECT(b_mid_point != nullptr);
+    PFL_EXPECT(nearly_equal(b_mid_point->packets_per_second, 100.0));
+    PFL_EXPECT(nearly_equal(b_mid_point->data_per_second, 40000.0));
+
+    const auto* a_tail_point = rate_point_at(rate_graph_analysis.rate_graph.points_a_to_b, 40000U);
+    PFL_EXPECT(a_tail_point != nullptr);
+    PFL_EXPECT(nearly_equal(a_tail_point->packets_per_second, 100.0));
+    PFL_EXPECT(nearly_equal(a_tail_point->data_per_second, 30000.0));
+
+    const auto* empty_a_window = rate_point_at(rate_graph_analysis.rate_graph.points_a_to_b, 10000U);
+    PFL_EXPECT(empty_a_window != nullptr);
+    PFL_EXPECT(nearly_equal(empty_a_window->packets_per_second, 0.0));
+    PFL_EXPECT(nearly_equal(empty_a_window->data_per_second, 0.0));
+
+    const auto* empty_b_window = rate_point_at(rate_graph_analysis.rate_graph.points_b_to_a, 10000U);
+    PFL_EXPECT(empty_b_window != nullptr);
+    PFL_EXPECT(nearly_equal(empty_b_window->packets_per_second, 0.0));
+    PFL_EXPECT(nearly_equal(empty_b_window->data_per_second, 0.0));
+
+    const auto total_packets_from_series =
+        total_packets_from_rate_series(rate_graph_analysis.rate_graph.points_a_to_b, rate_graph_analysis.rate_graph.window_us)
+        + total_packets_from_rate_series(rate_graph_analysis.rate_graph.points_b_to_a, rate_graph_analysis.rate_graph.window_us);
+    const auto total_bytes_from_series =
+        total_bytes_from_rate_series(rate_graph_analysis.rate_graph.points_a_to_b, rate_graph_analysis.rate_graph.window_us)
+        + total_bytes_from_rate_series(rate_graph_analysis.rate_graph.points_b_to_a, rate_graph_analysis.rate_graph.window_us);
+    PFL_EXPECT(nearly_equal(total_packets_from_series, 4.0));
+    PFL_EXPECT(nearly_equal(total_bytes_from_series, 1000.0));
+
+    std::vector<PacketRef> capped_rate_a_packets {};
+    std::vector<PacketRef> capped_rate_b_packets {};
+    capped_rate_a_packets.reserve(120U);
+    capped_rate_b_packets.reserve(120U);
+    for (std::uint64_t index = 0; index < 240U; ++index) {
+        const auto timestamp_us = index * 1000000U;
+        if ((index % 2U) == 0U) {
+            capped_rate_a_packets.push_back(make_analysis_packet_ref_at(index, timestamp_us, 120U, 0U));
+        } else {
+            capped_rate_b_packets.push_back(make_analysis_packet_ref_at(index, timestamp_us, 80U, 0U));
+        }
+    }
+
+    const auto capped_rate_connection = make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::udp,
+        capped_rate_a_packets,
+        capped_rate_b_packets
+    );
+    const auto capped_rate_analysis = analysis_service.analyze(capped_rate_connection);
+    PFL_EXPECT(capped_rate_analysis.rate_graph.available);
+    PFL_EXPECT(capped_rate_analysis.rate_graph.window_us >= 1000000U);
+    PFL_EXPECT(capped_rate_analysis.rate_graph.points_a_to_b.size() <= 100U);
+    PFL_EXPECT(capped_rate_analysis.rate_graph.points_a_to_b.size() == capped_rate_analysis.rate_graph.points_b_to_a.size());
+
+    const auto short_rate_analysis = analysis_service.analyze(make_protocol_panel_connection(
+        FlowProtocolHint::unknown,
+        ProtocolId::tcp,
+        {
+            make_analysis_packet_ref_at(0U, 0U, 90U, 0U),
+        },
+        {}
+    ));
+    PFL_EXPECT(!short_rate_analysis.rate_graph.available);
+    PFL_EXPECT(short_rate_analysis.rate_graph.points_a_to_b.empty());
+    PFL_EXPECT(short_rate_analysis.rate_graph.points_b_to_a.empty());
+    PFL_EXPECT(short_rate_analysis.rate_graph.status_text == "Flow too short for rate graph");
     const auto empty_connection = make_burst_summary_connection({}, {});
     const auto empty_analysis = analysis_service.analyze(empty_connection);
     PFL_EXPECT(empty_analysis.total_packets == 0U);
@@ -721,6 +856,13 @@ void run_flow_analysis_tests() {
     PFL_EXPECT(empty_analysis.largest_burst_bytes == 0U);
     PFL_EXPECT(empty_analysis.idle_gap_count == 0U);
     PFL_EXPECT(empty_analysis.largest_idle_gap_us == 0U);
+    PFL_EXPECT(!empty_analysis.rate_graph.available);
+    PFL_EXPECT(empty_analysis.rate_graph.points_a_to_b.empty());
+    PFL_EXPECT(empty_analysis.rate_graph.points_b_to_a.empty());
+    PFL_EXPECT(empty_analysis.rate_graph.status_text == "Flow too short for rate graph");
 }
 
 }  // namespace pfl::tests
+
+
+

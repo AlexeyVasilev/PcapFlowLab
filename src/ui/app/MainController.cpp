@@ -1,4 +1,4 @@
-﻿#include "ui/app/MainController.h"
+#include "ui/app/MainController.h"
 
 #include <algorithm>
 #include <array>
@@ -183,7 +183,7 @@ QString selected_flow_endpoint_summary(const FlowListModel& flow_model, const in
     const auto address_b = flow_model.data(index, FlowListModel::AddressBRole).toString();
     const auto port_b = flow_model.data(index, FlowListModel::PortBRole).toInt();
     const auto protocol = flow_model.data(index, FlowListModel::ProtocolRole).toString();
-    return QStringLiteral("%1:%2 → %3:%4 %5")
+    return QStringLiteral("%1:%2 > %3:%4 %5")
         .arg(address_a)
         .arg(port_a)
         .arg(address_b)
@@ -466,6 +466,20 @@ QString trim_trailing_zeros(QString text) {
     return text;
 }
 
+QString format_rate_graph_window_text(const std::uint64_t window_us) {
+    if (window_us == 0U) {
+        return {};
+    }
+
+    if (window_us < 1000000U) {
+        const auto window_ms = static_cast<double>(window_us) / 1000.0;
+        return QStringLiteral("Window: %1 ms (auto)").arg(trim_trailing_zeros(QString::number(window_ms, 'f', 3)));
+    }
+
+    const auto window_seconds = static_cast<double>(window_us) / 1000000.0;
+    return QStringLiteral("Window: %1 s (auto)").arg(trim_trailing_zeros(QString::number(window_seconds, 'f', 3)));
+}
+
 QString group_integer_part(QString text) {
     const auto decimal_index = text.indexOf(QLatin1Char('.'));
     const QString fraction = decimal_index >= 0 ? text.mid(decimal_index) : QString {};
@@ -553,6 +567,21 @@ QString format_data_rate_for_duration(const std::uint64_t byte_count, const std:
     return format_byte_rate_value(bytes_per_second);
 }
 
+QVariantList make_analysis_rate_series(const std::vector<FlowAnalysisRatePoint>& points) {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(points.size()));
+
+    for (const auto& point : points) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("xUs"), static_cast<qulonglong>(point.relative_time_us));
+        row.insert(QStringLiteral("xSeconds"), static_cast<double>(point.relative_time_us) / 1000000.0);
+        row.insert(QStringLiteral("dataPerSecond"), point.data_per_second);
+        row.insert(QStringLiteral("packetsPerSecond"), point.packets_per_second);
+        rows.push_back(row);
+    }
+
+    return rows;
+}
 QString format_average_packet_size_for_direction(const std::uint64_t byte_count, const std::uint64_t packet_count) {
     const auto average_packet_size = packet_count > 0U
         ? static_cast<double>(byte_count) / static_cast<double>(packet_count)
@@ -852,6 +881,41 @@ bool MainController::analysisAvailable() const noexcept {
     return current_flow_analysis_.has_value();
 }
 
+bool MainController::analysisRateGraphAvailable() const noexcept {
+    return current_flow_analysis_.has_value() && current_flow_analysis_->rate_graph.available;
+}
+
+QString MainController::analysisRateGraphStatusText() const {
+    if (!current_flow_analysis_.has_value() || current_flow_analysis_->rate_graph.status_text.empty()) {
+        return {};
+    }
+
+    return QString::fromStdString(current_flow_analysis_->rate_graph.status_text);
+}
+
+QString MainController::analysisRateGraphWindowText() const {
+    if (!current_flow_analysis_.has_value()) {
+        return {};
+    }
+
+    return format_rate_graph_window_text(current_flow_analysis_->rate_graph.window_us);
+}
+
+QVariantList MainController::analysisRateSeriesAToB() const {
+    if (!current_flow_analysis_.has_value()) {
+        return {};
+    }
+
+    return make_analysis_rate_series(current_flow_analysis_->rate_graph.points_a_to_b);
+}
+
+QVariantList MainController::analysisRateSeriesBToA() const {
+    if (!current_flow_analysis_.has_value()) {
+        return {};
+    }
+
+    return make_analysis_rate_series(current_flow_analysis_->rate_graph.points_b_to_a);
+}
 bool MainController::canExportAnalysisSequence() const noexcept {
     return selected_flow_index_ >= 0 && !analysis_sequence_export_in_progress_;
 }
@@ -2794,6 +2858,11 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
+
 
 
 

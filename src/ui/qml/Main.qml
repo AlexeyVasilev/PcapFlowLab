@@ -289,6 +289,11 @@ ApplicationWindow {
                 selectedFlowIndex: mainController.selectedFlowIndex
                 analysisLoading: mainController.analysisLoading
                 analysisAvailable: mainController.analysisAvailable
+                analysisRateGraphAvailable: mainController.analysisRateGraphAvailable
+                analysisRateGraphStatusText: mainController.analysisRateGraphStatusText
+                analysisRateGraphWindowText: mainController.analysisRateGraphWindowText
+                analysisRateSeriesAToB: mainController.analysisRateSeriesAToB
+                analysisRateSeriesBToA: mainController.analysisRateSeriesBToA
                 canExportAnalysisSequence: mainController.canExportAnalysisSequence
                 analysisSequenceExportInProgress: mainController.analysisSequenceExportInProgress
                 analysisSequenceExportStatusText: mainController.analysisSequenceExportStatusText
@@ -429,6 +434,8 @@ ApplicationWindow {
         }
     }
 }
+
+
 
 
 

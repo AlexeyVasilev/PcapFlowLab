@@ -16,6 +16,11 @@ Frame {
     readonly property int histogramModeAll: 0
     readonly property int histogramModeAToB: 1
     readonly property int histogramModeBToA: 2
+    readonly property int rateMetricData: 0
+    readonly property int rateMetricPackets: 1
+    readonly property int rateDirectionAToB: 0
+    readonly property int rateDirectionBToA: 1
+    readonly property int rateDirectionBoth: 2
     readonly property string forwardDirection: "A->B"
     readonly property string reverseDirection: "B->A"
 
@@ -30,7 +35,6 @@ Frame {
         Layout.fillWidth: true
         padding: 0
         implicitHeight: sectionLayout.implicitHeight + (root.blockPadding * 3)
-
         background: Rectangle {
             color: "#ffffff"
             border.color: "#d8dee9"
@@ -159,9 +163,48 @@ Frame {
         return "max: " + model[maxIndex].packetCountText
     }
 
+    function ratePointValue(point) {
+        return rateMetricMode === rateMetricPackets ? point.packetsPerSecond : point.dataPerSecond
+    }
+
+    function rateSeriesMaxValue(series) {
+        var maxValue = 0
+        for (var index = 0; index < series.length; ++index) {
+            var value = ratePointValue(series[index])
+            if (value > maxValue) {
+                maxValue = value
+            }
+        }
+        return maxValue
+    }
+
+    function rateGraphMaxXValue(seriesA, seriesB) {
+        var maxX = 0
+        if (seriesA.length > 0) {
+            maxX = Math.max(maxX, seriesA[seriesA.length - 1].xUs)
+        }
+        if (seriesB.length > 0) {
+            maxX = Math.max(maxX, seriesB[seriesB.length - 1].xUs)
+        }
+        return maxX
+    }
+
+    function rateGraphMaxYValue(seriesA, seriesB) {
+        return Math.max(rateSeriesMaxValue(seriesA), rateSeriesMaxValue(seriesB))
+    }
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
+    property bool rateGraphAvailable: false
+    property string rateGraphStatusText: ""
+    property string rateGraphWindowText: ""
+    property var rateSeriesAToBModel: []
+    property var rateSeriesBToAModel: []
+    property int rateMetricMode: rateMetricData
+    property int rateDirectionMode: rateDirectionBoth
+    readonly property var renderedRateSeriesAToB: (rateDirectionMode === rateDirectionAToB || rateDirectionMode === rateDirectionBoth) ? rateSeriesAToBModel : []
+    readonly property var renderedRateSeriesBToA: (rateDirectionMode === rateDirectionBToA || rateDirectionMode === rateDirectionBoth) ? rateSeriesBToAModel : []
+    readonly property bool rateGraphHasVisibleSeries: renderedRateSeriesAToB.length > 0 || renderedRateSeriesBToA.length > 0
     property bool canExportAnalysisSequence: false
     property bool sequenceExportInProgress: false
     property string sequenceExportStatusText: ""
@@ -253,6 +296,17 @@ Frame {
     readonly property real derivedMetricsMetricColumnWidth: 150
     readonly property real derivedMetricsValueColumnWidth: 104
 
+    function requestRateGraphRepaint() {
+        if (typeof rateGraphCanvas !== "undefined" && rateGraphCanvas !== null) {
+            rateGraphCanvas.requestPaint()
+        }
+    }
+
+    onRenderedRateSeriesAToBChanged: requestRateGraphRepaint()
+    onRenderedRateSeriesBToAChanged: requestRateGraphRepaint()
+    onRateMetricModeChanged: requestRateGraphRepaint()
+    onRateDirectionModeChanged: requestRateGraphRepaint()
+    onRateGraphAvailableChanged: requestRateGraphRepaint()
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -452,7 +506,7 @@ Frame {
                         }
 
                         RowLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             spacing: root.blockSpacing
 
                             GridLayout {
@@ -511,7 +565,7 @@ Frame {
                         }
 
                         GridLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             columns: 2
                             columnSpacing: 16
                             rowSpacing: root.rowSpacing
@@ -534,13 +588,13 @@ Frame {
 
                         Rectangle {
                             visible: (root.protocolHint === "TLS" || root.protocolHint === "QUIC") && root.hasTcpControlCounts
-                            width: parent.width
+                            Layout.fillWidth: true
                             height: 1
                             color: "#e2e8f0"
                         }
 
                         GridLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             columns: 2
                             columnSpacing: 16
                             rowSpacing: root.rowSpacing
@@ -577,7 +631,7 @@ Frame {
                             }
 
                             GridLayout {
-                                width: parent.width
+                            Layout.fillWidth: true
                                 columns: 4
                                 columnSpacing: 16
                                 rowSpacing: root.rowSpacing
@@ -626,7 +680,7 @@ Frame {
                             }
 
                             GridLayout {
-                                width: parent.width
+                            Layout.fillWidth: true
                                 columns: 2
                                 columnSpacing: 16
                                 rowSpacing: root.rowSpacing
@@ -650,13 +704,227 @@ Frame {
                     }
 
                     AnalysisSectionFrame {
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            Label {
+                                text: "Flow Rate"
+                                font.bold: true
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            Label {
+                                objectName: "analysisRateWindowLabel"
+                                text: root.rateGraphWindowText
+                                visible: root.rateGraphWindowText.length > 0
+                                color: "#475569"
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: rateMetricModeLayout.implicitHeight + 4
+                                implicitWidth: rateMetricModeLayout.implicitWidth + 8
+
+                                RowLayout {
+                                    id: rateMetricModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
+
+                                    ButtonGroup {
+                                        id: rateMetricModeGroup
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "analysisRateMetricDataButton"
+                                        text: "Data/s"
+                                        checked: root.rateMetricMode === root.rateMetricData
+                                        ButtonGroup.group: rateMetricModeGroup
+                                        onClicked: root.rateMetricMode = root.rateMetricData
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "analysisRateMetricPacketsButton"
+                                        text: "Packets/s"
+                                        checked: root.rateMetricMode === root.rateMetricPackets
+                                        ButtonGroup.group: rateMetricModeGroup
+                                        onClicked: root.rateMetricMode = root.rateMetricPackets
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                color: "#f8fafc"
+                                border.color: "#cbd5e1"
+                                radius: 6
+                                implicitHeight: rateDirectionModeLayout.implicitHeight + 4
+                                implicitWidth: rateDirectionModeLayout.implicitWidth + 8
+
+                                RowLayout {
+                                    id: rateDirectionModeLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    spacing: 2
+
+                                    ButtonGroup {
+                                        id: rateDirectionModeGroup
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "analysisRateDirectionAToBButton"
+                                        text: "A->B"
+                                        checked: root.rateDirectionMode === root.rateDirectionAToB
+                                        ButtonGroup.group: rateDirectionModeGroup
+                                        onClicked: root.rateDirectionMode = root.rateDirectionAToB
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "analysisRateDirectionBToAButton"
+                                        text: "B->A"
+                                        checked: root.rateDirectionMode === root.rateDirectionBToA
+                                        ButtonGroup.group: rateDirectionModeGroup
+                                        onClicked: root.rateDirectionMode = root.rateDirectionBToA
+                                    }
+
+                                    HistogramModeButton {
+                                        objectName: "analysisRateDirectionBothButton"
+                                        text: "Both"
+                                        checked: root.rateDirectionMode === root.rateDirectionBoth
+                                        ButtonGroup.group: rateDirectionModeGroup
+                                        onClicked: root.rateDirectionMode = root.rateDirectionBoth
+                                    }
+                                }
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Label {
+                            objectName: "analysisRateGraphFallbackLabel"
+                            text: root.rateGraphStatusText
+                            visible: !root.rateGraphAvailable && root.rateGraphStatusText.length > 0
+                            color: "#64748b"
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Rectangle {
+                            objectName: "analysisRateGraphSurface"
+                            Layout.fillWidth: true
+                            implicitHeight: 150
+                            color: "#f8fafc"
+                            border.color: "#dbe3ee"
+                            radius: 6
+                            visible: root.rateGraphAvailable && root.rateGraphHasVisibleSeries
+
+                            Canvas {
+                                id: rateGraphCanvas
+                                objectName: "analysisRateGraphCanvas"
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                antialiasing: true
+
+                                renderStrategy: Canvas.Immediate
+                                canvasSize: Qt.size(width, height)
+                                onPaint: {
+                                    var context = getContext("2d")
+                                    context.clearRect(0, 0, width, height)
+
+                                    if (!root.rateGraphAvailable) {
+                                        return
+                                    }
+
+                                    var seriesA = root.renderedRateSeriesAToB
+                                    var seriesB = root.renderedRateSeriesBToA
+                                    if (seriesA.length === 0 && seriesB.length === 0) {
+                                        return
+                                    }
+
+                                    var padLeft = 6
+                                    var padRight = 6
+                                    var padTop = 8
+                                    var padBottom = 8
+                                    var graphWidth = Math.max(1, width - padLeft - padRight)
+                                    var graphHeight = Math.max(1, height - padTop - padBottom)
+
+                                    var maxX = root.rateGraphMaxXValue(seriesA, seriesB)
+                                    if (maxX <= 0) {
+                                        maxX = 1
+                                    }
+
+                                    var maxY = root.rateGraphMaxYValue(seriesA, seriesB)
+                                    if (maxY <= 0) {
+                                        maxY = 1
+                                    }
+
+                                    function pointX(point) {
+                                        return padLeft + (point.xUs / maxX) * graphWidth
+                                    }
+
+                                    function pointY(point) {
+                                        var value = root.ratePointValue(point)
+                                        return padTop + (1 - (value / maxY)) * graphHeight
+                                    }
+
+                                    function drawSeries(series, color) {
+                                        if (series.length === 0) {
+                                            return
+                                        }
+
+                                        context.beginPath()
+                                        context.lineWidth = 2
+                                        context.strokeStyle = color
+                                        for (var index = 0; index < series.length; ++index) {
+                                            var point = series[index]
+                                            var x = pointX(point)
+                                            var y = pointY(point)
+                                            if (index === 0) {
+                                                context.moveTo(x, y)
+                                            } else {
+                                                context.lineTo(x, y)
+                                            }
+                                        }
+                                        context.stroke()
+
+                                        if (series.length === 1) {
+                                            context.beginPath()
+                                            context.fillStyle = color
+                                            context.arc(pointX(series[0]), pointY(series[0]), 2.5, 0, 2 * Math.PI)
+                                            context.fill()
+                                        }
+                                    }
+
+                                    drawSeries(seriesA, "#22c55e")
+                                    drawSeries(seriesB, "#3b82f6")
+                                }
+
+                                onWidthChanged: requestPaint()
+                                onHeightChanged: requestPaint()
+                                Component.onCompleted: requestPaint()
+                            }
+                        }
+                    }
+
+                    AnalysisSectionFrame {
                         Label {
                             text: "Directional"
                             font.bold: true
                         }
 
                         RowLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             spacing: root.blockSpacing
 
                             ColumnLayout {
@@ -669,7 +937,7 @@ Frame {
                                 }
 
                                 GridLayout {
-                                    width: parent.width
+                            Layout.fillWidth: true
                                     columns: 3
                                     columnSpacing: 16
                                     rowSpacing: root.rowSpacing
@@ -704,7 +972,7 @@ Frame {
                                 }
 
                                 GridLayout {
-                                    width: parent.width
+                            Layout.fillWidth: true
                                     columns: 2
                                     columnSpacing: 16
                                     rowSpacing: root.rowSpacing
@@ -733,7 +1001,7 @@ Frame {
                                 }
 
                                 GridLayout {
-                                    width: parent.width
+                            Layout.fillWidth: true
                                     columns: 2
                                     columnSpacing: 16
                                     rowSpacing: root.rowSpacing
@@ -755,7 +1023,7 @@ Frame {
 
                     AnalysisSectionFrame {
                         RowLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             spacing: 12
 
                             Label {
@@ -826,7 +1094,7 @@ Frame {
 
                             delegate: RowLayout {
                                 required property var modelData
-                                width: parent.width
+                            Layout.fillWidth: true
                                 spacing: root.histogramColumnSpacing
 
                                 Label {
@@ -866,7 +1134,7 @@ Frame {
 
                     AnalysisSectionFrame {
                         RowLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             spacing: 12
 
                             Label {
@@ -937,7 +1205,7 @@ Frame {
 
                             delegate: RowLayout {
                                 required property var modelData
-                                width: parent.width
+                            Layout.fillWidth: true
                                 spacing: root.histogramColumnSpacing
 
                                 Label {
@@ -977,7 +1245,7 @@ Frame {
 
                     AnalysisSectionFrame {
                         RowLayout {
-                            width: parent.width
+                            Layout.fillWidth: true
                             spacing: 12
 
                             Label {
@@ -1020,7 +1288,7 @@ Frame {
 
                             delegate: RowLayout {
                                 required property var modelData
-                                width: parent.width
+                            Layout.fillWidth: true
                                 spacing: root.histogramColumnSpacing
 
                                 Label { text: modelData.packetNumber; Layout.preferredWidth: 34 }

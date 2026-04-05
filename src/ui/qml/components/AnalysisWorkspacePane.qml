@@ -9,6 +9,11 @@ Item {
     property int selectedFlowIndex: -1
     property bool analysisLoading: false
     property bool analysisAvailable: false
+    property bool analysisRateGraphAvailable: false
+    property string analysisRateGraphStatusText: ""
+    property string analysisRateGraphWindowText: ""
+    property var analysisRateSeriesAToB: []
+    property var analysisRateSeriesBToA: []
     property bool canExportAnalysisSequence: false
     property bool analysisSequenceExportInProgress: false
     property string analysisSequenceExportStatusText: ""
@@ -236,6 +241,11 @@ Item {
             hasActiveFlow: root.selectedFlowIndex >= 0
             analysisLoading: root.analysisLoading
             analysisAvailable: root.analysisAvailable
+            rateGraphAvailable: root.analysisRateGraphAvailable
+            rateGraphStatusText: root.analysisRateGraphStatusText
+            rateGraphWindowText: root.analysisRateGraphWindowText
+            rateSeriesAToBModel: root.analysisRateSeriesAToB
+            rateSeriesBToAModel: root.analysisRateSeriesBToA
             canExportAnalysisSequence: root.canExportAnalysisSequence
             sequenceExportInProgress: root.analysisSequenceExportInProgress
             sequenceExportStatusText: root.analysisSequenceExportStatusText
@@ -313,3 +323,5 @@ Item {
         }
     }
 }
+
+

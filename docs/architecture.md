@@ -52,6 +52,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - Analysis tab now also includes a bounded metadata-only Inter-arrival Histogram block for the selected flow.
 - Analysis tab now also includes a bounded metadata-only Derived Metrics block for the selected flow.
 - Analysis tab now also includes a bounded metadata-only Directional Ratio block for the selected flow.
+- Analysis tab now also includes a bounded metadata-only Flow Rate graph block for the selected flow (window-aggregated Data/s and Packets/s from packet timestamps, lengths, and direction only).
 - Analysis tab block order is periodically reorganized for readability, with summary/interpretation blocks ahead of evidence/detail blocks; this does not change analysis logic.
 - Never runs globally across all flows during open.
 
@@ -151,6 +152,7 @@ Current scalability risks are still worth watching:
 - Bounded reassembly may truncate long streams.
 - Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
 - Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
+
 
 
 

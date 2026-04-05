@@ -39,6 +39,20 @@ struct FlowAnalysisInterArrivalHistogramSet {
     std::vector<FlowAnalysisInterArrivalHistogramRow> histogram_b_to_a {};
 };
 
+struct FlowAnalysisRatePoint {
+    std::uint64_t relative_time_us {0};
+    double data_per_second {0.0};
+    double packets_per_second {0.0};
+};
+
+struct FlowAnalysisRateGraph {
+    bool available {false};
+    std::string status_text {};
+    std::uint64_t window_us {0};
+    std::vector<FlowAnalysisRatePoint> points_a_to_b {};
+    std::vector<FlowAnalysisRatePoint> points_b_to_a {};
+};
+
 struct FlowAnalysisResult {
     std::uint64_t total_packets {0};
     std::uint64_t total_bytes {0};
@@ -81,6 +95,7 @@ struct FlowAnalysisResult {
     bool has_tcp_control_counts {false};
     FlowAnalysisInterArrivalHistogramSet inter_arrival_histograms {};
     FlowAnalysisPacketSizeHistogramSet packet_size_histograms {};
+    FlowAnalysisRateGraph rate_graph {};
     std::vector<FlowAnalysisInterArrivalHistogramRow> inter_arrival_histogram_rows {};
     std::vector<FlowAnalysisPacketSizeHistogramRow> packet_size_histogram_rows {};
     std::vector<FlowAnalysisSequencePreviewRow> sequence_preview_rows {};
@@ -93,3 +108,4 @@ public:
 };
 
 }  // namespace pfl
+

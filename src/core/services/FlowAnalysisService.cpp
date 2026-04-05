@@ -15,6 +15,12 @@ namespace {
 constexpr std::size_t kSequencePreviewLimit = 20U;
 constexpr std::uint64_t kBurstThresholdUs = 1000U;
 constexpr std::uint64_t kIdleGapThresholdUs = 100000U;
+constexpr std::size_t kRateGraphTargetPointCount = 60U;
+constexpr std::size_t kRateGraphMaxPointCount = 100U;
+constexpr std::size_t kRateGraphMinUsefulPointCount = 3U;
+constexpr std::uint64_t kRateGraphMinWindowUs = 10000U;
+constexpr std::uint64_t kRateGraphMaxWindowUs = 1000000U;
+constexpr const char* kRateGraphShortFlowStatusText = "Flow too short for rate graph";
 
 enum class FlowDirection {
     a_to_b,
@@ -198,6 +204,112 @@ std::vector<PacketPreviewCandidate> build_time_ordered_packet_refs(const Connect
     return ordered_packets;
 }
 
+struct RateWindowAccumulator {
+    std::uint64_t bytes_a_to_b {0};
+    std::uint64_t bytes_b_to_a {0};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+};
+
+std::uint64_t ceil_div_u64(const std::uint64_t numerator, const std::uint64_t denominator) noexcept {
+    if (denominator == 0U) {
+        return 0U;
+    }
+
+    return (numerator + denominator - 1U) / denominator;
+}
+
+std::uint64_t choose_rate_window_us(const std::uint64_t duration_us) noexcept {
+    std::uint64_t window_us = duration_us / static_cast<std::uint64_t>(kRateGraphTargetPointCount);
+    window_us = std::max(window_us, kRateGraphMinWindowUs);
+    window_us = std::min(window_us, kRateGraphMaxWindowUs);
+
+    const auto max_window_span_count = static_cast<std::uint64_t>(kRateGraphMaxPointCount - 1U);
+    const auto point_cap_window_us = ceil_div_u64(duration_us, max_window_span_count);
+    window_us = std::max(window_us, point_cap_window_us);
+
+    if (window_us == 0U) {
+        return kRateGraphMinWindowUs;
+    }
+
+    return window_us;
+}
+
+FlowAnalysisRateGraph build_rate_graph(const std::vector<PacketPreviewCandidate>& ordered_packets) {
+    FlowAnalysisRateGraph rate_graph {};
+    if (ordered_packets.empty()) {
+        rate_graph.status_text = kRateGraphShortFlowStatusText;
+        return rate_graph;
+    }
+
+    const auto first_timestamp_us = packet_timestamp_us(*ordered_packets.front().packet);
+    const auto last_timestamp_us = packet_timestamp_us(*ordered_packets.back().packet);
+    const auto duration_us = last_timestamp_us >= first_timestamp_us
+        ? last_timestamp_us - first_timestamp_us
+        : 0U;
+
+    const auto window_us = choose_rate_window_us(duration_us);
+    rate_graph.window_us = window_us;
+
+    const auto window_count = static_cast<std::size_t>((duration_us / window_us) + 1U);
+    std::vector<RateWindowAccumulator> windows(window_count);
+
+    for (const auto& ordered_packet : ordered_packets) {
+        const auto timestamp_us = packet_timestamp_us(*ordered_packet.packet);
+        const auto relative_time_us = timestamp_us >= first_timestamp_us
+            ? timestamp_us - first_timestamp_us
+            : 0U;
+
+        auto window_index = static_cast<std::size_t>(relative_time_us / window_us);
+        if (window_index >= windows.size()) {
+            window_index = windows.size() - 1U;
+        }
+
+        auto& window = windows[window_index];
+        if (ordered_packet.direction == FlowDirection::a_to_b) {
+            window.bytes_a_to_b += ordered_packet.packet->captured_length;
+            window.packets_a_to_b += 1U;
+        } else {
+            window.bytes_b_to_a += ordered_packet.packet->captured_length;
+            window.packets_b_to_a += 1U;
+        }
+    }
+
+    const auto window_seconds = static_cast<double>(window_us) / 1000000.0;
+    rate_graph.points_a_to_b.reserve(windows.size());
+    rate_graph.points_b_to_a.reserve(windows.size());
+
+    std::size_t useful_point_count = 0U;
+    for (std::size_t index = 0; index < windows.size(); ++index) {
+        const auto& window = windows[index];
+        if ((window.packets_a_to_b + window.packets_b_to_a) > 0U) {
+            useful_point_count += 1U;
+        }
+
+        const auto relative_time_us = static_cast<std::uint64_t>(index) * window_us;
+        rate_graph.points_a_to_b.push_back(FlowAnalysisRatePoint {
+            .relative_time_us = relative_time_us,
+            .data_per_second = static_cast<double>(window.bytes_a_to_b) / window_seconds,
+            .packets_per_second = static_cast<double>(window.packets_a_to_b) / window_seconds,
+        });
+
+        rate_graph.points_b_to_a.push_back(FlowAnalysisRatePoint {
+            .relative_time_us = relative_time_us,
+            .data_per_second = static_cast<double>(window.bytes_b_to_a) / window_seconds,
+            .packets_per_second = static_cast<double>(window.packets_b_to_a) / window_seconds,
+        });
+    }
+
+    if (useful_point_count < kRateGraphMinUsefulPointCount) {
+        rate_graph.points_a_to_b.clear();
+        rate_graph.points_b_to_a.clear();
+        rate_graph.status_text = kRateGraphShortFlowStatusText;
+        return rate_graph;
+    }
+
+    rate_graph.available = true;
+    return rate_graph;
+}
 template <typename Flow>
 void update_time_bounds(const Flow& flow, std::optional<std::uint64_t>& first_us, std::optional<std::uint64_t>& last_us) {
     for (const auto& packet : flow.packets) {
@@ -534,6 +646,7 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
 
     result.inter_arrival_histograms = build_inter_arrival_histograms(ordered_packets);
     result.packet_size_histograms = build_packet_size_histograms(connection);
+    result.rate_graph = build_rate_graph(ordered_packets);
     result.inter_arrival_histogram_rows = result.inter_arrival_histograms.histogram_all;
     result.packet_size_histogram_rows = result.packet_size_histograms.histogram_all;
     result.sequence_preview_rows = build_sequence_preview_rows(connection);
@@ -552,3 +665,7 @@ FlowAnalysisResult FlowAnalysisService::analyze(const ConnectionV6& connection) 
 }
 
 }  // namespace pfl
+
+
+
+

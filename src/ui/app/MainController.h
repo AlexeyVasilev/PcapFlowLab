@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <filesystem>
 #include <map>
@@ -58,6 +58,11 @@ class MainController final : public QObject {
     Q_PROPERTY(bool canLoadMoreStreamItems READ canLoadMoreStreamItems NOTIFY streamListStateChanged)
     Q_PROPERTY(bool analysisLoading READ analysisLoading NOTIFY analysisStateChanged)
     Q_PROPERTY(bool analysisAvailable READ analysisAvailable NOTIFY analysisStateChanged)
+    Q_PROPERTY(bool analysisRateGraphAvailable READ analysisRateGraphAvailable NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisRateGraphStatusText READ analysisRateGraphStatusText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisRateGraphWindowText READ analysisRateGraphWindowText NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisRateSeriesAToB READ analysisRateSeriesAToB NOTIFY analysisStateChanged)
+    Q_PROPERTY(QVariantList analysisRateSeriesBToA READ analysisRateSeriesBToA NOTIFY analysisStateChanged)
     Q_PROPERTY(bool canExportAnalysisSequence READ canExportAnalysisSequence NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool analysisSequenceExportInProgress READ analysisSequenceExportInProgress NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(QString analysisSequenceExportStatusText READ analysisSequenceExportStatusText NOTIFY analysisSequenceExportStateChanged)
@@ -217,6 +222,11 @@ public:
     [[nodiscard]] bool canLoadMoreStreamItems() const noexcept;
     [[nodiscard]] bool analysisLoading() const noexcept;
     [[nodiscard]] bool analysisAvailable() const noexcept;
+    [[nodiscard]] bool analysisRateGraphAvailable() const noexcept;
+    [[nodiscard]] QString analysisRateGraphStatusText() const;
+    [[nodiscard]] QString analysisRateGraphWindowText() const;
+    [[nodiscard]] QVariantList analysisRateSeriesAToB() const;
+    [[nodiscard]] QVariantList analysisRateSeriesBToA() const;
     [[nodiscard]] bool canExportAnalysisSequence() const noexcept;
     [[nodiscard]] bool analysisSequenceExportInProgress() const noexcept;
     [[nodiscard]] QString analysisSequenceExportStatusText() const;
@@ -493,6 +503,8 @@ private:
 };
 
 }  // namespace pfl
+
+
 
 
 

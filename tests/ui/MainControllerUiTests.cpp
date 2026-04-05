@@ -422,6 +422,17 @@ int main(int argc, char* argv[]) {
         });
         pane.object->setProperty("endpointSummaryText", QString::fromUtf8("10.0.0.1:40000 \xE2\x86\x92 10.0.0.2:80 TCP"));
         pane.object->setProperty("protocolHint", QStringLiteral("HTTP"));
+        pane.object->setProperty("rateGraphAvailable", true);
+        pane.object->setProperty("rateGraphStatusText", QStringLiteral(""));
+        pane.object->setProperty("rateGraphWindowText", QStringLiteral("Window: 10 ms (auto)"));
+        pane.object->setProperty("rateSeriesAToBModel", QVariantList {
+            QVariantMap {{QStringLiteral("xUs"), 0ULL}, {QStringLiteral("xSeconds"), 0.0}, {QStringLiteral("dataPerSecond"), 30000.0}, {QStringLiteral("packetsPerSecond"), 200.0}},
+            QVariantMap {{QStringLiteral("xUs"), 10000ULL}, {QStringLiteral("xSeconds"), 0.01}, {QStringLiteral("dataPerSecond"), 10000.0}, {QStringLiteral("packetsPerSecond"), 100.0}},
+        });
+        pane.object->setProperty("rateSeriesBToAModel", QVariantList {
+            QVariantMap {{QStringLiteral("xUs"), 0ULL}, {QStringLiteral("xSeconds"), 0.0}, {QStringLiteral("dataPerSecond"), 5000.0}, {QStringLiteral("packetsPerSecond"), 50.0}},
+            QVariantMap {{QStringLiteral("xUs"), 10000ULL}, {QStringLiteral("xSeconds"), 0.01}, {QStringLiteral("dataPerSecond"), 7500.0}, {QStringLiteral("packetsPerSecond"), 75.0}},
+        });
         pane.object->setProperty("sequencePreviewModel", QVariantList {
             QVariantMap {
                 {QStringLiteral("packetNumber"), 1U},
@@ -458,11 +469,57 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(named_object(pane.object.get(), "interArrivalHistogramModeAllButton") != nullptr);
         UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 3);
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 4);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateWindowLabel") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateWindowLabel")->property("text").toString() == QStringLiteral("Window: 10 ms (auto)"));
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateMetricDataButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateMetricPacketsButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionAToBButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionBToAButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateDirectionBothButton") != nullptr);
+        UI_EXPECT(named_object(pane.object.get(), "analysisRateGraphCanvas") != nullptr);
+        auto* analysisPaneItem = qobject_cast<QQuickItem*>(pane.object.get());
+        auto* rateGraphSurface = qobject_cast<QQuickItem*>(named_object(pane.object.get(), "analysisRateGraphSurface"));
+        auto* rateGraphCanvas = qobject_cast<QQuickItem*>(named_object(pane.object.get(), "analysisRateGraphCanvas"));
+        UI_EXPECT(analysisPaneItem != nullptr);
+        UI_EXPECT(rateGraphSurface != nullptr);
+        UI_EXPECT(rateGraphCanvas != nullptr);
+        analysisPaneItem->setWidth(900);
+        analysisPaneItem->setHeight(700);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        analysisPaneItem->setWidth(1200);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        const auto widenedSurfaceWidth = rateGraphSurface->width();
+        UI_EXPECT(widenedSurfaceWidth > 900.0);
+        UI_EXPECT(pane.object->property("rateMetricMode").toInt() == 0);
+        UI_EXPECT(pane.object->property("rateDirectionMode").toInt() == 2);
+        UI_EXPECT(pane.object->property("renderedRateSeriesAToB").toList().size() == 2);
+        UI_EXPECT(pane.object->property("renderedRateSeriesBToA").toList().size() == 2);
+        UI_EXPECT(rateGraphSurface->width() >= widenedSurfaceWidth - 0.5);
+        const auto canvasSizeAfterSwitches = rateGraphCanvas->property("canvasSize").toSizeF();
+        UI_EXPECT(std::fabs(canvasSizeAfterSwitches.width() - rateGraphCanvas->width()) <= 1.0);
+        UI_EXPECT(std::fabs(canvasSizeAfterSwitches.height() - rateGraphCanvas->height()) <= 1.0);
         pane.object->setProperty("packetSizeHistogramMode", 1);
         pane.object->setProperty("interArrivalHistogramMode", 2);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 2);
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);
+        pane.object->setProperty("rateDirectionMode", 0);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("renderedRateSeriesAToB").toList().size() == 2);
+        UI_EXPECT(pane.object->property("renderedRateSeriesBToA").toList().isEmpty());
+        pane.object->setProperty("rateDirectionMode", 1);
+        pane.object->setProperty("rateMetricMode", 1);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(pane.object->property("renderedRateSeriesAToB").toList().isEmpty());
+        UI_EXPECT(pane.object->property("renderedRateSeriesBToA").toList().size() == 2);
+        UI_EXPECT(rateGraphSurface->width() >= widenedSurfaceWidth - 0.5);
+        const auto canvasSizeAfterModeToggle = rateGraphCanvas->property("canvasSize").toSizeF();
+        UI_EXPECT(std::fabs(canvasSizeAfterModeToggle.width() - rateGraphCanvas->width()) <= 1.0);
+        UI_EXPECT(std::fabs(canvasSizeAfterModeToggle.height() - rateGraphCanvas->height()) <= 1.0);
+        pane.object->setProperty("rateGraphAvailable", false);
+        pane.object->setProperty("rateGraphStatusText", QStringLiteral("Flow too short for rate graph"));
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(pane.object.get(), "analysisRateGraphFallbackLabel"));
     }
 
     MainController idle_cancel_controller {};
@@ -657,6 +714,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisBytesAToBText() == QStringLiteral("%1 B").arg(http_flow.size()));
     UI_EXPECT(controller.analysisBytesBToA() == 0U);
     UI_EXPECT(controller.analysisBytesBToAText() == QStringLiteral("0 B"));
+    UI_EXPECT(!controller.analysisRateGraphAvailable());
+    UI_EXPECT(controller.analysisRateGraphStatusText() == QStringLiteral("Flow too short for rate graph"));
+    UI_EXPECT(controller.analysisRateGraphWindowText() == QStringLiteral("Window: 10 ms (auto)"));
+    UI_EXPECT(controller.analysisRateSeriesAToB().isEmpty());
+    UI_EXPECT(controller.analysisRateSeriesBToA().isEmpty());
     UI_EXPECT(controller.analysisInterArrivalHistogram().size() == 9);
     UI_EXPECT(histogram_total_count(controller.analysisInterArrivalHistogram()) == 0U);
     UI_EXPECT(controller.analysisInterArrivalHistogramAll().size() == 9);
@@ -751,6 +813,11 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.analysisPacketSizeHistogramAToB().isEmpty());
     UI_EXPECT(controller.analysisPacketSizeHistogramBToA().isEmpty());
     UI_EXPECT(controller.analysisSequencePreview().isEmpty());
+    UI_EXPECT(!controller.analysisRateGraphAvailable());
+    UI_EXPECT(controller.analysisRateGraphStatusText().isEmpty());
+    UI_EXPECT(controller.analysisRateGraphWindowText().isEmpty());
+    UI_EXPECT(controller.analysisRateSeriesAToB().isEmpty());
+    UI_EXPECT(controller.analysisRateSeriesBToA().isEmpty());
 
     const int analysis_dns_flow_index = find_flow_index_by_protocol_hint(analysis_flow_model, QStringLiteral("DNS"));
     UI_EXPECT(analysis_dns_flow_index >= 0);
