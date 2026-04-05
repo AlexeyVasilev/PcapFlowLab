@@ -258,6 +258,29 @@ Frame {
         var decimals = unit === "B/s" || unit === "pkt/s" ? 0 : 2
         return formatRateNumber(scaled, decimals) + " " + unit
     }
+
+    function formatWindowContextText(windowText) {
+        if (windowText.length === 0) {
+            return "Window: -"
+        }
+
+        var match = /^Window:\s*([0-9]+(?:\.[0-9]+)?)\s*(ms|s)\s*\(auto\)$/.exec(windowText)
+        if (match === null) {
+            return windowText
+        }
+
+        var value = parseFloat(match[1])
+        if (isNaN(value)) {
+            return windowText
+        }
+
+        var windowMs = match[2] === "s" ? value * 1000 : value
+        if (windowMs < 1000) {
+            return "Window: " + Math.max(1, Math.round(windowMs)) + " ms (auto)"
+        }
+
+        return "Window: " + (windowMs / 1000).toFixed(1) + " s (auto)"
+    }
     property bool hasActiveFlow: false
     property bool analysisLoading: false
     property bool analysisAvailable: false
@@ -278,8 +301,11 @@ Frame {
     readonly property string rateGraphUnit: rateUnitForValue(rateGraphPeakRawValue)
     readonly property string rateGraphMetricLabel: rateMetricMode === rateMetricData ? "Data rate (" + rateGraphUnit + ")" : "Packets rate (pkt/s)"
     readonly property string rateGraphPeakText: "Peak: " + formatPeakRateValue(rateGraphPeakRawValue, rateGraphUnit)
+    readonly property string rateGraphHeaderLine1: rateGraphMetricLabel + " \u2022 " + rateGraphPeakText
+    readonly property string rateGraphWindowDisplayText: formatWindowContextText(rateGraphWindowText)
     readonly property string rateGraphContextText: "Duration: " + (durationText.length > 0 ? durationText : "-")
-        + " \u2022 " + (rateGraphWindowText.length > 0 ? rateGraphWindowText : "Window: -")
+        + " \u2022 " + rateGraphWindowDisplayText
+        + " \u2022 Samples: " + rateGraphPointCount
     property bool canExportAnalysisSequence: false
     property bool sequenceExportInProgress: false
     property string sequenceExportStatusText: ""
@@ -783,27 +809,20 @@ Frame {
                     AnalysisSectionFrame {
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 12
+                            spacing: 10
 
                             Label {
-                                text: "Flow Rate"
-                                font.bold: true
-                            }
-                            Label {
                                 objectName: "analysisRateUnitLabel"
-                                text: root.rateGraphMetricLabel
+                                Layout.fillWidth: true
+                                text: root.rateGraphHeaderLine1
                                 color: "#475569"
+                                elide: Text.ElideRight
                             }
 
                             Label {
                                 objectName: "analysisRatePeakLabel"
+                                visible: false
                                 text: root.rateGraphPeakText
-                                visible: root.rateGraphAvailable && root.rateGraphHasVisibleSeries
-                                color: "#475569"
-                            }
-
-                            Item {
-                                Layout.fillWidth: true
                             }
                         }
 
