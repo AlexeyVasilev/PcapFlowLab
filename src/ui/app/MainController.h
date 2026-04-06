@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <filesystem>
 #include <map>
@@ -25,6 +25,8 @@ namespace pfl {
 class MainController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
+    Q_PROPERTY(QString activeSourceCapturePath READ activeSourceCapturePath NOTIFY sourceAvailabilityChanged)
+    Q_PROPERTY(QString expectedSourceCapturePath READ expectedSourceCapturePath NOTIFY sourceAvailabilityChanged)
     Q_PROPERTY(QString openErrorText READ openErrorText NOTIFY openErrorTextChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
     Q_PROPERTY(bool statusIsError READ statusIsError NOTIFY statusTextChanged)
@@ -44,6 +46,9 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong openProgressBytes READ openProgressBytes NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressTotalBytes READ openProgressTotalBytes NOTIFY openProgressChanged)
     Q_PROPERTY(double openProgressPercent READ openProgressPercent NOTIFY openProgressChanged)
+    Q_PROPERTY(QString openingInputPath READ openingInputPath NOTIFY openProgressChanged)
+    Q_PROPERTY(bool openingAsIndex READ openingAsIndex NOTIFY openProgressChanged)
+    Q_PROPERTY(QString openProgressProcessedText READ openProgressProcessedText NOTIFY openProgressChanged)
     Q_PROPERTY(bool packetsLoading READ packetsLoading NOTIFY packetListStateChanged)
     Q_PROPERTY(bool packetsPartiallyLoaded READ packetsPartiallyLoaded NOTIFY packetListStateChanged)
     Q_PROPERTY(qulonglong loadedPacketRowCount READ loadedPacketRowCount NOTIFY packetListStateChanged)
@@ -190,6 +195,8 @@ public:
     ~MainController() override;
 
     [[nodiscard]] QString currentInputPath() const;
+    [[nodiscard]] QString activeSourceCapturePath() const;
+    [[nodiscard]] QString expectedSourceCapturePath() const;
     [[nodiscard]] QString openErrorText() const;
     [[nodiscard]] QString statusText() const;
     [[nodiscard]] bool statusIsError() const noexcept;
@@ -209,6 +216,9 @@ public:
     [[nodiscard]] qulonglong openProgressBytes() const noexcept;
     [[nodiscard]] qulonglong openProgressTotalBytes() const noexcept;
     [[nodiscard]] double openProgressPercent() const noexcept;
+    [[nodiscard]] QString openingInputPath() const;
+    [[nodiscard]] bool openingAsIndex() const noexcept;
+    [[nodiscard]] QString openProgressProcessedText() const;
     [[nodiscard]] bool packetsLoading() const noexcept;
     [[nodiscard]] bool packetsPartiallyLoaded() const noexcept;
     [[nodiscard]] qulonglong loadedPacketRowCount() const noexcept;
@@ -464,6 +474,7 @@ private:
     std::vector<StreamItemRow> current_stream_items_ {};
     std::map<std::uint64_t, std::uint64_t> current_flow_packet_numbers_ {};
     QString current_input_path_ {};
+    QString active_open_input_path_ {};
     QString open_error_text_ {};
     QString status_text_ {};
     QString last_directory_path_ {};
@@ -500,6 +511,7 @@ private:
     qulonglong open_progress_total_bytes_ {0};
     double open_progress_percent_ {0.0};
     qulonglong active_open_job_id_ {0};
+    bool active_open_as_index_ {false};
     QThread* analysis_sequence_export_thread_ {nullptr};
     QThread* open_thread_ {nullptr};
     std::shared_ptr<OpenContext> active_open_context_ {};
@@ -507,6 +519,7 @@ private:
 };
 
 }  // namespace pfl
+
 
 
 

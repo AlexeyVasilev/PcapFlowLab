@@ -1,4 +1,4 @@
-#include "ui/app/MainController.h"
+﻿#include "ui/app/MainController.h"
 
 #include <algorithm>
 #include <array>
@@ -754,6 +754,15 @@ QString MainController::currentInputPath() const {
     return current_input_path_;
 }
 
+QString MainController::activeSourceCapturePath() const {
+    const auto& path = session_.attached_source_capture_path();
+    return path.empty() ? QString {} : QString::fromStdWString(path.wstring());
+}
+
+QString MainController::expectedSourceCapturePath() const {
+    const auto& path = session_.expected_source_capture_path();
+    return path.empty() ? QString {} : QString::fromStdWString(path.wstring());
+}
 QString MainController::openErrorText() const {
     return open_error_text_;
 }
@@ -832,6 +841,25 @@ double MainController::openProgressPercent() const noexcept {
     return open_progress_percent_;
 }
 
+QString MainController::openingInputPath() const {
+    return active_open_input_path_;
+}
+
+bool MainController::openingAsIndex() const noexcept {
+    return active_open_as_index_;
+}
+
+QString MainController::openProgressProcessedText() const {
+    if (open_progress_total_bytes_ > 0U) {
+        const auto percent_text = trim_trailing_zeros(QString::number(std::clamp(open_progress_percent_ * 100.0, 0.0, 100.0), 'f', 1));
+        return QStringLiteral("Processed: %1 / %2 (%3%)")
+            .arg(format_size_value(open_progress_bytes_))
+            .arg(format_size_value(open_progress_total_bytes_))
+            .arg(percent_text);
+    }
+
+    return QStringLiteral("Processed: %1").arg(format_size_value(open_progress_bytes_));
+}
 
 bool MainController::packetsLoading() const noexcept {
     return packets_loading_;
@@ -2499,6 +2527,8 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
 
     setOpenErrorText({});
     setStatusText({});
+    active_open_input_path_ = trimmedPath;
+    active_open_as_index_ = asIndex;
     beginOpenProgress();
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
@@ -2742,7 +2772,7 @@ void MainController::reloadActiveDetails() {
 
 void MainController::beginOpenProgress() {
     const bool changed = !is_opening_ || open_progress_packets_ != 0U || open_progress_bytes_ != 0U ||
-        open_progress_total_bytes_ != 0U || open_progress_percent_ != 0.0;
+        open_progress_total_bytes_ != 0U || open_progress_percent_ != 0.0 || !active_open_input_path_.isEmpty() || active_open_as_index_;
     is_opening_ = true;
     open_progress_packets_ = 0;
     open_progress_bytes_ = 0;
@@ -2775,12 +2805,14 @@ void MainController::updateOpenProgress(const OpenProgress& progress) {
 
 void MainController::finishOpenProgress() {
     const bool changed = is_opening_ || open_progress_packets_ != 0U || open_progress_bytes_ != 0U ||
-        open_progress_total_bytes_ != 0U || open_progress_percent_ != 0.0;
+        open_progress_total_bytes_ != 0U || open_progress_percent_ != 0.0 || !active_open_input_path_.isEmpty() || active_open_as_index_;
     is_opening_ = false;
     open_progress_packets_ = 0;
     open_progress_bytes_ = 0;
     open_progress_total_bytes_ = 0;
     open_progress_percent_ = 0.0;
+    active_open_input_path_.clear();
+    active_open_as_index_ = false;
     if (changed) {
         emit openProgressChanged();
         emit actionAvailabilityChanged();
@@ -2893,6 +2925,9 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
 
 
 

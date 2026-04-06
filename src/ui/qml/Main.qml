@@ -16,6 +16,16 @@ ApplicationWindow {
         mainController.browseCaptureFile()
     }
 
+    function fileNameFromPath(path) {
+        if (!path || path.length === 0) {
+            return ""
+        }
+
+        const normalized = path.replace(/\\/g, "/")
+        const parts = normalized.split("/")
+        return parts.length > 0 ? parts[parts.length - 1] : path
+    }
+
     Action {
         id: openCaptureFastAction
         text: "Open Capture (Fast)"
@@ -173,25 +183,123 @@ ApplicationWindow {
                     radius: 6
                 }
 
-                Label {
+                ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 10
-                    text: mainController.currentInputPath.length > 0
-                        ? mainController.currentInputPath
-                        : "No file loaded"
-                    color: "#0f172a"
-                    elide: Text.ElideMiddle
-                    verticalAlignment: Text.AlignVCenter
-                }
+                    spacing: 6
 
-                ToolTip.visible: pathHoverArea.containsMouse && mainController.currentInputPath.length > 0
-                ToolTip.text: mainController.currentInputPath
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
 
-                MouseArea {
-                    id: pathHoverArea
-                    anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    hoverEnabled: true
+                        Label {
+                            text: "Active session:"
+                            color: "#64748b"
+                            font.bold: true
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: activeSessionPathLabel.implicitHeight
+
+                            Label {
+                                id: activeSessionPathLabel
+                                anchors.fill: parent
+                                text: mainController.currentInputPath.length > 0
+                                    ? (mainController.openedFromIndex
+                                        ? "Index: " + mainController.currentInputPath
+                                        : "PCAP: " + mainController.currentInputPath)
+                                    : "No active session"
+                                color: "#0f172a"
+                                elide: Text.ElideMiddle
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: activeSessionHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: activeSessionHoverArea.containsMouse && mainController.currentInputPath.length > 0
+                            ToolTip.text: activeSessionPathLabel.text
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: mainController.openedFromIndex
+
+                        Label {
+                            text: "Source PCAP:"
+                            color: "#64748b"
+                            font.bold: true
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: sourceCapturePathLabel.implicitHeight
+
+                            Label {
+                                id: sourceCapturePathLabel
+                                anchors.fill: parent
+                                text: mainController.hasSourceCapture
+                                    ? mainController.activeSourceCapturePath
+                                    : "NOT FOUND"
+                                color: mainController.hasSourceCapture ? "#0f172a" : "#b45309"
+                                elide: Text.ElideMiddle
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: sourceCaptureHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: sourceCaptureHoverArea.containsMouse && mainController.hasSourceCapture && mainController.activeSourceCapturePath.length > 0
+                            ToolTip.text: mainController.activeSourceCapturePath
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: mainController.openedFromIndex && !mainController.hasSourceCapture && mainController.expectedSourceCapturePath.length > 0
+
+                        Label {
+                            text: "Expected source path:"
+                            color: "#64748b"
+                            font.bold: true
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: expectedSourcePathLabel.implicitHeight
+
+                            Label {
+                                id: expectedSourcePathLabel
+                                anchors.fill: parent
+                                text: mainController.expectedSourceCapturePath
+                                color: "#0f172a"
+                                elide: Text.ElideMiddle
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: expectedSourceHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: expectedSourceHoverArea.containsMouse && mainController.expectedSourceCapturePath.length > 0
+                            ToolTip.text: mainController.expectedSourceCapturePath
+                        }
+                    }
                 }
             }
         }
@@ -290,16 +398,44 @@ ApplicationWindow {
                 anchors.margins: 8
                 spacing: 6
 
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label {
+                        text: mainController.openingAsIndex ? "Opening index:" : "Opening capture:"
+                        color: "#64748b"
+                        font.bold: true
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                        implicitHeight: openingPathLabel.implicitHeight
+
+                        Label {
+                            id: openingPathLabel
+                            anchors.fill: parent
+                            text: window.fileNameFromPath(mainController.openingInputPath)
+                            color: "#0f172a"
+                            elide: Text.ElideMiddle
+                            verticalAlignment: Text.AlignVCenter
+                        }
+
+                        MouseArea {
+                            id: openingPathHoverArea
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            hoverEnabled: true
+                        }
+
+                        ToolTip.visible: openingPathHoverArea.containsMouse && mainController.openingInputPath.length > 0
+                        ToolTip.text: mainController.openingInputPath
+                    }
+                }
+
                 Label {
                     Layout.fillWidth: true
-                    text: mainController.openProgressTotalBytes > 0
-                        ? "Opening file: %1 packets, %2 / %3 bytes"
-                            .arg(mainController.openProgressPackets)
-                            .arg(mainController.openProgressBytes)
-                            .arg(mainController.openProgressTotalBytes)
-                        : "Opening file: %1 packets, %2 bytes"
-                            .arg(mainController.openProgressPackets)
-                            .arg(mainController.openProgressBytes)
+                    text: mainController.openProgressProcessedText
                     color: "#334155"
                     wrapMode: Text.WordWrap
                 }
@@ -542,6 +678,9 @@ ApplicationWindow {
         }
     }
 }
+
+
+
 
 
 

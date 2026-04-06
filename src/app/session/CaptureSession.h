@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <filesystem>
 #include <optional>
@@ -37,6 +37,8 @@ public:
     [[nodiscard]] const std::string& last_open_error_text() const noexcept;
     bool attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
+    [[nodiscard]] const std::filesystem::path& attached_source_capture_path() const noexcept;
+    [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
@@ -84,6 +86,8 @@ private:
 };
 
 }  // namespace pfl
+
+
 
 
 

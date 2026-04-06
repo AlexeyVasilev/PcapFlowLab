@@ -1,4 +1,4 @@
-#include "app/session/CaptureSession.h"
+﻿#include "app/session/CaptureSession.h"
 
 #include <algorithm>
 #include <cassert>
@@ -1789,6 +1789,14 @@ const std::filesystem::path& CaptureSession::capture_path() const noexcept {
     return source_capture_path_;
 }
 
+const std::filesystem::path& CaptureSession::attached_source_capture_path() const noexcept {
+    return capture_path_;
+}
+
+const std::filesystem::path& CaptureSession::expected_source_capture_path() const noexcept {
+    return source_capture_path_;
+}
+
 const CaptureSummary& CaptureSession::summary() const noexcept {
     return state_.summary;
 }
@@ -2574,6 +2582,9 @@ const CaptureState& CaptureSession::state() const noexcept {
 }
 
 }  // namespace pfl
+
+
+
 
 
 
