@@ -62,24 +62,6 @@ Item {
                 hasCapture: root.hasCapture
             }
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                Label {
-                    text: "Display By:"
-                }
-
-                ComboBox {
-                    model: ["Flows", "Packets", "Bytes"]
-                    currentIndex: root.statisticsMode
-                    onActivated: function(index) {
-                        root.statisticsModeChangedByUser(index)
-                    }
-                    Layout.preferredWidth: 140
-                }
-            }
-
             ProtocolStatsPane {
                 Layout.fillWidth: true
                 hasCapture: root.hasCapture
@@ -131,4 +113,3 @@ Item {
         }
     }
 }
-
