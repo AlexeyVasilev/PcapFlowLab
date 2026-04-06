@@ -49,6 +49,7 @@ class MainController final : public QObject {
     Q_PROPERTY(QString openingInputPath READ openingInputPath NOTIFY openProgressChanged)
     Q_PROPERTY(bool openingAsIndex READ openingAsIndex NOTIFY openProgressChanged)
     Q_PROPERTY(QString openProgressProcessedText READ openProgressProcessedText NOTIFY openProgressChanged)
+    Q_PROPERTY(bool isApplyingSession READ isApplyingSession NOTIFY sessionApplicationStateChanged)
     Q_PROPERTY(bool packetsLoading READ packetsLoading NOTIFY packetListStateChanged)
     Q_PROPERTY(bool packetsPartiallyLoaded READ packetsPartiallyLoaded NOTIFY packetListStateChanged)
     Q_PROPERTY(qulonglong loadedPacketRowCount READ loadedPacketRowCount NOTIFY packetListStateChanged)
@@ -219,6 +220,7 @@ public:
     [[nodiscard]] QString openingInputPath() const;
     [[nodiscard]] bool openingAsIndex() const noexcept;
     [[nodiscard]] QString openProgressProcessedText() const;
+    [[nodiscard]] bool isApplyingSession() const noexcept;
     [[nodiscard]] bool packetsLoading() const noexcept;
     [[nodiscard]] bool packetsPartiallyLoaded() const noexcept;
     [[nodiscard]] qulonglong loadedPacketRowCount() const noexcept;
@@ -419,6 +421,7 @@ signals:
     void streamListStateChanged();
     void analysisStateChanged();
     void analysisSequenceExportStateChanged();
+    void sessionApplicationStateChanged();
 
 private:
     enum class DetailsSelectionContext {
@@ -452,6 +455,7 @@ private:
     void beginOpenProgress();
     void updateOpenProgress(const OpenProgress& progress);
     void finishOpenProgress();
+    void setApplyingSession(bool applying);
     void setOpenErrorText(const QString& text);
     void setAnalysisSequenceExportState(bool inProgress, const QString& statusText, bool statusIsError);
     void setStatusText(const QString& text, bool isError = false);
@@ -487,6 +491,7 @@ private:
     qulonglong selected_stream_item_index_ {0};
     bool status_is_error_ {false};
     bool is_opening_ {false};
+    bool is_applying_session_ {false};
     bool packets_loading_ {false};
     std::size_t loaded_packet_row_count_ {0};
     std::size_t total_packet_row_count_ {0};
@@ -519,6 +524,7 @@ private:
 };
 
 }  // namespace pfl
+
 
 
 

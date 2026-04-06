@@ -36,6 +36,7 @@ constexpr std::size_t kInitialStreamItems = 15U;
 constexpr std::size_t kStreamItemBatchSize = 15U;
 constexpr std::size_t kInitialStreamPacketBudget = 30U;
 constexpr std::size_t kStreamPacketBatchSize = 30U;
+constexpr int kSessionApplyOverlayDelayMs = 40;
 
 struct OpenJobResult {
     bool opened {false};
@@ -859,6 +860,10 @@ QString MainController::openProgressProcessedText() const {
     }
 
     return QStringLiteral("Processed: %1").arg(format_size_value(open_progress_bytes_));
+}
+
+bool MainController::isApplyingSession() const noexcept {
+    return is_applying_session_;
 }
 
 bool MainController::packetsLoading() const noexcept {
@@ -2454,6 +2459,7 @@ void MainController::synchronizeFlowSelection() {
 }
 
 void MainController::resetLoadedState() {
+    setApplyingSession(false);
     current_input_path_.clear();
     finishOpenProgress();
     session_ = {};
@@ -2595,15 +2601,16 @@ void MainController::completeOpenJob(
     active_open_job_id_ = 0;
     cleanupOpenThread();
     releaseOpenContext();
-    finishOpenProgress();
 
     if (cancellationWon) {
+        finishOpenProgress();
         setOpenErrorText({});
         setStatusText(QStringLiteral("Open cancelled."));
         return;
     }
 
     if (!opened) {
+        finishOpenProgress();
         const QString genericError = asIndex
             ? QStringLiteral("Failed to open analysis index.")
             : QStringLiteral("Failed to open capture file.");
@@ -2612,11 +2619,17 @@ void MainController::completeOpenJob(
         return;
     }
 
-    session_ = std::move(session);
-    applyLoadedState(path);
-    if (session_.is_partial_open()) {
-        setStatusText(format_partial_open_warning_message(session_.partial_open_failure()));
-    }
+    const auto loadedSession = std::make_shared<CaptureSession>(std::move(session));
+    setApplyingSession(true);
+    QTimer::singleShot(kSessionApplyOverlayDelayMs, this, [this, path, loadedSession]() mutable {
+        session_ = std::move(*loadedSession);
+        applyLoadedState(path);
+        if (session_.is_partial_open()) {
+            setStatusText(format_partial_open_warning_message(session_.partial_open_failure()));
+        }
+        setApplyingSession(false);
+        finishOpenProgress();
+    });
 }
 
 void MainController::completeAnalysisSequenceExport(
@@ -2819,6 +2832,16 @@ void MainController::finishOpenProgress() {
     }
 }
 
+
+void MainController::setApplyingSession(const bool applying) {
+    if (is_applying_session_ == applying) {
+        return;
+    }
+
+    is_applying_session_ = applying;
+    emit sessionApplicationStateChanged();
+}
+
 void MainController::setOpenErrorText(const QString& text) {
     if (open_error_text_ == text) {
         return;
@@ -2925,6 +2948,10 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
+
+
+
 
 
 

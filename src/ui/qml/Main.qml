@@ -677,10 +677,35 @@ ApplicationWindow {
             }
         }
     }
+
+    Rectangle {
+        anchors.fill: parent
+        z: 1000
+        visible: mainController.isApplyingSession
+        color: "#800f172a"
+
+        MouseArea {
+            anchors.fill: parent
+            enabled: parent.visible
+        }
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 12
+
+            BusyIndicator {
+                anchors.horizontalCenter: parent.horizontalCenter
+                running: mainController.isApplyingSession
+                visible: running
+            }
+
+            Label {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Applying new session..."
+                color: "#ffffff"
+                font.pixelSize: 18
+                font.bold: true
+            }
+        }
+    }
 }
-
-
-
-
-
-
