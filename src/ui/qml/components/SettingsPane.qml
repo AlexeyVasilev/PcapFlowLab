@@ -24,21 +24,49 @@ Item {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             color: "#475569"
-            text: "Most settings are applied when opening a capture. Possible TLS/QUIC fallback updates the current view immediately because it only uses existing flow metadata."
+            text: "Settings control how new captures are interpreted and how current results are presented."
         }
 
-        CheckBox {
+        ColumnLayout {
             Layout.fillWidth: true
-            text: "HTTP: use request path as service hint when Host is missing"
-            checked: root.httpUsePathAsServiceHint
-            onToggled: root.httpUsePathAsServiceHintChangedByUser(checked)
+            spacing: 4
+
+            CheckBox {
+                Layout.fillWidth: true
+                text: "HTTP: use request path as service hint when Host is missing"
+                checked: root.httpUsePathAsServiceHint
+                onToggled: root.httpUsePathAsServiceHintChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied when opening a capture or index"
+            }
         }
 
-        CheckBox {
+        ColumnLayout {
             Layout.fillWidth: true
-            text: "Use possible TLS/QUIC"
-            checked: root.usePossibleTlsQuic
-            onToggled: root.usePossibleTlsQuicChangedByUser(checked)
+            spacing: 4
+
+            CheckBox {
+                Layout.fillWidth: true
+                text: "Use possible TLS/QUIC"
+                checked: root.usePossibleTlsQuic
+                onToggled: root.usePossibleTlsQuicChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied immediately to the current view and statistics"
+            }
         }
 
         Item {
