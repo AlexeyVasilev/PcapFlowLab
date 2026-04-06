@@ -1,4 +1,4 @@
-import QtQuick
+﻿import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import PcapFlowLab
@@ -71,7 +71,7 @@ ApplicationWindow {
     Action {
         id: showSettingsAction
         text: "Settings"
-        onTriggered: mainController.currentTabIndex = 3
+        onTriggered: settingsDialog.open()
     }
 
     Action {
@@ -108,6 +108,36 @@ ApplicationWindow {
         }
     }
 
+    Dialog {
+        id: settingsDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 560
+        height: 300
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        title: "Settings"
+
+        contentItem: SettingsPane {
+            httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
+            usePossibleTlsQuic: mainController.usePossibleTlsQuic
+            onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
+                mainController.httpUsePathAsServiceHint = enabled
+            }
+            onUsePossibleTlsQuicChangedByUser: function(enabled) {
+                mainController.usePossibleTlsQuic = enabled
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Ok | DialogButtonBox.Cancel
+            onAccepted: settingsDialog.close()
+            onRejected: settingsDialog.close()
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
@@ -133,42 +163,36 @@ ApplicationWindow {
                 Layout.preferredWidth: 96
             }
 
-            Button {
-                text: "Open Index"
-                enabled: !mainController.isOpening
-                onClicked: mainController.browseIndexFile()
-            }
-
-            Button {
-                text: "Save Index"
-                enabled: mainController.canSaveIndex
-                onClicked: mainController.browseSaveAnalysisIndex()
-            }
-
-            Button {
-                text: "Export Flow"
-                enabled: mainController.canExportSelectedFlow
-                onClicked: mainController.browseExportSelectedFlow()
-            }
-
-            Button {
-                text: "Export Selected"
-                enabled: mainController.canExportSelectedFlows
-                onClicked: mainController.browseExportSelectedFlows()
-            }
-
-            Button {
-                text: "Export Unselected"
-                enabled: mainController.canExportUnselectedFlows
-                onClicked: mainController.browseExportUnselectedFlows()
-            }
-
-            TextField {
+            Frame {
                 Layout.fillWidth: true
-                readOnly: true
-                text: mainController.currentInputPath.length > 0
-                    ? mainController.currentInputPath
-                    : "No file loaded"
+                padding: 0
+
+                background: Rectangle {
+                    color: "#ffffff"
+                    border.color: "#d8dee9"
+                    radius: 6
+                }
+
+                Label {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    text: mainController.currentInputPath.length > 0
+                        ? mainController.currentInputPath
+                        : "No file loaded"
+                    color: "#0f172a"
+                    elide: Text.ElideMiddle
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                ToolTip.visible: pathHoverArea.containsMouse && mainController.currentInputPath.length > 0
+                ToolTip.text: mainController.currentInputPath
+
+                MouseArea {
+                    id: pathHoverArea
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    hoverEnabled: true
+                }
             }
         }
 
@@ -304,7 +328,7 @@ ApplicationWindow {
         TabBar {
             id: mainTabs
             Layout.fillWidth: true
-            currentIndex: mainController.currentTabIndex
+            currentIndex: mainController.currentTabIndex < 3 ? mainController.currentTabIndex : 0
             onCurrentIndexChanged: mainController.currentTabIndex = currentIndex
 
             TabButton {
@@ -318,16 +342,12 @@ ApplicationWindow {
             TabButton {
                 text: "Statistics"
             }
-
-            TabButton {
-                text: "Settings"
-            }
         }
 
         StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: mainController.currentTabIndex
+            currentIndex: mainController.currentTabIndex < 3 ? mainController.currentTabIndex : 0
 
             FlowWorkspacePane {
                 flowModel: mainController.flowModel
@@ -379,9 +399,7 @@ ApplicationWindow {
                 onFlowDetailsTabChanged: function(index) {
                     mainController.setFlowDetailsTabIndex(index)
                 }
-            }
-
-            AnalysisWorkspacePane {
+            }            AnalysisWorkspacePane {
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
                 analysisLoading: mainController.analysisLoading
@@ -521,17 +539,9 @@ ApplicationWindow {
                     mainController.statisticsMode = mode
                 }
             }
-
-            SettingsPane {
-                httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
-                usePossibleTlsQuic: mainController.usePossibleTlsQuic
-                onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
-                    mainController.httpUsePathAsServiceHint = enabled
-                }
-                onUsePossibleTlsQuicChangedByUser: function(enabled) {
-                    mainController.usePossibleTlsQuic = enabled
-                }
-            }
         }
     }
 }
+
+
+
