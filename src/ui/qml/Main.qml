@@ -11,6 +11,103 @@ ApplicationWindow {
     visible: true
     title: "Pcap Flow Lab"
 
+    function browseCaptureWithMode(mode) {
+        mainController.captureOpenMode = mode
+        mainController.browseCaptureFile()
+    }
+
+    Action {
+        id: openCaptureFastAction
+        text: "Open Capture (Fast)"
+        enabled: !mainController.isOpening
+        shortcut: StandardKey.Open
+        onTriggered: window.browseCaptureWithMode(0)
+    }
+
+    Action {
+        id: openCaptureDeepAction
+        text: "Open Capture (Deep)"
+        enabled: !mainController.isOpening
+        shortcut: "Ctrl+Shift+O"
+        onTriggered: window.browseCaptureWithMode(1)
+    }
+
+    Action {
+        id: openIndexAction
+        text: "Open Index"
+        enabled: !mainController.isOpening
+        onTriggered: mainController.browseIndexFile()
+    }
+
+    Action {
+        id: saveIndexAction
+        text: "Save Index"
+        enabled: mainController.canSaveIndex
+        shortcut: StandardKey.Save
+        onTriggered: mainController.browseSaveAnalysisIndex()
+    }
+
+    Action {
+        id: exportCurrentFlowAction
+        text: "Export Current Flow"
+        enabled: mainController.canExportSelectedFlow
+        onTriggered: mainController.browseExportSelectedFlow()
+    }
+
+    Action {
+        id: exportSelectedFlowsAction
+        text: "Export Selected Flows"
+        enabled: mainController.canExportSelectedFlows
+        onTriggered: mainController.browseExportSelectedFlows()
+    }
+
+    Action {
+        id: exportUnselectedFlowsAction
+        text: "Export Unselected Flows"
+        enabled: mainController.canExportUnselectedFlows
+        onTriggered: mainController.browseExportUnselectedFlows()
+    }
+
+    Action {
+        id: showSettingsAction
+        text: "Settings"
+        onTriggered: mainController.currentTabIndex = 3
+    }
+
+    Action {
+        id: exitAction
+        text: "Exit"
+        onTriggered: Qt.quit()
+    }
+
+    menuBar: MenuBar {
+        Menu {
+            title: "File"
+
+            MenuItem { action: openCaptureFastAction }
+            MenuItem { action: openCaptureDeepAction }
+            MenuItem { action: openIndexAction }
+            MenuSeparator {}
+            MenuItem { action: saveIndexAction }
+            MenuSeparator {}
+            MenuItem { action: exitAction }
+        }
+
+        Menu {
+            title: "Flow"
+
+            MenuItem { action: exportCurrentFlowAction }
+            MenuItem { action: exportSelectedFlowsAction }
+            MenuItem { action: exportUnselectedFlowsAction }
+        }
+
+        Menu {
+            title: "View"
+
+            MenuItem { action: showSettingsAction }
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 12
@@ -438,8 +535,3 @@ ApplicationWindow {
         }
     }
 }
-
-
-
-
-
