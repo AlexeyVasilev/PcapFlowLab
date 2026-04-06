@@ -126,9 +126,11 @@ Frame {
                     width: tableListView.width
                     height: 34
                     radius: 4
-                    color: rowMouseArea.containsMouse
-                        ? "#eff6ff"
-                        : (index % 2 === 0 ? "transparent" : "#f8fafc")
+                    color: rowMouseArea.pressed
+                        ? "#e2e8f0"
+                        : (rowMouseArea.containsMouse
+                            ? "#f1f5f9"
+                            : (index % 2 === 0 ? "transparent" : "#f8fafc"))
 
                     RowLayout {
                         anchors.fill: parent
