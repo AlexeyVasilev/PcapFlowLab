@@ -147,6 +147,22 @@ if(PFL_BUILD_UI)
                 src/ui/qml/components/SettingsPane.qml
         )
 
+        qt_add_resources(
+            pcap_flow_lab_ui
+            "pcap_flow_lab_icons"
+            PREFIX "/"
+            FILES
+                assets/icons/app.ico
+        )
+
+        if(WIN32)
+            target_sources(
+                pcap_flow_lab_ui
+                PRIVATE
+                    src/ui/app/app_icon.rc
+            )
+        endif()
+
         set_target_properties(pcap_flow_lab_ui PROPERTIES OUTPUT_NAME "pcap-flow-lab-ui")
 
         target_link_libraries(
@@ -244,6 +260,7 @@ if(BUILD_TESTING)
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
+
 
 
 
