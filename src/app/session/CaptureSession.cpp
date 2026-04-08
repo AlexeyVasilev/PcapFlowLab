@@ -1018,6 +1018,132 @@ std::optional<std::string> extract_http_header_value(
     return std::nullopt;
 }
 
+std::optional<std::size_t> parse_http_size_value(
+    const std::string_view text,
+    const int base
+) noexcept {
+    const auto value = trim_ascii(text);
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    try {
+        std::size_t parsed_characters = 0U;
+        const auto parsed = std::stoull(value, &parsed_characters, base);
+        if (parsed_characters != value.size() || parsed > std::numeric_limits<std::size_t>::max()) {
+            return std::nullopt;
+        }
+        return static_cast<std::size_t>(parsed);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+bool http_header_value_contains_token(
+    const std::string_view value,
+    const std::string_view token
+) noexcept {
+    std::size_t offset = 0U;
+    while (offset < value.size()) {
+        const auto separator = value.find(',', offset);
+        const auto part = trim_ascii(value.substr(offset, (separator == std::string_view::npos) ? (value.size() - offset) : (separator - offset)));
+        if (part.size() == token.size() && starts_with_ascii_case_insensitive(part, token)) {
+            return true;
+        }
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        offset = separator + 1U;
+    }
+    return false;
+}
+
+std::optional<std::size_t> complete_http_chunked_body_size(
+    const std::string_view payload_text,
+    const std::size_t body_offset
+) noexcept {
+    std::size_t cursor = body_offset;
+    while (cursor < payload_text.size()) {
+        const auto line_end = http_line_end(payload_text, cursor);
+        if (line_end == std::string_view::npos) {
+            return std::nullopt;
+        }
+
+        const auto chunk_line = payload_text.substr(cursor, line_end - cursor);
+        const auto extension_separator = chunk_line.find(';');
+        const auto chunk_size_text = trim_ascii(chunk_line.substr(0U, extension_separator));
+        const auto chunk_size = parse_http_size_value(chunk_size_text, 16);
+        if (!chunk_size.has_value()) {
+            return std::nullopt;
+        }
+
+        cursor = http_next_line_offset(payload_text, line_end);
+        if (*chunk_size == 0U) {
+            while (cursor <= payload_text.size()) {
+                const auto trailer_end = http_line_end(payload_text, cursor);
+                if (trailer_end == std::string_view::npos) {
+                    return std::nullopt;
+                }
+                const auto trailer_line = payload_text.substr(cursor, trailer_end - cursor);
+                cursor = http_next_line_offset(payload_text, trailer_end);
+                if (trailer_line.empty()) {
+                    return cursor - body_offset;
+                }
+            }
+            return std::nullopt;
+        }
+
+        if (*chunk_size > (payload_text.size() - cursor)) {
+            return std::nullopt;
+        }
+        cursor += *chunk_size;
+
+        if (cursor >= payload_text.size()) {
+            return std::nullopt;
+        }
+        if (payload_text[cursor] == '\r') {
+            if ((cursor + 1U) >= payload_text.size() || payload_text[cursor + 1U] != '\n') {
+                return std::nullopt;
+            }
+            cursor += 2U;
+        } else if (payload_text[cursor] == '\n') {
+            cursor += 1U;
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::size_t http_message_size(
+    const std::string_view payload_text,
+    const std::size_t offset,
+    const std::size_t header_size,
+    const std::string_view headers_text
+) noexcept {
+    const auto body_offset = offset + header_size;
+    if (body_offset > payload_text.size()) {
+        return header_size;
+    }
+
+    if (const auto transfer_encoding = extract_http_header_value(headers_text, "Transfer-Encoding");
+        transfer_encoding.has_value() && http_header_value_contains_token(*transfer_encoding, "chunked")) {
+        if (const auto body_size = complete_http_chunked_body_size(payload_text, body_offset); body_size.has_value()) {
+            return header_size + *body_size;
+        }
+        return header_size;
+    }
+
+    if (const auto content_length = extract_http_header_value(headers_text, "Content-Length"); content_length.has_value()) {
+        if (const auto body_size = parse_http_size_value(*content_length, 10); body_size.has_value() && *body_size <= (payload_text.size() - body_offset)) {
+            return header_size + *body_size;
+        }
+    }
+
+    return header_size;
+}
+
 struct ParsedHttpHeaderBlock {
     std::size_t size {0U};
     std::string label {};
@@ -1040,6 +1166,7 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
     if (first_line.empty()) {
         return std::nullopt;
     }
+    const auto headers_text = header_text.substr(http_next_line_offset(header_text, first_line_end));
 
     std::ostringstream text {};
     text << "HTTP\n";
@@ -1079,7 +1206,7 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
              << "  Path: " << path << "\n"
              << "  Version: " << version;
 
-        const auto host = extract_http_host_header(header_text.substr(http_next_line_offset(header_text, first_line_end)));
+        const auto host = extract_http_host_header(headers_text);
         if (host.has_value()) {
             text << "\n"
                  << "  Host: " << *host;
@@ -1088,7 +1215,7 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
         const auto method_text = std::string {method};
         const auto path_text = std::string {path};
         return ParsedHttpHeaderBlock {
-            .size = *header_size,
+            .size = http_message_size(payload_text, offset, *header_size, headers_text),
             .label = method_text.empty() || path_text.empty()
                 ? "HTTP Request"
                 : ("HTTP " + method_text + " " + path_text),
@@ -1130,7 +1257,6 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
             }
         }
 
-        const auto headers_text = header_text.substr(http_next_line_offset(header_text, first_line_end));
         if (const auto content_type = extract_http_header_value(headers_text, "Content-Type"); content_type.has_value()) {
             text << "\n"
                  << "  Content-Type: " << *content_type;
@@ -1142,7 +1268,7 @@ std::optional<ParsedHttpHeaderBlock> parse_http_header_block(
 
         const auto code_text = std::string {code};
         return ParsedHttpHeaderBlock {
-            .size = *header_size,
+            .size = http_message_size(payload_text, offset, *header_size, headers_text),
             .label = code_text.empty()
                 ? "HTTP Response"
                 : (reason_text.empty() ? ("HTTP " + code_text) : ("HTTP " + code_text + " " + reason_text)),
@@ -1208,11 +1334,13 @@ bool append_http_stream_items_from_reassembly(
     const std::string_view direction_text,
     const Direction direction
 ) {
+    constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
+
     const auto result = session.reassemble_flow_direction(ReassemblyRequest {
         .flow_index = flow_index,
         .direction = direction,
         .max_packets = 256U,
-        .max_bytes = 256U * 1024U,
+        .max_bytes = kHttpReassemblyMaxBytes,
     });
     if (!result.has_value() || result->bytes.empty()) {
         return false;

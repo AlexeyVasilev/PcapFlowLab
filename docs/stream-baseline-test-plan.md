@@ -170,72 +170,106 @@ Relevant files:
 
 These should remain in place. The fixture-backed baseline is meant to complement them, not replace them.
 
-## Minimal Additional PCAP Fixtures Needed
+## Additional Repository Fixtures Now Available
 
-### Required: TLS multi-packet reassembly-sensitive fixture
+### HTTP multi-message sequence
 
-Suggested fixture:
+Fixture:
 
-- `tests/data/parsing/tls/tls_split_server_hello_2pkts.pcap`
-
-Why it is needed:
-
-- current repository TLS fixtures are single-packet only
-- we need at least one stable repository PCAP that proves Stream can materialize one TLS item from two packets
-- this is the smallest fixture that protects reassembly-sensitive TLS Stream behavior without relying only on synthetic generators
+- `tests/data/parsing/http/http_multi_message_3.pcap`
 
 Baseline expectations:
 
 - one TCP flow
-- one Stream item
-- label is TLS-aware, preferably `TLS ServerHello`
-- `packet_count == 2`
-- item is not generic `TCP Payload`
-- `protocol_text` is present
-- `payload_hex_text` is present
-- Stream Item Details should use item-level texts, not packet fallback
+- at least three protocol-aware HTTP request items
+  - narrow assertion: labels start with `HTTP GET`
+- at least three protocol-aware HTTP response items
+  - narrow assertion: labels start with `HTTP 200`
+- at least one HTTP response item spans multiple packets
+- complete large responses must stay HTTP-aware rather than collapsing into `HTTP Payload (partial)`
 
-### Required: generic UDP payload fixture
+### HTTP redirect followed by partial response tail
 
-Suggested fixture:
+Fixture:
 
-- `tests/data/parsing/udp/udp_payload_1.pcap`
-
-Why it is needed:
-
-- current repository fixtures do not contain a protocol-neutral UDP payload case
-- DNS and QUIC are both useful, but they carry protocol meaning and should not be the only fallback references
-- a tiny one-packet UDP payload fixture gives a clean baseline for generic UDP Stream fallback
+- `tests/data/parsing/http/http_partial_response_4.pcap`
 
 Baseline expectations:
 
-- one UDP flow
-- one Stream item
-- label is `UDP Payload`
-- `packet_count == 1`
-- item is generic, not protocol-aware
-- Stream Item Details should fall back to the underlying packet for payload/protocol fields
+- the capture contains two TCP flows
+- one flow is a clean redirect pair
+  - `HTTP GET /`
+  - `HTTP 301 Moved Permanently`
+- another flow contains a partial tail after a successful response
+  - `HTTP GET /`
+  - `HTTP 200 OK`
+  - trailing `HTTP Payload (partial)`
+- the partial item should explain incompleteness in `protocol_text`
 
-### Optional: partial / truncated Stream fixture
+### Generic UDP payload
 
-Suggested fixture:
+Fixture:
 
-- `tests/data/parsing/http/http_partial_headers_2pkts.pcap`
-  or
-- `tests/data/parsing/tls/tls_partial_record_1pkt.pcap`
+- `tests/data/parsing/udp/udp_generic_payload_2.pcap`
 
-Why it is optional:
+Baseline expectations:
 
-- partial behavior is already covered synthetically in `StreamQueryTests.cpp`
-- adding one repository fixture would improve long-term readability, but it is not the first priority if we want the minimal fixture set
+- one or more UDP Stream items
+- every item label is `UDP Payload`
+- no DNS-specific or QUIC-specific labels appear
+- item-level `protocol_text` and `payload_hex_text` remain empty
 
-Recommended narrow expectation:
+### Generic TCP payload
 
-- one complete item followed by one partial item
-- partial label is explicit
-  - `HTTP Payload (partial)` or `TLS Record Fragment (partial)`
-- protocol text explains incompleteness
-- no brittle full-text snapshot
+Fixture:
+
+- `tests/data/parsing/tcp/tcp_generic_payload_7.pcap`
+
+Baseline expectations:
+
+- one or more TCP Stream items
+- every item label is `TCP Payload`
+- no HTTP-specific or TLS-specific labels appear
+- item-level `protocol_text` and `payload_hex_text` remain empty
+
+### TLS partial tail
+
+Fixture:
+
+- `tests/data/parsing/tls/tls_partial_tail_5.pcap`
+
+Baseline expectations:
+
+- TLS-aware handshake items are still materialized before the truncated tail
+- the final item is explicit partial TLS data
+  - `TLS Payload (partial)` or `TLS Record Fragment (partial)`
+- if the fragment label is used, `protocol_text` should explain incompleteness
+
+### TLS retransmitted server handshake
+
+Fixture:
+
+- `tests/data/parsing/tls/tls_server_handshake_retransmit_6.pcap`
+
+Baseline expectations:
+
+- one TLS ClientHello item is present
+- at least one later TLS-aware server-side item spans multiple packets
+- retransmission must not degrade the whole stream to generic `TCP Payload`
+
+## Minimal Additional PCAP Fixtures Needed
+
+The latest fixture wave covers several previously missing baseline categories already:
+
+- generic UDP fallback is now covered by `udp_generic_payload_2.pcap`
+- generic TCP fallback is now covered by `tcp_generic_payload_7.pcap`
+- repository-backed partial HTTP behavior is now covered by `http_partial_response_4.pcap`
+- repository-backed multi-packet TLS behavior is now covered by `tls_server_handshake_retransmit_6.pcap`
+
+Still useful later, if we want even smaller single-purpose captures:
+
+- a tiny two-packet TLS ServerHello fixture with no retransmission noise
+- a tiny one-message truncated HTTP or TLS fixture that isolates partial handling more narrowly than the current real captures
 
 ## Tests To Add First
 
@@ -262,22 +296,26 @@ Recommended first set:
 
 This first wave gives a stable small-capture baseline without adding any new fixture files.
 
-### Second wave: minimal new fixture additions
+### Second wave: use the current real-fixture additions
 
-After the first wave is stable, add:
+The current repository already has good second-wave coverage in place:
 
-1. `tls_split_server_hello_2pkts.pcap`
-   - to lock reassembly-sensitive TLS Stream behavior
-2. `udp_payload_1.pcap`
-   - to lock pure generic UDP fallback behavior
+1. `http_multi_message_3.pcap`
+  - locks large multi-message HTTP response handling
+2. `http_partial_response_4.pcap`
+  - locks redirect plus partial-tail HTTP behavior
+3. `udp_generic_payload_2.pcap`
+  - locks pure generic UDP fallback behavior
+4. `tcp_generic_payload_7.pcap`
+  - locks pure generic TCP fallback behavior
+5. `tls_partial_tail_5.pcap`
+  - locks explicit partial TLS tail behavior
+6. `tls_server_handshake_retransmit_6.pcap`
+  - locks reassembly-sensitive TLS behavior under retransmission
 
-### Third wave: optional readability fixture
+### Third wave: optional simplification fixtures
 
-Add one partial fixture only if needed for clearer long-term intent:
-
-- `http_partial_headers_2pkts.pcap`
-  or
-- `tls_partial_record_1pkt.pcap`
+Add smaller single-purpose captures only if the current real fixtures feel too noisy for future maintenance.
 
 ## Suggested Assertion Style
 
@@ -307,11 +345,13 @@ Existing repository fixtures already cover:
 - TLS single-packet ServerHello
 - QUIC flow that currently remains generic UDP in Stream
 
-Minimal new repository fixtures still needed for a stronger baseline:
+Additional repository fixtures now cover:
 
-- one TLS multi-packet reassembly-sensitive capture
-- one protocol-neutral generic UDP payload capture
+- HTTP multi-message response sequences
+- HTTP redirect plus partial-tail response behavior
+- generic UDP fallback
+- generic TCP fallback
+- partial TLS tails
+- TLS retransmitted multi-packet handshake behavior
 
-Optional later fixture:
-
-- one partial / truncated Stream capture
+Smaller single-purpose fixtures may still be useful later, but they are no longer required to establish the current baseline.

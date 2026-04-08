@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -77,6 +79,21 @@ std::string direction_for_packet(const std::vector<PacketRow>& packet_rows, cons
 
     PFL_EXPECT(false);
     return {};
+}
+
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+bool starts_with(const std::string_view value, const std::string_view prefix) {
+    return value.rfind(prefix, 0U) == 0U;
+}
+
+const StreamItemRow* find_stream_row_by_label(const std::vector<StreamItemRow>& rows, const std::string_view label) {
+    const auto it = std::find_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
+        return row.label == label;
+    });
+    return it == rows.end() ? nullptr : &(*it);
 }
 
 }  // namespace
@@ -582,6 +599,167 @@ void run_stream_query_tests() {
     const auto tail_stream_rows = bounded_stream_session.list_flow_stream_items(0, 30U, 15U);
     PFL_EXPECT(tail_stream_rows.size() == 1U);
     PFL_EXPECT(tail_stream_rows.front().stream_item_index == 31U);
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_normal_1.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(!rows.empty());
+
+        const auto* client_hello = find_stream_row_by_label(rows, "TLS ClientHello");
+        const auto* server_hello = find_stream_row_by_label(rows, "TLS ServerHello");
+        const auto* change_cipher_spec = find_stream_row_by_label(rows, "TLS ChangeCipherSpec");
+        PFL_EXPECT(client_hello != nullptr);
+        PFL_EXPECT(server_hello != nullptr);
+        PFL_EXPECT(change_cipher_spec != nullptr);
+        PFL_EXPECT(!client_hello->protocol_text.empty());
+        PFL_EXPECT(!client_hello->payload_hex_text.empty());
+        PFL_EXPECT(!server_hello->protocol_text.empty());
+        PFL_EXPECT(!server_hello->payload_hex_text.empty());
+        PFL_EXPECT(!change_cipher_spec->protocol_text.empty());
+        PFL_EXPECT(!change_cipher_spec->payload_hex_text.empty());
+
+        const auto data_like_it = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.label == "TLS AppData" || row.label == "TLS Payload";
+        });
+        PFL_EXPECT(data_like_it != rows.end());
+        PFL_EXPECT(!data_like_it->protocol_text.empty());
+        PFL_EXPECT(!data_like_it->payload_hex_text.empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/udp/udp_generic_payload_2.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(!rows.empty());
+        for (const auto& row : rows) {
+            PFL_EXPECT(row.label == "UDP Payload");
+            PFL_EXPECT(!starts_with(row.label, "DNS"));
+            PFL_EXPECT(!starts_with(row.label, "QUIC"));
+            PFL_EXPECT(row.protocol_text.empty());
+            PFL_EXPECT(row.payload_hex_text.empty());
+        }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_multi_message_3.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(!rows.empty());
+
+        std::size_t request_count = 0U;
+        std::size_t response_count = 0U;
+        bool saw_multi_packet_http_response = false;
+        for (const auto& row : rows) {
+            if (starts_with(row.label, "HTTP GET")) {
+                ++request_count;
+                PFL_EXPECT(!row.protocol_text.empty());
+                PFL_EXPECT(!row.payload_hex_text.empty());
+            }
+            if (starts_with(row.label, "HTTP 200")) {
+                ++response_count;
+                PFL_EXPECT(!row.protocol_text.empty());
+                PFL_EXPECT(!row.payload_hex_text.empty());
+                if (row.packet_count > 1U) {
+                    saw_multi_packet_http_response = true;
+                }
+            }
+        }
+
+        PFL_EXPECT(request_count >= 3U);
+        PFL_EXPECT(response_count >= 3U);
+        PFL_EXPECT(saw_multi_packet_http_response);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_partial_response_4.pcap"), fast_options));
+
+        const auto flows = session.list_flows();
+        PFL_EXPECT(flows.size() >= 2U);
+
+        const std::vector<StreamItemRow>* redirect_rows = nullptr;
+        const std::vector<StreamItemRow>* partial_rows = nullptr;
+        std::vector<std::vector<StreamItemRow>> flow_rows {};
+        flow_rows.reserve(flows.size());
+        for (std::size_t flow_index = 0; flow_index < flows.size(); ++flow_index) {
+            flow_rows.push_back(session.list_flow_stream_items(flow_index));
+            const auto& rows = flow_rows.back();
+            if (std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+                    return starts_with(row.label, "HTTP 301");
+                })) {
+                redirect_rows = &rows;
+            }
+            if (!rows.empty() && rows.back().label == "HTTP Payload (partial)") {
+                partial_rows = &rows;
+            }
+        }
+
+        PFL_EXPECT(redirect_rows != nullptr);
+        PFL_EXPECT(partial_rows != nullptr);
+
+        PFL_EXPECT(redirect_rows->size() == 2U);
+        PFL_EXPECT(starts_with((*redirect_rows)[0].label, "HTTP GET"));
+        PFL_EXPECT(starts_with((*redirect_rows)[1].label, "HTTP 301"));
+        PFL_EXPECT(!(*redirect_rows)[1].protocol_text.empty());
+
+        PFL_EXPECT(!partial_rows->empty());
+        PFL_EXPECT(starts_with((*partial_rows)[0].label, "HTTP GET"));
+        PFL_EXPECT(std::any_of(partial_rows->begin(), partial_rows->end(), [](const StreamItemRow& row) {
+            return starts_with(row.label, "HTTP 200");
+        }));
+        PFL_EXPECT(partial_rows->back().label == "HTTP Payload (partial)");
+        PFL_EXPECT(partial_rows->back().protocol_text.find("complete HTTP header block") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_partial_tail_5.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(!rows.empty());
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ClientHello") != nullptr);
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerHello") != nullptr);
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ChangeCipherSpec") != nullptr);
+        PFL_EXPECT(rows.back().label == "TLS Payload (partial)" || rows.back().label == "TLS Record Fragment (partial)");
+        PFL_EXPECT(!rows.front().protocol_text.empty());
+        if (rows.back().label == "TLS Record Fragment (partial)") {
+            PFL_EXPECT(rows.back().protocol_text.find("complete TLS record") != std::string::npos);
+        }
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_server_handshake_retransmit_6.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(!rows.empty());
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ClientHello") != nullptr);
+        PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return starts_with(row.label, "TLS ") && row.label != "TLS ClientHello" && row.packet_count > 1U && !row.protocol_text.empty();
+        }));
+        PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return starts_with(row.label, "TLS ") && row.label != "TCP Payload";
+        }));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tcp/tcp_generic_payload_7.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(!rows.empty());
+        for (const auto& row : rows) {
+            PFL_EXPECT(row.label == "TCP Payload");
+            PFL_EXPECT(!starts_with(row.label, "HTTP"));
+            PFL_EXPECT(!starts_with(row.label, "TLS"));
+            PFL_EXPECT(row.protocol_text.empty());
+            PFL_EXPECT(row.payload_hex_text.empty());
+        }
+    }
 }
 
 }  // namespace pfl::tests
