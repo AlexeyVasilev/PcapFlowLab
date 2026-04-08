@@ -1,4 +1,4 @@
-﻿import QtQuick
+import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -7,9 +7,11 @@ Item {
 
     property bool httpUsePathAsServiceHint: false
     property bool usePossibleTlsQuic: false
+    property bool showWiresharkFilterForSelectedFlow: true
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
     signal usePossibleTlsQuicChangedByUser(bool enabled)
+    signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
 
     implicitWidth: 560
     implicitHeight: contentColumn.implicitHeight + 24
@@ -66,6 +68,27 @@ Item {
                 color: "#64748b"
                 font.pixelSize: 12
                 text: "Applied immediately to the current view and statistics"
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            CheckBox {
+                Layout.fillWidth: true
+                text: "Show Wireshark filter for selected flow"
+                checked: root.showWiresharkFilterForSelectedFlow
+                onToggled: root.showWiresharkFilterForSelectedFlowChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied immediately to the selected-flow view"
             }
         }
 

@@ -1,4 +1,4 @@
-﻿#include "ui/app/MainController.h"
+#include "ui/app/MainController.h"
 
 #include <algorithm>
 #include <array>
@@ -8,7 +8,9 @@
 #include <limits>
 #include <memory>
 
+#include <QClipboard>
 #include <QFileDialog>
+#include <QGuiApplication>
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
@@ -166,6 +168,41 @@ QString selected_flow_protocol_hint(const FlowListModel& flow_model, const int s
     }
 
     return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolHintRole).toString();
+}
+
+QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return {};
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return {};
+    }
+
+    const auto model_index = flow_model.index(row, 0);
+    const auto family = flow_model.data(model_index, FlowListModel::FamilyRole).toString();
+    const auto protocol = flow_model.data(model_index, FlowListModel::ProtocolRole).toString();
+    const auto address_a = flow_model.data(model_index, FlowListModel::AddressARole).toString();
+    const auto address_b = flow_model.data(model_index, FlowListModel::AddressBRole).toString();
+    const auto port_a = flow_model.data(model_index, FlowListModel::PortARole).toUInt();
+    const auto port_b = flow_model.data(model_index, FlowListModel::PortBRole).toUInt();
+
+    const QString address_term = family.compare(QStringLiteral("IPv6"), Qt::CaseInsensitive) == 0
+        ? QStringLiteral("ipv6.addr")
+        : (family.compare(QStringLiteral("IPv4"), Qt::CaseInsensitive) == 0 ? QStringLiteral("ip.addr") : QString {});
+
+    const QString port_term = protocol.compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0
+        ? QStringLiteral("tcp.port")
+        : (protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0 ? QStringLiteral("udp.port") : QString {});
+
+    if (address_term.isEmpty() || port_term.isEmpty() || address_a.isEmpty() || address_b.isEmpty()) {
+        return {};
+    }
+
+    return QStringLiteral("%1 == %2 && %1 == %3 && (%4 == %5 || %4 == %6)")
+        .arg(address_term, address_a, address_b, port_term)
+        .arg(QString::number(port_a), QString::number(port_b));
 }
 
 QString format_protocol_hint_display(const QString& protocol_hint) {
@@ -1645,6 +1682,22 @@ bool MainController::usePossibleTlsQuic() const noexcept {
     return pending_analysis_settings_.use_possible_tls_quic;
 }
 
+
+bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
+    return show_wireshark_filter_for_selected_flow_;
+}
+
+QString MainController::selectedFlowWiresharkFilter() const {
+    if (!show_wireshark_filter_for_selected_flow_) {
+        return {};
+    }
+
+    return selected_flow_wireshark_filter(flow_model_, selected_flow_index_);
+}
+
+bool MainController::selectedFlowHasWiresharkFilter() const {
+    return !selectedFlowWiresharkFilter().isEmpty();
+}
 int MainController::currentTabIndex() const noexcept {
     return current_tab_index_;
 }
@@ -1987,6 +2040,17 @@ void MainController::browseExportUnselectedFlows() {
     }
 }
 
+void MainController::copySelectedFlowWiresharkFilter() {
+    const auto filter = selectedFlowWiresharkFilter();
+    if (filter.isEmpty()) {
+        return;
+    }
+
+    if (auto* clipboard = QGuiApplication::clipboard(); clipboard != nullptr) {
+        clipboard->setText(filter);
+    }
+}
+
 void MainController::sortFlows(const int column) {
     const auto requestedKey = sort_key_from_column(column);
 
@@ -2080,6 +2144,16 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     emit usePossibleTlsQuicChanged();
 }
 
+void MainController::setShowWiresharkFilterForSelectedFlow(const bool enabled) {
+    if (show_wireshark_filter_for_selected_flow_ == enabled) {
+        return;
+    }
+
+    show_wireshark_filter_for_selected_flow_ = enabled;
+    emit showWiresharkFilterForSelectedFlowChanged();
+    emit selectedFlowWiresharkFilterChanged();
+}
+
 void MainController::setCurrentTabIndex(const int index) {
     const int normalizedIndex = (index == kAnalysisTabIndex || index == kStatsTabIndex || index == kSettingsTabIndex)
         ? index
@@ -2150,6 +2224,7 @@ void MainController::setSelectedFlowIndex(const int index) {
     }
 
     emit selectedFlowIndexChanged();
+    emit selectedFlowWiresharkFilterChanged();
     emit actionAvailabilityChanged();
 }
 
@@ -2948,6 +3023,7 @@ void MainController::setLastDirectoryFromPath(const std::filesystem::path& path)
 }
 
 }  // namespace pfl
+
 
 
 

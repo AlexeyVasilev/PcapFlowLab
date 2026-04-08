@@ -8,11 +8,14 @@ Frame {
     property var flowModel: null
     property int selectedFlowIndex: -1
     property string filterText: ""
+    property string wiresharkFilterText: ""
+    property bool wiresharkFilterVisible: false
     property int sortColumn: 0
     property bool sortAscending: true
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
+    signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
     signal sendFlowToAnalysisRequested()
 
@@ -102,6 +105,30 @@ Frame {
                 text: "Send flow to Analysis"
                 enabled: root.selectedFlowIndex >= 0
                 onClicked: root.sendFlowToAnalysisRequested()
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            visible: root.wiresharkFilterVisible
+
+            Label {
+                text: "Wireshark filter"
+                color: "#475569"
+            }
+
+            TextField {
+                Layout.fillWidth: true
+                readOnly: true
+                selectByMouse: true
+                text: root.wiresharkFilterText
+                font.family: "Consolas"
+            }
+
+            Button {
+                text: "Copy"
+                onClicked: root.copyWiresharkFilterRequested()
             }
         }
 
@@ -272,5 +299,3 @@ Frame {
         }
     }
 }
-
-

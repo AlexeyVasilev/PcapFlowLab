@@ -1,4 +1,4 @@
-﻿import QtQuick
+import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import PcapFlowLab
@@ -133,11 +133,15 @@ ApplicationWindow {
         contentItem: SettingsPane {
             httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
             usePossibleTlsQuic: mainController.usePossibleTlsQuic
+            showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
             onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
                 mainController.httpUsePathAsServiceHint = enabled
             }
             onUsePossibleTlsQuicChangedByUser: function(enabled) {
                 mainController.usePossibleTlsQuic = enabled
+            }
+            onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
+                mainController.showWiresharkFilterForSelectedFlow = enabled
             }
         }
 
@@ -159,7 +163,7 @@ ApplicationWindow {
 
             Button {
                 id: openCaptureButton
-                text: "Open Capture…"
+                text: "Open Capture..."
                 enabled: !mainController.isOpening
                 implicitHeight: 40
                 leftPadding: 16
@@ -608,6 +612,8 @@ ApplicationWindow {
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
                 filterText: mainController.flowFilterText
+                wiresharkFilterText: mainController.selectedFlowWiresharkFilter
+                wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel
@@ -632,6 +638,9 @@ ApplicationWindow {
                 }
                 onFilterTextEdited: function(text) {
                     mainController.flowFilterText = text
+                }
+                onCopyWiresharkFilterRequested: function() {
+                    mainController.copySelectedFlowWiresharkFilter()
                 }
                 onSortRequested: function(column) {
                     mainController.sortFlows(column)
@@ -828,5 +837,7 @@ ApplicationWindow {
         }
     }
 }
+
+
 
 

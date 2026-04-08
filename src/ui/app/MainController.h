@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <filesystem>
 #include <map>
@@ -177,6 +177,9 @@ class MainController final : public QObject {
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
+    Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
+    Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
+    Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
     Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
@@ -348,6 +351,9 @@ public:
     [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
+    [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
+    [[nodiscard]] QString selectedFlowWiresharkFilter() const;
+    [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
     [[nodiscard]] int currentTabIndex() const noexcept;
     [[nodiscard]] QObject* topEndpointsModel() noexcept;
     [[nodiscard]] QObject* topPortsModel() noexcept;
@@ -382,6 +388,7 @@ public:
     Q_INVOKABLE void browseExportSelectedFlowSequenceCsv();
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
+    Q_INVOKABLE void copySelectedFlowWiresharkFilter();
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
@@ -393,6 +400,7 @@ public:
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
     void setUsePossibleTlsQuic(bool enabled);
+    void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
@@ -409,6 +417,8 @@ signals:
     void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
     void usePossibleTlsQuicChanged();
+    void showWiresharkFilterForSelectedFlowChanged();
+    void selectedFlowWiresharkFilterChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void selectedFlowCountChanged();
@@ -483,6 +493,7 @@ private:
     QString status_text_ {};
     QString last_directory_path_ {};
     AnalysisSettings pending_analysis_settings_ {};
+    bool show_wireshark_filter_for_selected_flow_ {true};
     int statistics_mode_ {0};
     int capture_open_mode_ {0};
     int current_tab_index_ {0};
@@ -524,6 +535,7 @@ private:
 };
 
 }  // namespace pfl
+
 
 
 

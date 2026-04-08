@@ -8,6 +8,8 @@ Item {
     property var flowModel: null
     property int selectedFlowIndex: -1
     property string filterText: ""
+    property string wiresharkFilterText: ""
+    property bool wiresharkFilterVisible: false
     property int sortColumn: 0
     property bool sortAscending: true
     property var packetModel: null
@@ -30,6 +32,7 @@ Item {
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
+    signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
     signal sendFlowToAnalysisRequested()
     signal packetSelected(var packetIndex)
@@ -49,6 +52,8 @@ Item {
             flowModel: root.flowModel
             selectedFlowIndex: root.selectedFlowIndex
             filterText: root.filterText
+            wiresharkFilterText: root.wiresharkFilterText
+            wiresharkFilterVisible: root.wiresharkFilterVisible
             sortColumn: root.sortColumn
             sortAscending: root.sortAscending
             onFlowSelected: function(flowIndex) {
@@ -56,6 +61,9 @@ Item {
             }
             onFilterTextEdited: function(text) {
                 root.filterTextEdited(text)
+            }
+            onCopyWiresharkFilterRequested: function() {
+                root.copyWiresharkFilterRequested()
             }
             onSortRequested: function(column) {
                 root.sortRequested(column)
