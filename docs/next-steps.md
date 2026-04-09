@@ -17,10 +17,10 @@
 
 ## Stream (mid-term)
 
-- improve TLS item details:
-  - extensions
-  - cipher suites
-  - handshake fields
+- extend TLS item details beyond the first narrow step:
+  - more handshake types
+  - richer certificate fields when cheaply available
+  - better compact summaries for incomplete TLS metadata
 - improve partial handling (HTTP/TLS)
 - add minimal QUIC stream labeling (bounded, selected-flow only)
 
@@ -44,6 +44,7 @@
 
 - refine Stream Item Details panel
 - improve clarity of partial / reconstructed data
+- validate the first TLS Protocol-tab enrichment pass against real captures
 - keep selected-flow loading observable and responsive
 
 This file reflects current working priorities and may evolve frequently.

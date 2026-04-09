@@ -662,8 +662,15 @@ void run_stream_query_tests() {
         PFL_EXPECT(change_cipher_spec != nullptr);
         PFL_EXPECT(!client_hello->protocol_text.empty());
         PFL_EXPECT(!client_hello->payload_hex_text.empty());
+        PFL_EXPECT(client_hello->protocol_text.find("Handshake Version:") != std::string::npos);
+        PFL_EXPECT(client_hello->protocol_text.find("Cipher Suites:") != std::string::npos);
+        PFL_EXPECT(client_hello->protocol_text.find("Extensions:") != std::string::npos);
+        PFL_EXPECT(client_hello->protocol_text.find("SNI:") != std::string::npos);
         PFL_EXPECT(!server_hello->protocol_text.empty());
         PFL_EXPECT(!server_hello->payload_hex_text.empty());
+        PFL_EXPECT(server_hello->protocol_text.find("Selected TLS Version:") != std::string::npos);
+        PFL_EXPECT(server_hello->protocol_text.find("Selected Cipher Suite:") != std::string::npos);
+        PFL_EXPECT(server_hello->protocol_text.find("Extensions:") != std::string::npos);
         PFL_EXPECT(!change_cipher_spec->protocol_text.empty());
         PFL_EXPECT(!change_cipher_spec->payload_hex_text.empty());
 
@@ -766,6 +773,8 @@ void run_stream_query_tests() {
         if (rows.back().label == "TLS Record Fragment (partial)") {
             PFL_EXPECT(rows.back().protocol_text.find("complete TLS record") != std::string::npos);
         }
+        PFL_EXPECT(rows.back().protocol_text.find("Cipher Suites:") == std::string::npos);
+        PFL_EXPECT(rows.back().protocol_text.find("Subject:") == std::string::npos);
     }
 
     {
@@ -779,6 +788,10 @@ void run_stream_query_tests() {
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS Certificate") != nullptr);
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerKeyExchange") != nullptr);
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerHelloDone") != nullptr);
+        const auto* certificate = find_stream_row_by_label(rows, "TLS Certificate");
+        PFL_EXPECT(certificate != nullptr);
+        PFL_EXPECT(certificate->protocol_text.find("Certificate Entries:") != std::string::npos);
+        PFL_EXPECT(certificate->protocol_text.find("Leaf Certificate Size:") != std::string::npos);
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return (row.label == "TLS Certificate" || row.label == "TLS ServerKeyExchange" || row.label == "TLS ServerHelloDone")
                 && row.packet_count > 1U

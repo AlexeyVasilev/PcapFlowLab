@@ -77,6 +77,7 @@ TLS Stream parsing is record-oriented and may use bounded directional reassembly
 - Multiple TLS records inside one TCP payload are split into separate Stream items.
 - A TLS record spanning multiple TCP packets may become one logical item if the bounded reassembly buffer contains the full record.
 - Handshake records are labeled by known handshake type when identifiable.
+- `ClientHello`, `ServerHello`, and `Certificate` items can expose a richer Protocol text block when the bounded Stream bytes contain enough complete handshake data.
 - Incomplete trailing TLS data falls back conservatively to partial TLS labels.
 
 Typical labels include:

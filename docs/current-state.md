@@ -8,6 +8,7 @@
 - Selected-flow-only retransmission detection is implemented.
 - Exact duplicate TCP payload suppression is implemented for selected-flow Stream use.
 - Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
+- TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
 
 ## Analysis tab
 
@@ -31,10 +32,10 @@
 
 - QUIC Stream parsing is not implemented.
 - General retransmission handling is not implemented beyond exact duplicate suppression.
-- TLS details are not fully exposed yet.
+- TLS details are only partially exposed; richer handshake and certificate fields exist for a narrow subset of Stream item types.
 
 ## Next steps
 
 - Extend retransmission handling beyond exact duplicate suppression.
-- Improve TLS details, including extensions and cipher-suite exposure.
+- Extend TLS Stream details beyond the initial `ClientHello` / `ServerHello` / `Certificate` enrichment step.
 - Add a narrow first step for QUIC Stream labeling.
