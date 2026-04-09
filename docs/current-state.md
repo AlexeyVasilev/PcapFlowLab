@@ -9,6 +9,7 @@
 - Exact duplicate TCP payload suppression is implemented for selected-flow Stream use.
 - Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
 - TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
+- Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.
 
 ## Analysis tab
 
@@ -32,7 +33,7 @@
 
 - QUIC Stream parsing is not implemented.
 - General retransmission handling is not implemented beyond exact duplicate suppression.
-- TLS details are only partially exposed; richer handshake and certificate fields exist for a narrow subset of Stream item types.
+- TLS details are only partially exposed; richer handshake and certificate fields exist only for complete packet-contained TLS records and the matching Stream item types.
 
 ## Next steps
 

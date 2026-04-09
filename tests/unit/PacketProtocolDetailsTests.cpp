@@ -43,7 +43,22 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(text.find("Record Type: Handshake") != std::string::npos);
         PFL_EXPECT(text.find("Record Version:") != std::string::npos);
         PFL_EXPECT(text.find("Handshake Type: ClientHello") != std::string::npos);
+        PFL_EXPECT(text.find("Handshake Version:") != std::string::npos);
+        PFL_EXPECT(text.find("Cipher Suites:") != std::string::npos);
+        PFL_EXPECT(text.find("Extensions:") != std::string::npos);
         PFL_EXPECT(text.find("SNI: auth.split.io") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_server_hello_6.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("TLS") != std::string::npos);
+        PFL_EXPECT(text.find("Handshake Type: ServerHello") != std::string::npos);
+        PFL_EXPECT(text.find("Selected TLS Version:") != std::string::npos);
+        PFL_EXPECT(text.find("Selected Cipher Suite:") != std::string::npos);
+        PFL_EXPECT(text.find("Session ID:") != std::string::npos);
     }
 
     {
@@ -182,7 +197,11 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
         const auto packet = require_packet(session, 0);
-        PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text == kNoProtocolDetailsMessage);
+        PFL_EXPECT(text.find("Cipher Suites:") == std::string::npos);
+        PFL_EXPECT(text.find("Selected Cipher Suite:") == std::string::npos);
+        PFL_EXPECT(text.find("Subject:") == std::string::npos);
     }
 }
 
