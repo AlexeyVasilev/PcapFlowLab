@@ -31,6 +31,8 @@
 #include "core/services/PacketPayloadService.h"
 #include "core/services/PerfOpenLogger.h"
 #include "core/services/QuicPacketProtocolAnalyzer.h"
+#include "core/services/QuicInitialParser.h"
+#include "core/services/TlsHandshakeDetails.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -3522,6 +3524,110 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
     }
 
     return try_flow(connection.flow_b, connection.has_flow_b);
+}
+
+std::optional<std::string> CaptureSession::derive_quic_initial_protocol_details_for_flow(const std::size_t flow_index) const {
+    if (!has_source_capture()) {
+        return std::nullopt;
+    }
+
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    constexpr std::size_t kOnDemandQuicInitialPacketBudget = 4U;
+    PacketPayloadService payload_service {};
+    QuicInitialParser initial_parser {};
+
+    const auto build_for_packets = [&](const auto& flow_key, const auto& packets) -> std::optional<std::string> {
+        if (flow_key.src_port == 443 || flow_key.dst_port != 443) {
+            return std::nullopt;
+        }
+
+        std::vector<std::vector<std::uint8_t>> udp_payloads {};
+        udp_payloads.reserve(std::min(kOnDemandQuicInitialPacketBudget, packets.size()));
+
+        const auto packet_limit = std::min(kOnDemandQuicInitialPacketBudget, packets.size());
+        for (std::size_t index = 0U; index < packet_limit; ++index) {
+            const auto& packet = packets[index];
+            if (packet.is_ip_fragmented) {
+                continue;
+            }
+
+            const auto packet_bytes = read_packet_data(packet);
+            if (packet_bytes.empty()) {
+                continue;
+            }
+
+            const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+            if (payload_bytes.empty()) {
+                continue;
+            }
+
+            udp_payloads.push_back(std::move(payload_bytes));
+        }
+
+        if (udp_payloads.empty()) {
+            return std::nullopt;
+        }
+
+        const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(
+            std::span<const std::vector<std::uint8_t>>(udp_payloads.data(), udp_payloads.size())
+        );
+        if (!crypto_prefix.has_value()) {
+            return std::nullopt;
+        }
+
+        const auto handshake = parse_tls_handshake_details(
+            std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
+        );
+        if (!handshake.has_value()) {
+            return std::nullopt;
+        }
+
+        std::ostringstream text {};
+        text << "  TLS Handshake Type: " << handshake->handshake_type_text << "\n"
+             << "  TLS Handshake Length: " << handshake->handshake_length;
+        if (!handshake->details_text.empty()) {
+            text << "\n" << handshake->details_text;
+        }
+
+        return text.str();
+    };
+
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        const auto& connection = *connections[flow_index].ipv4;
+        if (connection.key.protocol != ProtocolId::udp) {
+            return std::nullopt;
+        }
+
+        if (connection.has_flow_a) {
+            if (const auto details = build_for_packets(connection.flow_a.key, connection.flow_a.packets); details.has_value()) {
+                return details;
+            }
+        }
+        if (connection.has_flow_b) {
+            return build_for_packets(connection.flow_b.key, connection.flow_b.packets);
+        }
+        return std::nullopt;
+    }
+
+    const auto& connection = *connections[flow_index].ipv6;
+    if (connection.key.protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    if (connection.has_flow_a) {
+        if (const auto details = build_for_packets(connection.flow_a.key, connection.flow_a.packets); details.has_value()) {
+            return details;
+        }
+    }
+    if (connection.has_flow_b) {
+        return build_for_packets(connection.flow_b.key, connection.flow_b.packets);
+    }
+
+    return std::nullopt;
 }
 
 std::vector<FlowRow> CaptureSession::list_flows() const {

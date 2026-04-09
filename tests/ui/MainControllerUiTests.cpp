@@ -1457,6 +1457,110 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
     quic_controller.setSelectedFlowIndex(0);
     UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("bag.itunes.apple.com"));
+    auto* quic_packet_model = qobject_cast<PacketListModel*>(quic_controller.packetModel());
+    auto* quic_stream_model = qobject_cast<StreamListModel*>(quic_controller.streamModel());
+    auto* quic_details_model = qobject_cast<PacketDetailsViewModel*>(quic_controller.packetDetailsModel());
+    UI_EXPECT(quic_packet_model != nullptr);
+    UI_EXPECT(quic_stream_model != nullptr);
+    UI_EXPECT(quic_details_model != nullptr);
+    UI_EXPECT(quic_packet_model->rowCount() >= 1);
+    quic_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(quic_details_model->detailsTitle() == QStringLiteral("Packet Details"));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("QUIC")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("bag.itunes.apple.com")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Cipher Suites:")));
+
+    quic_controller.setFlowDetailsTabIndex(1);
+    UI_EXPECT(quic_stream_model->rowCount() >= 1);
+    int quic_initial_row = -1;
+    for (int row = 0; row < quic_stream_model->rowCount(); ++row) {
+        if (quic_stream_model->data(quic_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial")) {
+            quic_initial_row = row;
+            break;
+        }
+    }
+    UI_EXPECT(quic_initial_row >= 0);
+    const auto quic_stream_item_index = quic_stream_model->data(
+        quic_stream_model->index(quic_initial_row, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    quic_controller.setSelectedStreamItemIndex(quic_stream_item_index);
+    UI_EXPECT(quic_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("QUIC")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("bag.itunes.apple.com")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+    UI_EXPECT(quic_details_model->protocolText().contains(QStringLiteral("Cipher Suites:")));
+
+    const auto quic_youtube_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_test_2.pcap";
+    MainController quic_youtube_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_youtube_controller, quic_youtube_fixture_path));
+    auto* quic_youtube_flow_model = qobject_cast<FlowListModel*>(quic_youtube_controller.flowModel());
+    auto* quic_youtube_packet_model = qobject_cast<PacketListModel*>(quic_youtube_controller.packetModel());
+    auto* quic_youtube_stream_model = qobject_cast<StreamListModel*>(quic_youtube_controller.streamModel());
+    auto* quic_youtube_details_model = qobject_cast<PacketDetailsViewModel*>(quic_youtube_controller.packetDetailsModel());
+    UI_EXPECT(quic_youtube_flow_model != nullptr);
+    UI_EXPECT(quic_youtube_packet_model != nullptr);
+    UI_EXPECT(quic_youtube_stream_model != nullptr);
+    UI_EXPECT(quic_youtube_details_model != nullptr);
+    UI_EXPECT(quic_youtube_flow_model->rowCount() >= 1);
+    quic_youtube_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(quic_youtube_flow_model->data(quic_youtube_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
+
+    quic_youtube_controller.setSelectedPacketIndex(0);
+    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
+    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("www.youtube.com")));
+    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+
+    quic_youtube_controller.setFlowDetailsTabIndex(1);
+    int quic_youtube_initial_row = -1;
+    for (int row = 0; row < quic_youtube_stream_model->rowCount(); ++row) {
+        if (quic_youtube_stream_model->data(quic_youtube_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial")) {
+            quic_youtube_initial_row = row;
+            break;
+        }
+    }
+    UI_EXPECT(quic_youtube_initial_row >= 0);
+    const auto quic_youtube_stream_item_index = quic_youtube_stream_model->data(
+        quic_youtube_stream_model->index(quic_youtube_initial_row, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    quic_youtube_controller.setSelectedStreamItemIndex(quic_youtube_stream_item_index);
+    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
+    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("www.youtube.com")));
+    UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
+
+    const auto quic_tiktok_fixture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "quic" / "quic_test_3.pcap";
+    MainController quic_tiktok_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_tiktok_controller, quic_tiktok_fixture_path));
+    auto* quic_tiktok_flow_model = qobject_cast<FlowListModel*>(quic_tiktok_controller.flowModel());
+    auto* quic_tiktok_stream_model = qobject_cast<StreamListModel*>(quic_tiktok_controller.streamModel());
+    auto* quic_tiktok_details_model = qobject_cast<PacketDetailsViewModel*>(quic_tiktok_controller.packetDetailsModel());
+    UI_EXPECT(quic_tiktok_flow_model != nullptr);
+    UI_EXPECT(quic_tiktok_stream_model != nullptr);
+    UI_EXPECT(quic_tiktok_details_model != nullptr);
+    UI_EXPECT(quic_tiktok_flow_model->rowCount() >= 1);
+    quic_tiktok_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(quic_tiktok_flow_model->data(quic_tiktok_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("log22-normal-useast1a.tiktokv.com"));
+    quic_tiktok_controller.setFlowDetailsTabIndex(1);
+    int quic_tiktok_initial_row = -1;
+    for (int row = 0; row < quic_tiktok_stream_model->rowCount(); ++row) {
+        if (quic_tiktok_stream_model->data(quic_tiktok_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial")) {
+            quic_tiktok_initial_row = row;
+            break;
+        }
+    }
+    UI_EXPECT(quic_tiktok_initial_row >= 0);
+    const auto quic_tiktok_stream_item_index = quic_tiktok_stream_model->data(
+        quic_tiktok_stream_model->index(quic_tiktok_initial_row, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    quic_tiktok_controller.setSelectedStreamItemIndex(quic_tiktok_stream_item_index);
+    UI_EXPECT(quic_tiktok_details_model->protocolText().contains(QStringLiteral("Packet Type: Initial")));
+    UI_EXPECT(quic_tiktok_details_model->protocolText().contains(QStringLiteral("log22-normal-useast1a.tiktokv.com")));
+    UI_EXPECT(quic_tiktok_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
     controller.setFlowFilterText(QStringLiteral("ui.example"));
     UI_EXPECT(flow_model->rowCount() == 1);
     UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("HTTP"));

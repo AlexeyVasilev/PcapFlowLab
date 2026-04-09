@@ -575,6 +575,44 @@ QString normalize_stream_protocol_text(const QString& protocol_text) {
     return protocol_text.isEmpty() ? stream_protocol_unavailable_text() : protocol_text;
 }
 
+bool is_quic_initial_protocol_text(const QString& protocol_text) {
+    return protocol_text.contains(QStringLiteral("QUIC"))
+        && protocol_text.contains(QStringLiteral("Packet Type: Initial"));
+}
+
+QString enrich_quic_initial_protocol_text(
+    CaptureSession& session,
+    const int selected_flow_index,
+    const QString& protocol_text
+) {
+    if (selected_flow_index < 0 || !is_quic_initial_protocol_text(protocol_text)) {
+        return protocol_text;
+    }
+
+    const bool has_sni = protocol_text.contains(QStringLiteral("SNI:"));
+    const bool has_tls_handshake = protocol_text.contains(QStringLiteral("TLS Handshake Type:"));
+    if (has_sni && has_tls_handshake) {
+        return protocol_text;
+    }
+
+    QString enriched = protocol_text;
+    if (!has_sni) {
+        const auto flow_sni = session.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index));
+        if (flow_sni.has_value() && !flow_sni->empty()) {
+            enriched += QStringLiteral("\n  SNI: ") + QString::fromStdString(*flow_sni);
+        }
+    }
+
+    if (!has_tls_handshake) {
+        const auto flow_tls_details = session.derive_quic_initial_protocol_details_for_flow(static_cast<std::size_t>(selected_flow_index));
+        if (flow_tls_details.has_value() && !flow_tls_details->empty()) {
+            enriched += QStringLiteral("\n") + QString::fromStdString(*flow_tls_details);
+        }
+    }
+
+    return enriched;
+}
+
 QString format_duration_us(const std::uint64_t duration_us) {
     if (duration_us == 0U) {
         return QStringLiteral("0 us");
@@ -2915,12 +2953,16 @@ void MainController::reloadSelectedPacketDetails() {
 
     const auto hexDump = session_.read_packet_hex_dump(*packet);
     const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-    const auto protocolText = session_.read_packet_protocol_details_text(*packet);
+    const auto protocolText = enrich_quic_initial_protocol_text(
+        session_,
+        selected_flow_index_,
+        QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
+    );
 
     packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
-    packet_details_model_.setProtocolText(QString::fromStdString(protocolText));
+    packet_details_model_.setProtocolText(protocolText);
 }
 
 void MainController::reloadSelectedStreamDetails() {
@@ -2951,10 +2993,11 @@ void MainController::reloadSelectedStreamDetails() {
                 ? stream_payload_unavailable_text()
                 : QString::fromStdString(itemIt->payload_hex_text)
         );
+        const auto protocolText = itemIt->protocol_text.empty()
+            ? stream_protocol_unavailable_text()
+            : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
         packet_details_model_.setProtocolText(
-            itemIt->protocol_text.empty()
-                ? stream_protocol_unavailable_text()
-                : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text))
+            enrich_quic_initial_protocol_text(session_, selected_flow_index_, protocolText)
         );
         return;
     }
@@ -2964,7 +3007,11 @@ void MainController::reloadSelectedStreamDetails() {
         if (packet.has_value()) {
             const auto hexDump = session_.read_packet_hex_dump(*packet);
             const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-            const auto protocolText = QString::fromStdString(session_.read_packet_protocol_details_text(*packet));
+            const auto protocolText = enrich_quic_initial_protocol_text(
+                session_,
+                selected_flow_index_,
+                QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
+            );
 
             packet_details_model_.setHexText(QString::fromStdString(hexDump));
             if (!payloadHexDump.empty()) {

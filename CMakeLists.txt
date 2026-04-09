@@ -69,6 +69,7 @@ add_library(
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
     src/core/services/PerfOpenLogger.cpp
+    src/core/services/TlsHandshakeDetails.cpp
     src/core/services/TlsPacketProtocolAnalyzer.cpp
     src/core/services/QuicPacketProtocolAnalyzer.cpp
     src/core/services/DnsPacketProtocolAnalyzer.cpp
@@ -110,6 +111,8 @@ if(PFL_BUILD_UI)
 
     if(Qt6_FOUND)
         qt_standard_project_setup()
+        qt_policy(SET QTP0001 NEW)
+        qt_policy(SET QTP0004 NEW)
 
         qt_add_executable(
             pcap_flow_lab_ui

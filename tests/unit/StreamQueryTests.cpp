@@ -92,8 +92,15 @@ std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<
     return payload;
 }
 
+std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::uint8_t>& crypto_bytes) {
+    std::vector<std::uint8_t> frame {0x06U, 0x00U};
+    append_quic_small_varint(frame, static_cast<std::uint8_t>(crypto_bytes.size()));
+    frame.insert(frame.end(), crypto_bytes.begin(), crypto_bytes.end());
+    return frame;
+}
+
 std::vector<std::uint8_t> make_quic_crypto_frame_bytes() {
-    return {0x06U, 0x00U, 0x03U, 'a', 'b', 'c'};
+    return make_quic_crypto_frame_bytes(std::vector<std::uint8_t> {'a', 'b', 'c'});
 }
 
 std::vector<std::uint8_t> make_quic_ack_frame_bytes() {
@@ -107,6 +114,31 @@ std::vector<std::uint8_t> make_quic_truncated_payload() {
         0x08U,
         0x11U, 0x22U, 0x33U, 0x44U,
     };
+}
+
+std::vector<std::uint8_t> make_tls_server_hello_handshake_bytes() {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    for (std::uint8_t index = 0U; index < 32U; ++index) {
+        body.push_back(static_cast<std::uint8_t>(0xA0U + index));
+    }
+    body.push_back(0x00U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x00U);
+
+    std::vector<std::uint8_t> extensions {};
+    append_be16(extensions, 0x002BU);
+    append_be16(extensions, 0x0002U);
+    extensions.push_back(0x03U);
+    extensions.push_back(0x04U);
+
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+
+    std::vector<std::uint8_t> handshake {0x02U};
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+    return handshake;
 }
 
 std::string direction_for_packet(const std::vector<PacketRow>& packet_rows, const std::uint64_t packet_index) {
@@ -738,6 +770,18 @@ void run_stream_query_tests() {
 
     {
         CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto* initial_row = find_stream_row_by_label(rows, "QUIC Initial");
+        PFL_EXPECT(initial_row != nullptr);
+        PFL_EXPECT(initial_row->protocol_text.find("TLS Handshake Type: ClientHello") != std::string::npos);
+        PFL_EXPECT(initial_row->protocol_text.find("Cipher Suites:") != std::string::npos);
+        PFL_EXPECT(initial_row->protocol_text.find("SNI:") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_test_1.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
@@ -797,6 +841,25 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].protocol_text.find("Frame Presence: CRYPTO") != std::string::npos);
         PFL_EXPECT(rows[1].label == "QUIC ACK");
         PFL_EXPECT(rows[1].protocol_text.find("Frame Presence: ACK") != std::string::npos);
+    }
+
+    {
+        const auto server_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 1, 3), ipv4(10, 41, 1, 4), 54000, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_server_hello_handshake_bytes())));
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_server_hello_plaintext.pcap",
+            make_classic_pcap({{100, server_hello_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "QUIC CRYPTO");
+        PFL_EXPECT(rows[0].protocol_text.find("TLS Handshake Type: ServerHello") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Selected TLS Version:") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Selected Cipher Suite:") != std::string::npos);
     }
 
     {

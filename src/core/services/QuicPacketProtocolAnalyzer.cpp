@@ -17,6 +17,7 @@
 #include "core/io/LinkType.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/QuicInitialParser.h"
+#include "core/services/TlsHandshakeDetails.h"
 
 namespace pfl {
 
@@ -26,11 +27,6 @@ constexpr std::uint16_t kHttpsPort = 443U;
 constexpr std::size_t kMaxConnectionIdLength = 20U;
 constexpr std::size_t kMaxFrameSummaryBytes = 512U;
 constexpr std::size_t kMaxFrameSummaryCount = 32U;
-
-std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
-    return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
-                                      static_cast<std::uint16_t>(bytes[offset + 1U]));
-}
 
 std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
@@ -342,7 +338,25 @@ struct ParsedQuicPacket {
     std::vector<std::uint32_t> supported_versions {};
     std::optional<FramePresenceSummary> frame_summary {};
     std::optional<std::string> sni {};
+    std::optional<TlsHandshakeDetails> tls_handshake {};
 };
+
+std::optional<TlsHandshakeDetails> parse_tls_handshake_from_plaintext_payloads(
+    std::span<const std::vector<std::uint8_t>> plaintext_payloads
+) {
+    QuicInitialParser initial_parser {};
+    const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(plaintext_payloads);
+    if (!crypto_prefix.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto handshake = parse_tls_handshake_details(std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size()));
+    if (!handshake.has_value() || handshake->details_text.empty()) {
+        return std::nullopt;
+    }
+
+    return handshake;
+}
 
 std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t> udp_payload) {
     if (udp_payload.empty()) {
@@ -440,10 +454,28 @@ std::optional<ParsedQuicPacket> parse_quic_payload(std::span<const std::uint8_t>
 
     const auto plaintext_candidate = udp_payload.subspan(frame_offset, packet_end - frame_offset);
     packet.frame_summary = summarize_plaintext_frames(plaintext_candidate);
+    if (packet.frame_summary.has_value() && packet.frame_summary->crypto && !plaintext_candidate.empty()) {
+        const std::vector<std::vector<std::uint8_t>> plaintext_payloads {
+            std::vector<std::uint8_t>(plaintext_candidate.begin(), plaintext_candidate.end())
+        };
+        packet.tls_handshake = parse_tls_handshake_from_plaintext_payloads(plaintext_payloads);
+    }
+
     if (packet.packet_type == "Initial") {
         QuicInitialParser initial_parser {};
         if (initial_parser.is_client_initial_packet(udp_payload)) {
             packet.sni = initial_parser.extract_client_initial_sni(udp_payload);
+            if (!packet.tls_handshake.has_value()) {
+                const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(udp_payload);
+                if (crypto_prefix.has_value()) {
+                    const auto handshake = parse_tls_handshake_details(
+                        std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
+                    );
+                    if (handshake.has_value() && !handshake->details_text.empty()) {
+                        packet.tls_handshake = handshake;
+                    }
+                }
+            }
         }
     }
 
@@ -597,6 +629,15 @@ std::string protocol_text_from_packet(const ParsedQuicPacket& packet) {
     if (packet.sni.has_value()) {
         text << "\n"
              << "  SNI: " << *packet.sni;
+    }
+
+    if (packet.tls_handshake.has_value()) {
+        text << "\n"
+             << "  TLS Handshake Type: " << packet.tls_handshake->handshake_type_text << "\n"
+             << "  TLS Handshake Length: " << packet.tls_handshake->handshake_length;
+        if (!packet.tls_handshake->details_text.empty()) {
+            text << "\n" << packet.tls_handshake->details_text;
+        }
     }
 
     return text.str();

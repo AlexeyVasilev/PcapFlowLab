@@ -11,6 +11,17 @@ namespace pfl::tests {
 
 namespace {
 
+void append_be16(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 
@@ -63,6 +74,60 @@ std::vector<std::uint8_t> make_tls_client_hello_payload() {
     payload.push_back(static_cast<std::uint8_t>(body.size() & 0xFFU));
     payload.insert(payload.end(), body.begin(), body.end());
     return payload;
+}
+
+void append_quic_small_varint(std::vector<std::uint8_t>& bytes, const std::uint8_t value) {
+    PFL_EXPECT(value < 64U);
+    bytes.push_back(value);
+}
+
+std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<std::uint8_t>& frame_bytes) {
+    std::vector<std::uint8_t> payload {
+        0xC0U,
+        0x00U, 0x00U, 0x00U, 0x01U,
+        0x08U,
+        0x11U, 0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U,
+        0x08U,
+        0x99U, 0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU, 0xFFU, 0x00U,
+        0x00U,
+    };
+
+    append_quic_small_varint(payload, static_cast<std::uint8_t>(frame_bytes.size() + 1U));
+    payload.push_back(0x00U);
+    payload.insert(payload.end(), frame_bytes.begin(), frame_bytes.end());
+    return payload;
+}
+
+std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::uint8_t>& crypto_bytes) {
+    std::vector<std::uint8_t> frame {0x06U, 0x00U};
+    append_quic_small_varint(frame, static_cast<std::uint8_t>(crypto_bytes.size()));
+    frame.insert(frame.end(), crypto_bytes.begin(), crypto_bytes.end());
+    return frame;
+}
+
+std::vector<std::uint8_t> make_tls_server_hello_handshake_bytes() {
+    std::vector<std::uint8_t> body {};
+    append_be16(body, 0x0303U);
+    for (std::uint8_t index = 0U; index < 32U; ++index) {
+        body.push_back(static_cast<std::uint8_t>(0xA0U + index));
+    }
+    body.push_back(0x00U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x00U);
+
+    std::vector<std::uint8_t> extensions {};
+    append_be16(extensions, 0x002BU);
+    append_be16(extensions, 0x0002U);
+    extensions.push_back(0x03U);
+    extensions.push_back(0x04U);
+
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+
+    std::vector<std::uint8_t> handshake {0x02U};
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+    return handshake;
 }
 
 std::vector<std::uint8_t> make_quic_truncated_payload() {
@@ -126,6 +191,10 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(text.find("Version:") != std::string::npos);
         PFL_EXPECT(text.find("Destination Connection ID Length:") != std::string::npos);
         PFL_EXPECT(text.find("Source Connection ID Length:") != std::string::npos);
+        PFL_EXPECT(text.find("TLS Handshake Type: ClientHello") != std::string::npos);
+        PFL_EXPECT(text.find("Cipher Suites:") != std::string::npos);
+        PFL_EXPECT(text.find("Supported Versions:") != std::string::npos);
+        PFL_EXPECT(text.find("SNI:") != std::string::npos);
     }
 
     {
@@ -137,6 +206,26 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(text.find("Header Form: Long") != std::string::npos);
         PFL_EXPECT(text.find("Packet Type: Handshake") != std::string::npos);
         PFL_EXPECT(text.find("Destination Connection ID Length:") != std::string::npos);
+    }
+
+    {
+        const auto packet_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 7), ipv4(8, 8, 8, 8), 54000, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_server_hello_handshake_bytes())));
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_quic_server_hello_plaintext.pcap",
+            make_classic_pcap({{100, packet_bytes}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("QUIC") != std::string::npos);
+        PFL_EXPECT(text.find("Frame Presence: CRYPTO") != std::string::npos);
+        PFL_EXPECT(text.find("TLS Handshake Type: ServerHello") != std::string::npos);
+        PFL_EXPECT(text.find("Selected TLS Version:") != std::string::npos);
+        PFL_EXPECT(text.find("Selected Cipher Suite:") != std::string::npos);
     }
 
     {

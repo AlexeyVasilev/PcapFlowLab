@@ -134,6 +134,7 @@ QUIC now has a first narrow selected-flow labeling step, but not a full Stream r
 
 - QUIC packets may be labeled as `QUIC Initial`, `QUIC Handshake`, `QUIC Retry`, `QUIC Version Negotiation`, or `QUIC Protected Payload` when packet bytes support reliable header typing.
 - Where plaintext frame bytes are directly parseable, the same bounded selected-flow path may refine a packet-sized item to `QUIC ACK` or `QUIC CRYPTO`.
+- When the current packet-sized QUIC CRYPTO bytes directly expose a parseable TLS `ClientHello` or `ServerHello`, the item Protocol text may append the same narrow TLS handshake fields used by the TLS detail path.
 - If bytes are incomplete or uncertain, QUIC traffic still falls back to `UDP Payload`.
 - No QUIC decryption or session-wide reconstruction is introduced by this step.
 

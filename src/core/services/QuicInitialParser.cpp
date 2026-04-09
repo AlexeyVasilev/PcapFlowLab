@@ -988,6 +988,23 @@ std::optional<std::string> extract_client_initial_sni_from_fragments(std::vector
     return extract_tls_client_hello_sni_from_handshake(crypto_prefix);
 }
 
+std::optional<std::vector<std::uint8_t>> extract_crypto_prefix_from_fragments(std::vector<CryptoFragment> fragments) {
+    if (fragments.empty()) {
+        return std::nullopt;
+    }
+
+    auto crypto_prefix = assemble_crypto_prefix(std::move(fragments));
+    if (crypto_prefix.empty()) {
+        return std::nullopt;
+    }
+
+    if (crypto_prefix.size() > QuicInitialParser::kMaxCryptoBytes) {
+        crypto_prefix.resize(QuicInitialParser::kMaxCryptoBytes);
+    }
+
+    return crypto_prefix;
+}
+
 }  // namespace
 
 bool QuicInitialParser::is_client_initial_packet(std::span<const std::uint8_t> udp_payload) const noexcept {
@@ -1011,6 +1028,26 @@ std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::sp
     bounded_fragments.reserve(std::min(packet_fragments.size(), kMaxCryptoFrames));
     append_bounded_crypto_fragments(bounded_fragments, std::move(packet_fragments), frame_count);
     return extract_client_initial_sni_from_fragments(std::move(bounded_fragments));
+}
+
+std::optional<std::vector<std::uint8_t>> QuicInitialParser::extract_client_initial_crypto_prefix(
+    std::span<const std::uint8_t> udp_payload
+) const {
+    const auto plaintext = decrypt_client_initial_plaintext(udp_payload);
+    if (!plaintext.has_value()) {
+        return std::nullopt;
+    }
+
+    std::vector<CryptoFragment> packet_fragments {};
+    if (!collect_crypto_fragments(*plaintext, packet_fragments)) {
+        return std::nullopt;
+    }
+
+    std::size_t frame_count = 0U;
+    std::vector<CryptoFragment> bounded_fragments {};
+    bounded_fragments.reserve(std::min(packet_fragments.size(), kMaxCryptoFrames));
+    append_bounded_crypto_fragments(bounded_fragments, std::move(packet_fragments), frame_count);
+    return extract_crypto_prefix_from_fragments(std::move(bounded_fragments));
 }
 
 std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::vector<std::uint8_t>> udp_payloads) const {
@@ -1046,7 +1083,53 @@ std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::sp
     return extract_client_initial_sni_from_fragments(std::move(fragments));
 }
 
+std::optional<std::vector<std::uint8_t>> QuicInitialParser::extract_client_initial_crypto_prefix(
+    std::span<const std::vector<std::uint8_t>> udp_payloads
+) const {
+    std::size_t initial_packet_count = 0U;
+    std::size_t frame_count = 0U;
+    std::vector<CryptoFragment> fragments {};
+
+    for (const auto& payload_bytes : udp_payloads) {
+        if (initial_packet_count >= kMaxInitialPackets || frame_count >= kMaxCryptoFrames) {
+            break;
+        }
+
+        const auto payload = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+        if (!is_client_initial_packet(payload)) {
+            continue;
+        }
+
+        ++initial_packet_count;
+
+        const auto plaintext = decrypt_client_initial_plaintext(payload);
+        if (!plaintext.has_value()) {
+            continue;
+        }
+
+        std::vector<CryptoFragment> packet_fragments {};
+        if (!collect_crypto_fragments(*plaintext, packet_fragments)) {
+            continue;
+        }
+
+        append_bounded_crypto_fragments(fragments, std::move(packet_fragments), frame_count);
+    }
+
+    return extract_crypto_prefix_from_fragments(std::move(fragments));
+}
+
 std::optional<std::string> QuicInitialParser::extract_client_initial_sni_from_crypto_payloads(
+    std::span<const std::vector<std::uint8_t>> decrypted_initial_payloads
+) const {
+    const auto crypto_prefix = extract_crypto_prefix_from_payloads(decrypted_initial_payloads);
+    if (!crypto_prefix.has_value()) {
+        return std::nullopt;
+    }
+
+    return extract_tls_client_hello_sni_from_handshake(*crypto_prefix);
+}
+
+std::optional<std::vector<std::uint8_t>> QuicInitialParser::extract_crypto_prefix_from_payloads(
     std::span<const std::vector<std::uint8_t>> decrypted_initial_payloads
 ) const {
     std::size_t frame_count = 0U;
@@ -1065,7 +1148,7 @@ std::optional<std::string> QuicInitialParser::extract_client_initial_sni_from_cr
         append_bounded_crypto_fragments(fragments, std::move(packet_fragments), frame_count);
     }
 
-    return extract_client_initial_sni_from_fragments(std::move(fragments));
+    return extract_crypto_prefix_from_fragments(std::move(fragments));
 }
 }  // namespace pfl
 
