@@ -39,6 +39,7 @@ constexpr std::size_t kStreamItemBatchSize = 15U;
 constexpr std::size_t kInitialStreamPacketBudget = 30U;
 constexpr std::size_t kStreamPacketBatchSize = 30U;
 constexpr int kSessionApplyOverlayDelayMs = 40;
+constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
 
 struct OpenJobResult {
     bool opened {false};
@@ -436,6 +437,31 @@ QString buildPayloadText(const PacketDetails& details, const std::string& payloa
     return QStringLiteral("Transport payload not available for this packet");
 }
 
+QString format_packet_sequence_compact(const std::vector<std::uint64_t>& numbers) {
+    if (numbers.empty()) {
+        return QStringLiteral("-");
+    }
+
+    bool contiguous = numbers.size() > 1U;
+    for (std::size_t index = 1U; index < numbers.size(); ++index) {
+        if (numbers[index] != numbers[index - 1U] + 1U) {
+            contiguous = false;
+            break;
+        }
+    }
+
+    if (contiguous) {
+        return QStringLiteral("%1\u2013%2").arg(numbers.front()).arg(numbers.back());
+    }
+
+    QStringList values {};
+    values.reserve(static_cast<qsizetype>(numbers.size()));
+    for (const auto number : numbers) {
+        values.push_back(QString::number(number));
+    }
+    return values.join(QStringLiteral(", "));
+}
+
 QString formatPacketIndices(const std::vector<std::uint64_t>& packetIndices) {
     QStringList values {};
     values.reserve(static_cast<qsizetype>(packetIndices.size()));
@@ -477,6 +503,82 @@ QString formatContributingPackets(
     }
 
     return QStringLiteral("(file %1)").arg(fileIndices);
+}
+
+QString format_stream_source_packets(
+    const StreamItemRow& item,
+    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
+) {
+    std::vector<std::uint64_t> flow_numbers {};
+    flow_numbers.reserve(item.packet_indices.size());
+    for (const auto packet_index : item.packet_indices) {
+        const auto flow_it = flowPacketNumbers.find(packet_index);
+        if (flow_it == flowPacketNumbers.end()) {
+            flow_numbers.clear();
+            break;
+        }
+
+        flow_numbers.push_back(flow_it->second);
+    }
+
+    if (!flow_numbers.empty()) {
+        return format_packet_sequence_compact(flow_numbers);
+    }
+
+    return format_packet_sequence_compact(item.packet_indices);
+}
+
+bool stream_item_uses_packet_fallback(const StreamItemRow& item) {
+    return item.payload_hex_text.empty() && item.protocol_text.empty() && item.packet_indices.size() == 1U;
+}
+
+QString stream_item_details_source(const StreamItemRow& item) {
+    return stream_item_uses_packet_fallback(item)
+        ? QStringLiteral("Packet fallback")
+        : QStringLiteral("Stream item");
+}
+
+QString stream_item_header_primary_text(const StreamItemRow& item) {
+    return QStringLiteral("#%1   %2   %3")
+        .arg(item.stream_item_index)
+        .arg(QString::fromStdString(item.direction_text))
+        .arg(QString::fromStdString(item.label));
+}
+
+QString stream_item_header_secondary_text(const StreamItemRow& item) {
+    return QStringLiteral("%1 bytes \u2022 %2")
+        .arg(item.byte_count)
+        .arg(item.packet_count == 1U ? QStringLiteral("1 packet") : QStringLiteral("%1 packets").arg(item.packet_count));
+}
+
+QString stream_item_header_badge_text(const StreamItemRow& item) {
+    const auto label = QString::fromStdString(item.label);
+    if (label.contains(QStringLiteral("partial"), Qt::CaseInsensitive)) {
+        return QStringLiteral("Partial");
+    }
+    if (stream_item_uses_packet_fallback(item)) {
+        return QStringLiteral("Packet fallback");
+    }
+    if (item.packet_count > 1U) {
+        return QStringLiteral("Reassembled");
+    }
+    return {};
+}
+
+QString stream_payload_unavailable_text() {
+    return QStringLiteral("Payload is not available for this stream item.");
+}
+
+QString stream_protocol_unavailable_text() {
+    return QStringLiteral("Protocol details are not available for this stream item.");
+}
+
+QString normalize_stream_protocol_text(const QString& protocol_text) {
+    if (protocol_text == QString::fromUtf8(kFastModeProtocolDetailsMessage.data(), static_cast<int>(kFastModeProtocolDetailsMessage.size()))) {
+        return QStringLiteral("Protocol details require Deep mode for this packet.");
+    }
+
+    return protocol_text.isEmpty() ? stream_protocol_unavailable_text() : protocol_text;
 }
 
 QString format_duration_us(const std::uint64_t duration_us) {
@@ -642,17 +744,14 @@ QString buildStreamItemSummary(
     const StreamItemRow& item,
     const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
 ) {
-    QStringList lines {};
-
-    appendSection(lines, QStringLiteral("Stream Item"), {
+    return QStringList {
         QStringLiteral("Direction: %1").arg(QString::fromStdString(item.direction_text)),
         QStringLiteral("Label: %1").arg(QString::fromStdString(item.label)),
-        QStringLiteral("Byte Count: %1").arg(item.byte_count),
-        QStringLiteral("Packet Count: %1").arg(item.packet_count),
-        QStringLiteral("Contributing Packets: %1").arg(formatContributingPackets(item, flowPacketNumbers)),
-    });
-
-    return lines.join(QLatin1Char('\n'));
+        QStringLiteral("Size: %1 bytes").arg(item.byte_count),
+        QStringLiteral("Packets: %1").arg(item.packet_count),
+        QStringLiteral("Source packets: %1").arg(format_stream_source_packets(item, flowPacketNumbers)),
+        QStringLiteral("Details source: %1").arg(stream_item_details_source(item)),
+    }.join(QLatin1Char('\n'));
 }
 QString format_partial_open_warning_message(const OpenFailureInfo& failure) {
     QString message = QStringLiteral("Capture opened partially.");
@@ -2089,6 +2188,25 @@ void MainController::setFlowDetailsTabIndex(const int index) {
     if (stream_tab_active_ && selected_flow_index_ >= 0 && !stream_state_materialized_for_selected_flow_) {
         refreshSelectedStreamItems(true);
     }
+
+    if (stream_tab_active_) {
+        if (selected_stream_item_index_ != kInvalidStreamSelection) {
+            details_selection_context_ = DetailsSelectionContext::stream;
+            reloadSelectedStreamDetails();
+        } else {
+            details_selection_context_ = DetailsSelectionContext::none;
+            packet_details_model_.clear();
+        }
+        return;
+    }
+
+    if (selected_packet_index_ != kInvalidPacketSelection) {
+        details_selection_context_ = DetailsSelectionContext::packet;
+        reloadSelectedPacketDetails();
+    } else {
+        details_selection_context_ = DetailsSelectionContext::none;
+        packet_details_model_.clear();
+    }
 }
 
 void MainController::setCaptureOpenMode(const int mode) {
@@ -2787,6 +2905,7 @@ void MainController::reloadSelectedPacketDetails() {
     }
 
     packet_details_model_.setDetailsTitle(QStringLiteral("Packet Details"));
+    packet_details_model_.clearStreamItemPresentation();
 
     const auto packet = session_.find_packet(static_cast<std::uint64_t>(selected_packet_index_));
     if (!packet.has_value()) {
@@ -2824,19 +2943,24 @@ void MainController::reloadSelectedStreamDetails() {
     }
 
     packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
+    packet_details_model_.setStreamItemPresentation(
+        stream_item_header_primary_text(*itemIt),
+        stream_item_header_secondary_text(*itemIt),
+        stream_item_header_badge_text(*itemIt)
+    );
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
 
     if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {
-        packet_details_model_.setHexText(QStringLiteral("Raw packet hex is not available for this stream item."));
+        packet_details_model_.setHexText({});
         packet_details_model_.setPayloadText(
             itemIt->payload_hex_text.empty()
-                ? QStringLiteral("Transport payload is not available for this stream item.")
+                ? stream_payload_unavailable_text()
                 : QString::fromStdString(itemIt->payload_hex_text)
         );
         packet_details_model_.setProtocolText(
             itemIt->protocol_text.empty()
-                ? QStringLiteral("No protocol-specific details available for this stream item.")
-                : QString::fromStdString(itemIt->protocol_text)
+                ? stream_protocol_unavailable_text()
+                : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text))
         );
         return;
     }
@@ -2844,27 +2968,24 @@ void MainController::reloadSelectedStreamDetails() {
     if (itemIt->packet_indices.size() == 1U) {
         const auto packet = session_.find_packet(itemIt->packet_indices.front());
         if (packet.has_value()) {
-            const auto details = session_.read_packet_details(*packet);
             const auto hexDump = session_.read_packet_hex_dump(*packet);
             const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-            const auto protocolText = session_.read_packet_protocol_details_text(*packet);
+            const auto protocolText = QString::fromStdString(session_.read_packet_protocol_details_text(*packet));
 
             packet_details_model_.setHexText(QString::fromStdString(hexDump));
-            if (details.has_value()) {
-                packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
-            } else if (!payloadHexDump.empty()) {
+            if (!payloadHexDump.empty()) {
                 packet_details_model_.setPayloadText(QString::fromStdString(payloadHexDump));
             } else {
-                packet_details_model_.setPayloadText(QStringLiteral("Transport payload not available for this stream item."));
+                packet_details_model_.setPayloadText(stream_payload_unavailable_text());
             }
-            packet_details_model_.setProtocolText(QString::fromStdString(protocolText));
+            packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
             return;
         }
     }
 
-    packet_details_model_.setHexText(QStringLiteral("Raw packet hex is not available for this stream item."));
-    packet_details_model_.setPayloadText(QStringLiteral("Transport payload is not available for this stream item."));
-    packet_details_model_.setProtocolText(QStringLiteral("No protocol-specific details available for this stream item."));
+    packet_details_model_.setHexText({});
+    packet_details_model_.setPayloadText(stream_payload_unavailable_text());
+    packet_details_model_.setProtocolText(stream_protocol_unavailable_text());
 }
 
 void MainController::reloadActiveDetails() {

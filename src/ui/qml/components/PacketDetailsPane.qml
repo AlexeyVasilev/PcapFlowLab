@@ -7,6 +7,10 @@ Frame {
 
     property var packetDetailsModel: null
 
+    function isStreamItemDetails() {
+        return !!root.packetDetailsModel && root.packetDetailsModel.streamItemDetails
+    }
+
     function detailsTitle() {
         if (!root.packetDetailsModel) {
             return "Packet Details"
@@ -25,6 +29,30 @@ Frame {
         }
 
         return root.packetDetailsModel.summaryText
+    }
+
+    function headerPrimaryText() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
+            return ""
+        }
+
+        return root.packetDetailsModel.headerPrimaryText
+    }
+
+    function headerSecondaryText() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
+            return ""
+        }
+
+        return root.packetDetailsModel.headerSecondaryText
+    }
+
+    function badgeText() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
+            return ""
+        }
+
+        return root.packetDetailsModel.badgeText
     }
 
     function warningBlockText(summary) {
@@ -88,7 +116,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: 8
 
         Label {
             text: root.detailsTitle()
@@ -102,9 +130,66 @@ Frame {
             color: "#e2e8f0"
         }
 
-        TabBar {
-            id: topTabs
+        Rectangle {
             Layout.fillWidth: true
+            visible: root.isStreamItemDetails() && root.headerPrimaryText().length > 0
+            color: "#f8fafc"
+            border.color: "#dbe4ee"
+            radius: 8
+            implicitHeight: headerColumn.implicitHeight + 20
+
+            ColumnLayout {
+                id: headerColumn
+                anchors.fill: parent
+                anchors.margins: 10
+                spacing: 4
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: root.headerPrimaryText()
+                        font.pixelSize: 15
+                        font.bold: true
+                        color: "#0f172a"
+                        elide: Text.ElideRight
+                    }
+
+                    Rectangle {
+                        visible: root.badgeText().length > 0
+                        color: "#e8eef8"
+                        border.color: "#c8d7ea"
+                        radius: 10
+                        implicitWidth: badgeLabel.implicitWidth + 14
+                        implicitHeight: badgeLabel.implicitHeight + 6
+
+                        Label {
+                            id: badgeLabel
+                            anchors.centerIn: parent
+                            text: root.badgeText()
+                            color: "#355070"
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: root.headerSecondaryText()
+                    color: "#475569"
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                }
+            }
+        }
+
+        TabBar {
+            id: packetTabs
+            Layout.fillWidth: true
+            visible: !root.isStreamItemDetails()
 
             TabButton {
                 text: "Summary"
@@ -115,14 +200,37 @@ Frame {
             }
 
             TabButton {
+                text: "Payload"
+            }
+
+            TabButton {
+                text: "Protocol"
+            }
+        }
+
+        TabBar {
+            id: streamTabs
+            Layout.fillWidth: true
+            visible: root.isStreamItemDetails()
+
+            TabButton {
+                text: "Summary"
+            }
+
+            TabButton {
+                text: "Payload"
+            }
+
+            TabButton {
                 text: "Protocol"
             }
         }
 
         StackLayout {
+            visible: !root.isStreamItemDetails()
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: topTabs.currentIndex
+            currentIndex: packetTabs.currentIndex
 
             Rectangle {
                 color: "transparent"
@@ -165,46 +273,79 @@ Frame {
                 }
             }
 
+            TextPane {
+                monospace: true
+                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                    ? root.packetDetailsModel.hexText
+                    : root.emptyText()
+            }
+
+            TextPane {
+                monospace: true
+                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                    ? root.packetDetailsModel.payloadText
+                    : root.emptyText()
+            }
+
+            TextPane {
+                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                    ? root.packetDetailsModel.protocolText
+                    : root.emptyText()
+            }
+        }
+
+        StackLayout {
+            visible: root.isStreamItemDetails()
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            currentIndex: streamTabs.currentIndex
+
             Rectangle {
                 color: "transparent"
+
+                readonly property string summary: root.summaryText()
+                readonly property string warningText: root.warningBlockText(summary)
+                readonly property string bodyText: root.summaryBodyText(summary)
 
                 ColumnLayout {
                     anchors.fill: parent
                     spacing: 10
 
-                    TabBar {
-                        id: rawTabs
+                    Rectangle {
                         Layout.fillWidth: true
+                        visible: parent.parent.warningText.length > 0
+                        color: "#fff6d6"
+                        border.color: "#e7d38d"
+                        radius: 6
+                        implicitHeight: streamWarningLabel.implicitHeight + 16
 
-                        TabButton {
-                            text: "Hex"
-                        }
-
-                        TabButton {
-                            text: "Payload"
+                        Text {
+                            id: streamWarningLabel
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 8
+                            wrapMode: Text.Wrap
+                            color: "#7a5d10"
+                            text: parent.parent.parent.warningText.length > 0
+                                ? "Warnings\n" + parent.parent.parent.warningText
+                                : ""
                         }
                     }
 
-                    StackLayout {
+                    TextPane {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        currentIndex: rawTabs.currentIndex
-
-                        TextPane {
-                            monospace: true
-                            viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                                ? root.packetDetailsModel.hexText
-                                : root.emptyText()
-                        }
-
-                        TextPane {
-                            monospace: true
-                            viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
-                                ? root.packetDetailsModel.payloadText
-                                : root.emptyText()
-                        }
+                        viewText: parent.parent.bodyText
                     }
                 }
+            }
+
+            TextPane {
+                monospace: true
+                viewText: root.packetDetailsModel && root.packetDetailsModel.hasPacket
+                    ? root.packetDetailsModel.payloadText
+                    : root.emptyText()
             }
 
             TextPane {
