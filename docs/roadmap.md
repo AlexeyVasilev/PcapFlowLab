@@ -9,13 +9,14 @@ It reflects what is already implemented, what is actively being stabilized, and 
 - packet-oriented fast path
 - flow aggregation
 - index support
+- session/query API
 - basic UI
 
 This phase established the product's core architectural direction: bounded packet-oriented ingestion, flow-first state, and a separate application/UI layer over session queries.
 
 ## Phase 2 — Selected-flow views (completed)
 
-- Stream (payload-oriented, bounded)
+- Stream (payload-oriented, selected-flow, on-demand)
 - Analysis tab (metadata-first, selected-flow)
 - Sequence preview
 - Histograms and derived metrics
@@ -31,27 +32,30 @@ This phase established selected-flow, on-demand derived work as a first-class pr
 	- chunked body support
 - partial HTTP/TLS handling
 - retransmission detection (selected-flow)
-- exact duplicate retransmission suppression (selected-flow)
+- retransmission suppression (in progress)
 
 This phase is focused on making current Stream behavior more reliable and more test-backed before broadening protocol scope.
 
-## Phase 4 — Stream improvements (next)
+## Phase 4 — Stream model convergence (next)
 
-- unify stream materialization (full vs prefix)
-- improve TLS details:
-	- extensions
-	- cipher suites
-	- handshake fields
-- QUIC stream labeling (narrow step)
-- improve partial handling consistency
+- move Stream to a single bounded on-demand materialization model
+- remove conceptual split between "prefix" and "full" Stream modes
+- ensure `Load more` extends the same Stream build
+- reduce user-visible differences between initial and expanded Stream results
+- improve partial item consistency
 
-This phase is about reducing internal inconsistency in Stream construction and improving protocol-aware presentation without changing the selected-flow architecture.
+This phase is about converging Stream behavior around one bounded selected-flow pipeline rather than preserving multiple conceptual Stream modes.
 
 ## Phase 5 — Protocol enrichment
 
-- QUIC parsing (bounded, phased)
-- TLS improvements
-- HTTP edge cases (HEAD, 204, etc.)
+- richer TLS details:
+	- extensions
+	- cipher suites
+	- handshake fields
+- QUIC stream labeling (narrow, bounded step)
+- HTTP edge cases:
+	- HEAD / 204 / 304
+	- request bodies
 
 This phase remains bounded and incremental. Protocol work is expected to stay conservative and test-backed rather than aiming for broad, fragile coverage.
 
@@ -67,8 +71,8 @@ This phase is focused on making the existing selected-flow workflows easier to u
 ## Phase 7 — Scalability and performance
 
 - selected-flow scalability improvements
-- incremental loading
-- mmap evaluation
+- incremental loading stability
+- mmap evaluation (optional)
 - large capture handling improvements
 
 This phase is focused on preserving bounded interactive behavior as capture size and selected-flow size increase.
@@ -79,5 +83,7 @@ The roadmap prioritizes:
 
 - reliability over feature count
 - bounded computation
-- selected-flow architecture
+- selected-flow on-demand architecture
 - test-backed evolution
+
+Do not introduce multiple Stream modes or global reassembly in any phase.
