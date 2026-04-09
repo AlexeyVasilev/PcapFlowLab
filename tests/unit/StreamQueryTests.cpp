@@ -679,40 +679,30 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_partial_response_4.pcap"), fast_options));
 
         const auto flows = session.list_flows();
-        PFL_EXPECT(flows.size() >= 2U);
+        PFL_EXPECT(flows.size() == 1U);
+        PFL_EXPECT(flows[0].packet_count == 8U);
 
-        const std::vector<StreamItemRow>* redirect_rows = nullptr;
-        const std::vector<StreamItemRow>* partial_rows = nullptr;
-        std::vector<std::vector<StreamItemRow>> flow_rows {};
-        flow_rows.reserve(flows.size());
-        for (std::size_t flow_index = 0; flow_index < flows.size(); ++flow_index) {
-            flow_rows.push_back(session.list_flow_stream_items(flow_index));
-            const auto& rows = flow_rows.back();
-            if (std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-                    return starts_with(row.label, "HTTP 301");
-                })) {
-                redirect_rows = &rows;
-            }
-            if (!rows.empty() && rows.back().label == "HTTP Payload (partial)") {
-                partial_rows = &rows;
-            }
-        }
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 3U);
 
-        PFL_EXPECT(redirect_rows != nullptr);
-        PFL_EXPECT(partial_rows != nullptr);
+        PFL_EXPECT(rows[0].label == "HTTP GET /");
+        PFL_EXPECT(rows[0].packet_count == 1U);
+        PFL_EXPECT(rows[0].packet_indices.size() == 1U);
+        PFL_EXPECT(rows[0].packet_indices[0] == 3U);
+        PFL_EXPECT(!rows[0].protocol_text.empty());
 
-        PFL_EXPECT(redirect_rows->size() == 2U);
-        PFL_EXPECT(starts_with((*redirect_rows)[0].label, "HTTP GET"));
-        PFL_EXPECT(starts_with((*redirect_rows)[1].label, "HTTP 301"));
-        PFL_EXPECT(!(*redirect_rows)[1].protocol_text.empty());
+        PFL_EXPECT(rows[1].label == "HTTP 200 OK");
+        PFL_EXPECT(rows[1].packet_count == 1U);
+        PFL_EXPECT(rows[1].packet_indices.size() == 1U);
+        PFL_EXPECT(rows[1].packet_indices[0] == 5U);
+        PFL_EXPECT(!rows[1].protocol_text.empty());
 
-        PFL_EXPECT(!partial_rows->empty());
-        PFL_EXPECT(starts_with((*partial_rows)[0].label, "HTTP GET"));
-        PFL_EXPECT(std::any_of(partial_rows->begin(), partial_rows->end(), [](const StreamItemRow& row) {
-            return starts_with(row.label, "HTTP 200");
-        }));
-        PFL_EXPECT(partial_rows->back().label == "HTTP Payload (partial)");
-        PFL_EXPECT(partial_rows->back().protocol_text.find("complete HTTP header block") != std::string::npos);
+        PFL_EXPECT(rows[2].label == "HTTP Payload (partial)");
+        PFL_EXPECT(rows[2].packet_count == 2U);
+        PFL_EXPECT(rows[2].packet_indices.size() == 2U);
+        PFL_EXPECT(rows[2].packet_indices[0] == 5U);
+        PFL_EXPECT(rows[2].packet_indices[1] == 7U);
+        PFL_EXPECT(rows[2].protocol_text.find("complete HTTP header block") != std::string::npos);
     }
 
     {
@@ -738,8 +728,14 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(!rows.empty());
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS ClientHello") != nullptr);
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerHello") != nullptr);
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS Certificate") != nullptr);
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerKeyExchange") != nullptr);
+        PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerHelloDone") != nullptr);
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return starts_with(row.label, "TLS ") && row.label != "TLS ClientHello" && row.packet_count > 1U && !row.protocol_text.empty();
+            return (row.label == "TLS Certificate" || row.label == "TLS ServerKeyExchange" || row.label == "TLS ServerHelloDone")
+                && row.packet_count > 1U
+                && !row.protocol_text.empty();
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return starts_with(row.label, "TLS ") && row.label != "TCP Payload";

@@ -550,12 +550,16 @@ const char* tls_record_type_text(const std::uint8_t content_type) noexcept {
 
 const char* tls_handshake_type_text(const std::uint8_t handshake_type) noexcept {
     switch (handshake_type) {
+    case 0U:
+        return "HelloRequest";
     case 1U:
         return "ClientHello";
     case 2U:
         return "ServerHello";
     case 4U:
         return "NewSessionTicket";
+    case 5U:
+        return "EndOfEarlyData";
     case 8U:
         return "EncryptedExtensions";
     case 11U:
@@ -572,9 +576,111 @@ const char* tls_handshake_type_text(const std::uint8_t handshake_type) noexcept 
         return "ClientKeyExchange";
     case 20U:
         return "Finished";
+    case 21U:
+        return "CertificateURL";
+    case 22U:
+        return "CertificateStatus";
+    case 23U:
+        return "SupplementalData";
+    case 24U:
+        return "KeyUpdate";
+    case 25U:
+        return "CompressedCertificate";
+    case 254U:
+        return "MessageHash";
     default:
         return "Unknown";
     }
+}
+
+std::string tls_handshake_stream_label(const std::uint8_t handshake_type) {
+    switch (handshake_type) {
+    case 0U:
+        return "TLS HelloRequest";
+    case 1U:
+        return "TLS ClientHello";
+    case 2U:
+        return "TLS ServerHello";
+    case 4U:
+        return "TLS NewSessionTicket";
+    case 5U:
+        return "TLS EndOfEarlyData";
+    case 8U:
+        return "TLS EncryptedExtensions";
+    case 11U:
+        return "TLS Certificate";
+    case 12U:
+        return "TLS ServerKeyExchange";
+    case 13U:
+        return "TLS CertificateRequest";
+    case 14U:
+        return "TLS ServerHelloDone";
+    case 15U:
+        return "TLS CertificateVerify";
+    case 16U:
+        return "TLS ClientKeyExchange";
+    case 20U:
+        return "TLS Finished";
+    case 21U:
+        return "TLS CertificateURL";
+    case 22U:
+        return "TLS CertificateStatus";
+    case 23U:
+        return "TLS SupplementalData";
+    case 24U:
+        return "TLS KeyUpdate";
+    case 25U:
+        return "TLS CompressedCertificate";
+    case 254U:
+        return "TLS MessageHash";
+    default:
+        return "TLS Handshake";
+    }
+}
+
+std::string tls_stream_label_from_protocol_text(const std::string_view protocol_text) {
+    constexpr std::array<std::pair<std::string_view, std::string_view>, 17> handshake_labels {{
+        {"Handshake Type: HelloRequest", "TLS HelloRequest"},
+        {"Handshake Type: ClientHello", "TLS ClientHello"},
+        {"Handshake Type: ServerHello", "TLS ServerHello"},
+        {"Handshake Type: NewSessionTicket", "TLS NewSessionTicket"},
+        {"Handshake Type: EndOfEarlyData", "TLS EndOfEarlyData"},
+        {"Handshake Type: EncryptedExtensions", "TLS EncryptedExtensions"},
+        {"Handshake Type: Certificate", "TLS Certificate"},
+        {"Handshake Type: ServerKeyExchange", "TLS ServerKeyExchange"},
+        {"Handshake Type: CertificateRequest", "TLS CertificateRequest"},
+        {"Handshake Type: ServerHelloDone", "TLS ServerHelloDone"},
+        {"Handshake Type: CertificateVerify", "TLS CertificateVerify"},
+        {"Handshake Type: ClientKeyExchange", "TLS ClientKeyExchange"},
+        {"Handshake Type: Finished", "TLS Finished"},
+        {"Handshake Type: CertificateURL", "TLS CertificateURL"},
+        {"Handshake Type: CertificateStatus", "TLS CertificateStatus"},
+        {"Handshake Type: KeyUpdate", "TLS KeyUpdate"},
+        {"Handshake Type: CompressedCertificate", "TLS CompressedCertificate"},
+    }};
+
+    for (const auto& [marker, label] : handshake_labels) {
+        if (contains_text(protocol_text, marker)) {
+            return std::string {label};
+        }
+    }
+
+    if (contains_text(protocol_text, "Handshake Type: SupplementalData")) {
+        return "TLS SupplementalData";
+    }
+    if (contains_text(protocol_text, "Handshake Type: MessageHash")) {
+        return "TLS MessageHash";
+    }
+    if (contains_text(protocol_text, "Record Type: ChangeCipherSpec")) {
+        return "TLS ChangeCipherSpec";
+    }
+    if (contains_text(protocol_text, "Record Type: ApplicationData")) {
+        return "TLS AppData";
+    }
+    if (contains_text(protocol_text, "Record Type: Handshake")) {
+        return "TLS Handshake";
+    }
+    return "TLS Payload";
 }
 
 std::string fallback_stream_label(const ProtocolId protocol) {
@@ -599,14 +705,7 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
         return "TLS ChangeCipherSpec";
     case 22U:
         if (record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
-            switch (record_bytes[kTlsRecordHeaderSize]) {
-            case 1U:
-                return "TLS ClientHello";
-            case 2U:
-                return "TLS ServerHello";
-            default:
-                return "TLS Handshake";
-            }
+            return tls_handshake_stream_label(record_bytes[kTlsRecordHeaderSize]);
         }
         return "TLS Handshake";
     case 23U:
@@ -1520,23 +1619,7 @@ std::string classify_stream_label(
     if (deep_protocol_details_enabled) {
         TlsPacketProtocolAnalyzer tls_analyzer {};
         if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
-            const auto text = std::string_view(*tls_details);
-            if (contains_text(text, "Handshake Type: ClientHello")) {
-                return "TLS ClientHello";
-            }
-            if (contains_text(text, "Handshake Type: ServerHello")) {
-                return "TLS ServerHello";
-            }
-            if (contains_text(text, "Record Type: ChangeCipherSpec")) {
-                return "TLS ChangeCipherSpec";
-            }
-            if (contains_text(text, "Record Type: ApplicationData")) {
-                return "TLS AppData";
-            }
-            if (contains_text(text, "Record Type: Handshake")) {
-                return "TLS Handshake";
-            }
-            return "TLS Payload";
+            return tls_stream_label_from_protocol_text(*tls_details);
         }
 
         HttpPacketProtocolAnalyzer http_analyzer {};

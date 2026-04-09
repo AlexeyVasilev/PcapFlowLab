@@ -188,7 +188,7 @@ Baseline expectations:
 - at least one HTTP response item spans multiple packets
 - complete large responses must stay HTTP-aware rather than collapsing into `HTTP Payload (partial)`
 
-### HTTP redirect followed by partial response tail
+### HTTP partial response tail
 
 Fixture:
 
@@ -196,14 +196,16 @@ Fixture:
 
 Baseline expectations:
 
-- the capture contains two TCP flows
-- one flow is a clean redirect pair
+- the capture contains one TCP flow
+- one request item
   - `HTTP GET /`
-  - `HTTP 301 Moved Permanently`
-- another flow contains a partial tail after a successful response
-  - `HTTP GET /`
+  - packet #4 in packet-view terms
+- one protocol-aware response item
   - `HTTP 200 OK`
-  - trailing `HTTP Payload (partial)`
+  - starts at packet #6 in packet-view terms
+- one trailing partial item
+  - `HTTP Payload (partial)`
+  - covers the truncated tail associated with packets #6 and #8
 - the partial item should explain incompleteness in `protocol_text`
 
 ### Generic UDP payload
@@ -263,7 +265,7 @@ The latest fixture wave covers several previously missing baseline categories al
 
 - generic UDP fallback is now covered by `udp_generic_payload_2.pcap`
 - generic TCP fallback is now covered by `tcp_generic_payload_7.pcap`
-- repository-backed partial HTTP behavior is now covered by `http_partial_response_4.pcap`
+- repository-backed single-flow partial HTTP behavior is now covered by `http_partial_response_4.pcap`
 - repository-backed multi-packet TLS behavior is now covered by `tls_server_handshake_retransmit_6.pcap`
 
 Still useful later, if we want even smaller single-purpose captures:
@@ -303,7 +305,7 @@ The current repository already has good second-wave coverage in place:
 1. `http_multi_message_3.pcap`
   - locks large multi-message HTTP response handling
 2. `http_partial_response_4.pcap`
-  - locks redirect plus partial-tail HTTP behavior
+  - locks single-flow HTTP response truncation behavior
 3. `udp_generic_payload_2.pcap`
   - locks pure generic UDP fallback behavior
 4. `tcp_generic_payload_7.pcap`
@@ -348,7 +350,7 @@ Existing repository fixtures already cover:
 Additional repository fixtures now cover:
 
 - HTTP multi-message response sequences
-- HTTP redirect plus partial-tail response behavior
+- HTTP single-flow partial response tail behavior
 - generic UDP fallback
 - generic TCP fallback
 - partial TLS tails
