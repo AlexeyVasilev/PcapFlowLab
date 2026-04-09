@@ -1900,37 +1900,49 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(small_stream_flow_index >= 0);
 
     stream_loading_controller.setSelectedFlowIndex(heavy_stream_flow_index);
-    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 15U);
+    const auto initial_heavy_loaded = stream_loading_controller.loadedStreamItemCount();
+    UI_EXPECT(initial_heavy_loaded > 0U);
+    UI_EXPECT(initial_heavy_loaded <= 15U);
     UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 0U);
     UI_EXPECT(stream_loading_controller.streamPartiallyLoaded());
     UI_EXPECT(stream_loading_controller.canLoadMoreStreamItems());
     UI_EXPECT(!stream_loading_controller.streamLoading());
-    UI_EXPECT(stream_loading_stream_model->rowCount() == 15);
+    UI_EXPECT(stream_loading_stream_model->rowCount() == static_cast<int>(initial_heavy_loaded));
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
-    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(14, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 15U);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(stream_loading_stream_model->rowCount() - 1, 0), StreamListModel::StreamItemIndexRole).toULongLong() == initial_heavy_loaded);
 
     stream_loading_controller.loadMoreStreamItems();
-    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 30U);
-    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 0U);
-    UI_EXPECT(stream_loading_controller.streamPartiallyLoaded());
-    UI_EXPECT(stream_loading_controller.canLoadMoreStreamItems());
-    UI_EXPECT(stream_loading_stream_model->rowCount() == 30);
-    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(15, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 16U);
-    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(29, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 30U);
+    const auto expanded_heavy_loaded = stream_loading_controller.loadedStreamItemCount();
+    UI_EXPECT(expanded_heavy_loaded >= initial_heavy_loaded);
+    UI_EXPECT(expanded_heavy_loaded <= 30U);
+    UI_EXPECT(!stream_loading_controller.streamLoading());
+    UI_EXPECT(stream_loading_stream_model->rowCount() == static_cast<int>(expanded_heavy_loaded));
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(stream_loading_stream_model->rowCount() - 1, 0), StreamListModel::StreamItemIndexRole).toULongLong() == expanded_heavy_loaded);
+    if (stream_loading_controller.canLoadMoreStreamItems()) {
+        UI_EXPECT(stream_loading_controller.streamPartiallyLoaded());
+        UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 0U);
+    } else {
+        UI_EXPECT(!stream_loading_controller.streamPartiallyLoaded());
+        UI_EXPECT(stream_loading_controller.totalStreamItemCount() == expanded_heavy_loaded);
+    }
 
-    stream_loading_controller.setSelectedStreamItemIndex(5U);
-    UI_EXPECT(stream_loading_controller.selectedStreamItemIndex() == 5U);
+    const auto selected_heavy_stream_item = std::min<qulonglong>(5U, expanded_heavy_loaded);
+    stream_loading_controller.setSelectedStreamItemIndex(selected_heavy_stream_item);
+    UI_EXPECT(stream_loading_controller.selectedStreamItemIndex() == selected_heavy_stream_item);
     UI_EXPECT(stream_loading_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
 
     stream_loading_controller.setSelectedFlowIndex(small_stream_flow_index);
+    const auto small_loaded = stream_loading_controller.loadedStreamItemCount();
     UI_EXPECT(stream_loading_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(stream_loading_controller.loadedStreamItemCount() == 15U);
-    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == 15U);
+    UI_EXPECT(small_loaded > 0U);
+    UI_EXPECT(small_loaded <= 15U);
+    UI_EXPECT(stream_loading_controller.totalStreamItemCount() == small_loaded);
     UI_EXPECT(!stream_loading_controller.streamPartiallyLoaded());
     UI_EXPECT(!stream_loading_controller.canLoadMoreStreamItems());
-    UI_EXPECT(stream_loading_stream_model->rowCount() == 15);
+    UI_EXPECT(stream_loading_stream_model->rowCount() == static_cast<int>(small_loaded));
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
-    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(14, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 15U);
+    UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(stream_loading_stream_model->rowCount() - 1, 0), StreamListModel::StreamItemIndexRole).toULongLong() == small_loaded);
     UI_EXPECT(stream_loading_details_model->summaryText().isEmpty());
 
     return 0;

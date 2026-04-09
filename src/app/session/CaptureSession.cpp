@@ -1457,14 +1457,15 @@ bool append_http_stream_items_from_reassembly(
     const CaptureSession& session,
     const std::size_t flow_index,
     const std::string_view direction_text,
-    const Direction direction
+    const Direction direction,
+    const std::size_t max_packets_to_scan
 ) {
     constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
 
     const auto result = session.reassemble_flow_direction(ReassemblyRequest {
         .flow_index = flow_index,
         .direction = direction,
-        .max_packets = 256U,
+        .max_packets = max_packets_to_scan,
         .max_bytes = kHttpReassemblyMaxBytes,
     });
     if (!result.has_value() || result->bytes.empty()) {
@@ -1555,12 +1556,13 @@ bool append_tls_stream_items_from_reassembly(
     const CaptureSession& session,
     const std::size_t flow_index,
     const std::string_view direction_text,
-    const Direction direction
+    const Direction direction,
+    const std::size_t max_packets_to_scan
 ) {
     const auto result = session.reassemble_flow_direction(ReassemblyRequest {
         .flow_index = flow_index,
         .direction = direction,
-        .max_packets = 256U,
+        .max_packets = max_packets_to_scan,
         .max_bytes = 256U * 1024U,
     });
     if (!result.has_value() || result->bytes.empty()) {
@@ -1882,7 +1884,6 @@ std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
             .payload_bytes = std::move(payload_bytes),
         });
     };
-
     std::size_t index_a = 0U;
     std::size_t index_b = 0U;
     while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
@@ -1895,6 +1896,111 @@ std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
     }
 
     return suspected_packet_indices;
+}
+
+std::vector<StreamItemRow> build_flow_stream_items_bounded(
+    const CaptureSession& session,
+    const ListedConnectionRef& connection,
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan,
+    const std::size_t target,
+    const bool deep_protocol_details_enabled
+) {
+    const auto flow_protocol = protocol_id(connection);
+    std::vector<StreamItemRow> rows {};
+
+    const auto total_packets = connection.family == FlowAddressFamily::ipv4
+        ? connection_packet_count(*connection.ipv4)
+        : connection_packet_count(*connection.ipv6);
+    rows.reserve(std::min(target, total_packets));
+
+    bool used_directional_tls_reassembly_a_to_b = false;
+    bool used_directional_tls_reassembly_b_to_a = false;
+    bool used_directional_http_reassembly_a_to_b = false;
+    bool used_directional_http_reassembly_b_to_a = false;
+    if (flow_protocol == ProtocolId::tcp) {
+        used_directional_tls_reassembly_a_to_b = append_tls_stream_items_from_reassembly(
+            rows,
+            session,
+            flow_index,
+            kDirectionAToB,
+            Direction::a_to_b,
+            max_packets_to_scan
+        );
+        used_directional_tls_reassembly_b_to_a = append_tls_stream_items_from_reassembly(
+            rows,
+            session,
+            flow_index,
+            kDirectionBToA,
+            Direction::b_to_a,
+            max_packets_to_scan
+        );
+        if (!used_directional_tls_reassembly_a_to_b) {
+            used_directional_http_reassembly_a_to_b = append_http_stream_items_from_reassembly(
+                rows,
+                session,
+                flow_index,
+                kDirectionAToB,
+                Direction::a_to_b,
+                max_packets_to_scan
+            );
+        }
+        if (!used_directional_tls_reassembly_b_to_a) {
+            used_directional_http_reassembly_b_to_a = append_http_stream_items_from_reassembly(
+                rows,
+                session,
+                flow_index,
+                kDirectionBToA,
+                Direction::b_to_a,
+                max_packets_to_scan
+            );
+        }
+    }
+
+    const bool skip_direction_a = used_directional_tls_reassembly_a_to_b || used_directional_http_reassembly_a_to_b;
+    const bool skip_direction_b = used_directional_tls_reassembly_b_to_a || used_directional_http_reassembly_b_to_a;
+
+    if (rows.size() < target) {
+        if (connection.family == FlowAddressFamily::ipv4) {
+            append_connection_stream_items_bounded(
+                rows,
+                session,
+                flow_index,
+                *connection.ipv4,
+                flow_protocol,
+                target,
+                max_packets_to_scan,
+                deep_protocol_details_enabled,
+                skip_direction_a,
+                skip_direction_b
+            );
+        } else {
+            append_connection_stream_items_bounded(
+                rows,
+                session,
+                flow_index,
+                *connection.ipv6,
+                flow_protocol,
+                target,
+                max_packets_to_scan,
+                deep_protocol_details_enabled,
+                skip_direction_a,
+                skip_direction_b
+            );
+        }
+    }
+
+    std::stable_sort(rows.begin(), rows.end(), [](const StreamItemRow& left, const StreamItemRow& right) {
+        const auto left_packet_index = left.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : left.packet_indices.front();
+        const auto right_packet_index = right.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : right.packet_indices.front();
+        return left_packet_index < right_packet_index;
+    });
+
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        rows[index].stream_item_index = static_cast<std::uint64_t>(index + 1U);
+    }
+
+    return rows;
 }
 
 }  // namespace
@@ -2707,95 +2813,17 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
 
     const auto maxTarget = std::numeric_limits<std::size_t>::max();
     const auto target = (offset > maxTarget - limit) ? maxTarget : offset + limit;
-
-    std::vector<StreamItemRow> rows {};
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        rows.reserve(std::min(target, connection_packet_count(*connections[flow_index].ipv4)));
-    } else {
-        rows.reserve(std::min(target, connection_packet_count(*connections[flow_index].ipv6)));
-    }
-
-    bool used_directional_tls_reassembly_a_to_b = false;
-    bool used_directional_tls_reassembly_b_to_a = false;
-    bool used_directional_http_reassembly_a_to_b = false;
-    bool used_directional_http_reassembly_b_to_a = false;
-    if (flow_protocol == ProtocolId::tcp) {
-        used_directional_tls_reassembly_a_to_b = append_tls_stream_items_from_reassembly(
-            rows,
-            *this,
-            flow_index,
-            kDirectionAToB,
-            Direction::a_to_b
-        );
-        used_directional_tls_reassembly_b_to_a = append_tls_stream_items_from_reassembly(
-            rows,
-            *this,
-            flow_index,
-            kDirectionBToA,
-            Direction::b_to_a
-        );
-        if (!used_directional_tls_reassembly_a_to_b) {
-            used_directional_http_reassembly_a_to_b = append_http_stream_items_from_reassembly(
-                rows,
-                *this,
-                flow_index,
-                kDirectionAToB,
-                Direction::a_to_b
-            );
-        }
-        if (!used_directional_tls_reassembly_b_to_a) {
-            used_directional_http_reassembly_b_to_a = append_http_stream_items_from_reassembly(
-                rows,
-                *this,
-                flow_index,
-                kDirectionBToA,
-                Direction::b_to_a
-            );
-        }
-    }
-
-    const bool skip_direction_a = used_directional_tls_reassembly_a_to_b || used_directional_http_reassembly_a_to_b;
-    const bool skip_direction_b = used_directional_tls_reassembly_b_to_a || used_directional_http_reassembly_b_to_a;
-
-    if (rows.size() < target) {
-        if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-            append_connection_stream_items_bounded(
-                rows,
-                *this,
-                flow_index,
-                *connections[flow_index].ipv4,
-                flow_protocol,
-                target,
-                connection_packet_count(*connections[flow_index].ipv4),
-                deep_protocol_details_enabled_,
-                skip_direction_a,
-                skip_direction_b
-            );
-        } else {
-            append_connection_stream_items_bounded(
-                rows,
-                *this,
-                flow_index,
-                *connections[flow_index].ipv6,
-                flow_protocol,
-                target,
-                connection_packet_count(*connections[flow_index].ipv6),
-                deep_protocol_details_enabled_,
-                skip_direction_a,
-                skip_direction_b
-            );
-        }
-    }
-
-    std::stable_sort(rows.begin(), rows.end(), [](const StreamItemRow& left, const StreamItemRow& right) {
-        const auto left_packet_index = left.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : left.packet_indices.front();
-        const auto right_packet_index = right.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : right.packet_indices.front();
-        return left_packet_index < right_packet_index;
-    });
-
-    for (std::size_t index = 0; index < rows.size(); ++index) {
-        rows[index].stream_item_index = static_cast<std::uint64_t>(index + 1U);
-    }
+    const auto max_packets_to_scan = connections[flow_index].family == FlowAddressFamily::ipv4
+        ? connection_packet_count(*connections[flow_index].ipv4)
+        : connection_packet_count(*connections[flow_index].ipv6);
+    auto rows = build_flow_stream_items_bounded(
+        *this,
+        connections[flow_index],
+        flow_index,
+        max_packets_to_scan,
+        target,
+        deep_protocol_details_enabled_
+    );
 
     if (offset >= rows.size()) {
         return {};
@@ -2829,48 +2857,14 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         return {};
     }
 
-    std::vector<StreamItemRow> rows {};
-    rows.reserve(std::min(limit, max_packets_to_scan));
-
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        append_connection_stream_items_bounded(
-            rows,
-            *this,
-            flow_index,
-            *connections[flow_index].ipv4,
-            flow_protocol,
-            limit,
-            max_packets_to_scan,
-            deep_protocol_details_enabled_,
-            false,
-            false
-        );
-    } else {
-        append_connection_stream_items_bounded(
-            rows,
-            *this,
-            flow_index,
-            *connections[flow_index].ipv6,
-            flow_protocol,
-            limit,
-            max_packets_to_scan,
-            deep_protocol_details_enabled_,
-            false,
-            false
-        );
-    }
-
-    std::stable_sort(rows.begin(), rows.end(), [](const StreamItemRow& left, const StreamItemRow& right) {
-        const auto left_packet_index = left.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : left.packet_indices.front();
-        const auto right_packet_index = right.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : right.packet_indices.front();
-        return left_packet_index < right_packet_index;
-    });
-
-    for (std::size_t index = 0; index < rows.size(); ++index) {
-        rows[index].stream_item_index = static_cast<std::uint64_t>(index + 1U);
-    }
-
-    return rows;
+    return build_flow_stream_items_bounded(
+        *this,
+        connections[flow_index],
+        flow_index,
+        max_packets_to_scan,
+        limit,
+        deep_protocol_details_enabled_
+    );
 }
 std::size_t CaptureSession::flow_stream_item_count(const std::size_t flow_index) const {
     return list_flow_stream_items(flow_index).size();

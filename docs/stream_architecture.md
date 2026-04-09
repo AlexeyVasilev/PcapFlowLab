@@ -36,33 +36,23 @@ Each Stream row is represented as a `StreamItemRow`.
 
 The model is intentionally narrow. A Stream item is a presentation artifact for the selected flow, not a protocol object with lifecycle outside the current view.
 
-## Stream materialization modes
+## Stream materialization
 
-Current Stream materialization has three practical modes.
+Stream now uses one bounded on-demand materialization pipeline.
 
-### Full build within budget
-
-If the selected flow is small enough, Stream items are materialized in one pass and the full current result fits within the initial item and packet budgets.
-
-- This is the common path for small captures and small flows.
-- No additional continuation step is needed.
-
-### Packet-prefix build
-
-For heavier flows, initial Stream construction uses a bounded packet window and a bounded item target.
-
-- The first Stream result is intentionally partial.
-- The goal is fast interactive startup for the selected flow rather than full immediate reconstruction.
-- The initial result should still preserve stable item ordering within the scanned packet prefix.
+- The same protocol-aware builder is used for the initial selected-flow result and every later `Load more` refresh.
+- Initial and extended views differ only by bounds, primarily the packet window and item budget supplied to the builder.
+- A small flow may fit completely inside the initial bounds and therefore appear fully materialized immediately.
+- A larger flow yields a partial result from the same builder, not from a fallback-only path.
 
 ### Load more
 
-When the initial packet window or item budget is insufficient, the UI exposes explicit continuation.
+`Load more` does not append from a separate continuation mode.
 
-- Additional Stream items are materialized only when the user asks for more.
-- This extends the selected flow's current ephemeral Stream result.
-- It does not retroactively change capture-wide state.
-- It does not imply a persistent Stream cache.
+- The controller increases the selected flow's packet and item budgets.
+- Stream is then rebuilt from scratch for that flow with the larger bounds.
+- This keeps ordering, labeling, and protocol-aware reconstruction semantics consistent across initial and extended views.
+- The result remains selected-flow only, ephemeral, and non-persistent.
 
 ## Reassembly usage
 
@@ -71,6 +61,7 @@ Stream uses reassembly only as a local helper for selected-flow analysis.
 - Directional only: one request handles one flow direction at a time.
 - Packet-order concatenation only: payload bytes are appended in observed packet order.
 - Exact duplicate TCP payload segments may be suppressed for the selected flow when they were already marked by the selected-flow retransmission detector.
+- The same bounded reassembly-assisted path is used whether Stream is still partial or already expanded by `Load more`.
 - No overlap trimming: overlapping sequence-space handling is not implemented.
 - No out-of-order repair: reordered packets are not reassembled into transport-correct byte order.
 - Partial results are allowed: budget exhaustion and incomplete trailing data are normal outputs, not exceptional states.

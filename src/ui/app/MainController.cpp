@@ -2405,10 +2405,11 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     stream_loading_ = true;
     const auto requestLimit = stream_item_budget_count_ + 1U;
     const bool packetBudgetExhausted = stream_packet_window_count_ < totalFlowPacketCount;
-
-    auto rows = packetBudgetExhausted
-        ? session_.list_flow_stream_items_for_packet_prefix(flowIndex, stream_packet_window_count_, requestLimit)
-        : session_.list_flow_stream_items(flowIndex, 0U, requestLimit);
+    auto rows = session_.list_flow_stream_items_for_packet_prefix(
+        flowIndex,
+        stream_packet_window_count_,
+        requestLimit
+    );
 
     const bool hasMoreItems = rows.size() > stream_item_budget_count_;
     if (hasMoreItems) {

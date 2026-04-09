@@ -7,6 +7,7 @@
 - Partial HTTP and TLS cases have explicit fallback handling.
 - Selected-flow-only retransmission detection is implemented.
 - Exact duplicate TCP payload suppression is implemented for selected-flow Stream use.
+- Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
 
 ## Analysis tab
 
@@ -30,12 +31,10 @@
 
 - QUIC Stream parsing is not implemented.
 - General retransmission handling is not implemented beyond exact duplicate suppression.
-- Stream materialization is still partially inconsistent across initial build, fallback, and continuation paths.
 - TLS details are not fully exposed yet.
 
 ## Next steps
 
 - Extend retransmission handling beyond exact duplicate suppression.
-- Unify the Stream materialization model.
 - Improve TLS details, including extensions and cipher-suite exposure.
 - Add a narrow first step for QUIC Stream labeling.
