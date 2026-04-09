@@ -10,6 +10,7 @@
 - Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
 - TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
 - Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.
+- Selected-packet protocol details now depend on packet-bytes availability, not Deep mode alone.
 
 ## Analysis tab
 

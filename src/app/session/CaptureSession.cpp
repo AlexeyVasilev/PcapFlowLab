@@ -451,7 +451,6 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
     return std::nullopt;
 }
 
-constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 constexpr std::string_view kFragmentedProtocolDetailsMessage = "Protocol details are unavailable for fragmented packets until reassembly is implemented.";
@@ -3344,10 +3343,6 @@ std::string CaptureSession::read_packet_payload_hex_dump(const PacketRef& packet
 }
 
 std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& packet) const {
-    if (!deep_protocol_details_enabled_) {
-        return std::string {kFastModeProtocolDetailsMessage};
-    }
-
     if (packet.is_ip_fragmented) {
         return std::string {kFragmentedProtocolDetailsMessage};
     }

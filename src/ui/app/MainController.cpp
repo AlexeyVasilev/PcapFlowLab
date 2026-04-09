@@ -39,8 +39,6 @@ constexpr std::size_t kStreamItemBatchSize = 15U;
 constexpr std::size_t kInitialStreamPacketBudget = 30U;
 constexpr std::size_t kStreamPacketBatchSize = 30U;
 constexpr int kSessionApplyOverlayDelayMs = 40;
-constexpr std::string_view kFastModeProtocolDetailsMessage = "Protocol details are only available in Deep mode.";
-
 struct OpenJobResult {
     bool opened {false};
     bool cancelled {false};
@@ -574,10 +572,6 @@ QString stream_protocol_unavailable_text() {
 }
 
 QString normalize_stream_protocol_text(const QString& protocol_text) {
-    if (protocol_text == QString::fromUtf8(kFastModeProtocolDetailsMessage.data(), static_cast<int>(kFastModeProtocolDetailsMessage.size()))) {
-        return QStringLiteral("Protocol details require Deep mode for this packet.");
-    }
-
     return protocol_text.isEmpty() ? stream_protocol_unavailable_text() : protocol_text;
 }
 

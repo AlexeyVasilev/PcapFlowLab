@@ -45,6 +45,7 @@
 - refine Stream Item Details panel
 - improve clarity of partial / reconstructed data
 - validate the first TLS Protocol-tab enrichment pass against real captures
+- keep selected-packet protocol details on-demand and bytes-gated, not mode-gated
 - keep selected-flow loading observable and responsive
 
 This file reflects current working priorities and may evolve frequently.
