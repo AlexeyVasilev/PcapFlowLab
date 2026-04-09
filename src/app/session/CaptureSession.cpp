@@ -30,6 +30,7 @@
 #include "core/services/PacketDetailsService.h"
 #include "core/services/PacketPayloadService.h"
 #include "core/services/PerfOpenLogger.h"
+#include "core/services/QuicPacketProtocolAnalyzer.h"
 #include "core/services/TlsPacketProtocolAnalyzer.h"
 
 namespace pfl {
@@ -1530,6 +1531,37 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     }
 }
 
+std::string quic_stream_label_from_protocol_text(const std::string_view protocol_text) {
+    if (contains_text(protocol_text, "Packet Type: Version Negotiation")) {
+        return "QUIC Version Negotiation";
+    }
+    if (contains_text(protocol_text, "Packet Type: Retry")) {
+        return "QUIC Retry";
+    }
+
+    const bool has_ack = contains_text(protocol_text, "Frame Presence: ACK") || contains_text(protocol_text, "Frame Presence: ACK,");
+    const bool has_crypto = contains_text(protocol_text, "Frame Presence: CRYPTO") || contains_text(protocol_text, "Frame Presence: CRYPTO,");
+    const bool has_stream = contains_text(protocol_text, "STREAM");
+    if (has_ack && !has_crypto && !has_stream) {
+        return "QUIC ACK";
+    }
+    if (has_crypto && !has_ack && !has_stream) {
+        return "QUIC CRYPTO";
+    }
+
+    if (contains_text(protocol_text, "Packet Type: Initial")) {
+        return "QUIC Initial";
+    }
+    if (contains_text(protocol_text, "Packet Type: Handshake")) {
+        return "QUIC Handshake";
+    }
+    if (contains_text(protocol_text, "Packet Type: Protected Payload")) {
+        return "QUIC Protected Payload";
+    }
+
+    return "UDP Payload";
+}
+
 std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS\n  Record details unavailable for this stream item.";
@@ -2521,6 +2553,7 @@ void append_connection_stream_items_bounded(
     const bool skip_direction_b
 ) {
     PacketPayloadService payload_service {};
+    HexDumpService hex_dump_service {};
     std::size_t index_a = 0U;
     std::size_t index_b = 0U;
     std::size_t scanned_packets = 0U;
@@ -2564,9 +2597,26 @@ void append_connection_stream_items_bounded(
             .protocol = flow_protocol,
         };
 
+        const auto payload_span = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+
         if (flow_protocol == ProtocolId::tcp) {
-            const auto payload_span = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
             if (append_tls_stream_items(rows, candidate, payload_span)) {
+                continue;
+            }
+        }
+
+        if (flow_protocol == ProtocolId::udp) {
+            QuicPacketProtocolAnalyzer quic_analyzer {};
+            if (const auto quic_details = quic_analyzer.analyze(packet_bytes, packet.data_link_type); quic_details.has_value()) {
+                rows.push_back(make_stream_item_row(
+                    static_cast<std::uint64_t>(rows.size() + 1U),
+                    direction_text,
+                    quic_stream_label_from_protocol_text(*quic_details),
+                    payload_bytes.size(),
+                    packet,
+                    hex_dump_service.format(payload_span),
+                    *quic_details
+                ));
                 continue;
             }
         }
@@ -3355,6 +3405,11 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
     TlsPacketProtocolAnalyzer tls_analyzer {};
     if (const auto tls_details = tls_analyzer.analyze(bytes, packet.data_link_type); tls_details.has_value()) {
         return *tls_details;
+    }
+
+    QuicPacketProtocolAnalyzer quic_analyzer {};
+    if (const auto quic_details = quic_analyzer.analyze(bytes, packet.data_link_type); quic_details.has_value()) {
+        return *quic_details;
     }
 
     DnsPacketProtocolAnalyzer dns_analyzer {};

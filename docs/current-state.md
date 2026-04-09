@@ -11,6 +11,7 @@
 - TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
 - Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.
 - Selected-packet protocol details now depend on packet-bytes availability, not Deep mode alone.
+- Selected-flow QUIC labeling now exists in a narrow bounded form for packet-aware `Initial`, `Handshake`, `Retry`, `Version Negotiation`, and `Protected Payload` cases, with conservative fallback to `UDP Payload`.
 
 ## Analysis tab
 
@@ -32,7 +33,7 @@
 
 ## Known gaps
 
-- QUIC Stream parsing is not implemented.
+- QUIC Stream handling is still narrow; there is no full QUIC reconstruction or decryption-backed session model.
 - General retransmission handling is not implemented beyond exact duplicate suppression.
 - TLS details are only partially exposed; richer handshake and certificate fields exist only for complete packet-contained TLS records and the matching Stream item types.
 

@@ -65,6 +65,15 @@ std::vector<std::uint8_t> make_tls_client_hello_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_quic_truncated_payload() {
+    return {
+        0xC0U,
+        0x00U, 0x00U, 0x00U, 0x01U,
+        0x08U,
+        0x11U, 0x22U, 0x33U, 0x44U,
+    };
+}
+
 }  // namespace
 
 void run_packet_protocol_details_tests() {
@@ -104,6 +113,30 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(text.find("Selected TLS Version:") != std::string::npos);
         PFL_EXPECT(text.find("Selected Cipher Suite:") != std::string::npos);
         PFL_EXPECT(text.find("Session ID:") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("QUIC") != std::string::npos);
+        PFL_EXPECT(text.find("Header Form: Long") != std::string::npos);
+        PFL_EXPECT(text.find("Packet Type: Initial") != std::string::npos);
+        PFL_EXPECT(text.find("Version:") != std::string::npos);
+        PFL_EXPECT(text.find("Destination Connection ID Length:") != std::string::npos);
+        PFL_EXPECT(text.find("Source Connection ID Length:") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_handshake_3.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("QUIC") != std::string::npos);
+        PFL_EXPECT(text.find("Header Form: Long") != std::string::npos);
+        PFL_EXPECT(text.find("Packet Type: Handshake") != std::string::npos);
+        PFL_EXPECT(text.find("Destination Connection ID Length:") != std::string::npos);
     }
 
     {
@@ -246,6 +279,20 @@ void run_packet_protocol_details_tests() {
             ipv4(10, 1, 0, 1), ipv4(8, 8, 8, 8), 53000, 53, truncated_dns);
         const auto capture_path = write_temp_pcap(
             "pfl_protocol_dns_truncated.pcap",
+            make_classic_pcap({{100, packet_bytes}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
+    }
+
+    {
+        const auto packet_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 5), ipv4(8, 8, 8, 8), 54000, 443, make_quic_truncated_payload());
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_quic_truncated.pcap",
             make_classic_pcap({{100, packet_bytes}})
         );
 

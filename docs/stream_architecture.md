@@ -130,10 +130,12 @@ DNS is currently packet-level only in Stream.
 
 ### QUIC
 
-QUIC does not currently have a dedicated Stream model.
+QUIC now has a first narrow selected-flow labeling step, but not a full Stream reconstruction model.
 
-- QUIC traffic stays on the generic UDP Stream path.
-- Flow-level QUIC recognition does not imply QUIC-specific Stream labeling.
+- QUIC packets may be labeled as `QUIC Initial`, `QUIC Handshake`, `QUIC Retry`, `QUIC Version Negotiation`, or `QUIC Protected Payload` when packet bytes support reliable header typing.
+- Where plaintext frame bytes are directly parseable, the same bounded selected-flow path may refine a packet-sized item to `QUIC ACK` or `QUIC CRYPTO`.
+- If bytes are incomplete or uncertain, QUIC traffic still falls back to `UDP Payload`.
+- No QUIC decryption or session-wide reconstruction is introduced by this step.
 
 ## Partial and fallback behavior
 

@@ -70,6 +70,7 @@ add_library(
     src/core/services/PacketPayloadService.cpp
     src/core/services/PerfOpenLogger.cpp
     src/core/services/TlsPacketProtocolAnalyzer.cpp
+    src/core/services/QuicPacketProtocolAnalyzer.cpp
     src/core/services/DnsPacketProtocolAnalyzer.cpp
     src/core/services/HttpPacketProtocolAnalyzer.cpp
     src/core/services/FlowHintService.cpp

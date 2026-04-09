@@ -22,7 +22,7 @@
   - richer certificate fields when cheaply available
   - better compact summaries for incomplete TLS metadata
 - improve partial handling (HTTP/TLS)
-- add minimal QUIC stream labeling (bounded, selected-flow only)
+- extend QUIC selected-flow labeling beyond the first bounded packet-aware taxonomy, without introducing full reconstruction or decryption
 
 ## Tests
 

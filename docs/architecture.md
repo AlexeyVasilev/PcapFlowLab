@@ -152,7 +152,7 @@ Current scalability risks are still worth watching:
 - No full TCP-correct stream reconstruction.
 - TCP retransmission effects are only partially handled in Stream reassembly; exact duplicate suppression exists, but full retransmission handling does not.
 - HTTP Stream parsing is limited to header blocks; bodies and chunked transfer decoding are not reconstructed.
-- QUIC stream parsing is not implemented.
+- QUIC Stream handling is limited to narrow selected-flow packet-aware labeling; full QUIC reconstruction and decryption remain out of scope.
 - Bounded reassembly may truncate long streams.
 - Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
 - Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
