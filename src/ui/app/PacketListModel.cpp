@@ -37,6 +37,8 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
         return item.payload_length;
     case IsIpFragmentedRole:
         return item.is_ip_fragmented;
+    case SuspectedTcpRetransmissionRole:
+        return item.suspected_tcp_retransmission;
     case TcpFlagsTextRole:
         return item.tcp_flags_text;
     default:
@@ -54,6 +56,7 @@ QHash<int, QByteArray> PacketListModel::roleNames() const {
         {OriginalLengthRole, "originalLength"},
         {PayloadLengthRole, "payloadLength"},
         {IsIpFragmentedRole, "isIpFragmented"},
+        {SuspectedTcpRetransmissionRole, "suspectedTcpRetransmission"},
         {TcpFlagsTextRole, "tcpFlagsText"},
     };
 }
@@ -83,6 +86,7 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
             .original_length = row.original_length,
             .payload_length = row.payload_length,
             .is_ip_fragmented = row.is_ip_fragmented,
+            .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
             .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
         });
     }
@@ -110,6 +114,7 @@ void PacketListModel::append(const std::vector<PacketRow>& rows) {
             .original_length = row.original_length,
             .payload_length = row.payload_length,
             .is_ip_fragmented = row.is_ip_fragmented,
+            .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
             .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
         });
     }

@@ -37,6 +37,10 @@ std::vector<std::uint8_t> make_dns_query_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> bytes_payload(std::string_view text) {
+    return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
 }  // namespace
 
 void run_query_tests() {
@@ -143,6 +147,66 @@ void run_query_tests() {
     const bool forward_is_a_to_b = direction_rows[0].address_a == "10.1.0.1" && direction_rows[0].port_a == 40000;
     PFL_EXPECT(packet_rows[0].direction_text == (forward_is_a_to_b ? "A\xE2\x86\x92" "B" : "B\xE2\x86\x92" "A"));
     PFL_EXPECT(packet_rows[1].direction_text == (forward_is_a_to_b ? "B\xE2\x86\x92" "A" : "A\xE2\x86\x92" "B"));
+
+    const auto retransmit_duplicate_path = write_temp_pcap(
+        "pfl_query_retransmit_duplicate.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 41000, 80, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 41000, 80, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+        })
+    );
+
+    CaptureSession retransmit_duplicate_session {};
+    PFL_EXPECT(retransmit_duplicate_session.open_capture(retransmit_duplicate_path));
+    const auto duplicate_marks = retransmit_duplicate_session.suspected_tcp_retransmission_packet_indices(0);
+    PFL_EXPECT(duplicate_marks.size() == 1U);
+    PFL_EXPECT(duplicate_marks[0] == 1U);
+
+    const auto retransmit_payload_mismatch_path = write_temp_pcap(
+        "pfl_query_retransmit_payload_mismatch.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 1, 1), ipv4(10, 2, 1, 2), 41001, 80, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 1, 1), ipv4(10, 2, 1, 2), 41001, 80, bytes_payload("omega"), 1000U, 2000U, 0x18)},
+        })
+    );
+
+    CaptureSession retransmit_payload_mismatch_session {};
+    PFL_EXPECT(retransmit_payload_mismatch_session.open_capture(retransmit_payload_mismatch_path));
+    PFL_EXPECT(retransmit_payload_mismatch_session.suspected_tcp_retransmission_packet_indices(0).empty());
+
+    const auto retransmit_sequence_mismatch_path = write_temp_pcap(
+        "pfl_query_retransmit_sequence_mismatch.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 2, 1), ipv4(10, 2, 2, 2), 41002, 80, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 2, 1), ipv4(10, 2, 2, 2), 41002, 80, bytes_payload("alpha"), 1001U, 2000U, 0x18)},
+            {300, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 2, 2), ipv4(10, 2, 2, 1), 80, 41002, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+        })
+    );
+
+    CaptureSession retransmit_sequence_mismatch_session {};
+    PFL_EXPECT(retransmit_sequence_mismatch_session.open_capture(retransmit_sequence_mismatch_path));
+    PFL_EXPECT(retransmit_sequence_mismatch_session.suspected_tcp_retransmission_packet_indices(0).empty());
+
+    const auto pure_ack_path = write_temp_pcap(
+        "pfl_query_retransmit_pure_ack.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 3, 1), ipv4(10, 2, 3, 2), 41003, 80, {}, 1000U, 2000U, 0x10)},
+            {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 2, 3, 1), ipv4(10, 2, 3, 2), 41003, 80, {}, 1000U, 2000U, 0x10)},
+        })
+    );
+
+    CaptureSession pure_ack_session {};
+    PFL_EXPECT(pure_ack_session.open_capture(pure_ack_path));
+    PFL_EXPECT(pure_ack_session.suspected_tcp_retransmission_packet_indices(0).empty());
 
     const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(192, 168, 1, 10), ipv4(93, 184, 216, 34), 51515, 80, make_http_request_payload(), 0x18);

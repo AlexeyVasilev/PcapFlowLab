@@ -46,6 +46,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - Requires source capture access because packet bytes are still read lazily from the original capture.
 - Builds ephemeral derived artifacts only for the active flow.
 - Current user-facing use is the Stream tab.
+- The selected-flow packet list may also carry ephemeral `Suspected retransmission` markers for exact duplicate payload-bearing TCP packets in the active flow only; these markers are not persisted and do not change open-time summaries or counts.
 - Analysis tab now also includes a bounded metadata-only Sequence Preview block for the selected flow.
 - Analysis can also export the full selected-flow packet sequence to CSV as a metadata-only artifact without payload bytes.
 - Analysis tab now also includes a bounded metadata-only Timeline block for the selected flow.
@@ -64,6 +65,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, transport payload length, TCP flags, link type, and fragmentation metadata.
 - Packet bytes are loaded lazily when details, payload, protocol text, export, or stream analysis needs them.
 - Selected-flow packet lists now use bounded initial materialization in the UI. Small flows that fit within the initial packet budget are materialized fully, while larger flows append additional rows only through explicit Load more continuation.
+- Selected-flow packet rows may be annotated on demand with exact-duplicate TCP retransmission suspicion using direction + seq + ack + payload length + payload bytes. This remains flow-local, conservative, and presentation-oriented.
 - Selected-flow Stream items now follow the same pattern: small flows that fit within the initial Stream budget are materialized fully, and heavier flows append additional items only through explicit Load more continuation.
 
 ## Stream items and directional reassembly

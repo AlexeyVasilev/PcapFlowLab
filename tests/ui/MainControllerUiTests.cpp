@@ -71,6 +71,11 @@ std::vector<std::uint8_t> make_dns_query_payload() {
     pfl::tests::append_be16(payload, 1);
     return payload;
 }
+
+std::vector<std::uint8_t> bytes_payload(std::string_view text) {
+    return std::vector<std::uint8_t>(text.begin(), text.end());
+}
+
 void append_be24(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
     bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
@@ -1505,7 +1510,40 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::DirectionTextRole).toString() == QString::fromUtf8("A\xE2\x86\x92" "B"));
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::PayloadLengthRole).toUInt() == make_http_request_payload().size());
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::OriginalLengthRole).toUInt() == http_flow.size());
+    UI_EXPECT(!packet_model->data(packet_index_model, PacketListModel::SuspectedTcpRetransmissionRole).toBool());
     UI_EXPECT(packet_model->data(packet_index_model, PacketListModel::TcpFlagsTextRole).toString() == QStringLiteral("ACK|SYN"));
+
+    const auto retransmit_capture_path = write_temp_pcap(
+        "pfl_ui_selected_flow_retransmit_marker.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 22, 0, 1), ipv4(10, 22, 0, 2), 44000, 80, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+            {200, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 22, 0, 1), ipv4(10, 22, 0, 2), 44000, 80, bytes_payload("alpha"), 1000U, 2000U, 0x18)},
+            {300, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 22, 1, 1), ipv4(10, 22, 1, 2), 44001, 80, bytes_payload("clean"), 3000U, 4000U, 0x18)},
+            {400, make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+                ipv4(10, 22, 1, 1), ipv4(10, 22, 1, 2), 44001, 80, bytes_payload("other"), 3000U, 4000U, 0x18)},
+        })
+    );
+
+    MainController retransmit_controller {};
+    UI_EXPECT(open_capture_and_wait(app, retransmit_controller, retransmit_capture_path));
+    auto* retransmit_flow_model = qobject_cast<FlowListModel*>(retransmit_controller.flowModel());
+    UI_EXPECT(retransmit_flow_model != nullptr);
+    UI_EXPECT(retransmit_flow_model->rowCount() == 2);
+
+    retransmit_controller.setSelectedFlowIndex(retransmit_flow_model->data(retransmit_flow_model->index(0, 0), FlowListModel::FlowIndexRole).toInt());
+    auto* retransmit_packet_model = qobject_cast<PacketListModel*>(retransmit_controller.packetModel());
+    UI_EXPECT(retransmit_packet_model != nullptr);
+    UI_EXPECT(retransmit_packet_model->rowCount() == 2);
+    UI_EXPECT(!retransmit_packet_model->data(retransmit_packet_model->index(0, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
+    UI_EXPECT(retransmit_packet_model->data(retransmit_packet_model->index(1, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
+
+    retransmit_controller.setSelectedFlowIndex(retransmit_flow_model->data(retransmit_flow_model->index(1, 0), FlowListModel::FlowIndexRole).toInt());
+    UI_EXPECT(retransmit_packet_model->rowCount() == 2);
+    UI_EXPECT(!retransmit_packet_model->data(retransmit_packet_model->index(0, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
+    UI_EXPECT(!retransmit_packet_model->data(retransmit_packet_model->index(1, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
 
     controller.setSelectedPacketIndex(0);
     auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());

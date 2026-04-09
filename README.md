@@ -52,6 +52,7 @@ The Qt Quick desktop UI can:
 - optionally classify unresolved TCP/UDP port 443 flows as Possible TLS / Possible QUIC with a user setting; these remain separate from confirmed protocol detection
 - show QUIC and TLS protocol-recognition statistics aggregated from existing flow metadata only (no extra parsing pass for statistics)
 - materialize selected-flow packet rows in bounded initial batches with explicit Load more continuation for heavy flows
+- mark exact-duplicate payload-bearing TCP packets in the selected flow as `Suspected retransmission` on demand only; this marker is ephemeral and does not affect import, counts, or stream materialization
 - show fragmented packets and flows as diagnostic metadata
 - open indexes in explicit index-only mode and attach the matching source capture later
 - inspect packet details in Summary, Raw, and Protocol views
@@ -76,6 +77,7 @@ The Stream tab is on-demand, flow-local, and ephemeral.
 - It runs only for the currently selected flow.
 - It requires source capture access because raw packet bytes are still read lazily from the original capture.
 - It does not store stream items in indexes or checkpoints.
+- Selected-flow packet metadata may also include ephemeral `Suspected retransmission` markers derived on demand from exact duplicate TCP payload/sequence/ack matches within the active flow only.
 - The Stream view now uses bounded initial materialization for the selected flow and loads additional items only through explicit `Load more` continuation.
 - TLS parsing uses bounded directional reassembly, so TLS records spanning multiple TCP packets can appear as one logical stream item when enough bytes are available.
 - HTTP parsing uses bounded directional reassembly for complete request/response header blocks.

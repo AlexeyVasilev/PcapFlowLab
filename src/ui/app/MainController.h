@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include <QObject>
@@ -487,6 +488,7 @@ private:
     // Flow-local, ephemeral stream projection for the currently selected flow only.
     std::vector<StreamItemRow> current_stream_items_ {};
     std::map<std::uint64_t, std::uint64_t> current_flow_packet_numbers_ {};
+    std::set<std::uint64_t> current_suspected_retransmission_packet_indices_ {};
     QString current_input_path_ {};
     QString active_open_input_path_ {};
     QString open_error_text_ {};

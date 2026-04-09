@@ -1,4 +1,4 @@
-#include "ui/app/MainController.h"
+﻿#include "ui/app/MainController.h"
 
 #include <algorithm>
 #include <array>
@@ -2193,6 +2193,7 @@ void MainController::setSelectedFlowIndex(const int index) {
     clearSelectedFlowAnalysis();
     clearSelectedFlowAnalysis();
     current_flow_packet_numbers_.clear();
+    current_suspected_retransmission_packet_indices_.clear();
     current_stream_items_.clear();
     stream_model_.clear();
     stream_loading_ = false;
@@ -2311,6 +2312,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     if (selected_flow_index_ < 0) {
         packet_model_.clear();
         current_flow_packet_numbers_.clear();
+        current_suspected_retransmission_packet_indices_.clear();
         loaded_packet_row_count_ = 0U;
         total_packet_row_count_ = 0U;
         packets_loading_ = false;
@@ -2327,7 +2329,18 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
         : std::min(kPacketRowBatchSize, total_packet_row_count_ - offset);
 
     packets_loading_ = true;
-    const auto rows = session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_), offset, batchSize);
+    auto rows = session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_), offset, batchSize);
+
+    if (resetRows) {
+        current_suspected_retransmission_packet_indices_.clear();
+        for (const auto packet_index : session_.suspected_tcp_retransmission_packet_indices(static_cast<std::size_t>(selected_flow_index_))) {
+            current_suspected_retransmission_packet_indices_.insert(packet_index);
+        }
+    }
+
+    for (auto& packet_row : rows) {
+        packet_row.suspected_tcp_retransmission = current_suspected_retransmission_packet_indices_.contains(packet_row.packet_index);
+    }
 
     if (resetRows) {
         packet_model_.refresh(rows);
@@ -2496,6 +2509,7 @@ void MainController::clearFlowSelection() {
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
+    current_suspected_retransmission_packet_indices_.clear();
     stream_model_.clear();
     loaded_packet_row_count_ = 0U;
     total_packet_row_count_ = 0U;
@@ -2546,6 +2560,7 @@ void MainController::resetLoadedState() {
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
+    current_suspected_retransmission_packet_indices_.clear();
     stream_model_.clear();
     loaded_stream_item_count_ = 0U;
     total_stream_item_count_ = 0U;

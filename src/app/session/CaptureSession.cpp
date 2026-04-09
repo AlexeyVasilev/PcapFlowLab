@@ -11,6 +11,7 @@
 #include <span>
 #include <sstream>
 #include <string_view>
+#include <tuple>
 
 #include "../../../core/open_context.h"
 #include "core/debug_logging.h"
@@ -456,6 +457,31 @@ constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol detail
 constexpr std::string_view kFragmentedProtocolDetailsMessage = "Protocol details are unavailable for fragmented packets until reassembly is implemented.";
 constexpr std::string_view kDirectionAToB = "A\xE2\x86\x92" "B";
 constexpr std::string_view kDirectionBToA = "B\xE2\x86\x92" "A";
+using SuspectedTcpRetransmissionFingerprint = std::tuple<
+    std::uint8_t,
+    std::uint32_t,
+    std::uint32_t,
+    std::uint32_t,
+    std::uint64_t
+>;
+
+struct SeenTcpPayloadCandidate {
+    std::uint64_t packet_index {0};
+    std::vector<std::uint8_t> payload_bytes {};
+};
+
+std::uint64_t stable_payload_hash(std::span<const std::uint8_t> payload) noexcept {
+    constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+
+    std::uint64_t hash = kFnvOffsetBasis;
+    for (const auto byte : payload) {
+        hash ^= static_cast<std::uint64_t>(byte);
+        hash *= kFnvPrime;
+    }
+
+    return hash;
+}
 
 PacketRow make_packet_row(const PacketRef& packet, const std::string_view direction_text) {
     return PacketRow {
@@ -1798,6 +1824,74 @@ std::vector<PacketRow> slice_connection_packets(
     return rows;
 }
 
+template <typename Connection>
+std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
+    const CaptureSession& session,
+    const Connection& connection
+) {
+    std::map<SuspectedTcpRetransmissionFingerprint, std::vector<SeenTcpPayloadCandidate>> seen_fingerprints {};
+    std::vector<std::uint64_t> suspected_packet_indices {};
+    PacketDetailsService details_service {};
+    PacketPayloadService payload_service {};
+
+    auto maybe_mark_packet = [&](const PacketRef& packet, const std::uint8_t direction_id) {
+        if (packet.payload_length == 0U) {
+            return;
+        }
+
+        const auto packet_bytes = session.read_packet_data(packet);
+        if (packet_bytes.empty()) {
+            return;
+        }
+
+        const auto details = details_service.decode(packet_bytes, packet);
+        if (!details.has_value() || !details->has_tcp) {
+            return;
+        }
+
+        auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        if (payload_bytes.size() != packet.payload_length) {
+            return;
+        }
+
+        const auto payload_hash = stable_payload_hash(payload_bytes);
+
+        auto fingerprint = SuspectedTcpRetransmissionFingerprint {
+            direction_id,
+            details->tcp.seq_number,
+            details->tcp.ack_number,
+            packet.payload_length,
+            payload_hash,
+        };
+
+        auto& candidates = seen_fingerprints[fingerprint];
+        for (const auto& candidate : candidates) {
+            if (candidate.payload_bytes == payload_bytes) {
+                suspected_packet_indices.push_back(packet.packet_index);
+                return;
+            }
+        }
+
+        candidates.push_back(SeenTcpPayloadCandidate {
+            .packet_index = packet.packet_index,
+            .payload_bytes = std::move(payload_bytes),
+        });
+    };
+
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        maybe_mark_packet(packet, use_a ? 0U : 1U);
+    }
+
+    return suspected_packet_indices;
+}
+
 }  // namespace
 
 void CaptureSession::reset_runtime_state() noexcept {
@@ -2514,6 +2608,31 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
     }
 
     return slice_connection_packets(*connections[flow_index].ipv6, offset, limit);
+}
+
+std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_indices(const std::size_t flow_index) const {
+    if (!has_source_capture()) {
+        return {};
+    }
+
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return {};
+    }
+
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        if (connections[flow_index].ipv4->key.protocol != ProtocolId::tcp) {
+            return {};
+        }
+
+        return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv4);
+    }
+
+    if (connections[flow_index].ipv6->key.protocol != ProtocolId::tcp) {
+        return {};
+    }
+
+    return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv6);
 }
 
 std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) const noexcept {

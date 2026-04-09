@@ -24,6 +24,7 @@ public:
         OriginalLengthRole,
         PayloadLengthRole,
         IsIpFragmentedRole,
+        SuspectedTcpRetransmissionRole,
         TcpFlagsTextRole,
     };
 
@@ -49,6 +50,7 @@ private:
         uint original_length {0};
         uint payload_length {0};
         bool is_ip_fragmented {false};
+        bool suspected_tcp_retransmission {false};
         QString tcp_flags_text {};
     };
 

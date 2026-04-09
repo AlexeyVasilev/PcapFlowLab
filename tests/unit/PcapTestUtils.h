@@ -316,6 +316,28 @@ inline std::vector<std::uint8_t> make_ethernet_ipv4_tcp_packet_with_bytes_payloa
     return bytes;
 }
 
+inline std::vector<std::uint8_t> make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+    std::uint32_t src_addr,
+    std::uint32_t dst_addr,
+    std::uint16_t src_port,
+    std::uint16_t dst_port,
+    const std::vector<std::uint8_t>& payload,
+    std::uint32_t seq_number,
+    std::uint32_t ack_number,
+    std::uint8_t tcp_flags = 0x18
+) {
+    auto bytes = make_ethernet_ipv4_tcp_packet_with_bytes_payload(src_addr, dst_addr, src_port, dst_port, payload, tcp_flags);
+    bytes[38] = static_cast<std::uint8_t>((seq_number >> 24U) & 0xFFU);
+    bytes[39] = static_cast<std::uint8_t>((seq_number >> 16U) & 0xFFU);
+    bytes[40] = static_cast<std::uint8_t>((seq_number >> 8U) & 0xFFU);
+    bytes[41] = static_cast<std::uint8_t>(seq_number & 0xFFU);
+    bytes[42] = static_cast<std::uint8_t>((ack_number >> 24U) & 0xFFU);
+    bytes[43] = static_cast<std::uint8_t>((ack_number >> 16U) & 0xFFU);
+    bytes[44] = static_cast<std::uint8_t>((ack_number >> 8U) & 0xFFU);
+    bytes[45] = static_cast<std::uint8_t>(ack_number & 0xFFU);
+    return bytes;
+}
+
 inline std::vector<std::uint8_t> make_ethernet_ipv4_udp_packet_with_bytes_payload(
     std::uint32_t src_addr,
     std::uint32_t dst_addr,

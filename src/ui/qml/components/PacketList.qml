@@ -240,6 +240,12 @@ Frame {
                 font.bold: true
                 Layout.fillWidth: true
             }
+
+            Label {
+                text: "Marker"
+                font.bold: true
+                Layout.preferredWidth: 168
+            }
         }
 
         Rectangle {
@@ -275,6 +281,7 @@ Frame {
                     required property int originalLength
                     required property int payloadLength
                     required property bool isIpFragmented
+                    required property bool suspectedTcpRetransmission
                     required property string tcpFlagsText
 
                     readonly property bool selected: index === packetListView.currentIndex
@@ -362,6 +369,27 @@ Frame {
                                 font.family: "Consolas"
                                 color: root.flagTextColor(tcpFlagsText, payloadLength, selected)
                                 elide: Text.ElideRight
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 168
+                            implicitHeight: 24
+                            radius: 4
+                            color: suspectedTcpRetransmission && !selected ? "#fff1cc" : "transparent"
+                            border.width: color === "transparent" ? 0 : 1
+                            border.color: color === "transparent" ? "transparent" : "#d6b55a"
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.right: parent.right
+                                anchors.rightMargin: 8
+                                text: suspectedTcpRetransmission ? "Suspected retransmission" : ""
+                                color: selected ? "#0f172a" : "#8a6a12"
+                                elide: Text.ElideRight
+                                font.pixelSize: 11
                             }
                         }
                     }
