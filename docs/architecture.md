@@ -150,6 +150,7 @@ Current scalability risks are still worth watching:
 ## Known limitations
 
 - No full TCP-correct stream reconstruction.
+- TCP retransmission effects are not handled in Stream reassembly (detection exists, suppression planned).
 - HTTP Stream parsing is limited to header blocks; bodies and chunked transfer decoding are not reconstructed.
 - QUIC stream parsing is not implemented.
 - Bounded reassembly may truncate long streams.

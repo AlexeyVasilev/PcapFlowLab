@@ -218,6 +218,14 @@ Baseline expectations:
 
 - one or more UDP Stream items
 - every item label is `UDP Payload`
+
+## Scope clarification
+
+These tests define observable Stream behavior, not exact internal reconstruction.
+
+- Packet-to-item mapping is not strictly fixed
+- Assertions focus on labels, protocol-awareness, and partial vs complete behavior
+- Exact byte-level reconstruction is out of scope
 - no DNS-specific or QUIC-specific labels appear
 - item-level `protocol_text` and `payload_hex_text` remain empty
 

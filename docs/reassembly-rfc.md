@@ -113,3 +113,8 @@ Current Stream analysis remains ephemeral.
 - Long streams may be truncated by budget.
 - Stream output may differ from Wireshark on captures with missing bytes, retransmissions, or reordering.
 - Conservative fallback is preferred over a falsely complete item.
+
+## Future direction
+
+- exact duplicate TCP segment suppression may be added for Stream use
+- this will remain bounded and heuristic, not full TCP reconstruction
