@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,9 @@ public:
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
     [[nodiscard]] std::vector<std::uint64_t> suspected_tcp_retransmission_packet_indices(std::size_t flow_index) const;
+    void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices) noexcept;
+    void clear_selected_flow_tcp_payload_suppression() noexcept;
+    [[nodiscard]] bool should_suppress_selected_flow_tcp_payload(std::size_t flow_index, std::uint64_t packet_index) const noexcept;
     [[nodiscard]] std::size_t flow_packet_count(std::size_t flow_index) const noexcept;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index) const;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
@@ -70,6 +74,11 @@ public:
     [[nodiscard]] const CaptureState& state() const noexcept;
 
 private:
+    struct SelectedFlowTcpPayloadSuppression {
+        std::size_t flow_index {0};
+        std::set<std::uint64_t> packet_indices {};
+    };
+
     void reset_runtime_state() noexcept;
 
     std::filesystem::path capture_path_ {};
@@ -84,6 +93,7 @@ private:
     bool partial_open_ {false};
     OpenFailureInfo partial_open_failure_ {};
     std::string last_open_error_text_ {};
+    std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };
 
 }  // namespace pfl

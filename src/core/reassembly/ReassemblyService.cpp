@@ -140,6 +140,11 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
             continue;
         }
 
+        if (session.should_suppress_selected_flow_tcp_payload(request.flow_index, packet.packet_index)) {
+            set_flag(result, ReassemblyQualityFlag::duplicate_tcp_segment_suppressed);
+            continue;
+        }
+
         const auto bytes = session.read_packet_data(packet);
         if (bytes.empty()) {
             set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);

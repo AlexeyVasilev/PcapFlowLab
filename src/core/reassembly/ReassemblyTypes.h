@@ -23,6 +23,7 @@ enum class ReassemblyQualityFlag : std::uint32_t {
     contains_non_payload_packets = 1U << 3U,
     may_contain_transport_gaps = 1U << 4U,
     may_contain_retransmissions = 1U << 5U,
+    duplicate_tcp_segment_suppressed = 1U << 6U,
 };
 
 struct ReassemblyResult {

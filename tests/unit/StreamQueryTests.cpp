@@ -136,6 +136,53 @@ void run_stream_query_tests() {
     PFL_EXPECT(stream_rows[0].label == "TCP Payload");
     PFL_EXPECT(stream_rows[1].label == "TCP Payload");
 
+    const auto duplicate_segment_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 40, 1, 1), ipv4(10, 40, 1, 2), 51001, 443, std::vector<std::uint8_t> {'D', 'U', 'P'}, 1000U, 2000U, 0x18);
+    const auto duplicate_segment_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 40, 1, 1), ipv4(10, 40, 1, 2), 51001, 443, std::vector<std::uint8_t> {'D', 'U', 'P'}, 1000U, 2000U, 0x18);
+    const auto duplicate_segment_path = write_temp_pcap(
+        "pfl_stream_query_duplicate_segment.pcap",
+        make_classic_pcap({
+            {100, duplicate_segment_packet_a},
+            {200, duplicate_segment_packet_b},
+        })
+    );
+
+    CaptureSession duplicate_segment_session {};
+    PFL_EXPECT(duplicate_segment_session.open_capture(duplicate_segment_path));
+    const auto duplicate_packet_rows = duplicate_segment_session.list_flow_packets(0);
+    PFL_EXPECT(duplicate_packet_rows.size() == 2U);
+    const auto duplicate_suppressed_packet_indices = duplicate_segment_session.suspected_tcp_retransmission_packet_indices(0);
+    PFL_EXPECT(duplicate_suppressed_packet_indices == std::vector<std::uint64_t> {1U});
+    duplicate_segment_session.set_selected_flow_tcp_payload_suppression(0U, duplicate_suppressed_packet_indices);
+    const auto duplicate_segment_rows = duplicate_segment_session.list_flow_stream_items(0);
+    PFL_EXPECT(duplicate_segment_rows.size() == 1U);
+    PFL_EXPECT(duplicate_segment_rows[0].label == "TCP Payload");
+    PFL_EXPECT(duplicate_segment_rows[0].packet_count == 1U);
+    PFL_EXPECT(duplicate_segment_rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+
+    const auto similar_segment_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 40, 2, 1), ipv4(10, 40, 2, 2), 51002, 443, std::vector<std::uint8_t> {'A', 'A', 'A'}, 1000U, 2000U, 0x18);
+    const auto similar_segment_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 40, 2, 1), ipv4(10, 40, 2, 2), 51002, 443, std::vector<std::uint8_t> {'B', 'B', 'B'}, 1000U, 2000U, 0x18);
+    const auto similar_segment_path = write_temp_pcap(
+        "pfl_stream_query_similar_segment.pcap",
+        make_classic_pcap({
+            {100, similar_segment_packet_a},
+            {200, similar_segment_packet_b},
+        })
+    );
+
+    CaptureSession similar_segment_session {};
+    PFL_EXPECT(similar_segment_session.open_capture(similar_segment_path));
+    const auto similar_suppressed_packet_indices = similar_segment_session.suspected_tcp_retransmission_packet_indices(0);
+    PFL_EXPECT(similar_suppressed_packet_indices.empty());
+    similar_segment_session.set_selected_flow_tcp_payload_suppression(0U, similar_suppressed_packet_indices);
+    const auto similar_segment_rows = similar_segment_session.list_flow_stream_items(0);
+    PFL_EXPECT(similar_segment_rows.size() == 2U);
+    PFL_EXPECT(similar_segment_rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+    PFL_EXPECT(similar_segment_rows[1].packet_indices == std::vector<std::uint64_t> {1U});
+
     const auto dns_payload = std::vector<std::uint8_t> {
         0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x03, 'a', 'p', 'i',

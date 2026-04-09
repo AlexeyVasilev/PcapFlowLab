@@ -17,6 +17,7 @@ Reassembly is currently used to improve Stream item construction for a selected 
 - Output is a temporary buffer plus contributing packet indices and quality flags.
 - Use is per-flow and per-request only.
 - No session-wide or persistent stream cache is part of the current design.
+- Exact duplicate TCP payload segments may be suppressed for selected-flow Stream use when they were already marked by selected-flow retransmission detection.
 
 ## Bounded reassembly contract
 
@@ -51,7 +52,7 @@ HTTP Stream parsing also uses directional reassembly, but only for header blocks
 
 - Complete HTTP request and response header blocks are recognized in byte order.
 - A header block spanning multiple TCP packets can appear as one logical stream item when enough bytes are present in the bounded reassembly buffer.
-- HTTP body parsing, content-length handling, and chunked decoding are intentionally out of scope.
+- Full HTTP body reconstruction is intentionally out of scope, but bounded `Content-Length` and chunked-body traversal may be used to continue across complete messages.
 - Incomplete or trailing non-header data falls back conservatively to `HTTP Payload`.
 
 ## Accuracy and diagnostic semantics
@@ -59,13 +60,14 @@ HTTP Stream parsing also uses directional reassembly, but only for header blocks
 Current reassembly is heuristic.
 
 - Payload bytes are concatenated in packet order.
+- Exact duplicate TCP payload segments may be skipped when selected-flow suppression context is present.
 - This is not a transport-correct TCP byte stream.
 - Retransmissions, overlaps, and out-of-order repair are not implemented.
 - Stream consumers must treat the result as best-effort data.
 
 Quality flags are diagnostic only.
 
-- Current flags cover packet-order-only reconstruction, packet or byte budget truncation, non-payload packets, possible transport gaps, and possible retransmissions.
+- Current flags cover packet-order-only reconstruction, packet or byte budget truncation, non-payload packets, possible transport gaps, possible retransmissions, and exact duplicate TCP segment suppression.
 - These signals describe approximation or limits in reconstruction.
 - They must not be treated as ground truth about the network.
 
@@ -116,5 +118,5 @@ Current Stream analysis remains ephemeral.
 
 ## Future direction
 
-- exact duplicate TCP segment suppression may be added for Stream use
+- additional retransmission handling may be added for Stream use
 - this will remain bounded and heuristic, not full TCP reconstruction

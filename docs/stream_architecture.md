@@ -70,12 +70,12 @@ Stream uses reassembly only as a local helper for selected-flow analysis.
 
 - Directional only: one request handles one flow direction at a time.
 - Packet-order concatenation only: payload bytes are appended in observed packet order.
-- No retransmission repair: duplicate payload is not currently removed from Stream reconstruction.
+- Exact duplicate TCP payload segments may be suppressed for the selected flow when they were already marked by the selected-flow retransmission detector.
 - No overlap trimming: overlapping sequence-space handling is not implemented.
 - No out-of-order repair: reordered packets are not reassembled into transport-correct byte order.
 - Partial results are allowed: budget exhaustion and incomplete trailing data are normal outputs, not exceptional states.
 
-Reassembly quality flags are diagnostic. They describe approximation or incompleteness, but they do not make the result TCP-correct.
+Reassembly quality flags are diagnostic. They describe approximation, suppression, or incompleteness, but they do not make the result TCP-correct.
 
 ## Protocol-specific behavior
 
@@ -165,7 +165,7 @@ These labels usually mean one of the following:
 ## Known limitations
 
 - No TCP-correct reconstruction.
-- Retransmissions are not handled by Stream reconstruction yet.
+- No general retransmission handling beyond exact duplicate TCP payload suppression.
 - Out-of-order repair is not implemented.
 - Overlap trimming is not implemented.
 - QUIC Stream labeling is not implemented.
@@ -176,7 +176,7 @@ These labels usually mean one of the following:
 
 Near-term Stream evolution is expected to stay incremental.
 
-- retransmission detection and optional suppression in Stream construction
+- broader retransmission suppression and handling in Stream construction
 - more unified Stream build logic across initial build and continuation
 - QUIC-aware Stream labeling
 - richer TLS item labeling and protocol details

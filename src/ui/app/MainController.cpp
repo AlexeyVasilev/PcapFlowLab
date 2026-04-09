@@ -2194,6 +2194,7 @@ void MainController::setSelectedFlowIndex(const int index) {
     clearSelectedFlowAnalysis();
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
+    session_.clear_selected_flow_tcp_payload_suppression();
     current_stream_items_.clear();
     stream_model_.clear();
     stream_loading_ = false;
@@ -2313,6 +2314,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
         packet_model_.clear();
         current_flow_packet_numbers_.clear();
         current_suspected_retransmission_packet_indices_.clear();
+        session_.clear_selected_flow_tcp_payload_suppression();
         loaded_packet_row_count_ = 0U;
         total_packet_row_count_ = 0U;
         packets_loading_ = false;
@@ -2333,7 +2335,9 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
 
     if (resetRows) {
         current_suspected_retransmission_packet_indices_.clear();
-        for (const auto packet_index : session_.suspected_tcp_retransmission_packet_indices(static_cast<std::size_t>(selected_flow_index_))) {
+        const auto suppressed_packet_indices = session_.suspected_tcp_retransmission_packet_indices(static_cast<std::size_t>(selected_flow_index_));
+        session_.set_selected_flow_tcp_payload_suppression(static_cast<std::size_t>(selected_flow_index_), suppressed_packet_indices);
+        for (const auto packet_index : suppressed_packet_indices) {
             current_suspected_retransmission_packet_indices_.insert(packet_index);
         }
     }
@@ -2510,6 +2514,7 @@ void MainController::clearFlowSelection() {
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
+    session_.clear_selected_flow_tcp_payload_suppression();
     stream_model_.clear();
     loaded_packet_row_count_ = 0U;
     total_packet_row_count_ = 0U;
@@ -2561,6 +2566,7 @@ void MainController::resetLoadedState() {
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
+    session_.clear_selected_flow_tcp_payload_suppression();
     stream_model_.clear();
     loaded_stream_item_count_ = 0U;
     total_stream_item_count_ = 0U;

@@ -31,7 +31,7 @@ This phase established selected-flow, on-demand derived work as a first-class pr
 	- chunked body support
 - partial HTTP/TLS handling
 - retransmission detection (selected-flow)
-- retransmission suppression (in progress)
+- exact duplicate retransmission suppression (selected-flow)
 
 This phase is focused on making current Stream behavior more reliable and more test-backed before broadening protocol scope.
 

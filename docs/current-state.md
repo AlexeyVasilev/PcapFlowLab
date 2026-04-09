@@ -6,7 +6,7 @@
 - HTTP Stream reassembly supports `Content-Length` and chunked-body traversal for multi-message continuity.
 - Partial HTTP and TLS cases have explicit fallback handling.
 - Selected-flow-only retransmission detection is implemented.
-- Retransmission suppression in Stream construction is not implemented yet.
+- Exact duplicate TCP payload suppression is implemented for selected-flow Stream use.
 
 ## Analysis tab
 
@@ -29,13 +29,13 @@
 ## Known gaps
 
 - QUIC Stream parsing is not implemented.
-- Retransmission suppression is not implemented.
+- General retransmission handling is not implemented beyond exact duplicate suppression.
 - Stream materialization is still partially inconsistent across initial build, fallback, and continuation paths.
 - TLS details are not fully exposed yet.
 
 ## Next steps
 
-- Add retransmission suppression in Stream and reassembly consumers.
+- Extend retransmission handling beyond exact duplicate suppression.
 - Unify the Stream materialization model.
 - Improve TLS details, including extensions and cipher-suite exposure.
 - Add a narrow first step for QUIC Stream labeling.

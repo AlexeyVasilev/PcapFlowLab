@@ -37,4 +37,4 @@ This document records short, stable architectural decisions for Pcap Flow Lab.
 
 - Stream baseline tests are fixture-backed.
 - HTTP reassembly supports `Content-Length` and chunked-body traversal for Stream continuity.
-- Retransmission detection is selected-flow only; suppression is planned next.
+- Retransmission detection and exact duplicate suppression are selected-flow only.

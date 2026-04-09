@@ -1710,6 +1710,7 @@ template <typename Connection>
 void append_connection_stream_items_bounded(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
+    const std::size_t flow_index,
     const Connection& connection,
     const ProtocolId flow_protocol,
     const std::size_t target_count,
@@ -1739,6 +1740,10 @@ void append_connection_stream_items_bounded(
         }
 
         if (packet.payload_length == 0U) {
+            continue;
+        }
+
+        if (flow_protocol == ProtocolId::tcp && session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
             continue;
         }
 
@@ -1905,6 +1910,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     opened_from_index_ = false;
     has_loaded_state_ = false;
     last_open_error_text_.clear();
+    selected_flow_tcp_payload_suppression_.reset();
 }
 
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
@@ -2635,6 +2641,34 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
     return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv6);
 }
 
+void CaptureSession::set_selected_flow_tcp_payload_suppression(
+    const std::size_t flow_index,
+    const std::vector<std::uint64_t>& packet_indices
+) noexcept {
+    if (packet_indices.empty()) {
+        selected_flow_tcp_payload_suppression_.reset();
+        return;
+    }
+
+    SelectedFlowTcpPayloadSuppression suppression {};
+    suppression.flow_index = flow_index;
+    suppression.packet_indices.insert(packet_indices.begin(), packet_indices.end());
+    selected_flow_tcp_payload_suppression_ = std::move(suppression);
+}
+
+void CaptureSession::clear_selected_flow_tcp_payload_suppression() noexcept {
+    selected_flow_tcp_payload_suppression_.reset();
+}
+
+bool CaptureSession::should_suppress_selected_flow_tcp_payload(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const noexcept {
+    return selected_flow_tcp_payload_suppression_.has_value()
+        && selected_flow_tcp_payload_suppression_->flow_index == flow_index
+        && selected_flow_tcp_payload_suppression_->packet_indices.contains(packet_index);
+}
+
 std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) const noexcept {
     const auto connections = list_connections(state_);
     if (flow_index >= connections.size()) {
@@ -2728,6 +2762,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
             append_connection_stream_items_bounded(
                 rows,
                 *this,
+                flow_index,
                 *connections[flow_index].ipv4,
                 flow_protocol,
                 target,
@@ -2740,6 +2775,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
             append_connection_stream_items_bounded(
                 rows,
                 *this,
+                flow_index,
                 *connections[flow_index].ipv6,
                 flow_protocol,
                 target,
@@ -2800,6 +2836,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         append_connection_stream_items_bounded(
             rows,
             *this,
+            flow_index,
             *connections[flow_index].ipv4,
             flow_protocol,
             limit,
@@ -2812,6 +2849,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         append_connection_stream_items_bounded(
             rows,
             *this,
+            flow_index,
             *connections[flow_index].ipv6,
             flow_protocol,
             limit,
