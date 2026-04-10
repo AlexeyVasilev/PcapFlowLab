@@ -13,12 +13,17 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QVariantMap>
 
+#include "app/session/CaptureSession.h"
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "cli/CliImportMode.h"
@@ -349,6 +354,167 @@ QVariantMap find_protocol_distribution_row(const QVariantList& rows, const QStri
     }
 
     return {};
+}
+
+std::filesystem::path ui_test_root() {
+    return std::filesystem::path(__FILE__).parent_path().parent_path();
+}
+
+QJsonObject load_json_object(const std::filesystem::path& path) {
+    QFile file(QString::fromStdWString(path.wstring()));
+    UI_EXPECT(file.open(QIODevice::ReadOnly));
+    const auto document = QJsonDocument::fromJson(file.readAll());
+    UI_EXPECT(!document.isNull());
+    UI_EXPECT(document.isObject());
+    return document.object();
+}
+
+std::vector<std::uint64_t> expected_packet_indices(const QJsonArray& packet_numbers) {
+    std::vector<std::uint64_t> indices {};
+    indices.reserve(static_cast<std::size_t>(packet_numbers.size()));
+    for (const auto& value : packet_numbers) {
+        const auto packet_number = value.toInteger();
+        UI_EXPECT(packet_number > 0);
+        indices.push_back(static_cast<std::uint64_t>(packet_number - 1));
+    }
+    return indices;
+}
+
+bool text_contains_required_fragments(const QString& text, const QJsonArray& fragments) {
+    for (const auto& value : fragments) {
+        if (!text.contains(value.toString())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool text_omits_forbidden_fragments(const QString& text, const QJsonArray& fragments) {
+    for (const auto& value : fragments) {
+        if (text.contains(value.toString())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+QString packet_direction_for_number(const std::vector<pfl::PacketRow>& packet_rows, const std::uint64_t packet_number) {
+    const auto packet_index = packet_number - 1U;
+    const auto it = std::find_if(packet_rows.begin(), packet_rows.end(), [packet_index](const pfl::PacketRow& row) {
+        return row.packet_index == packet_index;
+    });
+    UI_EXPECT(it != packet_rows.end());
+    return QString::fromStdString(it->direction_text);
+}
+
+std::vector<const pfl::StreamItemRow*> find_matching_stream_rows(
+    const std::vector<pfl::StreamItemRow>& rows,
+    const QString& direction,
+    const QString& label,
+    const std::vector<std::uint64_t>& packet_indices
+) {
+    std::vector<const pfl::StreamItemRow*> matches {};
+    for (const auto& row : rows) {
+        if (QString::fromStdString(row.direction_text) != direction) {
+            continue;
+        }
+        if (QString::fromStdString(row.label) != label) {
+            continue;
+        }
+        if (row.packet_indices != packet_indices) {
+            continue;
+        }
+        matches.push_back(&row);
+    }
+    return matches;
+}
+
+void run_quic_fixture_reference_tests(QApplication& app) {
+    const auto spec_path = ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json";
+    const auto spec = load_json_object(spec_path);
+    const auto fixture_relative_path = spec.value(QStringLiteral("fixture_relative_path")).toString();
+    UI_EXPECT(!fixture_relative_path.isEmpty());
+
+    const auto fixture_path = ui_test_root() / fixture_relative_path.toStdString();
+
+    pfl::MainController controller {};
+    UI_EXPECT(open_capture_and_wait(app, controller, fixture_path));
+
+    auto* details_model = qobject_cast<pfl::PacketDetailsViewModel*>(controller.packetDetailsModel());
+    UI_EXPECT(details_model != nullptr);
+    controller.setSelectedFlowIndex(0);
+
+    pfl::CaptureSession session {};
+    UI_EXPECT(session.open_capture(fixture_path));
+
+    const auto packet_rows = session.list_flow_packets(0);
+    UI_EXPECT(packet_rows.size() == static_cast<std::size_t>(spec.value(QStringLiteral("packet_count")).toInteger()));
+
+    for (const auto& packet_value : spec.value(QStringLiteral("packet_expectations")).toArray()) {
+        const auto packet_expectation = packet_value.toObject();
+        const auto packet_number = static_cast<std::uint64_t>(packet_expectation.value(QStringLiteral("packet_number")).toInteger());
+        UI_EXPECT(packet_number > 0U);
+        UI_EXPECT(packet_direction_for_number(packet_rows, packet_number) == packet_expectation.value(QStringLiteral("direction")).toString());
+
+        controller.setSelectedPacketIndex(packet_number - 1U);
+        UI_EXPECT(details_model->detailsTitle() == QStringLiteral("Packet Details"));
+
+        const auto protocol_text = details_model->protocolText();
+        UI_EXPECT(text_contains_required_fragments(protocol_text, packet_expectation.value(QStringLiteral("detail_required_substrings")).toArray()));
+        UI_EXPECT(text_omits_forbidden_fragments(protocol_text, packet_expectation.value(QStringLiteral("detail_forbidden_substrings")).toArray()));
+    }
+
+    const auto stream_rows = session.list_flow_stream_items(0);
+
+    const auto stream_sequence = spec.value(QStringLiteral("stream_sequence")).toArray();
+    UI_EXPECT(stream_rows.size() == static_cast<std::size_t>(stream_sequence.size()));
+    for (qsizetype sequence_index = 0; sequence_index < stream_sequence.size(); ++sequence_index) {
+        const auto sequence_value = stream_sequence[sequence_index];
+        const auto sequence_entry = sequence_value.toObject();
+        const auto& row = stream_rows[static_cast<std::size_t>(sequence_index)];
+        UI_EXPECT(QString::fromStdString(row.direction_text) == sequence_entry.value(QStringLiteral("direction")).toString());
+        UI_EXPECT(QString::fromStdString(row.label) == sequence_entry.value(QStringLiteral("ui_label")).toString());
+        UI_EXPECT(row.packet_indices == expected_packet_indices(sequence_entry.value(QStringLiteral("source_packets")).toArray()));
+    }
+
+    for (const auto& stream_value : spec.value(QStringLiteral("stream_expectations")).toArray()) {
+        const auto stream_expectation = stream_value.toObject();
+        const auto matches = find_matching_stream_rows(
+            stream_rows,
+            stream_expectation.value(QStringLiteral("direction")).toString(),
+            stream_expectation.value(QStringLiteral("ui_label")).toString(),
+            expected_packet_indices(stream_expectation.value(QStringLiteral("source_packets")).toArray())
+        );
+        UI_EXPECT(matches.size() == static_cast<std::size_t>(stream_expectation.value(QStringLiteral("count")).toInteger()));
+
+        for (const auto* row : matches) {
+            UI_EXPECT(row != nullptr);
+            UI_EXPECT(row->protocol_text.empty() == !stream_expectation.value(QStringLiteral("expects_protocol_text")).toBool());
+            UI_EXPECT(row->payload_hex_text.empty() == !stream_expectation.value(QStringLiteral("expects_payload_hex_text")).toBool());
+
+            const auto protocol_text = QString::fromStdString(row->protocol_text);
+            UI_EXPECT(text_contains_required_fragments(protocol_text, stream_expectation.value(QStringLiteral("detail_required_substrings")).toArray()));
+            UI_EXPECT(text_omits_forbidden_fragments(protocol_text, stream_expectation.value(QStringLiteral("detail_forbidden_substrings")).toArray()));
+        }
+    }
+
+    for (const auto& absence_value : spec.value(QStringLiteral("stream_absence_expectations")).toArray()) {
+        const auto absence = absence_value.toObject();
+        const auto kind = absence.value(QStringLiteral("kind")).toString();
+        const auto needle = absence.value(QStringLiteral("value")).toString();
+        UI_EXPECT(!needle.isEmpty());
+
+        for (const auto& row : stream_rows) {
+            const auto label = QString::fromStdString(row.label);
+            if (kind == QStringLiteral("label_substring")) {
+                UI_EXPECT(!label.contains(needle));
+            } else if (kind == QStringLiteral("exact_label")) {
+                UI_EXPECT(label != needle);
+            } else {
+                UI_EXPECT(false);
+            }
+        }
+    }
 }
 
 }  // namespace
@@ -2041,6 +2207,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(stream_loading_stream_model->rowCount() - 1, 0), StreamListModel::StreamItemIndexRole).toULongLong() == small_loaded);
     UI_EXPECT(stream_loading_details_model->summaryText().isEmpty());
+
+    run_quic_fixture_reference_tests(app);
 
     return 0;
 }

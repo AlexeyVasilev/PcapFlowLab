@@ -1,0 +1,451 @@
+{
+  "fixture_id": "quic_fixture_01",
+  "fixture_relative_path": "data/parsing/quic/quic_example_1.pcap",
+  "packet_count": 19,
+  "notes": [
+    "Packet numbering in this spec is 1-based and follows the user mapping table.",
+    "Semantic object names come from the user table. UI stream labels use the current QUIC-prefixed form.",
+    "One packet may map to several semantic objects and to several stream items."
+  ],
+  "packet_expectations": [
+    {
+      "packet_number": 1,
+      "direction": "A->B",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["CRYPTO", "CRYPTO"],
+      "tls_semantic": "ClientHello",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO", "TLS Handshake Type: ClientHello"],
+      "detail_forbidden_substrings": ["ServerHello"]
+    },
+    {
+      "packet_number": 2,
+      "direction": "A->B",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["CRYPTO"],
+      "tls_semantic": "ClientHello",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO", "TLS Handshake Type: ClientHello"],
+      "detail_forbidden_substrings": ["ServerHello"]
+    },
+    {
+      "packet_number": 3,
+      "direction": "B->A",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["ACK"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 4,
+      "direction": "B->A",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["ACK", "PADDING"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK, PADDING"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 5,
+      "direction": "B->A",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["CRYPTO", "PADDING"],
+      "tls_semantic": "ServerHello",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO, PADDING", "TLS Handshake Type: ServerHello", "Selected TLS Version:", "Selected Cipher Suite:"],
+      "detail_forbidden_substrings": ["ClientHello", "SNI:"]
+    },
+    {
+      "packet_number": 6,
+      "direction": "A->B",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["ACK"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 7,
+      "direction": "B->A",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["CRYPTO", "PADDING"],
+      "tls_semantic": "ServerHello",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO, PADDING", "TLS Handshake Type: ServerHello", "Selected TLS Version:", "Selected Cipher Suite:"],
+      "detail_forbidden_substrings": ["ClientHello", "SNI:"]
+    },
+    {
+      "packet_number": 8,
+      "direction": "A->B",
+      "quic_shell_type": "Initial",
+      "packet_objects": ["ACK"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 9,
+      "direction": "B->A",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 10,
+      "direction": "B->A",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 11,
+      "direction": "B->A",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 12,
+      "direction": "A->B",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 13,
+      "direction": "B->A",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 14,
+      "direction": "B->A",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 15,
+      "direction": "B->A",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake", "Protected payload"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "packet_number": 16,
+      "direction": "A->B",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 17,
+      "direction": "A->B",
+      "quic_shell_type": "Handshake",
+      "packet_objects": ["Handshake", "Protected payload"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "packet_number": 18,
+      "direction": "A->B",
+      "quic_shell_type": "Protected Payload",
+      "packet_objects": ["Protected payload"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Protected Payload"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "packet_number": 19,
+      "direction": "B->A",
+      "quic_shell_type": "Protected Payload",
+      "packet_objects": ["Protected payload"],
+      "tls_semantic": "none",
+      "detail_required_substrings": ["Packet Type: Protected Payload"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    }
+  ],
+  "stream_expectations": [
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC CRYPTO",
+      "semantic_label": "CRYPTO",
+      "source_packets": [1],
+      "count": 2,
+      "tls_semantic": "ClientHello",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO", "TLS Handshake Type: ClientHello"],
+      "detail_forbidden_substrings": ["ServerHello"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC CRYPTO",
+      "semantic_label": "CRYPTO",
+      "source_packets": [2],
+      "count": 1,
+      "tls_semantic": "ClientHello",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO", "TLS Handshake Type: ClientHello"],
+      "detail_forbidden_substrings": ["ServerHello"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC ACK",
+      "semantic_label": "ACK",
+      "source_packets": [3],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC ACK",
+      "semantic_label": "ACK",
+      "source_packets": [4],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK, PADDING"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC CRYPTO",
+      "semantic_label": "CRYPTO",
+      "source_packets": [5],
+      "count": 1,
+      "tls_semantic": "ServerHello",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO, PADDING", "TLS Handshake Type: ServerHello", "Selected TLS Version:", "Selected Cipher Suite:"],
+      "detail_forbidden_substrings": ["ClientHello", "SNI:"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC ACK",
+      "semantic_label": "ACK",
+      "source_packets": [6],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC CRYPTO",
+      "semantic_label": "CRYPTO",
+      "source_packets": [7],
+      "count": 1,
+      "tls_semantic": "ServerHello",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: CRYPTO, PADDING", "TLS Handshake Type: ServerHello", "Selected TLS Version:", "Selected Cipher Suite:"],
+      "detail_forbidden_substrings": ["ClientHello", "SNI:"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC ACK",
+      "semantic_label": "ACK",
+      "source_packets": [8],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Initial", "Frame Presence: ACK"],
+      "detail_forbidden_substrings": ["TLS Handshake Type:"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [9],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [10],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [11],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [12],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [13],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [14],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [15],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Protected Payload",
+      "semantic_label": "Protected payload",
+      "source_packets": [15],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Protected Payload"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [16],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC Handshake",
+      "semantic_label": "Handshake",
+      "source_packets": [17],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Handshake"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC Protected Payload",
+      "semantic_label": "Protected payload",
+      "source_packets": [17],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Protected Payload"]
+    },
+    {
+      "direction": "A->B",
+      "ui_label": "QUIC Protected Payload",
+      "semantic_label": "Protected payload",
+      "source_packets": [18],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Protected Payload"]
+    },
+    {
+      "direction": "B->A",
+      "ui_label": "QUIC Protected Payload",
+      "semantic_label": "Protected payload",
+      "source_packets": [19],
+      "count": 1,
+      "tls_semantic": "none",
+      "expects_protocol_text": true,
+      "expects_payload_hex_text": true,
+      "detail_required_substrings": ["Packet Type: Protected Payload"]
+    }
+  ],
+  "stream_sequence": [
+    {"direction": "A->B", "ui_label": "QUIC CRYPTO", "source_packets": [1]},
+    {"direction": "A->B", "ui_label": "QUIC CRYPTO", "source_packets": [1]},
+    {"direction": "A->B", "ui_label": "QUIC CRYPTO", "source_packets": [2]},
+    {"direction": "B->A", "ui_label": "QUIC ACK", "source_packets": [3]},
+    {"direction": "B->A", "ui_label": "QUIC ACK", "source_packets": [4]},
+    {"direction": "B->A", "ui_label": "QUIC CRYPTO", "source_packets": [5]},
+    {"direction": "A->B", "ui_label": "QUIC ACK", "source_packets": [6]},
+    {"direction": "B->A", "ui_label": "QUIC CRYPTO", "source_packets": [7]},
+    {"direction": "A->B", "ui_label": "QUIC ACK", "source_packets": [8]},
+    {"direction": "B->A", "ui_label": "QUIC Handshake", "source_packets": [9]},
+    {"direction": "B->A", "ui_label": "QUIC Handshake", "source_packets": [10]},
+    {"direction": "B->A", "ui_label": "QUIC Handshake", "source_packets": [11]},
+    {"direction": "A->B", "ui_label": "QUIC Handshake", "source_packets": [12]},
+    {"direction": "B->A", "ui_label": "QUIC Handshake", "source_packets": [13]},
+    {"direction": "B->A", "ui_label": "QUIC Handshake", "source_packets": [14]},
+    {"direction": "B->A", "ui_label": "QUIC Handshake", "source_packets": [15]},
+    {"direction": "B->A", "ui_label": "QUIC Protected Payload", "source_packets": [15]},
+    {"direction": "A->B", "ui_label": "QUIC Handshake", "source_packets": [16]},
+    {"direction": "A->B", "ui_label": "QUIC Handshake", "source_packets": [17]},
+    {"direction": "A->B", "ui_label": "QUIC Protected Payload", "source_packets": [17]},
+    {"direction": "A->B", "ui_label": "QUIC Protected Payload", "source_packets": [18]},
+    {"direction": "B->A", "ui_label": "QUIC Protected Payload", "source_packets": [19]}
+  ],
+  "stream_absence_expectations": [
+    {"kind": "label_substring", "value": "PADDING"},
+    {"kind": "label_substring", "value": "PING"},
+    {"kind": "exact_label", "value": "UDP Payload"}
+  ]
+}
