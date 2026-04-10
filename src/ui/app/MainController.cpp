@@ -460,49 +460,6 @@ QString format_packet_sequence_compact(const std::vector<std::uint64_t>& numbers
     return values.join(QStringLiteral(", "));
 }
 
-QString formatPacketIndices(const std::vector<std::uint64_t>& packetIndices) {
-    QStringList values {};
-    values.reserve(static_cast<qsizetype>(packetIndices.size()));
-
-    for (const auto packetIndex : packetIndices) {
-        values.push_back(QString::number(packetIndex));
-    }
-
-    return values.join(QStringLiteral(", "));
-}
-
-QString formatFlowPacketNumbers(
-    const std::vector<std::uint64_t>& packetIndices,
-    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
-) {
-    QStringList values {};
-
-    for (const auto packetIndex : packetIndices) {
-        const auto flowIt = flowPacketNumbers.find(packetIndex);
-        if (flowIt == flowPacketNumbers.end()) {
-            continue;
-        }
-
-        values.push_back(QStringLiteral("#%1").arg(flowIt->second));
-    }
-
-    return values.join(QStringLiteral(", "));
-}
-
-QString formatContributingPackets(
-    const StreamItemRow& item,
-    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
-) {
-    const QString fileIndices = formatPacketIndices(item.packet_indices);
-    const QString flowNumbers = formatFlowPacketNumbers(item.packet_indices, flowPacketNumbers);
-
-    if (!flowNumbers.isEmpty()) {
-        return QStringLiteral("flow %1 (file %2)").arg(flowNumbers, fileIndices);
-    }
-
-    return QStringLiteral("(file %1)").arg(fileIndices);
-}
-
 QString format_stream_source_packets(
     const StreamItemRow& item,
     const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
@@ -575,17 +532,34 @@ QString normalize_stream_protocol_text(const QString& protocol_text) {
     return protocol_text.isEmpty() ? stream_protocol_unavailable_text() : protocol_text;
 }
 
-bool is_quic_initial_protocol_text(const QString& protocol_text) {
-    return protocol_text.contains(QStringLiteral("QUIC"))
-        && protocol_text.contains(QStringLiteral("Packet Type: Initial"));
+bool is_quic_protocol_text(const QString& protocol_text) {
+    return protocol_text.contains(QStringLiteral("QUIC"));
 }
 
-QString enrich_quic_initial_protocol_text(
+QString quic_context_sni_text(const QString& context_details) {
+    const auto marker = QStringLiteral("  SNI: ");
+    const auto marker_index = context_details.indexOf(marker);
+    if (marker_index < 0) {
+        return {};
+    }
+
+    const auto line_end = context_details.indexOf(QLatin1Char('\n'), marker_index);
+    return context_details.mid(marker_index, line_end < 0 ? -1 : line_end - marker_index);
+}
+
+QString quic_context_tls_text(const QString& context_details) {
+    const auto marker = QStringLiteral("  TLS Handshake Type: ");
+    const auto marker_index = context_details.indexOf(marker);
+    return marker_index < 0 ? QString {} : context_details.mid(marker_index);
+}
+
+QString enrich_quic_protocol_text_for_packet(
     CaptureSession& session,
     const int selected_flow_index,
+    const std::uint64_t packet_index,
     const QString& protocol_text
 ) {
-    if (selected_flow_index < 0 || !is_quic_initial_protocol_text(protocol_text)) {
+    if (selected_flow_index < 0 || !is_quic_protocol_text(protocol_text)) {
         return protocol_text;
     }
 
@@ -595,21 +569,69 @@ QString enrich_quic_initial_protocol_text(
         return protocol_text;
     }
 
+    const auto context_details = session.derive_quic_protocol_details_for_packet(
+        static_cast<std::size_t>(selected_flow_index),
+        packet_index
+    );
+    if (!context_details.has_value() || context_details->empty()) {
+        return protocol_text;
+    }
+
     QString enriched = protocol_text;
+    const auto details = QString::fromStdString(*context_details);
     if (!has_sni) {
-        const auto flow_sni = session.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index));
-        if (flow_sni.has_value() && !flow_sni->empty()) {
-            enriched += QStringLiteral("\n  SNI: ") + QString::fromStdString(*flow_sni);
+        const auto sni_text = quic_context_sni_text(details);
+        if (!sni_text.isEmpty()) {
+            enriched += QStringLiteral("\n") + sni_text;
         }
     }
-
     if (!has_tls_handshake) {
-        const auto flow_tls_details = session.derive_quic_initial_protocol_details_for_flow(static_cast<std::size_t>(selected_flow_index));
-        if (flow_tls_details.has_value() && !flow_tls_details->empty()) {
-            enriched += QStringLiteral("\n") + QString::fromStdString(*flow_tls_details);
+        const auto tls_text = quic_context_tls_text(details);
+        if (!tls_text.isEmpty()) {
+            enriched += QStringLiteral("\n") + tls_text;
         }
     }
+    return enriched;
+}
 
+QString enrich_quic_protocol_text_for_stream_item(
+    CaptureSession& session,
+    const int selected_flow_index,
+    const StreamItemRow& item,
+    const QString& protocol_text
+) {
+    if (selected_flow_index < 0 || !is_quic_protocol_text(protocol_text)) {
+        return protocol_text;
+    }
+
+    const bool has_sni = protocol_text.contains(QStringLiteral("SNI:"));
+    const bool has_tls_handshake = protocol_text.contains(QStringLiteral("TLS Handshake Type:"));
+    if (has_sni && has_tls_handshake) {
+        return protocol_text;
+    }
+
+    const auto context_details = session.derive_quic_protocol_details_for_packet_context(
+        static_cast<std::size_t>(selected_flow_index),
+        item.packet_indices
+    );
+    if (!context_details.has_value() || context_details->empty()) {
+        return protocol_text;
+    }
+
+    QString enriched = protocol_text;
+    const auto details = QString::fromStdString(*context_details);
+    if (!has_sni) {
+        const auto sni_text = quic_context_sni_text(details);
+        if (!sni_text.isEmpty()) {
+            enriched += QStringLiteral("\n") + sni_text;
+        }
+    }
+    if (!has_tls_handshake) {
+        const auto tls_text = quic_context_tls_text(details);
+        if (!tls_text.isEmpty()) {
+            enriched += QStringLiteral("\n") + tls_text;
+        }
+    }
     return enriched;
 }
 
@@ -2953,9 +2975,10 @@ void MainController::reloadSelectedPacketDetails() {
 
     const auto hexDump = session_.read_packet_hex_dump(*packet);
     const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-    const auto protocolText = enrich_quic_initial_protocol_text(
+    const auto protocolText = enrich_quic_protocol_text_for_packet(
         session_,
         selected_flow_index_,
+        packet->packet_index,
         QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
     );
 
@@ -2997,7 +3020,7 @@ void MainController::reloadSelectedStreamDetails() {
             ? stream_protocol_unavailable_text()
             : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
         packet_details_model_.setProtocolText(
-            enrich_quic_initial_protocol_text(session_, selected_flow_index_, protocolText)
+            enrich_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
         );
         return;
     }
@@ -3007,9 +3030,10 @@ void MainController::reloadSelectedStreamDetails() {
         if (packet.has_value()) {
             const auto hexDump = session_.read_packet_hex_dump(*packet);
             const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
-            const auto protocolText = enrich_quic_initial_protocol_text(
+            const auto protocolText = enrich_quic_protocol_text_for_packet(
                 session_,
                 selected_flow_index_,
+                packet->packet_index,
                 QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
             );
 

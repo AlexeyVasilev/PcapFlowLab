@@ -55,7 +55,11 @@ public:
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
     [[nodiscard]] std::optional<FlowAnalysisResult> get_flow_analysis(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_service_hint_for_flow(std::size_t flow_index) const;
-    [[nodiscard]] std::optional<std::string> derive_quic_initial_protocol_details_for_flow(std::size_t flow_index) const;
+    [[nodiscard]] std::optional<std::string> derive_quic_protocol_details_for_packet(std::size_t flow_index, std::uint64_t packet_index) const;
+    [[nodiscard]] std::optional<std::string> derive_quic_protocol_details_for_packet_context(
+        std::size_t flow_index,
+        const std::vector<std::uint64_t>& packet_indices
+    ) const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
     [[nodiscard]] std::vector<std::uint64_t> suspected_tcp_retransmission_packet_indices(std::size_t flow_index) const;

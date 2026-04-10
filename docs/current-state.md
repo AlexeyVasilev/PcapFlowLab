@@ -12,7 +12,7 @@
 - Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.
 - Selected-packet protocol details now depend on packet-bytes availability, not Deep mode alone.
 - Selected-flow QUIC labeling now exists in a narrow bounded form for packet-aware `Initial`, `Handshake`, `Retry`, `Version Negotiation`, and `Protected Payload` cases, with conservative fallback to `UDP Payload`.
-- QUIC packet and Stream details now append narrow TLS `ClientHello` / `ServerHello` fields when the current QUIC CRYPTO bytes are directly parseable in the selected-flow path.
+- QUIC packet and Stream details now use direction-aware, ownership-aware selected-flow TLS attachment so `ClientHello` / `ServerHello` details are not reused across the wrong packet or Stream item context.
 
 ## Analysis tab
 
@@ -34,7 +34,7 @@
 
 ## Known gaps
 
-- QUIC Stream handling is still narrow; there is no full QUIC reconstruction or decryption-backed session model.
+- QUIC Stream handling is still narrow; there is no full QUIC reconstruction or decryption-backed session model, and broader QUIC itemization remains future work.
 - General retransmission handling is not implemented beyond exact duplicate suppression.
 - TLS details are only partially exposed; richer handshake and certificate fields exist for complete packet-contained TLS records, matching Stream item types, and directly parseable QUIC CRYPTO handshake bytes.
 

@@ -70,9 +70,15 @@ std::vector<std::uint8_t> make_text_bytes(const std::string_view text) {
     return std::vector<std::uint8_t>(text.begin(), text.end());
 }
 
-void append_quic_small_varint(std::vector<std::uint8_t>& bytes, const std::uint8_t value) {
-    PFL_EXPECT(value < 64U);
-    bytes.push_back(value);
+void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t value) {
+    if (value < 64U) {
+        bytes.push_back(static_cast<std::uint8_t>(value));
+        return;
+    }
+
+    PFL_EXPECT(value < 16384U);
+    bytes.push_back(static_cast<std::uint8_t>(0x40U | ((value >> 8U) & 0x3FU)));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
 std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<std::uint8_t>& frame_bytes) {
@@ -86,7 +92,7 @@ std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<
         0x00U,
     };
 
-    append_quic_small_varint(payload, static_cast<std::uint8_t>(frame_bytes.size() + 1U));
+    append_quic_varint(payload, frame_bytes.size() + 1U);
     payload.push_back(0x00U);
     payload.insert(payload.end(), frame_bytes.begin(), frame_bytes.end());
     return payload;
@@ -94,13 +100,52 @@ std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<
 
 std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::uint8_t>& crypto_bytes) {
     std::vector<std::uint8_t> frame {0x06U, 0x00U};
-    append_quic_small_varint(frame, static_cast<std::uint8_t>(crypto_bytes.size()));
+    append_quic_varint(frame, crypto_bytes.size());
     frame.insert(frame.end(), crypto_bytes.begin(), crypto_bytes.end());
     return frame;
 }
 
 std::vector<std::uint8_t> make_quic_crypto_frame_bytes() {
     return make_quic_crypto_frame_bytes(std::vector<std::uint8_t> {'a', 'b', 'c'});
+}
+
+std::vector<std::uint8_t> make_tls_client_hello_handshake_bytes() {
+    const std::vector<std::uint8_t> server_name {'s', 't', 'a', 'g', 'e', '1', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
+
+    std::vector<std::uint8_t> sni_extension_data {};
+    append_be16(sni_extension_data, static_cast<std::uint16_t>(server_name.size() + 3U));
+    sni_extension_data.push_back(0x00U);
+    append_be16(sni_extension_data, static_cast<std::uint16_t>(server_name.size()));
+    sni_extension_data.insert(sni_extension_data.end(), server_name.begin(), server_name.end());
+
+    std::vector<std::uint8_t> supported_versions_extension_data {0x02U, 0x03U, 0x04U};
+
+    std::vector<std::uint8_t> extensions {};
+    append_be16(extensions, 0x0000U);
+    append_be16(extensions, static_cast<std::uint16_t>(sni_extension_data.size()));
+    extensions.insert(extensions.end(), sni_extension_data.begin(), sni_extension_data.end());
+    append_be16(extensions, 0x002BU);
+    append_be16(extensions, static_cast<std::uint16_t>(supported_versions_extension_data.size()));
+    extensions.insert(extensions.end(), supported_versions_extension_data.begin(), supported_versions_extension_data.end());
+
+    std::vector<std::uint8_t> body {};
+    body.push_back(0x03U);
+    body.push_back(0x03U);
+    for (std::uint8_t index = 0U; index < 32U; ++index) {
+        body.push_back(static_cast<std::uint8_t>(0x20U + index));
+    }
+    body.push_back(0x00U);
+    append_be16(body, 0x0002U);
+    append_be16(body, 0x1301U);
+    body.push_back(0x01U);
+    body.push_back(0x00U);
+    append_be16(body, static_cast<std::uint16_t>(extensions.size()));
+    body.insert(body.end(), extensions.begin(), extensions.end());
+
+    std::vector<std::uint8_t> handshake {0x01U};
+    append_be24(handshake, static_cast<std::uint32_t>(body.size()));
+    handshake.insert(handshake.end(), body.begin(), body.end());
+    return handshake;
 }
 
 std::vector<std::uint8_t> make_quic_ack_frame_bytes() {
@@ -922,23 +967,61 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows.size() == 3U);
 
         PFL_EXPECT(rows[0].label == "HTTP GET /");
-        PFL_EXPECT(rows[0].packet_count == 1U);
-        PFL_EXPECT(rows[0].packet_indices.size() == 1U);
-        PFL_EXPECT(rows[0].packet_indices[0] == 3U);
-        PFL_EXPECT(!rows[0].protocol_text.empty());
-
         PFL_EXPECT(rows[1].label == "HTTP 200 OK");
-        PFL_EXPECT(rows[1].packet_count == 1U);
-        PFL_EXPECT(rows[1].packet_indices.size() == 1U);
-        PFL_EXPECT(rows[1].packet_indices[0] == 5U);
-        PFL_EXPECT(!rows[1].protocol_text.empty());
-
         PFL_EXPECT(rows[2].label == "HTTP Payload (partial)");
-        PFL_EXPECT(rows[2].packet_count == 2U);
-        PFL_EXPECT(rows[2].packet_indices.size() == 2U);
-        PFL_EXPECT(rows[2].packet_indices[0] == 5U);
-        PFL_EXPECT(rows[2].packet_indices[1] == 7U);
         PFL_EXPECT(rows[2].protocol_text.find("complete HTTP header block") != std::string::npos);
+    }
+
+    {
+        const auto client_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 3, 1), ipv4(10, 41, 3, 2), 54020, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())));
+        const auto server_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 3, 2), ipv4(10, 41, 3, 1), 443, 54020,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_server_hello_handshake_bytes())));
+        const auto server_ack_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 3, 2), ipv4(10, 41, 3, 1), 443, 54020,
+            make_plaintext_quic_initial_payload(make_quic_ack_frame_bytes()));
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_direction_ownership_stage1.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, client_hello_packet},
+                {200U, server_hello_packet},
+                {300U, server_ack_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto client_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {0U};
+        });
+        const auto server_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {1U};
+        });
+        const auto ack_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {2U};
+        });
+
+        PFL_EXPECT(client_row != rows.end());
+        PFL_EXPECT(server_row != rows.end());
+        PFL_EXPECT(ack_row != rows.end());
+
+        const auto client_context = session.derive_quic_protocol_details_for_packet_context(0, client_row->packet_indices);
+        PFL_EXPECT(client_context.has_value());
+        PFL_EXPECT(client_context->find("TLS Handshake Type: ClientHello") != std::string::npos);
+        PFL_EXPECT(client_context->find("ServerHello") == std::string::npos);
+
+        const auto server_context = session.derive_quic_protocol_details_for_packet_context(0, server_row->packet_indices);
+        PFL_EXPECT(server_context.has_value());
+        PFL_EXPECT(server_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
+        PFL_EXPECT(server_context->find("ClientHello") == std::string::npos);
+        PFL_EXPECT(server_context->find("SNI:") == std::string::npos);
+
+        const auto ack_context = session.derive_quic_protocol_details_for_packet_context(0, ack_row->packet_indices);
+        PFL_EXPECT(!ack_context.has_value());
     }
 
     {

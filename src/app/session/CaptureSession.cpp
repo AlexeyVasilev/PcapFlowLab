@@ -522,6 +522,645 @@ std::uint32_t read_be24(std::span<const std::uint8_t> bytes, const std::size_t o
            static_cast<std::uint32_t>(bytes[offset + 2U]);
 }
 
+std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) noexcept {
+    return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 3U]);
+}
+
+constexpr std::uint16_t kHttpsPort = 443U;
+constexpr std::size_t kMaxQuicConnectionIdLength = 20U;
+constexpr std::size_t kMaxQuicFrameSummaryBytes = 512U;
+constexpr std::size_t kMaxQuicFrameSummaryCount = 32U;
+constexpr std::size_t kQuicPresentationPacketBudget = 4U;
+
+enum class QuicPresentationShellType : std::uint8_t {
+    none,
+    initial,
+    handshake,
+    retry,
+    version_negotiation,
+    protected_payload,
+};
+
+enum class QuicPresentationSemanticType : std::uint8_t {
+    ack,
+    crypto,
+    stream,
+    padding,
+    ping,
+};
+
+struct QuicPresentationShellMetadata {
+    std::string header_form {};
+    std::optional<std::uint32_t> version {};
+    std::vector<std::uint8_t> dcid {};
+    std::vector<std::uint8_t> scid {};
+};
+
+struct QuicFramePresenceSummary {
+    bool ack {false};
+    bool crypto {false};
+    bool stream {false};
+    bool padding {false};
+    bool ping {false};
+};
+
+struct ParsedQuicPresentationPacket {
+    QuicPresentationShellType shell_type {QuicPresentationShellType::none};
+    QuicPresentationShellMetadata shell {};
+    std::optional<QuicFramePresenceSummary> frame_summary {};
+    std::vector<std::uint8_t> plaintext_payload_candidate {};
+    bool is_client_initial {false};
+    std::optional<std::string> sni {};
+    std::optional<TlsHandshakeDetails> tls_handshake {};
+};
+
+struct QuicPresentationCandidate {
+    PacketRef packet {};
+    std::vector<std::uint8_t> udp_payload {};
+    ParsedQuicPresentationPacket parsed {};
+};
+
+struct QuicPresentationResult {
+    QuicPresentationShellType shell_type {QuicPresentationShellType::none};
+    QuicPresentationShellMetadata shell {};
+    std::vector<QuicPresentationSemanticType> semantics {};
+    std::vector<std::uint64_t> selected_packet_indices {};
+    std::vector<std::uint64_t> crypto_packet_indices {};
+    std::optional<std::string> sni {};
+    std::optional<TlsHandshakeDetails> tls_handshake {};
+    bool used_bounded_crypto_assembly {false};
+};
+
+std::optional<std::uint64_t> quic_read_varint(std::span<const std::uint8_t> bytes, std::size_t& offset) {
+    if (offset >= bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto first = bytes[offset];
+    const auto encoded_length = static_cast<std::size_t>(1U << ((first >> 6U) & 0x03U));
+    if (offset + encoded_length > bytes.size()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t value = static_cast<std::uint64_t>(first & 0x3FU);
+    for (std::size_t index = 1U; index < encoded_length; ++index) {
+        value = (value << 8U) | static_cast<std::uint64_t>(bytes[offset + index]);
+    }
+
+    offset += encoded_length;
+    return value;
+}
+
+std::optional<std::size_t> quic_read_varint_size(std::span<const std::uint8_t> bytes, std::size_t& offset) {
+    const auto value = quic_read_varint(bytes, offset);
+    if (!value.has_value() || *value > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::size_t>(*value);
+}
+
+bool quic_skip_bytes(std::span<const std::uint8_t> bytes, std::size_t& offset, const std::size_t count) {
+    if (offset + count > bytes.size()) {
+        return false;
+    }
+
+    offset += count;
+    return true;
+}
+
+bool quic_skip_ack_frame(std::span<const std::uint8_t> bytes, std::size_t& offset, const bool has_ecn) {
+    const auto largest_ack = quic_read_varint(bytes, offset);
+    const auto ack_delay = quic_read_varint(bytes, offset);
+    const auto ack_range_count = quic_read_varint_size(bytes, offset);
+    const auto first_ack_range = quic_read_varint(bytes, offset);
+    if (!largest_ack.has_value() || !ack_delay.has_value() || !ack_range_count.has_value() || !first_ack_range.has_value()) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < *ack_range_count; ++index) {
+        const auto gap = quic_read_varint(bytes, offset);
+        const auto ack_range_length = quic_read_varint(bytes, offset);
+        if (!gap.has_value() || !ack_range_length.has_value()) {
+            return false;
+        }
+    }
+
+    if (!has_ecn) {
+        return true;
+    }
+
+    return quic_read_varint(bytes, offset).has_value() &&
+           quic_read_varint(bytes, offset).has_value() &&
+           quic_read_varint(bytes, offset).has_value();
+}
+
+bool quic_skip_stream_frame(std::span<const std::uint8_t> bytes, std::size_t& offset, const std::uint8_t frame_type) {
+    if (!quic_read_varint(bytes, offset).has_value()) {
+        return false;
+    }
+
+    const bool has_offset = (frame_type & 0x04U) != 0U;
+    const bool has_length = (frame_type & 0x02U) != 0U;
+    if (has_offset && !quic_read_varint(bytes, offset).has_value()) {
+        return false;
+    }
+
+    if (!has_length) {
+        offset = bytes.size();
+        return true;
+    }
+
+    const auto length = quic_read_varint_size(bytes, offset);
+    return length.has_value() && quic_skip_bytes(bytes, offset, *length);
+}
+
+bool quic_skip_frame_payload(std::span<const std::uint8_t> bytes, std::size_t& offset, const std::uint8_t frame_type) {
+    switch (frame_type) {
+    case 0x02U:
+        return quic_skip_ack_frame(bytes, offset, false);
+    case 0x03U:
+        return quic_skip_ack_frame(bytes, offset, true);
+    case 0x04U:
+        return quic_read_varint(bytes, offset).has_value() &&
+               quic_read_varint(bytes, offset).has_value() &&
+               quic_read_varint(bytes, offset).has_value();
+    case 0x05U:
+        return quic_read_varint(bytes, offset).has_value() && quic_read_varint(bytes, offset).has_value();
+    case 0x07U: {
+        const auto token_length = quic_read_varint_size(bytes, offset);
+        return token_length.has_value() && quic_skip_bytes(bytes, offset, *token_length);
+    }
+    case 0x08U:
+    case 0x09U:
+    case 0x0AU:
+    case 0x0BU:
+    case 0x0CU:
+    case 0x0DU:
+    case 0x0EU:
+    case 0x0FU:
+        return quic_skip_stream_frame(bytes, offset, frame_type);
+    case 0x10U:
+    case 0x12U:
+    case 0x13U:
+    case 0x14U:
+    case 0x16U:
+    case 0x17U:
+    case 0x19U:
+        return quic_read_varint(bytes, offset).has_value();
+    case 0x11U:
+    case 0x15U:
+        return quic_read_varint(bytes, offset).has_value() && quic_read_varint(bytes, offset).has_value();
+    case 0x18U: {
+        const auto sequence_number = quic_read_varint(bytes, offset);
+        const auto retire_prior_to = quic_read_varint(bytes, offset);
+        if (!sequence_number.has_value() || !retire_prior_to.has_value() || offset >= bytes.size()) {
+            return false;
+        }
+
+        const auto connection_id_length = static_cast<std::size_t>(bytes[offset++]);
+        return quic_skip_bytes(bytes, offset, connection_id_length) && quic_skip_bytes(bytes, offset, 16U);
+    }
+    case 0x1AU:
+    case 0x1BU:
+        return quic_skip_bytes(bytes, offset, 8U);
+    case 0x1CU: {
+        const auto error_code = quic_read_varint(bytes, offset);
+        const auto triggering_frame_type = quic_read_varint(bytes, offset);
+        const auto reason_length = quic_read_varint_size(bytes, offset);
+        return error_code.has_value() && triggering_frame_type.has_value() &&
+               reason_length.has_value() && quic_skip_bytes(bytes, offset, *reason_length);
+    }
+    case 0x1DU: {
+        const auto error_code = quic_read_varint(bytes, offset);
+        const auto reason_length = quic_read_varint_size(bytes, offset);
+        return error_code.has_value() && reason_length.has_value() && quic_skip_bytes(bytes, offset, *reason_length);
+    }
+    case 0x1EU:
+    case 0x01U:
+        return true;
+    default: {
+        const auto extension_length = quic_read_varint_size(bytes, offset);
+        if (extension_length.has_value()) {
+            return quic_skip_bytes(bytes, offset, *extension_length);
+        }
+        return false;
+    }
+    }
+}
+
+std::optional<QuicFramePresenceSummary> summarize_quic_plaintext_frames(std::span<const std::uint8_t> bytes) {
+    if (bytes.empty() || bytes.size() > kMaxQuicFrameSummaryBytes) {
+        return std::nullopt;
+    }
+
+    QuicFramePresenceSummary summary {};
+    std::size_t offset = 0U;
+    std::size_t frame_count = 0U;
+    bool saw_non_padding = false;
+
+    while (offset < bytes.size()) {
+        if (++frame_count > kMaxQuicFrameSummaryCount) {
+            return std::nullopt;
+        }
+
+        const auto frame_type = bytes[offset++];
+        if (frame_type == 0x00U) {
+            summary.padding = true;
+            continue;
+        }
+
+        saw_non_padding = true;
+        if (frame_type == 0x01U) {
+            summary.ping = true;
+            continue;
+        }
+        if (frame_type == 0x02U || frame_type == 0x03U) {
+            summary.ack = true;
+            if (!quic_skip_ack_frame(bytes, offset, frame_type == 0x03U)) {
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (frame_type == 0x06U) {
+            summary.crypto = true;
+            const auto crypto_offset = quic_read_varint(bytes, offset);
+            const auto crypto_length = quic_read_varint_size(bytes, offset);
+            if (!crypto_offset.has_value() || !crypto_length.has_value() || !quic_skip_bytes(bytes, offset, *crypto_length)) {
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (frame_type >= 0x08U && frame_type <= 0x0FU) {
+            summary.stream = true;
+            if (!quic_skip_stream_frame(bytes, offset, frame_type)) {
+                return std::nullopt;
+            }
+            continue;
+        }
+        if (!quic_skip_frame_payload(bytes, offset, frame_type)) {
+            return std::nullopt;
+        }
+    }
+
+    if (!saw_non_padding && !summary.padding) {
+        return std::nullopt;
+    }
+
+    return summary;
+}
+
+std::vector<QuicPresentationSemanticType> quic_semantics_from_summary(const QuicFramePresenceSummary& summary) {
+    std::vector<QuicPresentationSemanticType> semantics {};
+    if (summary.ack) {
+        semantics.push_back(QuicPresentationSemanticType::ack);
+    }
+    if (summary.crypto) {
+        semantics.push_back(QuicPresentationSemanticType::crypto);
+    }
+    if (summary.stream) {
+        semantics.push_back(QuicPresentationSemanticType::stream);
+    }
+    if (summary.padding) {
+        semantics.push_back(QuicPresentationSemanticType::padding);
+    }
+    if (summary.ping) {
+        semantics.push_back(QuicPresentationSemanticType::ping);
+    }
+    return semantics;
+}
+
+std::optional<TlsHandshakeDetails> parse_tls_handshake_from_quic_plaintext_payloads(
+    std::span<const std::vector<std::uint8_t>> plaintext_payloads
+) {
+    QuicInitialParser initial_parser {};
+    const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(plaintext_payloads);
+    if (!crypto_prefix.has_value()) {
+        return std::nullopt;
+    }
+
+    return parse_tls_handshake_details(std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size()));
+}
+
+std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::span<const std::uint8_t> udp_payload) {
+    if (udp_payload.empty()) {
+        return std::nullopt;
+    }
+
+    const auto first = udp_payload[0];
+    const bool long_header = (first & 0x80U) != 0U;
+    QuicInitialParser initial_parser {};
+
+    if (!long_header) {
+        if ((first & 0x40U) == 0U || udp_payload.size() < 4U) {
+            return std::nullopt;
+        }
+
+        ParsedQuicPresentationPacket packet {};
+        packet.shell_type = QuicPresentationShellType::protected_payload;
+        packet.shell.header_form = "Short";
+        return packet;
+    }
+
+    if (udp_payload.size() < 7U) {
+        return std::nullopt;
+    }
+
+    ParsedQuicPresentationPacket packet {};
+    packet.shell.header_form = "Long";
+    packet.shell.version = read_be32(udp_payload, 1U);
+
+    std::size_t offset = 5U;
+    const auto dcid_length = static_cast<std::size_t>(udp_payload[offset++]);
+    if (dcid_length > kMaxQuicConnectionIdLength || offset + dcid_length + 1U > udp_payload.size()) {
+        return std::nullopt;
+    }
+    packet.shell.dcid.assign(
+        udp_payload.begin() + static_cast<std::ptrdiff_t>(offset),
+        udp_payload.begin() + static_cast<std::ptrdiff_t>(offset + dcid_length)
+    );
+    offset += dcid_length;
+
+    const auto scid_length = static_cast<std::size_t>(udp_payload[offset++]);
+    if (scid_length > kMaxQuicConnectionIdLength || offset + scid_length > udp_payload.size()) {
+        return std::nullopt;
+    }
+    packet.shell.scid.assign(
+        udp_payload.begin() + static_cast<std::ptrdiff_t>(offset),
+        udp_payload.begin() + static_cast<std::ptrdiff_t>(offset + scid_length)
+    );
+    offset += scid_length;
+
+    if (*packet.shell.version == 0U) {
+        packet.shell_type = QuicPresentationShellType::version_negotiation;
+        return packet;
+    }
+
+    if ((first & 0x40U) == 0U) {
+        return std::nullopt;
+    }
+
+    const auto packet_type_bits = static_cast<std::uint8_t>((first >> 4U) & 0x03U);
+    if (packet_type_bits == 0U) {
+        packet.shell_type = QuicPresentationShellType::initial;
+        const auto token_length = quic_read_varint_size(udp_payload, offset);
+        if (!token_length.has_value() || !quic_skip_bytes(udp_payload, offset, *token_length)) {
+            return std::nullopt;
+        }
+        packet.is_client_initial = initial_parser.is_client_initial_packet(udp_payload);
+    } else if (packet_type_bits == 1U) {
+        packet.shell_type = QuicPresentationShellType::protected_payload;
+    } else if (packet_type_bits == 2U) {
+        packet.shell_type = QuicPresentationShellType::handshake;
+    } else {
+        packet.shell_type = QuicPresentationShellType::retry;
+        if (udp_payload.size() < offset + 16U) {
+            return std::nullopt;
+        }
+        return packet;
+    }
+
+    const auto length = quic_read_varint_size(udp_payload, offset);
+    if (!length.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto packet_number_length = static_cast<std::size_t>((first & 0x03U) + 1U);
+    if (offset + *length > udp_payload.size() || *length < packet_number_length) {
+        return std::nullopt;
+    }
+
+    const auto frame_offset = offset + packet_number_length;
+    const auto packet_end = offset + *length;
+    if (frame_offset > packet_end) {
+        return std::nullopt;
+    }
+
+    const auto plaintext_candidate = udp_payload.subspan(frame_offset, packet_end - frame_offset);
+    packet.frame_summary = summarize_quic_plaintext_frames(plaintext_candidate);
+    if (packet.frame_summary.has_value()) {
+        packet.plaintext_payload_candidate.assign(plaintext_candidate.begin(), plaintext_candidate.end());
+        if (packet.frame_summary->crypto) {
+            const std::vector<std::vector<std::uint8_t>> plaintext_payloads {
+                std::vector<std::uint8_t>(plaintext_candidate.begin(), plaintext_candidate.end())
+            };
+            packet.tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(
+                std::span<const std::vector<std::uint8_t>>(plaintext_payloads.data(), plaintext_payloads.size())
+            );
+        }
+    }
+
+    if (packet.is_client_initial) {
+        packet.sni = initial_parser.extract_client_initial_sni(udp_payload);
+        if (!packet.tls_handshake.has_value()) {
+            const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(udp_payload);
+            if (crypto_prefix.has_value()) {
+                packet.tls_handshake = parse_tls_handshake_details(
+                    std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
+                );
+            }
+        }
+    }
+
+    return packet;
+}
+
+std::optional<std::string> format_quic_presentation_enrichment(const QuicPresentationResult& result) {
+    std::ostringstream text {};
+    bool wrote_any = false;
+
+    if (result.sni.has_value() && !result.sni->empty()) {
+        text << "  SNI: " << *result.sni;
+        wrote_any = true;
+    }
+
+    if (result.tls_handshake.has_value()) {
+        if (wrote_any) {
+            text << '\n';
+        }
+        text << "  TLS Handshake Type: " << result.tls_handshake->handshake_type_text << "\n"
+             << "  TLS Handshake Length: " << result.tls_handshake->handshake_length;
+        if (!result.tls_handshake->details_text.empty()) {
+            text << "\n" << result.tls_handshake->details_text;
+        }
+        wrote_any = true;
+    }
+
+    if (!wrote_any) {
+        return std::nullopt;
+    }
+
+    return text.str();
+}
+
+template <typename PacketList>
+std::optional<std::size_t> find_first_selected_packet_position(
+    const PacketList& packets,
+    const std::vector<std::uint64_t>& selected_packet_indices
+) {
+    std::optional<std::size_t> earliest_position {};
+    for (const auto packet_index : selected_packet_indices) {
+        const auto it = std::find_if(packets.begin(), packets.end(), [&](const PacketRef& packet) {
+            return packet.packet_index == packet_index;
+        });
+        if (it == packets.end()) {
+            return std::nullopt;
+        }
+
+        const auto position = static_cast<std::size_t>(std::distance(packets.begin(), it));
+        if (!earliest_position.has_value() || position < *earliest_position) {
+            earliest_position = position;
+        }
+    }
+
+    return earliest_position;
+}
+
+template <typename FlowKey, typename PacketList>
+std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(
+    const CaptureSession& session,
+    const FlowKey& flow_key,
+    const PacketList& packets,
+    const std::vector<std::uint64_t>& selected_packet_indices
+) {
+    if (selected_packet_indices.empty()) {
+        return std::nullopt;
+    }
+
+    const auto start_position = find_first_selected_packet_position(packets, selected_packet_indices);
+    if (!start_position.has_value()) {
+        return std::nullopt;
+    }
+
+    PacketPayloadService payload_service {};
+    QuicInitialParser initial_parser {};
+    std::vector<QuicPresentationCandidate> candidates {};
+    candidates.reserve(kQuicPresentationPacketBudget);
+
+    for (std::size_t position = *start_position;
+         position < packets.size() && candidates.size() < kQuicPresentationPacketBudget;
+         ++position) {
+        const auto& packet = packets[position];
+        if (packet.is_ip_fragmented) {
+            continue;
+        }
+
+        const auto packet_bytes = session.read_packet_data(packet);
+        if (packet_bytes.empty()) {
+            continue;
+        }
+
+        const auto udp_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        if (udp_payload.empty()) {
+            continue;
+        }
+
+        const auto parsed = parse_quic_presentation_packet(
+            std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
+        );
+        if (!parsed.has_value()) {
+            if (packet.packet_index == selected_packet_indices.front()) {
+                return std::nullopt;
+            }
+            continue;
+        }
+
+        candidates.push_back(QuicPresentationCandidate {
+            .packet = packet,
+            .udp_payload = std::move(udp_payload),
+            .parsed = std::move(*parsed),
+        });
+    }
+
+    if (candidates.empty() || candidates.front().packet.packet_index != selected_packet_indices.front()) {
+        return std::nullopt;
+    }
+
+    QuicPresentationResult result {};
+    result.shell_type = candidates.front().parsed.shell_type;
+    result.shell = candidates.front().parsed.shell;
+    result.selected_packet_indices = selected_packet_indices;
+    if (candidates.front().parsed.frame_summary.has_value()) {
+        result.semantics = quic_semantics_from_summary(*candidates.front().parsed.frame_summary);
+    }
+
+    if (candidates.front().parsed.sni.has_value()) {
+        result.sni = candidates.front().parsed.sni;
+    }
+    if (candidates.front().parsed.tls_handshake.has_value()) {
+        result.tls_handshake = candidates.front().parsed.tls_handshake;
+        result.crypto_packet_indices.push_back(candidates.front().packet.packet_index);
+    }
+
+    if (!result.sni.has_value() || !result.tls_handshake.has_value()) {
+        const bool is_client_to_server = flow_key.src_port != kHttpsPort && flow_key.dst_port == kHttpsPort;
+        if (is_client_to_server && candidates.front().parsed.is_client_initial) {
+            std::vector<std::vector<std::uint8_t>> client_initial_payloads {};
+            std::vector<std::uint64_t> crypto_packet_indices {};
+            for (const auto& candidate : candidates) {
+                if (!candidate.parsed.is_client_initial) {
+                    break;
+                }
+
+                client_initial_payloads.push_back(candidate.udp_payload);
+                crypto_packet_indices.push_back(candidate.packet.packet_index);
+            }
+
+            if (!client_initial_payloads.empty()) {
+                const auto payload_span = std::span<const std::vector<std::uint8_t>>(
+                    client_initial_payloads.data(),
+                    client_initial_payloads.size()
+                );
+                if (!result.sni.has_value()) {
+                    result.sni = initial_parser.extract_client_initial_sni(payload_span);
+                }
+                if (!result.tls_handshake.has_value()) {
+                    const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(payload_span);
+                    if (crypto_prefix.has_value()) {
+                        result.tls_handshake = parse_tls_handshake_details(
+                            std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
+                        );
+                        if (result.tls_handshake.has_value()) {
+                            result.used_bounded_crypto_assembly = true;
+                            result.crypto_packet_indices = crypto_packet_indices;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!result.tls_handshake.has_value()) {
+        std::vector<std::vector<std::uint8_t>> plaintext_payloads {};
+        std::vector<std::uint64_t> crypto_packet_indices {};
+        for (const auto& candidate : candidates) {
+            if (candidate.parsed.plaintext_payload_candidate.empty()) {
+                continue;
+            }
+
+            plaintext_payloads.push_back(candidate.parsed.plaintext_payload_candidate);
+            crypto_packet_indices.push_back(candidate.packet.packet_index);
+        }
+
+        if (!plaintext_payloads.empty()) {
+            const auto payload_span = std::span<const std::vector<std::uint8_t>>(
+                plaintext_payloads.data(),
+                plaintext_payloads.size()
+            );
+            result.tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(payload_span);
+            if (result.tls_handshake.has_value()) {
+                result.used_bounded_crypto_assembly = plaintext_payloads.size() > 1U;
+                result.crypto_packet_indices = crypto_packet_indices;
+            }
+        }
+    }
+
+    return result;
+}
+
 bool looks_like_tls_record_prefix(std::span<const std::uint8_t> payload, const std::size_t offset = 0U) noexcept {
     if (offset > payload.size() || payload.size() - offset < kTlsRecordHeaderSize) {
         return false;
@@ -3526,8 +4165,18 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
     return try_flow(connection.flow_b, connection.has_flow_b);
 }
 
-std::optional<std::string> CaptureSession::derive_quic_initial_protocol_details_for_flow(const std::size_t flow_index) const {
-    if (!has_source_capture()) {
+std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_packet(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const {
+    return derive_quic_protocol_details_for_packet_context(flow_index, std::vector<std::uint64_t> {packet_index});
+}
+
+std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_packet_context(
+    const std::size_t flow_index,
+    const std::vector<std::uint64_t>& packet_indices
+) const {
+    if (!has_source_capture() || packet_indices.empty()) {
         return std::nullopt;
     }
 
@@ -3536,98 +4185,48 @@ std::optional<std::string> CaptureSession::derive_quic_initial_protocol_details_
         return std::nullopt;
     }
 
-    constexpr std::size_t kOnDemandQuicInitialPacketBudget = 4U;
-    PacketPayloadService payload_service {};
-    QuicInitialParser initial_parser {};
+    std::vector<std::uint64_t> selected_packet_indices = packet_indices;
+    std::sort(selected_packet_indices.begin(), selected_packet_indices.end());
+    selected_packet_indices.erase(
+        std::unique(selected_packet_indices.begin(), selected_packet_indices.end()),
+        selected_packet_indices.end()
+    );
 
-    const auto build_for_packets = [&](const auto& flow_key, const auto& packets) -> std::optional<std::string> {
-        if (flow_key.src_port == 443 || flow_key.dst_port != 443) {
-            return std::nullopt;
-        }
-
-        std::vector<std::vector<std::uint8_t>> udp_payloads {};
-        udp_payloads.reserve(std::min(kOnDemandQuicInitialPacketBudget, packets.size()));
-
-        const auto packet_limit = std::min(kOnDemandQuicInitialPacketBudget, packets.size());
-        for (std::size_t index = 0U; index < packet_limit; ++index) {
-            const auto& packet = packets[index];
-            if (packet.is_ip_fragmented) {
-                continue;
-            }
-
-            const auto packet_bytes = read_packet_data(packet);
-            if (packet_bytes.empty()) {
-                continue;
-            }
-
-            const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-            if (payload_bytes.empty()) {
-                continue;
-            }
-
-            udp_payloads.push_back(std::move(payload_bytes));
-        }
-
-        if (udp_payloads.empty()) {
-            return std::nullopt;
-        }
-
-        const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(
-            std::span<const std::vector<std::uint8_t>>(udp_payloads.data(), udp_payloads.size())
-        );
-        if (!crypto_prefix.has_value()) {
-            return std::nullopt;
-        }
-
-        const auto handshake = parse_tls_handshake_details(
-            std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
-        );
-        if (!handshake.has_value()) {
-            return std::nullopt;
-        }
-
-        std::ostringstream text {};
-        text << "  TLS Handshake Type: " << handshake->handshake_type_text << "\n"
-             << "  TLS Handshake Length: " << handshake->handshake_length;
-        if (!handshake->details_text.empty()) {
-            text << "\n" << handshake->details_text;
-        }
-
-        return text.str();
-    };
-
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        const auto& connection = *connections[flow_index].ipv4;
+    const auto build_for_connection = [&](const auto& connection) -> std::optional<std::string> {
         if (connection.key.protocol != ProtocolId::udp) {
             return std::nullopt;
         }
 
+        std::optional<QuicPresentationResult> result {};
         if (connection.has_flow_a) {
-            if (const auto details = build_for_packets(connection.flow_a.key, connection.flow_a.packets); details.has_value()) {
-                return details;
-            }
+            result = build_quic_presentation_for_selected_direction(
+                *this,
+                connection.flow_a.key,
+                connection.flow_a.packets,
+                selected_packet_indices
+            );
         }
-        if (connection.has_flow_b) {
-            return build_for_packets(connection.flow_b.key, connection.flow_b.packets);
+        if (!result.has_value() && connection.has_flow_b) {
+            result = build_quic_presentation_for_selected_direction(
+                *this,
+                connection.flow_b.key,
+                connection.flow_b.packets,
+                selected_packet_indices
+            );
         }
-        return std::nullopt;
+
+        if (!result.has_value()) {
+            return std::nullopt;
+        }
+
+        return format_quic_presentation_enrichment(*result);
+    };
+
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        return build_for_connection(*connections[flow_index].ipv4);
     }
 
-    const auto& connection = *connections[flow_index].ipv6;
-    if (connection.key.protocol != ProtocolId::udp) {
-        return std::nullopt;
-    }
-
-    if (connection.has_flow_a) {
-        if (const auto details = build_for_packets(connection.flow_a.key, connection.flow_a.packets); details.has_value()) {
-            return details;
-        }
-    }
-    if (connection.has_flow_b) {
-        return build_for_packets(connection.flow_b.key, connection.flow_b.packets);
-    }
-
-    return std::nullopt;
+    return build_for_connection(*connections[flow_index].ipv6);
 }
 
 std::vector<FlowRow> CaptureSession::list_flows() const {

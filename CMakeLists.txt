@@ -110,9 +110,9 @@ if(PFL_BUILD_UI)
     find_package(Qt6 QUIET COMPONENTS Quick Qml QuickControls2 Widgets)
 
     if(Qt6_FOUND)
-        qt_standard_project_setup()
         qt_policy(SET QTP0001 NEW)
         qt_policy(SET QTP0004 NEW)
+        qt_standard_project_setup(REQUIRES 6.8)
 
         qt_add_executable(
             pcap_flow_lab_ui
@@ -135,6 +135,7 @@ if(PFL_BUILD_UI)
             pcap_flow_lab_ui
             URI PcapFlowLab
             VERSION 1.0
+            RESOURCE_PREFIX /qt/qml
             QML_FILES
                 src/ui/qml/Main.qml
                 src/ui/qml/components/SummaryBar.qml

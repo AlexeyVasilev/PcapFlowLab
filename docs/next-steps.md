@@ -22,7 +22,8 @@
   - richer certificate fields when cheaply available
   - better compact summaries for incomplete TLS metadata
 - improve partial handling (HTTP/TLS)
-- extend QUIC selected-flow detail coverage beyond the first bounded packet-aware taxonomy and the initial ClientHello / ServerHello detail pass, without introducing full reconstruction or decryption
+- extend QUIC selected-flow detail coverage beyond the now ownership-aware ClientHello / ServerHello attachment step, without introducing full reconstruction or decryption
+- keep broader QUIC stream itemization and priority rules as future work after correctness-first presentation changes settle
 
 ## Tests
 
