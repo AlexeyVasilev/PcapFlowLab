@@ -56,12 +56,20 @@ Packet-level details should show at least:
 - packet 3 / 4 / 6 / 8: `Packet Type: Initial` plus `Frame Presence: ACK` or `Frame Presence: ACK, PADDING`
 - packet 18 / 19: `Packet Type: Protected Payload`
 
+Note:
+- the packet table uses semantic packet objects such as `CRYPTO`, `ACK`, `PADDING`, `Handshake`, and `Protected payload`
+- in packet details, these correspond to expected packet-level frame/payload presence in the UI, typically expressed through `Frame Presence: ...` and the selected QUIC packet type text
+
 Packet-level negative expectations:
 - packet 5 / 7 must not show stale `ClientHello`
 - packet 5 / 7 must not show `SNI:`
 - ACK-only packets must not show TLS handshake details
 
 ## Stream-Level Expectations
+
+Stream items here are semantic units, not packet mirrors:
+- one packet may map to multiple stream items
+- one packet may also contribute no standalone stream item for low-value semantics such as `PADDING` or `PING`
 
 Expected stream sequence:
 
@@ -96,6 +104,14 @@ Stream-level detail expectations:
 - `QUIC ACK` items should stay protocol-aware but must not attach TLS details
 - `QUIC Handshake` items should remain `Handshake`, not collapse into generic `UDP Payload`
 - `QUIC Protected Payload` items should remain distinct from `Handshake`
+- TLS semantic attachment in this fixture comes from bounded QUIC `CRYPTO` assembly, not from QUIC shell type alone
+
+### Mixed-Semantics Rules
+
+- `CRYPTO + PADDING` -> stream emits `QUIC CRYPTO` only
+- `ACK + PADDING` -> stream emits `QUIC ACK` only
+- `Handshake + Protected payload` -> stream may emit both when both are semantically meaningful and reliably identifiable
+- standalone `PADDING` and standalone `PING` must not appear as stream items
 
 Stream-level negative expectations:
 - no standalone `PADDING` item
@@ -109,6 +125,8 @@ This fixture is intentionally stricter than the earlier narrow QUIC smoke tests:
 - packet 1 maps to two QUIC `CRYPTO` objects
 - packets 5 and 7 carry `ServerHello` semantics that must stay direction-owned
 - packets 15 and 17 prove that one capture packet can map to more than one stream item
+
+The exact stream sequence remains intentionally valuable for this fixture, but the more important long-term guarantees are semantic mapping correctness and source-packet ownership.
 
 This document is the human-readable reference for the paired expectation spec:
 - [quic_fixture_01_expectations.json](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/tests/fixtures/quic_fixture_01_expectations.json)
