@@ -1359,7 +1359,9 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         std::vector<std::vector<std::uint8_t>> plaintext_payloads {};
         std::vector<std::uint64_t> crypto_packet_indices {};
         for (const auto& candidate : candidates) {
-            if (candidate.parsed.plaintext_payload_candidate.empty()) {
+            if (candidate.parsed.plaintext_payload_candidate.empty() ||
+                !candidate.parsed.frame_summary.has_value() ||
+                !candidate.parsed.frame_summary->crypto) {
                 continue;
             }
 
