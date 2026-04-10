@@ -24,6 +24,7 @@
 - improve partial handling (HTTP/TLS)
 - extend QUIC selected-flow detail coverage beyond the current shell-plus-semantics presentation step, without introducing full reconstruction or decryption
 - keep broader QUIC stream itemization, prioritization, and multi-packet correlation as future work after correctness-first presentation changes settle
+- keep QUIC `ServerHello` attachment bounded and ownership-aware; broader QUIC handshake reconstruction remains out of scope
 
 ## Tests
 

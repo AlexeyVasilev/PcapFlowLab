@@ -105,6 +105,17 @@ std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::ui
     return frame;
 }
 
+std::vector<std::uint8_t> make_quic_crypto_frame_bytes(
+    const std::uint64_t crypto_offset,
+    const std::vector<std::uint8_t>& crypto_bytes
+) {
+    std::vector<std::uint8_t> frame {0x06U};
+    append_quic_varint(frame, crypto_offset);
+    append_quic_varint(frame, crypto_bytes.size());
+    frame.insert(frame.end(), crypto_bytes.begin(), crypto_bytes.end());
+    return frame;
+}
+
 std::vector<std::uint8_t> make_quic_crypto_frame_bytes() {
     return make_quic_crypto_frame_bytes(std::vector<std::uint8_t> {'a', 'b', 'c'});
 }
@@ -1085,6 +1096,84 @@ void run_stream_query_tests() {
 
         const auto ack_context = session.derive_quic_protocol_details_for_packet_context(0, ack_row->packet_indices);
         PFL_EXPECT(!ack_context.has_value());
+    }
+
+    {
+        const auto server_hello_bytes = make_tls_server_hello_handshake_bytes();
+        const auto split_offset = server_hello_bytes.size() / 2U;
+        const std::vector<std::uint8_t> server_hello_prefix(server_hello_bytes.begin(), server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset));
+        const std::vector<std::uint8_t> server_hello_suffix(server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset), server_hello_bytes.end());
+
+        const auto client_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 4, 1), ipv4(10, 41, 4, 2), 54040, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())));
+        const auto server_hello_prefix_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 4, 2), ipv4(10, 41, 4, 1), 443, 54040,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(server_hello_prefix)));
+        const auto server_hello_suffix_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 4, 2), ipv4(10, 41, 4, 1), 443, 54040,
+            make_plaintext_quic_initial_payload(concat_bytes(
+                make_quic_crypto_frame_bytes(static_cast<std::uint64_t>(split_offset), server_hello_suffix),
+                make_quic_ack_frame_bytes()
+            )));
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_server_hello_bounded_tail_attachment.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, client_hello_packet},
+                {200U, server_hello_prefix_packet},
+                {300U, server_hello_suffix_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto server_tail_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {2U};
+        });
+        PFL_EXPECT(server_tail_row != rows.end());
+        PFL_EXPECT(starts_with(server_tail_row->label, "QUIC "));
+
+        const auto server_tail_context = session.derive_quic_protocol_details_for_packet_context(0, server_tail_row->packet_indices);
+        PFL_EXPECT(server_tail_context.has_value());
+        PFL_EXPECT(server_tail_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("Selected TLS Version:") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("Selected Cipher Suite:") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("ClientHello") == std::string::npos);
+        PFL_EXPECT(server_tail_context->find("SNI:") == std::string::npos);
+    }
+
+    {
+        const auto server_hello_bytes = make_tls_server_hello_handshake_bytes();
+        const auto split_offset = server_hello_bytes.size() / 2U;
+        const std::vector<std::uint8_t> server_hello_suffix(server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset), server_hello_bytes.end());
+
+        const auto client_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 5, 1), ipv4(10, 41, 5, 2), 54050, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())));
+        const auto server_hello_suffix_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 5, 2), ipv4(10, 41, 5, 1), 443, 54050,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(static_cast<std::uint64_t>(split_offset), server_hello_suffix)));
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_server_hello_insufficient_tail_only.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, client_hello_packet},
+                {200U, server_hello_suffix_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto server_tail_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {1U};
+        });
+        PFL_EXPECT(server_tail_row != rows.end());
+
+        const auto server_tail_context = session.derive_quic_protocol_details_for_packet_context(0, server_tail_row->packet_indices);
+        PFL_EXPECT(!server_tail_context.has_value());
     }
 
     {

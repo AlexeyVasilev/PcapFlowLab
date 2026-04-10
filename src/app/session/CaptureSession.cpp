@@ -1184,11 +1184,12 @@ std::optional<std::string> format_quic_presentation_enrichment(const QuicPresent
 }
 
 template <typename PacketList>
-std::optional<std::size_t> find_first_selected_packet_position(
+std::optional<std::vector<std::size_t>> find_selected_packet_positions(
     const PacketList& packets,
     const std::vector<std::uint64_t>& selected_packet_indices
 ) {
-    std::optional<std::size_t> earliest_position {};
+    std::vector<std::size_t> positions {};
+    positions.reserve(selected_packet_indices.size());
     for (const auto packet_index : selected_packet_indices) {
         const auto it = std::find_if(packets.begin(), packets.end(), [&](const PacketRef& packet) {
             return packet.packet_index == packet_index;
@@ -1197,13 +1198,19 @@ std::optional<std::size_t> find_first_selected_packet_position(
             return std::nullopt;
         }
 
-        const auto position = static_cast<std::size_t>(std::distance(packets.begin(), it));
-        if (!earliest_position.has_value() || position < *earliest_position) {
-            earliest_position = position;
-        }
+        positions.push_back(static_cast<std::size_t>(std::distance(packets.begin(), it)));
     }
 
-    return earliest_position;
+    return positions;
+}
+
+bool selected_packet_indices_are_covered(
+    const std::vector<std::uint64_t>& selected_packet_indices,
+    const std::vector<std::uint64_t>& owner_packet_indices
+) noexcept {
+    return std::all_of(selected_packet_indices.begin(), selected_packet_indices.end(), [&](const std::uint64_t packet_index) {
+        return std::find(owner_packet_indices.begin(), owner_packet_indices.end(), packet_index) != owner_packet_indices.end();
+    });
 }
 
 template <typename FlowKey, typename PacketList>
@@ -1217,17 +1224,21 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         return std::nullopt;
     }
 
-    const auto start_position = find_first_selected_packet_position(packets, selected_packet_indices);
-    if (!start_position.has_value()) {
+    const auto selected_positions = find_selected_packet_positions(packets, selected_packet_indices);
+    if (!selected_positions.has_value() || selected_positions->empty()) {
         return std::nullopt;
     }
+    const auto earliest_selected_position = *std::min_element(selected_positions->begin(), selected_positions->end());
+    const auto scan_start_position = earliest_selected_position >= (kQuicPresentationPacketBudget - 1U)
+        ? earliest_selected_position - (kQuicPresentationPacketBudget - 1U)
+        : 0U;
 
     PacketPayloadService payload_service {};
     QuicInitialParser initial_parser {};
     std::vector<QuicPresentationCandidate> candidates {};
     candidates.reserve(kQuicPresentationPacketBudget);
 
-    for (std::size_t position = *start_position;
+    for (std::size_t position = scan_start_position;
          position < packets.size() && candidates.size() < kQuicPresentationPacketBudget;
          ++position) {
         const auto& packet = packets[position];
@@ -1249,7 +1260,7 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
         );
         if (!parsed.has_value()) {
-            if (packet.packet_index == selected_packet_indices.front()) {
+            if (std::find(selected_packet_indices.begin(), selected_packet_indices.end(), packet.packet_index) != selected_packet_indices.end()) {
                 return std::nullopt;
             }
             continue;
@@ -1262,35 +1273,58 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         });
     }
 
-    if (candidates.empty() || candidates.front().packet.packet_index != selected_packet_indices.front()) {
+    if (candidates.empty()) {
         return std::nullopt;
     }
 
+    const auto anchor_it = std::find_if(candidates.begin(), candidates.end(), [&](const QuicPresentationCandidate& candidate) {
+        return candidate.packet.packet_index == selected_packet_indices.front();
+    });
+    if (anchor_it == candidates.end()) {
+        return std::nullopt;
+    }
+    const auto selected_packets_present = std::all_of(selected_packet_indices.begin(), selected_packet_indices.end(), [&](const std::uint64_t packet_index) {
+        return std::find_if(candidates.begin(), candidates.end(), [&](const QuicPresentationCandidate& candidate) {
+            return candidate.packet.packet_index == packet_index;
+        }) != candidates.end();
+    });
+    if (!selected_packets_present) {
+        return std::nullopt;
+    }
+    const auto anchor_position = static_cast<std::size_t>(std::distance(candidates.begin(), anchor_it));
+
     QuicPresentationResult result {};
-    result.shell_type = candidates.front().parsed.shell_type;
-    result.shell = candidates.front().parsed.shell;
+    result.shell_type = anchor_it->parsed.shell_type;
+    result.shell = anchor_it->parsed.shell;
     result.selected_packet_indices = selected_packet_indices;
-    if (candidates.front().parsed.frame_summary.has_value()) {
-        result.semantics = quic_semantics_from_summary(*candidates.front().parsed.frame_summary);
+    if (anchor_it->parsed.frame_summary.has_value()) {
+        result.semantics = quic_semantics_from_summary(*anchor_it->parsed.frame_summary);
     }
 
-    if (candidates.front().parsed.sni.has_value()) {
-        result.sni = candidates.front().parsed.sni;
+    if (anchor_it->parsed.sni.has_value()) {
+        result.sni = anchor_it->parsed.sni;
     }
-    if (candidates.front().parsed.tls_handshake.has_value()) {
-        result.tls_handshake = candidates.front().parsed.tls_handshake;
-        result.crypto_packet_indices.push_back(candidates.front().packet.packet_index);
+    if (anchor_it->parsed.tls_handshake.has_value() && selected_packet_indices.size() == 1U) {
+        result.tls_handshake = anchor_it->parsed.tls_handshake;
+        result.crypto_packet_indices.push_back(anchor_it->packet.packet_index);
     }
 
     if (!result.sni.has_value() || !result.tls_handshake.has_value()) {
         const bool is_client_to_server = flow_key.src_port != kHttpsPort && flow_key.dst_port == kHttpsPort;
-        if (is_client_to_server && candidates.front().parsed.is_client_initial) {
+        if (is_client_to_server && anchor_it->parsed.is_client_initial) {
             std::vector<std::vector<std::uint8_t>> client_initial_payloads {};
             std::vector<std::uint64_t> crypto_packet_indices {};
-            for (const auto& candidate : candidates) {
-                if (!candidate.parsed.is_client_initial) {
-                    break;
-                }
+            auto client_initial_start = anchor_position;
+            while (client_initial_start > 0U && candidates[client_initial_start - 1U].parsed.is_client_initial) {
+                --client_initial_start;
+            }
+            auto client_initial_end = anchor_position;
+            while (client_initial_end + 1U < candidates.size() && candidates[client_initial_end + 1U].parsed.is_client_initial) {
+                ++client_initial_end;
+            }
+
+            for (std::size_t position = client_initial_start; position <= client_initial_end; ++position) {
+                const auto& candidate = candidates[position];
 
                 client_initial_payloads.push_back(candidate.udp_payload);
                 crypto_packet_indices.push_back(candidate.packet.packet_index);
@@ -1307,10 +1341,11 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
                 if (!result.tls_handshake.has_value()) {
                     const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(payload_span);
                     if (crypto_prefix.has_value()) {
-                        result.tls_handshake = parse_tls_handshake_details(
+                        const auto tls_handshake = parse_tls_handshake_details(
                             std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
                         );
-                        if (result.tls_handshake.has_value()) {
+                        if (tls_handshake.has_value() && selected_packet_indices_are_covered(selected_packet_indices, crypto_packet_indices)) {
+                            result.tls_handshake = tls_handshake;
                             result.used_bounded_crypto_assembly = true;
                             result.crypto_packet_indices = crypto_packet_indices;
                         }
@@ -1337,8 +1372,9 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
                 plaintext_payloads.data(),
                 plaintext_payloads.size()
             );
-            result.tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(payload_span);
-            if (result.tls_handshake.has_value()) {
+            const auto tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(payload_span);
+            if (tls_handshake.has_value() && selected_packet_indices_are_covered(selected_packet_indices, crypto_packet_indices)) {
+                result.tls_handshake = tls_handshake;
                 result.used_bounded_crypto_assembly = plaintext_payloads.size() > 1U;
                 result.crypto_packet_indices = crypto_packet_indices;
             }

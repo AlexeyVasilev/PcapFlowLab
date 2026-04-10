@@ -143,11 +143,30 @@ std::vector<std::uint8_t> make_plaintext_quic_initial_payload(const std::vector<
     return payload;
 }
 
-std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::uint8_t>& crypto_bytes) {
-    std::vector<std::uint8_t> frame {0x06U, 0x00U};
+std::vector<std::uint8_t> concat_bytes(
+    const std::vector<std::uint8_t>& first,
+    const std::vector<std::uint8_t>& second
+) {
+    std::vector<std::uint8_t> combined {};
+    combined.reserve(first.size() + second.size());
+    combined.insert(combined.end(), first.begin(), first.end());
+    combined.insert(combined.end(), second.begin(), second.end());
+    return combined;
+}
+
+std::vector<std::uint8_t> make_quic_crypto_frame_bytes(
+    const std::uint64_t crypto_offset,
+    const std::vector<std::uint8_t>& crypto_bytes
+) {
+    std::vector<std::uint8_t> frame {0x06U};
+    append_quic_varint(frame, crypto_offset);
     append_quic_varint(frame, crypto_bytes.size());
     frame.insert(frame.end(), crypto_bytes.begin(), crypto_bytes.end());
     return frame;
+}
+
+std::vector<std::uint8_t> make_quic_crypto_frame_bytes(const std::vector<std::uint8_t>& crypto_bytes) {
+    return make_quic_crypto_frame_bytes(0U, crypto_bytes);
 }
 
 std::vector<std::uint8_t> make_quic_ack_frame_bytes() {
@@ -312,6 +331,77 @@ void run_packet_protocol_details_tests() {
 
         const auto server_ack_context = session.derive_quic_protocol_details_for_packet(0, 2);
         PFL_EXPECT(!server_ack_context.has_value());
+    }
+
+    {
+        const auto server_hello_bytes = make_tls_server_hello_handshake_bytes();
+        const auto split_offset = server_hello_bytes.size() / 2U;
+        const std::vector<std::uint8_t> server_hello_prefix(server_hello_bytes.begin(), server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset));
+        const std::vector<std::uint8_t> server_hello_suffix(server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset), server_hello_bytes.end());
+
+        const auto client_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 30), ipv4(10, 1, 0, 40), 54030, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())));
+        const auto server_hello_prefix_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 40), ipv4(10, 1, 0, 30), 443, 54030,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(server_hello_prefix)));
+        const auto server_hello_suffix_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 40), ipv4(10, 1, 0, 30), 443, 54030,
+            make_plaintext_quic_initial_payload(concat_bytes(
+                make_quic_crypto_frame_bytes(static_cast<std::uint64_t>(split_offset), server_hello_suffix),
+                make_quic_ack_frame_bytes()
+            )));
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_quic_server_hello_bounded_tail_attachment.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, client_hello_packet},
+                {200U, server_hello_prefix_packet},
+                {300U, server_hello_suffix_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+
+        const auto server_tail_context = session.derive_quic_protocol_details_for_packet(0, 2);
+        PFL_EXPECT(server_tail_context.has_value());
+        PFL_EXPECT(server_tail_context->find("TLS Handshake Type: ServerHello") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("Selected TLS Version:") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("Selected Cipher Suite:") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("Extensions:") != std::string::npos);
+        PFL_EXPECT(server_tail_context->find("ClientHello") == std::string::npos);
+        PFL_EXPECT(server_tail_context->find("Cipher Suites:") == std::string::npos);
+        PFL_EXPECT(server_tail_context->find("SNI:") == std::string::npos);
+    }
+
+    {
+        const auto server_hello_bytes = make_tls_server_hello_handshake_bytes();
+        const auto split_offset = server_hello_bytes.size() / 2U;
+        const std::vector<std::uint8_t> server_hello_suffix(server_hello_bytes.begin() + static_cast<std::ptrdiff_t>(split_offset), server_hello_bytes.end());
+
+        const auto client_hello_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 50), ipv4(10, 1, 0, 60), 54050, 443,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(make_tls_client_hello_handshake_bytes())));
+        const auto server_hello_suffix_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 1, 0, 60), ipv4(10, 1, 0, 50), 443, 54050,
+            make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes(static_cast<std::uint64_t>(split_offset), server_hello_suffix)));
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_quic_server_hello_insufficient_tail_only.pcap",
+            make_classic_pcap(std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> {
+                {100U, client_hello_packet},
+                {200U, server_hello_suffix_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+
+        const auto server_tail_context = session.derive_quic_protocol_details_for_packet(0, 1);
+        PFL_EXPECT(!server_tail_context.has_value());
+        const auto server_tail_protocol_text = session.derive_quic_protocol_text_for_packet(0, 1);
+        PFL_EXPECT(server_tail_protocol_text.has_value());
+        PFL_EXPECT(server_tail_protocol_text->find("TLS Handshake Type: ServerHello") == std::string::npos);
+        PFL_EXPECT(server_tail_protocol_text->find("ClientHello") == std::string::npos);
     }
 
     {

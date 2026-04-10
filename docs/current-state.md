@@ -14,6 +14,7 @@
 - Selected-flow QUIC labeling now exists in a narrow bounded form for packet-aware `Initial`, `Handshake`, `Retry`, `Version Negotiation`, and `Protected Payload` cases, with conservative fallback to `UDP Payload`.
 - QUIC packet and Stream details now use direction-aware, ownership-aware selected-flow TLS attachment so `ClientHello` / `ServerHello` details are not reused across the wrong packet or Stream item context.
 - Selected-flow QUIC packet and Stream presentation now share one bounded internal model: Packet Details stays shell-oriented but Stream labeling is more semantic when confidently isolated (`CRYPTO`, `ACK`) and suppresses standalone `PADDING` / `PING` noise.
+- Bounded selected-flow QUIC TLS attachment now also surfaces `ServerHello` on server-side packets/items when the selected packet participates in enough same-direction CRYPTO bytes; otherwise it remains conservatively QUIC-only.
 
 ## Analysis tab
 
