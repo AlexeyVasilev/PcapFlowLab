@@ -22,8 +22,8 @@
   - richer certificate fields when cheaply available
   - better compact summaries for incomplete TLS metadata
 - improve partial handling (HTTP/TLS)
-- extend QUIC selected-flow detail coverage beyond the now ownership-aware ClientHello / ServerHello attachment step, without introducing full reconstruction or decryption
-- keep broader QUIC stream itemization and priority rules as future work after correctness-first presentation changes settle
+- extend QUIC selected-flow detail coverage beyond the current shell-plus-semantics presentation step, without introducing full reconstruction or decryption
+- keep broader QUIC stream itemization, prioritization, and multi-packet correlation as future work after correctness-first presentation changes settle
 
 ## Tests
 
@@ -33,6 +33,7 @@
   - request bodies (POST/PUT)
 - add DNS baseline fixture (if missing)
 - validate QUIC fallback behavior explicitly
+- add a few more focused QUIC selected-flow cases around mixed frame semantics and conservative fallback
 - keep tests focused on behavior, not exact packet mapping
 
 ## Analysis

@@ -594,6 +594,193 @@ struct QuicPresentationResult {
     bool used_bounded_crypto_assembly {false};
 };
 
+std::string quic_hex_text(std::span<const std::uint8_t> bytes, const std::size_t max_bytes = 8U) {
+    if (bytes.empty()) {
+        return "<empty>";
+    }
+
+    std::ostringstream text {};
+    text << std::hex << std::setfill('0');
+    const auto emit_count = std::min(bytes.size(), max_bytes);
+    for (std::size_t index = 0U; index < emit_count; ++index) {
+        if (index > 0U) {
+            text << ' ';
+        }
+        text << std::setw(2) << static_cast<unsigned int>(bytes[index]);
+    }
+    if (bytes.size() > emit_count) {
+        text << " ...";
+    }
+    return text.str();
+}
+
+std::string quic_version_text(const std::uint32_t version) {
+    switch (version) {
+    case 0x00000000U:
+        return "Version Negotiation (0x00000000)";
+    case 0x00000001U:
+        return "QUIC v1 (0x00000001)";
+    case 0x6B3343CFU:
+        return "QUIC v2 (0x6b3343cf)";
+    case 0xFF00001DU:
+        return "QUIC draft-29 (0xff00001d)";
+    default: {
+        std::ostringstream builder {};
+        builder << "0x" << std::hex << std::setfill('0') << std::setw(8) << version;
+        return builder.str();
+    }
+    }
+}
+
+const char* quic_shell_type_text(const QuicPresentationShellType shell_type) noexcept {
+    switch (shell_type) {
+    case QuicPresentationShellType::initial:
+        return "Initial";
+    case QuicPresentationShellType::handshake:
+        return "Handshake";
+    case QuicPresentationShellType::retry:
+        return "Retry";
+    case QuicPresentationShellType::version_negotiation:
+        return "Version Negotiation";
+    case QuicPresentationShellType::protected_payload:
+        return "Protected Payload";
+    default:
+        return "Unknown";
+    }
+}
+
+const char* quic_semantic_text(const QuicPresentationSemanticType semantic) noexcept {
+    switch (semantic) {
+    case QuicPresentationSemanticType::ack:
+        return "ACK";
+    case QuicPresentationSemanticType::crypto:
+        return "CRYPTO";
+    case QuicPresentationSemanticType::stream:
+        return "STREAM";
+    case QuicPresentationSemanticType::padding:
+        return "PADDING";
+    case QuicPresentationSemanticType::ping:
+        return "PING";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+bool quic_has_semantic(const QuicPresentationResult& result, const QuicPresentationSemanticType semantic) noexcept {
+    return std::find(result.semantics.begin(), result.semantics.end(), semantic) != result.semantics.end();
+}
+
+std::string quic_semantics_text(const QuicPresentationResult& result) {
+    if (result.semantics.empty()) {
+        return {};
+    }
+
+    std::ostringstream text {};
+    for (std::size_t index = 0U; index < result.semantics.size(); ++index) {
+        if (index > 0U) {
+            text << ", ";
+        }
+        text << quic_semantic_text(result.semantics[index]);
+    }
+    return text.str();
+}
+
+std::optional<std::string> format_quic_presentation_enrichment(const QuicPresentationResult& result);
+
+std::optional<std::string> format_quic_presentation_protocol_text(const QuicPresentationResult& result) {
+    if (result.shell_type == QuicPresentationShellType::none) {
+        return std::nullopt;
+    }
+
+    std::ostringstream text {};
+    text << "QUIC\n"
+         << "  Header Form: " << result.shell.header_form << "\n"
+         << "  Packet Type: " << quic_shell_type_text(result.shell_type);
+
+    if (result.shell.version.has_value()) {
+        text << "\n"
+             << "  Version: " << quic_version_text(*result.shell.version);
+    }
+
+    if (!result.shell.dcid.empty()) {
+        text << "\n"
+             << "  Destination Connection ID Length: " << result.shell.dcid.size() << "\n"
+             << "  Destination Connection ID: " << quic_hex_text(std::span<const std::uint8_t>(result.shell.dcid.data(), result.shell.dcid.size()));
+    }
+
+    if (!result.shell.scid.empty()) {
+        text << "\n"
+             << "  Source Connection ID Length: " << result.shell.scid.size() << "\n"
+             << "  Source Connection ID: " << quic_hex_text(std::span<const std::uint8_t>(result.shell.scid.data(), result.shell.scid.size()));
+    }
+
+    if (const auto semantics_text = quic_semantics_text(result); !semantics_text.empty()) {
+        text << "\n"
+             << "  Frame Presence: " << semantics_text;
+    }
+
+    if (const auto enrichment = format_quic_presentation_enrichment(result); enrichment.has_value() && !enrichment->empty()) {
+        text << "\n" << *enrichment;
+    }
+
+    return text.str();
+}
+
+bool should_emit_quic_stream_item(const QuicPresentationResult& result) noexcept {
+    if (result.shell_type == QuicPresentationShellType::version_negotiation ||
+        result.shell_type == QuicPresentationShellType::retry ||
+        result.shell_type == QuicPresentationShellType::handshake ||
+        result.shell_type == QuicPresentationShellType::protected_payload) {
+        return true;
+    }
+
+    if (result.semantics.empty()) {
+        return result.shell_type == QuicPresentationShellType::initial;
+    }
+
+    const bool has_ack = quic_has_semantic(result, QuicPresentationSemanticType::ack);
+    const bool has_crypto = quic_has_semantic(result, QuicPresentationSemanticType::crypto);
+    const bool has_stream = quic_has_semantic(result, QuicPresentationSemanticType::stream);
+    const bool has_padding = quic_has_semantic(result, QuicPresentationSemanticType::padding);
+    const bool has_ping = quic_has_semantic(result, QuicPresentationSemanticType::ping);
+
+    if (!has_ack && !has_crypto && !has_stream && (has_padding || has_ping)) {
+        return false;
+    }
+
+    return true;
+}
+
+std::string quic_stream_label_from_result(const QuicPresentationResult& result) {
+    if (result.shell_type == QuicPresentationShellType::version_negotiation) {
+        return "QUIC Version Negotiation";
+    }
+    if (result.shell_type == QuicPresentationShellType::retry) {
+        return "QUIC Retry";
+    }
+
+    const bool has_ack = quic_has_semantic(result, QuicPresentationSemanticType::ack);
+    const bool has_crypto = quic_has_semantic(result, QuicPresentationSemanticType::crypto);
+    const bool has_stream = quic_has_semantic(result, QuicPresentationSemanticType::stream);
+    if (has_ack && !has_crypto && !has_stream) {
+        return "QUIC ACK";
+    }
+    if (has_crypto && !has_ack && !has_stream) {
+        return "QUIC CRYPTO";
+    }
+
+    switch (result.shell_type) {
+    case QuicPresentationShellType::initial:
+        return "QUIC Initial";
+    case QuicPresentationShellType::handshake:
+        return "QUIC Handshake";
+    case QuicPresentationShellType::protected_payload:
+        return "QUIC Protected Payload";
+    default:
+        return "UDP Payload";
+    }
+}
+
 std::optional<std::uint64_t> quic_read_varint(std::span<const std::uint8_t> bytes, std::size_t& offset) {
     if (offset >= bytes.size()) {
         return std::nullopt;
@@ -2172,37 +2359,6 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     }
 }
 
-std::string quic_stream_label_from_protocol_text(const std::string_view protocol_text) {
-    if (contains_text(protocol_text, "Packet Type: Version Negotiation")) {
-        return "QUIC Version Negotiation";
-    }
-    if (contains_text(protocol_text, "Packet Type: Retry")) {
-        return "QUIC Retry";
-    }
-
-    const bool has_ack = contains_text(protocol_text, "Frame Presence: ACK") || contains_text(protocol_text, "Frame Presence: ACK,");
-    const bool has_crypto = contains_text(protocol_text, "Frame Presence: CRYPTO") || contains_text(protocol_text, "Frame Presence: CRYPTO,");
-    const bool has_stream = contains_text(protocol_text, "STREAM");
-    if (has_ack && !has_crypto && !has_stream) {
-        return "QUIC ACK";
-    }
-    if (has_crypto && !has_ack && !has_stream) {
-        return "QUIC CRYPTO";
-    }
-
-    if (contains_text(protocol_text, "Packet Type: Initial")) {
-        return "QUIC Initial";
-    }
-    if (contains_text(protocol_text, "Packet Type: Handshake")) {
-        return "QUIC Handshake";
-    }
-    if (contains_text(protocol_text, "Packet Type: Protected Payload")) {
-        return "QUIC Protected Payload";
-    }
-
-    return "UDP Payload";
-}
-
 std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes) {
     if (record_bytes.size() < kTlsRecordHeaderSize) {
         return "TLS\n  Record details unavailable for this stream item.";
@@ -3247,17 +3403,38 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::udp) {
-            QuicPacketProtocolAnalyzer quic_analyzer {};
-            if (const auto quic_details = quic_analyzer.analyze(packet_bytes, packet.data_link_type); quic_details.has_value()) {
+            const auto build_quic_row = [&](const auto& flow_key, const auto& flow_packets) -> bool {
+                const auto result = build_quic_presentation_for_selected_direction(
+                    session,
+                    flow_key,
+                    flow_packets,
+                    std::vector<std::uint64_t> {packet.packet_index}
+                );
+                if (!result.has_value()) {
+                    return false;
+                }
+                if (!should_emit_quic_stream_item(*result)) {
+                    return true;
+                }
+
+                const auto protocol_text = format_quic_presentation_protocol_text(*result);
                 rows.push_back(make_stream_item_row(
                     static_cast<std::uint64_t>(rows.size() + 1U),
                     direction_text,
-                    quic_stream_label_from_protocol_text(*quic_details),
+                    quic_stream_label_from_result(*result),
                     payload_bytes.size(),
                     packet,
                     hex_dump_service.format(payload_span),
-                    *quic_details
+                    protocol_text.value_or(std::string {})
                 ));
+                return true;
+            };
+
+            const bool handled_quic = use_a
+                ? build_quic_row(connection.flow_a.key, connection.flow_a.packets)
+                : build_quic_row(connection.flow_b.key, connection.flow_b.packets);
+
+            if (handled_quic) {
                 continue;
             }
         }
@@ -4163,6 +4340,70 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
     }
 
     return try_flow(connection.flow_b, connection.has_flow_b);
+}
+
+std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const {
+    return derive_quic_protocol_text_for_packet_context(flow_index, std::vector<std::uint64_t> {packet_index});
+}
+
+std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_context(
+    const std::size_t flow_index,
+    const std::vector<std::uint64_t>& packet_indices
+) const {
+    if (!has_source_capture() || packet_indices.empty()) {
+        return std::nullopt;
+    }
+
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint64_t> selected_packet_indices = packet_indices;
+    std::sort(selected_packet_indices.begin(), selected_packet_indices.end());
+    selected_packet_indices.erase(
+        std::unique(selected_packet_indices.begin(), selected_packet_indices.end()),
+        selected_packet_indices.end()
+    );
+
+    const auto build_for_connection = [&](const auto& connection) -> std::optional<std::string> {
+        if (connection.key.protocol != ProtocolId::udp) {
+            return std::nullopt;
+        }
+
+        std::optional<QuicPresentationResult> result {};
+        if (connection.has_flow_a) {
+            result = build_quic_presentation_for_selected_direction(
+                *this,
+                connection.flow_a.key,
+                connection.flow_a.packets,
+                selected_packet_indices
+            );
+        }
+        if (!result.has_value() && connection.has_flow_b) {
+            result = build_quic_presentation_for_selected_direction(
+                *this,
+                connection.flow_b.key,
+                connection.flow_b.packets,
+                selected_packet_indices
+            );
+        }
+
+        if (!result.has_value()) {
+            return std::nullopt;
+        }
+
+        return format_quic_presentation_protocol_text(*result);
+    };
+
+    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
+        return build_for_connection(*connections[flow_index].ipv4);
+    }
+
+    return build_for_connection(*connections[flow_index].ipv6);
 }
 
 std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_packet(

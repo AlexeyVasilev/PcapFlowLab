@@ -1474,13 +1474,16 @@ int main(int argc, char* argv[]) {
 
     quic_controller.setFlowDetailsTabIndex(1);
     UI_EXPECT(quic_stream_model->rowCount() >= 1);
-    int quic_initial_row = -1;
-    for (int row = 0; row < quic_stream_model->rowCount(); ++row) {
-        if (quic_stream_model->data(quic_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial")) {
-            quic_initial_row = row;
-            break;
+    const auto find_quic_initial_like_row = [](StreamListModel* model) {
+        for (int row = 0; row < model->rowCount(); ++row) {
+            const auto label = model->data(model->index(row, 0), StreamListModel::LabelRole).toString();
+            if (label == QStringLiteral("QUIC CRYPTO") || label == QStringLiteral("QUIC Initial")) {
+                return row;
+            }
         }
-    }
+        return -1;
+    };
+    const int quic_initial_row = find_quic_initial_like_row(quic_stream_model);
     UI_EXPECT(quic_initial_row >= 0);
     const auto quic_stream_item_index = quic_stream_model->data(
         quic_stream_model->index(quic_initial_row, 0),
@@ -1515,13 +1518,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_youtube_details_model->protocolText().contains(QStringLiteral("TLS Handshake Type: ClientHello")));
 
     quic_youtube_controller.setFlowDetailsTabIndex(1);
-    int quic_youtube_initial_row = -1;
-    for (int row = 0; row < quic_youtube_stream_model->rowCount(); ++row) {
-        if (quic_youtube_stream_model->data(quic_youtube_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial")) {
-            quic_youtube_initial_row = row;
-            break;
-        }
-    }
+    const int quic_youtube_initial_row = find_quic_initial_like_row(quic_youtube_stream_model);
     UI_EXPECT(quic_youtube_initial_row >= 0);
     const auto quic_youtube_stream_item_index = quic_youtube_stream_model->data(
         quic_youtube_stream_model->index(quic_youtube_initial_row, 0),
@@ -1545,13 +1542,7 @@ int main(int argc, char* argv[]) {
     quic_tiktok_controller.setSelectedFlowIndex(0);
     UI_EXPECT(quic_tiktok_flow_model->data(quic_tiktok_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("log22-normal-useast1a.tiktokv.com"));
     quic_tiktok_controller.setFlowDetailsTabIndex(1);
-    int quic_tiktok_initial_row = -1;
-    for (int row = 0; row < quic_tiktok_stream_model->rowCount(); ++row) {
-        if (quic_tiktok_stream_model->data(quic_tiktok_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial")) {
-            quic_tiktok_initial_row = row;
-            break;
-        }
-    }
+    const int quic_tiktok_initial_row = find_quic_initial_like_row(quic_tiktok_stream_model);
     UI_EXPECT(quic_tiktok_initial_row >= 0);
     const auto quic_tiktok_stream_item_index = quic_tiktok_stream_model->data(
         quic_tiktok_stream_model->index(quic_tiktok_initial_row, 0),

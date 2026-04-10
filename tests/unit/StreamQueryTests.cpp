@@ -152,6 +152,14 @@ std::vector<std::uint8_t> make_quic_ack_frame_bytes() {
     return {0x02U, 0x00U, 0x00U, 0x00U, 0x00U};
 }
 
+std::vector<std::uint8_t> make_quic_padding_frame_bytes(const std::size_t count = 1U) {
+    return std::vector<std::uint8_t>(count, 0x00U);
+}
+
+std::vector<std::uint8_t> make_quic_ping_frame_bytes() {
+    return {0x01U};
+}
+
 std::vector<std::uint8_t> make_quic_truncated_payload() {
     return {
         0xC0U,
@@ -818,11 +826,14 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
-        const auto* initial_row = find_stream_row_by_label(rows, "QUIC Initial");
-        PFL_EXPECT(initial_row != nullptr);
-        PFL_EXPECT(initial_row->protocol_text.find("TLS Handshake Type: ClientHello") != std::string::npos);
-        PFL_EXPECT(initial_row->protocol_text.find("Cipher Suites:") != std::string::npos);
-        PFL_EXPECT(initial_row->protocol_text.find("SNI:") != std::string::npos);
+        const auto* quic_row = find_stream_row_by_label(rows, "QUIC CRYPTO");
+        if (quic_row == nullptr) {
+            quic_row = find_stream_row_by_label(rows, "QUIC Initial");
+        }
+        PFL_EXPECT(quic_row != nullptr);
+        PFL_EXPECT(quic_row->protocol_text.find("TLS Handshake Type: ClientHello") != std::string::npos);
+        PFL_EXPECT(quic_row->protocol_text.find("Cipher Suites:") != std::string::npos);
+        PFL_EXPECT(quic_row->protocol_text.find("SNI:") != std::string::npos);
     }
 
     {
@@ -835,7 +846,7 @@ void run_stream_query_tests() {
             return starts_with(row.label, "QUIC ");
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return row.label == "QUIC Initial";
+            return row.label == "QUIC Initial" || row.label == "QUIC CRYPTO";
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label != "UDP Payload" && !row.protocol_text.empty() && !row.payload_hex_text.empty();
@@ -886,6 +897,58 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].protocol_text.find("Frame Presence: CRYPTO") != std::string::npos);
         PFL_EXPECT(rows[1].label == "QUIC ACK");
         PFL_EXPECT(rows[1].protocol_text.find("Frame Presence: ACK") != std::string::npos);
+    }
+
+    {
+        const auto crypto_with_padding_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 1, 1),
+            ipv4(10, 41, 1, 2),
+            54000,
+            443,
+            make_plaintext_quic_initial_payload(concat_bytes(make_quic_crypto_frame_bytes(), make_quic_padding_frame_bytes(3U)))
+        );
+        const auto ack_with_padding_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 1, 1),
+            ipv4(10, 41, 1, 2),
+            54000,
+            443,
+            make_plaintext_quic_initial_payload(concat_bytes(make_quic_ack_frame_bytes(), make_quic_padding_frame_bytes(2U)))
+        );
+        const auto padding_only_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 1, 1),
+            ipv4(10, 41, 1, 2),
+            54000,
+            443,
+            make_plaintext_quic_initial_payload(make_quic_padding_frame_bytes(4U))
+        );
+        const auto ping_only_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 1, 1),
+            ipv4(10, 41, 1, 2),
+            54000,
+            443,
+            make_plaintext_quic_initial_payload(make_quic_ping_frame_bytes())
+        );
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_padding_ping_suppression.pcap",
+            make_classic_pcap({
+                {100, crypto_with_padding_packet},
+                {200, ack_with_padding_packet},
+                {300, padding_only_packet},
+                {400, ping_only_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label == "QUIC CRYPTO");
+        PFL_EXPECT(rows[0].protocol_text.find("Frame Presence: CRYPTO, PADDING") != std::string::npos);
+        PFL_EXPECT(rows[1].label == "QUIC ACK");
+        PFL_EXPECT(rows[1].protocol_text.find("Frame Presence: ACK, PADDING") != std::string::npos);
+        PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.label.find("PADDING") != std::string::npos || row.label.find("PING") != std::string::npos;
+        }));
     }
 
     {
