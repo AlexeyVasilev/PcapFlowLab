@@ -455,6 +455,7 @@ std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std
 struct ParsedClientInitialHeader {
     std::uint32_t version {0U};
     std::span<const std::uint8_t> destination_connection_id {};
+    std::span<const std::uint8_t> source_connection_id {};
     std::size_t packet_number_offset {0U};
     std::size_t packet_end {0U};
 };
@@ -492,6 +493,7 @@ std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<c
     if (offset + source_connection_id_length > udp_payload.size()) {
         return std::nullopt;
     }
+    const auto source_connection_id = udp_payload.subspan(offset, source_connection_id_length);
     offset += source_connection_id_length;
 
     const auto token_length = read_varint(udp_payload, offset);
@@ -514,6 +516,7 @@ std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<c
     return ParsedClientInitialHeader {
         .version = version,
         .destination_connection_id = destination_connection_id,
+        .source_connection_id = source_connection_id,
         .packet_number_offset = packet_number_offset,
         .packet_end = packet_end,
     };
@@ -894,9 +897,19 @@ std::optional<std::string> extract_tls_client_hello_sni_from_handshake(std::span
 
 namespace {
 
-std::optional<std::vector<std::uint8_t>> decrypt_client_initial_plaintext(std::span<const std::uint8_t> udp_payload) {
+std::optional<std::vector<std::uint8_t>> decrypt_initial_plaintext_with_perspective(
+    std::span<const std::uint8_t> udp_payload,
+    const bool use_server_initial_secret
+) {
     const auto header = parse_client_initial_header(udp_payload);
-    if (!header.has_value() || header->destination_connection_id.empty()) {
+    if (!header.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto initial_secret_connection_id = use_server_initial_secret
+        ? header->source_connection_id
+        : header->destination_connection_id;
+    if (initial_secret_connection_id.empty()) {
         return std::nullopt;
     }
 
@@ -905,19 +918,23 @@ std::optional<std::vector<std::uint8_t>> decrypt_client_initial_plaintext(std::s
         return std::nullopt;
     }
 
-    const auto initial_secret = hkdf_extract(version_params->initial_salt, header->destination_connection_id);
+    const auto initial_secret = hkdf_extract(version_params->initial_salt, initial_secret_connection_id);
     if (!initial_secret.has_value()) {
         return std::nullopt;
     }
 
-    const auto client_initial_secret = hkdf_expand_label(*initial_secret, "client in", kQuicInitialSecretSize);
-    if (!client_initial_secret.has_value()) {
+    const auto directional_initial_secret = hkdf_expand_label(
+        *initial_secret,
+        use_server_initial_secret ? "server in" : "client in",
+        kQuicInitialSecretSize
+    );
+    if (!directional_initial_secret.has_value()) {
         return std::nullopt;
     }
 
-    const auto key = hkdf_expand_label(*client_initial_secret, version_params->key_label, kQuicAes128KeySize);
-    const auto iv = hkdf_expand_label(*client_initial_secret, version_params->iv_label, kQuicIvSize);
-    const auto hp = hkdf_expand_label(*client_initial_secret, version_params->hp_label, kQuicAes128KeySize);
+    const auto key = hkdf_expand_label(*directional_initial_secret, version_params->key_label, kQuicAes128KeySize);
+    const auto iv = hkdf_expand_label(*directional_initial_secret, version_params->iv_label, kQuicIvSize);
+    const auto hp = hkdf_expand_label(*directional_initial_secret, version_params->hp_label, kQuicAes128KeySize);
     if (!key.has_value() || !iv.has_value() || !hp.has_value()) {
         return std::nullopt;
     }
@@ -1012,8 +1029,15 @@ bool QuicInitialParser::is_client_initial_packet(std::span<const std::uint8_t> u
     return header.has_value() && !header->destination_connection_id.empty();
 }
 
+std::optional<std::vector<std::uint8_t>> QuicInitialParser::decrypt_initial_plaintext(
+    std::span<const std::uint8_t> udp_payload,
+    const bool use_server_initial_secret
+) const {
+    return decrypt_initial_plaintext_with_perspective(udp_payload, use_server_initial_secret);
+}
+
 std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::uint8_t> udp_payload) const {
-    const auto plaintext = decrypt_client_initial_plaintext(udp_payload);
+    const auto plaintext = decrypt_initial_plaintext_with_perspective(udp_payload, false);
     if (!plaintext.has_value()) {
         return std::nullopt;
     }
@@ -1033,7 +1057,7 @@ std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::sp
 std::optional<std::vector<std::uint8_t>> QuicInitialParser::extract_client_initial_crypto_prefix(
     std::span<const std::uint8_t> udp_payload
 ) const {
-    const auto plaintext = decrypt_client_initial_plaintext(udp_payload);
+    const auto plaintext = decrypt_initial_plaintext_with_perspective(udp_payload, false);
     if (!plaintext.has_value()) {
         return std::nullopt;
     }
@@ -1067,7 +1091,7 @@ std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::sp
 
         ++initial_packet_count;
 
-        const auto plaintext = decrypt_client_initial_plaintext(payload);
+        const auto plaintext = decrypt_initial_plaintext_with_perspective(payload, false);
         if (!plaintext.has_value()) {
             continue;
         }
@@ -1102,7 +1126,7 @@ std::optional<std::vector<std::uint8_t>> QuicInitialParser::extract_client_initi
 
         ++initial_packet_count;
 
-        const auto plaintext = decrypt_client_initial_plaintext(payload);
+        const auto plaintext = decrypt_initial_plaintext_with_perspective(payload, false);
         if (!plaintext.has_value()) {
             continue;
         }
@@ -1151,4 +1175,3 @@ std::optional<std::vector<std::uint8_t>> QuicInitialParser::extract_crypto_prefi
     return extract_crypto_prefix_from_fragments(std::move(fragments));
 }
 }  // namespace pfl
-

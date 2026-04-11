@@ -404,7 +404,14 @@ QString packet_direction_for_number(const std::vector<pfl::PacketRow>& packet_ro
         return row.packet_index == packet_index;
     });
     UI_EXPECT(it != packet_rows.end());
-    return QString::fromStdString(it->direction_text);
+    const auto direction = QString::fromStdString(it->direction_text);
+    if (direction == QString::fromUtf8("A→B")) {
+        return QStringLiteral("A->B");
+    }
+    if (direction == QString::fromUtf8("B→A")) {
+        return QStringLiteral("B->A");
+    }
+    return direction;
 }
 
 std::vector<const pfl::StreamItemRow*> find_matching_stream_rows(
@@ -415,7 +422,12 @@ std::vector<const pfl::StreamItemRow*> find_matching_stream_rows(
 ) {
     std::vector<const pfl::StreamItemRow*> matches {};
     for (const auto& row : rows) {
-        if (QString::fromStdString(row.direction_text) != direction) {
+        const auto row_direction = QString::fromStdString(row.direction_text) == QString::fromUtf8("A→B")
+            ? QStringLiteral("A->B")
+            : (QString::fromStdString(row.direction_text) == QString::fromUtf8("B→A")
+                ? QStringLiteral("B->A")
+                : QString::fromStdString(row.direction_text));
+        if (row_direction != direction) {
             continue;
         }
         if (QString::fromStdString(row.label) != label) {
@@ -441,7 +453,10 @@ void run_quic_fixture_reference_tests(QApplication& app) {
     UI_EXPECT(open_capture_and_wait(app, controller, fixture_path));
 
     auto* details_model = qobject_cast<pfl::PacketDetailsViewModel*>(controller.packetDetailsModel());
+    auto* stream_model = qobject_cast<pfl::StreamListModel*>(controller.streamModel());
     UI_EXPECT(details_model != nullptr);
+    UI_EXPECT(stream_model != nullptr);
+    controller.setFlowDetailsTabIndex(1);
     controller.setSelectedFlowIndex(0);
 
     pfl::CaptureSession session {};
@@ -467,12 +482,31 @@ void run_quic_fixture_reference_tests(QApplication& app) {
     const auto stream_rows = session.list_flow_stream_items(0);
 
     const auto stream_sequence = spec.value(QStringLiteral("stream_sequence")).toArray();
+    UI_EXPECT(controller.loadedStreamItemCount() == static_cast<qulonglong>(stream_sequence.size()));
+    UI_EXPECT(controller.totalStreamItemCount() == static_cast<qulonglong>(stream_sequence.size()));
+    UI_EXPECT(!controller.streamPartiallyLoaded());
+    UI_EXPECT(!controller.canLoadMoreStreamItems());
+    UI_EXPECT(stream_model->rowCount() == stream_sequence.size());
+    bool sawProtectedPayloadInUi = false;
+    for (int row = 0; row < stream_model->rowCount(); ++row) {
+        if (stream_model->data(stream_model->index(row, 0), pfl::StreamListModel::LabelRole).toString() ==
+            QStringLiteral("QUIC Protected Payload")) {
+            sawProtectedPayloadInUi = true;
+            break;
+        }
+    }
+    UI_EXPECT(sawProtectedPayloadInUi);
     UI_EXPECT(stream_rows.size() == static_cast<std::size_t>(stream_sequence.size()));
     for (qsizetype sequence_index = 0; sequence_index < stream_sequence.size(); ++sequence_index) {
         const auto sequence_value = stream_sequence[sequence_index];
         const auto sequence_entry = sequence_value.toObject();
         const auto& row = stream_rows[static_cast<std::size_t>(sequence_index)];
-        UI_EXPECT(QString::fromStdString(row.direction_text) == sequence_entry.value(QStringLiteral("direction")).toString());
+        const auto row_direction = QString::fromStdString(row.direction_text) == QString::fromUtf8("A→B")
+            ? QStringLiteral("A->B")
+            : (QString::fromStdString(row.direction_text) == QString::fromUtf8("B→A")
+                ? QStringLiteral("B->A")
+                : QString::fromStdString(row.direction_text));
+        UI_EXPECT(row_direction == sequence_entry.value(QStringLiteral("direction")).toString());
         UI_EXPECT(QString::fromStdString(row.label) == sequence_entry.value(QStringLiteral("ui_label")).toString());
         UI_EXPECT(row.packet_indices == expected_packet_indices(sequence_entry.value(QStringLiteral("source_packets")).toArray()));
     }

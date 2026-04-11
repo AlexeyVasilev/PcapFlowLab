@@ -2511,7 +2511,9 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     const auto totalFlowPacketCount = session_.flow_packet_count(flowIndex);
     if (resetRows) {
         stream_packet_window_count_ = std::min(totalFlowPacketCount, kInitialStreamPacketBudget);
-        stream_item_budget_count_ = kInitialStreamItems;
+        stream_item_budget_count_ = totalFlowPacketCount <= kInitialStreamPacketBudget
+            ? session_.flow_stream_item_count(flowIndex)
+            : kInitialStreamItems;
     } else {
         stream_packet_window_count_ = std::min(totalFlowPacketCount, stream_packet_window_count_ + kStreamPacketBatchSize);
         stream_item_budget_count_ += kStreamItemBatchSize;

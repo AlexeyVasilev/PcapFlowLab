@@ -250,16 +250,21 @@ std::optional<FramePresenceSummary> summarize_plaintext_frames(std::span<const s
     bool saw_non_padding = false;
 
     while (offset < bytes.size()) {
-        if (++frame_count > kMaxFrameSummaryCount) {
-            return std::nullopt;
-        }
-
         const auto frame_type = bytes[offset++];
         if (frame_type == 0x00U) {
+            if (++frame_count > kMaxFrameSummaryCount) {
+                return std::nullopt;
+            }
             summary.padding = true;
+            while (offset < bytes.size() && bytes[offset] == 0x00U) {
+                ++offset;
+            }
             continue;
         }
 
+        if (++frame_count > kMaxFrameSummaryCount) {
+            return std::nullopt;
+        }
         saw_non_padding = true;
         if (frame_type == 0x02U || frame_type == 0x03U) {
             summary.ack = true;

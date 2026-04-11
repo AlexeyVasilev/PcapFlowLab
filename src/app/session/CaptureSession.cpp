@@ -531,7 +531,6 @@ std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t o
 
 constexpr std::uint16_t kHttpsPort = 443U;
 constexpr std::size_t kMaxQuicConnectionIdLength = 20U;
-constexpr std::size_t kMaxQuicFrameSummaryBytes = 512U;
 constexpr std::size_t kMaxQuicFrameSummaryCount = 32U;
 constexpr std::size_t kQuicPresentationPacketBudget = 4U;
 
@@ -575,6 +574,7 @@ struct ParsedQuicPresentationPacket {
     bool is_client_initial {false};
     std::optional<std::string> sni {};
     std::optional<TlsHandshakeDetails> tls_handshake {};
+    std::size_t packet_bytes_consumed {0U};
 };
 
 struct QuicPresentationCandidate {
@@ -940,7 +940,7 @@ bool quic_skip_frame_payload(std::span<const std::uint8_t> bytes, std::size_t& o
 }
 
 std::optional<QuicFramePresenceSummary> summarize_quic_plaintext_frames(std::span<const std::uint8_t> bytes) {
-    if (bytes.empty() || bytes.size() > kMaxQuicFrameSummaryBytes) {
+    if (bytes.empty()) {
         return std::nullopt;
     }
 
@@ -950,16 +950,21 @@ std::optional<QuicFramePresenceSummary> summarize_quic_plaintext_frames(std::spa
     bool saw_non_padding = false;
 
     while (offset < bytes.size()) {
-        if (++frame_count > kMaxQuicFrameSummaryCount) {
-            return std::nullopt;
-        }
-
         const auto frame_type = bytes[offset++];
         if (frame_type == 0x00U) {
+            if (++frame_count > kMaxQuicFrameSummaryCount) {
+                return std::nullopt;
+            }
             summary.padding = true;
+            while (offset < bytes.size() && bytes[offset] == 0x00U) {
+                ++offset;
+            }
             continue;
         }
 
+        if (++frame_count > kMaxQuicFrameSummaryCount) {
+            return std::nullopt;
+        }
         saw_non_padding = true;
         if (frame_type == 0x01U) {
             summary.ping = true;
@@ -1020,6 +1025,64 @@ std::vector<QuicPresentationSemanticType> quic_semantics_from_summary(const Quic
     return semantics;
 }
 
+std::vector<QuicPresentationSemanticType> quic_semantic_item_sequence_from_plaintext(
+    std::span<const std::uint8_t> bytes
+) {
+    std::vector<QuicPresentationSemanticType> items {};
+    if (bytes.empty()) {
+        return items;
+    }
+
+    std::size_t offset = 0U;
+    std::size_t frame_count = 0U;
+    while (offset < bytes.size()) {
+        const auto frame_type = bytes[offset++];
+        if (frame_type == 0x00U) {
+            if (++frame_count > kMaxQuicFrameSummaryCount) {
+                return {};
+            }
+            while (offset < bytes.size() && bytes[offset] == 0x00U) {
+                ++offset;
+            }
+            continue;
+        }
+        if (++frame_count > kMaxQuicFrameSummaryCount) {
+            return {};
+        }
+        if (frame_type == 0x01U) {
+            continue;
+        }
+        if (frame_type == 0x02U || frame_type == 0x03U) {
+            items.push_back(QuicPresentationSemanticType::ack);
+            if (!quic_skip_ack_frame(bytes, offset, frame_type == 0x03U)) {
+                return {};
+            }
+            continue;
+        }
+        if (frame_type == 0x06U) {
+            items.push_back(QuicPresentationSemanticType::crypto);
+            const auto crypto_offset = quic_read_varint(bytes, offset);
+            const auto crypto_length = quic_read_varint_size(bytes, offset);
+            if (!crypto_offset.has_value() || !crypto_length.has_value() || !quic_skip_bytes(bytes, offset, *crypto_length)) {
+                return {};
+            }
+            continue;
+        }
+        if (frame_type >= 0x08U && frame_type <= 0x0FU) {
+            items.push_back(QuicPresentationSemanticType::stream);
+            if (!quic_skip_stream_frame(bytes, offset, frame_type)) {
+                return {};
+            }
+            continue;
+        }
+        if (!quic_skip_frame_payload(bytes, offset, frame_type)) {
+            return {};
+        }
+    }
+
+    return items;
+}
+
 std::optional<TlsHandshakeDetails> parse_tls_handshake_from_quic_plaintext_payloads(
     std::span<const std::vector<std::uint8_t>> plaintext_payloads
 ) {
@@ -1049,6 +1112,7 @@ std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::
         ParsedQuicPresentationPacket packet {};
         packet.shell_type = QuicPresentationShellType::protected_payload;
         packet.shell.header_form = "Short";
+        packet.packet_bytes_consumed = udp_payload.size();
         return packet;
     }
 
@@ -1083,6 +1147,7 @@ std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::
 
     if (*packet.shell.version == 0U) {
         packet.shell_type = QuicPresentationShellType::version_negotiation;
+        packet.packet_bytes_consumed = udp_payload.size();
         return packet;
     }
 
@@ -1107,6 +1172,7 @@ std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::
         if (udp_payload.size() < offset + 16U) {
             return std::nullopt;
         }
+        packet.packet_bytes_consumed = udp_payload.size();
         return packet;
     }
 
@@ -1152,7 +1218,41 @@ std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::
         }
     }
 
+    packet.packet_bytes_consumed = packet_end;
     return packet;
+}
+
+std::vector<ParsedQuicPresentationPacket> parse_quic_presentation_datagram(std::span<const std::uint8_t> udp_payload) {
+    std::vector<ParsedQuicPresentationPacket> packets {};
+    std::size_t offset = 0U;
+
+    while (offset < udp_payload.size()) {
+        const auto parsed = parse_quic_presentation_packet(udp_payload.subspan(offset));
+        if (!parsed.has_value() || parsed->packet_bytes_consumed == 0U) {
+            if (packets.empty()) {
+                return {};
+            }
+            break;
+        }
+
+        packets.push_back(*parsed);
+
+        if (parsed->shell.header_form == "Short") {
+            break;
+        }
+
+        offset += parsed->packet_bytes_consumed;
+    }
+
+    return packets;
+}
+
+std::optional<std::vector<std::uint8_t>> decrypt_quic_initial_plaintext_for_direction(
+    QuicInitialParser& initial_parser,
+    std::span<const std::uint8_t> udp_payload,
+    const bool is_client_to_server
+) {
+    return initial_parser.decrypt_initial_plaintext(udp_payload, !is_client_to_server);
 }
 
 std::optional<std::string> format_quic_presentation_enrichment(const QuicPresentationResult& result) {
@@ -1292,6 +1392,7 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         return std::nullopt;
     }
     const auto anchor_position = static_cast<std::size_t>(std::distance(candidates.begin(), anchor_it));
+    const bool is_client_to_server = flow_key.src_port != kHttpsPort && flow_key.dst_port == kHttpsPort;
 
     QuicPresentationResult result {};
     result.shell_type = anchor_it->parsed.shell_type;
@@ -1309,46 +1410,75 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
         result.crypto_packet_indices.push_back(anchor_it->packet.packet_index);
     }
 
-    if (!result.sni.has_value() || !result.tls_handshake.has_value()) {
-        const bool is_client_to_server = flow_key.src_port != kHttpsPort && flow_key.dst_port == kHttpsPort;
-        if (is_client_to_server && anchor_it->parsed.is_client_initial) {
-            std::vector<std::vector<std::uint8_t>> client_initial_payloads {};
-            std::vector<std::uint64_t> crypto_packet_indices {};
-            auto client_initial_start = anchor_position;
-            while (client_initial_start > 0U && candidates[client_initial_start - 1U].parsed.is_client_initial) {
-                --client_initial_start;
-            }
-            auto client_initial_end = anchor_position;
-            while (client_initial_end + 1U < candidates.size() && candidates[client_initial_end + 1U].parsed.is_client_initial) {
-                ++client_initial_end;
+    if (result.shell_type == QuicPresentationShellType::initial) {
+        std::vector<std::vector<std::uint8_t>> crypto_plaintexts {};
+        std::vector<std::uint64_t> crypto_packet_indices {};
+        auto initial_start = anchor_position;
+        while (initial_start > 0U && candidates[initial_start - 1U].parsed.shell_type == QuicPresentationShellType::initial) {
+            --initial_start;
+        }
+        auto initial_end = anchor_position;
+        while (initial_end + 1U < candidates.size() && candidates[initial_end + 1U].parsed.shell_type == QuicPresentationShellType::initial) {
+            ++initial_end;
+        }
+
+        for (std::size_t position = initial_start; position <= initial_end; ++position) {
+            const auto& candidate = candidates[position];
+            const auto plaintext = decrypt_quic_initial_plaintext_for_direction(
+                initial_parser,
+                std::span<const std::uint8_t>(candidate.udp_payload.data(), candidate.udp_payload.size()),
+                is_client_to_server
+            );
+            if (!plaintext.has_value()) {
+                continue;
             }
 
-            for (std::size_t position = client_initial_start; position <= client_initial_end; ++position) {
-                const auto& candidate = candidates[position];
-
-                client_initial_payloads.push_back(candidate.udp_payload);
-                crypto_packet_indices.push_back(candidate.packet.packet_index);
+            const auto summary = summarize_quic_plaintext_frames(
+                std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
+            );
+            const bool is_anchor_packet = candidate.packet.packet_index == anchor_it->packet.packet_index;
+            if (is_anchor_packet && summary.has_value()) {
+                result.semantics = quic_semantics_from_summary(*summary);
             }
 
-            if (!client_initial_payloads.empty()) {
-                const auto payload_span = std::span<const std::vector<std::uint8_t>>(
-                    client_initial_payloads.data(),
-                    client_initial_payloads.size()
-                );
-                if (!result.sni.has_value()) {
-                    result.sni = initial_parser.extract_client_initial_sni(payload_span);
+            if (!summary.has_value() || !summary->crypto) {
+                continue;
+            }
+
+            if (is_anchor_packet && !result.tls_handshake.has_value()) {
+                const std::vector<std::vector<std::uint8_t>> plaintext_payloads {*plaintext};
+                if (const auto tls_handshake = parse_tls_handshake_from_quic_plaintext_payloads(
+                        std::span<const std::vector<std::uint8_t>>(plaintext_payloads.data(), plaintext_payloads.size()));
+                    tls_handshake.has_value()) {
+                    result.tls_handshake = tls_handshake;
+                    result.crypto_packet_indices = {candidate.packet.packet_index};
                 }
-                if (!result.tls_handshake.has_value()) {
-                    const auto crypto_prefix = initial_parser.extract_client_initial_crypto_prefix(payload_span);
-                    if (crypto_prefix.has_value()) {
-                        const auto tls_handshake = parse_tls_handshake_details(
-                            std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
-                        );
-                        if (tls_handshake.has_value() && selected_packet_indices_are_covered(selected_packet_indices, crypto_packet_indices)) {
-                            result.tls_handshake = tls_handshake;
-                            result.used_bounded_crypto_assembly = true;
-                            result.crypto_packet_indices = crypto_packet_indices;
-                        }
+            }
+
+            crypto_plaintexts.push_back(*plaintext);
+            crypto_packet_indices.push_back(candidate.packet.packet_index);
+        }
+
+        if (!crypto_plaintexts.empty()) {
+            const auto payload_span = std::span<const std::vector<std::uint8_t>>(
+                crypto_plaintexts.data(),
+                crypto_plaintexts.size()
+            );
+            if (is_client_to_server &&
+                !result.sni.has_value() &&
+                selected_packet_indices_are_covered(selected_packet_indices, crypto_packet_indices)) {
+                result.sni = initial_parser.extract_client_initial_sni_from_crypto_payloads(payload_span);
+            }
+            if (!result.tls_handshake.has_value()) {
+                const auto crypto_prefix = initial_parser.extract_crypto_prefix_from_payloads(payload_span);
+                if (crypto_prefix.has_value()) {
+                    const auto tls_handshake = parse_tls_handshake_details(
+                        std::span<const std::uint8_t>(crypto_prefix->data(), crypto_prefix->size())
+                    );
+                    if (tls_handshake.has_value() && selected_packet_indices_are_covered(selected_packet_indices, crypto_packet_indices)) {
+                        result.tls_handshake = tls_handshake;
+                        result.used_bounded_crypto_assembly = crypto_plaintexts.size() > 1U;
+                        result.crypto_packet_indices = crypto_packet_indices;
                     }
                 }
             }
@@ -3374,6 +3504,162 @@ std::size_t connection_packet_count(const Connection& connection) noexcept {
     return connection.flow_a.packets.size() + connection.flow_b.packets.size();
 }
 
+std::optional<std::string> merge_quic_protocol_text(
+    const std::optional<std::string>& base_protocol_text,
+    const std::optional<std::string>& enrichment_text
+) {
+    if ((!base_protocol_text.has_value() || base_protocol_text->empty()) &&
+        (!enrichment_text.has_value() || enrichment_text->empty())) {
+        return std::nullopt;
+    }
+    if (!enrichment_text.has_value() || enrichment_text->empty()) {
+        return base_protocol_text;
+    }
+    if (!base_protocol_text.has_value() || base_protocol_text->empty()) {
+        return enrichment_text;
+    }
+    if (base_protocol_text->find(*enrichment_text) != std::string::npos) {
+        return base_protocol_text;
+    }
+
+    return *base_protocol_text + "\n" + *enrichment_text;
+}
+
+template <typename FlowKey, typename PacketList>
+bool append_quic_stream_items_for_packet(
+    std::vector<StreamItemRow>& rows,
+    const CaptureSession& session,
+    const std::size_t /*flow_index*/,
+    const FlowKey& flow_key,
+    const PacketList& flow_packets,
+    const PacketRef& packet,
+    const std::string_view direction_text,
+    std::span<const std::uint8_t> payload_span,
+    HexDumpService& hex_dump_service
+) {
+    const auto context_result = build_quic_presentation_for_selected_direction(
+        session,
+        flow_key,
+        flow_packets,
+        std::vector<std::uint64_t> {packet.packet_index}
+    );
+    const auto datagram_packets = parse_quic_presentation_datagram(payload_span);
+
+    if (datagram_packets.empty()) {
+        return false;
+    }
+
+    const auto context_enrichment = context_result.has_value()
+        ? format_quic_presentation_enrichment(*context_result)
+        : std::optional<std::string> {};
+    const bool is_client_to_server = flow_key.src_port != kHttpsPort && flow_key.dst_port == kHttpsPort;
+    QuicInitialParser initial_parser {};
+
+    bool emitted_any = false;
+    std::size_t packet_offset = 0U;
+    for (const auto& parsed_packet : datagram_packets) {
+        const auto packet_slice_length = std::min(parsed_packet.packet_bytes_consumed, payload_span.size() - packet_offset);
+        const auto packet_slice = payload_span.subspan(packet_offset, packet_slice_length);
+        packet_offset += packet_slice_length;
+
+        if (parsed_packet.shell_type == QuicPresentationShellType::initial) {
+            QuicPresentationResult aggregate_result {};
+            aggregate_result.shell_type = parsed_packet.shell_type;
+            aggregate_result.shell = parsed_packet.shell;
+            aggregate_result.selected_packet_indices = {packet.packet_index};
+            aggregate_result.sni = context_result.has_value() ? context_result->sni : std::optional<std::string> {};
+            aggregate_result.tls_handshake = context_result.has_value() ? context_result->tls_handshake : std::optional<TlsHandshakeDetails> {};
+            aggregate_result.crypto_packet_indices = context_result.has_value() ? context_result->crypto_packet_indices : std::vector<std::uint64_t> {};
+            aggregate_result.used_bounded_crypto_assembly = context_result.has_value() && context_result->used_bounded_crypto_assembly;
+
+            std::optional<QuicFramePresenceSummary> aggregate_summary = parsed_packet.frame_summary;
+            std::vector<QuicPresentationSemanticType> semantic_items = quic_semantic_item_sequence_from_plaintext(parsed_packet.plaintext_payload_candidate);
+            if (!aggregate_summary.has_value() || semantic_items.empty()) {
+                const auto plaintext = decrypt_quic_initial_plaintext_for_direction(initial_parser, packet_slice, is_client_to_server);
+                if (plaintext.has_value()) {
+                    aggregate_summary = summarize_quic_plaintext_frames(
+                        std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
+                    );
+                    semantic_items = quic_semantic_item_sequence_from_plaintext(
+                        std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
+                    );
+                }
+            }
+
+            if (aggregate_summary.has_value()) {
+                aggregate_result.semantics = quic_semantics_from_summary(*aggregate_summary);
+            }
+
+            const auto protocol_text = merge_quic_protocol_text(
+                format_quic_presentation_protocol_text(aggregate_result),
+                context_enrichment
+            );
+
+            if (!semantic_items.empty()) {
+                for (const auto semantic_item : semantic_items) {
+                    QuicPresentationResult label_result {};
+                    label_result.shell_type = parsed_packet.shell_type;
+                    label_result.shell = parsed_packet.shell;
+                    label_result.semantics = {semantic_item};
+                    rows.push_back(make_stream_item_row(
+                        static_cast<std::uint64_t>(rows.size() + 1U),
+                        direction_text,
+                        quic_stream_label_from_result(label_result),
+                        payload_span.size(),
+                        packet,
+                        hex_dump_service.format(payload_span),
+                        protocol_text.value_or(std::string {})
+                    ));
+                    emitted_any = true;
+                }
+                continue;
+            }
+
+            if (should_emit_quic_stream_item(aggregate_result)) {
+                rows.push_back(make_stream_item_row(
+                    static_cast<std::uint64_t>(rows.size() + 1U),
+                    direction_text,
+                    quic_stream_label_from_result(aggregate_result),
+                    payload_span.size(),
+                    packet,
+                    hex_dump_service.format(payload_span),
+                    protocol_text.value_or(std::string {})
+                ));
+                emitted_any = true;
+            }
+            continue;
+        }
+
+        QuicPresentationResult result {};
+        result.shell_type = parsed_packet.shell_type;
+        result.shell = parsed_packet.shell;
+        if (parsed_packet.frame_summary.has_value()) {
+            result.semantics = quic_semantics_from_summary(*parsed_packet.frame_summary);
+        }
+        result.selected_packet_indices = {packet.packet_index};
+        result.sni = parsed_packet.sni;
+        result.tls_handshake = parsed_packet.tls_handshake;
+
+        if (!should_emit_quic_stream_item(result)) {
+            continue;
+        }
+
+        const auto protocol_text = format_quic_presentation_protocol_text(result);
+        rows.push_back(make_stream_item_row(
+            static_cast<std::uint64_t>(rows.size() + 1U),
+            direction_text,
+            quic_stream_label_from_result(result),
+            payload_span.size(),
+            packet,
+            hex_dump_service.format(payload_span),
+            protocol_text.value_or(std::string {})
+        ));
+        emitted_any = true;
+    }
+
+    return emitted_any;
+}
+
 template <typename Connection>
 void append_connection_stream_items_bounded(
     std::vector<StreamItemRow>& rows,
@@ -3441,36 +3727,29 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::udp) {
-            const auto build_quic_row = [&](const auto& flow_key, const auto& flow_packets) -> bool {
-                const auto result = build_quic_presentation_for_selected_direction(
-                    session,
-                    flow_key,
-                    flow_packets,
-                    std::vector<std::uint64_t> {packet.packet_index}
-                );
-                if (!result.has_value()) {
-                    return false;
-                }
-                if (!should_emit_quic_stream_item(*result)) {
-                    return true;
-                }
-
-                const auto protocol_text = format_quic_presentation_protocol_text(*result);
-                rows.push_back(make_stream_item_row(
-                    static_cast<std::uint64_t>(rows.size() + 1U),
-                    direction_text,
-                    quic_stream_label_from_result(*result),
-                    payload_bytes.size(),
-                    packet,
-                    hex_dump_service.format(payload_span),
-                    protocol_text.value_or(std::string {})
-                ));
-                return true;
-            };
-
             const bool handled_quic = use_a
-                ? build_quic_row(connection.flow_a.key, connection.flow_a.packets)
-                : build_quic_row(connection.flow_b.key, connection.flow_b.packets);
+                ? append_quic_stream_items_for_packet(
+                    rows,
+                    session,
+                    flow_index,
+                    connection.flow_a.key,
+                    connection.flow_a.packets,
+                    packet,
+                    direction_text,
+                    payload_span,
+                    hex_dump_service
+                )
+                : append_quic_stream_items_for_packet(
+                    rows,
+                    session,
+                    flow_index,
+                    connection.flow_b.key,
+                    connection.flow_b.packets,
+                    packet,
+                    direction_text,
+                    payload_span,
+                    hex_dump_service
+                );
 
             if (handled_quic) {
                 continue;

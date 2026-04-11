@@ -27,6 +27,10 @@ public:
     [[nodiscard]] std::optional<std::vector<std::uint8_t>> extract_crypto_prefix_from_payloads(
         std::span<const std::vector<std::uint8_t>> decrypted_initial_payloads
     ) const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> decrypt_initial_plaintext(
+        std::span<const std::uint8_t> udp_payload,
+        bool use_server_initial_secret
+    ) const;
 
     // Decrypted Initial payload helper used by bounded multi-packet assembly tests.
     [[nodiscard]] std::optional<std::string> extract_client_initial_sni_from_crypto_payloads(
@@ -35,4 +39,3 @@ public:
 };
 
 }  // namespace pfl
-
