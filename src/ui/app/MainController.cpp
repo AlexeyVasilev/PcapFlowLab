@@ -11,6 +11,7 @@
 #include <QClipboard>
 #include <QFileDialog>
 #include <QGuiApplication>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QThread>
 #include <QTimer>
@@ -435,31 +436,6 @@ QString buildPayloadText(const PacketDetails& details, const std::string& payloa
     return QStringLiteral("Transport payload not available for this packet");
 }
 
-QString format_packet_sequence_compact(const std::vector<std::uint64_t>& numbers) {
-    if (numbers.empty()) {
-        return QStringLiteral("-");
-    }
-
-    bool contiguous = numbers.size() > 1U;
-    for (std::size_t index = 1U; index < numbers.size(); ++index) {
-        if (numbers[index] != numbers[index - 1U] + 1U) {
-            contiguous = false;
-            break;
-        }
-    }
-
-    if (contiguous) {
-        return QStringLiteral("%1\u2013%2").arg(numbers.front()).arg(numbers.back());
-    }
-
-    QStringList values {};
-    values.reserve(static_cast<qsizetype>(numbers.size()));
-    for (const auto number : numbers) {
-        values.push_back(QString::number(number));
-    }
-    return values.join(QStringLiteral(", "));
-}
-
 QString format_stream_source_packets(
     const StreamItemRow& item,
     const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
@@ -476,11 +452,23 @@ QString format_stream_source_packets(
         flow_numbers.push_back(flow_it->second);
     }
 
-    if (!flow_numbers.empty()) {
-        return format_packet_sequence_compact(flow_numbers);
+    const auto& packet_numbers = !flow_numbers.empty() ? flow_numbers : item.packet_indices;
+
+    QStringList values {};
+    values.reserve(static_cast<qsizetype>(packet_numbers.size()));
+    for (const auto number : packet_numbers) {
+        values.push_back(QStringLiteral("#%1").arg(number));
     }
 
-    return format_packet_sequence_compact(item.packet_indices);
+    if (values.isEmpty()) {
+        return item.packet_count == 1U
+            ? QStringLiteral("1 packet")
+            : QStringLiteral("%1 packets").arg(item.packet_count);
+    }
+
+    return values.size() == 1
+        ? QStringLiteral("packet %1").arg(values.join(QString {}))
+        : QStringLiteral("packets %1").arg(values.join(QStringLiteral(",")));
 }
 
 bool stream_item_uses_packet_fallback(const StreamItemRow& item) {
@@ -494,16 +482,65 @@ QString stream_item_details_source(const StreamItemRow& item) {
 }
 
 QString stream_item_header_primary_text(const StreamItemRow& item) {
-    return QStringLiteral("#%1   %2   %3")
-        .arg(item.stream_item_index)
-        .arg(QString::fromStdString(item.direction_text))
-        .arg(QString::fromStdString(item.label));
+    return QString::fromStdString(item.label);
 }
 
-QString stream_item_header_secondary_text(const StreamItemRow& item) {
+QString stream_item_frames_hint_text(const StreamItemRow& item) {
+    const auto protocolText = QString::fromStdString(item.protocol_text);
+    if (protocolText.isEmpty()) {
+        return {};
+    }
+
+    QStringList hints {};
+
+    const auto extractLineValue = [&](const QString& marker) -> QString {
+        const auto markerIndex = protocolText.indexOf(marker);
+        if (markerIndex < 0) {
+            return {};
+        }
+
+        const auto lineStart = markerIndex + marker.size();
+        auto lineEnd = protocolText.indexOf(QLatin1Char('\n'), lineStart);
+        if (lineEnd < 0) {
+            lineEnd = protocolText.size();
+        }
+        return protocolText.mid(lineStart, lineEnd - lineStart).trimmed();
+    };
+
+    const auto appendNormalizedValues = [&](const QString& text) {
+        for (const auto& rawPart : text.split(QStringLiteral(","), Qt::SkipEmptyParts)) {
+            auto part = rawPart.trimmed();
+            if (part.compare(QStringLiteral("Protected Payload"), Qt::CaseInsensitive) == 0) {
+                part = QStringLiteral("Protected payload");
+            }
+            if (part.compare(QStringLiteral("Packet Type: Initial"), Qt::CaseInsensitive) == 0 ||
+                part.compare(QStringLiteral("Initial"), Qt::CaseInsensitive) == 0) {
+                continue;
+            }
+            if (!part.isEmpty() && !hints.contains(part)) {
+                hints.push_back(part);
+            }
+        }
+    };
+
+    appendNormalizedValues(extractLineValue(QStringLiteral("Frame Presence:")));
+    appendNormalizedValues(extractLineValue(QStringLiteral("Packet Type:")));
+    appendNormalizedValues(extractLineValue(QStringLiteral("Additional Packet Types:")));
+
+    if (hints.isEmpty()) {
+        return {};
+    }
+
+    return QStringLiteral("Frames: %1").arg(hints.join(QStringLiteral(", ")));
+}
+
+QString stream_item_header_secondary_text(
+    const StreamItemRow& item,
+    const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
+) {
     return QStringLiteral("%1 bytes \u2022 %2")
         .arg(item.byte_count)
-        .arg(item.packet_count == 1U ? QStringLiteral("1 packet") : QStringLiteral("%1 packets").arg(item.packet_count));
+        .arg(format_stream_source_packets(item, flowPacketNumbers));
 }
 
 QString stream_item_header_badge_text(const StreamItemRow& item) {
@@ -529,7 +566,30 @@ QString stream_protocol_unavailable_text() {
 }
 
 QString normalize_stream_protocol_text(const QString& protocol_text) {
-    return protocol_text.isEmpty() ? stream_protocol_unavailable_text() : protocol_text;
+    if (protocol_text.isEmpty()) {
+        return stream_protocol_unavailable_text();
+    }
+
+    QString text = protocol_text;
+    text.replace(QRegularExpression(QStringLiteral("Frame Presence:\\s*")), QStringLiteral("Frame Presence: "));
+
+    if (!text.startsWith(QStringLiteral("QUIC"))) {
+        return text;
+    }
+
+    qsizetype tlsBlockIndex = text.indexOf(QStringLiteral("\n  SNI: "));
+    const auto handshakeIndex = text.indexOf(QStringLiteral("\n  TLS Handshake Type: "));
+    if (tlsBlockIndex < 0 || (handshakeIndex >= 0 && handshakeIndex < tlsBlockIndex)) {
+        tlsBlockIndex = handshakeIndex;
+    }
+
+    if (tlsBlockIndex < 0) {
+        return text;
+    }
+
+    const auto quicBlock = text.left(tlsBlockIndex);
+    const auto tlsBlock = text.mid(tlsBlockIndex + 1);
+    return QStringLiteral("%1\n\nTLS over CRYPTO\n%2").arg(quicBlock, tlsBlock);
 }
 
 bool is_quic_protocol_text(const QString& protocol_text) {
@@ -741,15 +801,27 @@ QString buildStreamItemSummary(
     const StreamItemRow& item,
     const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
 ) {
-    return QStringList {
-        QStringLiteral("Direction: %1").arg(QString::fromStdString(item.direction_text)),
+    const auto sourcePackets = format_stream_source_packets(item, flowPacketNumbers);
+    const auto sourcePacketsLine = sourcePackets.startsWith(QStringLiteral("packet "))
+        ? QStringLiteral("Source packet: %1").arg(sourcePackets.sliced(7))
+        : sourcePackets.startsWith(QStringLiteral("packets "))
+            ? QStringLiteral("Source packets: %1").arg(sourcePackets.sliced(8))
+            : QStringLiteral("Source packets: %1").arg(sourcePackets);
+
+    QStringList lines {
         QStringLiteral("Label: %1").arg(QString::fromStdString(item.label)),
         QStringLiteral("Size: %1 bytes").arg(item.byte_count),
-        QStringLiteral("Packets: %1").arg(item.packet_count),
-        QStringLiteral("Source packets: %1").arg(format_stream_source_packets(item, flowPacketNumbers)),
+        sourcePacketsLine,
         QStringLiteral("Details source: %1").arg(stream_item_details_source(item)),
-    }.join(QLatin1Char('\n'));
+    };
+
+    if (const auto framesHint = stream_item_frames_hint_text(item); !framesHint.isEmpty()) {
+        lines.insert(2, framesHint);
+    }
+
+    return lines.join(QLatin1Char('\n'));
 }
+
 QString format_partial_open_warning_message(const OpenFailureInfo& failure) {
     QString message = QStringLiteral("Capture opened partially.");
 
@@ -2534,7 +2606,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     }
 
     current_stream_items_ = rows;
-    stream_model_.refresh(current_stream_items_);
+    stream_model_.refresh(current_stream_items_, current_flow_packet_numbers_);
 
     loaded_stream_item_count_ = current_stream_items_.size();
     can_load_more_stream_items_ = packetBudgetExhausted || hasMoreItems;
@@ -2930,7 +3002,7 @@ void MainController::reloadSelectedPacketDetails() {
     packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
-    packet_details_model_.setProtocolText(protocolText);
+    packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
 }
 
 void MainController::reloadSelectedStreamDetails() {
@@ -2949,7 +3021,7 @@ void MainController::reloadSelectedStreamDetails() {
     packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
     packet_details_model_.setStreamItemPresentation(
         stream_item_header_primary_text(*itemIt),
-        stream_item_header_secondary_text(*itemIt),
+        stream_item_header_secondary_text(*itemIt, current_flow_packet_numbers_),
         stream_item_header_badge_text(*itemIt)
     );
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
@@ -2965,7 +3037,9 @@ void MainController::reloadSelectedStreamDetails() {
             ? stream_protocol_unavailable_text()
             : normalize_stream_protocol_text(QString::fromStdString(itemIt->protocol_text));
         packet_details_model_.setProtocolText(
-            selected_flow_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
+            normalize_stream_protocol_text(
+                selected_flow_quic_protocol_text_for_stream_item(session_, selected_flow_index_, *itemIt, protocolText)
+            )
         );
         return;
     }

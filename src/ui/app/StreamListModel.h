@@ -5,6 +5,7 @@
 #include <QString>
 #include <QVariant>
 
+#include <map>
 #include <vector>
 
 #include "app/session/FlowRows.h"
@@ -21,6 +22,7 @@ public:
         LabelRole,
         ByteCountRole,
         PacketCountRole,
+        SourcePacketsTextRole,
     };
 
     explicit StreamListModel(QObject* parent = nullptr);
@@ -29,8 +31,8 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
 
-    void refresh(const std::vector<StreamItemRow>& rows);
-    void append(const std::vector<StreamItemRow>& rows);
+    void refresh(const std::vector<StreamItemRow>& rows, const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers = {});
+    void append(const std::vector<StreamItemRow>& rows, const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers = {});
     void clear();
 
 private:
@@ -40,6 +42,7 @@ private:
         QString label {};
         uint byte_count {0};
         uint packet_count {0};
+        QString source_packets_text {};
     };
 
     std::vector<Item> items_ {};

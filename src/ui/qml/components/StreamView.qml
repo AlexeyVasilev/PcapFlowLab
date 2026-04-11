@@ -141,10 +141,11 @@ Frame {
                     required property string label
                     required property int byteCount
                     required property int packetCount
+                    required property string sourcePacketsText
 
                     readonly property bool selected: root.isSelected(streamItemIndex)
                     readonly property bool forward: root.isForward(directionText)
-                    readonly property string metadataText: byteCount + " bytes | " + (packetCount > 1 ? packetCount + " packets" : "1 packet")
+                    readonly property string metadataText: byteCount + " bytes | " + (sourcePacketsText.length > 0 ? sourcePacketsText : (packetCount > 1 ? packetCount + " packets" : "1 packet"))
 
                     width: streamListView.width
                     height: bubble.implicitHeight
@@ -153,48 +154,58 @@ Frame {
                         id: bubble
                         x: forward ? 0 : parent.width - width
                         width: Math.min(streamListView.width * 0.78, 320)
-                        implicitHeight: metadataTextItem.y + metadataTextItem.implicitHeight + 9
+                        implicitHeight: metadataTextItem.y + metadataTextItem.implicitHeight + 10
                         radius: 10
                         color: root.bubbleColor(directionText, selected)
                         border.color: root.bubbleBorderColor(directionText, selected)
                         border.width: selected ? 2 : 1
 
-                        Text {
-                            id: directionTextItem
-                            x: 9
-                            y: 9
-                            text: directionText
-                            color: root.bubbleTextColor(directionText)
-                            font.family: "Consolas"
-                        }
-
-                        Text {
-                            id: itemIndexText
-                            anchors.top: parent.top
-                            anchors.topMargin: 9
+                        RowLayout {
+                            id: topRow
+                            anchors.left: parent.left
                             anchors.right: parent.right
-                            anchors.rightMargin: 9
-                            text: "#" + streamItemIndex
-                            color: "#64748b"
-                            font.family: "Consolas"
-                        }
+                            anchors.top: parent.top
+                            anchors.margins: 9
+                            spacing: 8
 
-                        Text {
-                            id: labelTextItem
-                            x: 9
-                            y: directionTextItem.y + directionTextItem.implicitHeight + 4
-                            width: parent.width - 18
-                            text: label
-                            font.bold: true
-                            color: "#0f172a"
-                            elide: Text.ElideRight
+                            Text {
+                                id: labelTextItem
+                                Layout.fillWidth: true
+                                text: label
+                                font.bold: true
+                                color: "#0f172a"
+                                elide: Text.ElideRight
+                            }
+
+                            RowLayout {
+                                spacing: 8
+
+                                Text {
+                                    id: itemIndexText
+                                    text: "#" + streamItemIndex
+                                    color: "#64748b"
+                                    font.family: "Consolas"
+                                    font.pixelSize: 12
+                                }
+
+                                Text {
+                                    id: directionTextItem
+                                    text: directionText
+                                    color: root.bubbleTextColor(directionText)
+                                    font.family: "Consolas"
+                                    font.pixelSize: 12
+                                }
+                            }
                         }
 
                         Text {
                             id: metadataTextItem
-                            x: 9
-                            y: labelTextItem.y + labelTextItem.implicitHeight + 4
-                            width: parent.width - 18
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: topRow.bottom
+                            anchors.leftMargin: 9
+                            anchors.rightMargin: 9
+                            anchors.topMargin: 4
                             text: metadataText
                             color: "#475569"
                             elide: Text.ElideRight

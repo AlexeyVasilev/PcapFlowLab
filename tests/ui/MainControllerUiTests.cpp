@@ -398,7 +398,7 @@ bool text_omits_forbidden_fragments(const QString& text, const QJsonArray& fragm
     return true;
 }
 
-QString normalize_direction_text(const QString& direction) {
+[[maybe_unused]] QString normalize_direction_text(const QString& direction) {
     if (direction == QStringLiteral("A→B") || direction == QString::fromUtf8("Aв†’B")) {
         return QStringLiteral("A->B");
     }
@@ -2014,10 +2014,8 @@ int main(int argc, char* argv[]) {
     auto* stream_details_model = qobject_cast<PacketDetailsViewModel*>(stream_controller.packetDetailsModel());
     UI_EXPECT(stream_details_model != nullptr);
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
-    UI_EXPECT(stream_details_model->summaryText().contains(QString::fromUtf8("Direction: A\xE2\x86\x92" "B")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Label: HTTP GET /")));
-    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packets: 1")));
-    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Source packets: 1")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
     UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
     UI_EXPECT(stream_details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(stream_details_model->protocolText().contains(QStringLiteral("HTTP")));
@@ -2063,8 +2061,7 @@ int main(int argc, char* argv[]) {
     auto* split_tls_details_model = qobject_cast<PacketDetailsViewModel*>(split_tls_controller.packetDetailsModel());
     UI_EXPECT(split_tls_details_model != nullptr);
     UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Label: TLS ServerHello")));
-    UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Packets: 2")));
-    UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Source packets: 1\u20132")));
+    UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Source packets: #1,#2")));
     UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
 
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
