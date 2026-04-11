@@ -854,6 +854,46 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(controller.statusIsError());
     UI_EXPECT(!std::filesystem::exists(no_selection_export_path));
 
+    auto* wireshark_flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+    UI_EXPECT(wireshark_flow_model != nullptr);
+    const int wireshark_http_flow_index = find_flow_index_by_protocol_hint(wireshark_flow_model, QStringLiteral("HTTP"));
+    const int wireshark_dns_flow_index = find_flow_index_by_protocol_hint(wireshark_flow_model, QStringLiteral("DNS"));
+    UI_EXPECT(wireshark_http_flow_index >= 0);
+    UI_EXPECT(wireshark_dns_flow_index >= 0);
+
+    controller.setSelectedFlowIndex(wireshark_dns_flow_index);
+    UI_EXPECT(controller.selectedFlowHasWiresharkFilter());
+    UI_EXPECT(
+        controller.selectedFlowWiresharkFilter() ==
+        QStringLiteral("ip.addr == 10.0.0.3 && ip.addr == 10.0.0.4 && udp.port == 5353")
+    );
+
+    controller.setSelectedFlowIndex(wireshark_http_flow_index);
+    UI_EXPECT(controller.selectedFlowHasWiresharkFilter());
+    UI_EXPECT(
+        controller.selectedFlowWiresharkFilter() ==
+        QStringLiteral("ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 1111")
+    );
+
+    const auto equal_port_capture_path = write_temp_pcap(
+        "pfl_ui_wireshark_equal_ports.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_udp_packet_with_payload(
+                ipv4(10, 30, 0, 1), ipv4(10, 30, 0, 2), 7777, 7777, 12)},
+        })
+    );
+    MainController equal_port_controller {};
+    UI_EXPECT(open_capture_and_wait(app, equal_port_controller, equal_port_capture_path));
+    auto* equal_port_flow_model = qobject_cast<FlowListModel*>(equal_port_controller.flowModel());
+    UI_EXPECT(equal_port_flow_model != nullptr);
+    UI_EXPECT(equal_port_flow_model->rowCount() == 1);
+    equal_port_controller.setSelectedFlowIndex(0);
+    UI_EXPECT(equal_port_controller.selectedFlowHasWiresharkFilter());
+    UI_EXPECT(
+        equal_port_controller.selectedFlowWiresharkFilter() ==
+        QStringLiteral("ip.addr == 10.30.0.1 && ip.addr == 10.30.0.2 && udp.port == 7777")
+    );
+
 
     auto* analysis_flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(analysis_flow_model != nullptr);

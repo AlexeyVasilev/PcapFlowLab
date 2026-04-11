@@ -199,9 +199,9 @@ QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const in
         return {};
     }
 
-    return QStringLiteral("%1 == %2 && %1 == %3 && (%4 == %5 || %4 == %6)")
-        .arg(address_term, address_a, address_b, port_term)
-        .arg(QString::number(port_a), QString::number(port_b));
+    const auto selected_port = std::max(port_a, port_b);
+    return QStringLiteral("%1 == %2 && %1 == %3 && %4 == %5")
+        .arg(address_term, address_a, address_b, port_term, QString::number(selected_port));
 }
 
 QString format_protocol_hint_display(const QString& protocol_hint) {
