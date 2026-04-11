@@ -537,6 +537,7 @@ constexpr std::size_t kQuicPresentationPacketBudget = 4U;
 enum class QuicPresentationShellType : std::uint8_t {
     none,
     initial,
+    zero_rtt,
     handshake,
     retry,
     version_negotiation,
@@ -546,7 +547,7 @@ enum class QuicPresentationShellType : std::uint8_t {
 enum class QuicPresentationSemanticType : std::uint8_t {
     ack,
     crypto,
-    stream,
+    zero_rtt,
     padding,
     ping,
 };
@@ -561,7 +562,7 @@ struct QuicPresentationShellMetadata {
 struct QuicFramePresenceSummary {
     bool ack {false};
     bool crypto {false};
-    bool stream {false};
+    bool zero_rtt {false};
     bool padding {false};
     bool ping {false};
 };
@@ -581,12 +582,14 @@ struct QuicPresentationCandidate {
     PacketRef packet {};
     std::vector<std::uint8_t> udp_payload {};
     ParsedQuicPresentationPacket parsed {};
+    std::vector<ParsedQuicPresentationPacket> datagram_packets {};
 };
 
 struct QuicPresentationResult {
     QuicPresentationShellType shell_type {QuicPresentationShellType::none};
     QuicPresentationShellMetadata shell {};
     std::vector<QuicPresentationSemanticType> semantics {};
+    std::vector<QuicPresentationShellType> additional_shell_types {};
     std::vector<std::uint64_t> selected_packet_indices {};
     std::vector<std::uint64_t> crypto_packet_indices {};
     std::optional<std::string> sni {};
@@ -636,6 +639,8 @@ const char* quic_shell_type_text(const QuicPresentationShellType shell_type) noe
     switch (shell_type) {
     case QuicPresentationShellType::initial:
         return "Initial";
+    case QuicPresentationShellType::zero_rtt:
+        return "0-RTT";
     case QuicPresentationShellType::handshake:
         return "Handshake";
     case QuicPresentationShellType::retry:
@@ -655,8 +660,8 @@ const char* quic_semantic_text(const QuicPresentationSemanticType semantic) noex
         return "ACK";
     case QuicPresentationSemanticType::crypto:
         return "CRYPTO";
-    case QuicPresentationSemanticType::stream:
-        return "STREAM";
+    case QuicPresentationSemanticType::zero_rtt:
+        return "0-RTT";
     case QuicPresentationSemanticType::padding:
         return "PADDING";
     case QuicPresentationSemanticType::ping:
@@ -668,6 +673,10 @@ const char* quic_semantic_text(const QuicPresentationSemanticType semantic) noex
 
 bool quic_has_semantic(const QuicPresentationResult& result, const QuicPresentationSemanticType semantic) noexcept {
     return std::find(result.semantics.begin(), result.semantics.end(), semantic) != result.semantics.end();
+}
+
+bool quic_has_additional_shell_type(const QuicPresentationResult& result, const QuicPresentationShellType shell_type) noexcept {
+    return std::find(result.additional_shell_types.begin(), result.additional_shell_types.end(), shell_type) != result.additional_shell_types.end();
 }
 
 std::string quic_semantics_text(const QuicPresentationResult& result) {
@@ -719,6 +728,17 @@ std::optional<std::string> format_quic_presentation_protocol_text(const QuicPres
              << "  Frame Presence: " << semantics_text;
     }
 
+    if (!result.additional_shell_types.empty()) {
+        text << "\n"
+             << "  Additional Packet Types: ";
+        for (std::size_t index = 0U; index < result.additional_shell_types.size(); ++index) {
+            if (index > 0U) {
+                text << ", ";
+            }
+            text << quic_shell_type_text(result.additional_shell_types[index]);
+        }
+    }
+
     if (const auto enrichment = format_quic_presentation_enrichment(result); enrichment.has_value() && !enrichment->empty()) {
         text << "\n" << *enrichment;
     }
@@ -729,6 +749,7 @@ std::optional<std::string> format_quic_presentation_protocol_text(const QuicPres
 bool should_emit_quic_stream_item(const QuicPresentationResult& result) noexcept {
     if (result.shell_type == QuicPresentationShellType::version_negotiation ||
         result.shell_type == QuicPresentationShellType::retry ||
+        result.shell_type == QuicPresentationShellType::zero_rtt ||
         result.shell_type == QuicPresentationShellType::handshake ||
         result.shell_type == QuicPresentationShellType::protected_payload) {
         return true;
@@ -740,11 +761,11 @@ bool should_emit_quic_stream_item(const QuicPresentationResult& result) noexcept
 
     const bool has_ack = quic_has_semantic(result, QuicPresentationSemanticType::ack);
     const bool has_crypto = quic_has_semantic(result, QuicPresentationSemanticType::crypto);
-    const bool has_stream = quic_has_semantic(result, QuicPresentationSemanticType::stream);
+    const bool has_zero_rtt = quic_has_semantic(result, QuicPresentationSemanticType::zero_rtt);
     const bool has_padding = quic_has_semantic(result, QuicPresentationSemanticType::padding);
     const bool has_ping = quic_has_semantic(result, QuicPresentationSemanticType::ping);
 
-    if (!has_ack && !has_crypto && !has_stream && (has_padding || has_ping)) {
+    if (!has_ack && !has_crypto && !has_zero_rtt && (has_padding || has_ping)) {
         return false;
     }
 
@@ -761,21 +782,26 @@ std::string quic_stream_label_from_result(const QuicPresentationResult& result) 
 
     const bool has_ack = quic_has_semantic(result, QuicPresentationSemanticType::ack);
     const bool has_crypto = quic_has_semantic(result, QuicPresentationSemanticType::crypto);
-    const bool has_stream = quic_has_semantic(result, QuicPresentationSemanticType::stream);
-    if (has_ack && !has_crypto && !has_stream) {
-        return "QUIC ACK";
+    const bool has_zero_rtt = quic_has_semantic(result, QuicPresentationSemanticType::zero_rtt);
+    if (has_ack && !has_crypto && !has_zero_rtt) {
+        return "QUIC Initial: ACK";
     }
-    if (has_crypto && !has_ack && !has_stream) {
-        return "QUIC CRYPTO";
+    if (has_crypto && !has_ack && !has_zero_rtt) {
+        return "QUIC Initial: CRYPTO";
+    }
+    if (has_zero_rtt && !has_ack && !has_crypto) {
+        return "0-RTT";
     }
 
     switch (result.shell_type) {
     case QuicPresentationShellType::initial:
         return "QUIC Initial";
+    case QuicPresentationShellType::zero_rtt:
+        return "0-RTT";
     case QuicPresentationShellType::handshake:
-        return "QUIC Handshake";
+        return "Handshake";
     case QuicPresentationShellType::protected_payload:
-        return "QUIC Protected Payload";
+        return "Protected payload";
     default:
         return "UDP Payload";
     }
@@ -987,7 +1013,7 @@ std::optional<QuicFramePresenceSummary> summarize_quic_plaintext_frames(std::spa
             continue;
         }
         if (frame_type >= 0x08U && frame_type <= 0x0FU) {
-            summary.stream = true;
+            summary.zero_rtt = true;
             if (!quic_skip_stream_frame(bytes, offset, frame_type)) {
                 return std::nullopt;
             }
@@ -1013,8 +1039,8 @@ std::vector<QuicPresentationSemanticType> quic_semantics_from_summary(const Quic
     if (summary.crypto) {
         semantics.push_back(QuicPresentationSemanticType::crypto);
     }
-    if (summary.stream) {
-        semantics.push_back(QuicPresentationSemanticType::stream);
+    if (summary.zero_rtt) {
+        semantics.push_back(QuicPresentationSemanticType::zero_rtt);
     }
     if (summary.padding) {
         semantics.push_back(QuicPresentationSemanticType::padding);
@@ -1069,7 +1095,7 @@ std::vector<QuicPresentationSemanticType> quic_semantic_item_sequence_from_plain
             continue;
         }
         if (frame_type >= 0x08U && frame_type <= 0x0FU) {
-            items.push_back(QuicPresentationSemanticType::stream);
+            items.push_back(QuicPresentationSemanticType::zero_rtt);
             if (!quic_skip_stream_frame(bytes, offset, frame_type)) {
                 return {};
             }
@@ -1164,7 +1190,7 @@ std::optional<ParsedQuicPresentationPacket> parse_quic_presentation_packet(std::
         }
         packet.is_client_initial = initial_parser.is_client_initial_packet(udp_payload);
     } else if (packet_type_bits == 1U) {
-        packet.shell_type = QuicPresentationShellType::protected_payload;
+        packet.shell_type = QuicPresentationShellType::zero_rtt;
     } else if (packet_type_bits == 2U) {
         packet.shell_type = QuicPresentationShellType::handshake;
     } else {
@@ -1250,9 +1276,69 @@ std::vector<ParsedQuicPresentationPacket> parse_quic_presentation_datagram(std::
 std::optional<std::vector<std::uint8_t>> decrypt_quic_initial_plaintext_for_direction(
     QuicInitialParser& initial_parser,
     std::span<const std::uint8_t> udp_payload,
-    const bool is_client_to_server
+    const bool is_client_to_server,
+    std::span<const std::uint8_t> initial_secret_connection_id = {}
 ) {
-    return initial_parser.decrypt_initial_plaintext(udp_payload, !is_client_to_server);
+    return initial_parser.decrypt_initial_plaintext(
+        udp_payload,
+        !is_client_to_server,
+        initial_secret_connection_id
+    );
+}
+
+template <typename PacketList>
+std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id(
+    const CaptureSession& session,
+    const PacketList& packets
+) {
+    PacketPayloadService payload_service {};
+    for (const auto& packet : packets) {
+        if (packet.is_ip_fragmented) {
+            continue;
+        }
+
+        const auto packet_bytes = session.read_packet_data(packet);
+        if (packet_bytes.empty()) {
+            continue;
+        }
+
+        const auto udp_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+        if (udp_payload.empty()) {
+            continue;
+        }
+
+        const auto datagram_packets = parse_quic_presentation_datagram(
+            std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
+        );
+        if (datagram_packets.empty()) {
+            continue;
+        }
+
+        for (const auto& parsed_packet : datagram_packets) {
+            if (parsed_packet.shell_type == QuicPresentationShellType::initial &&
+                parsed_packet.is_client_initial &&
+                !parsed_packet.shell.dcid.empty()) {
+                return parsed_packet.shell.dcid;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+template <typename Connection>
+std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_for_connection(
+    const CaptureSession& session,
+    const Connection& connection
+) {
+    std::vector<PacketRef> packets {};
+    packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
+    packets.insert(packets.end(), connection.flow_a.packets.begin(), connection.flow_a.packets.end());
+    packets.insert(packets.end(), connection.flow_b.packets.begin(), connection.flow_b.packets.end());
+    std::sort(packets.begin(), packets.end(), [](const PacketRef& lhs, const PacketRef& rhs) {
+        return lhs.packet_index < rhs.packet_index;
+    });
+    return find_quic_client_initial_connection_id(session, packets);
 }
 
 std::optional<std::string> format_quic_presentation_enrichment(const QuicPresentationResult& result) {
@@ -1318,7 +1404,8 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     const CaptureSession& session,
     const FlowKey& flow_key,
     const PacketList& packets,
-    const std::vector<std::uint64_t>& selected_packet_indices
+    const std::vector<std::uint64_t>& selected_packet_indices,
+    std::span<const std::uint8_t> initial_secret_connection_id = {}
 ) {
     if (selected_packet_indices.empty()) {
         return std::nullopt;
@@ -1356,20 +1443,22 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             continue;
         }
 
-        const auto parsed = parse_quic_presentation_packet(
+        const auto datagram_packets = parse_quic_presentation_datagram(
             std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size())
         );
-        if (!parsed.has_value()) {
+        if (datagram_packets.empty()) {
             if (std::find(selected_packet_indices.begin(), selected_packet_indices.end(), packet.packet_index) != selected_packet_indices.end()) {
                 return std::nullopt;
             }
             continue;
         }
 
+        const auto parsed = datagram_packets.front();
         candidates.push_back(QuicPresentationCandidate {
             .packet = packet,
             .udp_payload = std::move(udp_payload),
-            .parsed = std::move(*parsed),
+            .parsed = parsed,
+            .datagram_packets = datagram_packets,
         });
     }
 
@@ -1398,6 +1487,15 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
     result.shell_type = anchor_it->parsed.shell_type;
     result.shell = anchor_it->parsed.shell;
     result.selected_packet_indices = selected_packet_indices;
+    for (std::size_t packet_index = 1U; packet_index < anchor_it->datagram_packets.size(); ++packet_index) {
+        const auto shell_type = anchor_it->datagram_packets[packet_index].shell_type;
+        if (shell_type == QuicPresentationShellType::none) {
+            continue;
+        }
+        if (!quic_has_additional_shell_type(result, shell_type)) {
+            result.additional_shell_types.push_back(shell_type);
+        }
+    }
     if (anchor_it->parsed.frame_summary.has_value()) {
         result.semantics = quic_semantics_from_summary(*anchor_it->parsed.frame_summary);
     }
@@ -1427,7 +1525,8 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             const auto plaintext = decrypt_quic_initial_plaintext_for_direction(
                 initial_parser,
                 std::span<const std::uint8_t>(candidate.udp_payload.data(), candidate.udp_payload.size()),
-                is_client_to_server
+                is_client_to_server,
+                initial_secret_connection_id
             );
             if (!plaintext.has_value()) {
                 continue;
@@ -3535,13 +3634,15 @@ bool append_quic_stream_items_for_packet(
     const PacketRef& packet,
     const std::string_view direction_text,
     std::span<const std::uint8_t> payload_span,
-    HexDumpService& hex_dump_service
+    HexDumpService& hex_dump_service,
+    std::span<const std::uint8_t> initial_secret_connection_id
 ) {
     const auto context_result = build_quic_presentation_for_selected_direction(
         session,
         flow_key,
         flow_packets,
-        std::vector<std::uint64_t> {packet.packet_index}
+        std::vector<std::uint64_t> {packet.packet_index},
+        initial_secret_connection_id
     );
     const auto datagram_packets = parse_quic_presentation_datagram(payload_span);
 
@@ -3575,7 +3676,12 @@ bool append_quic_stream_items_for_packet(
             std::optional<QuicFramePresenceSummary> aggregate_summary = parsed_packet.frame_summary;
             std::vector<QuicPresentationSemanticType> semantic_items = quic_semantic_item_sequence_from_plaintext(parsed_packet.plaintext_payload_candidate);
             if (!aggregate_summary.has_value() || semantic_items.empty()) {
-                const auto plaintext = decrypt_quic_initial_plaintext_for_direction(initial_parser, packet_slice, is_client_to_server);
+                const auto plaintext = decrypt_quic_initial_plaintext_for_direction(
+                    initial_parser,
+                    packet_slice,
+                    is_client_to_server,
+                    initial_secret_connection_id
+                );
                 if (plaintext.has_value()) {
                     aggregate_summary = summarize_quic_plaintext_frames(
                         std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
@@ -3657,7 +3763,7 @@ bool append_quic_stream_items_for_packet(
         emitted_any = true;
     }
 
-    return emitted_any;
+    return emitted_any || !datagram_packets.empty();
 }
 
 template <typename Connection>
@@ -3675,6 +3781,10 @@ void append_connection_stream_items_bounded(
 ) {
     PacketPayloadService payload_service {};
     HexDumpService hex_dump_service {};
+    const auto quic_initial_secret_connection_id =
+        flow_protocol == ProtocolId::udp
+            ? find_quic_client_initial_connection_id_for_connection(session, connection)
+            : std::optional<std::vector<std::uint8_t>> {};
     std::size_t index_a = 0U;
     std::size_t index_b = 0U;
     std::size_t scanned_packets = 0U;
@@ -3737,7 +3847,12 @@ void append_connection_stream_items_bounded(
                     packet,
                     direction_text,
                     payload_span,
-                    hex_dump_service
+                    hex_dump_service,
+                    quic_initial_secret_connection_id.has_value()
+                        ? std::span<const std::uint8_t>(
+                            quic_initial_secret_connection_id->data(),
+                            quic_initial_secret_connection_id->size())
+                        : std::span<const std::uint8_t> {}
                 )
                 : append_quic_stream_items_for_packet(
                     rows,
@@ -3748,7 +3863,12 @@ void append_connection_stream_items_bounded(
                     packet,
                     direction_text,
                     payload_span,
-                    hex_dump_service
+                    hex_dump_service,
+                    quic_initial_secret_connection_id.has_value()
+                        ? std::span<const std::uint8_t>(
+                            quic_initial_secret_connection_id->data(),
+                            quic_initial_secret_connection_id->size())
+                        : std::span<const std::uint8_t> {}
                 );
 
             if (handled_quic) {
@@ -4691,13 +4811,19 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_
             return std::nullopt;
         }
 
+        const auto initial_secret_connection_id = find_quic_client_initial_connection_id_for_connection(*this, connection);
+        const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
+            ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
+            : std::span<const std::uint8_t> {};
+
         std::optional<QuicPresentationResult> result {};
         if (connection.has_flow_a) {
             result = build_quic_presentation_for_selected_direction(
                 *this,
                 connection.flow_a.key,
                 connection.flow_a.packets,
-                selected_packet_indices
+                selected_packet_indices,
+                initial_secret_connection_id_span
             );
         }
         if (!result.has_value() && connection.has_flow_b) {
@@ -4705,7 +4831,8 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_
                 *this,
                 connection.flow_b.key,
                 connection.flow_b.packets,
-                selected_packet_indices
+                selected_packet_indices,
+                initial_secret_connection_id_span
             );
         }
 
@@ -4755,13 +4882,19 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_pack
             return std::nullopt;
         }
 
+        const auto initial_secret_connection_id = find_quic_client_initial_connection_id_for_connection(*this, connection);
+        const auto initial_secret_connection_id_span = initial_secret_connection_id.has_value()
+            ? std::span<const std::uint8_t>(initial_secret_connection_id->data(), initial_secret_connection_id->size())
+            : std::span<const std::uint8_t> {};
+
         std::optional<QuicPresentationResult> result {};
         if (connection.has_flow_a) {
             result = build_quic_presentation_for_selected_direction(
                 *this,
                 connection.flow_a.key,
                 connection.flow_a.packets,
-                selected_packet_indices
+                selected_packet_indices,
+                initial_secret_connection_id_span
             );
         }
         if (!result.has_value() && connection.has_flow_b) {
@@ -4769,7 +4902,8 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_pack
                 *this,
                 connection.flow_b.key,
                 connection.flow_b.packets,
-                selected_packet_indices
+                selected_packet_indices,
+                initial_secret_connection_id_span
             );
         }
 

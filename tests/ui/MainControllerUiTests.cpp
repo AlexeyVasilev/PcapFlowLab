@@ -1730,7 +1730,7 @@ int main(int argc, char* argv[]) {
     const auto find_quic_initial_like_row = [](StreamListModel* model) {
         for (int row = 0; row < model->rowCount(); ++row) {
             const auto label = model->data(model->index(row, 0), StreamListModel::LabelRole).toString();
-            if (label == QStringLiteral("QUIC CRYPTO") || label == QStringLiteral("QUIC Initial")) {
+            if (label == QStringLiteral("QUIC Initial: CRYPTO")) {
                 return row;
             }
         }

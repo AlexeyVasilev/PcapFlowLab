@@ -837,10 +837,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
-        const auto* quic_row = find_stream_row_by_label(rows, "QUIC CRYPTO");
-        if (quic_row == nullptr) {
-            quic_row = find_stream_row_by_label(rows, "QUIC Initial");
-        }
+        const auto* quic_row = find_stream_row_by_label(rows, "QUIC Initial: CRYPTO");
         PFL_EXPECT(quic_row != nullptr);
         PFL_EXPECT(quic_row->protocol_text.find("TLS Handshake Type: ClientHello") != std::string::npos);
         PFL_EXPECT(quic_row->protocol_text.find("Cipher Suites:") != std::string::npos);
@@ -854,10 +851,10 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(!rows.empty());
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return starts_with(row.label, "QUIC ");
+            return starts_with(row.label, "QUIC ") || row.label == "Handshake" || row.label == "Protected payload" || row.label == "0-RTT";
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return row.label == "QUIC Initial" || row.label == "QUIC CRYPTO";
+            return row.label == "QUIC Initial: CRYPTO";
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label != "UDP Payload" && !row.protocol_text.empty() && !row.payload_hex_text.empty();
@@ -870,7 +867,7 @@ void run_stream_query_tests() {
 
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "QUIC Handshake");
+        PFL_EXPECT(rows[0].label == "Handshake");
         PFL_EXPECT(rows[0].protocol_text.find("Packet Type: Handshake") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Header Form: Long") != std::string::npos);
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
@@ -882,7 +879,7 @@ void run_stream_query_tests() {
 
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "QUIC Protected Payload");
+        PFL_EXPECT(rows[0].label == "Protected payload");
         PFL_EXPECT(rows[0].protocol_text.find("Packet Type: Protected Payload") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Header Form: Short") != std::string::npos);
     }
@@ -904,9 +901,9 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 2U);
-        PFL_EXPECT(rows[0].label == "QUIC CRYPTO");
+        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
         PFL_EXPECT(rows[0].protocol_text.find("Frame Presence: CRYPTO") != std::string::npos);
-        PFL_EXPECT(rows[1].label == "QUIC ACK");
+        PFL_EXPECT(rows[1].label == "QUIC Initial: ACK");
         PFL_EXPECT(rows[1].protocol_text.find("Frame Presence: ACK") != std::string::npos);
     }
 
@@ -953,9 +950,9 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 2U);
-        PFL_EXPECT(rows[0].label == "QUIC CRYPTO");
+        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
         PFL_EXPECT(rows[0].protocol_text.find("Frame Presence: CRYPTO, PADDING") != std::string::npos);
-        PFL_EXPECT(rows[1].label == "QUIC ACK");
+        PFL_EXPECT(rows[1].label == "QUIC Initial: ACK");
         PFL_EXPECT(rows[1].protocol_text.find("Frame Presence: ACK, PADDING") != std::string::npos);
         PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label.find("PADDING") != std::string::npos || row.label.find("PING") != std::string::npos;
@@ -975,7 +972,7 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "QUIC CRYPTO");
+        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
         PFL_EXPECT(rows[0].protocol_text.find("TLS Handshake Type: ServerHello") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Selected TLS Version:") != std::string::npos);
         PFL_EXPECT(rows[0].protocol_text.find("Selected Cipher Suite:") != std::string::npos);
@@ -1236,8 +1233,6 @@ void run_stream_query_tests() {
 }
 
 }  // namespace pfl::tests
-
-
 
 
 

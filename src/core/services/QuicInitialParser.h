@@ -31,6 +31,11 @@ public:
         std::span<const std::uint8_t> udp_payload,
         bool use_server_initial_secret
     ) const;
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> decrypt_initial_plaintext(
+        std::span<const std::uint8_t> udp_payload,
+        bool use_server_initial_secret,
+        std::span<const std::uint8_t> initial_secret_connection_id_override
+    ) const;
 
     // Decrypted Initial payload helper used by bounded multi-packet assembly tests.
     [[nodiscard]] std::optional<std::string> extract_client_initial_sni_from_crypto_payloads(

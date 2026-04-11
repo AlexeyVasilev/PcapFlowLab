@@ -74,37 +74,37 @@ Stream items here are semantic units, not packet mirrors:
 
 Expected stream sequence:
 
-| Order | Dir | Semantic label | Current UI label | Source packet(s) | TLS semantic |
+| Order | Dir | Semantic label | UI label | Source packet(s) | TLS semantic |
 | --- | --- | --- | --- | --- | --- |
-| 1 | A->B | `QUIC Initial: CRYPTO` | `QUIC CRYPTO` | 1 | ClientHello |
-| 2 | A->B | `QUIC Initial: CRYPTO` | `QUIC CRYPTO` | 1 | ClientHello |
-| 3 | A->B | `QUIC Initial: CRYPTO` | `QUIC CRYPTO` | 2 | ClientHello |
-| 4 | B->A | `QUIC Initial: ACK` | `QUIC ACK` | 3 | none |
-| 5 | B->A | `QUIC Initial: ACK` | `QUIC ACK` | 4 | none |
-| 6 | B->A | `QUIC Initial: CRYPTO` | `QUIC CRYPTO` | 5 | ServerHello |
-| 7 | A->B | `QUIC Initial: ACK` | `QUIC ACK` | 6 | none |
-| 8 | B->A | `QUIC Initial: CRYPTO` | `QUIC CRYPTO` | 7 | ServerHello |
-| 9 | A->B | `QUIC Initial: ACK` | `QUIC ACK` | 8 | none |
-| 10 | B->A | `QUIC Handshake` | `QUIC Handshake` | 9 | none |
-| 11 | B->A | `QUIC Handshake` | `QUIC Handshake` | 10 | none |
-| 12 | B->A | `QUIC Handshake` | `QUIC Handshake` | 11 | none |
-| 13 | A->B | `QUIC Handshake` | `QUIC Handshake` | 12 | none |
-| 14 | B->A | `QUIC Handshake` | `QUIC Handshake` | 13 | none |
-| 15 | B->A | `QUIC Handshake` | `QUIC Handshake` | 14 | none |
-| 16 | B->A | `QUIC Handshake` | `QUIC Handshake` | 15 | none |
-| 17 | B->A | `QUIC Protected payload` | `QUIC Protected Payload` | 15 | none |
-| 18 | A->B | `QUIC Handshake` | `QUIC Handshake` | 16 | none |
-| 19 | A->B | `QUIC Handshake` | `QUIC Handshake` | 17 | none |
-| 20 | A->B | `QUIC Protected payload` | `QUIC Protected Payload` | 17 | none |
-| 21 | A->B | `QUIC Protected payload` | `QUIC Protected Payload` | 18 | none |
-| 22 | B->A | `QUIC Protected payload` | `QUIC Protected Payload` | 19 | none |
+| 1 | A->B | `QUIC Initial: CRYPTO` | `QUIC Initial: CRYPTO` | 1 | ClientHello |
+| 2 | A->B | `QUIC Initial: CRYPTO` | `QUIC Initial: CRYPTO` | 1 | ClientHello |
+| 3 | A->B | `QUIC Initial: CRYPTO` | `QUIC Initial: CRYPTO` | 2 | ClientHello |
+| 4 | B->A | `QUIC Initial: ACK` | `QUIC Initial: ACK` | 3 | none |
+| 5 | B->A | `QUIC Initial: ACK` | `QUIC Initial: ACK` | 4 | none |
+| 6 | B->A | `QUIC Initial: CRYPTO` | `QUIC Initial: CRYPTO` | 5 | ServerHello |
+| 7 | A->B | `QUIC Initial: ACK` | `QUIC Initial: ACK` | 6 | none |
+| 8 | B->A | `QUIC Initial: CRYPTO` | `QUIC Initial: CRYPTO` | 7 | ServerHello |
+| 9 | A->B | `QUIC Initial: ACK` | `QUIC Initial: ACK` | 8 | none |
+| 10 | B->A | `Handshake` | `Handshake` | 9 | none |
+| 11 | B->A | `Handshake` | `Handshake` | 10 | none |
+| 12 | B->A | `Handshake` | `Handshake` | 11 | none |
+| 13 | A->B | `Handshake` | `Handshake` | 12 | none |
+| 14 | B->A | `Handshake` | `Handshake` | 13 | none |
+| 15 | B->A | `Handshake` | `Handshake` | 14 | none |
+| 16 | B->A | `Handshake` | `Handshake` | 15 | none |
+| 17 | B->A | `Protected payload` | `Protected payload` | 15 | none |
+| 18 | A->B | `Handshake` | `Handshake` | 16 | none |
+| 19 | A->B | `Handshake` | `Handshake` | 17 | none |
+| 20 | A->B | `Protected payload` | `Protected payload` | 17 | none |
+| 21 | A->B | `Protected payload` | `Protected payload` | 18 | none |
+| 22 | B->A | `Protected payload` | `Protected payload` | 19 | none |
 
 Stream-level detail expectations:
 - `QUIC Initial: CRYPTO` from packets 1 and 2 should attach `ClientHello`
 - `QUIC Initial: CRYPTO` from packets 5 and 7 should attach `ServerHello`
 - `QUIC Initial: ACK` items should stay protocol-aware but must not attach TLS details
-- `QUIC Handshake` items should remain `Handshake`, not collapse into generic `UDP Payload`
-- `QUIC Protected payload` items should remain distinct from `Handshake`
+- `Handshake` items should remain `Handshake`, not collapse into generic `UDP Payload`
+- `Protected payload` items should remain distinct from `Handshake`
 
 ### Mixed-Semantics Rules
 

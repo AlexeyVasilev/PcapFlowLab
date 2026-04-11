@@ -899,15 +899,16 @@ namespace {
 
 std::optional<std::vector<std::uint8_t>> decrypt_initial_plaintext_with_perspective(
     std::span<const std::uint8_t> udp_payload,
-    const bool use_server_initial_secret
+    const bool use_server_initial_secret,
+    std::span<const std::uint8_t> initial_secret_connection_id_override = {}
 ) {
     const auto header = parse_client_initial_header(udp_payload);
     if (!header.has_value()) {
         return std::nullopt;
     }
 
-    const auto initial_secret_connection_id = use_server_initial_secret
-        ? header->source_connection_id
+    const auto initial_secret_connection_id = !initial_secret_connection_id_override.empty()
+        ? initial_secret_connection_id_override
         : header->destination_connection_id;
     if (initial_secret_connection_id.empty()) {
         return std::nullopt;
@@ -1034,6 +1035,18 @@ std::optional<std::vector<std::uint8_t>> QuicInitialParser::decrypt_initial_plai
     const bool use_server_initial_secret
 ) const {
     return decrypt_initial_plaintext_with_perspective(udp_payload, use_server_initial_secret);
+}
+
+std::optional<std::vector<std::uint8_t>> QuicInitialParser::decrypt_initial_plaintext(
+    std::span<const std::uint8_t> udp_payload,
+    const bool use_server_initial_secret,
+    std::span<const std::uint8_t> initial_secret_connection_id_override
+) const {
+    return decrypt_initial_plaintext_with_perspective(
+        udp_payload,
+        use_server_initial_secret,
+        initial_secret_connection_id_override
+    );
 }
 
 std::optional<std::string> QuicInitialParser::extract_client_initial_sni(std::span<const std::uint8_t> udp_payload) const {
