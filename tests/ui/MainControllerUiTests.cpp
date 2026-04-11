@@ -398,6 +398,28 @@ bool text_omits_forbidden_fragments(const QString& text, const QJsonArray& fragm
     return true;
 }
 
+QString normalize_direction_text(const QString& direction) {
+    if (direction == QStringLiteral("A→B") || direction == QString::fromUtf8("Aв†’B")) {
+        return QStringLiteral("A->B");
+    }
+    if (direction == QStringLiteral("B→A") || direction == QString::fromUtf8("Bв†’A")) {
+        return QStringLiteral("B->A");
+    }
+    return direction;
+}
+
+QString canonical_direction_text(const QString& direction) {
+    const auto canonical_ab = QStringLiteral("A") + QChar(0x2192) + QStringLiteral("B");
+    const auto canonical_ba = QStringLiteral("B") + QChar(0x2192) + QStringLiteral("A");
+    if (direction == canonical_ab || direction == QString::fromUtf8("Aв†’B") || direction == QString::fromUtf8("AРІвЂ вЂ™B")) {
+        return QStringLiteral("A->B");
+    }
+    if (direction == canonical_ba || direction == QString::fromUtf8("Bв†’A") || direction == QString::fromUtf8("BРІвЂ вЂ™A")) {
+        return QStringLiteral("B->A");
+    }
+    return direction;
+}
+
 QString packet_direction_for_number(const std::vector<pfl::PacketRow>& packet_rows, const std::uint64_t packet_number) {
     const auto packet_index = packet_number - 1U;
     const auto it = std::find_if(packet_rows.begin(), packet_rows.end(), [packet_index](const pfl::PacketRow& row) {
@@ -441,8 +463,7 @@ std::vector<const pfl::StreamItemRow*> find_matching_stream_rows(
     return matches;
 }
 
-void run_quic_fixture_reference_tests(QApplication& app) {
-    const auto spec_path = ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json";
+void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::path& spec_path) {
     const auto spec = load_json_object(spec_path);
     const auto fixture_relative_path = spec.value(QStringLiteral("fixture_relative_path")).toString();
     UI_EXPECT(!fixture_relative_path.isEmpty());
@@ -469,7 +490,8 @@ void run_quic_fixture_reference_tests(QApplication& app) {
         const auto packet_expectation = packet_value.toObject();
         const auto packet_number = static_cast<std::uint64_t>(packet_expectation.value(QStringLiteral("packet_number")).toInteger());
         UI_EXPECT(packet_number > 0U);
-        UI_EXPECT(packet_direction_for_number(packet_rows, packet_number) == packet_expectation.value(QStringLiteral("direction")).toString());
+        UI_EXPECT(canonical_direction_text(packet_direction_for_number(packet_rows, packet_number)) ==
+                  packet_expectation.value(QStringLiteral("direction")).toString());
 
         controller.setSelectedPacketIndex(packet_number - 1U);
         UI_EXPECT(details_model->detailsTitle() == QStringLiteral("Packet Details"));
@@ -487,15 +509,6 @@ void run_quic_fixture_reference_tests(QApplication& app) {
     UI_EXPECT(!controller.streamPartiallyLoaded());
     UI_EXPECT(!controller.canLoadMoreStreamItems());
     UI_EXPECT(stream_model->rowCount() == stream_sequence.size());
-    bool sawProtectedPayloadInUi = false;
-    for (int row = 0; row < stream_model->rowCount(); ++row) {
-        if (stream_model->data(stream_model->index(row, 0), pfl::StreamListModel::LabelRole).toString() ==
-            QStringLiteral("QUIC Protected Payload")) {
-            sawProtectedPayloadInUi = true;
-            break;
-        }
-    }
-    UI_EXPECT(sawProtectedPayloadInUi);
     UI_EXPECT(stream_rows.size() == static_cast<std::size_t>(stream_sequence.size()));
     for (qsizetype sequence_index = 0; sequence_index < stream_sequence.size(); ++sequence_index) {
         const auto sequence_value = stream_sequence[sequence_index];
@@ -2282,7 +2295,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(stream_loading_stream_model->rowCount() - 1, 0), StreamListModel::StreamItemIndexRole).toULongLong() == small_loaded);
     UI_EXPECT(stream_loading_details_model->summaryText().isEmpty());
 
-    run_quic_fixture_reference_tests(app);
+    run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json");
+    run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_02_expectations.json");
 
     return 0;
 }

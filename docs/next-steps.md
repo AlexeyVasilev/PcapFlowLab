@@ -36,6 +36,7 @@
 - validate QUIC fallback behavior explicitly
 - add a few more focused QUIC selected-flow cases around mixed frame semantics and conservative fallback
 - keep further QUIC selected-flow changes aligned with fixture-backed expectations in `quic_fixture_01_expectations.json`
+- keep further QUIC selected-flow changes aligned with the paired fixture-backed expectations in `quic_fixture_01_expectations.json` and `quic_fixture_02_expectations.json`
 - keep tests focused on behavior, not exact packet mapping
 
 ## Analysis
