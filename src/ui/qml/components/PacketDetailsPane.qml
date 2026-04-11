@@ -101,8 +101,11 @@ Frame {
 
             TextArea {
                 readOnly: true
+                selectByMouse: true
                 wrapMode: monospace ? TextEdit.NoWrap : TextEdit.Wrap
                 font.family: monospace ? "Consolas" : ""
+                font.pixelSize: monospace ? 12 : 13
+                padding: 10
                 text: viewText
             }
         }

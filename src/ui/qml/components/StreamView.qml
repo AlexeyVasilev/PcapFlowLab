@@ -28,6 +28,19 @@ Frame {
         return streamItemIndex === root.selectedStreamItemIndex
     }
 
+    function compactSourcePacketsText(sourcePacketsText) {
+        if (!sourcePacketsText || !sourcePacketsText.startsWith("packets ")) {
+            return sourcePacketsText
+        }
+
+        const packetRefs = sourcePacketsText.slice(8).split(",")
+        if (packetRefs.length <= 3 && sourcePacketsText.length <= 26) {
+            return sourcePacketsText
+        }
+
+        return "packets " + packetRefs.slice(0, 3).join(",") + "\u2026"
+    }
+
     function bubbleColor(directionText, selected) {
         if (selected) {
             return isForward(directionText) ? "#dcecff" : "#dcf4e4"
@@ -42,10 +55,6 @@ Frame {
         }
 
         return isForward(directionText) ? "#c8dbf2" : "#c9e7d1"
-    }
-
-    function bubbleTextColor(directionText) {
-        return isForward(directionText) ? "#1f4b7a" : "#24563c"
     }
 
     background: Rectangle {
@@ -145,7 +154,8 @@ Frame {
 
                     readonly property bool selected: root.isSelected(streamItemIndex)
                     readonly property bool forward: root.isForward(directionText)
-                    readonly property string metadataText: byteCount + " bytes | " + (sourcePacketsText.length > 0 ? sourcePacketsText : (packetCount > 1 ? packetCount + " packets" : "1 packet"))
+                    readonly property string metadataText: byteCount + " bytes | " + (sourcePacketsText.length > 0 ? root.compactSourcePacketsText(sourcePacketsText) : (packetCount > 1 ? packetCount + " packets" : "1 packet"))
+                    readonly property string headerMetaText: "#" + streamItemIndex + " \u00b7 " + directionText
 
                     width: streamListView.width
                     height: bubble.implicitHeight
@@ -177,24 +187,11 @@ Frame {
                                 elide: Text.ElideRight
                             }
 
-                            RowLayout {
-                                spacing: 8
-
-                                Text {
-                                    id: itemIndexText
-                                    text: "#" + streamItemIndex
-                                    color: "#64748b"
-                                    font.family: "Consolas"
-                                    font.pixelSize: 12
-                                }
-
-                                Text {
-                                    id: directionTextItem
-                                    text: directionText
-                                    color: root.bubbleTextColor(directionText)
-                                    font.family: "Consolas"
-                                    font.pixelSize: 12
-                                }
+                            Text {
+                                text: headerMetaText
+                                color: selected ? "#66758a" : "#7b8794"
+                                font.family: "Consolas"
+                                font.pixelSize: 11
                             }
                         }
 
