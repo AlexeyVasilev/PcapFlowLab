@@ -543,14 +543,21 @@ template <typename PacketList>
 std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp_payload_suppression_for_direction(
     const CaptureSession& session,
     const PacketList& packets,
-    const std::set<std::uint64_t>& exact_duplicate_packet_indices
+    const std::set<std::uint64_t>& exact_duplicate_packet_indices,
+    const std::size_t max_packets_to_scan = std::numeric_limits<std::size_t>::max()
 ) {
     std::map<std::uint64_t, TcpPayloadContributionCandidate> contributions {};
     PacketDetailsService details_service {};
     PacketPayloadService payload_service {};
     TcpContributionTracker tracker {};
+    std::size_t processed_packets = 0U;
 
     for (const auto& packet : packets) {
+        if (processed_packets >= max_packets_to_scan) {
+            break;
+        }
+        ++processed_packets;
+
         const auto decoded = decode_tcp_payload_packet(session, packet, details_service, payload_service);
         if (!decoded.has_value()) {
             continue;
@@ -4222,7 +4229,8 @@ std::vector<PacketRow> slice_connection_packets(
 template <typename Connection>
 std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
     const CaptureSession& session,
-    const Connection& connection
+    const Connection& connection,
+    const std::size_t max_packets_to_scan
 ) {
     std::map<SuspectedTcpRetransmissionFingerprint, std::vector<SeenTcpPayloadCandidate>> seen_fingerprints {};
     std::vector<std::uint64_t> suspected_packet_indices {};
@@ -4260,16 +4268,50 @@ std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
     };
     std::size_t index_a = 0U;
     std::size_t index_b = 0U;
-    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+    std::size_t processed_packets = 0U;
+    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size())
+           && processed_packets < max_packets_to_scan) {
         const bool use_a = index_b >= connection.flow_b.packets.size() ||
             (index_a < connection.flow_a.packets.size() &&
              connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
 
         const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
         maybe_mark_packet(packet, use_a ? 0U : 1U);
+        ++processed_packets;
     }
 
     return suspected_packet_indices;
+}
+
+template <typename Connection>
+std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
+    const Connection& connection,
+    const std::size_t max_packets_to_scan
+) {
+    std::size_t count_a = 0U;
+    std::size_t count_b = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+    std::size_t processed_packets = 0U;
+
+    while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size())
+           && processed_packets < max_packets_to_scan) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        if (use_a) {
+            ++index_a;
+            ++count_a;
+        } else {
+            ++index_b;
+            ++count_b;
+        }
+
+        ++processed_packets;
+    }
+
+    return {count_a, count_b};
 }
 
 std::vector<StreamItemRow> build_flow_stream_items_bounded(
@@ -5240,6 +5282,13 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
 }
 
 std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_indices(const std::size_t flow_index) const {
+    return suspected_tcp_retransmission_packet_indices(flow_index, flow_packet_count(flow_index));
+}
+
+std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_indices(
+    const std::size_t flow_index,
+    const std::size_t max_packets_to_scan
+) const {
     if (!has_source_capture()) {
         return {};
     }
@@ -5254,19 +5303,27 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
             return {};
         }
 
-        return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv4);
+        return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv4, max_packets_to_scan);
     }
 
     if (connections[flow_index].ipv6->key.protocol != ProtocolId::tcp) {
         return {};
     }
 
-    return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv6);
+    return collect_suspected_tcp_retransmission_packet_indices(*this, *connections[flow_index].ipv6, max_packets_to_scan);
 }
 
 void CaptureSession::set_selected_flow_tcp_payload_suppression(
     const std::size_t flow_index,
     const std::vector<std::uint64_t>& packet_indices
+) noexcept {
+    set_selected_flow_tcp_payload_suppression(flow_index, packet_indices, flow_packet_count(flow_index));
+}
+
+void CaptureSession::set_selected_flow_tcp_payload_suppression(
+    const std::size_t flow_index,
+    const std::vector<std::uint64_t>& packet_indices,
+    const std::size_t max_packets_to_scan
 ) noexcept {
     const auto connections = list_connections(state_);
     if (flow_index >= connections.size()) {
@@ -5281,13 +5338,17 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
     }
 
     const std::set<std::uint64_t> exact_duplicate_packet_indices(packet_indices.begin(), packet_indices.end());
+    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
+        ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
+        : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
+
     auto packet_contributions = connection.family == FlowAddressFamily::ipv4
-        ? build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv4->flow_a.packets, exact_duplicate_packet_indices)
-        : build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv6->flow_a.packets, exact_duplicate_packet_indices);
+        ? build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv4->flow_a.packets, exact_duplicate_packet_indices, prefix_count_a)
+        : build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv6->flow_a.packets, exact_duplicate_packet_indices, prefix_count_a);
 
     const auto direction_b_contributions = connection.family == FlowAddressFamily::ipv4
-        ? build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv4->flow_b.packets, exact_duplicate_packet_indices)
-        : build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv6->flow_b.packets, exact_duplicate_packet_indices);
+        ? build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv4->flow_b.packets, exact_duplicate_packet_indices, prefix_count_b)
+        : build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv6->flow_b.packets, exact_duplicate_packet_indices, prefix_count_b);
 
     for (const auto& [packet_index, contribution] : direction_b_contributions) {
         packet_contributions[packet_index] = contribution;

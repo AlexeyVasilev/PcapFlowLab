@@ -9,6 +9,7 @@
 #include <memory>
 
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QRegularExpression>
@@ -2559,6 +2560,9 @@ void MainController::setFlowDetailsTabIndex(const int index) {
 
     stream_tab_active_ = streamActive;
     if (stream_tab_active_ && selected_flow_index_ >= 0 && !stream_state_materialized_for_selected_flow_) {
+        stream_loading_ = true;
+        emit streamListStateChanged();
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
         refreshSelectedStreamItems(true);
     }
 
@@ -2682,13 +2686,19 @@ void MainController::setSelectedFlowIndex(const int index) {
     clearPacketSelection();
     clearStreamSelection();
     clearSelectedFlowAnalysis();
-    clearSelectedFlowAnalysis();
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
+    prepared_tcp_contribution_packet_window_count_ = 0U;
     session_.clear_selected_flow_tcp_payload_suppression();
+    packet_model_.clear();
     current_stream_items_.clear();
     stream_model_.clear();
-    stream_loading_ = false;
+    total_packet_row_count_ = selected_flow_index_ >= 0
+        ? session_.flow_packet_count(static_cast<std::size_t>(selected_flow_index_))
+        : 0U;
+    loaded_packet_row_count_ = 0U;
+    packets_loading_ = selected_flow_index_ >= 0;
+    stream_loading_ = selected_flow_index_ >= 0 && stream_tab_active_;
     loaded_stream_item_count_ = 0U;
     total_stream_item_count_ = 0U;
     stream_packet_window_count_ = 0U;
@@ -2696,29 +2706,23 @@ void MainController::setSelectedFlowIndex(const int index) {
     can_load_more_stream_items_ = false;
     stream_state_materialized_for_selected_flow_ = false;
 
+    emit selectedFlowIndexChanged();
+    emit selectedFlowWiresharkFilterChanged();
+    emit packetListStateChanged();
+    emit streamListStateChanged();
+    emit actionAvailabilityChanged();
+
     if (selected_flow_index_ >= 0) {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
         refreshSelectedFlowPackets(true);
         maybeEnrichSelectedFlowServiceHint();
         if (stream_tab_active_) {
             refreshSelectedStreamItems(true);
-        } else {
-            emit streamListStateChanged();
         }
         if (analysis_tab_active_) {
             refreshSelectedFlowAnalysis();
         }
-    } else {
-        packet_model_.clear();
-        loaded_packet_row_count_ = 0U;
-        total_packet_row_count_ = 0U;
-        packets_loading_ = false;
-        emit packetListStateChanged();
-        emit streamListStateChanged();
     }
-
-    emit selectedFlowIndexChanged();
-    emit selectedFlowWiresharkFilterChanged();
-    emit actionAvailabilityChanged();
 }
 
 void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
@@ -2769,6 +2773,29 @@ void MainController::setFlowFilterText(const QString& text) {
     flow_model_.setFilterText(text);
     synchronizeFlowSelection();
     emit flowFilterTextChanged();
+}
+
+void MainController::prepareSelectedFlowTcpContributionState(const std::size_t maxPacketsToScan) {
+    if (selected_flow_index_ < 0 || maxPacketsToScan == 0U) {
+        current_suspected_retransmission_packet_indices_.clear();
+        prepared_tcp_contribution_packet_window_count_ = 0U;
+        session_.clear_selected_flow_tcp_payload_suppression();
+        return;
+    }
+
+    if (prepared_tcp_contribution_packet_window_count_ >= maxPacketsToScan) {
+        return;
+    }
+
+    const auto flowIndex = static_cast<std::size_t>(selected_flow_index_);
+    const auto suppressedPacketIndices = session_.suspected_tcp_retransmission_packet_indices(flowIndex, maxPacketsToScan);
+    current_suspected_retransmission_packet_indices_.clear();
+    for (const auto packetIndex : suppressedPacketIndices) {
+        current_suspected_retransmission_packet_indices_.insert(packetIndex);
+    }
+
+    session_.set_selected_flow_tcp_payload_suppression(flowIndex, suppressedPacketIndices, maxPacketsToScan);
+    prepared_tcp_contribution_packet_window_count_ = maxPacketsToScan;
 }
 
 void MainController::maybeEnrichSelectedFlowServiceHint() {
@@ -2826,11 +2853,11 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
 
     if (resetRows) {
         current_suspected_retransmission_packet_indices_.clear();
-        const auto suppressed_packet_indices = session_.suspected_tcp_retransmission_packet_indices(static_cast<std::size_t>(selected_flow_index_));
-        session_.set_selected_flow_tcp_payload_suppression(static_cast<std::size_t>(selected_flow_index_), suppressed_packet_indices);
-        for (const auto packet_index : suppressed_packet_indices) {
-            current_suspected_retransmission_packet_indices_.insert(packet_index);
-        }
+        prepared_tcp_contribution_packet_window_count_ = 0U;
+    }
+
+    if (!rows.empty()) {
+        prepareSelectedFlowTcpContributionState(offset + rows.size());
     }
 
     for (auto& packet_row : rows) {
@@ -2896,6 +2923,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     }
 
     stream_loading_ = true;
+    prepareSelectedFlowTcpContributionState(stream_packet_window_count_);
     const auto requestLimit = stream_item_budget_count_ + 1U;
     const bool packetBudgetExhausted = stream_packet_window_count_ < totalFlowPacketCount;
     auto rows = session_.list_flow_stream_items_for_packet_prefix(

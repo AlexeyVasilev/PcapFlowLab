@@ -69,7 +69,9 @@ public:
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
     [[nodiscard]] std::vector<std::uint64_t> suspected_tcp_retransmission_packet_indices(std::size_t flow_index) const;
+    [[nodiscard]] std::vector<std::uint64_t> suspected_tcp_retransmission_packet_indices(std::size_t flow_index, std::size_t max_packets_to_scan) const;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices) noexcept;
+    void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices, std::size_t max_packets_to_scan) noexcept;
     void clear_selected_flow_tcp_payload_suppression() noexcept;
     [[nodiscard]] bool should_suppress_selected_flow_tcp_payload(std::size_t flow_index, std::uint64_t packet_index) const noexcept;
     [[nodiscard]] std::size_t selected_flow_tcp_payload_trim_prefix_bytes(std::size_t flow_index, std::uint64_t packet_index) const noexcept;

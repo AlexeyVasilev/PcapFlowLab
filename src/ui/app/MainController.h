@@ -446,6 +446,7 @@ private:
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
     void maybeEnrichSelectedFlowServiceHint();
+    void prepareSelectedFlowTcpContributionState(std::size_t maxPacketsToScan);
     void refreshSelectedFlowPackets(bool resetRows);
     void refreshSelectedStreamItems(bool resetRows);
     void refreshSelectedFlowAnalysis();
@@ -517,6 +518,7 @@ private:
     bool analysis_tab_active_ {false};
     bool can_load_more_stream_items_ {false};
     bool stream_state_materialized_for_selected_flow_ {false};
+    std::size_t prepared_tcp_contribution_packet_window_count_ {0U};
     bool analysis_loading_ {false};
     bool analysis_sequence_export_in_progress_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};

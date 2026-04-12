@@ -29,6 +29,7 @@ Item {
     property var packetDetailsModel: null
     property var selectedPacketIndex: 0
     property var selectedStreamItemIndex: 0
+    readonly property bool selectedFlowWorkspaceLoading: root.selectedFlowIndex >= 0 && (root.packetsLoading || root.streamLoading)
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
@@ -74,6 +75,7 @@ Item {
         }
 
         SplitView {
+            id: lowerWorkspaceSplit
             SplitView.fillWidth: true
             SplitView.fillHeight: true
             SplitView.preferredHeight: 300
@@ -193,6 +195,38 @@ Item {
                 SplitView.fillHeight: true
                 SplitView.preferredWidth: 720
                 packetDetailsModel: root.packetDetailsModel
+            }
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: lowerWorkspaceSplit.horizontalCenter
+            anchors.top: lowerWorkspaceSplit.top
+            anchors.topMargin: 10
+            visible: root.selectedFlowWorkspaceLoading
+            color: "#ffffff"
+            border.color: "#cbd5e1"
+            radius: 8
+            z: 2
+            implicitWidth: loadingColumn.implicitWidth + 20
+            implicitHeight: loadingColumn.implicitHeight + 14
+
+            ColumnLayout {
+                id: loadingColumn
+                anchors.centerIn: parent
+                spacing: 1
+
+                Label {
+                    text: "Loading selected flow..."
+                    font.pixelSize: 13
+                    font.bold: true
+                    color: "#0f172a"
+                }
+
+                Label {
+                    text: "Preparing packets, stream, and details..."
+                    font.pixelSize: 12
+                    color: "#64748b"
+                }
             }
         }
     }
