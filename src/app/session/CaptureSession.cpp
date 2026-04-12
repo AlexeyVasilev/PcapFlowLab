@@ -1051,10 +1051,15 @@ std::vector<QuicPresentationSemanticType> quic_semantics_from_summary(const Quic
     return semantics;
 }
 
-std::vector<QuicPresentationSemanticType> quic_semantic_item_sequence_from_plaintext(
+struct QuicSemanticItemInfo {
+    QuicPresentationSemanticType semantic {};
+    std::size_t byte_count {0U};
+};
+
+std::vector<QuicSemanticItemInfo> quic_semantic_items_from_plaintext(
     std::span<const std::uint8_t> bytes
 ) {
-    std::vector<QuicPresentationSemanticType> items {};
+    std::vector<QuicSemanticItemInfo> items {};
     if (bytes.empty()) {
         return items;
     }
@@ -1062,6 +1067,7 @@ std::vector<QuicPresentationSemanticType> quic_semantic_item_sequence_from_plain
     std::size_t offset = 0U;
     std::size_t frame_count = 0U;
     while (offset < bytes.size()) {
+        const auto frame_start = offset;
         const auto frame_type = bytes[offset++];
         if (frame_type == 0x00U) {
             if (++frame_count > kMaxQuicFrameSummaryCount) {
@@ -1079,26 +1085,35 @@ std::vector<QuicPresentationSemanticType> quic_semantic_item_sequence_from_plain
             continue;
         }
         if (frame_type == 0x02U || frame_type == 0x03U) {
-            items.push_back(QuicPresentationSemanticType::ack);
             if (!quic_skip_ack_frame(bytes, offset, frame_type == 0x03U)) {
                 return {};
             }
+            items.push_back(QuicSemanticItemInfo {
+                .semantic = QuicPresentationSemanticType::ack,
+                .byte_count = offset - frame_start,
+            });
             continue;
         }
         if (frame_type == 0x06U) {
-            items.push_back(QuicPresentationSemanticType::crypto);
             const auto crypto_offset = quic_read_varint(bytes, offset);
             const auto crypto_length = quic_read_varint_size(bytes, offset);
             if (!crypto_offset.has_value() || !crypto_length.has_value() || !quic_skip_bytes(bytes, offset, *crypto_length)) {
                 return {};
             }
+            items.push_back(QuicSemanticItemInfo {
+                .semantic = QuicPresentationSemanticType::crypto,
+                .byte_count = offset - frame_start,
+            });
             continue;
         }
         if (frame_type >= 0x08U && frame_type <= 0x0FU) {
-            items.push_back(QuicPresentationSemanticType::zero_rtt);
             if (!quic_skip_stream_frame(bytes, offset, frame_type)) {
                 return {};
             }
+            items.push_back(QuicSemanticItemInfo {
+                .semantic = QuicPresentationSemanticType::zero_rtt,
+                .byte_count = offset - frame_start,
+            });
             continue;
         }
         if (!quic_skip_frame_payload(bytes, offset, frame_type)) {
@@ -2459,6 +2474,76 @@ const char* tls_record_type_text(const std::uint8_t content_type) noexcept {
     }
 }
 
+const char* tls_alert_level_text(const std::uint8_t level) noexcept {
+    switch (level) {
+    case 1U:
+        return "Warning";
+    case 2U:
+        return "Fatal";
+    default:
+        return nullptr;
+    }
+}
+
+const char* tls_alert_description_text(const std::uint8_t description) noexcept {
+    switch (description) {
+    case 0U:
+        return "Close Notify";
+    case 10U:
+        return "Unexpected Message";
+    case 20U:
+        return "Bad Record MAC";
+    case 21U:
+        return "Decryption Failed";
+    case 22U:
+        return "Record Overflow";
+    case 40U:
+        return "Handshake Failure";
+    case 42U:
+        return "Bad Certificate";
+    case 43U:
+        return "Unsupported Certificate";
+    case 44U:
+        return "Certificate Revoked";
+    case 45U:
+        return "Certificate Expired";
+    case 46U:
+        return "Certificate Unknown";
+    case 47U:
+        return "Illegal Parameter";
+    case 48U:
+        return "Unknown CA";
+    case 49U:
+        return "Access Denied";
+    case 50U:
+        return "Decode Error";
+    case 51U:
+        return "Decrypt Error";
+    case 70U:
+        return "Protocol Version";
+    case 71U:
+        return "Insufficient Security";
+    case 80U:
+        return "Internal Error";
+    case 86U:
+        return "Inappropriate Fallback";
+    case 90U:
+        return "User Canceled";
+    case 109U:
+        return "Missing Extension";
+    case 110U:
+        return "Unsupported Extension";
+    case 112U:
+        return "Unrecognized Name";
+    case 116U:
+        return "Certificate Required";
+    case 120U:
+        return "No Application Protocol";
+    default:
+        return nullptr;
+    }
+}
+
 const char* tls_handshake_type_text(const std::uint8_t handshake_type) noexcept {
     switch (handshake_type) {
     case 0U:
@@ -2585,6 +2670,9 @@ std::string tls_stream_label_from_protocol_text(const std::string_view protocol_
     if (contains_text(protocol_text, "Record Type: ChangeCipherSpec")) {
         return "TLS ChangeCipherSpec";
     }
+    if (contains_text(protocol_text, "Record Type: Alert")) {
+        return "TLS Alert";
+    }
     if (contains_text(protocol_text, "Record Type: ApplicationData")) {
         return "TLS AppData";
     }
@@ -2614,6 +2702,8 @@ std::string tls_stream_label(std::span<const std::uint8_t> record_bytes) {
     switch (content_type) {
     case 20U:
         return "TLS ChangeCipherSpec";
+    case 21U:
+        return "TLS Alert";
     case 22U:
         if (record_bytes.size() >= kTlsRecordHeaderSize + 4U) {
             return tls_handshake_stream_label(record_bytes[kTlsRecordHeaderSize]);
@@ -2654,6 +2744,26 @@ std::string tls_record_protocol_text(std::span<const std::uint8_t> record_bytes)
             if (!details_text.empty()) {
                 text << "\n" << details_text;
             }
+        }
+    }
+
+    if (content_type == 21U && record_length >= 2U && record_bytes.size() >= kTlsRecordHeaderSize + 2U) {
+        const auto alert_level = record_bytes[kTlsRecordHeaderSize];
+        const auto alert_description = record_bytes[kTlsRecordHeaderSize + 1U];
+        if (const auto* level_text = tls_alert_level_text(alert_level); level_text != nullptr) {
+            text << "\n"
+                 << "  Alert Level: " << level_text;
+        } else {
+            text << "\n"
+                 << "  Alert Level: " << static_cast<unsigned int>(alert_level);
+        }
+
+        if (const auto* description_text = tls_alert_description_text(alert_description); description_text != nullptr) {
+            text << "\n"
+                 << "  Alert Description: " << description_text;
+        } else {
+            text << "\n"
+                 << "  Alert Description: " << static_cast<unsigned int>(alert_description);
         }
     }
 
@@ -3674,7 +3784,7 @@ bool append_quic_stream_items_for_packet(
             aggregate_result.used_bounded_crypto_assembly = context_result.has_value() && context_result->used_bounded_crypto_assembly;
 
             std::optional<QuicFramePresenceSummary> aggregate_summary = parsed_packet.frame_summary;
-            std::vector<QuicPresentationSemanticType> semantic_items = quic_semantic_item_sequence_from_plaintext(parsed_packet.plaintext_payload_candidate);
+            std::vector<QuicSemanticItemInfo> semantic_items = quic_semantic_items_from_plaintext(parsed_packet.plaintext_payload_candidate);
             if (!aggregate_summary.has_value() || semantic_items.empty()) {
                 const auto plaintext = decrypt_quic_initial_plaintext_for_direction(
                     initial_parser,
@@ -3686,7 +3796,7 @@ bool append_quic_stream_items_for_packet(
                     aggregate_summary = summarize_quic_plaintext_frames(
                         std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
                     );
-                    semantic_items = quic_semantic_item_sequence_from_plaintext(
+                    semantic_items = quic_semantic_items_from_plaintext(
                         std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
                     );
                 }
@@ -3702,16 +3812,16 @@ bool append_quic_stream_items_for_packet(
             );
 
             if (!semantic_items.empty()) {
-                for (const auto semantic_item : semantic_items) {
+                for (const auto& semantic_item : semantic_items) {
                     QuicPresentationResult label_result {};
                     label_result.shell_type = parsed_packet.shell_type;
                     label_result.shell = parsed_packet.shell;
-                    label_result.semantics = {semantic_item};
+                    label_result.semantics = {semantic_item.semantic};
                     rows.push_back(make_stream_item_row(
                         static_cast<std::uint64_t>(rows.size() + 1U),
                         direction_text,
                         quic_stream_label_from_result(label_result),
-                        payload_span.size(),
+                        semantic_item.byte_count > 0U ? semantic_item.byte_count : packet_slice_length,
                         packet,
                         hex_dump_service.format(payload_span),
                         protocol_text.value_or(std::string {})
@@ -3726,7 +3836,7 @@ bool append_quic_stream_items_for_packet(
                     static_cast<std::uint64_t>(rows.size() + 1U),
                     direction_text,
                     quic_stream_label_from_result(aggregate_result),
-                    payload_span.size(),
+                    packet_slice_length,
                     packet,
                     hex_dump_service.format(payload_span),
                     protocol_text.value_or(std::string {})
@@ -3755,7 +3865,7 @@ bool append_quic_stream_items_for_packet(
             static_cast<std::uint64_t>(rows.size() + 1U),
             direction_text,
             quic_stream_label_from_result(result),
-            payload_span.size(),
+            packet_slice_length,
             packet,
             hex_dump_service.format(payload_span),
             protocol_text.value_or(std::string {})

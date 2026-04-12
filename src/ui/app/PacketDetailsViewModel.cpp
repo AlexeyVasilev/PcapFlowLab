@@ -42,40 +42,48 @@ const QString& PacketDetailsViewModel::payloadText() const noexcept {
     return payload_text_;
 }
 
+const QString& PacketDetailsViewModel::payloadTabTitle() const noexcept {
+    return payload_tab_title_;
+}
+
 const QString& PacketDetailsViewModel::protocolText() const noexcept {
     return protocol_text_;
 }
 
 void PacketDetailsViewModel::clear() {
-    emitIfChanged(false, false, QStringLiteral("Packet Details"), {}, {}, {}, {}, {}, {}, {});
+    emitIfChanged(false, false, QStringLiteral("Packet Details"), {}, {}, {}, {}, {}, {}, QStringLiteral("Payload"), {});
 }
 
 void PacketDetailsViewModel::setDetailsTitle(const QString& text) {
-    emitIfChanged(has_packet_, stream_item_details_, text, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, payload_text_, protocol_text_);
+    emitIfChanged(has_packet_, stream_item_details_, text, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, payload_text_, payload_tab_title_, protocol_text_);
 }
 
 void PacketDetailsViewModel::setStreamItemPresentation(const QString& primaryText, const QString& secondaryText, const QString& badgeText) {
-    emitIfChanged(has_packet_, true, details_title_, primaryText, secondaryText, badgeText, summary_text_, hex_text_, payload_text_, protocol_text_);
+    emitIfChanged(has_packet_, true, details_title_, primaryText, secondaryText, badgeText, summary_text_, hex_text_, payload_text_, payload_tab_title_, protocol_text_);
 }
 
 void PacketDetailsViewModel::clearStreamItemPresentation() {
-    emitIfChanged(has_packet_, false, details_title_, {}, {}, {}, summary_text_, hex_text_, payload_text_, protocol_text_);
+    emitIfChanged(has_packet_, false, details_title_, {}, {}, {}, summary_text_, hex_text_, payload_text_, payload_tab_title_, protocol_text_);
 }
 
 void PacketDetailsViewModel::setPacketDetailsText(const QString& text) {
-    emitIfChanged(!text.isEmpty() || !hex_text_.isEmpty() || !payload_text_.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, text, hex_text_, payload_text_, protocol_text_);
+    emitIfChanged(!text.isEmpty() || !hex_text_.isEmpty() || !payload_text_.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, text, hex_text_, payload_text_, payload_tab_title_, protocol_text_);
 }
 
 void PacketDetailsViewModel::setHexText(const QString& text) {
-    emitIfChanged(!summary_text_.isEmpty() || !text.isEmpty() || !payload_text_.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, text, payload_text_, protocol_text_);
+    emitIfChanged(!summary_text_.isEmpty() || !text.isEmpty() || !payload_text_.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, text, payload_text_, payload_tab_title_, protocol_text_);
 }
 
 void PacketDetailsViewModel::setPayloadText(const QString& text) {
-    emitIfChanged(!summary_text_.isEmpty() || !hex_text_.isEmpty() || !text.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, text, protocol_text_);
+    emitIfChanged(!summary_text_.isEmpty() || !hex_text_.isEmpty() || !text.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, text, payload_tab_title_, protocol_text_);
+}
+
+void PacketDetailsViewModel::setPayloadTabTitle(const QString& text) {
+    emitIfChanged(!summary_text_.isEmpty() || !hex_text_.isEmpty() || !payload_text_.isEmpty() || !protocol_text_.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, payload_text_, text, protocol_text_);
 }
 
 void PacketDetailsViewModel::setProtocolText(const QString& text) {
-    emitIfChanged(!summary_text_.isEmpty() || !hex_text_.isEmpty() || !payload_text_.isEmpty() || !text.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, payload_text_, text);
+    emitIfChanged(!summary_text_.isEmpty() || !hex_text_.isEmpty() || !payload_text_.isEmpty() || !text.isEmpty(), stream_item_details_, details_title_, header_primary_text_, header_secondary_text_, badge_text_, summary_text_, hex_text_, payload_text_, payload_tab_title_, text);
 }
 
 void PacketDetailsViewModel::emitIfChanged(const bool newHasPacket,
@@ -87,6 +95,7 @@ void PacketDetailsViewModel::emitIfChanged(const bool newHasPacket,
                                            const QString& newSummaryText,
                                            const QString& newHexText,
                                            const QString& newPayloadText,
+                                           const QString& newPayloadTabTitle,
                                            const QString& newProtocolText) {
     if (has_packet_ == newHasPacket &&
         stream_item_details_ == newStreamItemDetails &&
@@ -97,6 +106,7 @@ void PacketDetailsViewModel::emitIfChanged(const bool newHasPacket,
         summary_text_ == newSummaryText &&
         hex_text_ == newHexText &&
         payload_text_ == newPayloadText &&
+        payload_tab_title_ == newPayloadTabTitle &&
         protocol_text_ == newProtocolText) {
         return;
     }
@@ -110,6 +120,7 @@ void PacketDetailsViewModel::emitIfChanged(const bool newHasPacket,
     summary_text_ = newSummaryText;
     hex_text_ = newHexText;
     payload_text_ = newPayloadText;
+    payload_tab_title_ = newPayloadTabTitle;
     protocol_text_ = newProtocolText;
     emit changed();
 }

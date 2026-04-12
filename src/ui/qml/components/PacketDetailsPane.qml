@@ -55,6 +55,14 @@ Frame {
         return root.packetDetailsModel.badgeText
     }
 
+    function payloadTabTitle() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
+            return "Payload"
+        }
+
+        return root.packetDetailsModel.payloadTabTitle
+    }
+
     function warningBlockText(summary) {
         const marker = "\n\nWarnings\n"
         const start = summary.indexOf(marker)
@@ -203,7 +211,7 @@ Frame {
             }
 
             TabButton {
-                text: "Payload"
+                text: root.payloadTabTitle()
             }
 
             TabButton {
@@ -221,7 +229,7 @@ Frame {
             }
 
             TabButton {
-                text: "Payload"
+                text: root.payloadTabTitle()
             }
 
             TabButton {

@@ -55,6 +55,14 @@ std::vector<std::uint8_t> make_tls_change_cipher_spec_record(const std::uint16_t
     return make_tls_record(0x14U, version, std::vector<std::uint8_t> {0x01U});
 }
 
+std::vector<std::uint8_t> make_tls_alert_record(
+    const std::uint8_t level = 0x01U,
+    const std::uint8_t description = 0x00U,
+    const std::uint16_t version = 0x0303U
+) {
+    return make_tls_record(0x15U, version, std::vector<std::uint8_t> {level, description});
+}
+
 std::vector<std::uint8_t> concat_bytes(
     const std::vector<std::uint8_t>& first,
     const std::vector<std::uint8_t>& second
@@ -549,6 +557,22 @@ void run_stream_query_tests() {
     PFL_EXPECT(tls_ccs_rows[0].label == "TLS ChangeCipherSpec");
     PFL_EXPECT(tls_ccs_rows[0].protocol_text.find("ChangeCipherSpec") != std::string::npos);
 
+    const auto tls_alert_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 43, 0, 3), ipv4(10, 43, 0, 4), 52003, 443, make_tls_alert_record(), 0x18);
+    const auto tls_alert_path = write_temp_pcap(
+        "pfl_stream_query_tls_alert.pcap",
+        make_classic_pcap({{100, tls_alert_packet}})
+    );
+
+    CaptureSession tls_alert_session {};
+    PFL_EXPECT(tls_alert_session.open_capture(tls_alert_path, fast_options));
+    const auto tls_alert_rows = tls_alert_session.list_flow_stream_items(0);
+    PFL_EXPECT(tls_alert_rows.size() == 1U);
+    PFL_EXPECT(tls_alert_rows[0].label == "TLS Alert");
+    PFL_EXPECT(tls_alert_rows[0].protocol_text.find("Record Type: Alert") != std::string::npos);
+    PFL_EXPECT(tls_alert_rows[0].protocol_text.find("Alert Level: Warning") != std::string::npos);
+    PFL_EXPECT(tls_alert_rows[0].protocol_text.find("Alert Description: Close Notify") != std::string::npos);
+
     std::vector<std::uint8_t> incomplete_tls_record {
         0x17U, 0x03U, 0x03U, 0x00U, 0x04U, 0xDEU, 0xADU,
     };
@@ -902,8 +926,10 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 2U);
         PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[0].byte_count == make_quic_crypto_frame_bytes().size());
         PFL_EXPECT(rows[0].protocol_text.find("Frame Presence: CRYPTO") != std::string::npos);
         PFL_EXPECT(rows[1].label == "QUIC Initial: ACK");
+        PFL_EXPECT(rows[1].byte_count == make_quic_ack_frame_bytes().size());
         PFL_EXPECT(rows[1].protocol_text.find("Frame Presence: ACK") != std::string::npos);
     }
 
@@ -1233,6 +1259,5 @@ void run_stream_query_tests() {
 }
 
 }  // namespace pfl::tests
-
 
 

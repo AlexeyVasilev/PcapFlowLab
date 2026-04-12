@@ -76,6 +76,20 @@ std::vector<std::uint8_t> make_tls_client_hello_payload() {
     return payload;
 }
 
+std::vector<std::uint8_t> make_tls_alert_payload(
+    const std::uint8_t level = 0x01U,
+    const std::uint8_t description = 0x00U,
+    const std::uint16_t version = 0x0303U
+) {
+    std::vector<std::uint8_t> payload {};
+    payload.push_back(0x15U);
+    append_be16(payload, version);
+    append_be16(payload, 2U);
+    payload.push_back(level);
+    payload.push_back(description);
+    return payload;
+}
+
 std::vector<std::uint8_t> make_tls_client_hello_handshake_bytes() {
     const std::vector<std::uint8_t> server_name {'s', 't', 'a', 'g', 'e', '1', '.', 'e', 'x', 'a', 'm', 'p', 'l', 'e'};
 
@@ -246,6 +260,24 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(text.find("Selected TLS Version:") != std::string::npos);
         PFL_EXPECT(text.find("Selected Cipher Suite:") != std::string::npos);
         PFL_EXPECT(text.find("Session ID:") != std::string::npos);
+    }
+
+    {
+        const auto packet_bytes = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 0, 0, 11), ipv4(10, 0, 0, 12), 54443, 443, make_tls_alert_payload(), 0x18);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_tls_alert.pcap",
+            make_classic_pcap({{100, packet_bytes}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0);
+        const auto text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(text.find("TLS") != std::string::npos);
+        PFL_EXPECT(text.find("Record Type: Alert") != std::string::npos);
+        PFL_EXPECT(text.find("Alert Level: Warning") != std::string::npos);
+        PFL_EXPECT(text.find("Alert Description: Close Notify") != std::string::npos);
     }
 
     {

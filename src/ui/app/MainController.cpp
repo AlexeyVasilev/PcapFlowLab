@@ -436,6 +436,16 @@ QString buildPayloadText(const PacketDetails& details, const std::string& payloa
     return QStringLiteral("Transport payload not available for this packet");
 }
 
+QString packet_payload_tab_title(const PacketDetails& details) {
+    if (details.has_tcp) {
+        return QStringLiteral("TCP Payload");
+    }
+    if (details.has_udp) {
+        return QStringLiteral("UDP Payload");
+    }
+    return QStringLiteral("Payload");
+}
+
 QString format_stream_source_packets(
     const StreamItemRow& item,
     const std::map<std::uint64_t, std::uint64_t>& flowPacketNumbers
@@ -555,6 +565,33 @@ QString stream_item_header_badge_text(const StreamItemRow& item) {
         return QStringLiteral("Reassembled");
     }
     return {};
+}
+
+bool is_quic_stream_item_label(const QString& label) {
+    return label.startsWith(QStringLiteral("QUIC ")) ||
+           label == QStringLiteral("0-RTT") ||
+           label == QStringLiteral("Handshake") ||
+           label == QStringLiteral("Protected payload");
+}
+
+QString stream_item_payload_tab_title(const StreamItemRow& item) {
+    const auto label = QString::fromStdString(item.label);
+    const auto protocolText = QString::fromStdString(item.protocol_text);
+
+    if (is_quic_stream_item_label(label) || protocolText.startsWith(QStringLiteral("QUIC"))) {
+        return QStringLiteral("UDP Payload");
+    }
+
+    if (label.startsWith(QStringLiteral("TLS ")) ||
+        label.startsWith(QStringLiteral("HTTP ")) ||
+        label == QStringLiteral("HTTP Request") ||
+        label == QStringLiteral("HTTP Response") ||
+        protocolText.startsWith(QStringLiteral("TLS")) ||
+        protocolText.startsWith(QStringLiteral("HTTP"))) {
+        return QStringLiteral("Item Payload");
+    }
+
+    return QStringLiteral("Payload");
 }
 
 QString stream_payload_unavailable_text() {
@@ -3268,6 +3305,7 @@ void MainController::reloadSelectedPacketDetails() {
 
     packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
+    packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
     packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
 }
@@ -3292,6 +3330,7 @@ void MainController::reloadSelectedStreamDetails() {
         stream_item_header_badge_text(*itemIt)
     );
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
+    packet_details_model_.setPayloadTabTitle(stream_item_payload_tab_title(*itemIt));
 
     if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {
         packet_details_model_.setHexText({});

@@ -60,6 +60,76 @@ const char* tls_record_type_text(const std::uint8_t content_type) noexcept {
     }
 }
 
+const char* tls_alert_level_text(const std::uint8_t level) noexcept {
+    switch (level) {
+    case 1U:
+        return "Warning";
+    case 2U:
+        return "Fatal";
+    default:
+        return nullptr;
+    }
+}
+
+const char* tls_alert_description_text(const std::uint8_t description) noexcept {
+    switch (description) {
+    case 0U:
+        return "Close Notify";
+    case 10U:
+        return "Unexpected Message";
+    case 20U:
+        return "Bad Record MAC";
+    case 21U:
+        return "Decryption Failed";
+    case 22U:
+        return "Record Overflow";
+    case 40U:
+        return "Handshake Failure";
+    case 42U:
+        return "Bad Certificate";
+    case 43U:
+        return "Unsupported Certificate";
+    case 44U:
+        return "Certificate Revoked";
+    case 45U:
+        return "Certificate Expired";
+    case 46U:
+        return "Certificate Unknown";
+    case 47U:
+        return "Illegal Parameter";
+    case 48U:
+        return "Unknown CA";
+    case 49U:
+        return "Access Denied";
+    case 50U:
+        return "Decode Error";
+    case 51U:
+        return "Decrypt Error";
+    case 70U:
+        return "Protocol Version";
+    case 71U:
+        return "Insufficient Security";
+    case 80U:
+        return "Internal Error";
+    case 86U:
+        return "Inappropriate Fallback";
+    case 90U:
+        return "User Canceled";
+    case 109U:
+        return "Missing Extension";
+    case 110U:
+        return "Unsupported Extension";
+    case 112U:
+        return "Unrecognized Name";
+    case 116U:
+        return "Certificate Required";
+    case 120U:
+        return "No Application Protocol";
+    default:
+        return nullptr;
+    }
+}
+
 std::string tls_version_text(const std::uint16_t version) {
     switch (version) {
     case 0x0301U:
@@ -120,9 +190,29 @@ std::optional<std::string> TlsPacketProtocolAnalyzer::analyze(std::span<const st
         }
     }
 
+    if (content_type == 0x15U && record_length >= 2U) {
+        const auto alert_level = payload[kTlsRecordHeaderSize];
+        const auto alert_description = payload[kTlsRecordHeaderSize + 1U];
+
+        if (const auto* level_text = tls_alert_level_text(alert_level); level_text != nullptr) {
+            text << "\n"
+                 << "  Alert Level: " << level_text;
+        } else {
+            text << "\n"
+                 << "  Alert Level: " << static_cast<unsigned int>(alert_level);
+        }
+
+        if (const auto* description_text = tls_alert_description_text(alert_description); description_text != nullptr) {
+            text << "\n"
+                 << "  Alert Description: " << description_text;
+        } else {
+            text << "\n"
+                 << "  Alert Description: " << static_cast<unsigned int>(alert_description);
+        }
+    }
+
     return text.str();
 }
 
 }  // namespace pfl
-
 
