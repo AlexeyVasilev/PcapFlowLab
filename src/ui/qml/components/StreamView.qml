@@ -90,9 +90,9 @@ Frame {
 
                 Label {
                     Layout.fillWidth: true
-                    color: "#64748b"
+                    color: "#6b7280"
                     text: root.streamLoading
-                        ? "Loading stream..."
+                        ? "Building stream view..."
                         : root.streamPartiallyLoaded
                             ? (root.totalStreamItemCount > 0
                                 ? "Showing %1 of %2 stream items".arg(root.loadedStreamItemCount).arg(root.totalStreamItemCount)
@@ -103,15 +103,15 @@ Frame {
                 Label {
                     Layout.fillWidth: true
                     visible: root.streamPacketWindowPartial && !root.streamLoading
-                    color: "#7c5a10"
-                    text: "Showing stream for first %1 packets".arg(root.streamPacketWindowCount)
+                    color: "#8a6a12"
+                    text: "Built from the first %1 packets".arg(root.streamPacketWindowCount)
                 }
 
                 Label {
                     Layout.fillWidth: true
                     visible: root.canLoadMoreStreamItems && !root.streamLoading
-                    color: "#64748b"
-                    text: "Load more packets to continue analysis"
+                    color: "#6b7280"
+                    text: "Load more packets to extend the stream view"
                 }
             }
 
@@ -254,7 +254,7 @@ Frame {
                 anchors.centerIn: parent
                 visible: !root.streamLoading && streamListView.count === 0
                 color: "#64748b"
-                text: "No payload-bearing stream items for selected flow"
+                text: "No stream items available for this flow"
             }
         }
     }

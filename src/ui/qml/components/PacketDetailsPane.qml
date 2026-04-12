@@ -20,7 +20,7 @@ Frame {
     }
 
     function emptyText() {
-        return "No details selected"
+        return "Select a packet or stream item to inspect details"
     }
 
     function summaryText() {
@@ -201,21 +201,106 @@ Frame {
             id: packetTabs
             Layout.fillWidth: true
             visible: !root.isStreamItemDetails()
+            spacing: 6
+
+            background: Rectangle {
+                color: "transparent"
+            }
 
             TabButton {
                 text: "Summary"
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: "Raw"
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: root.payloadTabTitle()
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: "Protocol"
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
         }
 
@@ -223,17 +308,82 @@ Frame {
             id: streamTabs
             Layout.fillWidth: true
             visible: root.isStreamItemDetails()
+            spacing: 6
+
+            background: Rectangle {
+                color: "transparent"
+            }
 
             TabButton {
                 text: "Summary"
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: root.payloadTabTitle()
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: "Protocol"
+                implicitHeight: 34
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 12
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
         }
 

@@ -91,13 +91,58 @@ Item {
                         id: flowDetailTabs
                         Layout.fillWidth: true
                         onCurrentIndexChanged: root.flowDetailsTabChanged(currentIndex)
+                        spacing: 6
+
+                        background: Rectangle {
+                            color: "transparent"
+                        }
 
                         TabButton {
                             text: "Packets"
+                            implicitHeight: 34
+
+                            contentItem: Label {
+                                text: parent.text
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 12
+                                font.bold: parent.checked
+                                color: parent.checked ? "#0f172a" : "#64748b"
+                            }
+
+                            background: Rectangle {
+                                radius: 6
+                                color: parent.checked
+                                    ? "#ffffff"
+                                    : parent.hovered
+                                        ? "#f8fafc"
+                                        : "#f1f5f9"
+                                border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                            }
                         }
 
                         TabButton {
                             text: "Stream"
+                            implicitHeight: 34
+
+                            contentItem: Label {
+                                text: parent.text
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 12
+                                font.bold: parent.checked
+                                color: parent.checked ? "#0f172a" : "#64748b"
+                            }
+
+                            background: Rectangle {
+                                radius: 6
+                                color: parent.checked
+                                    ? "#ffffff"
+                                    : parent.hovered
+                                        ? "#f8fafc"
+                                        : "#f1f5f9"
+                                border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                            }
                         }
                     }
 

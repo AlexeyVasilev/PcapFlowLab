@@ -318,7 +318,7 @@ ApplicationWindow {
                         Label {
                             text: "Active session:"
                             color: "#64748b"
-                            font.bold: true
+                            font.pixelSize: 12
                         }
 
                         Item {
@@ -359,7 +359,7 @@ ApplicationWindow {
                         Label {
                             text: "Source PCAP:"
                             color: "#64748b"
-                            font.bold: true
+                            font.pixelSize: 12
                         }
 
                         Item {
@@ -398,7 +398,7 @@ ApplicationWindow {
                         Label {
                             text: "Expected source path:"
                             color: "#64748b"
-                            font.bold: true
+                            font.pixelSize: 12
                         }
 
                         Item {
@@ -446,7 +446,7 @@ ApplicationWindow {
 
                 Label {
                     Layout.fillWidth: true
-                    text: "Opened from analysis index. Raw packet data is unavailable until the original capture is attached."
+                    text: "Opened from index only. Attach the original capture to inspect raw packets and byte-backed details."
                     color: "#92400e"
                     wrapMode: Text.WordWrap
                 }
@@ -504,7 +504,7 @@ ApplicationWindow {
             selectByKeyboard: true
             cursorVisible: false
             text: mainController.statusText
-            color: mainController.statusIsError ? "#b91c1c" : "#1f2937"
+            color: mainController.statusIsError ? "#b91c1c" : "#475569"
             wrapMode: TextEdit.Wrap
             textFormat: TextEdit.PlainText
             Layout.preferredHeight: contentHeight
@@ -531,7 +531,7 @@ ApplicationWindow {
                     Label {
                         text: mainController.openingAsIndex ? "Opening index:" : "Opening capture:"
                         color: "#64748b"
-                        font.bold: true
+                        font.pixelSize: 12
                     }
 
                     Item {
@@ -563,7 +563,7 @@ ApplicationWindow {
                 Label {
                     Layout.fillWidth: true
                     text: mainController.openProgressProcessedText
-                    color: "#334155"
+                    color: "#64748b"
                     elide: Text.ElideRight
                     maximumLineCount: 1
                 }
@@ -594,17 +594,82 @@ ApplicationWindow {
             Layout.fillWidth: true
             currentIndex: mainController.currentTabIndex < 3 ? mainController.currentTabIndex : 0
             onCurrentIndexChanged: mainController.currentTabIndex = currentIndex
+            spacing: 6
+
+            background: Rectangle {
+                color: "transparent"
+            }
 
             TabButton {
                 text: "Flows"
+                implicitHeight: 36
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 13
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: "Analysis"
+                implicitHeight: 36
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 13
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
 
             TabButton {
                 text: "Statistics"
+                implicitHeight: 36
+
+                contentItem: Label {
+                    text: parent.text
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    font.pixelSize: 13
+                    font.bold: parent.checked
+                    color: parent.checked ? "#0f172a" : "#64748b"
+                }
+
+                background: Rectangle {
+                    radius: 6
+                    color: parent.checked
+                        ? "#ffffff"
+                        : parent.hovered
+                            ? "#f8fafc"
+                            : "#f1f5f9"
+                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                }
             }
         }
 

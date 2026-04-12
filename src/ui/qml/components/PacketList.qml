@@ -181,9 +181,9 @@ Frame {
 
             Label {
                 Layout.fillWidth: true
-                color: "#64748b"
+                color: "#6b7280"
                 text: root.packetsLoading
-                    ? "Loading packets..."
+                    ? "Loading packet list..."
                     : root.packetsPartiallyLoaded
                         ? "Showing %1 of %2 packets".arg(root.loadedPacketRowCount).arg(root.totalPacketRowCount)
                         : "Showing all %1 packets".arg(root.totalPacketRowCount)
@@ -431,7 +431,7 @@ Frame {
                 anchors.centerIn: parent
                 visible: !root.packetsLoading && packetListView.count === 0
                 color: "#64748b"
-                text: "No packets for selected flow"
+                text: "Select a flow to inspect packets"
             }
         }
     }
