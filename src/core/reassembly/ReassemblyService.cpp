@@ -157,18 +157,33 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
             continue;
         }
 
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(request.flow_index, packet.packet_index);
+        if (trim_prefix_bytes >= payload.size()) {
+            set_flag(result, ReassemblyQualityFlag::duplicate_tcp_segment_suppressed);
+            continue;
+        }
+
         const auto remaining_budget = request.max_bytes - std::min(request.max_bytes, result.bytes.size());
         if (remaining_budget == 0U) {
             set_flag(result, ReassemblyQualityFlag::truncated_by_byte_budget);
             break;
         }
 
-        const auto appended_bytes = std::min(remaining_budget, payload.size());
-        result.bytes.insert(result.bytes.end(), payload.begin(), payload.begin() + static_cast<std::ptrdiff_t>(appended_bytes));
+        const auto contributed_payload_size = payload.size() - trim_prefix_bytes;
+        const auto appended_bytes = std::min(remaining_budget, contributed_payload_size);
+        result.bytes.insert(
+            result.bytes.end(),
+            payload.begin() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload.begin() + static_cast<std::ptrdiff_t>(trim_prefix_bytes + appended_bytes)
+        );
         result.packet_indices.push_back(packet.packet_index);
         ++result.payload_packets_used;
 
-        if (appended_bytes < payload.size()) {
+        if (trim_prefix_bytes > 0U) {
+            set_flag(result, ReassemblyQualityFlag::duplicate_tcp_segment_suppressed);
+        }
+
+        if (appended_bytes < contributed_payload_size) {
             set_flag(result, ReassemblyQualityFlag::truncated_by_byte_budget);
             break;
         }
@@ -178,4 +193,3 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
 }
 
 }  // namespace pfl
-

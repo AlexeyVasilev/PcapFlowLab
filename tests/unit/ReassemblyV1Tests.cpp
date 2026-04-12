@@ -112,6 +112,20 @@ std::filesystem::path write_similar_tcp_segment_capture() {
     );
 }
 
+std::filesystem::path write_partially_overlapping_tcp_segment_capture() {
+    const auto packet0 = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 4, 2, 1), ipv4(10, 4, 2, 2), 43002, 443, std::vector<std::uint8_t> {'A', 'B', 'C', 'D', 'E'}, 1000U, 2000U, 0x18);
+    const auto packet1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 4, 2, 1), ipv4(10, 4, 2, 2), 43002, 443, std::vector<std::uint8_t> {'C', 'D', 'E', 'F', 'G'}, 1002U, 2000U, 0x18);
+    return write_temp_pcap(
+        "pfl_reassembly_v1_partial_overlap_segment.pcap",
+        make_classic_pcap({
+            {100, packet0},
+            {200, packet1},
+        })
+    );
+}
+
 }  // namespace
 
 void run_reassembly_v1_tests() {
@@ -300,6 +314,31 @@ void run_reassembly_v1_tests() {
         PFL_EXPECT(result->bytes == expected_bytes);
         PFL_EXPECT(result->packet_indices == expected_packet_indices);
         PFL_EXPECT(!has_flag(*result, ReassemblyQualityFlag::duplicate_tcp_segment_suppressed));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(write_partially_overlapping_tcp_segment_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto direction = direction_for_packet(session, 0, 0);
+        const auto suppressed_packet_indices = session.suspected_tcp_retransmission_packet_indices(0);
+        const auto expected_bytes = std::vector<std::uint8_t> {'A', 'B', 'C', 'D', 'E', 'F', 'G'};
+        const auto expected_packet_indices = std::vector<std::uint64_t> {0U, 1U};
+        PFL_EXPECT(suppressed_packet_indices.empty());
+        session.set_selected_flow_tcp_payload_suppression(0U, suppressed_packet_indices);
+
+        const auto result = session.reassemble_flow_direction(ReassemblyRequest {
+            .flow_index = 0,
+            .direction = direction,
+            .max_packets = 16,
+            .max_bytes = 1024,
+        });
+
+        PFL_EXPECT(result.has_value());
+        PFL_EXPECT(result->bytes == expected_bytes);
+        PFL_EXPECT(result->packet_indices == expected_packet_indices);
+        PFL_EXPECT(result->payload_packets_used == 2U);
+        PFL_EXPECT(result->total_packets_seen == 2U);
+        PFL_EXPECT(has_flag(*result, ReassemblyQualityFlag::duplicate_tcp_segment_suppressed));
     }
 }
 

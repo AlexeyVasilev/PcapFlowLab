@@ -472,6 +472,27 @@ struct SeenTcpPayloadCandidate {
     std::vector<std::uint8_t> payload_bytes {};
 };
 
+struct DecodedTcpPayloadPacket {
+    PacketRef packet {};
+    std::uint64_t sequence_number {0};
+    std::uint32_t acknowledgement_number {0};
+    std::vector<std::uint8_t> payload_bytes {};
+};
+
+struct TcpContributionTracker {
+    bool has_contiguous_stream {false};
+    bool overlap_tracking_enabled {true};
+    std::uint64_t base_sequence {0};
+    std::uint64_t next_sequence {0};
+    std::uint32_t last_acknowledgement_number {0};
+    std::vector<std::uint8_t> contiguous_bytes {};
+};
+
+struct TcpPayloadContributionCandidate {
+    bool suppress_entire_packet {false};
+    std::size_t trim_prefix_bytes {0};
+};
+
 std::uint64_t stable_payload_hash(std::span<const std::uint8_t> payload) noexcept {
     constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
     constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
@@ -483,6 +504,139 @@ std::uint64_t stable_payload_hash(std::span<const std::uint8_t> payload) noexcep
     }
 
     return hash;
+}
+
+std::optional<DecodedTcpPayloadPacket> decode_tcp_payload_packet(
+    const CaptureSession& session,
+    const PacketRef& packet,
+    PacketDetailsService& details_service,
+    PacketPayloadService& payload_service
+) {
+    if (packet.payload_length == 0U) {
+        return std::nullopt;
+    }
+
+    const auto packet_bytes = session.read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    const auto details = details_service.decode(packet_bytes, packet);
+    if (!details.has_value() || !details->has_tcp) {
+        return std::nullopt;
+    }
+
+    auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    if (payload_bytes.size() != packet.payload_length || payload_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    return DecodedTcpPayloadPacket {
+        .packet = packet,
+        .sequence_number = details->tcp.seq_number,
+        .acknowledgement_number = details->tcp.ack_number,
+        .payload_bytes = std::move(payload_bytes),
+    };
+}
+
+template <typename PacketList>
+std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp_payload_suppression_for_direction(
+    const CaptureSession& session,
+    const PacketList& packets,
+    const std::set<std::uint64_t>& exact_duplicate_packet_indices
+) {
+    std::map<std::uint64_t, TcpPayloadContributionCandidate> contributions {};
+    PacketDetailsService details_service {};
+    PacketPayloadService payload_service {};
+    TcpContributionTracker tracker {};
+
+    for (const auto& packet : packets) {
+        const auto decoded = decode_tcp_payload_packet(session, packet, details_service, payload_service);
+        if (!decoded.has_value()) {
+            continue;
+        }
+
+        if (exact_duplicate_packet_indices.contains(packet.packet_index)) {
+            contributions[packet.packet_index].suppress_entire_packet = true;
+            continue;
+        }
+
+        const auto payload_size = decoded->payload_bytes.size();
+        const auto sequence_start = decoded->sequence_number;
+        const auto sequence_end = sequence_start + payload_size;
+
+        if (!tracker.has_contiguous_stream) {
+            tracker.has_contiguous_stream = true;
+            tracker.base_sequence = sequence_start;
+            tracker.next_sequence = sequence_end;
+            tracker.last_acknowledgement_number = decoded->acknowledgement_number;
+            tracker.contiguous_bytes = decoded->payload_bytes;
+            continue;
+        }
+
+        if (!tracker.overlap_tracking_enabled) {
+            continue;
+        }
+
+        if (sequence_start == tracker.next_sequence) {
+            tracker.next_sequence = sequence_end;
+            tracker.last_acknowledgement_number = decoded->acknowledgement_number;
+            tracker.contiguous_bytes.insert(
+                tracker.contiguous_bytes.end(),
+                decoded->payload_bytes.begin(),
+                decoded->payload_bytes.end()
+            );
+            continue;
+        }
+
+        if (sequence_start > tracker.next_sequence || sequence_start < tracker.base_sequence) {
+            tracker.overlap_tracking_enabled = false;
+            continue;
+        }
+
+        if (decoded->acknowledgement_number != tracker.last_acknowledgement_number) {
+            tracker.overlap_tracking_enabled = false;
+            continue;
+        }
+
+        const auto overlap_bytes = tracker.next_sequence - sequence_start;
+        if (overlap_bytes == 0U || overlap_bytes > payload_size) {
+            tracker.overlap_tracking_enabled = false;
+            continue;
+        }
+
+        const auto start_offset = static_cast<std::size_t>(sequence_start - tracker.base_sequence);
+        if (start_offset > tracker.contiguous_bytes.size() || overlap_bytes > tracker.contiguous_bytes.size() - start_offset) {
+            tracker.overlap_tracking_enabled = false;
+            continue;
+        }
+
+        const auto overlap_size = static_cast<std::size_t>(overlap_bytes);
+        if (!std::equal(
+                decoded->payload_bytes.begin(),
+                decoded->payload_bytes.begin() + static_cast<std::ptrdiff_t>(overlap_size),
+                tracker.contiguous_bytes.begin() + static_cast<std::ptrdiff_t>(start_offset))) {
+            tracker.overlap_tracking_enabled = false;
+            continue;
+        }
+
+        auto& contribution = contributions[packet.packet_index];
+        if (overlap_size >= payload_size) {
+            contribution.suppress_entire_packet = true;
+            continue;
+        }
+
+        contribution.trim_prefix_bytes = overlap_size;
+        tracker.next_sequence = sequence_end;
+        tracker.last_acknowledgement_number = decoded->acknowledgement_number;
+        tracker.contiguous_bytes.insert(
+            tracker.contiguous_bytes.end(),
+            decoded->payload_bytes.begin() + static_cast<std::ptrdiff_t>(overlap_size),
+            decoded->payload_bytes.end()
+        );
+    }
+
+    return contributions;
 }
 
 PacketRow make_packet_row(const PacketRef& packet, const std::string_view direction_text) {
@@ -2884,6 +3038,7 @@ struct ReassembledPayloadChunk {
 
 std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_chunks(
     const CaptureSession& session,
+    const std::size_t flow_index,
     const ReassemblyResult& result
 ) {
     std::vector<ReassembledPayloadChunk> chunks {};
@@ -2912,8 +3067,14 @@ std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_ch
             return std::nullopt;
         }
 
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
         const auto remaining_bytes = result.bytes.size() - consumed_bytes;
-        const auto chunk_size = std::min<std::size_t>(payload_bytes.size(), remaining_bytes);
+        const auto contributed_bytes = payload_bytes.size() - trim_prefix_bytes;
+        const auto chunk_size = std::min<std::size_t>(contributed_bytes, remaining_bytes);
         if (chunk_size == 0U) {
             continue;
         }
@@ -3483,7 +3644,7 @@ bool append_http_stream_items_from_reassembly(
 
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
     const auto payload_text = bytes_as_text(payload_bytes);
-    const auto chunks = build_reassembled_payload_chunks(session, *result);
+    const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
     if (!chunks.has_value() || chunks->empty()) {
         return false;
     }
@@ -3579,7 +3740,7 @@ bool append_tls_stream_items_from_reassembly(
         return false;
     }
 
-    const auto chunks = build_reassembled_payload_chunks(session, *result);
+    const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
     if (!chunks.has_value() || chunks->empty()) {
         return false;
     }
@@ -3932,15 +4093,26 @@ void append_connection_stream_items_bounded(
             continue;
         }
 
+        const auto trim_prefix_bytes = flow_protocol == ProtocolId::tcp
+            ? session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index)
+            : 0U;
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
         const auto candidate = StreamPacketCandidate {
             .packet = packet,
             .direction_text = direction_text,
             .protocol = flow_protocol,
         };
 
-        const auto payload_span = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+        const auto payload_span = std::span<const std::uint8_t>(
+            payload_bytes.data() + static_cast<std::ptrdiff_t>(trim_prefix_bytes),
+            payload_bytes.size() - trim_prefix_bytes
+        );
+        const bool trimmed_tcp_payload = flow_protocol == ProtocolId::tcp && trim_prefix_bytes > 0U;
 
-        if (flow_protocol == ProtocolId::tcp) {
+        if (flow_protocol == ProtocolId::tcp && !trimmed_tcp_payload) {
             if (append_tls_stream_items(rows, candidate, payload_span)) {
                 continue;
             }
@@ -3986,12 +4158,14 @@ void append_connection_stream_items_bounded(
             }
         }
 
-        const auto label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol, deep_protocol_details_enabled);
+        const auto label = trimmed_tcp_payload
+            ? fallback_stream_label(flow_protocol)
+            : classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol, deep_protocol_details_enabled);
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
             direction_text,
             label,
-            payload_bytes.size(),
+            payload_span.size(),
             packet
         ));
     }
@@ -4056,38 +4230,24 @@ std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
     PacketPayloadService payload_service {};
 
     auto maybe_mark_packet = [&](const PacketRef& packet, const std::uint8_t direction_id) {
-        if (packet.payload_length == 0U) {
+        const auto decoded = decode_tcp_payload_packet(session, packet, details_service, payload_service);
+        if (!decoded.has_value()) {
             return;
         }
 
-        const auto packet_bytes = session.read_packet_data(packet);
-        if (packet_bytes.empty()) {
-            return;
-        }
-
-        const auto details = details_service.decode(packet_bytes, packet);
-        if (!details.has_value() || !details->has_tcp) {
-            return;
-        }
-
-        auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-        if (payload_bytes.size() != packet.payload_length) {
-            return;
-        }
-
-        const auto payload_hash = stable_payload_hash(payload_bytes);
+        const auto payload_hash = stable_payload_hash(decoded->payload_bytes);
 
         auto fingerprint = SuspectedTcpRetransmissionFingerprint {
             direction_id,
-            details->tcp.seq_number,
-            details->tcp.ack_number,
+            static_cast<std::uint32_t>(decoded->sequence_number),
+            decoded->acknowledgement_number,
             packet.payload_length,
             payload_hash,
         };
 
         auto& candidates = seen_fingerprints[fingerprint];
         for (const auto& candidate : candidates) {
-            if (candidate.payload_bytes == payload_bytes) {
+            if (candidate.payload_bytes == decoded->payload_bytes) {
                 suspected_packet_indices.push_back(packet.packet_index);
                 return;
             }
@@ -4095,7 +4255,7 @@ std::vector<std::uint64_t> collect_suspected_tcp_retransmission_packet_indices(
 
         candidates.push_back(SeenTcpPayloadCandidate {
             .packet_index = packet.packet_index,
-            .payload_bytes = std::move(payload_bytes),
+            .payload_bytes = decoded->payload_bytes,
         });
     };
     std::size_t index_a = 0U;
@@ -5108,14 +5268,44 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
     const std::size_t flow_index,
     const std::vector<std::uint64_t>& packet_indices
 ) noexcept {
-    if (packet_indices.empty()) {
+    const auto connections = list_connections(state_);
+    if (flow_index >= connections.size()) {
+        selected_flow_tcp_payload_suppression_.reset();
+        return;
+    }
+
+    const auto& connection = connections[flow_index];
+    if (protocol_id(connection) != ProtocolId::tcp) {
+        selected_flow_tcp_payload_suppression_.reset();
+        return;
+    }
+
+    const std::set<std::uint64_t> exact_duplicate_packet_indices(packet_indices.begin(), packet_indices.end());
+    auto packet_contributions = connection.family == FlowAddressFamily::ipv4
+        ? build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv4->flow_a.packets, exact_duplicate_packet_indices)
+        : build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv6->flow_a.packets, exact_duplicate_packet_indices);
+
+    const auto direction_b_contributions = connection.family == FlowAddressFamily::ipv4
+        ? build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv4->flow_b.packets, exact_duplicate_packet_indices)
+        : build_selected_flow_tcp_payload_suppression_for_direction(*this, connection.ipv6->flow_b.packets, exact_duplicate_packet_indices);
+
+    for (const auto& [packet_index, contribution] : direction_b_contributions) {
+        packet_contributions[packet_index] = contribution;
+    }
+
+    if (packet_contributions.empty()) {
         selected_flow_tcp_payload_suppression_.reset();
         return;
     }
 
     SelectedFlowTcpPayloadSuppression suppression {};
     suppression.flow_index = flow_index;
-    suppression.packet_indices.insert(packet_indices.begin(), packet_indices.end());
+    for (const auto& [packet_index, contribution] : packet_contributions) {
+        suppression.packet_contributions.insert_or_assign(packet_index, SelectedFlowTcpPayloadContribution {
+            .suppress_entire_packet = contribution.suppress_entire_packet,
+            .trim_prefix_bytes = contribution.trim_prefix_bytes,
+        });
+    }
     selected_flow_tcp_payload_suppression_ = std::move(suppression);
 }
 
@@ -5127,9 +5317,26 @@ bool CaptureSession::should_suppress_selected_flow_tcp_payload(
     const std::size_t flow_index,
     const std::uint64_t packet_index
 ) const noexcept {
-    return selected_flow_tcp_payload_suppression_.has_value()
-        && selected_flow_tcp_payload_suppression_->flow_index == flow_index
-        && selected_flow_tcp_payload_suppression_->packet_indices.contains(packet_index);
+    if (!selected_flow_tcp_payload_suppression_.has_value() || selected_flow_tcp_payload_suppression_->flow_index != flow_index) {
+        return false;
+    }
+
+    const auto it = selected_flow_tcp_payload_suppression_->packet_contributions.find(packet_index);
+    return it != selected_flow_tcp_payload_suppression_->packet_contributions.end() && it->second.suppress_entire_packet;
+}
+
+std::size_t CaptureSession::selected_flow_tcp_payload_trim_prefix_bytes(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const noexcept {
+    if (!selected_flow_tcp_payload_suppression_.has_value() || selected_flow_tcp_payload_suppression_->flow_index != flow_index) {
+        return 0U;
+    }
+
+    const auto it = selected_flow_tcp_payload_suppression_->packet_contributions.find(packet_index);
+    return it == selected_flow_tcp_payload_suppression_->packet_contributions.end()
+        ? 0U
+        : it->second.trim_prefix_bytes;
 }
 
 std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) const noexcept {

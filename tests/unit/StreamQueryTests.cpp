@@ -239,6 +239,12 @@ const StreamItemRow* find_stream_row_by_label(const std::vector<StreamItemRow>& 
     return it == rows.end() ? nullptr : &(*it);
 }
 
+std::size_t count_stream_rows_by_label(const std::vector<StreamItemRow>& rows, const std::string_view label) {
+    return static_cast<std::size_t>(std::count_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
+        return row.label == label;
+    }));
+}
+
 }  // namespace
 
 void run_stream_query_tests() {
@@ -325,6 +331,32 @@ void run_stream_query_tests() {
     PFL_EXPECT(similar_segment_rows.size() == 2U);
     PFL_EXPECT(similar_segment_rows[0].packet_indices == std::vector<std::uint64_t> {0U});
     PFL_EXPECT(similar_segment_rows[1].packet_indices == std::vector<std::uint64_t> {1U});
+
+    const auto partial_overlap_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 40, 3, 1), ipv4(10, 40, 3, 2), 51003, 443, std::vector<std::uint8_t> {'A', 'B', 'C', 'D', 'E'}, 1000U, 2000U, 0x18);
+    const auto partial_overlap_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 40, 3, 1), ipv4(10, 40, 3, 2), 51003, 443, std::vector<std::uint8_t> {'C', 'D', 'E', 'F', 'G'}, 1002U, 2000U, 0x18);
+    const auto partial_overlap_path = write_temp_pcap(
+        "pfl_stream_query_partial_overlap_segment.pcap",
+        make_classic_pcap({
+            {100, partial_overlap_packet_a},
+            {200, partial_overlap_packet_b},
+        })
+    );
+
+    CaptureSession partial_overlap_session {};
+    PFL_EXPECT(partial_overlap_session.open_capture(partial_overlap_path));
+    const auto partial_overlap_suppressed_packet_indices = partial_overlap_session.suspected_tcp_retransmission_packet_indices(0);
+    PFL_EXPECT(partial_overlap_suppressed_packet_indices.empty());
+    partial_overlap_session.set_selected_flow_tcp_payload_suppression(0U, partial_overlap_suppressed_packet_indices);
+    const auto partial_overlap_rows = partial_overlap_session.list_flow_stream_items(0);
+    PFL_EXPECT(partial_overlap_rows.size() == 2U);
+    PFL_EXPECT(partial_overlap_rows[0].label == "TCP Payload");
+    PFL_EXPECT(partial_overlap_rows[0].byte_count == 5U);
+    PFL_EXPECT(partial_overlap_rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+    PFL_EXPECT(partial_overlap_rows[1].label == "TCP Payload");
+    PFL_EXPECT(partial_overlap_rows[1].byte_count == 2U);
+    PFL_EXPECT(partial_overlap_rows[1].packet_indices == std::vector<std::uint64_t> {1U});
 
     const auto dns_payload = std::vector<std::uint8_t> {
         0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
@@ -1228,6 +1260,10 @@ void run_stream_query_tests() {
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS Certificate") != nullptr);
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerKeyExchange") != nullptr);
         PFL_EXPECT(find_stream_row_by_label(rows, "TLS ServerHelloDone") != nullptr);
+        PFL_EXPECT(count_stream_rows_by_label(rows, "TLS ServerHello") == 1U);
+        PFL_EXPECT(count_stream_rows_by_label(rows, "TLS Certificate") == 1U);
+        PFL_EXPECT(count_stream_rows_by_label(rows, "TLS ServerKeyExchange") == 1U);
+        PFL_EXPECT(count_stream_rows_by_label(rows, "TLS ServerHelloDone") == 1U);
         const auto* certificate = find_stream_row_by_label(rows, "TLS Certificate");
         PFL_EXPECT(certificate != nullptr);
         PFL_EXPECT(certificate->protocol_text.find("Certificate Entries:") != std::string::npos);
@@ -1259,5 +1295,4 @@ void run_stream_query_tests() {
 }
 
 }  // namespace pfl::tests
-
 

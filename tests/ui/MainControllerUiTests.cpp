@@ -1922,18 +1922,26 @@ int main(int argc, char* argv[]) {
     auto* retransmit_flow_model = qobject_cast<FlowListModel*>(retransmit_controller.flowModel());
     UI_EXPECT(retransmit_flow_model != nullptr);
     UI_EXPECT(retransmit_flow_model->rowCount() == 2);
+    retransmit_controller.setFlowDetailsTabIndex(1);
 
     retransmit_controller.setSelectedFlowIndex(retransmit_flow_model->data(retransmit_flow_model->index(0, 0), FlowListModel::FlowIndexRole).toInt());
     auto* retransmit_packet_model = qobject_cast<PacketListModel*>(retransmit_controller.packetModel());
+    auto* retransmit_stream_model = qobject_cast<StreamListModel*>(retransmit_controller.streamModel());
     UI_EXPECT(retransmit_packet_model != nullptr);
+    UI_EXPECT(retransmit_stream_model != nullptr);
     UI_EXPECT(retransmit_packet_model->rowCount() == 2);
     UI_EXPECT(!retransmit_packet_model->data(retransmit_packet_model->index(0, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
     UI_EXPECT(retransmit_packet_model->data(retransmit_packet_model->index(1, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
+    UI_EXPECT(retransmit_stream_model->rowCount() == 1);
+    UI_EXPECT(retransmit_stream_model->data(retransmit_stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TCP Payload"));
+    UI_EXPECT(retransmit_stream_model->data(retransmit_stream_model->index(0, 0), StreamListModel::PacketCountRole).toUInt() == 1U);
+    UI_EXPECT(retransmit_stream_model->data(retransmit_stream_model->index(0, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #1"));
 
     retransmit_controller.setSelectedFlowIndex(retransmit_flow_model->data(retransmit_flow_model->index(1, 0), FlowListModel::FlowIndexRole).toInt());
     UI_EXPECT(retransmit_packet_model->rowCount() == 2);
     UI_EXPECT(!retransmit_packet_model->data(retransmit_packet_model->index(0, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
     UI_EXPECT(!retransmit_packet_model->data(retransmit_packet_model->index(1, 0), PacketListModel::SuspectedTcpRetransmissionRole).toBool());
+    UI_EXPECT(retransmit_stream_model->rowCount() == 2);
 
     controller.setSelectedPacketIndex(0);
     auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());

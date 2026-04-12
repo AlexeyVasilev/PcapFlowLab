@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -71,6 +72,7 @@ public:
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices) noexcept;
     void clear_selected_flow_tcp_payload_suppression() noexcept;
     [[nodiscard]] bool should_suppress_selected_flow_tcp_payload(std::size_t flow_index, std::uint64_t packet_index) const noexcept;
+    [[nodiscard]] std::size_t selected_flow_tcp_payload_trim_prefix_bytes(std::size_t flow_index, std::uint64_t packet_index) const noexcept;
     [[nodiscard]] std::size_t flow_packet_count(std::size_t flow_index) const noexcept;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index) const;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
@@ -84,9 +86,14 @@ public:
     [[nodiscard]] const CaptureState& state() const noexcept;
 
 private:
+    struct SelectedFlowTcpPayloadContribution {
+        bool suppress_entire_packet {false};
+        std::size_t trim_prefix_bytes {0};
+    };
+
     struct SelectedFlowTcpPayloadSuppression {
         std::size_t flow_index {0};
-        std::set<std::uint64_t> packet_indices {};
+        std::map<std::uint64_t, SelectedFlowTcpPayloadContribution> packet_contributions {};
     };
 
     void reset_runtime_state() noexcept;
