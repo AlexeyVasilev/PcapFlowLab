@@ -154,12 +154,12 @@ ApplicationWindow {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 12
+        spacing: 10
         anchors.margins: 16
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 10
 
             Button {
                 id: openCaptureButton
@@ -308,8 +308,8 @@ ApplicationWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 6
+                    anchors.margins: 8
+                    spacing: 4
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -336,6 +336,7 @@ ApplicationWindow {
                                 color: "#0f172a"
                                 elide: Text.ElideMiddle
                                 verticalAlignment: Text.AlignVCenter
+                                maximumLineCount: 1
                             }
 
                             MouseArea {
@@ -374,6 +375,7 @@ ApplicationWindow {
                                 color: mainController.hasSourceCapture ? "#0f172a" : "#b45309"
                                 elide: Text.ElideMiddle
                                 verticalAlignment: Text.AlignVCenter
+                                maximumLineCount: 1
                             }
 
                             MouseArea {
@@ -410,6 +412,7 @@ ApplicationWindow {
                                 color: "#0f172a"
                                 elide: Text.ElideMiddle
                                 verticalAlignment: Text.AlignVCenter
+                                maximumLineCount: 1
                             }
 
                             MouseArea {
@@ -519,7 +522,7 @@ ApplicationWindow {
                 id: openProgressLayout
                 anchors.fill: parent
                 anchors.margins: 8
-                spacing: 6
+                spacing: 4
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -542,6 +545,7 @@ ApplicationWindow {
                             color: "#0f172a"
                             elide: Text.ElideMiddle
                             verticalAlignment: Text.AlignVCenter
+                            maximumLineCount: 1
                         }
 
                         MouseArea {
@@ -560,7 +564,8 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     text: mainController.openProgressProcessedText
                     color: "#334155"
-                    wrapMode: Text.WordWrap
+                    elide: Text.ElideRight
+                    maximumLineCount: 1
                 }
 
                 RowLayout {

@@ -79,7 +79,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: 8
 
         Label {
             text: "Flows"
@@ -89,7 +89,7 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: 6
 
             TextField {
                 id: filterField
@@ -119,11 +119,15 @@ Frame {
             }
 
             TextField {
+                id: wiresharkFilterField
                 Layout.fillWidth: true
                 readOnly: true
                 selectByMouse: true
                 text: root.wiresharkFilterText
                 font.family: "Consolas"
+                padding: 8
+                ToolTip.visible: hovered && text.length > 0
+                ToolTip.text: text
             }
 
             Button {
@@ -150,7 +154,7 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 10
+            spacing: 8
 
             Label { text: "Sel"; Layout.preferredWidth: 42; horizontalAlignment: Text.AlignHCenter }
             Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: 64; onClicked: root.sortRequested(0) }
@@ -217,16 +221,16 @@ Frame {
                     }
 
                     width: flowListView.width
-                    height: 40
+                    height: 36
                     color: selected
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 10
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
 
                         Item {
                             Layout.preferredWidth: 42
@@ -244,11 +248,67 @@ Frame {
                             }
                         }
 
-                        Text { text: flowIndex; Layout.preferredWidth: 46; horizontalAlignment: Text.AlignRight }
-                        Text { text: family; Layout.preferredWidth: 58 }
-                        Text { text: protocol; Layout.preferredWidth: 66 }
-                        Text { text: protocolHint; Layout.preferredWidth: 78; elide: Text.ElideRight }
-                        Text { text: serviceHint; Layout.fillWidth: true; Layout.preferredWidth: 220; elide: Text.ElideRight }
+                        Text {
+                            text: flowIndex
+                            Layout.preferredWidth: 46
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Text {
+                            text: family
+                            Layout.preferredWidth: 58
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Text {
+                            text: protocol
+                            Layout.preferredWidth: 66
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Item {
+                            Layout.preferredWidth: 78
+                            implicitHeight: protocolHintLabel.implicitHeight
+
+                            Label {
+                                id: protocolHintLabel
+                                anchors.fill: parent
+                                text: protocolHint
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: protocolHintHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: protocolHintHoverArea.containsMouse && protocolHintLabel.truncated
+                            ToolTip.text: protocolHintLabel.text
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 220
+                            implicitHeight: serviceHintLabel.implicitHeight
+
+                            Label {
+                                id: serviceHintLabel
+                                anchors.fill: parent
+                                text: serviceHint
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: serviceHintHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: serviceHintHoverArea.containsMouse && serviceHintLabel.truncated
+                            ToolTip.text: serviceHintLabel.text
+                        }
 
                         Rectangle {
                             Layout.preferredWidth: 48
@@ -268,12 +328,76 @@ Frame {
                             }
                         }
 
-                        Text { text: addressA; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
-                        Text { text: portA; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
-                        Text { text: addressB; Layout.fillWidth: true; Layout.preferredWidth: 180; elide: Text.ElideMiddle }
-                        Text { text: portB; Layout.preferredWidth: 62; horizontalAlignment: Text.AlignRight }
-                        Text { text: packets; Layout.preferredWidth: 68; horizontalAlignment: Text.AlignRight }
-                        Text { text: bytes; Layout.preferredWidth: 80; horizontalAlignment: Text.AlignRight }
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 180
+                            implicitHeight: addressALabel.implicitHeight
+
+                            Label {
+                                id: addressALabel
+                                anchors.fill: parent
+                                text: addressA
+                                elide: Text.ElideMiddle
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: addressAHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: addressAHoverArea.containsMouse && addressALabel.truncated
+                            ToolTip.text: addressALabel.text
+                        }
+                        Text {
+                            text: portA
+                            Layout.preferredWidth: 62
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 180
+                            implicitHeight: addressBLabel.implicitHeight
+
+                            Label {
+                                id: addressBLabel
+                                anchors.fill: parent
+                                text: addressB
+                                elide: Text.ElideMiddle
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            MouseArea {
+                                id: addressBHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: addressBHoverArea.containsMouse && addressBLabel.truncated
+                            ToolTip.text: addressBLabel.text
+                        }
+                        Text {
+                            text: portB
+                            Layout.preferredWidth: 62
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Text {
+                            text: packets
+                            Layout.preferredWidth: 68
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        Text {
+                            text: bytes
+                            Layout.preferredWidth: 80
+                            horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
+                        }
                     }
 
                     MouseArea {
@@ -282,6 +406,7 @@ Frame {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.leftMargin: 52
+                        hoverEnabled: true
                         onClicked: {
                             flowListView.currentIndex = index
                             root.flowSelected(flowIndex)

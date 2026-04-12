@@ -113,7 +113,7 @@ Frame {
                 wrapMode: monospace ? TextEdit.NoWrap : TextEdit.Wrap
                 font.family: monospace ? "Consolas" : ""
                 font.pixelSize: monospace ? 12 : 13
-                padding: 10
+                padding: 8
                 text: viewText
             }
         }
@@ -127,7 +127,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
+        spacing: 6
 
         Label {
             text: root.detailsTitle()
@@ -152,8 +152,8 @@ Frame {
             ColumnLayout {
                 id: headerColumn
                 anchors.fill: parent
-                anchors.margins: 10
-                spacing: 4
+                anchors.margins: 8
+                spacing: 3
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -252,7 +252,7 @@ Frame {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 10
+                    spacing: 8
 
                     Rectangle {
                         Layout.fillWidth: true
@@ -267,7 +267,7 @@ Frame {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.margins: 8
+                            anchors.margins: 7
                             wrapMode: Text.Wrap
                             color: "#7a5d10"
                             text: parent.parent.parent.warningText.length > 0
@@ -320,7 +320,7 @@ Frame {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 10
+                    spacing: 8
 
                     Rectangle {
                         Layout.fillWidth: true
@@ -335,7 +335,7 @@ Frame {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.margins: 8
+                            anchors.margins: 7
                             wrapMode: Text.Wrap
                             color: "#7a5d10"
                             text: parent.parent.parent.warningText.length > 0

@@ -65,7 +65,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: 8
 
         Label {
             text: "Stream"
@@ -82,7 +82,7 @@ Frame {
         RowLayout {
             Layout.fillWidth: true
             visible: root.streamLoading || root.loadedStreamItemCount > 0 || root.totalStreamItemCount > 0 || root.streamPacketWindowPartial
-            spacing: 8
+            spacing: 6
 
             ColumnLayout {
                 Layout.fillWidth: true
@@ -163,8 +163,8 @@ Frame {
                     Rectangle {
                         id: bubble
                         x: forward ? 0 : parent.width - width
-                        width: Math.min(streamListView.width * 0.78, 320)
-                        implicitHeight: metadataTextItem.y + metadataTextItem.implicitHeight + 10
+                        width: Math.min(streamListView.width * 0.84, 420)
+                        implicitHeight: metadataContainer.y + metadataContainer.implicitHeight + 10
                         radius: 10
                         color: root.bubbleColor(directionText, selected)
                         border.color: root.bubbleBorderColor(directionText, selected)
@@ -178,13 +178,30 @@ Frame {
                             anchors.margins: 9
                             spacing: 8
 
-                            Text {
-                                id: labelTextItem
+                            Item {
                                 Layout.fillWidth: true
-                                text: label
-                                font.bold: true
-                                color: "#0f172a"
-                                elide: Text.ElideRight
+                                implicitHeight: labelTextItem.implicitHeight
+
+                                Label {
+                                    id: labelTextItem
+                                    anchors.fill: parent
+                                    text: label
+                                    font.bold: true
+                                    font.pixelSize: 13
+                                    color: "#0f172a"
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+
+                                MouseArea {
+                                    id: labelHoverArea
+                                    anchors.fill: parent
+                                    acceptedButtons: Qt.NoButton
+                                    hoverEnabled: true
+                                }
+
+                                ToolTip.visible: labelHoverArea.containsMouse && labelTextItem.truncated
+                                ToolTip.text: labelTextItem.text
                             }
 
                             Text {
@@ -195,17 +212,35 @@ Frame {
                             }
                         }
 
-                        Text {
-                            id: metadataTextItem
+                        Item {
+                            id: metadataContainer
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: topRow.bottom
                             anchors.leftMargin: 9
                             anchors.rightMargin: 9
                             anchors.topMargin: 4
-                            text: metadataText
-                            color: "#475569"
-                            elide: Text.ElideRight
+                            implicitHeight: metadataTextItem.implicitHeight
+
+                            Label {
+                                id: metadataTextItem
+                                anchors.fill: parent
+                                text: metadataText
+                                color: "#475569"
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                                font.pixelSize: 12
+                            }
+
+                            MouseArea {
+                                id: metadataHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
+
+                            ToolTip.visible: metadataHoverArea.containsMouse && metadataTextItem.truncated
+                            ToolTip.text: byteCount + " bytes | " + (sourcePacketsText.length > 0 ? sourcePacketsText : (packetCount > 1 ? packetCount + " packets" : "1 packet"))
                         }
 
                         TapHandler {

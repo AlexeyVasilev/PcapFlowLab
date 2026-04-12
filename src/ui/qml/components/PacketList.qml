@@ -160,7 +160,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 10
+        spacing: 8
 
         Label {
             text: "Packets"
@@ -199,7 +199,7 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 10
 
             Label {
                 text: "#"
@@ -287,19 +287,20 @@ Frame {
                     readonly property bool selected: index === packetListView.currentIndex
 
                     width: packetListView.width
-                    height: 38
+                    height: 34
                     color: root.rowBackgroundColor(index, capturedLength, originalLength, selected)
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        spacing: 12
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 10
 
                         Text {
                             text: rowNumber
                             Layout.preferredWidth: 50
                             horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Rectangle {
@@ -325,6 +326,7 @@ Frame {
                             text: timestamp
                             Layout.preferredWidth: 126
                             font.family: "Consolas"
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Rectangle {
@@ -349,6 +351,7 @@ Frame {
                             text: payloadLength
                             Layout.preferredWidth: 68
                             horizontalAlignment: Text.AlignRight
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Rectangle {
@@ -370,6 +373,16 @@ Frame {
                                 color: root.flagTextColor(tcpFlagsText, payloadLength, selected)
                                 elide: Text.ElideRight
                             }
+
+                            ToolTip.visible: flagsHoverArea.containsMouse && tcpFlagsText.length > 0
+                            ToolTip.text: tcpFlagsText
+
+                            MouseArea {
+                                id: flagsHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
+                            }
                         }
 
                         Rectangle {
@@ -390,6 +403,16 @@ Frame {
                                 color: selected ? "#0f172a" : "#8a6a12"
                                 elide: Text.ElideRight
                                 font.pixelSize: 11
+                            }
+
+                            ToolTip.visible: markerHoverArea.containsMouse && suspectedTcpRetransmission
+                            ToolTip.text: "Suspected retransmission"
+
+                            MouseArea {
+                                id: markerHoverArea
+                                anchors.fill: parent
+                                acceptedButtons: Qt.NoButton
+                                hoverEnabled: true
                             }
                         }
                     }
