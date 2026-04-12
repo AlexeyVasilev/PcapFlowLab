@@ -41,6 +41,7 @@ Item {
     property int statisticsMode: 0
     property var topEndpointsModel: null
     property var topPortsModel: null
+    readonly property bool showTopTalkers: root.hasCapture && Number(root.flowCount || 0) > 30
 
     signal endpointActivated(string endpointText)
     signal portActivated(int port)
@@ -99,7 +100,8 @@ Item {
 
             TopTalkersPane {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 260
+                Layout.preferredHeight: root.showTopTalkers ? 260 : 0
+                visible: root.showTopTalkers
                 hasCapture: root.hasCapture
                 topEndpointsModel: root.topEndpointsModel
                 topPortsModel: root.topPortsModel

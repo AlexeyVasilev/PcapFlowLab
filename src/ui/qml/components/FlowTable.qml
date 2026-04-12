@@ -162,11 +162,11 @@ Frame {
             Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: 86; onClicked: root.sortRequested(2) }
             Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: 98; onClicked: root.sortRequested(3) }
             Button { text: "Service" + root.sortIndicator(4); Layout.fillWidth: true; Layout.preferredWidth: 220; onClicked: root.sortRequested(4) }
-            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: 64; onClicked: root.sortRequested(5) }
             Button { text: "Address A" + root.sortIndicator(6); Layout.fillWidth: true; Layout.preferredWidth: 180; onClicked: root.sortRequested(6) }
             Button { text: "Port A" + root.sortIndicator(7); Layout.preferredWidth: 78; onClicked: root.sortRequested(7) }
             Button { text: "Address B" + root.sortIndicator(8); Layout.fillWidth: true; Layout.preferredWidth: 180; onClicked: root.sortRequested(8) }
             Button { text: "Port B" + root.sortIndicator(9); Layout.preferredWidth: 78; onClicked: root.sortRequested(9) }
+            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: 64; onClicked: root.sortRequested(5) }
             Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: 86; onClicked: root.sortRequested(10) }
             Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: 92; onClicked: root.sortRequested(11) }
         }
@@ -310,24 +310,6 @@ Frame {
                             ToolTip.text: serviceHintLabel.text
                         }
 
-                        Rectangle {
-                            Layout.preferredWidth: 48
-                            implicitHeight: 24
-                            radius: 4
-                            color: root.fragBackgroundColor(hasFragmentedPackets, selected)
-                            border.width: color === "transparent" ? 0 : 1
-                            border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
-
-                            Text {
-                                anchors.centerIn: parent
-                                width: parent.width
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                text: fragmentedPacketCount
-                                color: root.fragTextColor(hasFragmentedPackets, selected)
-                            }
-                        }
-
                         Item {
                             Layout.fillWidth: true
                             Layout.preferredWidth: 180
@@ -385,6 +367,23 @@ Frame {
                             Layout.preferredWidth: 62
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
+                        }
+                        Rectangle {
+                            Layout.preferredWidth: 48
+                            implicitHeight: 24
+                            radius: 4
+                            color: root.fragBackgroundColor(hasFragmentedPackets, selected)
+                            border.width: color === "transparent" ? 0 : 1
+                            border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                            Text {
+                                anchors.centerIn: parent
+                                width: parent.width
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                                text: fragmentedPacketCount
+                                color: root.fragTextColor(hasFragmentedPackets, selected)
+                            }
                         }
                         Text {
                             text: packets

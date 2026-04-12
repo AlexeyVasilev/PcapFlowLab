@@ -3104,6 +3104,12 @@ void MainController::applyLoadedState(const QString& path) {
 }
 
 void MainController::refreshTopSummaryModels() {
+    if (session_.summary().flow_count <= 30U) {
+        top_endpoints_model_.refreshEndpoints({});
+        top_ports_model_.refreshPorts({});
+        return;
+    }
+
     const auto top = session_.top_summary();
     top_endpoints_model_.refreshEndpoints(top.endpoints_by_bytes);
     top_ports_model_.refreshPorts(top.ports_by_bytes);

@@ -12,6 +12,7 @@ Frame {
     property var loadedPacketRowCount: 0
     property var totalPacketRowCount: 0
     property bool canLoadMorePackets: false
+    readonly property bool showMarkerColumn: !!root.packetModel && root.packetModel.hasVisibleMarkers
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
 
@@ -245,6 +246,7 @@ Frame {
                 text: "Marker"
                 font.bold: true
                 Layout.preferredWidth: 168
+                visible: root.showMarkerColumn
             }
         }
 
@@ -388,6 +390,7 @@ Frame {
                         Rectangle {
                             Layout.preferredWidth: 168
                             implicitHeight: 24
+                            visible: root.showMarkerColumn
                             radius: 4
                             color: suspectedTcpRetransmission && !selected ? "#fff1cc" : "transparent"
                             border.width: color === "transparent" ? 0 : 1

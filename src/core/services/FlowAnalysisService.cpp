@@ -15,7 +15,7 @@ namespace {
 constexpr std::size_t kSequencePreviewLimit = 20U;
 constexpr std::uint64_t kBurstThresholdUs = 1000U;
 constexpr std::uint64_t kIdleGapThresholdUs = 100000U;
-constexpr std::size_t kRateGraphTargetPointCount = 60U;
+constexpr std::size_t kRateGraphTargetPointCount = 100U;
 constexpr std::size_t kRateGraphMaxPointCount = 100U;
 constexpr std::size_t kRateGraphMinUsefulPointCount = 3U;
 constexpr std::uint64_t kRateGraphMinWindowUs = 10000U;

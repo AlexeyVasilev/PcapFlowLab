@@ -1,5 +1,7 @@
 #include "ui/app/PacketListModel.h"
 
+#include <algorithm>
+
 namespace pfl {
 
 PacketListModel::PacketListModel(QObject* parent)
@@ -61,6 +63,10 @@ QHash<int, QByteArray> PacketListModel::roleNames() const {
     };
 }
 
+bool PacketListModel::hasVisibleMarkers() const noexcept {
+    return has_visible_markers_;
+}
+
 int PacketListModel::rowForPacketIndex(const qulonglong packetIndex) const noexcept {
     for (std::size_t row = 0; row < items_.size(); ++row) {
         if (items_[row].packet_index == packetIndex) {
@@ -92,6 +98,7 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
     }
 
     endResetModel();
+    updateHasVisibleMarkers();
 }
 
 void PacketListModel::append(const std::vector<PacketRow>& rows) {
@@ -120,10 +127,24 @@ void PacketListModel::append(const std::vector<PacketRow>& rows) {
     }
 
     endInsertRows();
+    updateHasVisibleMarkers();
 }
 
 void PacketListModel::clear() {
     refresh({});
+}
+
+void PacketListModel::updateHasVisibleMarkers() {
+    const bool nextHasVisibleMarkers = std::any_of(items_.begin(), items_.end(), [](const Item& item) {
+        return item.suspected_tcp_retransmission;
+    });
+
+    if (has_visible_markers_ == nextHasVisibleMarkers) {
+        return;
+    }
+
+    has_visible_markers_ = nextHasVisibleMarkers;
+    emit hasVisibleMarkersChanged();
 }
 
 }  // namespace pfl

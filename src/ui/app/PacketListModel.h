@@ -13,6 +13,7 @@ namespace pfl {
 
 class PacketListModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(bool hasVisibleMarkers READ hasVisibleMarkers NOTIFY hasVisibleMarkersChanged)
 
 public:
     enum Role {
@@ -33,12 +34,16 @@ public:
     [[nodiscard]] int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
+    [[nodiscard]] bool hasVisibleMarkers() const noexcept;
 
     Q_INVOKABLE int rowForPacketIndex(qulonglong packetIndex) const noexcept;
 
     void refresh(const std::vector<PacketRow>& rows);
     void append(const std::vector<PacketRow>& rows);
     void clear();
+
+signals:
+    void hasVisibleMarkersChanged();
 
 private:
     struct Item {
@@ -54,7 +59,10 @@ private:
         QString tcp_flags_text {};
     };
 
+    void updateHasVisibleMarkers();
+
     std::vector<Item> items_ {};
+    bool has_visible_markers_ {false};
 };
 
 }  // namespace pfl
