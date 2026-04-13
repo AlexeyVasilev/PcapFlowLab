@@ -814,6 +814,64 @@ void run_stream_query_tests() {
             PFL_EXPECT(packet_index < 30U);
         }
     }
+    bounded_prefix_http_session.prepare_selected_flow_packet_cache(0, 30U);
+    auto bounded_prefix_cache = bounded_prefix_http_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(bounded_prefix_cache.has_value());
+    PFL_EXPECT(bounded_prefix_cache->flow_index == 0U);
+    PFL_EXPECT(bounded_prefix_cache->cached_packet_window_count == 30U);
+    PFL_EXPECT(!bounded_prefix_cache->limit_reached);
+    PFL_EXPECT(bounded_prefix_cache->window_fully_cached);
+
+    bounded_prefix_http_session.prepare_selected_flow_packet_cache(0, 40U);
+    bounded_prefix_cache = bounded_prefix_http_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(bounded_prefix_cache.has_value());
+    PFL_EXPECT(bounded_prefix_cache->cached_packet_window_count == 40U);
+    PFL_EXPECT(!bounded_prefix_cache->limit_reached);
+    PFL_EXPECT(bounded_prefix_cache->window_fully_cached);
+
+    const auto extended_prefix_rows = bounded_prefix_http_session.list_flow_stream_items_for_packet_prefix(0, 40U, 16U);
+    PFL_EXPECT(!extended_prefix_rows.empty());
+    PFL_EXPECT(extended_prefix_rows.size() <= 16U);
+    for (const auto& row : extended_prefix_rows) {
+        for (const auto packet_index : row.packet_indices) {
+            PFL_EXPECT(packet_index < 40U);
+        }
+    }
+
+    std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> mixed_prefix_http_packets {};
+    mixed_prefix_http_packets.reserve(80U);
+    const auto mixed_chunk_size = (bounded_prefix_http_bytes.size() + 39U) / 40U;
+    for (std::size_t packetIndex = 0; packetIndex < 40U; ++packetIndex) {
+        const auto begin = std::min(packetIndex * mixed_chunk_size, bounded_prefix_http_bytes.size());
+        const auto end = std::min(begin + mixed_chunk_size, bounded_prefix_http_bytes.size());
+        const auto fragment = std::vector<std::uint8_t>(
+            bounded_prefix_http_bytes.begin() + static_cast<std::ptrdiff_t>(begin),
+            bounded_prefix_http_bytes.begin() + static_cast<std::ptrdiff_t>(end)
+        );
+        mixed_prefix_http_packets.push_back({
+            static_cast<std::uint32_t>(3000U + (packetIndex * 2U)),
+            make_ethernet_ipv4_tcp_packet_with_bytes_payload(ipv4(10, 62, 0, 1), ipv4(10, 62, 0, 2), 54020, 80, fragment, 0x18)
+        });
+        mixed_prefix_http_packets.push_back({
+            static_cast<std::uint32_t>(3001U + (packetIndex * 2U)),
+            make_ethernet_ipv4_tcp_packet(ipv4(10, 62, 0, 2), ipv4(10, 62, 0, 1), 80, 54020)
+        });
+    }
+    const auto mixed_prefix_http_path = write_temp_pcap(
+        "pfl_stream_query_bounded_prefix_http_mixed.pcap",
+        make_classic_pcap(mixed_prefix_http_packets)
+    );
+
+    CaptureSession mixed_prefix_http_session {};
+    PFL_EXPECT(mixed_prefix_http_session.open_capture(mixed_prefix_http_path, fast_options));
+    const auto mixed_prefix_rows = mixed_prefix_http_session.list_flow_stream_items_for_packet_prefix(0, 30U, 16U);
+    PFL_EXPECT(!mixed_prefix_rows.empty());
+    for (const auto& row : mixed_prefix_rows) {
+        for (const auto packet_index : row.packet_indices) {
+            PFL_EXPECT(packet_index < 30U);
+        }
+    }
+
     const auto bounded_stream_path = write_temp_pcap(
         "pfl_stream_query_bounded_rows.pcap",
         make_classic_pcap(bounded_stream_packets)
@@ -1295,4 +1353,3 @@ void run_stream_query_tests() {
 }
 
 }  // namespace pfl::tests
-

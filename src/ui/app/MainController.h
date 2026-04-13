@@ -446,6 +446,7 @@ private:
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
     void maybeEnrichSelectedFlowServiceHint();
+    void ensureSelectedFlowPacketNumbers(std::size_t packetWindowCount);
     void prepareSelectedFlowTcpContributionState(std::size_t maxPacketsToScan);
     void refreshSelectedFlowPackets(bool resetRows);
     void refreshSelectedStreamItems(bool resetRows);

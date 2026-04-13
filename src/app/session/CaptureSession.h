@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,15 @@
 struct OpenContext;
 
 namespace pfl {
+
+struct SelectedFlowPacketCacheInfo {
+    std::size_t flow_index {0};
+    std::size_t cached_packet_window_count {0};
+    std::size_t cached_packet_contribution_count {0};
+    std::size_t total_cached_bytes {0};
+    bool limit_reached {false};
+    bool window_fully_cached {false};
+};
 
 class CaptureSession {
 public:
@@ -70,6 +80,11 @@ public:
     [[nodiscard]] std::vector<PacketRow> list_flow_packets(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
     [[nodiscard]] std::vector<std::uint64_t> suspected_tcp_retransmission_packet_indices(std::size_t flow_index) const;
     [[nodiscard]] std::vector<std::uint64_t> suspected_tcp_retransmission_packet_indices(std::size_t flow_index, std::size_t max_packets_to_scan) const;
+    void prepare_selected_flow_packet_cache(std::size_t flow_index, std::size_t max_packets_to_scan) const;
+    void clear_selected_flow_packet_cache() noexcept;
+    [[nodiscard]] std::optional<SelectedFlowPacketCacheInfo> selected_flow_packet_cache_info() const noexcept;
+    [[nodiscard]] bool selected_flow_packet_cache_limit_reached() const noexcept;
+    [[nodiscard]] std::vector<std::uint8_t> read_selected_flow_transport_payload(std::size_t flow_index, const PacketRef& packet) const;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices) noexcept;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices, std::size_t max_packets_to_scan) noexcept;
     void clear_selected_flow_tcp_payload_suppression() noexcept;
@@ -98,6 +113,33 @@ private:
         std::map<std::uint64_t, SelectedFlowTcpPayloadContribution> packet_contributions {};
     };
 
+    struct SelectedFlowPacketCacheEntry {
+        std::uint64_t flow_local_packet_number {0};
+        std::uint64_t packet_index {0};
+        Direction direction {Direction::a_to_b};
+        std::size_t cache_offset {0};
+        std::size_t cache_length {0};
+        std::uint32_t payload_length {0};
+        bool payload_cached {false};
+    };
+
+    struct SelectedFlowPacketCache {
+        std::size_t flow_index {0};
+        std::vector<std::uint8_t> bytes {};
+        std::vector<SelectedFlowPacketCacheEntry> entries {};
+        std::map<std::uint64_t, std::size_t> entry_index_by_packet_index {};
+        std::size_t cached_packet_window_count {0};
+        bool limit_reached {false};
+        bool has_uncached_payload_entries {false};
+        bool window_fully_cached {false};
+    };
+
+    [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
+    [[nodiscard]] const SelectedFlowPacketCacheEntry* find_selected_flow_packet_cache_entry(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const noexcept;
+
     void reset_runtime_state() noexcept;
 
     std::filesystem::path capture_path_ {};
@@ -112,6 +154,7 @@ private:
     bool partial_open_ {false};
     OpenFailureInfo partial_open_failure_ {};
     std::string last_open_error_text_ {};
+    mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };
 

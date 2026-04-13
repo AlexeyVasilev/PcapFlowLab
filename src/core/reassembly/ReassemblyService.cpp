@@ -4,7 +4,6 @@
 #include <variant>
 
 #include "app/session/CaptureSession.h"
-#include "core/services/PacketPayloadService.h"
 
 namespace pfl {
 
@@ -122,8 +121,6 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
         set_flag(result, ReassemblyQualityFlag::truncated_by_packet_budget);
     }
 
-    PacketPayloadService payload_service {};
-
     for (std::size_t index = 0; index < packet_budget; ++index) {
         const auto& packet = packets[index];
         ++result.total_packets_seen;
@@ -145,13 +142,7 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
             continue;
         }
 
-        const auto bytes = session.read_packet_data(packet);
-        if (bytes.empty()) {
-            set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
-            continue;
-        }
-
-        const auto payload = payload_service.extract_transport_payload(bytes, packet.data_link_type);
+        const auto payload = session.read_selected_flow_transport_payload(request.flow_index, packet);
         if (payload.empty() || payload.size() != packet.payload_length) {
             set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
             continue;

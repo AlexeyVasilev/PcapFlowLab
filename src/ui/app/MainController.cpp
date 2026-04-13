@@ -2689,6 +2689,7 @@ void MainController::setSelectedFlowIndex(const int index) {
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
     prepared_tcp_contribution_packet_window_count_ = 0U;
+    session_.clear_selected_flow_packet_cache();
     session_.clear_selected_flow_tcp_payload_suppression();
     packet_model_.clear();
     current_stream_items_.clear();
@@ -2779,6 +2780,7 @@ void MainController::prepareSelectedFlowTcpContributionState(const std::size_t m
     if (selected_flow_index_ < 0 || maxPacketsToScan == 0U) {
         current_suspected_retransmission_packet_indices_.clear();
         prepared_tcp_contribution_packet_window_count_ = 0U;
+        session_.clear_selected_flow_packet_cache();
         session_.clear_selected_flow_tcp_payload_suppression();
         return;
     }
@@ -2823,6 +2825,26 @@ void MainController::maybeEnrichSelectedFlowServiceHint() {
     flow_model_.setServiceHintForFlowIndex(selected_flow_index_, QString::fromStdString(*derivedServiceHint));
 }
 
+void MainController::ensureSelectedFlowPacketNumbers(const std::size_t packetWindowCount) {
+    if (selected_flow_index_ < 0 || packetWindowCount == 0U) {
+        return;
+    }
+
+    const auto knownCount = current_flow_packet_numbers_.size();
+    if (knownCount >= packetWindowCount) {
+        return;
+    }
+
+    const auto rows = session_.list_flow_packets(
+        static_cast<std::size_t>(selected_flow_index_),
+        knownCount,
+        packetWindowCount - knownCount
+    );
+    for (const auto& packetRow : rows) {
+        current_flow_packet_numbers_.insert_or_assign(packetRow.packet_index, packetRow.row_number);
+    }
+}
+
 void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     const bool previousLoading = packets_loading_;
     const auto previousLoaded = loaded_packet_row_count_;
@@ -2832,6 +2854,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
         packet_model_.clear();
         current_flow_packet_numbers_.clear();
         current_suspected_retransmission_packet_indices_.clear();
+        session_.clear_selected_flow_packet_cache();
         session_.clear_selected_flow_tcp_payload_suppression();
         loaded_packet_row_count_ = 0U;
         total_packet_row_count_ = 0U;
@@ -2857,6 +2880,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     }
 
     if (!rows.empty()) {
+        session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
         prepareSelectedFlowTcpContributionState(offset + rows.size());
     }
 
@@ -2892,6 +2916,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     const bool previousLoading = stream_loading_;
     const auto previousLoaded = loaded_stream_item_count_;
     const auto previousTotal = total_stream_item_count_;
+    const auto previousPacketWindow = stream_packet_window_count_;
     const auto previousCanLoadMore = can_load_more_stream_items_;
 
     if (selected_flow_index_ < 0) {
@@ -2904,7 +2929,11 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         stream_item_budget_count_ = 0U;
         can_load_more_stream_items_ = false;
         stream_state_materialized_for_selected_flow_ = false;
-        if (previousLoading != stream_loading_ || previousLoaded != loaded_stream_item_count_ || previousTotal != total_stream_item_count_ || previousCanLoadMore != can_load_more_stream_items_) {
+        if (previousLoading != stream_loading_
+            || previousLoaded != loaded_stream_item_count_
+            || previousTotal != total_stream_item_count_
+            || previousPacketWindow != stream_packet_window_count_
+            || previousCanLoadMore != can_load_more_stream_items_) {
             emit streamListStateChanged();
         }
         return;
@@ -2914,6 +2943,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     const auto totalFlowPacketCount = session_.flow_packet_count(flowIndex);
     if (resetRows) {
         stream_packet_window_count_ = std::min(totalFlowPacketCount, kInitialStreamPacketBudget);
+        session_.prepare_selected_flow_packet_cache(flowIndex, stream_packet_window_count_);
         stream_item_budget_count_ = totalFlowPacketCount <= kInitialStreamPacketBudget
             ? session_.flow_stream_item_count(flowIndex)
             : kInitialStreamItems;
@@ -2923,7 +2953,9 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     }
 
     stream_loading_ = true;
+    session_.prepare_selected_flow_packet_cache(flowIndex, stream_packet_window_count_);
     prepareSelectedFlowTcpContributionState(stream_packet_window_count_);
+    ensureSelectedFlowPacketNumbers(stream_packet_window_count_);
     const auto requestLimit = stream_item_budget_count_ + 1U;
     const bool packetBudgetExhausted = stream_packet_window_count_ < totalFlowPacketCount;
     auto rows = session_.list_flow_stream_items_for_packet_prefix(
@@ -2955,7 +2987,11 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         }
     }
 
-    if (previousLoading != stream_loading_ || previousLoaded != loaded_stream_item_count_ || previousTotal != total_stream_item_count_ || previousCanLoadMore != can_load_more_stream_items_) {
+    if (previousLoading != stream_loading_
+        || previousLoaded != loaded_stream_item_count_
+        || previousTotal != total_stream_item_count_
+        || previousPacketWindow != stream_packet_window_count_
+        || previousCanLoadMore != can_load_more_stream_items_) {
         emit streamListStateChanged();
     }
 }
@@ -3036,6 +3072,7 @@ void MainController::clearFlowSelection() {
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
+    session_.clear_selected_flow_packet_cache();
     session_.clear_selected_flow_tcp_payload_suppression();
     stream_model_.clear();
     loaded_packet_row_count_ = 0U;
@@ -3088,6 +3125,7 @@ void MainController::resetLoadedState() {
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
     current_suspected_retransmission_packet_indices_.clear();
+    session_.clear_selected_flow_packet_cache();
     session_.clear_selected_flow_tcp_payload_suppression();
     stream_model_.clear();
     loaded_stream_item_count_ = 0U;
