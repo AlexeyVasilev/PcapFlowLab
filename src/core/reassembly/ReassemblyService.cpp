@@ -114,6 +114,8 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
     ReassemblyResult result {};
     set_flag(result, ReassemblyQualityFlag::packet_order_only);
     set_flag(result, ReassemblyQualityFlag::may_contain_retransmissions);
+    const auto selected_flow_gap_packet_index =
+        session.selected_flow_tcp_direction_first_gap_packet_index(request.flow_index, request.direction);
 
     const auto packets = collect_direction_packets(connection, request.direction);
     const auto packet_budget = std::min(request.max_packets, packets.size());
@@ -127,14 +129,21 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
 
         if (packet.is_ip_fragmented) {
             set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
-            if (packet.payload_length == 0U) {
-                continue;
-            }
+            result.stopped_at_gap = true;
+            result.first_gap_packet_index = packet.packet_index;
+            break;
         }
 
         if (packet.payload_length == 0U) {
             set_flag(result, ReassemblyQualityFlag::contains_non_payload_packets);
             continue;
+        }
+
+        if (selected_flow_gap_packet_index.has_value() && packet.packet_index >= *selected_flow_gap_packet_index) {
+            set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
+            result.stopped_at_gap = true;
+            result.first_gap_packet_index = *selected_flow_gap_packet_index;
+            break;
         }
 
         if (session.should_suppress_selected_flow_tcp_payload(request.flow_index, packet.packet_index)) {
@@ -145,7 +154,9 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
         const auto payload = session.read_selected_flow_transport_payload(request.flow_index, packet);
         if (payload.empty() || payload.size() != packet.payload_length) {
             set_flag(result, ReassemblyQualityFlag::may_contain_transport_gaps);
-            continue;
+            result.stopped_at_gap = true;
+            result.first_gap_packet_index = packet.packet_index;
+            break;
         }
 
         const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(request.flow_index, packet.packet_index);

@@ -495,6 +495,12 @@ struct TcpPayloadContributionCandidate {
     std::size_t trim_prefix_bytes {0};
 };
 
+struct TcpDirectionalContributionAnalysis {
+    std::map<std::uint64_t, TcpPayloadContributionCandidate> contributions {};
+    bool tainted_by_gap {false};
+    std::uint64_t first_gap_packet_index {0};
+};
+
 std::uint64_t stable_payload_hash(std::span<const std::uint8_t> payload) noexcept {
     constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
     constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
@@ -542,17 +548,22 @@ std::optional<DecodedTcpPayloadPacket> decode_tcp_payload_packet(
 }
 
 template <typename PacketList>
-std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp_payload_suppression_for_direction(
+TcpDirectionalContributionAnalysis build_selected_flow_tcp_payload_suppression_for_direction(
     const CaptureSession& session,
     const std::size_t flow_index,
     const PacketList& packets,
     const std::set<std::uint64_t>& exact_duplicate_packet_indices,
     const std::size_t max_packets_to_scan = std::numeric_limits<std::size_t>::max()
 ) {
-    std::map<std::uint64_t, TcpPayloadContributionCandidate> contributions {};
+    TcpDirectionalContributionAnalysis analysis {};
     PacketDetailsService details_service {};
     TcpContributionTracker tracker {};
     std::size_t processed_packets = 0U;
+
+    const auto mark_gap = [&](const std::uint64_t packet_index) {
+        analysis.tainted_by_gap = true;
+        analysis.first_gap_packet_index = packet_index;
+    };
 
     for (const auto& packet : packets) {
         if (processed_packets >= max_packets_to_scan) {
@@ -566,7 +577,7 @@ std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp
         }
 
         if (exact_duplicate_packet_indices.contains(packet.packet_index)) {
-            contributions[packet.packet_index].suppress_entire_packet = true;
+            analysis.contributions[packet.packet_index].suppress_entire_packet = true;
             continue;
         }
 
@@ -598,7 +609,13 @@ std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp
             continue;
         }
 
-        if (sequence_start > tracker.next_sequence || sequence_start < tracker.base_sequence) {
+        if (sequence_start > tracker.next_sequence) {
+            tracker.overlap_tracking_enabled = false;
+            mark_gap(packet.packet_index);
+            break;
+        }
+
+        if (sequence_start < tracker.base_sequence) {
             tracker.overlap_tracking_enabled = false;
             continue;
         }
@@ -629,7 +646,7 @@ std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp
             continue;
         }
 
-        auto& contribution = contributions[packet.packet_index];
+        auto& contribution = analysis.contributions[packet.packet_index];
         if (overlap_size >= payload_size) {
             contribution.suppress_entire_packet = true;
             continue;
@@ -645,7 +662,7 @@ std::map<std::uint64_t, TcpPayloadContributionCandidate> build_selected_flow_tcp
         );
     }
 
-    return contributions;
+    return analysis;
 }
 
 PacketRow make_packet_row(const PacketRef& packet, const std::string_view direction_text) {
@@ -3044,11 +3061,6 @@ bool append_tls_stream_items(
 
     return emitted_any;
 }
-bool has_reassembly_flag(const ReassemblyResult& result, const ReassemblyQualityFlag flag) noexcept {
-    return (result.quality_flags & static_cast<std::uint32_t>(flag)) != 0U;
-}
-
-
 struct ReassembledPayloadChunk {
     std::uint64_t packet_index {0};
     std::size_t byte_count {0};
@@ -3139,6 +3151,10 @@ std::string limited_quality_tls_protocol_text(const bool record_fragment) {
     }
 
     return "TLS\n  Reassembled bytes suggest a TLS record, but stream reconstruction quality is limited for this direction.";
+}
+
+std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
+    return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
 }
 
 std::string_view bytes_as_text(std::span<const std::uint8_t> bytes) {
@@ -3629,7 +3645,16 @@ std::string limited_quality_http_protocol_text() {
     return "HTTP\n  Reassembled bytes do not contain a complete HTTP header block in this direction.";
 }
 
-bool append_http_stream_items_from_reassembly(
+struct DirectionalStreamPolicy {
+    bool used_reassembly {false};
+    bool explicit_gap_item_emitted {false};
+    std::uint64_t first_gap_packet_index {0};
+    std::string fallback_label {};
+    std::string fallback_protocol_text {};
+    std::set<std::uint64_t> covered_packet_indices {};
+};
+
+DirectionalStreamPolicy append_http_stream_items_from_reassembly(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -3637,6 +3662,7 @@ bool append_http_stream_items_from_reassembly(
     const Direction direction,
     const std::size_t max_packets_to_scan
 ) {
+    DirectionalStreamPolicy policy {};
     constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
 
     const auto result = session.reassemble_flow_direction(ReassemblyRequest {
@@ -3646,18 +3672,14 @@ bool append_http_stream_items_from_reassembly(
         .max_bytes = kHttpReassemblyMaxBytes,
     });
     if (!result.has_value() || result->bytes.empty()) {
-        return false;
-    }
-
-    if (has_reassembly_flag(*result, ReassemblyQualityFlag::may_contain_transport_gaps)) {
-        return false;
+        return policy;
     }
 
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
     const auto payload_text = bytes_as_text(payload_bytes);
     const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
     if (!chunks.has_value() || chunks->empty()) {
-        return false;
+        return policy;
     }
 
     HexDumpService hex_dump_service {};
@@ -3670,7 +3692,7 @@ bool append_http_stream_items_from_reassembly(
         const auto parsed = parse_http_header_block(payload_bytes, offset);
         if (!parsed.has_value()) {
             if (offset == 0U) {
-                return false;
+                return policy;
             }
 
             const auto trailing = payload_bytes.subspan(offset);
@@ -3686,7 +3708,8 @@ bool append_http_stream_items_from_reassembly(
                     limited_quality_http_protocol_text()
                 ));
             }
-            return true;
+            policy.used_reassembly = true;
+            break;
         }
 
         const auto block_bytes = payload_bytes.subspan(offset, parsed->size);
@@ -3720,15 +3743,37 @@ bool append_http_stream_items_from_reassembly(
                         limited_quality_http_protocol_text()
                     ));
                 }
-                return true;
+                policy.used_reassembly = true;
+                break;
             }
         }
     }
 
-    return emitted_any;
+    policy.used_reassembly = policy.used_reassembly || emitted_any;
+    if (policy.used_reassembly) {
+        policy.covered_packet_indices.insert(result->packet_indices.begin(), result->packet_indices.end());
+    }
+    if (result->stopped_at_gap && result->first_gap_packet_index != 0U) {
+        rows.push_back(make_stream_item_row(
+            static_cast<std::uint64_t>(rows.size() + 1U),
+            direction_text,
+            "HTTP Gap",
+            0U,
+            std::vector<std::uint64_t> {result->first_gap_packet_index},
+            {},
+            tcp_gap_protocol_text("HTTP")
+        ));
+        policy.used_reassembly = true;
+        policy.explicit_gap_item_emitted = true;
+        policy.first_gap_packet_index = result->first_gap_packet_index;
+        policy.fallback_label = "HTTP Payload";
+        policy.fallback_protocol_text = tcp_gap_protocol_text("HTTP");
+    }
+
+    return policy;
 }
 
-bool append_tls_stream_items_from_reassembly(
+DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -3736,6 +3781,7 @@ bool append_tls_stream_items_from_reassembly(
     const Direction direction,
     const std::size_t max_packets_to_scan
 ) {
+    DirectionalStreamPolicy policy {};
     const auto result = session.reassemble_flow_direction(ReassemblyRequest {
         .flow_index = flow_index,
         .direction = direction,
@@ -3743,20 +3789,19 @@ bool append_tls_stream_items_from_reassembly(
         .max_bytes = 256U * 1024U,
     });
     if (!result.has_value() || result->bytes.empty()) {
-        return false;
+        return policy;
     }
 
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
     if (!looks_like_tls_record_prefix(payload_bytes)) {
-        return false;
+        return policy;
     }
 
     const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
     if (!chunks.has_value() || chunks->empty()) {
-        return false;
+        return policy;
     }
 
-    const bool limited_quality = has_reassembly_flag(*result, ReassemblyQualityFlag::may_contain_transport_gaps);
     HexDumpService hex_dump_service {};
     std::size_t offset = 0U;
     std::size_t chunk_index = 0U;
@@ -3778,7 +3823,8 @@ bool append_tls_stream_items_from_reassembly(
                     limited_quality_tls_protocol_text(false)
                 ));
             }
-            return true;
+            policy.used_reassembly = true;
+            break;
         }
 
         const auto record_size = tls_record_size(payload_bytes, offset);
@@ -3794,7 +3840,8 @@ bool append_tls_stream_items_from_reassembly(
                 hex_dump_service.format(trailing),
                 limited_quality_tls_protocol_text(true)
             ));
-            return true;
+            policy.used_reassembly = true;
+            break;
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
@@ -3802,17 +3849,38 @@ bool append_tls_stream_items_from_reassembly(
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
             direction_text,
-            limited_quality ? std::string {"TLS Payload"} : tls_stream_label(record_bytes),
+            tls_stream_label(record_bytes),
             record_bytes.size(),
             packet_indices,
             hex_dump_service.format(record_bytes),
-            limited_quality ? limited_quality_tls_protocol_text(false) : tls_record_protocol_text(record_bytes)
+            tls_record_protocol_text(record_bytes)
         ));
         emitted_any = true;
         offset += *record_size;
     }
 
-    return emitted_any;
+    policy.used_reassembly = policy.used_reassembly || emitted_any;
+    if (policy.used_reassembly) {
+        policy.covered_packet_indices.insert(result->packet_indices.begin(), result->packet_indices.end());
+    }
+    if (result->stopped_at_gap && result->first_gap_packet_index != 0U) {
+        rows.push_back(make_stream_item_row(
+            static_cast<std::uint64_t>(rows.size() + 1U),
+            direction_text,
+            "TLS Gap",
+            0U,
+            std::vector<std::uint64_t> {result->first_gap_packet_index},
+            {},
+            tcp_gap_protocol_text("TLS")
+        ));
+        policy.used_reassembly = true;
+        policy.explicit_gap_item_emitted = true;
+        policy.first_gap_packet_index = result->first_gap_packet_index;
+        policy.fallback_label = "TLS Payload";
+        policy.fallback_protocol_text = tcp_gap_protocol_text("TLS");
+    }
+
+    return policy;
 }
 
 std::string classify_stream_label(
@@ -4059,8 +4127,8 @@ void append_connection_stream_items_bounded(
     const std::size_t target_count,
     const std::size_t max_packets_to_scan,
     const bool deep_protocol_details_enabled,
-    const bool skip_direction_a,
-    const bool skip_direction_b
+    const DirectionalStreamPolicy& direction_policy_a,
+    const DirectionalStreamPolicy& direction_policy_b
 ) {
     HexDumpService hex_dump_service {};
     const auto quic_initial_secret_connection_id =
@@ -4070,6 +4138,8 @@ void append_connection_stream_items_bounded(
     std::size_t index_a = 0U;
     std::size_t index_b = 0U;
     std::size_t scanned_packets = 0U;
+    bool gap_item_emitted_a = direction_policy_a.explicit_gap_item_emitted;
+    bool gap_item_emitted_b = direction_policy_b.explicit_gap_item_emitted;
 
     while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) &&
            rows.size() < target_count &&
@@ -4081,8 +4151,11 @@ void append_connection_stream_items_bounded(
         const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
         ++scanned_packets;
         const auto direction_text = use_a ? kDirectionAToB : kDirectionBToA;
+        const auto direction = use_a ? Direction::a_to_b : Direction::b_to_a;
+        const auto& direction_policy = use_a ? direction_policy_a : direction_policy_b;
+        auto& gap_item_emitted = use_a ? gap_item_emitted_a : gap_item_emitted_b;
 
-        if ((use_a && skip_direction_a) || (!use_a && skip_direction_b)) {
+        if (direction_policy.covered_packet_indices.contains(packet.packet_index)) {
             continue;
         }
 
@@ -4117,8 +4190,38 @@ void append_connection_stream_items_bounded(
             payload_bytes.size() - trim_prefix_bytes
         );
         const bool trimmed_tcp_payload = flow_protocol == ProtocolId::tcp && trim_prefix_bytes > 0U;
+        const auto gap_packet_index = flow_protocol == ProtocolId::tcp
+            ? (direction_policy.first_gap_packet_index != 0U
+                ? std::optional<std::uint64_t> {direction_policy.first_gap_packet_index}
+                : session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, direction))
+            : std::optional<std::uint64_t> {};
+        const bool direction_tainted_by_gap = gap_packet_index.has_value() && packet.packet_index >= *gap_packet_index;
 
-        if (flow_protocol == ProtocolId::tcp && !trimmed_tcp_payload) {
+        if (direction_tainted_by_gap && !gap_item_emitted) {
+            const auto gap_label = direction_policy.fallback_label == "HTTP Payload"
+                ? std::string {"HTTP Gap"}
+                : direction_policy.fallback_label == "TLS Payload"
+                    ? std::string {"TLS Gap"}
+                    : std::string {"TCP Gap"};
+            const auto gap_protocol = !direction_policy.fallback_protocol_text.empty()
+                ? direction_policy.fallback_protocol_text
+                : tcp_gap_protocol_text("TCP");
+            rows.push_back(make_stream_item_row(
+                static_cast<std::uint64_t>(rows.size() + 1U),
+                direction_text,
+                gap_label,
+                0U,
+                packet,
+                {},
+                gap_protocol
+            ));
+            gap_item_emitted = true;
+            if (rows.size() >= target_count) {
+                break;
+            }
+        }
+
+        if (flow_protocol == ProtocolId::tcp && !trimmed_tcp_payload && !direction_tainted_by_gap) {
             if (append_tls_stream_items(rows, candidate, payload_span)) {
                 continue;
             }
@@ -4165,7 +4268,15 @@ void append_connection_stream_items_bounded(
         }
 
         std::string label = fallback_stream_label(flow_protocol);
-        if (!trimmed_tcp_payload) {
+        std::string protocol_text {};
+        if (direction_tainted_by_gap) {
+            if (!direction_policy.fallback_label.empty()) {
+                label = direction_policy.fallback_label;
+            }
+            protocol_text = !direction_policy.fallback_protocol_text.empty()
+                ? direction_policy.fallback_protocol_text
+                : tcp_gap_protocol_text("TCP");
+        } else if (!trimmed_tcp_payload) {
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
                 label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol, deep_protocol_details_enabled);
@@ -4176,7 +4287,9 @@ void append_connection_stream_items_bounded(
             direction_text,
             label,
             payload_span.size(),
-            packet
+            packet,
+            {},
+            protocol_text
         ));
     }
 }
@@ -4333,15 +4446,13 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
         : connection_packet_count(*connection.ipv6);
     rows.reserve(std::min(target, total_packets));
 
-    bool used_directional_tls_reassembly_a_to_b = false;
-    bool used_directional_tls_reassembly_b_to_a = false;
-    bool used_directional_http_reassembly_a_to_b = false;
-    bool used_directional_http_reassembly_b_to_a = false;
+    DirectionalStreamPolicy direction_policy_a {};
+    DirectionalStreamPolicy direction_policy_b {};
     if (flow_protocol == ProtocolId::tcp) {
         const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
             ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
             : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
-        used_directional_tls_reassembly_a_to_b = append_tls_stream_items_from_reassembly(
+        direction_policy_a = append_tls_stream_items_from_reassembly(
             rows,
             session,
             flow_index,
@@ -4349,7 +4460,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             Direction::a_to_b,
             prefix_count_a
         );
-        used_directional_tls_reassembly_b_to_a = append_tls_stream_items_from_reassembly(
+        direction_policy_b = append_tls_stream_items_from_reassembly(
             rows,
             session,
             flow_index,
@@ -4357,8 +4468,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             Direction::b_to_a,
             prefix_count_b
         );
-        if (!used_directional_tls_reassembly_a_to_b) {
-            used_directional_http_reassembly_a_to_b = append_http_stream_items_from_reassembly(
+        if (!direction_policy_a.used_reassembly) {
+            direction_policy_a = append_http_stream_items_from_reassembly(
                 rows,
                 session,
                 flow_index,
@@ -4367,8 +4478,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 prefix_count_a
             );
         }
-        if (!used_directional_tls_reassembly_b_to_a) {
-            used_directional_http_reassembly_b_to_a = append_http_stream_items_from_reassembly(
+        if (!direction_policy_b.used_reassembly) {
+            direction_policy_b = append_http_stream_items_from_reassembly(
                 rows,
                 session,
                 flow_index,
@@ -4378,9 +4489,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             );
         }
     }
-
-    const bool skip_direction_a = used_directional_tls_reassembly_a_to_b || used_directional_http_reassembly_a_to_b;
-    const bool skip_direction_b = used_directional_tls_reassembly_b_to_a || used_directional_http_reassembly_b_to_a;
 
     if (rows.size() < target) {
         if (connection.family == FlowAddressFamily::ipv4) {
@@ -4393,8 +4501,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 target,
                 max_packets_to_scan,
                 deep_protocol_details_enabled,
-                skip_direction_a,
-                skip_direction_b
+                direction_policy_a,
+                direction_policy_b
             );
         } else {
             append_connection_stream_items_bounded(
@@ -4406,8 +4514,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 target,
                 max_packets_to_scan,
                 deep_protocol_details_enabled,
-                skip_direction_a,
-                skip_direction_b
+                direction_policy_a,
+                direction_policy_b
             );
         }
     }
@@ -5540,25 +5648,34 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
         ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
         : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
 
-    auto packet_contributions = connection.family == FlowAddressFamily::ipv4
+    const auto direction_a_analysis = connection.family == FlowAddressFamily::ipv4
         ? build_selected_flow_tcp_payload_suppression_for_direction(*this, flow_index, connection.ipv4->flow_a.packets, exact_duplicate_packet_indices, prefix_count_a)
         : build_selected_flow_tcp_payload_suppression_for_direction(*this, flow_index, connection.ipv6->flow_a.packets, exact_duplicate_packet_indices, prefix_count_a);
 
-    const auto direction_b_contributions = connection.family == FlowAddressFamily::ipv4
+    const auto direction_b_analysis = connection.family == FlowAddressFamily::ipv4
         ? build_selected_flow_tcp_payload_suppression_for_direction(*this, flow_index, connection.ipv4->flow_b.packets, exact_duplicate_packet_indices, prefix_count_b)
         : build_selected_flow_tcp_payload_suppression_for_direction(*this, flow_index, connection.ipv6->flow_b.packets, exact_duplicate_packet_indices, prefix_count_b);
 
-    for (const auto& [packet_index, contribution] : direction_b_contributions) {
+    auto packet_contributions = direction_a_analysis.contributions;
+    for (const auto& [packet_index, contribution] : direction_b_analysis.contributions) {
         packet_contributions[packet_index] = contribution;
     }
 
-    if (packet_contributions.empty()) {
+    if (packet_contributions.empty() && !direction_a_analysis.tainted_by_gap && !direction_b_analysis.tainted_by_gap) {
         selected_flow_tcp_payload_suppression_.reset();
         return;
     }
 
     SelectedFlowTcpPayloadSuppression suppression {};
     suppression.flow_index = flow_index;
+    suppression.gap_state_a_to_b = SelectedFlowTcpDirectionalGapState {
+        .tainted_by_gap = direction_a_analysis.tainted_by_gap,
+        .first_gap_packet_index = direction_a_analysis.first_gap_packet_index,
+    };
+    suppression.gap_state_b_to_a = SelectedFlowTcpDirectionalGapState {
+        .tainted_by_gap = direction_b_analysis.tainted_by_gap,
+        .first_gap_packet_index = direction_b_analysis.first_gap_packet_index,
+    };
     for (const auto& [packet_index, contribution] : packet_contributions) {
         suppression.packet_contributions.insert_or_assign(packet_index, SelectedFlowTcpPayloadContribution {
             .suppress_entire_packet = contribution.suppress_entire_packet,
@@ -5596,6 +5713,38 @@ std::size_t CaptureSession::selected_flow_tcp_payload_trim_prefix_bytes(
     return it == selected_flow_tcp_payload_suppression_->packet_contributions.end()
         ? 0U
         : it->second.trim_prefix_bytes;
+}
+
+bool CaptureSession::selected_flow_tcp_direction_tainted_by_gap(
+    const std::size_t flow_index,
+    const Direction direction
+) const noexcept {
+    if (!selected_flow_tcp_payload_suppression_.has_value() || selected_flow_tcp_payload_suppression_->flow_index != flow_index) {
+        return false;
+    }
+
+    const auto& gap_state = direction == Direction::a_to_b
+        ? selected_flow_tcp_payload_suppression_->gap_state_a_to_b
+        : selected_flow_tcp_payload_suppression_->gap_state_b_to_a;
+    return gap_state.tainted_by_gap;
+}
+
+std::optional<std::uint64_t> CaptureSession::selected_flow_tcp_direction_first_gap_packet_index(
+    const std::size_t flow_index,
+    const Direction direction
+) const noexcept {
+    if (!selected_flow_tcp_payload_suppression_.has_value() || selected_flow_tcp_payload_suppression_->flow_index != flow_index) {
+        return std::nullopt;
+    }
+
+    const auto& gap_state = direction == Direction::a_to_b
+        ? selected_flow_tcp_payload_suppression_->gap_state_a_to_b
+        : selected_flow_tcp_payload_suppression_->gap_state_b_to_a;
+    if (!gap_state.tainted_by_gap || gap_state.first_gap_packet_index == 0U) {
+        return std::nullopt;
+    }
+
+    return gap_state.first_gap_packet_index;
 }
 
 std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) const noexcept {

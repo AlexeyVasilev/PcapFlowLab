@@ -686,6 +686,65 @@ void run_stream_query_tests() {
     PFL_EXPECT(split_app_rows[0].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
     PFL_EXPECT(!split_app_rows[0].payload_hex_text.empty());
 
+    const auto tls_gap_app_data = make_tls_record(0x17U, 0x0303U, {0xAAU, 0xBBU, 0xCCU, 0xDDU});
+    const auto tls_gap_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 46, 1, 1), ipv4(10, 46, 1, 2), 52014, 443, split_server_hello_record, 1000U, 0U, 0x18);
+    const auto tls_gap_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 46, 1, 1), ipv4(10, 46, 1, 2), 52014, 443, tls_gap_app_data, 1000U + static_cast<std::uint32_t>(split_server_hello_record.size()) + 9U, 0U, 0x18);
+    const auto tls_gap_path = write_temp_pcap(
+        "pfl_stream_query_tls_gap_stop.pcap",
+        make_classic_pcap({
+            {100, tls_gap_packet_a},
+            {200, tls_gap_packet_b},
+        })
+    );
+
+    CaptureSession tls_gap_session {};
+    PFL_EXPECT(tls_gap_session.open_capture(tls_gap_path, fast_options));
+    tls_gap_session.set_selected_flow_tcp_payload_suppression(0U, {}, 2U);
+    const auto tls_gap_rows = tls_gap_session.list_flow_stream_items_for_packet_prefix(0U, 2U, 10U);
+    PFL_EXPECT(tls_gap_rows.size() == 3U);
+    PFL_EXPECT(tls_gap_rows[0].label == "TLS ServerHello");
+    PFL_EXPECT(tls_gap_rows[1].label == "TLS Gap");
+    PFL_EXPECT(tls_gap_rows[2].label == "TLS Payload");
+    PFL_EXPECT(tls_gap_rows[1].protocol_text.find("Semantic parsing stopped for this direction") != std::string::npos);
+    PFL_EXPECT(tls_gap_rows[2].protocol_text.find("Later bytes are shown conservatively") != std::string::npos);
+    PFL_EXPECT(tls_gap_rows[2].packet_indices == std::vector<std::uint64_t> {1U});
+
+    constexpr std::string_view http_gap_request_one =
+        "GET /one HTTP/1.1\r\n"
+        "Host: gap.example\r\n"
+        "\r\n";
+    constexpr std::string_view http_gap_request_two =
+        "GET /two HTTP/1.1\r\n"
+        "Host: gap.example\r\n"
+        "\r\n";
+    const auto http_gap_payload_a = make_text_bytes(http_gap_request_one);
+    const auto http_gap_payload_b = make_text_bytes(http_gap_request_two);
+    const auto http_gap_packet_a = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 46, 2, 1), ipv4(10, 46, 2, 2), 53024, 80, http_gap_payload_a, 4000U, 0U, 0x18);
+    const auto http_gap_packet_b = make_ethernet_ipv4_tcp_packet_with_bytes_payload_and_sequence(
+        ipv4(10, 46, 2, 1), ipv4(10, 46, 2, 2), 53024, 80, http_gap_payload_b, 4000U + static_cast<std::uint32_t>(http_gap_payload_a.size()) + 13U, 0U, 0x18);
+    const auto http_gap_path = write_temp_pcap(
+        "pfl_stream_query_http_gap_stop.pcap",
+        make_classic_pcap({
+            {100, http_gap_packet_a},
+            {200, http_gap_packet_b},
+        })
+    );
+
+    CaptureSession http_gap_session {};
+    PFL_EXPECT(http_gap_session.open_capture(http_gap_path, fast_options));
+    http_gap_session.set_selected_flow_tcp_payload_suppression(0U, {}, 2U);
+    const auto http_gap_rows = http_gap_session.list_flow_stream_items_for_packet_prefix(0U, 2U, 10U);
+    PFL_EXPECT(http_gap_rows.size() == 3U);
+    PFL_EXPECT(http_gap_rows[0].label == "HTTP GET /one");
+    PFL_EXPECT(http_gap_rows[1].label == "HTTP Gap");
+    PFL_EXPECT(http_gap_rows[2].label == "HTTP Payload");
+    PFL_EXPECT(http_gap_rows[1].protocol_text.find("Semantic parsing stopped for this direction") != std::string::npos);
+    PFL_EXPECT(http_gap_rows[2].protocol_text.find("Later bytes are shown conservatively") != std::string::npos);
+    PFL_EXPECT(http_gap_rows[2].packet_indices == std::vector<std::uint64_t> {1U});
+
     const auto multi_record_server_hello = make_tls_handshake_record(0x02U, {0x10U, 0x11U, 0x12U, 0x13U});
     const auto multi_record_ccs = make_tls_change_cipher_spec_record();
     const auto multi_record_app_data = make_tls_record(0x17U, 0x0303U, {0x21U, 0x22U, 0x23U, 0x24U, 0x25U});

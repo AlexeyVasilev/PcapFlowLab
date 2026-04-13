@@ -90,6 +90,8 @@ public:
     void clear_selected_flow_tcp_payload_suppression() noexcept;
     [[nodiscard]] bool should_suppress_selected_flow_tcp_payload(std::size_t flow_index, std::uint64_t packet_index) const noexcept;
     [[nodiscard]] std::size_t selected_flow_tcp_payload_trim_prefix_bytes(std::size_t flow_index, std::uint64_t packet_index) const noexcept;
+    [[nodiscard]] bool selected_flow_tcp_direction_tainted_by_gap(std::size_t flow_index, Direction direction) const noexcept;
+    [[nodiscard]] std::optional<std::uint64_t> selected_flow_tcp_direction_first_gap_packet_index(std::size_t flow_index, Direction direction) const noexcept;
     [[nodiscard]] std::size_t flow_packet_count(std::size_t flow_index) const noexcept;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index) const;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
@@ -108,9 +110,16 @@ private:
         std::size_t trim_prefix_bytes {0};
     };
 
+    struct SelectedFlowTcpDirectionalGapState {
+        bool tainted_by_gap {false};
+        std::uint64_t first_gap_packet_index {0};
+    };
+
     struct SelectedFlowTcpPayloadSuppression {
         std::size_t flow_index {0};
         std::map<std::uint64_t, SelectedFlowTcpPayloadContribution> packet_contributions {};
+        SelectedFlowTcpDirectionalGapState gap_state_a_to_b {};
+        SelectedFlowTcpDirectionalGapState gap_state_b_to_a {};
     };
 
     struct SelectedFlowPacketCacheEntry {

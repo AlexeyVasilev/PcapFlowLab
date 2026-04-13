@@ -32,6 +32,8 @@ struct ReassemblyResult {
     std::uint32_t quality_flags {0};
     std::size_t payload_packets_used {0};
     std::size_t total_packets_seen {0};
+    bool stopped_at_gap {false};
+    std::uint64_t first_gap_packet_index {0};
 
     [[nodiscard]] bool empty() const noexcept {
         return bytes.empty();
