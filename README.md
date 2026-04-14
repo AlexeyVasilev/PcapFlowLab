@@ -1,100 +1,165 @@
 # Pcap Flow Lab
 
-Flow-centric PCAP analyzer for large network captures.
+Flow-first PCAP analyzer for large network captures.
 
-Pcap Flow Lab is an open-source C++ project focused on flow-first analysis of packet captures. The current import path auto-detects classic PCAP and current PCAPNG support, and the decode path supports Ethernet II, Linux cooked captures (SLL and SLL2), up to two VLAN tags, ARP, IPv4/IPv6, ICMP, ICMPv6, TCP/UDP, conservative traversal of common IPv6 extension headers, and always-on IP fragmentation detection as diagnostic metadata.
+Pcap Flow Lab is an open-source C++20 project with a CLI and an optional Qt Quick desktop UI. The project is built around three constraints:
 
-## Project status
+- open captures quickly with a packet-oriented fast path
+- persist reusable analysis indexes so large captures do not need to be re-imported every time
+- keep richer work bounded and selected-flow-only instead of doing global stream reconstruction during open
 
-Usable prototype with flow browsing, packet inspection, saved analysis indexes, and on-demand Stream analysis for selected flows.
+This is the product direction for the first public release. The goal is not to be a Wireshark replacement. The goal is to be a practical flow-oriented tool that stays useful, predictable, and honest about limits.
 
-## CLI
+## Current status
 
-The main read/query commands accept either a capture file or a saved analysis index.
+The project is approaching `v0.1.0` as a first public release.
 
-Examples:
+Today it is already useful for:
 
-`pcap-flow-lab summary sample.pcap --mode fast`
+- opening PCAP and PCAPNG captures
+- browsing flows, packets, top endpoints, top ports, and protocol statistics
+- saving and reopening analysis indexes
+- opening an index in index-only mode and attaching the source capture later when needed
+- selected-flow Analysis views built from metadata only
+- selected-flow Stream inspection for practical TCP, TLS, HTTP, and narrow QUIC cases
+- conservative handling of imperfect or partially readable captures
 
-`pcap-flow-lab summary sample.idx`
+The roadmap is still focused on reliability, Stream correctness, bounded analysis, and incremental protocol enrichment rather than broad protocol coverage.
 
-`pcap-flow-lab flows sample.pcapng --mode deep`
+## What the tool supports
 
-`pcap-flow-lab flows sample.idx`
+Current decode and import support includes:
 
-`pcap-flow-lab inspect-packet sample.idx --packet-index 0`
+- classic PCAP and current PCAPNG
+- Ethernet II
+- Linux cooked captures `SLL` and `SLL2`
+- up to two VLAN tags
+- ARP
+- IPv4 and IPv6
+- ICMP and ICMPv6
+- TCP and UDP
+- conservative traversal of common IPv6 extension headers
+- always-on IP fragmentation detection as diagnostic metadata
 
-`pcap-flow-lab hex sample.pcapng --packet-index 0`
+Current desktop and analysis workflows include:
 
-`pcap-flow-lab export-flow sample.idx --flow-index 0 --out selected-flow.pcap`
+- fast capture open with non-modal progress and cooperative cancellation
+- saved index reopen workflows for large captures
+- packet details in Summary, Raw, and Protocol views
+- selected-flow Analysis with Sequence Preview, Timeline, Packet Size Histogram, Inter-arrival Histogram, Derived Metrics, Directional Ratio, and Flow Rate graph
+- selected-flow Stream with bounded initial materialization and explicit `Load more` continuation for heavy flows
+- flow export to classic PCAP
+- selected-flow sequence export to CSV from metadata only
+- optional weak-hint buckets for `Possible TLS` and `Possible QUIC` on unresolved port 443 flows
 
-`pcap-flow-lab save-index sample.pcapng --out sample.idx --mode deep`
+## Analysis model
 
-`pcap-flow-lab load-index-summary sample.idx`
+The project is intentionally flow-first and bounded.
 
-`pcap-flow-lab chunked-import sample.pcap --checkpoint sample.ckp --max-packets 100000`
+- `fast` mode is the default open path and keeps work packet-oriented and predictable.
+- `deep` mode remains available as a separate open path for richer packet-level details.
+- Indexes store metadata, packet references, and source metadata, but not raw packet bytes.
+- Selected-flow Stream and byte-dependent packet details still require source capture access.
+- Opening an index without the original capture is supported, but raw-byte features become available only after the matching source capture is attached and validated.
 
-`pcap-flow-lab resume-import --checkpoint sample.ckp --max-packets 100000`
+This separation is deliberate. Stream analysis is on-demand, flow-local, and ephemeral.
 
-`pcap-flow-lab finalize-import --checkpoint sample.ckp --out sample.idx`
+## Current protocol behavior
 
-## Desktop UI
+The most useful protocol-aware paths today are:
 
-The Qt Quick desktop UI can:
+- HTTP request and response header-block recognition with bounded directional reassembly
+- TLS record-oriented Stream parsing with bounded directional reassembly
+- narrow TLS detail exposure for complete `ClientHello`, `ServerHello`, and `Certificate` cases
+- narrow selected-flow QUIC labeling for practical packet-aware cases such as `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `CRYPTO`, `ACK`, and protected payload fallback
 
-- open captures and analysis indexes via native file dialogs
-- show non-modal open progress and allow cooperative cancellation while preserving the previous valid session if the open is cancelled
-- save the current analysis state back to an index (disabled for partial-open captures)
-- export the currently selected flow to classic PCAP
-- browse flows, packets, protocol statistics, top endpoints, and top ports
-- switch Statistics tab protocol presentation between flows, packets, and bytes (presentation only over existing metadata)
-- include SSH, STUN, BitTorrent, DHCP, and mDNS in protocol summary/distribution when detected by cheap flow hints
-- optionally classify unresolved TCP/UDP port 443 flows as Possible TLS / Possible QUIC with a user setting; these remain separate from confirmed protocol detection
-- show QUIC and TLS protocol-recognition statistics aggregated from existing flow metadata only (no extra parsing pass for statistics)
-- materialize selected-flow packet rows in bounded initial batches with explicit Load more continuation for heavy flows
-- mark exact-duplicate payload-bearing TCP packets in the selected flow as `Suspected retransmission` on demand only; this marker is ephemeral, does not affect import or counts, and may suppress duplicate payload contribution in selected-flow Stream analysis
-- show fragmented packets and flows as diagnostic metadata
-- open indexes in explicit index-only mode and attach the matching source capture later
-- inspect packet details in Summary, Raw, and Protocol views
-- show a payload-oriented Stream tab for the selected flow
-- expose Analysis as a dedicated selected-flow workspace with compact flow selection and MVP overview and directional stats only
-- include a bounded metadata-only Sequence Preview block in Analysis for the first packets of the selected flow
-- export the full selected-flow sequence from Analysis to CSV using existing packet metadata only, without payload bytes
-- include a bounded metadata-only Timeline block in Analysis for selected-flow timing summary
-- include a bounded metadata-only Packet Size Histogram block in Analysis for selected-flow captured-length distribution
-- include a bounded metadata-only Inter-arrival Histogram block in Analysis for selected-flow timing distribution
-- explain directional histogram modes inline in Analysis so packet-size filtering and inter-arrival attribution stay understandable without changing analysis logic
-- include a bounded metadata-only Derived Metrics block in Analysis for selected-flow summary rates and averages
-- include a bounded metadata-only Directional Ratio block in Analysis for selected-flow directional imbalance summary
-- include a bounded metadata-only Flow Rate graph in Analysis with auto windowing and A->B/B->A/Both directional rendering from packet metadata only
-- keep the Analysis tab organized with summary-first blocks followed by histogram/detail evidence blocks for readability only; this step does not add new analysis logic
-- materialize selected-flow Stream items in bounded initial batches with explicit `Load more` continuation for heavy flows
+## Known limitations
 
-### Stream tab
+The current release direction explicitly accepts these limits:
 
-The Stream tab is on-demand, flow-local, and ephemeral.
+- no full TCP-correct stream reconstruction
+- no deep TCP recovery after gaps, major reordering, or loss
+- Stream results are heuristic and can differ from Wireshark on difficult captures
+- retransmission handling is still narrow and currently centered on exact duplicate suppression for selected-flow analysis
+- HTTP Stream parsing is focused on header blocks, not full body reconstruction
+- QUIC handling is intentionally narrow and does not attempt full session reconstruction or decryption-backed analysis
+- packet details remain intentionally shallower than Wireshark
+- index and checkpoint loading currently follow an exact-version policy
 
-- It runs only for the currently selected flow.
-- It requires source capture access because raw packet bytes are still read lazily from the original capture.
-- It does not store stream items in indexes or checkpoints.
-- Selected-flow packet metadata may also include ephemeral `Suspected retransmission` markers derived on demand from exact duplicate TCP payload/sequence/ack matches within the active flow only.
-- Exact duplicate TCP payload segments marked this way may be suppressed from payload contribution during selected-flow Stream analysis.
-- The Stream view now uses bounded initial materialization for the selected flow and loads additional items only through explicit `Load more` continuation.
-- TLS parsing uses bounded directional reassembly, so TLS records spanning multiple TCP packets can appear as one logical stream item when enough bytes are available.
-- HTTP parsing uses bounded directional reassembly for complete request/response header blocks.
-- This remains heuristic analysis, not full TCP-correct stream reconstruction.
+If the core workflows are solid and these limits are made explicit, the tool is behaving as intended.
 
-Deep mode remains available as a separate open path for richer packet-level protocol details. Fast mode remains the default browsing path and does not perform global reassembly during open.
+## Build
 
-If capture import fails after a strictly valid parsed prefix, the session may still open partially with a warning. Only the accepted prefix is kept; corrupted trailing data is never parsed or included, and saving an index from that partial session is disabled initially.
+Requirements:
+
+- CMake `3.24+`
+- a C++20 compiler
+- Qt `6.8+` with `Quick`, `Qml`, `QuickControls2`, and `Widgets` for the desktop UI
+
+The CLI and core library can build without Qt. If Qt 6 is not found, the UI target is skipped.
+
+Example configure and build steps:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+If `BUILD_TESTING` is enabled, the repository defines:
+
+- `pcap_flow_lab_core_tests`
+- `pcap_flow_lab_ui_tests` when the Qt UI target is available
+
+Example test command:
+
+```sh
+ctest --test-dir build --output-on-failure --build-config Release
+```
+
+## Run
+
+CLI examples:
+
+```sh
+pcap-flow-lab summary sample.pcap --mode fast
+pcap-flow-lab flows sample.pcapng --mode deep
+pcap-flow-lab summary sample.idx
+pcap-flow-lab inspect-packet sample.idx --packet-index 0
+pcap-flow-lab export-flow sample.idx --flow-index 0 --out selected-flow.pcap
+pcap-flow-lab save-index sample.pcapng --out sample.idx --mode deep
+pcap-flow-lab load-index-summary sample.idx
+pcap-flow-lab chunked-import sample.pcap --checkpoint sample.ckp --max-packets 100000
+pcap-flow-lab resume-import --checkpoint sample.ckp --max-packets 100000
+pcap-flow-lab finalize-import --checkpoint sample.ckp --out sample.idx
+```
+
+If the Qt UI target is built, run:
+
+```sh
+pcap-flow-lab-ui
+```
+
+## Platform note
+
+The repository currently shows an actively used Windows workflow, and some code paths are Windows-specific. Treat broader platform support as best-effort unless a release note explicitly says a platform or workflow was checked for that release.
+
+## Repository guide
+
+Key documents:
+
+- [docs/architecture.md](docs/architecture.md): architecture, persistence boundaries, and runtime paths
+- [docs/current-state.md](docs/current-state.md): implemented behavior and current gaps
+- [docs/roadmap.md](docs/roadmap.md): practical engineering roadmap
+- [docs/release-checklist-v0.1.0.md](docs/release-checklist-v0.1.0.md): first public release readiness checklist
+- [docs/contributing.md](docs/contributing.md): contribution expectations
+
+## License
+
+This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Developer note
 
-Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is intended only for local regression tracking during development and has no effect in normal usage.
-
-Console logging in open/import paths is intentionally quiet by default. If temporary developer logging is needed there, use the compile-time flags in `src/core/debug_logging.h` so disabled builds stay effectively free of logging overhead.
-
-Current large-list strategy also stays intentionally simple: Flow, Packet, and Stream surfaces use virtualization-friendly `ListView`-based rendering, explicit scrollbars, and lightweight delegates, while pagination remains deferred until there is stronger evidence that the current approach is insufficient. Selected-flow packet and Stream loading now stays fully materialized for small flows that fit within the initial budgets, while heavy flows still use bounded initial materialization with explicit `Load more` continuation.
+Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is developer-only instrumentation for local regression tracking and has no effect in normal usage.
 
 
 
