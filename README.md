@@ -79,7 +79,7 @@ Current strengths:
 - practical flow navigation on large captures
 - fast open plus reusable index reopen workflows
 - selected-flow Analysis from metadata only
-- useful selected-flow Stream behavior for supported TCP, TLS, HTTP, and narrow QUIC cases
+- useful selected-flow Stream behavior for supported TCP, TLS, HTTP, and meaningful bounded QUIC cases
 
 Current limitations:
 
@@ -112,6 +112,8 @@ Current protocol-aware inspection is strongest in:
 - TLS record-oriented Stream parsing with bounded directional reassembly
 - narrow TLS detail exposure for complete `ClientHello`, `ServerHello`, and `Certificate` cases
 - meaningful selected-flow QUIC inspection with bounded frame-level and handshake-aware details for practical cases such as `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `CRYPTO`, `ACK`, `PADDING`, and protected payload fallback
+
+Near-term work remains focused on reliability, Stream correctness, bounded analysis, and incremental protocol enrichment.
 
 ## Build and platform status
 

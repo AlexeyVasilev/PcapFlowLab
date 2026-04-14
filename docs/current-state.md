@@ -5,8 +5,8 @@
 - Fixture-backed baseline tests are in place for 7 repository PCAP cases.
 - HTTP Stream reconstruction supports requests and responses, including bounded body assembly across multiple TCP segments via `Content-Length` and chunked-body traversal, with conservative fallback where needed.
 - Partial HTTP and TLS cases have explicit fallback handling.
-- Selected-flow-only retransmission detection is implemented.
-- Retransmission indication is surfaced in the selected-flow packet list, and selected-flow Stream construction suppresses retransmitted packets in the current bounded model.
+- Retransmissions are indicated in the selected-flow packet list.
+- Selected-flow Stream construction suppresses retransmitted packets in the current bounded model.
 - Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
 - TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
 - Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.

@@ -85,11 +85,11 @@ Current Stream behavior:
   - Multiple TLS records inside one TCP payload are split into separate stream items.
   - A TLS record spanning multiple TCP packets can appear as one logical stream item when the bounded reassembly buffer contains the full record.
   - Incomplete trailing TLS data falls back conservatively to `TLS Record Fragment` or `TLS Payload`.
-- HTTP stream parsing uses bounded directional reassembly for requests and responses, including bodies when enough bytes are available.
-  - Complete HTTP requests and responses can appear as one logical stream item even when assembled across multiple TCP packets.
+- HTTP stream parsing uses bounded directional reassembly for requests and responses, including bodies assembled across multiple TCP segments when enough bytes are available.
+  - Complete HTTP requests and responses can appear as one logical stream item even when assembled from many TCP packets.
   - `Content-Length` and chunked-body traversal are used to preserve bounded multi-segment continuity where parseability remains clear.
   - Incomplete or ambiguous data falls back conservatively rather than implying transport-complete recovery.
-- QUIC selected-flow inspection uses bounded packet-aware parsing.
+- QUIC selected-flow inspection provides meaningful bounded packet-aware parsing.
   - Practical frame-level details such as `CRYPTO`, `ACK`, and `PADDING` can be exposed in packet and Stream presentation when confidently isolated.
   - Parseable CRYPTO contents can surface handshake-aware TLS details such as `ClientHello` and `ServerHello` in bounded selected-flow contexts.
   - This remains conservative selected-flow inspection, not full QUIC reconstruction or decryption-backed analysis.
