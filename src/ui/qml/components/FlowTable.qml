@@ -110,6 +110,7 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.rightMargin: flowListView.rightGutter
             spacing: 8
             visible: root.wiresharkFilterVisible
 
@@ -180,6 +181,7 @@ Frame {
 
             ListView {
                 id: flowListView
+                readonly property int rightGutter: flowScrollBar.visible ? flowScrollBar.width + 10 : 0
 
                 anchors.fill: parent
                 anchors.margins: 1
@@ -190,6 +192,7 @@ Frame {
                 onModelChanged: root.syncSelectedFlowRow()
 
                 ScrollBar.vertical: ScrollBar {
+                    id: flowScrollBar
                     policy: ScrollBar.AsNeeded
                     visible: flowListView.contentHeight > flowListView.height
                 }
@@ -229,7 +232,7 @@ Frame {
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 8
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: 8 + flowListView.rightGutter
                         spacing: 8
 
                         Item {

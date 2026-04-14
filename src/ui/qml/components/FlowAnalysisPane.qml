@@ -585,81 +585,81 @@ Frame {
                     width: analysisResultScroll.availableWidth
                     spacing: root.blockSpacing
 
-                    AnalysisSectionFrame {
-                        Label {
-                            text: "Overview"
-                            font.bold: true
-                        }
+                        AnalysisSectionFrame {
+                            Label {
+                                text: "Overview"
+                                font.bold: true
+                            }
 
-                        Label {
-                            objectName: "analysisEndpointSummaryLabel"
-                            visible: root.endpointSummaryText.length > 0
-                            text: root.endpointLineText(root.endpointSummaryText)
-                            color: "#334155"
-                            font.bold: true
-                            wrapMode: Text.WordWrap
-                        }
+                            Label {
+                                objectName: "analysisEndpointSummaryLabel"
+                                visible: root.endpointSummaryText.length > 0
+                                text: root.endpointLineText(root.endpointSummaryText)
+                                color: "#334155"
+                                font.bold: true
+                                wrapMode: Text.WordWrap
+                            }
 
-                        Label {
-                            objectName: "analysisProtocolSummaryLabel"
-                            visible: root.protocolLineText().length > 0
-                            text: root.protocolLineText()
-                            color: "#475569"
-                            wrapMode: Text.WordWrap
-                        }
+                            Label {
+                                objectName: "analysisProtocolSummaryLabel"
+                                visible: root.protocolLineText().length > 0
+                                text: root.protocolLineText()
+                                color: "#475569"
+                                wrapMode: Text.WordWrap
+                            }
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: root.blockSpacing
-
-                            GridLayout {
+                            RowLayout {
                                 Layout.fillWidth: true
-                                columns: 2
-                                columnSpacing: 16
-                                rowSpacing: root.rowSpacing
+                                spacing: root.blockSpacing
 
-                                Label { text: "Total packets" }
-                                Label { text: root.totalPacketsText.length > 0 ? root.totalPacketsText : "0" }
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: root.rowSpacing
 
-                                Label { text: "Total bytes" }
-                                Label { text: root.totalBytesText.length > 0 ? root.totalBytesText : "0 B" }
+                                    Label { text: "Total packets" }
+                                    Label { text: root.totalPacketsText.length > 0 ? root.totalPacketsText : "0" }
 
-                                Label { text: "Protocol hint" }
-                                Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
+                                    Label { text: "Total bytes" }
+                                    Label { text: root.totalBytesText.length > 0 ? root.totalBytesText : "0 B" }
 
-                                Label { text: "Service hint" }
-                                Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
-                            }
+                                    Label { text: "Protocol hint" }
+                                    Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
 
-                            Rectangle {
-                                Layout.fillHeight: true
-                                Layout.preferredWidth: 1
-                                color: "#e2e8f0"
-                            }
+                                    Label { text: "Service hint" }
+                                    Label { text: root.serviceHint.length > 0 ? root.serviceHint : "-"; elide: Text.ElideRight; Layout.fillWidth: true }
+                                }
 
-                            GridLayout {
-                                Layout.fillWidth: true
-                                columns: 2
-                                columnSpacing: 16
-                                rowSpacing: root.rowSpacing
+                                Rectangle {
+                                    Layout.fillHeight: true
+                                    Layout.preferredWidth: 1
+                                    color: "#e2e8f0"
+                                }
 
-                                Label { text: "First packet" }
-                                Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 16
+                                    rowSpacing: root.rowSpacing
 
-                                Label { text: "Last packet" }
-                                Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
+                                    Label { text: "First packet" }
+                                    Label { text: root.timelineFirstPacketTime.length > 0 ? root.timelineFirstPacketTime : "-" }
 
-                                Label { text: "Duration" }
-                                Label { text: root.durationText.length > 0 ? root.durationText : "-" }
+                                    Label { text: "Last packet" }
+                                    Label { text: root.timelineLastPacketTime.length > 0 ? root.timelineLastPacketTime : "-" }
 
-                                Label { text: "Largest gap" }
-                                Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
+                                    Label { text: "Duration" }
+                                    Label { text: root.durationText.length > 0 ? root.durationText : "-" }
 
-                                Label { text: "Packets considered" }
-                                Label { text: root.timelinePacketCountConsideredText.length > 0 ? root.timelinePacketCountConsideredText : "0" }
+                                    Label { text: "Largest gap" }
+                                    Label { text: root.timelineLargestGapText.length > 0 ? root.timelineLargestGapText : "-" }
+
+                                    Label { text: "Packets considered" }
+                                    Label { text: root.timelinePacketCountConsideredText.length > 0 ? root.timelinePacketCountConsideredText : "0" }
+                                }
                             }
                         }
-                    }
 
                     AnalysisSectionFrame {
                         Label {

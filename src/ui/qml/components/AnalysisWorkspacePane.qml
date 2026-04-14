@@ -128,6 +128,7 @@ Item {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.rightMargin: analysisFlowList.rightGutter
                     spacing: 10
 
                     Label { text: "Index"; Layout.preferredWidth: 44 }
@@ -146,6 +147,7 @@ Item {
 
                     ListView {
                         id: analysisFlowList
+                        readonly property int rightGutter: analysisFlowScrollBar.visible ? analysisFlowScrollBar.width + 10 : 0
 
                         anchors.fill: parent
                         anchors.margins: 1
@@ -153,6 +155,7 @@ Item {
                         model: root.flowModel
 
                         ScrollBar.vertical: ScrollBar {
+                            id: analysisFlowScrollBar
                             policy: ScrollBar.AsNeeded
                             visible: analysisFlowList.contentHeight > analysisFlowList.height
                         }
@@ -184,7 +187,7 @@ Item {
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.leftMargin: 12
-                                anchors.rightMargin: 10
+                                anchors.rightMargin: 10 + analysisFlowList.rightGutter
                                 anchors.topMargin: 8
                                 anchors.bottomMargin: 8
                                 spacing: 4

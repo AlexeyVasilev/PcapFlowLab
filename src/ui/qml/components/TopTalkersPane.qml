@@ -47,6 +47,7 @@ Frame {
         required property var viewModel
         required property string emptyText
         required property bool endpointTable
+        readonly property int listRightGutter: tableScrollBar.visible ? tableScrollBar.width + 10 : 0
 
         Layout.fillWidth: true
         Layout.fillHeight: true
@@ -79,7 +80,7 @@ Frame {
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: 8
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: 8 + tableFrame.listRightGutter
                     spacing: 12
 
                     Label {
@@ -115,6 +116,7 @@ Frame {
                 model: tableFrame.viewModel
 
                 ScrollBar.vertical: ScrollBar {
+                    id: tableScrollBar
                     policy: ScrollBar.AsNeeded
                 }
 
@@ -135,7 +137,7 @@ Frame {
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 8
-                        anchors.rightMargin: 8
+                        anchors.rightMargin: 8 + tableFrame.listRightGutter
                         spacing: 12
 
                         Label {
