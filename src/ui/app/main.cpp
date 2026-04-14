@@ -6,10 +6,15 @@
 
 #include "ui/app/MainController.h"
 
+#ifndef PFL_APP_VERSION
+#define PFL_APP_VERSION "0.0.0"
+#endif
+
 int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     application.setOrganizationName("Pcap Flow Lab");
     application.setApplicationName("Pcap Flow Lab");
+    application.setApplicationVersion(QStringLiteral(PFL_APP_VERSION));
 
     const QIcon app_icon(QStringLiteral(":/assets/icons/app.ico"));
     if (!app_icon.isNull()) {

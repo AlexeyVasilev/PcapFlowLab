@@ -26,6 +26,7 @@ namespace pfl {
 class MainController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString currentInputPath READ currentInputPath NOTIFY stateChanged)
+    Q_PROPERTY(QString applicationVersion READ applicationVersion CONSTANT)
     Q_PROPERTY(QString activeSourceCapturePath READ activeSourceCapturePath NOTIFY sourceAvailabilityChanged)
     Q_PROPERTY(QString expectedSourceCapturePath READ expectedSourceCapturePath NOTIFY sourceAvailabilityChanged)
     Q_PROPERTY(QString openErrorText READ openErrorText NOTIFY openErrorTextChanged)
@@ -200,6 +201,7 @@ public:
     ~MainController() override;
 
     [[nodiscard]] QString currentInputPath() const;
+    [[nodiscard]] QString applicationVersion() const;
     [[nodiscard]] QString activeSourceCapturePath() const;
     [[nodiscard]] QString expectedSourceCapturePath() const;
     [[nodiscard]] QString openErrorText() const;

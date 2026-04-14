@@ -1265,6 +1265,10 @@ QString MainController::currentInputPath() const {
     return current_input_path_;
 }
 
+QString MainController::applicationVersion() const {
+    return QCoreApplication::applicationVersion();
+}
+
 QString MainController::activeSourceCapturePath() const {
     const auto& path = session_.attached_source_capture_path();
     return path.empty() ? QString {} : QString::fromStdWString(path.wstring());

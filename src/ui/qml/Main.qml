@@ -85,6 +85,12 @@ ApplicationWindow {
     }
 
     Action {
+        id: showAboutAction
+        text: "About"
+        onTriggered: aboutDialog.open()
+    }
+
+    Action {
         id: exitAction
         text: "Exit"
         onTriggered: Qt.quit()
@@ -115,6 +121,109 @@ ApplicationWindow {
             title: "View"
 
             MenuItem { action: showSettingsAction }
+            MenuSeparator {}
+            MenuItem { action: showAboutAction }
+        }
+    }
+
+    Dialog {
+        id: aboutDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 460
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        title: "About Pcap Flow Lab"
+
+        contentItem: Item {
+            implicitHeight: aboutLayout.implicitHeight + 24
+
+            ColumnLayout {
+                id: aboutLayout
+                anchors.fill: parent
+                anchors.margins: 18
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    Image {
+                        source: "qrc:/assets/app_icon_source.png"
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
+                        mipmap: true
+                        sourceSize.width: 64
+                        sourceSize.height: 64
+                        Layout.preferredWidth: status === Image.Ready ? 64 : 0
+                        Layout.preferredHeight: status === Image.Ready ? 64 : 0
+                        visible: status === Image.Ready
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        Label {
+                            text: "Pcap Flow Lab"
+                            font.pixelSize: 20
+                            font.bold: true
+                            color: "#0f172a"
+                        }
+
+                        Label {
+                            text: "Version " + mainController.applicationVersion
+                            color: "#475569"
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: "#e2e8f0"
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Flow-first PCAP analyzer for large captures"
+                    wrapMode: Text.WordWrap
+                    color: "#0f172a"
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Built with C++ and Qt"
+                    color: "#64748b"
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    textFormat: Text.RichText
+                    wrapMode: Text.WrapAnywhere
+                    color: "#475569"
+                    linkColor: "#2563eb"
+                    text: "Repository: <a href=\"https://github.com/AlexeyVasilev/PcapFlowLab\">https://github.com/AlexeyVasilev/PcapFlowLab</a>"
+                    onLinkActivated: function(link) {
+                        Qt.openUrlExternally(link)
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.NoButton
+                        cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        hoverEnabled: true
+                    }
+                }
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Ok
+            onAccepted: aboutDialog.close()
         }
     }
 

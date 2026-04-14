@@ -131,6 +131,12 @@ if(PFL_BUILD_UI)
             src/ui/app/StreamListModel.h
         )
 
+        target_compile_definitions(
+            pcap_flow_lab_ui
+            PRIVATE
+                PFL_APP_VERSION="${PROJECT_VERSION}"
+        )
+
         qt_add_qml_module(
             pcap_flow_lab_ui
             URI PcapFlowLab
@@ -157,6 +163,7 @@ if(PFL_BUILD_UI)
             "pcap_flow_lab_icons"
             PREFIX "/"
             FILES
+                assets/app_icon_source.png
                 assets/icons/app.ico
         )
 
