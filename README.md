@@ -1,12 +1,14 @@
 # Pcap Flow Lab
 
-Flow-first PCAP analyzer for large captures.
+**Flow-first PCAP analyzer for large captures.**
 
 Pcap Flow Lab is an open-source C++20 project with a CLI and an optional Qt Quick desktop UI. It is designed for a specific workflow: open large captures quickly, navigate by flow instead of packet-first hunting, save reusable indexes, and inspect only the selected flow in more detail when that deeper work is worth doing.
 
 It is not trying to be a Wireshark replacement. It is trying to be a practical flow-oriented tool for large capture exploration that stays fast, bounded, and honest about its limits.
 
-![Pcap Flow Lab banner](docs/images/branding/logo-banner.png)
+<p align="center">
+	<img src="docs/images/branding/logo-banner.png" alt="Pcap Flow Lab banner" width="520">
+</p>
 
 ## Why this project exists
 
