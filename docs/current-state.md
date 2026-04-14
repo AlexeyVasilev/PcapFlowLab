@@ -3,18 +3,18 @@
 ## Stream
 
 - Fixture-backed baseline tests are in place for 7 repository PCAP cases.
-- HTTP Stream reassembly supports `Content-Length` and chunked-body traversal for multi-message continuity.
+- HTTP Stream reconstruction supports requests and responses, including bounded body assembly across multiple TCP segments via `Content-Length` and chunked-body traversal, with conservative fallback where needed.
 - Partial HTTP and TLS cases have explicit fallback handling.
 - Selected-flow-only retransmission detection is implemented.
-- Exact duplicate TCP payload suppression is implemented for selected-flow Stream use.
+- Retransmission indication is surfaced in the selected-flow packet list, and selected-flow Stream construction suppresses retransmitted packets in the current bounded model.
 - Stream materialization now uses one bounded on-demand pipeline for both initial and extended selected-flow views.
 - TLS Stream item protocol details now expose a first narrow enrichment step for `ClientHello`, `ServerHello`, and `Certificate` items.
 - Packet Details now exposes the same narrow TLS enrichment for complete packet-contained `ClientHello`, `ServerHello`, and `Certificate` records.
 - Selected-packet protocol details now depend on packet-bytes availability, not Deep mode alone.
-- Selected-flow QUIC labeling now exists in a narrow bounded form for packet-aware `Initial`, `Handshake`, `Retry`, `Version Negotiation`, and `Protected Payload` cases, with conservative fallback to `UDP Payload`.
+- Selected-flow QUIC inspection now exposes bounded packet-aware details for `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `Protected Payload`, and practical frame-level cases such as `CRYPTO`, `ACK`, and `PADDING`, with conservative fallback where confidence is limited.
 - QUIC packet and Stream details now use direction-aware, ownership-aware selected-flow TLS attachment so `ClientHello` / `ServerHello` details are not reused across the wrong packet or Stream item context.
 - Selected-flow QUIC packet and Stream presentation now share one bounded internal model: Packet Details stays shell-oriented but Stream labeling is more semantic when confidently isolated (`CRYPTO`, `ACK`) and suppresses standalone `PADDING` / `PING` noise.
-- Bounded selected-flow QUIC TLS attachment now also surfaces `ServerHello` on server-side packets/items when the selected packet participates in enough same-direction CRYPTO bytes; otherwise it remains conservatively QUIC-only.
+- Bounded selected-flow QUIC TLS attachment now also surfaces handshake-aware details such as `ClientHello` and `ServerHello` when enough parseable CRYPTO bytes are available; otherwise it remains conservatively QUIC-only.
 
 ## Analysis tab
 
@@ -36,8 +36,8 @@
 
 ## Known gaps
 
-- QUIC Stream handling is still narrow; there is no full QUIC reconstruction or decryption-backed session model, and broader QUIC itemization, prioritization, and multi-packet interpretation remain future work.
-- General retransmission handling is not implemented beyond exact duplicate suppression.
+- QUIC Stream handling is still bounded and incomplete; there is no full QUIC reconstruction or decryption-backed session model, and broader QUIC itemization, prioritization, and multi-packet interpretation remain future work.
+- Retransmission suppression works in the current bounded selected-flow Stream model, but broader transport-complete retransmission handling is not implemented.
 - TLS details are only partially exposed; richer handshake and certificate fields exist for complete packet-contained TLS records, matching Stream item types, and directly parseable QUIC CRYPTO handshake bytes.
 
 ## Next steps

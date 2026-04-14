@@ -44,9 +44,10 @@ That also means it intentionally does not compete on every axis:
 - Index-only reopen workflow with later source-capture attach for byte-dependent features.
 - Flow browsing with filtering, protocol hints, top endpoints, top ports, and protocol statistics.
 - Selected-flow Analysis workspace with metadata-first summaries, derived metrics, histograms, timeline, directional ratios, and rate graph.
-- Selected-flow Stream inspection for practical TCP, TLS, HTTP, and narrow QUIC cases.
+- Selected-flow Stream inspection for practical TCP, TLS, HTTP, and meaningful bounded QUIC cases.
 - Packet details in Summary, Raw, and Protocol views.
 - Flow export to classic PCAP and selected-flow sequence export to CSV.
+- Selected-flow Stream construction suppresses retransmitted packets in the current bounded model.
 - Conservative behavior on imperfect captures, including bounded fallback paths instead of over-claiming semantic certainty.
 
 ## Screenshots
@@ -85,8 +86,8 @@ Current limitations:
 - no full TCP-correct stream reconstruction
 - no deep TCP recovery after gaps, major reordering, or loss
 - Stream results are heuristic and can differ from Wireshark on difficult captures
-- HTTP Stream handling is focused on header blocks, not full body reconstruction
-- QUIC handling is intentionally narrow and not session-complete
+- HTTP Stream reconstruction is bounded and selected-flow-only; requests and responses, including bodies, may be assembled across multiple TCP segments, but recovery is not transport-complete
+- QUIC inspection is meaningful but intentionally bounded; selected-flow analysis can expose frame-level and handshake-aware details, but full QUIC coverage and decryption remain out of scope
 - packet details are intentionally shallower than Wireshark
 - index and checkpoint loading currently use an exact-version policy
 
@@ -107,10 +108,10 @@ Current decode and import support includes:
 
 Current protocol-aware inspection is strongest in:
 
-- HTTP request and response header-block recognition with bounded directional reassembly
+- HTTP request and response reconstruction with bounded directional reassembly, including bodies assembled across multiple TCP segments with conservative fallback where needed
 - TLS record-oriented Stream parsing with bounded directional reassembly
 - narrow TLS detail exposure for complete `ClientHello`, `ServerHello`, and `Certificate` cases
-- narrow selected-flow QUIC labeling for practical packet-aware cases such as `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `CRYPTO`, `ACK`, and protected payload fallback
+- meaningful selected-flow QUIC inspection with bounded frame-level and handshake-aware details for practical cases such as `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `CRYPTO`, `ACK`, `PADDING`, and protected payload fallback
 
 ## Build and platform status
 
@@ -167,7 +168,6 @@ pcap-flow-lab-ui
 
 - [docs/architecture.md](docs/architecture.md): architecture, persistence boundaries, and runtime paths
 - [docs/current-state.md](docs/current-state.md): implemented behavior and current gaps
-- [docs/roadmap.md](docs/roadmap.md): practical engineering roadmap
 - [docs/release-checklist-v0.1.0.md](docs/release-checklist-v0.1.0.md): first public release readiness checklist
 - [docs/contributing.md](docs/contributing.md): contribution expectations
 

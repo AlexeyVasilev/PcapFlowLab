@@ -47,6 +47,7 @@ On-demand analysis is separate from the fast path and from index loading.
 - Builds ephemeral derived artifacts only for the active flow.
 - Current user-facing use is the Stream tab.
 - The selected-flow packet list may also carry ephemeral `Suspected retransmission` markers for exact duplicate payload-bearing TCP packets in the active flow only; these markers are not persisted and do not change open-time summaries or counts.
+- Selected-flow Stream construction can suppress retransmitted packet contribution in the current bounded model; this remains presentation-oriented and does not imply transport-complete recovery.
 - Analysis tab now also includes a bounded metadata-only Sequence Preview block for the selected flow.
 - Analysis can also export the full selected-flow packet sequence to CSV as a metadata-only artifact without payload bytes.
 - Analysis tab now also includes a bounded metadata-only Timeline block for the selected flow.
@@ -84,10 +85,14 @@ Current Stream behavior:
   - Multiple TLS records inside one TCP payload are split into separate stream items.
   - A TLS record spanning multiple TCP packets can appear as one logical stream item when the bounded reassembly buffer contains the full record.
   - Incomplete trailing TLS data falls back conservatively to `TLS Record Fragment` or `TLS Payload`.
-- HTTP stream parsing uses bounded directional reassembly for header blocks.
-  - Complete HTTP request and response header blocks are recognized in byte order.
-  - A request or response header block spanning multiple TCP packets can appear as one logical stream item when enough bytes are available.
-  - HTTP body parsing is intentionally out of scope; incomplete or trailing non-header data falls back conservatively to `HTTP Payload`.
+- HTTP stream parsing uses bounded directional reassembly for requests and responses, including bodies when enough bytes are available.
+  - Complete HTTP requests and responses can appear as one logical stream item even when assembled across multiple TCP packets.
+  - `Content-Length` and chunked-body traversal are used to preserve bounded multi-segment continuity where parseability remains clear.
+  - Incomplete or ambiguous data falls back conservatively rather than implying transport-complete recovery.
+- QUIC selected-flow inspection uses bounded packet-aware parsing.
+  - Practical frame-level details such as `CRYPTO`, `ACK`, and `PADDING` can be exposed in packet and Stream presentation when confidently isolated.
+  - Parseable CRYPTO contents can surface handshake-aware TLS details such as `ClientHello` and `ServerHello` in bounded selected-flow contexts.
+  - This remains conservative selected-flow inspection, not full QUIC reconstruction or decryption-backed analysis.
 
 ## Reassembly principles
 
@@ -150,9 +155,9 @@ Current scalability risks are still worth watching:
 ## Known limitations
 
 - No full TCP-correct stream reconstruction.
-- TCP retransmission effects are only partially handled in Stream reassembly; exact duplicate suppression exists, but full retransmission handling does not.
-- HTTP Stream parsing is limited to header blocks; bodies and chunked transfer decoding are not reconstructed.
-- QUIC Stream handling is limited to narrow selected-flow packet-aware labeling; full QUIC reconstruction and decryption remain out of scope.
+- TCP retransmission effects are only partially handled in Stream construction; retransmitted packets are suppressed in the current bounded selected-flow model, but full retransmission-aware recovery does not exist.
+- HTTP Stream reconstruction is bounded and selected-flow-only; requests and responses, including bodies, can be assembled across multiple TCP segments, but recovery remains heuristic and not transport-complete.
+- QUIC selected-flow inspection is meaningful but bounded; frame-level and handshake-aware details can be exposed, but full QUIC reconstruction and decryption remain out of scope.
 - Bounded reassembly may truncate long streams.
 - Stream view is ephemeral and may differ from Wireshark on captures with retransmissions, reordering, or missing bytes.
 - Index and checkpoint loading use an exact-version policy; backward compatibility across format revisions is not guaranteed yet.
