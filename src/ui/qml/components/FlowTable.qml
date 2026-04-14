@@ -12,6 +12,20 @@ Frame {
     property bool wiresharkFilterVisible: false
     property int sortColumn: 0
     property bool sortAscending: true
+    readonly property int tableRowSpacing: 8
+    readonly property int tableContentLeftMargin: 8
+    readonly property int tableContentRightMargin: 8
+    readonly property int selectionColumnWidth: 42
+    readonly property int indexColumnWidth: 64
+    readonly property int familyColumnWidth: 74
+    readonly property int protocolColumnWidth: 86
+    readonly property int protocolHintColumnWidth: 98
+    readonly property int serviceColumnWidth: 220
+    readonly property int addressColumnWidth: 180
+    readonly property int portColumnWidth: 78
+    readonly property int fragColumnWidth: 56
+    readonly property int packetsColumnWidth: 86
+    readonly property int bytesColumnWidth: 92
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
@@ -155,21 +169,23 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            Layout.leftMargin: root.tableContentLeftMargin
+            Layout.rightMargin: root.tableContentRightMargin + flowListView.rightGutter
+            spacing: root.tableRowSpacing
 
-            Label { text: "Sel"; Layout.preferredWidth: 42; horizontalAlignment: Text.AlignHCenter }
-            Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: 64; onClicked: root.sortRequested(0) }
-            Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: 74; onClicked: root.sortRequested(1) }
-            Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: 86; onClicked: root.sortRequested(2) }
-            Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: 98; onClicked: root.sortRequested(3) }
-            Button { text: "Service" + root.sortIndicator(4); Layout.fillWidth: true; Layout.preferredWidth: 220; onClicked: root.sortRequested(4) }
-            Button { text: "Address A" + root.sortIndicator(6); Layout.fillWidth: true; Layout.preferredWidth: 180; onClicked: root.sortRequested(6) }
-            Button { text: "Port A" + root.sortIndicator(7); Layout.preferredWidth: 78; onClicked: root.sortRequested(7) }
-            Button { text: "Address B" + root.sortIndicator(8); Layout.fillWidth: true; Layout.preferredWidth: 180; onClicked: root.sortRequested(8) }
-            Button { text: "Port B" + root.sortIndicator(9); Layout.preferredWidth: 78; onClicked: root.sortRequested(9) }
-            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: 64; onClicked: root.sortRequested(5) }
-            Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: 86; onClicked: root.sortRequested(10) }
-            Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: 92; onClicked: root.sortRequested(11) }
+            Label { text: "Sel"; Layout.preferredWidth: root.selectionColumnWidth; horizontalAlignment: Text.AlignHCenter }
+            Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: root.indexColumnWidth; onClicked: root.sortRequested(0) }
+            Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: root.familyColumnWidth; onClicked: root.sortRequested(1) }
+            Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: root.protocolColumnWidth; onClicked: root.sortRequested(2) }
+            Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: root.protocolHintColumnWidth; onClicked: root.sortRequested(3) }
+            Button { text: "Service" + root.sortIndicator(4); Layout.fillWidth: true; Layout.preferredWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
+            Button { text: "Address A" + root.sortIndicator(6); Layout.fillWidth: true; Layout.preferredWidth: root.addressColumnWidth; onClicked: root.sortRequested(6) }
+            Button { text: "Port A" + root.sortIndicator(7); Layout.preferredWidth: root.portColumnWidth; onClicked: root.sortRequested(7) }
+            Button { text: "Address B" + root.sortIndicator(8); Layout.fillWidth: true; Layout.preferredWidth: root.addressColumnWidth; onClicked: root.sortRequested(8) }
+            Button { text: "Port B" + root.sortIndicator(9); Layout.preferredWidth: root.portColumnWidth; onClicked: root.sortRequested(9) }
+            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
+            Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
+            Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
         }
 
         Rectangle {
@@ -231,12 +247,12 @@ Frame {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8 + flowListView.rightGutter
-                        spacing: 8
+                        anchors.leftMargin: root.tableContentLeftMargin
+                        anchors.rightMargin: root.tableContentRightMargin + flowListView.rightGutter
+                        spacing: root.tableRowSpacing
 
                         Item {
-                            Layout.preferredWidth: 42
+                            Layout.preferredWidth: root.selectionColumnWidth
                             Layout.fillHeight: true
 
                             CheckBox {
@@ -252,23 +268,23 @@ Frame {
                         }
 
                         Text {
-                            text: flowIndex
-                            Layout.preferredWidth: 46
+                            text: flowIndex + 1
+                            Layout.preferredWidth: root.indexColumnWidth
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }
                         Text {
                             text: family
-                            Layout.preferredWidth: 58
+                            Layout.preferredWidth: root.familyColumnWidth
                             verticalAlignment: Text.AlignVCenter
                         }
                         Text {
                             text: protocol
-                            Layout.preferredWidth: 66
+                            Layout.preferredWidth: root.protocolColumnWidth
                             verticalAlignment: Text.AlignVCenter
                         }
                         Item {
-                            Layout.preferredWidth: 78
+                            Layout.preferredWidth: root.protocolHintColumnWidth
                             implicitHeight: protocolHintLabel.implicitHeight
 
                             Label {
@@ -291,7 +307,7 @@ Frame {
                         }
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 220
+                            Layout.preferredWidth: root.serviceColumnWidth
                             implicitHeight: serviceHintLabel.implicitHeight
 
                             Label {
@@ -315,7 +331,7 @@ Frame {
 
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 180
+                            Layout.preferredWidth: root.addressColumnWidth
                             implicitHeight: addressALabel.implicitHeight
 
                             Label {
@@ -338,13 +354,13 @@ Frame {
                         }
                         Text {
                             text: portA
-                            Layout.preferredWidth: 62
-                            horizontalAlignment: Text.AlignRight
+                            Layout.preferredWidth: root.portColumnWidth
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                         }
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 180
+                            Layout.preferredWidth: root.addressColumnWidth
                             implicitHeight: addressBLabel.implicitHeight
 
                             Label {
@@ -367,12 +383,12 @@ Frame {
                         }
                         Text {
                             text: portB
-                            Layout.preferredWidth: 62
-                            horizontalAlignment: Text.AlignRight
+                            Layout.preferredWidth: root.portColumnWidth
+                            horizontalAlignment: Text.AlignLeft
                             verticalAlignment: Text.AlignVCenter
                         }
                         Rectangle {
-                            Layout.preferredWidth: 48
+                            Layout.preferredWidth: root.fragColumnWidth
                             implicitHeight: 24
                             radius: 4
                             color: root.fragBackgroundColor(hasFragmentedPackets, selected)
@@ -390,13 +406,13 @@ Frame {
                         }
                         Text {
                             text: packets
-                            Layout.preferredWidth: 68
+                            Layout.preferredWidth: root.packetsColumnWidth
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }
                         Text {
                             text: bytes
-                            Layout.preferredWidth: 80
+                            Layout.preferredWidth: root.bytesColumnWidth
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
                         }

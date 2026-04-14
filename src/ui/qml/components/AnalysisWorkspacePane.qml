@@ -196,7 +196,7 @@ Item {
                                     Layout.fillWidth: true
                                     spacing: 10
 
-                                    Label { text: flowIndex; Layout.preferredWidth: 44 }
+                                    Label { text: flowIndex + 1; Layout.preferredWidth: 44 }
                                     Label { text: protocolHint.length > 0 ? protocolHint : "-"; Layout.preferredWidth: 70; elide: Text.ElideRight }
                                     Label { text: serviceHint.length > 0 ? serviceHint : "-"; Layout.fillWidth: true; elide: Text.ElideRight }
                                     Label { text: packets; Layout.preferredWidth: 58; horizontalAlignment: Text.AlignRight }

@@ -166,6 +166,12 @@ if(PFL_BUILD_UI)
                 PRIVATE
                     src/ui/app/app_icon.rc
             )
+
+            set_target_properties(
+                pcap_flow_lab_ui
+                PROPERTIES
+                    WIN32_EXECUTABLE TRUE
+            )
         endif()
 
         set_target_properties(pcap_flow_lab_ui PROPERTIES OUTPUT_NAME "pcap-flow-lab-ui")
