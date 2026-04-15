@@ -81,6 +81,7 @@ add_library(
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp
     src/app/session/SessionOpenHelpers.cpp
+    src/app/session/SessionQuicPresentation.cpp
 )
 
 target_link_libraries(pcap_flow_lab_core PUBLIC pcap_flow_lab_warnings)
