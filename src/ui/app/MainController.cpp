@@ -3290,9 +3290,6 @@ void MainController::completeOpenJob(
     QTimer::singleShot(kSessionApplyOverlayDelayMs, this, [this, path, loadedSession]() mutable {
         session_ = std::move(*loadedSession);
         applyLoadedState(path);
-        if (session_.is_partial_open()) {
-            setStatusText(format_partial_open_warning_message(session_.partial_open_failure()));
-        }
         setApplyingSession(false);
         finishOpenProgress();
     });

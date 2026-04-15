@@ -1696,9 +1696,9 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(!partial_controller.canSaveIndex());
     UI_EXPECT(partial_controller.partialOpen());
     UI_EXPECT(partial_controller.openErrorText().isEmpty());
-    UI_EXPECT(partial_controller.statusText().contains(QStringLiteral("Capture opened partially.")));
-    UI_EXPECT(partial_controller.statusText().contains(QStringLiteral("Results are incomplete.")));
+    UI_EXPECT(partial_controller.statusText().isEmpty());
     UI_EXPECT(partial_controller.partialOpenWarningText().contains(QStringLiteral("Capture opened partially.")));
+    UI_EXPECT(partial_controller.partialOpenWarningText().contains(QStringLiteral("Results are incomplete.")));
     auto* partial_packet_model = qobject_cast<PacketListModel*>(partial_controller.packetModel());
     UI_EXPECT(partial_packet_model != nullptr);
     partial_controller.setSelectedFlowIndex(0);
