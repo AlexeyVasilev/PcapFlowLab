@@ -82,6 +82,7 @@ add_library(
     src/app/session/SessionFormatting.cpp
     src/app/session/SessionOpenHelpers.cpp
     src/app/session/SessionQuicPresentation.cpp
+    src/app/session/SessionTlsPresentation.cpp
     src/app/session/SessionTcpStreamSupport.cpp
     src/app/session/SessionHttpReconstruction.cpp
 )
