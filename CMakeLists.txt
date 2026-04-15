@@ -83,6 +83,7 @@ add_library(
     src/app/session/SessionOpenHelpers.cpp
     src/app/session/SessionQuicPresentation.cpp
     src/app/session/SessionTcpStreamSupport.cpp
+    src/app/session/SessionHttpReconstruction.cpp
 )
 
 target_link_libraries(pcap_flow_lab_core PUBLIC pcap_flow_lab_warnings)
