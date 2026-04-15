@@ -115,7 +115,7 @@ Current protocol-aware inspection is strongest in:
 
 Near-term work remains focused on reliability, Stream correctness, bounded analysis, and incremental protocol enrichment.
 
-## Build and platform status
+## Build and release status
 
 Requirements:
 
@@ -124,6 +124,13 @@ Requirements:
 - Qt `6.8+` with `Quick`, `Qml`, `QuickControls2`, and `Widgets` for the desktop UI
 
 The CLI and core library can build without Qt. If Qt 6 is not found, the UI target is skipped.
+
+Manual `v0.1.0` release status:
+
+- Windows: a prebuilt UI zip archive is intended for the release.
+- Ubuntu: a prebuilt archive should be published only if it is manually built and manually verified for that release; otherwise treat Ubuntu as source-build-only for that tag.
+- macOS: source-build-only for `v0.1.0`.
+- `v0.1.0` release artifacts are expected to be prepared manually rather than through automated packaging or release infrastructure.
 
 Example configure and build steps:
 
@@ -143,7 +150,7 @@ Example test command:
 ctest --test-dir build --output-on-failure --build-config Release
 ```
 
-Current checked workflow in the repository is a Windows-oriented development path. Treat broader platform coverage as best-effort unless release notes explicitly say a platform or workflow was checked for that release.
+Current checked workflow in the repository is a Windows-oriented development path. Treat broader platform coverage as best-effort unless the release notes for a specific tag explicitly say that a platform artifact or source-build path was manually checked for that release.
 
 ## Quick usage examples
 
@@ -171,6 +178,7 @@ pcap-flow-lab-ui
 - [docs/architecture.md](docs/architecture.md): architecture, persistence boundaries, and runtime paths
 - [docs/current-state.md](docs/current-state.md): implemented behavior and current gaps
 - [docs/release-checklist-v0.1.0.md](docs/release-checklist-v0.1.0.md): first public release readiness checklist
+- [docs/release-notes-v0.1.0-draft.md](docs/release-notes-v0.1.0-draft.md): draft public release notes for the first manual release
 - [docs/contributing.md](docs/contributing.md): contribution expectations
 
 ## License

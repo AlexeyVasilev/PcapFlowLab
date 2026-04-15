@@ -50,13 +50,14 @@ These are acceptable for the first public release if they are documented and the
 - Stream results are heuristic and practical, not full protocol-correct reconstruction under all edge cases.
 - Partial-open captures may remain restricted, including limits on saving back to index where appropriate.
 
-## 4. Pre-release checks
+## 4. Manual pre-release checks
 
-- [ ] Local build status is known and recorded.
-- [ ] Current automated test status is known and recorded, including any intentionally accepted failures or gaps.
+- [ ] Local build status is known and recorded for the exact commit intended for `v0.1.0`.
+- [ ] Test status is known and recorded manually, including any intentionally accepted failures or gaps.
 - [ ] README first screen has been reviewed for clarity and honesty.
 - [ ] Screenshots are current enough to match the actual UI.
 - [ ] Version string, tag name, and short release notes are prepared.
+- [ ] Release notes explicitly describe the release as a manual `v0.1.0` publication rather than an automated multi-platform packaging pipeline.
 - [ ] License file is present and correct.
 - [ ] No private paths, local machine artifacts, credentials, or sensitive sample data are accidentally tracked in the repo or docs.
 - [ ] No accidentally tracked large artifacts, temporary captures, local outputs, or unnecessary binary files remain in the repo, and `.gitignore` plus release-facing repo contents have been reviewed before publication.
@@ -69,7 +70,8 @@ These are acceptable for the first public release if they are documented and the
 - [ ] Build/install instructions are sufficient for an engineer to get started without guessing.
 - [ ] Basic usage examples exist for opening captures, opening indexes, and selected-flow inspection.
 - [ ] Screenshot set is good enough to show the main workflows.
-- [ ] README or release notes make clear which platforms and workflows were actually checked for v0.1.0.
+- [ ] README or release notes make clear which platforms and workflows were actually checked for `v0.1.0`.
+- [ ] README or release notes make clear that Windows is the primary prebuilt artifact target, Ubuntu binaries are conditional on manual verification, and macOS is source-build-only for `v0.1.0`.
 - [ ] Current-state and architecture docs make the project's maturity and direction obvious.
 
 ## 6. Nice-to-have but not blocking
@@ -88,10 +90,23 @@ Do not delay release for broad cleanup work.
 - [ ] Public release notes.
 - [ ] Release notes include a short known-limitations section.
 - [ ] Screenshot set used in the README and/or release page.
-- [ ] Optional binaries if distribution is intended.
+- [ ] Windows prebuilt UI zip archive is prepared and named clearly.
+- [ ] Windows archive contents were reviewed manually to avoid shipping tests, debug-only outputs, or unrelated build artifacts.
+- [ ] Ubuntu prebuilt archive is published only if it was manually built and manually verified for this release; otherwise Ubuntu is described as source-build-only for `v0.1.0`.
+- [ ] macOS is described as source-build-only for `v0.1.0`.
 - [ ] Optional demo capture or index assets if they are safe, small, and genuinely useful.
 
-## 8. Final go/no-go list
+## 8. Manual publish pass
+
+- [ ] Release title and tag text match `v0.1.0` exactly.
+- [ ] Release description uses the same platform wording as the README.
+- [ ] Attached artifact names are short and predictable.
+- [ ] The Windows archive opens into one clean top-level folder.
+- [ ] The Windows archive includes the main UI executable and the runtime files it needs, but not tests or local build clutter.
+- [ ] If Ubuntu is not attached as a verified binary, the release page says source-build-only instead of implying a missing artifact.
+- [ ] The release page says clearly that Pcap Flow Lab is flow-first, bounded, and not a Wireshark replacement.
+
+## 9. Final go/no-go list
 
 - [ ] The core promise is true: fast open/index workflows plus useful selected-flow analysis.
 - [ ] The supported TCP/TLS/HTTP workflows are practically useful.
