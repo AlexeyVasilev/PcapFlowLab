@@ -179,6 +179,7 @@ pcap-flow-lab-ui
 - [docs/current-state.md](docs/current-state.md): implemented behavior and current gaps
 - [docs/release-checklist-v0.1.0.md](docs/release-checklist-v0.1.0.md): first public release readiness checklist
 - [docs/release-notes-v0.1.0-draft.md](docs/release-notes-v0.1.0-draft.md): draft public release notes for the first manual release
+- [docs/manual-release-publish-checklist-v0.1.0.md](docs/manual-release-publish-checklist-v0.1.0.md): compact final publish checklist for the manual GitHub release
 - [docs/contributing.md](docs/contributing.md): contribution expectations
 
 ## License

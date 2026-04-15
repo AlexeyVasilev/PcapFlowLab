@@ -2,7 +2,7 @@
 
 Pcap Flow Lab `v0.1.0` is the first public release of a flow-first PCAP analysis tool for large captures.
 
-It focuses on a practical workflow: open captures quickly, persist reusable indexes, return to large captures without starting from zero, and inspect only the selected flow in more detail when that extra work is worth doing.
+It is built around a practical workflow: open captures quickly, persist reusable indexes, return to large captures without starting from zero, and inspect only the selected flow in more detail when deeper work is actually worth doing.
 
 This release is not trying to be a Wireshark replacement. It is a bounded, pragmatic tool for flow-oriented exploration with explicit limits.
 
@@ -16,13 +16,24 @@ This release is not trying to be a Wireshark replacement. It is a bounded, pragm
 - Selected-flow Stream inspection for practical TCP, TLS, HTTP, and meaningful bounded QUIC cases.
 - Packet Details views and selected-flow export workflows.
 
+## Major workflows in v0.1.0
+
+- Open a large capture, inspect the flow table first, and narrow attention before deeper packet work.
+- Save an index and reopen it later without paying the full import cost again.
+- Reopen an index in index-only mode and attach the source capture only when byte-dependent features are needed.
+- Use the selected-flow Analysis workspace for bounded metrics and visual summaries.
+- Use the selected-flow Stream view for practical TCP, TLS, HTTP, and bounded QUIC inspection.
+- Export useful subsets without turning the product into a full protocol-forensics environment.
+
 ## Platform availability for v0.1.0
 
-- Windows: prebuilt UI archive intended.
-- Ubuntu: prebuilt archive only if it was manually built and manually verified for this release; otherwise treat this release as source-build-only on Ubuntu.
+- Windows: prebuilt UI archive provided.
+- Ubuntu: prebuilt archive only if it was manually built and manually verified for this release; otherwise treat this release as source-build-only.
 - macOS: source-build-only.
 
 `v0.1.0` release artifacts are expected to be assembled manually. This release does not assume automated packaging or automated multi-platform publication.
+
+If a prebuilt archive is not attached for your platform, use the source build instructions from the repository instead of assuming that a missing binary is a packaging error.
 
 ## What this release does well
 
@@ -36,7 +47,7 @@ This release is not trying to be a Wireshark replacement. It is a bounded, pragm
 
 - No full TCP-correct stream reconstruction under adverse capture conditions.
 - No deep TCP recovery after gaps, major reordering, or loss.
-- HTTP Stream reconstruction is bounded and selected-flow-only.
+- HTTP Stream reconstruction is bounded and selected-flow-only, even when requests and responses can be assembled across multiple segments.
 - QUIC inspection is meaningful but intentionally bounded; there is no full QUIC reconstruction or decryption-backed session model.
 - Packet detail depth is intentionally below Wireshark.
 - Stream results are practical and heuristic, not full protocol-forensics output.
@@ -50,3 +61,24 @@ This release is not trying to be a Wireshark replacement. It is a bounded, pragm
 ## Suggested GitHub Release Summary
 
 Pcap Flow Lab `v0.1.0` is the first public release of a flow-first PCAP analyzer built for large-capture exploration. It emphasizes fast open, reusable indexes, selected-flow Analysis and Stream workflows, and practical bounded protocol inspection for TCP, TLS, HTTP, and meaningful QUIC cases. It is not a Wireshark replacement, and the current release stays explicit about limits around deep TCP recovery, transport-complete reconstruction, and full QUIC coverage.
+
+## Repository metadata suggestion
+
+Recommended repository description:
+
+Flow-first PCAP analyzer for large captures with reusable indexes and selected-flow inspection.
+
+Recommended GitHub topics:
+
+- pcap
+- pcapng
+- packet-analysis
+- network-analysis
+- network-forensics
+- qt
+- qt-quick
+- qml
+- cpp
+- cmake
+- wireshark-alternative
+- traffic-analysis
