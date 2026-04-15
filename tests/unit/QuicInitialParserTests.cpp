@@ -67,6 +67,7 @@ std::vector<std::uint8_t> make_minimal_initial_packet(const std::uint32_t versio
 
 std::vector<std::uint8_t> make_client_hello_handshake(const std::string& host) {
     std::vector<std::uint8_t> body {};
+    body.reserve(52U + host.size());
     body.push_back(0x03U);
     body.push_back(0x03U);
     body.insert(body.end(), 32U, 0x11U);
@@ -81,12 +82,14 @@ std::vector<std::uint8_t> make_client_hello_handshake(const std::string& host) {
     body.push_back(0x00U);
 
     std::vector<std::uint8_t> sni_extension_data {};
+    sni_extension_data.reserve(5U + host.size());
     append_be16(sni_extension_data, static_cast<std::uint16_t>(3U + host.size()));
     sni_extension_data.push_back(0x00U);
     append_be16(sni_extension_data, static_cast<std::uint16_t>(host.size()));
     sni_extension_data.insert(sni_extension_data.end(), host.begin(), host.end());
 
     std::vector<std::uint8_t> extensions {};
+    extensions.reserve(4U + sni_extension_data.size());
     append_be16(extensions, 0x0000U);
     append_be16(extensions, static_cast<std::uint16_t>(sni_extension_data.size()));
     extensions.insert(extensions.end(), sni_extension_data.begin(), sni_extension_data.end());
@@ -95,6 +98,7 @@ std::vector<std::uint8_t> make_client_hello_handshake(const std::string& host) {
     body.insert(body.end(), extensions.begin(), extensions.end());
 
     std::vector<std::uint8_t> handshake {};
+    handshake.reserve(4U + body.size());
     handshake.push_back(0x01U);
     append_be24(handshake, static_cast<std::uint32_t>(body.size()));
     handshake.insert(handshake.end(), body.begin(), body.end());
