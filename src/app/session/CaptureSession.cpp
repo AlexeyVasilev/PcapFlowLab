@@ -1,4 +1,7 @@
 ﻿#include "app/session/CaptureSession.h"
+#include "app/session/SessionFlowHelpers.h"
+#include "app/session/SessionFormatting.h"
+#include "app/session/SessionOpenHelpers.h"
 
 #include <algorithm>
 #include <cassert>
@@ -39,422 +42,26 @@ namespace pfl {
 
 namespace {
 
-struct ListedConnectionRef {
-    FlowAddressFamily family {FlowAddressFamily::ipv4};
-    const ConnectionV4* ipv4 {nullptr};
-    const ConnectionV6* ipv6 {nullptr};
-};
-
-std::string format_ipv4_address(std::uint32_t address);
-std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address);
-std::string format_endpoint(const EndpointKeyV4& endpoint);
-std::string format_endpoint(const EndpointKeyV6& endpoint);
-
 constexpr std::size_t kSelectedFlowPacketCacheMaxBytes = 16U * 1024U * 1024U;
 
-std::uintmax_t file_size_or_zero(const std::filesystem::path& path) {
-    std::error_code error {};
-    const auto size = std::filesystem::file_size(path, error);
-    return error ? 0U : size;
-}
-
-OpenFailureInfo fallback_open_failure(const char* reason) {
-    OpenFailureInfo failure {};
-    failure.reason = reason;
-    return failure;
-}
-
-std::string format_open_failure_message(const OpenFailureInfo& failure) {
-    std::ostringstream builder {};
-    builder << "Open failed";
-
-    if (failure.has_file_offset) {
-        builder << " at offset " << failure.file_offset;
-    }
-
-    if (failure.has_packet_index) {
-        if (failure.has_file_offset) {
-            builder << " (packet " << failure.packet_index << ')';
-        } else {
-            builder << " at packet " << failure.packet_index;
-        }
-    }
-
-    if (failure.bytes_processed != 0U || failure.packets_processed != 0U) {
-        builder << " after ";
-        bool wrote_part = false;
-        if (failure.bytes_processed != 0U) {
-            builder << failure.bytes_processed << " bytes";
-            wrote_part = true;
-        }
-        if (failure.packets_processed != 0U) {
-            if (wrote_part) {
-                builder << " and ";
-            }
-            builder << failure.packets_processed << " packets";
-        }
-    }
-
-    if (!failure.reason.empty()) {
-        builder << ": " << failure.reason;
-    }
-
-    return builder.str();
-}
-
-std::string build_open_failure_message(const OpenContext* ctx, const OpenFailureInfo& fallback_failure) {
-    if (ctx != nullptr && ctx->failure.has_details()) {
-        return format_open_failure_message(ctx->failure);
-    }
-
-    return format_open_failure_message(fallback_failure);
-}
-
-void log_open_result(
-    const PerfOpenLogger& logger,
-    const PerfOpenOperationType operation_type,
-    const std::filesystem::path& input_path,
-    const bool success,
-    const std::chrono::steady_clock::time_point started_at,
-    const CaptureSession& session
-) {
-    if (!logger.enabled()) {
-        return;
-    }
-
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - started_at
-    );
-    logger.append(PerfOpenRecord {
-        .operation_type = operation_type,
-        .input_path = input_path,
-        .input_kind = PerfOpenLogger::detect_input_kind(input_path),
-        .file_size_bytes = file_size_or_zero(input_path),
-        .success = success,
-        .elapsed_ms = static_cast<std::uint64_t>(elapsed.count()),
-        .packet_count = session.summary().packet_count,
-        .flow_count = session.summary().flow_count,
-        .total_bytes = session.summary().total_bytes,
-        .opened_from_index = session.opened_from_index(),
-        .has_source_capture = session.has_source_capture(),
-    });
-}
-
-std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
-    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
-}
-
-std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
-    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->total_bytes : connection.ipv6->total_bytes;
-}
-
-ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept {
-    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->key.protocol : connection.ipv6->key.protocol;
-}
-
-FlowProtocolHint protocol_hint(const ListedConnectionRef& connection) noexcept {
-    return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->protocol_hint : connection.ipv6->protocol_hint;
-}
-
-bool has_port_443(const ListedConnectionRef& connection) noexcept {
-    if (connection.family == FlowAddressFamily::ipv4) {
-        return connection.ipv4->key.first.port == 443U || connection.ipv4->key.second.port == 443U;
-    }
-
-    return connection.ipv6->key.first.port == 443U || connection.ipv6->key.second.port == 443U;
-}
-
-FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept {
-    const auto confirmed_hint = protocol_hint(connection);
-    if (confirmed_hint != FlowProtocolHint::unknown) {
-        return confirmed_hint;
-    }
-
-    if (!settings.use_possible_tls_quic || !has_port_443(connection)) {
-        return FlowProtocolHint::unknown;
-    }
-
-    switch (protocol_id(connection)) {
-    case ProtocolId::tcp:
-        return FlowProtocolHint::possible_tls;
-    case ProtocolId::udp:
-        return FlowProtocolHint::possible_quic;
-    default:
-        return FlowProtocolHint::unknown;
-    }
-}
-std::string protocol_text(const ProtocolId protocol) {
-    switch (protocol) {
-    case ProtocolId::arp:
-        return "ARP";
-    case ProtocolId::icmp:
-        return "ICMP";
-    case ProtocolId::tcp:
-        return "TCP";
-    case ProtocolId::udp:
-        return "UDP";
-    case ProtocolId::icmpv6:
-        return "ICMPv6";
-    default:
-        return "unknown";
-    }
-}
-
-bool listed_connection_less(const ListedConnectionRef& left, const ListedConnectionRef& right) noexcept {
-    if (total_bytes(left) != total_bytes(right)) {
-        return total_bytes(left) > total_bytes(right);
-    }
-
-    if (packet_count(left) != packet_count(right)) {
-        return packet_count(left) > packet_count(right);
-    }
-
-    if (left.family != right.family) {
-        return left.family < right.family;
-    }
-
-    if (left.family == FlowAddressFamily::ipv4) {
-        return left.ipv4->key < right.ipv4->key;
-    }
-
-    return left.ipv6->key < right.ipv6->key;
-}
-
-std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
-    std::vector<ListedConnectionRef> connections {};
-
-    const auto ipv4_connections = state.ipv4_connections.list();
-    const auto ipv6_connections = state.ipv6_connections.list();
-    connections.reserve(ipv4_connections.size() + ipv6_connections.size());
-
-    for (const auto* connection : ipv4_connections) {
-        connections.push_back(ListedConnectionRef {
-            .family = FlowAddressFamily::ipv4,
-            .ipv4 = connection,
-        });
-    }
-
-    for (const auto* connection : ipv6_connections) {
-        connections.push_back(ListedConnectionRef {
-            .family = FlowAddressFamily::ipv6,
-            .ipv6 = connection,
-        });
-    }
-
-    std::sort(connections.begin(), connections.end(), listed_connection_less);
-    return connections;
-}
-
-void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept {
-    ++stats.flow_count;
-    stats.packet_count += packet_count(connection);
-    stats.total_bytes += total_bytes(connection);
-}
-
-std::vector<PacketRef> collect_packets(const ConnectionV4& connection) {
-    std::vector<PacketRef> packets {};
-    packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
-    packets.insert(packets.end(), connection.flow_a.packets.begin(), connection.flow_a.packets.end());
-    packets.insert(packets.end(), connection.flow_b.packets.begin(), connection.flow_b.packets.end());
-    std::sort(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
-        return left.packet_index < right.packet_index;
-    });
-    return packets;
-}
-
-std::vector<PacketRef> collect_packets(const ConnectionV6& connection) {
-    std::vector<PacketRef> packets {};
-    packets.reserve(connection.flow_a.packets.size() + connection.flow_b.packets.size());
-    packets.insert(packets.end(), connection.flow_a.packets.begin(), connection.flow_a.packets.end());
-    packets.insert(packets.end(), connection.flow_b.packets.begin(), connection.flow_b.packets.end());
-    std::sort(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
-        return left.packet_index < right.packet_index;
-    });
-    return packets;
-}
-
-FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings) {
-    const auto hint = effective_protocol_hint(connection, settings);
-    const auto hint_text = hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(hint)};
-
-    if (connection.family == FlowAddressFamily::ipv4) {
-        const auto& key = connection.ipv4->key;
-        return FlowRow {
-            .index = index,
-            .family = FlowAddressFamily::ipv4,
-            .key = key,
-            .protocol_text = protocol_text(key.protocol),
-            .protocol_hint = hint_text,
-            .service_hint = connection.ipv4->service_hint,
-            .has_fragmented_packets = connection.ipv4->has_fragmented_packets,
-            .fragmented_packet_count = connection.ipv4->fragmented_packet_count,
-            .address_a = format_ipv4_address(key.first.addr),
-            .port_a = key.first.port,
-            .endpoint_a = format_endpoint(key.first),
-            .address_b = format_ipv4_address(key.second.addr),
-            .port_b = key.second.port,
-            .endpoint_b = format_endpoint(key.second),
-            .packet_count = connection.ipv4->packet_count,
-            .total_bytes = connection.ipv4->total_bytes,
-        };
-    }
-
-    const auto& key = connection.ipv6->key;
-    return FlowRow {
-        .index = index,
-        .family = FlowAddressFamily::ipv6,
-        .key = key,
-        .protocol_text = protocol_text(key.protocol),
-        .protocol_hint = hint_text,
-        .service_hint = connection.ipv6->service_hint,
-        .has_fragmented_packets = connection.ipv6->has_fragmented_packets,
-        .fragmented_packet_count = connection.ipv6->fragmented_packet_count,
-        .address_a = format_ipv6_address(key.first.addr),
-        .port_a = key.first.port,
-        .endpoint_a = format_endpoint(key.first),
-        .address_b = format_ipv6_address(key.second.addr),
-        .port_b = key.second.port,
-        .endpoint_b = format_endpoint(key.second),
-        .packet_count = connection.ipv6->packet_count,
-        .total_bytes = connection.ipv6->total_bytes,
-    };
-}
-std::string format_packet_timestamp(const PacketRef& packet) {
-    const auto seconds_of_day = packet.ts_sec % 86400U;
-    const auto hours = seconds_of_day / 3600U;
-    const auto minutes = (seconds_of_day % 3600U) / 60U;
-    const auto seconds = seconds_of_day % 60U;
-
-    std::ostringstream timestamp {};
-    timestamp << std::setfill('0')
-              << std::setw(2) << hours << ':'
-              << std::setw(2) << minutes << ':'
-              << std::setw(2) << seconds << '.'
-              << std::setw(6) << packet.ts_usec;
-    return timestamp.str();
-}
-
-std::string format_tcp_flags_text(const std::uint8_t flags) {
-    struct FlagName {
-        std::uint8_t mask;
-        const char* name;
-    };
-
-    constexpr FlagName names[] {
-        {0x80U, "CWR"},
-        {0x40U, "ECE"},
-        {0x20U, "URG"},
-        {0x10U, "ACK"},
-        {0x08U, "PSH"},
-        {0x04U, "RST"},
-        {0x02U, "SYN"},
-        {0x01U, "FIN"},
-    };
-
-    std::ostringstream builder {};
-    bool first = true;
-    for (const auto& flag : names) {
-        if ((flags & flag.mask) == 0U) {
-            continue;
-        }
-
-        if (!first) {
-            builder << '|';
-        }
-
-        builder << flag.name;
-        first = false;
-    }
-
-    return first ? std::string {} : builder.str();
-}
-
-std::string format_ipv4_address(const std::uint32_t address) {
-    std::ostringstream builder {};
-    builder << ((address >> 24U) & 0xFFU) << '.'
-            << ((address >> 16U) & 0xFFU) << '.'
-            << ((address >> 8U) & 0xFFU) << '.'
-            << (address & 0xFFU);
-    return builder.str();
-}
-
-std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address) {
-    std::ostringstream builder {};
-    builder << std::hex << std::setfill('0');
-
-    for (std::size_t index = 0; index < 8; ++index) {
-        if (index > 0) {
-            builder << ':';
-        }
-
-        const auto word = static_cast<std::uint16_t>(
-            (static_cast<std::uint16_t>(address[index * 2U]) << 8U) |
-            static_cast<std::uint16_t>(address[index * 2U + 1U])
-        );
-        builder << std::setw(4) << word;
-    }
-
-    return builder.str();
-}
-
-std::string format_endpoint(const EndpointKeyV4& endpoint) {
-    std::ostringstream builder {};
-    builder << format_ipv4_address(endpoint.addr) << ':' << endpoint.port;
-    return builder.str();
-}
-
-std::string format_endpoint(const EndpointKeyV6& endpoint) {
-    std::ostringstream builder {};
-    builder << '[' << format_ipv6_address(endpoint.addr) << "]:" << endpoint.port;
-    return builder.str();
-}
-
-std::string format_ipv4_address(const std::array<std::uint8_t, 4>& address) {
-    std::ostringstream builder {};
-    builder << static_cast<unsigned>(address[0]) << '.'
-            << static_cast<unsigned>(address[1]) << '.'
-            << static_cast<unsigned>(address[2]) << '.'
-            << static_cast<unsigned>(address[3]);
-    return builder.str();
-}
-
-std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details) {
-    std::ostringstream builder {};
-
-    if (details.has_arp) {
-        builder << "ARP\n"
-                << "Opcode: " << details.arp.opcode << '\n'
-                << "Sender IPv4: " << format_ipv4_address(details.arp.sender_ipv4) << '\n'
-                << "Target IPv4: " << format_ipv4_address(details.arp.target_ipv4);
-        return builder.str();
-    }
-
-    if (details.has_icmp) {
-        builder << "ICMP\n"
-                << "Type: " << static_cast<unsigned>(details.icmp.type) << '\n'
-                << "Code: " << static_cast<unsigned>(details.icmp.code);
-        if (details.has_ipv4) {
-            builder << '\n'
-                    << "Source: " << format_ipv4_address(details.ipv4.src_addr) << '\n'
-                    << "Destination: " << format_ipv4_address(details.ipv4.dst_addr);
-        }
-        return builder.str();
-    }
-
-    if (details.has_icmpv6) {
-        builder << "ICMPv6\n"
-                << "Type: " << static_cast<unsigned>(details.icmpv6.type) << '\n'
-                << "Code: " << static_cast<unsigned>(details.icmpv6.code);
-        if (details.has_ipv6) {
-            builder << '\n'
-                    << "Source: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
-                    << "Destination: " << format_ipv6_address(details.ipv6.dst_addr);
-        }
-        return builder.str();
-    }
-
-    return std::nullopt;
-}
+using session_detail::ListedConnectionRef;
+using session_detail::add_protocol_stats;
+using session_detail::build_basic_protocol_details_text;
+using session_detail::build_open_failure_message;
+using session_detail::collect_packets;
+using session_detail::fallback_open_failure;
+using session_detail::format_endpoint;
+using session_detail::format_ipv4_address;
+using session_detail::format_ipv6_address;
+using session_detail::format_packet_timestamp;
+using session_detail::format_tcp_flags_text;
+using session_detail::list_connections;
+using session_detail::log_open_result;
+using session_detail::make_flow_row;
+using session_detail::packet_count;
+using session_detail::protocol_id;
+using session_detail::effective_protocol_hint;
+using session_detail::total_bytes;
 
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
@@ -4590,7 +4197,16 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
         const auto failureText = build_open_failure_message(effective_ctx, fallback_open_failure("capture import failed"));
         reset_runtime_state();
         last_open_error_text_ = failureText;
-        log_open_result(perf_logger, operation_type, path, false, started_at, *this);
+        log_open_result(
+            perf_logger,
+            operation_type,
+            path,
+            false,
+            started_at,
+            summary(),
+            opened_from_index(),
+            has_source_capture()
+        );
         return false;
     }
 
@@ -4614,7 +4230,16 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     debug::log_if<debug::kDebugOpen>([&]() {
         std::clog << (partial_open_ ? "open_capture partial: " : "open_capture succeeded: ") << path.string() << '\n';
     });
-    log_open_result(perf_logger, operation_type, path, true, started_at, *this);
+    log_open_result(
+        perf_logger,
+        operation_type,
+        path,
+        true,
+        started_at,
+        summary(),
+        opened_from_index(),
+        has_source_capture()
+    );
     return true;
 }
 
@@ -4669,7 +4294,16 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
         const auto failureText = build_open_failure_message(effective_ctx, fallback_failure);
         reset_runtime_state();
         last_open_error_text_ = failureText;
-        log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, false, started_at, *this);
+        log_open_result(
+            perf_logger,
+            PerfOpenOperationType::index_load,
+            index_path,
+            false,
+            started_at,
+            summary(),
+            opened_from_index(),
+            has_source_capture()
+        );
         return false;
     }
 
@@ -4694,7 +4328,16 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     debug::log_if<debug::kDebugIndexLoad>([&]() {
         std::clog << "load_index succeeded: " << index_path.string() << '\n';
     });
-    log_open_result(perf_logger, PerfOpenOperationType::index_load, index_path, true, started_at, *this);
+    log_open_result(
+        perf_logger,
+        PerfOpenOperationType::index_load,
+        index_path,
+        true,
+        started_at,
+        summary(),
+        opened_from_index(),
+        has_source_capture()
+    );
     return true;
 }
 
@@ -5560,7 +5203,7 @@ std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::s
         ? service.analyze(*connections[flow_index].ipv4)
         : service.analyze(*connections[flow_index].ipv6);
     const auto hint = effective_protocol_hint(connections[flow_index], analysis_settings_);
-    result.protocol_hint = hint == FlowProtocolHint::unknown ? std::string {} : std::string {flow_protocol_hint_text(hint)};
+    result.protocol_hint = hint == FlowProtocolHint::unknown ? std::string {} : std::string(flow_protocol_hint_text(hint));
     return result;
 }
 
