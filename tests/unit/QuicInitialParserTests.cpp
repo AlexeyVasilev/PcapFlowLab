@@ -30,6 +30,26 @@ void append_be32(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
+void append_bytes(std::vector<std::uint8_t>& destination, std::span<const std::uint8_t> source) {
+    if (source.empty()) {
+        return;
+    }
+
+    const auto previous_size = destination.size();
+    destination.resize(previous_size + source.size());
+    std::copy(source.begin(), source.end(), destination.begin() + static_cast<std::ptrdiff_t>(previous_size));
+}
+
+void append_bytes(std::vector<std::uint8_t>& destination, const std::string_view source) {
+    if (source.empty()) {
+        return;
+    }
+
+    const auto previous_size = destination.size();
+    destination.resize(previous_size + source.size());
+    std::copy(source.begin(), source.end(), destination.begin() + static_cast<std::ptrdiff_t>(previous_size));
+}
+
 void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t value) {
     if (value < 64U) {
         bytes.push_back(static_cast<std::uint8_t>(value));
@@ -86,22 +106,22 @@ std::vector<std::uint8_t> make_client_hello_handshake(const std::string& host) {
     append_be16(sni_extension_data, static_cast<std::uint16_t>(3U + host.size()));
     sni_extension_data.push_back(0x00U);
     append_be16(sni_extension_data, static_cast<std::uint16_t>(host.size()));
-    sni_extension_data.insert(sni_extension_data.end(), host.begin(), host.end());
+    append_bytes(sni_extension_data, host);
 
     std::vector<std::uint8_t> extensions {};
     extensions.reserve(4U + sni_extension_data.size());
     append_be16(extensions, 0x0000U);
     append_be16(extensions, static_cast<std::uint16_t>(sni_extension_data.size()));
-    extensions.insert(extensions.end(), sni_extension_data.begin(), sni_extension_data.end());
+    append_bytes(extensions, sni_extension_data);
 
     append_be16(body, static_cast<std::uint16_t>(extensions.size()));
-    body.insert(body.end(), extensions.begin(), extensions.end());
+    append_bytes(body, extensions);
 
     std::vector<std::uint8_t> handshake {};
     handshake.reserve(4U + body.size());
     handshake.push_back(0x01U);
     append_be24(handshake, static_cast<std::uint32_t>(body.size()));
-    handshake.insert(handshake.end(), body.begin(), body.end());
+    append_bytes(handshake, body);
     return handshake;
 }
 

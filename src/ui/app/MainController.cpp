@@ -1368,12 +1368,12 @@ QString MainController::openProgressProcessedText() const {
     if (open_progress_total_bytes_ > 0U) {
         const auto percent_text = trim_trailing_zeros(QString::number(std::clamp(open_progress_percent_ * 100.0, 0.0, 100.0), 'f', 1));
         return QStringLiteral("Processed: %1 / %2 (%3%)")
-            .arg(format_size_value(open_progress_bytes_))
-            .arg(format_size_value(open_progress_total_bytes_))
+            .arg(format_size_value(static_cast<std::uint64_t>(open_progress_bytes_)))
+            .arg(format_size_value(static_cast<std::uint64_t>(open_progress_total_bytes_)))
             .arg(percent_text);
     }
 
-    return QStringLiteral("Processed: %1").arg(format_size_value(open_progress_bytes_));
+    return QStringLiteral("Processed: %1").arg(format_size_value(static_cast<std::uint64_t>(open_progress_bytes_)));
 }
 
 bool MainController::isApplyingSession() const noexcept {

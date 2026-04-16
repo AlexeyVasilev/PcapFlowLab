@@ -150,6 +150,8 @@ std::optional<std::uint64_t> read_varint(std::span<const std::uint8_t> bytes, st
     return value;
 }
 
+#ifdef _WIN32
+
 std::vector<std::uint8_t> tls_hkdf_label(const std::uint16_t length, const std::string_view label) {
     constexpr std::string_view prefix = "tls13 ";
 
@@ -163,8 +165,6 @@ std::vector<std::uint8_t> tls_hkdf_label(const std::uint16_t length, const std::
     info.push_back(0x00U);
     return info;
 }
-
-#ifdef _WIN32
 
 class BCryptAlgorithm final {
 public:
