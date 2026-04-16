@@ -156,8 +156,7 @@ Item {
 
                         ScrollBar.vertical: ScrollBar {
                             id: analysisFlowScrollBar
-                            policy: ScrollBar.AsNeeded
-                            visible: analysisFlowList.contentHeight > analysisFlowList.height
+                            policy: analysisFlowList.contentHeight > analysisFlowList.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                         }
 
                         delegate: Rectangle {

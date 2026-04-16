@@ -50,6 +50,8 @@ Item {
     ScrollView {
         anchors.fill: parent
         clip: true
+        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+        ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
 
         ColumnLayout {
             width: root.width

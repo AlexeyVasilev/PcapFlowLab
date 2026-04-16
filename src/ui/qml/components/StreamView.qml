@@ -139,8 +139,7 @@ Frame {
                 model: root.streamModel
 
                 ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    visible: streamListView.contentHeight > streamListView.height
+                    policy: streamListView.contentHeight > streamListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 
                 delegate: Item {

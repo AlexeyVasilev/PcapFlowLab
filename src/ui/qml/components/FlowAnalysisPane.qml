@@ -52,7 +52,9 @@ Frame {
 
     component HistogramModeButton: Button {
         checkable: true
-        implicitWidth: 64
+        leftPadding: 12
+        rightPadding: 12
+        implicitWidth: Math.max(72, implicitContentWidth + leftPadding + rightPadding)
         implicitHeight: 28
     }
 
@@ -579,7 +581,8 @@ Frame {
                 clip: true
                 visible: root.analysisAvailable && !root.analysisLoading
 
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
 
                 ColumnLayout {
                     width: analysisResultScroll.availableWidth

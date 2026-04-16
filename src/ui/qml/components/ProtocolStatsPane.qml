@@ -193,6 +193,7 @@ Frame {
     }
 
     component CompactMetricLabel: Label {
+        Layout.fillWidth: true
         color: "#334155"
         wrapMode: Text.NoWrap
         elide: Text.ElideRight
@@ -333,8 +334,10 @@ Frame {
     }
 
     ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 10
+        id: contentLayout
+        x: 10
+        y: 10
+        width: Math.max(0, parent.width - 20)
         spacing: 10
 
         Label {
@@ -582,11 +585,14 @@ Frame {
         }
 
         RowLayout {
+            id: quicTlsRow
             Layout.fillWidth: true
             spacing: 10
 
             SectionFrame {
+                id: quicSection
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
 
                 Label {
                     text: "QUIC"
@@ -641,7 +647,9 @@ Frame {
             }
 
             SectionFrame {
+                id: tlsSection
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignTop
 
                 Label {
                     text: "TLS"

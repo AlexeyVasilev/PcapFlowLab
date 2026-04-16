@@ -209,8 +209,7 @@ Frame {
 
                 ScrollBar.vertical: ScrollBar {
                     id: flowScrollBar
-                    policy: ScrollBar.AsNeeded
-                    visible: flowListView.contentHeight > flowListView.height
+                    policy: flowListView.contentHeight > flowListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 
                 delegate: Rectangle {

@@ -103,9 +103,12 @@ Frame {
         radius: 6
 
         ScrollView {
+            id: textPaneScroll
             anchors.fill: parent
             anchors.margins: 1
             clip: true
+            ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            ScrollBar.horizontal.policy: contentWidth > width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
 
             TextArea {
                 readOnly: true

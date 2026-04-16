@@ -117,7 +117,7 @@ Frame {
 
                 ScrollBar.vertical: ScrollBar {
                     id: tableScrollBar
-                    policy: ScrollBar.AsNeeded
+                    policy: tableListView.contentHeight > tableListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 
                 delegate: Rectangle {

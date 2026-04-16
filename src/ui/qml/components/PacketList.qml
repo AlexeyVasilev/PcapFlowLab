@@ -269,8 +269,7 @@ Frame {
                 onModelChanged: root.syncCurrentSelection()
 
                 ScrollBar.vertical: ScrollBar {
-                    policy: ScrollBar.AsNeeded
-                    visible: packetListView.contentHeight > packetListView.height
+                    policy: packetListView.contentHeight > packetListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
                 }
 
                 delegate: Rectangle {

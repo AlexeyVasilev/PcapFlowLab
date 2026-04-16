@@ -54,6 +54,7 @@ Frame {
         }
 
         ColumnLayout {
+            id: chipLayout
             anchors.fill: parent
             spacing: 3
 

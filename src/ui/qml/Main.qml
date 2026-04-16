@@ -842,7 +842,9 @@ ApplicationWindow {
                 onFlowDetailsTabChanged: function(index) {
                     mainController.setFlowDetailsTabIndex(index)
                 }
-            }            AnalysisWorkspacePane {
+            }
+
+            AnalysisWorkspacePane {
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
                 analysisLoading: mainController.analysisLoading
