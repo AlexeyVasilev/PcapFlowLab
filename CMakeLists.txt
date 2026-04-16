@@ -17,6 +17,10 @@ option(PFL_BUILD_UI "Build the Qt Quick desktop UI when Qt 6 is available." ON)
 
 add_library(pcap_flow_lab_warnings INTERFACE)
 
+if(NOT WIN32)
+    find_package(OpenSSL REQUIRED)
+endif()
+
 target_compile_features(pcap_flow_lab_warnings INTERFACE cxx_std_20)
 
 if(MSVC)
@@ -91,6 +95,8 @@ target_link_libraries(pcap_flow_lab_core PUBLIC pcap_flow_lab_warnings)
 
 if(WIN32)
     target_link_libraries(pcap_flow_lab_core PUBLIC bcrypt)
+else()
+    target_link_libraries(pcap_flow_lab_core PUBLIC OpenSSL::Crypto)
 endif()
 
 target_include_directories(

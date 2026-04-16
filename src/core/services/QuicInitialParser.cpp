@@ -4,8 +4,8 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
-#include <cwchar>
 #include <cstdint>
+#include <cwchar>
 #include <limits>
 #include <optional>
 #include <span>
@@ -19,6 +19,9 @@
 #endif
 #include <windows.h>
 #include <bcrypt.h>
+#else
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
 #endif
 
 namespace pfl {
@@ -150,8 +153,6 @@ std::optional<std::uint64_t> read_varint(std::span<const std::uint8_t> bytes, st
     return value;
 }
 
-#ifdef _WIN32
-
 std::vector<std::uint8_t> tls_hkdf_label(const std::uint16_t length, const std::string_view label) {
     constexpr std::string_view prefix = "tls13 ";
 
@@ -165,6 +166,8 @@ std::vector<std::uint8_t> tls_hkdf_label(const std::uint16_t length, const std::
     info.push_back(0x00U);
     return info;
 }
+
+#ifdef _WIN32
 
 class BCryptAlgorithm final {
 public:
@@ -430,24 +433,181 @@ std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std
 
 #else
 
-std::optional<std::vector<std::uint8_t>> hkdf_extract(std::span<const std::uint8_t>, std::span<const std::uint8_t>) {
-    return std::nullopt;
+class EvpCipherContext final {
+public:
+    EvpCipherContext()
+        : handle_(EVP_CIPHER_CTX_new()) {
+    }
+
+    ~EvpCipherContext() {
+        if (handle_ != nullptr) {
+            EVP_CIPHER_CTX_free(handle_);
+        }
+    }
+
+    EvpCipherContext(const EvpCipherContext&) = delete;
+    EvpCipherContext& operator=(const EvpCipherContext&) = delete;
+
+    [[nodiscard]] EVP_CIPHER_CTX* get() const noexcept {
+        return handle_;
+    }
+
+    [[nodiscard]] bool valid() const noexcept {
+        return handle_ != nullptr;
+    }
+
+private:
+    EVP_CIPHER_CTX* handle_ {nullptr};
+};
+
+bool fits_openssl_int(const std::size_t size) noexcept {
+    return size <= static_cast<std::size_t>(std::numeric_limits<int>::max());
 }
 
-std::optional<std::vector<std::uint8_t>> hkdf_expand_label(std::span<const std::uint8_t>, const std::string_view, const std::size_t) {
-    return std::nullopt;
+std::optional<std::vector<std::uint8_t>> hmac_sha256(std::span<const std::uint8_t> key,
+                                                     std::span<const std::uint8_t> data) {
+    if (!fits_openssl_int(key.size())) {
+        return std::nullopt;
+    }
+
+    unsigned int output_length = EVP_MAX_MD_SIZE;
+    std::vector<std::uint8_t> output(output_length);
+
+    const auto* result = HMAC(
+        EVP_sha256(),
+        key.empty() ? nullptr : key.data(),
+        static_cast<int>(key.size()),
+        data.empty() ? nullptr : data.data(),
+        data.size(),
+        output.data(),
+        &output_length);
+    if (result == nullptr || output_length != kQuicInitialSecretSize) {
+        return std::nullopt;
+    }
+
+    output.resize(output_length);
+    return output;
 }
 
-std::optional<std::array<std::uint8_t, 16>> aes_ecb_encrypt_block(std::span<const std::uint8_t>, std::span<const std::uint8_t>) {
-    return std::nullopt;
+std::optional<std::vector<std::uint8_t>> hkdf_extract(std::span<const std::uint8_t> salt,
+                                                      std::span<const std::uint8_t> ikm) {
+    return hmac_sha256(salt, ikm);
 }
 
-std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std::uint8_t>,
-                                                             std::span<const std::uint8_t>,
-                                                             std::span<const std::uint8_t>,
-                                                             std::span<const std::uint8_t>,
-                                                             std::span<const std::uint8_t>) {
-    return std::nullopt;
+std::optional<std::vector<std::uint8_t>> hkdf_expand(std::span<const std::uint8_t> prk,
+                                                     std::span<const std::uint8_t> info,
+                                                     const std::size_t length) {
+    std::vector<std::uint8_t> output {};
+    output.reserve(length);
+    std::vector<std::uint8_t> previous {};
+    std::uint8_t counter = 1U;
+
+    while (output.size() < length) {
+        std::vector<std::uint8_t> input {};
+        input.reserve(previous.size() + info.size() + 1U);
+        input.insert(input.end(), previous.begin(), previous.end());
+        input.insert(input.end(), info.begin(), info.end());
+        input.push_back(counter);
+
+        const auto block = hmac_sha256(prk, input);
+        if (!block.has_value()) {
+            return std::nullopt;
+        }
+
+        previous = *block;
+        const auto bytes_to_copy = std::min(previous.size(), length - output.size());
+        output.insert(output.end(), previous.begin(), previous.begin() + static_cast<std::ptrdiff_t>(bytes_to_copy));
+        ++counter;
+    }
+
+    return output;
+}
+
+std::optional<std::vector<std::uint8_t>> hkdf_expand_label(std::span<const std::uint8_t> secret,
+                                                           const std::string_view label,
+                                                           const std::size_t length) {
+    const auto info = tls_hkdf_label(static_cast<std::uint16_t>(length), label);
+    return hkdf_expand(secret, info, length);
+}
+
+std::optional<std::array<std::uint8_t, 16>> aes_ecb_encrypt_block(std::span<const std::uint8_t> key,
+                                                                  std::span<const std::uint8_t> block) {
+    if (key.size() != kQuicAes128KeySize || block.size() != 16U) {
+        return std::nullopt;
+    }
+
+    EvpCipherContext context {};
+    if (!context.valid() ||
+        EVP_EncryptInit_ex(context.get(), EVP_aes_128_ecb(), nullptr, key.data(), nullptr) <= 0 ||
+        EVP_CIPHER_CTX_set_padding(context.get(), 0) <= 0) {
+        return std::nullopt;
+    }
+
+    std::array<std::uint8_t, 16> output {};
+    int bytes_written = 0;
+    int final_bytes = 0;
+    if (EVP_EncryptUpdate(context.get(), output.data(), &bytes_written, block.data(), static_cast<int>(block.size())) <= 0 ||
+        bytes_written != static_cast<int>(output.size()) ||
+        EVP_EncryptFinal_ex(context.get(), output.data() + bytes_written, &final_bytes) <= 0 ||
+        final_bytes != 0) {
+        return std::nullopt;
+    }
+
+    return output;
+}
+
+std::optional<std::vector<std::uint8_t>> aes_128_gcm_decrypt(std::span<const std::uint8_t> key,
+                                                             std::span<const std::uint8_t> nonce,
+                                                             std::span<const std::uint8_t> aad,
+                                                             std::span<const std::uint8_t> ciphertext,
+                                                             std::span<const std::uint8_t> tag) {
+    if (key.size() != kQuicAes128KeySize || nonce.size() != kQuicIvSize || tag.size() != kQuicTagSize ||
+        !fits_openssl_int(aad.size()) || !fits_openssl_int(ciphertext.size())) {
+        return std::nullopt;
+    }
+
+    EvpCipherContext context {};
+    if (!context.valid() ||
+        EVP_DecryptInit_ex(context.get(), EVP_aes_128_gcm(), nullptr, nullptr, nullptr) <= 0 ||
+        EVP_CIPHER_CTX_ctrl(context.get(), EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(nonce.size()), nullptr) <= 0 ||
+        EVP_DecryptInit_ex(context.get(), nullptr, nullptr, key.data(), nonce.data()) <= 0) {
+        return std::nullopt;
+    }
+
+    int bytes_written = 0;
+    if (!aad.empty() &&
+        EVP_DecryptUpdate(context.get(), nullptr, &bytes_written, aad.data(), static_cast<int>(aad.size())) <= 0) {
+        return std::nullopt;
+    }
+
+    std::vector<std::uint8_t> plaintext(ciphertext.size());
+    int plaintext_length = 0;
+    if (!ciphertext.empty() &&
+        EVP_DecryptUpdate(
+            context.get(),
+            plaintext.data(),
+            &bytes_written,
+            ciphertext.data(),
+            static_cast<int>(ciphertext.size())) <= 0) {
+        return std::nullopt;
+    }
+    plaintext_length = bytes_written;
+
+    if (EVP_CIPHER_CTX_ctrl(
+            context.get(),
+            EVP_CTRL_GCM_SET_TAG,
+            static_cast<int>(tag.size()),
+            const_cast<std::uint8_t*>(tag.data())) <= 0) {
+        return std::nullopt;
+    }
+
+    int final_bytes = 0;
+    if (EVP_DecryptFinal_ex(context.get(), plaintext.data() + plaintext_length, &final_bytes) <= 0) {
+        return std::nullopt;
+    }
+
+    plaintext.resize(static_cast<std::size_t>(plaintext_length + final_bytes));
+    return plaintext;
 }
 
 #endif
