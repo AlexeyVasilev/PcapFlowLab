@@ -4,6 +4,8 @@ import QtQuick.Layouts
 
 Frame {
     id: root
+    implicitHeight: contentLayout.implicitHeight + 20
+    clip: true
 
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
@@ -176,7 +178,9 @@ Frame {
         default property alias sectionContent: sectionLayout.data
 
         Layout.fillWidth: true
+        implicitHeight: sectionLayout.implicitHeight + 20
         padding: 0
+        clip: true
 
         background: Rectangle {
             color: "#ffffff"
@@ -335,9 +339,10 @@ Frame {
 
     ColumnLayout {
         id: contentLayout
-        x: 10
-        y: 10
-        width: Math.max(0, parent.width - 20)
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 10
         spacing: 10
 
         Label {
