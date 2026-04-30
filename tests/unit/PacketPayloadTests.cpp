@@ -34,6 +34,18 @@ void run_packet_payload_tests() {
     }
 
     {
+        const auto full_udp_packet = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 0, 0, 5), ipv4(10, 0, 0, 6), 54000, 443, 7);
+        auto captured_udp_packet = full_udp_packet;
+        captured_udp_packet.resize(full_udp_packet.size() - 3U);
+
+        const auto payload = payload_service.extract_transport_payload(captured_udp_packet);
+        PFL_EXPECT(payload.size() == 4U);
+        PFL_EXPECT(payload[0] == static_cast<std::uint8_t>('a'));
+        PFL_EXPECT(payload[3] == static_cast<std::uint8_t>('d'));
+    }
+
+    {
         const auto ack_only_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 1000, 2000);
         const auto payload = payload_service.extract_transport_payload(ack_only_packet);
         PFL_EXPECT(payload.empty());

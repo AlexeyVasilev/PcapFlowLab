@@ -1499,6 +1499,10 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return std::string {kFragmentedProtocolDetailsMessage};
     }
 
+    if (packet.captured_length < packet.original_length) {
+        return std::string {kNoProtocolDetailsMessage};
+    }
+
     const auto bytes = read_packet_data(packet);
     if (bytes.empty()) {
         return std::string {kUnavailableProtocolDetailsMessage};

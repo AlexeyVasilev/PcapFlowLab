@@ -161,13 +161,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         }
 
         if (protocol == detail::kIpProtocolUdp) {
-            if (transport_offset + detail::kUdpHeaderSize > packet_end ||
-                packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
-                return {};
-            }
-
-            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
-            if (udp_length < detail::kUdpHeaderSize || transport_offset + udp_length > packet_end) {
+            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_offset + total_length);
+            if (!udp_payload.has_value()) {
                 return {};
             }
 
@@ -177,7 +172,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.protocol = ProtocolId::udp;
 
             auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
+            packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
 
             return DecodedPacket {
                 .ipv4 = IngestedPacketV4 {
@@ -284,13 +279,12 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
-            if (payload->payload_offset + detail::kUdpHeaderSize > packet_end ||
-                packet_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
-                return {};
-            }
-
-            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
-            if (udp_length < detail::kUdpHeaderSize || payload->payload_offset + udp_length > packet_end) {
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                packet_bytes,
+                payload->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+            );
+            if (!udp_payload.has_value()) {
                 return {};
             }
 
@@ -299,7 +293,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.protocol = ProtocolId::udp;
 
             auto packet_ref = make_packet_ref(packet);
-            packet_ref.payload_length = static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
+            packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
 
             return DecodedPacket {
                 .ipv6 = IngestedPacketV6 {

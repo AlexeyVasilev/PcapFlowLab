@@ -213,13 +213,8 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         }
 
         if (details.ipv4.protocol == detail::kIpProtocolUdp) {
-            if (transport_offset + detail::kUdpHeaderSize > packet_end ||
-                packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
-                return std::nullopt;
-            }
-
-            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
-            if (udp_length < detail::kUdpHeaderSize || transport_offset + udp_length > packet_end) {
+            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_offset + total_length);
+            if (!udp_payload.has_value()) {
                 return std::nullopt;
             }
 
@@ -227,7 +222,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             details.udp = UdpDetails {
                 .src_port = detail::read_be16(packet_bytes, transport_offset),
                 .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
-                .length = static_cast<std::uint16_t>(udp_length),
+                .length = udp_payload->datagram_length,
             };
             return details;
         }
@@ -305,13 +300,12 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
-            if (payload->payload_offset + detail::kUdpHeaderSize > packet_end ||
-                packet_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
-                return std::nullopt;
-            }
-
-            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
-            if (udp_length < detail::kUdpHeaderSize || payload->payload_offset + udp_length > packet_end) {
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                packet_bytes,
+                payload->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)
+            );
+            if (!udp_payload.has_value()) {
                 return std::nullopt;
             }
 
@@ -319,7 +313,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             details.udp = UdpDetails {
                 .src_port = detail::read_be16(packet_bytes, payload->payload_offset),
                 .dst_port = detail::read_be16(packet_bytes, payload->payload_offset + 2U),
-                .length = static_cast<std::uint16_t>(udp_length),
+                .length = udp_payload->datagram_length,
             };
             return details;
         }

@@ -600,6 +600,21 @@ void run_packet_protocol_details_tests() {
     }
 
     {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            fixture_path("parsing/udp/udp_truncated_quic_like_payload_3.pcap"),
+            CaptureImportOptions {.mode = ImportMode::deep}
+        ));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto packet = require_packet(session, 0);
+        PFL_EXPECT(packet.captured_length < packet.original_length);
+        PFL_EXPECT(packet.payload_length == 32U);
+        PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
+    }
+
+    {
         const std::vector<std::uint8_t> truncated_tls {0x16, 0x03, 0x03, 0x00, 0x10, 0x01, 0x00};
         const auto packet_bytes = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
             ipv4(10, 0, 0, 3), ipv4(10, 0, 0, 4), 12345, 443, truncated_tls, 0x18);

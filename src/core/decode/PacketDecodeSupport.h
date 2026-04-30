@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -51,6 +52,12 @@ struct Ipv6PayloadView {
     std::uint8_t next_header {0};
     std::size_t payload_offset {0};
     bool has_fragment_header {false};
+};
+
+struct UdpPayloadBounds {
+    std::uint16_t datagram_length {0};
+    std::size_t payload_offset {0};
+    std::size_t payload_length {0};
 };
 
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
@@ -188,6 +195,28 @@ inline std::optional<Ipv6PayloadView> parse_ipv6_payload(std::span<const std::ui
     }
 
     return std::nullopt;
+}
+
+inline std::optional<UdpPayloadBounds> parse_udp_payload_bounds(std::span<const std::uint8_t> bytes,
+                                                                const std::size_t udp_offset,
+                                                                const std::size_t nominal_packet_end) {
+    const auto packet_end = std::min(nominal_packet_end, bytes.size());
+    if (udp_offset + kUdpHeaderSize > packet_end) {
+        return std::nullopt;
+    }
+
+    const auto udp_length = static_cast<std::size_t>(read_be16(bytes, udp_offset + 4U));
+    if (udp_length < kUdpHeaderSize || udp_offset + udp_length > nominal_packet_end) {
+        return std::nullopt;
+    }
+
+    const auto payload_offset = udp_offset + kUdpHeaderSize;
+    const auto available_payload_length = (packet_end > payload_offset) ? (packet_end - payload_offset) : 0U;
+    return UdpPayloadBounds {
+        .datagram_length = static_cast<std::uint16_t>(udp_length),
+        .payload_offset = payload_offset,
+        .payload_length = std::min(udp_length - kUdpHeaderSize, available_payload_length),
+    };
 }
 
 }  // namespace pfl::detail

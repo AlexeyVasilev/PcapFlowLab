@@ -85,6 +85,35 @@ void run_import_tests() {
     }
 
     {
+        PacketDecoder decoder {};
+        const auto full_udp_packet = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 0, 0, 5), ipv4(10, 0, 0, 6), 53530, 443, 8);
+        auto captured_udp_packet = full_udp_packet;
+        captured_udp_packet.resize(full_udp_packet.size() - 4U);
+
+        const RawPcapPacket raw_packet {
+            .packet_index = 5,
+            .ts_sec = 1,
+            .ts_usec = 12,
+            .captured_length = static_cast<std::uint32_t>(captured_udp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(full_udp_packet.size()),
+            .data_offset = 320,
+            .bytes = captured_udp_packet,
+        };
+
+        const auto decoded = decoder.decode_ethernet(raw_packet);
+        PFL_EXPECT(decoded.ipv4.has_value());
+        PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 5));
+        PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 6));
+        PFL_EXPECT(decoded.ipv4->flow_key.src_port == 53530);
+        PFL_EXPECT(decoded.ipv4->flow_key.dst_port == 443);
+        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
+        PFL_EXPECT(decoded.ipv4->packet_ref.payload_length == 4U);
+        PFL_EXPECT(decoded.ipv4->packet_ref.captured_length == captured_udp_packet.size());
+        PFL_EXPECT(decoded.ipv4->packet_ref.original_length == full_udp_packet.size());
+    }
+
+    {
         const auto path = write_temp_pcap(
             "pfl_import_counts.pcap",
             make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
@@ -96,6 +125,54 @@ void run_import_tests() {
         PFL_EXPECT(state.summary.packet_count == 2);
         PFL_EXPECT(state.summary.flow_count == 2);
         PFL_EXPECT(state.ipv4_connections.size() == 2);
+    }
+
+    {
+        const auto full_udp_packet = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 0, 1, 1), ipv4(10, 0, 1, 2), 54000, 443, 8);
+        auto captured_udp_packet = full_udp_packet;
+        captured_udp_packet.resize(full_udp_packet.size() - 4U);
+
+        const auto path = write_temp_pcap(
+            "pfl_import_truncated_udp_visible.pcap",
+            make_classic_pcap_with_captured_lengths({
+                ClassicPcapCapturedRecord {
+                    .ts_usec = 100U,
+                    .captured_bytes = captured_udp_packet,
+                    .original_length = static_cast<std::uint32_t>(full_udp_packet.size()),
+                },
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto packet = session.find_packet(0);
+        PFL_EXPECT(packet.has_value());
+        PFL_EXPECT(packet->captured_length == captured_udp_packet.size());
+        PFL_EXPECT(packet->original_length == full_udp_packet.size());
+        PFL_EXPECT(packet->payload_length == 4U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "udp" / "udp_truncated_quic_like_payload_3.pcap"
+        ));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto packet = session.find_packet(0);
+        PFL_EXPECT(packet.has_value());
+        PFL_EXPECT(packet->captured_length == 74U);
+        PFL_EXPECT(packet->original_length == 332U);
+        PFL_EXPECT(packet->payload_length == 32U);
+
+        const auto rows = session.list_flow_packets(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows.front().payload_length == 32U);
     }
 
     {

@@ -46,8 +46,8 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
             return {};
         }
 
-        const auto packet_end = ipv4_offset + total_length;
-        if (packet_bytes.size() < ipv4_offset + ihl || packet_bytes.size() < packet_end) {
+        const auto nominal_packet_end = ipv4_offset + total_length;
+        if (packet_bytes.size() < ipv4_offset + ihl) {
             return {};
         }
 
@@ -58,8 +58,12 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
 
         const auto protocol = packet_bytes[ipv4_offset + 9U];
         const auto transport_offset = ipv4_offset + ihl;
+        const auto packet_end = nominal_packet_end;
 
         if (protocol == detail::kIpProtocolTcp) {
+            if (packet_bytes.size() < nominal_packet_end) {
+                return {};
+            }
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end) {
                 return {};
             }
@@ -73,16 +77,12 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         }
 
         if (protocol == detail::kIpProtocolUdp) {
-            if (transport_offset + detail::kUdpHeaderSize > packet_end) {
+            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, nominal_packet_end);
+            if (!udp_payload.has_value()) {
                 return {};
             }
 
-            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
-            if (udp_length < detail::kUdpHeaderSize || transport_offset + udp_length > packet_end) {
-                return {};
-            }
-
-            return copy_payload(packet_bytes, transport_offset + detail::kUdpHeaderSize, udp_length - detail::kUdpHeaderSize);
+            return copy_payload(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
         }
 
         return {};
@@ -100,17 +100,18 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         }
 
         const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
-        const auto packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
-        if (packet_bytes.size() < packet_end) {
-            return {};
-        }
+        const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
 
         const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        const auto packet_end = std::min(nominal_packet_end, packet_bytes.size());
         if (!payload.has_value() || payload->payload_offset > packet_end || payload->has_fragment_header) {
             return {};
         }
 
         if (payload->next_header == detail::kIpProtocolTcp) {
+            if (packet_bytes.size() < nominal_packet_end) {
+                return {};
+            }
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end) {
                 return {};
             }
@@ -125,16 +126,12 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
-            if (payload->payload_offset + detail::kUdpHeaderSize > packet_end) {
+            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, payload->payload_offset, nominal_packet_end);
+            if (!udp_payload.has_value()) {
                 return {};
             }
 
-            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
-            if (udp_length < detail::kUdpHeaderSize || payload->payload_offset + udp_length > packet_end) {
-                return {};
-            }
-
-            return copy_payload(packet_bytes, payload->payload_offset + detail::kUdpHeaderSize, udp_length - detail::kUdpHeaderSize);
+            return copy_payload(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
         }
 
         return {};

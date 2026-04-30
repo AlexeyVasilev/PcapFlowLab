@@ -747,6 +747,39 @@ inline std::vector<std::uint8_t> make_classic_pcap(
     return bytes;
 }
 
+struct ClassicPcapCapturedRecord {
+    std::uint32_t ts_usec {0};
+    std::vector<std::uint8_t> captured_bytes {};
+    std::uint32_t original_length {0};
+};
+
+inline std::vector<std::uint8_t> make_classic_pcap_with_captured_lengths(
+    const std::vector<ClassicPcapCapturedRecord>& packets,
+    std::uint32_t linktype = 1U
+) {
+    std::vector<std::uint8_t> bytes {};
+    append_le32(bytes, 0xa1b2c3d4U);
+    append_le16(bytes, 2);
+    append_le16(bytes, 4);
+    append_le32(bytes, 0);
+    append_le32(bytes, 0);
+    append_le32(bytes, 65535);
+    append_le32(bytes, linktype);
+
+    std::uint32_t ts_sec = 1;
+    for (const auto& packet : packets) {
+        append_le32(bytes, ts_sec);
+        append_le32(bytes, packet.ts_usec);
+        append_le32(bytes, static_cast<std::uint32_t>(packet.captured_bytes.size()));
+        append_le32(bytes, packet.original_length == 0U ? static_cast<std::uint32_t>(packet.captured_bytes.size())
+                                                        : packet.original_length);
+        bytes.insert(bytes.end(), packet.captured_bytes.begin(), packet.captured_bytes.end());
+        ++ts_sec;
+    }
+
+    return bytes;
+}
+
 inline std::vector<std::uint8_t> make_classic_pcap(
     const std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>>& packets
 ) {
@@ -766,7 +799,6 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
-
 
 
 

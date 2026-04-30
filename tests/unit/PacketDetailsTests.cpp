@@ -60,6 +60,30 @@ void run_packet_details_tests() {
     }
 
     {
+        const auto full_udp_with_payload = make_ethernet_ipv4_udp_packet_with_payload(
+            ipv4(10, 0, 0, 5), ipv4(10, 0, 0, 6), 54000, 443, 7);
+        auto captured_udp_with_payload = full_udp_with_payload;
+        captured_udp_with_payload.resize(full_udp_with_payload.size() - 3U);
+
+        PacketDetailsService service {};
+        const PacketRef packet_ref {
+            .packet_index = 18,
+            .byte_offset = 88,
+            .captured_length = static_cast<std::uint32_t>(captured_udp_with_payload.size()),
+            .original_length = static_cast<std::uint32_t>(full_udp_with_payload.size()),
+        };
+
+        const auto details = service.decode(captured_udp_with_payload, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->ipv4.protocol == 17);
+        PFL_EXPECT(details->has_udp);
+        PFL_EXPECT(details->udp.src_port == 54000);
+        PFL_EXPECT(details->udp.dst_port == 443);
+        PFL_EXPECT(details->udp.length == 15);
+    }
+
+    {
         const auto path = write_temp_pcap("pfl_packet_details_session.pcap", make_classic_pcap({{100, tcp_packet}}));
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(path));

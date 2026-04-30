@@ -512,30 +512,21 @@ std::optional<UdpPayloadView> extract_udp_payload_view(std::span<const std::uint
             return std::nullopt;
         }
 
-        const auto packet_end = ipv4_offset + total_length;
-        if (packet_bytes.size() < packet_end) {
-            return std::nullopt;
-        }
-
         const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
         if ((flags_fragment & 0x3FFFU) != 0U || packet_bytes[ipv4_offset + 9U] != detail::kIpProtocolUdp) {
             return std::nullopt;
         }
 
         const auto udp_offset = ipv4_offset + ihl;
-        if (udp_offset + detail::kUdpHeaderSize > packet_end) {
-            return std::nullopt;
-        }
-
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, udp_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize || udp_offset + udp_length > packet_end) {
+        const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, udp_offset, ipv4_offset + total_length);
+        if (!udp_payload.has_value()) {
             return std::nullopt;
         }
 
         return UdpPayloadView {
             .src_port = detail::read_be16(packet_bytes, udp_offset),
             .dst_port = detail::read_be16(packet_bytes, udp_offset + 2U),
-            .payload = packet_bytes.subspan(udp_offset + detail::kUdpHeaderSize, udp_length - detail::kUdpHeaderSize),
+            .payload = packet_bytes.subspan(udp_payload->payload_offset, udp_payload->payload_length),
         };
     }
 
@@ -551,28 +542,28 @@ std::optional<UdpPayloadView> extract_udp_payload_view(std::span<const std::uint
         }
 
         const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
-        const auto packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
-        if (packet_bytes.size() < packet_end) {
-            return std::nullopt;
-        }
-
         const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, packet_bytes.size());
         if (!payload.has_value() || payload->has_fragment_header || payload->next_header != detail::kIpProtocolUdp) {
             return std::nullopt;
         }
-        if (payload->payload_offset + detail::kUdpHeaderSize > packet_end) {
+        if (payload->payload_offset > packet_end) {
             return std::nullopt;
         }
 
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize || payload->payload_offset + udp_length > packet_end) {
+        const auto udp_payload = detail::parse_udp_payload_bounds(
+            packet_bytes,
+            payload->payload_offset,
+            ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+        );
+        if (!udp_payload.has_value()) {
             return std::nullopt;
         }
 
         return UdpPayloadView {
             .src_port = detail::read_be16(packet_bytes, payload->payload_offset),
             .dst_port = detail::read_be16(packet_bytes, payload->payload_offset + 2U),
-            .payload = packet_bytes.subspan(payload->payload_offset + detail::kUdpHeaderSize, udp_length - detail::kUdpHeaderSize),
+            .payload = packet_bytes.subspan(udp_payload->payload_offset, udp_payload->payload_length),
         };
     }
 
