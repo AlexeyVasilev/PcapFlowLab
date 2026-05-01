@@ -80,6 +80,7 @@ struct PacketDetails {
     std::uint64_t packet_index {0};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
+    bool ipv4_bounds_from_captured_bytes {false};
 
     bool has_ethernet {false};
     EthernetDetails ethernet {};

@@ -60,6 +60,14 @@ struct UdpPayloadBounds {
     std::size_t payload_length {0};
 };
 
+struct Ipv4PacketBounds {
+    std::size_t header_length {0};
+    std::uint16_t total_length {0};
+    std::size_t nominal_packet_end {0};
+    std::size_t packet_end {0};
+    bool bounds_from_captured_bytes {false};
+};
+
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
                                       static_cast<std::uint16_t>(bytes[offset + 1]));
@@ -195,6 +203,45 @@ inline std::optional<Ipv6PayloadView> parse_ipv6_payload(std::span<const std::ui
     }
 
     return std::nullopt;
+}
+
+inline std::optional<Ipv4PacketBounds> parse_ipv4_packet_bounds(std::span<const std::uint8_t> bytes,
+                                                                const std::size_t ipv4_offset) {
+    if (bytes.size() < ipv4_offset + kIpv4MinimumHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto version = static_cast<std::uint8_t>(bytes[ipv4_offset] >> 4U);
+    const auto ihl = static_cast<std::size_t>((bytes[ipv4_offset] & 0x0FU) * 4U);
+    const auto total_length = read_be16(bytes, ipv4_offset + 2U);
+    if (version != 4U || ihl < kIpv4MinimumHeaderSize) {
+        return std::nullopt;
+    }
+
+    if (bytes.size() < ipv4_offset + ihl) {
+        return std::nullopt;
+    }
+
+    const bool bounds_from_captured_bytes = total_length == 0U;
+    if (!bounds_from_captured_bytes && total_length < ihl) {
+        return std::nullopt;
+    }
+
+    const auto nominal_packet_end = bounds_from_captured_bytes
+        ? bytes.size()
+        : (ipv4_offset + static_cast<std::size_t>(total_length));
+    const auto packet_end = std::min(nominal_packet_end, bytes.size());
+    if (packet_end < ipv4_offset + ihl) {
+        return std::nullopt;
+    }
+
+    return Ipv4PacketBounds {
+        .header_length = ihl,
+        .total_length = total_length,
+        .nominal_packet_end = nominal_packet_end,
+        .packet_end = packet_end,
+        .bounds_from_captured_bytes = bounds_from_captured_bytes,
+    };
 }
 
 inline std::optional<UdpPayloadBounds> parse_udp_payload_bounds(std::span<const std::uint8_t> bytes,

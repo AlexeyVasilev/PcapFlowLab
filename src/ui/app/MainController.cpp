@@ -1168,6 +1168,10 @@ QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet
         warnings.push_back(QStringLiteral("Captured Length: %1").arg(details.captured_length));
         warnings.push_back(QStringLiteral("Original Length: %1").arg(details.original_length));
     }
+    if (details.ipv4_bounds_from_captured_bytes) {
+        warnings.push_back(QStringLiteral("IPv4 total length is unavailable; packet was parsed using captured bytes only"));
+        warnings.push_back(QStringLiteral("Header interpretation is conservative (possible pre-offload packet)"));
+    }
     appendSection(lines, QStringLiteral("Warnings"), warnings);
 
     if (details.has_ethernet) {

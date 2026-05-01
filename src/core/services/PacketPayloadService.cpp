@@ -35,19 +35,8 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
 
     if (envelope->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = envelope->payload_offset;
-        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
-            return {};
-        }
-
-        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
-        const auto ihl = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
-        const auto total_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv4_offset + 2U));
-        if (version != 4U || ihl < detail::kIpv4MinimumHeaderSize || total_length < ihl) {
-            return {};
-        }
-
-        const auto nominal_packet_end = ipv4_offset + total_length;
-        if (packet_bytes.size() < ipv4_offset + ihl) {
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
             return {};
         }
 
@@ -57,11 +46,12 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         }
 
         const auto protocol = packet_bytes[ipv4_offset + 9U];
-        const auto transport_offset = ipv4_offset + ihl;
-        const auto packet_end = nominal_packet_end;
+        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        const auto nominal_packet_end = ipv4_bounds->nominal_packet_end;
+        const auto packet_end = ipv4_bounds->packet_end;
 
         if (protocol == detail::kIpProtocolTcp) {
-            if (packet_bytes.size() < nominal_packet_end) {
+            if (!ipv4_bounds->bounds_from_captured_bytes && packet_bytes.size() < nominal_packet_end) {
                 return {};
             }
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end) {

@@ -81,18 +81,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
     if (envelope->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = envelope->payload_offset;
-        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
-            return {};
-        }
-
-        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
-        const auto ihl = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
-        const auto total_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv4_offset + 2U));
-        if (version != 4U || ihl < detail::kIpv4MinimumHeaderSize || total_length < ihl) {
-            return {};
-        }
-
-        if (packet_bytes.size() < ipv4_offset + ihl) {
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
             return {};
         }
 
@@ -100,8 +90,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
 
         const auto protocol = packet_bytes[ipv4_offset + 9U];
-        const auto transport_offset = ipv4_offset + ihl;
-        const auto packet_end = std::min(ipv4_offset + total_length, packet_bytes.size());
+        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        const auto packet_end = ipv4_bounds->packet_end;
         auto flow_base = FlowKeyV4 {
             .src_addr = detail::read_be32(packet_bytes, ipv4_offset + 12U),
             .dst_addr = detail::read_be32(packet_bytes, ipv4_offset + 16U),
@@ -161,7 +151,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         }
 
         if (protocol == detail::kIpProtocolUdp) {
-            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_offset + total_length);
+            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
             if (!udp_payload.has_value()) {
                 return {};
             }
