@@ -8,22 +8,28 @@ Item {
     property bool hasCapture: false
     property var packetCount: 0
     property var flowCount: 0
-    property var totalBytes: 0
+    property var capturedBytes: 0
+    property var originalBytes: 0
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
-    property var tcpTotalBytes: 0
+    property var tcpCapturedBytes: 0
+    property var tcpOriginalBytes: 0
     property var udpFlowCount: 0
     property var udpPacketCount: 0
-    property var udpTotalBytes: 0
+    property var udpCapturedBytes: 0
+    property var udpOriginalBytes: 0
     property var otherFlowCount: 0
     property var otherPacketCount: 0
-    property var otherTotalBytes: 0
+    property var otherCapturedBytes: 0
+    property var otherOriginalBytes: 0
     property var ipv4FlowCount: 0
     property var ipv4PacketCount: 0
-    property var ipv4TotalBytes: 0
+    property var ipv4CapturedBytes: 0
+    property var ipv4OriginalBytes: 0
     property var ipv6FlowCount: 0
     property var ipv6PacketCount: 0
-    property var ipv6TotalBytes: 0
+    property var ipv6CapturedBytes: 0
+    property var ipv6OriginalBytes: 0
     property var quicTotalFlows: 0
     property var quicWithSni: 0
     property var quicWithoutSni: 0
@@ -72,7 +78,8 @@ Item {
                     Layout.fillWidth: true
                     packetCount: root.packetCount
                     flowCount: root.flowCount
-                    totalBytes: root.totalBytes
+                    capturedBytes: root.capturedBytes
+                    originalBytes: root.originalBytes
                     hasCapture: root.hasCapture
                 }
 
@@ -82,19 +89,24 @@ Item {
                     hasCapture: root.hasCapture
                     tcpFlowCount: root.tcpFlowCount
                     tcpPacketCount: root.tcpPacketCount
-                    tcpTotalBytes: root.tcpTotalBytes
+                    tcpCapturedBytes: root.tcpCapturedBytes
+                    tcpOriginalBytes: root.tcpOriginalBytes
                     udpFlowCount: root.udpFlowCount
                     udpPacketCount: root.udpPacketCount
-                    udpTotalBytes: root.udpTotalBytes
+                    udpCapturedBytes: root.udpCapturedBytes
+                    udpOriginalBytes: root.udpOriginalBytes
                     otherFlowCount: root.otherFlowCount
                     otherPacketCount: root.otherPacketCount
-                    otherTotalBytes: root.otherTotalBytes
+                    otherCapturedBytes: root.otherCapturedBytes
+                    otherOriginalBytes: root.otherOriginalBytes
                     ipv4FlowCount: root.ipv4FlowCount
                     ipv4PacketCount: root.ipv4PacketCount
-                    ipv4TotalBytes: root.ipv4TotalBytes
+                    ipv4CapturedBytes: root.ipv4CapturedBytes
+                    ipv4OriginalBytes: root.ipv4OriginalBytes
                     ipv6FlowCount: root.ipv6FlowCount
                     ipv6PacketCount: root.ipv6PacketCount
-                    ipv6TotalBytes: root.ipv6TotalBytes
+                    ipv6CapturedBytes: root.ipv6CapturedBytes
+                    ipv6OriginalBytes: root.ipv6OriginalBytes
                     quicTotalFlows: root.quicTotalFlows
                     quicWithSni: root.quicWithSni
                     quicWithoutSni: root.quicWithoutSni

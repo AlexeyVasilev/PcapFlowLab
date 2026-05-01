@@ -9,19 +9,24 @@ Frame {
 
     property var tcpFlowCount: 0
     property var tcpPacketCount: 0
-    property var tcpTotalBytes: 0
+    property var tcpCapturedBytes: 0
+    property var tcpOriginalBytes: 0
     property var udpFlowCount: 0
     property var udpPacketCount: 0
-    property var udpTotalBytes: 0
+    property var udpCapturedBytes: 0
+    property var udpOriginalBytes: 0
     property var otherFlowCount: 0
     property var otherPacketCount: 0
-    property var otherTotalBytes: 0
+    property var otherCapturedBytes: 0
+    property var otherOriginalBytes: 0
     property var ipv4FlowCount: 0
     property var ipv4PacketCount: 0
-    property var ipv4TotalBytes: 0
+    property var ipv4CapturedBytes: 0
+    property var ipv4OriginalBytes: 0
     property var ipv6FlowCount: 0
     property var ipv6PacketCount: 0
-    property var ipv6TotalBytes: 0
+    property var ipv6CapturedBytes: 0
+    property var ipv6OriginalBytes: 0
     property var quicTotalFlows: 0
     property var quicWithSni: 0
     property var quicWithoutSni: 0
@@ -47,15 +52,17 @@ Frame {
     readonly property int transportNameColumnWidth: 92
     readonly property int transportFlowsColumnWidth: 118
     readonly property int transportPacketsColumnWidth: 126
-    readonly property int transportBytesColumnWidth: 126
-    readonly property int transportTableWidth: transportNameColumnWidth + transportFlowsColumnWidth + transportPacketsColumnWidth + transportBytesColumnWidth + (tableColumnSpacing * 3) + (tablePadding * 2)
+    readonly property int transportCapturedColumnWidth: 126
+    readonly property int transportOriginalColumnWidth: 126
+    readonly property int transportTableWidth: transportNameColumnWidth + transportFlowsColumnWidth + transportPacketsColumnWidth + transportCapturedColumnWidth + transportOriginalColumnWidth + (tableColumnSpacing * 4) + (tablePadding * 2)
 
     readonly property int hintGroupColumnWidth: 92
     readonly property int hintProtocolColumnWidth: 180
     readonly property int hintFlowsColumnWidth: 110
     readonly property int hintPacketsColumnWidth: 118
-    readonly property int hintBytesColumnWidth: 118
-    readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintBytesColumnWidth + (tableColumnSpacing * 4) + (tablePadding * 2)
+    readonly property int hintCapturedColumnWidth: 118
+    readonly property int hintOriginalColumnWidth: 118
+    readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintCapturedColumnWidth + hintOriginalColumnWidth + (tableColumnSpacing * 5) + (tablePadding * 2)
 
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
@@ -125,13 +132,23 @@ Frame {
         return total
     }
 
-    function totalHintBytes() {
+    function totalHintCapturedBytes() {
         if (!protocolHintDistribution || protocolHintDistribution.length === 0)
             return 0
 
         let total = 0
         for (let index = 0; index < protocolHintDistribution.length; ++index)
-            total += protocolHintDistribution[index]["bytes"] || 0
+            total += protocolHintDistribution[index]["capturedBytes"] || 0
+        return total
+    }
+
+    function totalHintOriginalBytes() {
+        if (!protocolHintDistribution || protocolHintDistribution.length === 0)
+            return 0
+
+        let total = 0
+        for (let index = 0; index < protocolHintDistribution.length; ++index)
+            total += protocolHintDistribution[index]["originalBytes"] || 0
         return total
     }
 
@@ -148,8 +165,12 @@ Frame {
         return Number(tcpPacketCount || 0) + Number(udpPacketCount || 0) + Number(otherPacketCount || 0)
     }
 
-    function totalTransportBytes() {
-        return Number(tcpTotalBytes || 0) + Number(udpTotalBytes || 0) + Number(otherTotalBytes || 0)
+    function totalTransportCapturedBytes() {
+        return Number(tcpCapturedBytes || 0) + Number(udpCapturedBytes || 0) + Number(otherCapturedBytes || 0)
+    }
+
+    function totalTransportOriginalBytes() {
+        return Number(tcpOriginalBytes || 0) + Number(udpOriginalBytes || 0) + Number(otherOriginalBytes || 0)
     }
 
     function totalIpFlows() {
@@ -160,8 +181,12 @@ Frame {
         return Number(ipv4PacketCount || 0) + Number(ipv6PacketCount || 0)
     }
 
-    function totalIpBytes() {
-        return Number(ipv4TotalBytes || 0) + Number(ipv6TotalBytes || 0)
+    function totalIpCapturedBytes() {
+        return Number(ipv4CapturedBytes || 0) + Number(ipv6CapturedBytes || 0)
+    }
+
+    function totalIpOriginalBytes() {
+        return Number(ipv4OriginalBytes || 0) + Number(ipv6OriginalBytes || 0)
     }
 
     function protocolHintGroup(title) {
@@ -203,15 +228,17 @@ Frame {
         elide: Text.ElideRight
     }
 
-    component FourColumnHeader: Rectangle {
+    component FiveColumnHeader: Rectangle {
         required property string firstTitle
         required property string secondTitle
         required property string thirdTitle
         required property string fourthTitle
+        required property string fifthTitle
         required property int firstWidth
         required property int secondWidth
         required property int thirdWidth
         required property int fourthWidth
+        required property int fifthWidth
         required property int tableWidth
 
         width: Math.min(tableWidth, parent ? parent.width : tableWidth)
@@ -263,18 +290,30 @@ Frame {
                 font.bold: true
                 color: "#334155"
             }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
+                width: parent.parent.fifthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fifthTitle
+                font.bold: true
+                color: "#334155"
+            }
         }
     }
 
-    component FourColumnRow: Rectangle {
+    component FiveColumnRow: Rectangle {
         required property string firstText
         required property string secondText
         required property string thirdText
         required property string fourthText
+        required property string fifthText
         required property int firstWidth
         required property int secondWidth
         required property int thirdWidth
         required property int fourthWidth
+        required property int fifthWidth
         required property int tableWidth
         required property int rowIndex
         required property color firstColor
@@ -327,6 +366,190 @@ Frame {
                 color: "#334155"
                 elide: Text.ElideLeft
             }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
+                width: parent.parent.fifthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fifthText
+                color: "#334155"
+                elide: Text.ElideLeft
+            }
+        }
+    }
+
+    component SixColumnHeader: Rectangle {
+        required property string firstTitle
+        required property string secondTitle
+        required property string thirdTitle
+        required property string fourthTitle
+        required property string fifthTitle
+        required property string sixthTitle
+        required property int firstWidth
+        required property int secondWidth
+        required property int thirdWidth
+        required property int fourthWidth
+        required property int fifthWidth
+        required property int sixthWidth
+        required property int tableWidth
+
+        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        height: root.tableHeaderHeight
+        radius: 4
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: root.tablePadding
+            anchors.rightMargin: root.tablePadding
+
+            Label {
+                x: 0
+                width: parent.parent.firstWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.firstTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing
+                width: parent.parent.secondWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.secondTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
+                width: parent.parent.thirdWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.thirdTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
+                width: parent.parent.fourthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fourthTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
+                width: parent.parent.fifthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fifthTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing + parent.parent.fifthWidth + root.tableColumnSpacing
+                width: parent.parent.sixthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.sixthTitle
+                font.bold: true
+                color: "#334155"
+            }
+        }
+    }
+
+    component SixColumnRow: Rectangle {
+        required property string firstText
+        required property string secondText
+        required property string thirdText
+        required property string fourthText
+        required property string fifthText
+        required property string sixthText
+        required property int firstWidth
+        required property int secondWidth
+        required property int thirdWidth
+        required property int fourthWidth
+        required property int fifthWidth
+        required property int sixthWidth
+        required property int tableWidth
+        required property int rowIndex
+        required property color firstColor
+        required property color secondColor
+
+        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        height: root.tableRowHeight
+        radius: 4
+        color: rowIndex % 2 === 0 ? "transparent" : "#f8fafc"
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: root.tablePadding
+            anchors.rightMargin: root.tablePadding
+
+            Label {
+                x: 0
+                width: parent.parent.firstWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.firstText
+                color: parent.parent.firstColor
+                elide: Text.ElideRight
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing
+                width: parent.parent.secondWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.secondText
+                color: parent.parent.secondColor
+                elide: Text.ElideRight
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
+                width: parent.parent.thirdWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.thirdText
+                color: "#334155"
+                elide: Text.ElideLeft
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
+                width: parent.parent.fourthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fourthText
+                color: "#334155"
+                elide: Text.ElideLeft
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing
+                width: parent.parent.fifthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fifthText
+                color: "#334155"
+                elide: Text.ElideLeft
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing + parent.parent.fourthWidth + root.tableColumnSpacing + parent.parent.fifthWidth + root.tableColumnSpacing
+                width: parent.parent.sixthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.sixthText
+                color: "#334155"
+                elide: Text.ElideLeft
+            }
         }
     }
 
@@ -352,55 +575,63 @@ Frame {
         }
 
         SectionFrame {
-            FourColumnHeader {
+            FiveColumnHeader {
                 firstTitle: "Transport"
                 secondTitle: "Flows"
                 thirdTitle: "Packets"
-                fourthTitle: "Bytes"
+                fourthTitle: "Captured"
+                fifthTitle: "Original"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
             }
 
-            FourColumnRow {
+            FiveColumnRow {
                 firstText: "TCP"
                 secondText: root.hasCapture ? root.formatHintCell(root.tcpFlowCount || 0, root.totalTransportFlows(), false) : "-"
                 thirdText: root.hasCapture ? root.formatHintCell(root.tcpPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.tcpTotalBytes || 0, root.totalTransportBytes(), true) : "-"
+                fourthText: root.hasCapture ? root.formatHintCell(root.tcpCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
+                fifthText: root.hasCapture ? root.formatHintCell(root.tcpOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
                 rowIndex: 0
                 firstColor: "#0f172a"
             }
 
-            FourColumnRow {
+            FiveColumnRow {
                 firstText: "UDP"
                 secondText: root.hasCapture ? root.formatHintCell(root.udpFlowCount || 0, root.totalTransportFlows(), false) : "-"
                 thirdText: root.hasCapture ? root.formatHintCell(root.udpPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.udpTotalBytes || 0, root.totalTransportBytes(), true) : "-"
+                fourthText: root.hasCapture ? root.formatHintCell(root.udpCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
+                fifthText: root.hasCapture ? root.formatHintCell(root.udpOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
                 rowIndex: 1
                 firstColor: "#0f172a"
             }
 
-            FourColumnRow {
+            FiveColumnRow {
                 firstText: "Other"
                 secondText: root.hasCapture ? root.formatHintCell(root.otherFlowCount || 0, root.totalTransportFlows(), false) : "-"
                 thirdText: root.hasCapture ? root.formatHintCell(root.otherPacketCount || 0, root.totalTransportPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.otherTotalBytes || 0, root.totalTransportBytes(), true) : "-"
+                fourthText: root.hasCapture ? root.formatHintCell(root.otherCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
+                fifthText: root.hasCapture ? root.formatHintCell(root.otherOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
                 rowIndex: 2
                 firstColor: "#0f172a"
@@ -408,41 +639,47 @@ Frame {
         }
 
         SectionFrame {
-            FourColumnHeader {
+            FiveColumnHeader {
                 firstTitle: "Family"
                 secondTitle: "Flows"
                 thirdTitle: "Packets"
-                fourthTitle: "Bytes"
+                fourthTitle: "Captured"
+                fifthTitle: "Original"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
             }
 
-            FourColumnRow {
+            FiveColumnRow {
                 firstText: "IPv4"
                 secondText: root.hasCapture ? root.formatHintCell(root.ipv4FlowCount || 0, root.totalIpFlows(), false) : "-"
                 thirdText: root.hasCapture ? root.formatHintCell(root.ipv4PacketCount || 0, root.totalIpPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.ipv4TotalBytes || 0, root.totalIpBytes(), true) : "-"
+                fourthText: root.hasCapture ? root.formatHintCell(root.ipv4CapturedBytes || 0, root.totalIpCapturedBytes(), true) : "-"
+                fifthText: root.hasCapture ? root.formatHintCell(root.ipv4OriginalBytes || 0, root.totalIpOriginalBytes(), true) : "-"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
                 rowIndex: 0
                 firstColor: "#0f172a"
             }
 
-            FourColumnRow {
+            FiveColumnRow {
                 firstText: "IPv6"
                 secondText: root.hasCapture ? root.formatHintCell(root.ipv6FlowCount || 0, root.totalIpFlows(), false) : "-"
                 thirdText: root.hasCapture ? root.formatHintCell(root.ipv6PacketCount || 0, root.totalIpPackets(), false) : "-"
-                fourthText: root.hasCapture ? root.formatHintCell(root.ipv6TotalBytes || 0, root.totalIpBytes(), true) : "-"
+                fourthText: root.hasCapture ? root.formatHintCell(root.ipv6CapturedBytes || 0, root.totalIpCapturedBytes(), true) : "-"
+                fifthText: root.hasCapture ? root.formatHintCell(root.ipv6OriginalBytes || 0, root.totalIpOriginalBytes(), true) : "-"
                 firstWidth: root.transportNameColumnWidth
                 secondWidth: root.transportFlowsColumnWidth
                 thirdWidth: root.transportPacketsColumnWidth
-                fourthWidth: root.transportBytesColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
                 rowIndex: 1
                 firstColor: "#0f172a"
@@ -455,66 +692,20 @@ Frame {
                 font.bold: true
             }
 
-            Rectangle {
-                width: Math.min(root.hintTableWidth, parent ? parent.width : root.hintTableWidth)
-                height: root.tableHeaderHeight
-                radius: 4
-                color: "#f8fafc"
-                border.color: "#e2e8f0"
-
-                Item {
-                    anchors.fill: parent
-                    anchors.leftMargin: root.tablePadding
-                    anchors.rightMargin: root.tablePadding
-
-                    Label {
-                        x: 0
-                        width: root.hintGroupColumnWidth
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Group"
-                        font.bold: true
-                        color: "#334155"
-                    }
-
-                    Label {
-                        x: root.hintGroupColumnWidth + root.tableColumnSpacing
-                        width: root.hintProtocolColumnWidth
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "Protocol"
-                        font.bold: true
-                        color: "#334155"
-                    }
-
-                    Label {
-                        x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing
-                        width: root.hintFlowsColumnWidth
-                        anchors.verticalCenter: parent.verticalCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: "Flows"
-                        font.bold: true
-                        color: "#334155"
-                    }
-
-                    Label {
-                        x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing
-                        width: root.hintPacketsColumnWidth
-                        anchors.verticalCenter: parent.verticalCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: "Packets"
-                        font.bold: true
-                        color: "#334155"
-                    }
-
-                    Label {
-                        x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing
-                        width: root.hintBytesColumnWidth
-                        anchors.verticalCenter: parent.verticalCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: "Bytes"
-                        font.bold: true
-                        color: "#334155"
-                    }
-                }
+            SixColumnHeader {
+                firstTitle: "Group"
+                secondTitle: "Protocol"
+                thirdTitle: "Flows"
+                fourthTitle: "Packets"
+                fifthTitle: "Captured"
+                sixthTitle: "Original"
+                firstWidth: root.hintGroupColumnWidth
+                secondWidth: root.hintProtocolColumnWidth
+                thirdWidth: root.hintFlowsColumnWidth
+                fourthWidth: root.hintPacketsColumnWidth
+                fifthWidth: root.hintCapturedColumnWidth
+                sixthWidth: root.hintOriginalColumnWidth
+                tableWidth: root.hintTableWidth
             }
 
             Repeater {
@@ -575,11 +766,23 @@ Frame {
 
                         Label {
                             x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing
-                            width: root.hintBytesColumnWidth
+                            width: root.hintCapturedColumnWidth
                             anchors.verticalCenter: parent.verticalCenter
                             horizontalAlignment: Text.AlignRight
                             text: root.hasCapture
-                                ? root.formatHintCell(modelData["bytes"] || 0, root.totalHintBytes(), true)
+                                ? root.formatHintCell(modelData["capturedBytes"] || 0, root.totalHintCapturedBytes(), true)
+                                : "-"
+                            color: "#334155"
+                            elide: Text.ElideLeft
+                        }
+
+                        Label {
+                            x: root.hintGroupColumnWidth + root.tableColumnSpacing + root.hintProtocolColumnWidth + root.tableColumnSpacing + root.hintFlowsColumnWidth + root.tableColumnSpacing + root.hintPacketsColumnWidth + root.tableColumnSpacing + root.hintCapturedColumnWidth + root.tableColumnSpacing
+                            width: root.hintOriginalColumnWidth
+                            anchors.verticalCenter: parent.verticalCenter
+                            horizontalAlignment: Text.AlignRight
+                            text: root.hasCapture
+                                ? root.formatHintCell(modelData["originalBytes"] || 0, root.totalHintOriginalBytes(), true)
                                 : "-"
                             color: "#334155"
                             elide: Text.ElideLeft

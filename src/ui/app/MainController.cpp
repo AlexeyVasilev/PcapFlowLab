@@ -1999,6 +1999,18 @@ qulonglong MainController::flowCount() const noexcept {
     return static_cast<qulonglong>(session_.summary().flow_count);
 }
 
+qulonglong MainController::capturedBytes() const noexcept {
+    return static_cast<qulonglong>(
+        protocol_summary_.tcp.captured_bytes +
+        protocol_summary_.udp.captured_bytes +
+        protocol_summary_.other.captured_bytes
+    );
+}
+
+qulonglong MainController::originalBytes() const noexcept {
+    return static_cast<qulonglong>(session_.summary().total_bytes);
+}
+
 qulonglong MainController::totalBytes() const noexcept {
     return static_cast<qulonglong>(session_.summary().total_bytes);
 }
@@ -2009,7 +2021,9 @@ QVariantList MainController::protocolHintDistribution() const {
         row.insert(QStringLiteral("title"), QString::fromUtf8(label));
         row.insert(QStringLiteral("flows"), static_cast<qulonglong>(stats.flow_count));
         row.insert(QStringLiteral("packets"), static_cast<qulonglong>(stats.packet_count));
-        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.total_bytes));
+        row.insert(QStringLiteral("capturedBytes"), static_cast<qulonglong>(stats.captured_bytes));
+        row.insert(QStringLiteral("originalBytes"), static_cast<qulonglong>(stats.original_bytes));
+        row.insert(QStringLiteral("bytes"), static_cast<qulonglong>(stats.original_bytes));
         return row;
     };
 
@@ -2039,8 +2053,16 @@ qulonglong MainController::tcpPacketCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.packet_count);
 }
 
+qulonglong MainController::tcpCapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.tcp.captured_bytes);
+}
+
+qulonglong MainController::tcpOriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.tcp.original_bytes);
+}
+
 qulonglong MainController::tcpTotalBytes() const noexcept {
-    return static_cast<qulonglong>(protocol_summary_.tcp.total_bytes);
+    return static_cast<qulonglong>(protocol_summary_.tcp.original_bytes);
 }
 
 qulonglong MainController::udpFlowCount() const noexcept {
@@ -2051,8 +2073,16 @@ qulonglong MainController::udpPacketCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.packet_count);
 }
 
+qulonglong MainController::udpCapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.udp.captured_bytes);
+}
+
+qulonglong MainController::udpOriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.udp.original_bytes);
+}
+
 qulonglong MainController::udpTotalBytes() const noexcept {
-    return static_cast<qulonglong>(protocol_summary_.udp.total_bytes);
+    return static_cast<qulonglong>(protocol_summary_.udp.original_bytes);
 }
 
 qulonglong MainController::otherFlowCount() const noexcept {
@@ -2063,8 +2093,16 @@ qulonglong MainController::otherPacketCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.other.packet_count);
 }
 
+qulonglong MainController::otherCapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.other.captured_bytes);
+}
+
+qulonglong MainController::otherOriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.other.original_bytes);
+}
+
 qulonglong MainController::otherTotalBytes() const noexcept {
-    return static_cast<qulonglong>(protocol_summary_.other.total_bytes);
+    return static_cast<qulonglong>(protocol_summary_.other.original_bytes);
 }
 
 qulonglong MainController::ipv4FlowCount() const noexcept {
@@ -2075,8 +2113,16 @@ qulonglong MainController::ipv4PacketCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv4.packet_count);
 }
 
+qulonglong MainController::ipv4CapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv4.captured_bytes);
+}
+
+qulonglong MainController::ipv4OriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv4.original_bytes);
+}
+
 qulonglong MainController::ipv4TotalBytes() const noexcept {
-    return static_cast<qulonglong>(protocol_summary_.ipv4.total_bytes);
+    return static_cast<qulonglong>(protocol_summary_.ipv4.original_bytes);
 }
 
 qulonglong MainController::ipv6FlowCount() const noexcept {
@@ -2087,8 +2133,16 @@ qulonglong MainController::ipv6PacketCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.packet_count);
 }
 
+qulonglong MainController::ipv6CapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv6.captured_bytes);
+}
+
+qulonglong MainController::ipv6OriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.ipv6.original_bytes);
+}
+
 qulonglong MainController::ipv6TotalBytes() const noexcept {
-    return static_cast<qulonglong>(protocol_summary_.ipv6.total_bytes);
+    return static_cast<qulonglong>(protocol_summary_.ipv6.original_bytes);
 }
 
 qulonglong MainController::quicTotalFlows() const noexcept {

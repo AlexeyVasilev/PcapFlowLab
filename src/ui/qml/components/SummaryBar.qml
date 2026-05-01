@@ -7,7 +7,8 @@ Frame {
 
     property var packetCount: 0
     property var flowCount: 0
-    property var totalBytes: 0
+    property var capturedBytes: 0
+    property var originalBytes: 0
     property bool hasCapture: false
 
     function groupInteger(value) {
@@ -96,8 +97,13 @@ Frame {
         }
 
         StatChip {
-            title: "Bytes"
-            valueText: root.hasCapture ? root.formatBytes(root.totalBytes) : "-"
+            title: "Original bytes"
+            valueText: root.hasCapture ? root.formatBytes(root.originalBytes) : "-"
+        }
+
+        StatChip {
+            title: "Captured bytes"
+            valueText: root.hasCapture ? root.formatBytes(root.capturedBytes) : "-"
         }
     }
 }

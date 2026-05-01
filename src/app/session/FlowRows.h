@@ -63,7 +63,8 @@ struct StreamItemRow {
 struct ProtocolStats {
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
-    std::uint64_t total_bytes {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t original_bytes {0};
 };
 
 struct CaptureProtocolSummary {
@@ -129,7 +130,6 @@ struct CaptureTopSummary {
 };
 
 }  // namespace pfl
-
 
 
 

@@ -941,22 +941,28 @@ ApplicationWindow {
                 hasCapture: mainController.hasCapture
                 packetCount: mainController.packetCount
                 flowCount: mainController.flowCount
-                totalBytes: mainController.totalBytes
+                capturedBytes: mainController.capturedBytes
+                originalBytes: mainController.originalBytes
                 tcpFlowCount: mainController.tcpFlowCount
                 tcpPacketCount: mainController.tcpPacketCount
-                tcpTotalBytes: mainController.tcpTotalBytes
+                tcpCapturedBytes: mainController.tcpCapturedBytes
+                tcpOriginalBytes: mainController.tcpOriginalBytes
                 udpFlowCount: mainController.udpFlowCount
                 udpPacketCount: mainController.udpPacketCount
-                udpTotalBytes: mainController.udpTotalBytes
+                udpCapturedBytes: mainController.udpCapturedBytes
+                udpOriginalBytes: mainController.udpOriginalBytes
                 otherFlowCount: mainController.otherFlowCount
                 otherPacketCount: mainController.otherPacketCount
-                otherTotalBytes: mainController.otherTotalBytes
+                otherCapturedBytes: mainController.otherCapturedBytes
+                otherOriginalBytes: mainController.otherOriginalBytes
                 ipv4FlowCount: mainController.ipv4FlowCount
                 ipv4PacketCount: mainController.ipv4PacketCount
-                ipv4TotalBytes: mainController.ipv4TotalBytes
+                ipv4CapturedBytes: mainController.ipv4CapturedBytes
+                ipv4OriginalBytes: mainController.ipv4OriginalBytes
                 ipv6FlowCount: mainController.ipv6FlowCount
                 ipv6PacketCount: mainController.ipv6PacketCount
-                ipv6TotalBytes: mainController.ipv6TotalBytes
+                ipv6CapturedBytes: mainController.ipv6CapturedBytes
+                ipv6OriginalBytes: mainController.ipv6OriginalBytes
                 quicTotalFlows: mainController.quicTotalFlows
                 quicWithSni: mainController.quicWithSni
                 quicWithoutSni: mainController.quicWithoutSni

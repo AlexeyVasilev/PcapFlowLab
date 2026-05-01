@@ -9,6 +9,16 @@ namespace pfl::session_detail {
 
 namespace {
 
+template <typename Flow>
+std::uint64_t sum_captured_bytes(const Flow& flow) noexcept {
+    std::uint64_t total {0};
+    for (const auto& packet : flow.packets) {
+        total += packet.captured_length;
+    }
+
+    return total;
+}
+
 FlowProtocolHint protocol_hint(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->protocol_hint : connection.ipv6->protocol_hint;
 }
@@ -62,6 +72,14 @@ bool listed_connection_less(const ListedConnectionRef& left, const ListedConnect
 
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept {
     return (connection.family == FlowAddressFamily::ipv4) ? connection.ipv4->packet_count : connection.ipv6->packet_count;
+}
+
+std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return sum_captured_bytes(connection.ipv4->flow_a) + sum_captured_bytes(connection.ipv4->flow_b);
+    }
+
+    return sum_captured_bytes(connection.ipv6->flow_a) + sum_captured_bytes(connection.ipv6->flow_b);
 }
 
 std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept {
@@ -120,7 +138,8 @@ std::vector<ListedConnectionRef> list_connections(const CaptureState& state) {
 void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connection) noexcept {
     ++stats.flow_count;
     stats.packet_count += packet_count(connection);
-    stats.total_bytes += total_bytes(connection);
+    stats.captured_bytes += captured_bytes(connection);
+    stats.original_bytes += total_bytes(connection);
 }
 
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection) {

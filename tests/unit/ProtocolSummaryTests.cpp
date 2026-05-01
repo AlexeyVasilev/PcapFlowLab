@@ -11,7 +11,7 @@ namespace {
 void expect_protocol_stats(const ProtocolStats& actual, const ProtocolStats& expected) {
     PFL_EXPECT(actual.flow_count == expected.flow_count);
     PFL_EXPECT(actual.packet_count == expected.packet_count);
-    PFL_EXPECT(actual.total_bytes == expected.total_bytes);
+    PFL_EXPECT(actual.original_bytes == expected.original_bytes);
 }
 
 std::vector<std::uint8_t> make_ssh_banner_payload() {
@@ -172,30 +172,37 @@ void run_protocol_summary_tests() {
         PFL_EXPECT(session.open_capture(capture_path));
 
         const auto summary = session.protocol_summary();
-        expect_protocol_stats(summary.tcp, ProtocolStats {1, 1, static_cast<std::uint64_t>(tcp_packet.size())});
+        expect_protocol_stats(summary.tcp, ProtocolStats {1, 1, static_cast<std::uint64_t>(tcp_packet.size()), static_cast<std::uint64_t>(tcp_packet.size())});
         expect_protocol_stats(summary.udp, ProtocolStats {
             2,
             2,
+            static_cast<std::uint64_t>(udp_ipv4_packet.size() + udp_ipv6_packet.size()),
             static_cast<std::uint64_t>(udp_ipv4_packet.size() + udp_ipv6_packet.size())
         });
         expect_protocol_stats(summary.other, ProtocolStats {
             2,
             2,
+            static_cast<std::uint64_t>(arp_packet.size() + icmpv6_packet.size()),
             static_cast<std::uint64_t>(arp_packet.size() + icmpv6_packet.size())
         });
         expect_protocol_stats(summary.ipv4, ProtocolStats {
             3,
             3,
+            static_cast<std::uint64_t>(tcp_packet.size() + udp_ipv4_packet.size() + arp_packet.size()),
             static_cast<std::uint64_t>(tcp_packet.size() + udp_ipv4_packet.size() + arp_packet.size())
         });
         expect_protocol_stats(summary.ipv6, ProtocolStats {
             2,
             2,
+            static_cast<std::uint64_t>(udp_ipv6_packet.size() + icmpv6_packet.size()),
             static_cast<std::uint64_t>(udp_ipv6_packet.size() + icmpv6_packet.size())
         });
         expect_protocol_stats(summary.hint_unknown, ProtocolStats {
             5,
             5,
+            static_cast<std::uint64_t>(
+                tcp_packet.size() + udp_ipv4_packet.size() + arp_packet.size() + udp_ipv6_packet.size() + icmpv6_packet.size()
+            ),
             static_cast<std::uint64_t>(
                 tcp_packet.size() + udp_ipv4_packet.size() + arp_packet.size() + udp_ipv6_packet.size() + icmpv6_packet.size()
             )
@@ -260,10 +267,10 @@ void run_protocol_summary_tests() {
         PFL_EXPECT(session.open_capture(capture_path));
         const auto summary = session.protocol_summary();
 
-        expect_protocol_stats(summary.hint_ssh, ProtocolStats {1, 1, static_cast<std::uint64_t>(ssh_packet.size())});
-        expect_protocol_stats(summary.hint_stun, ProtocolStats {1, 1, static_cast<std::uint64_t>(stun_packet.size())});
-        expect_protocol_stats(summary.hint_bittorrent, ProtocolStats {1, 1, static_cast<std::uint64_t>(bittorrent_packet.size())});
-        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size())});
+        expect_protocol_stats(summary.hint_ssh, ProtocolStats {1, 1, static_cast<std::uint64_t>(ssh_packet.size()), static_cast<std::uint64_t>(ssh_packet.size())});
+        expect_protocol_stats(summary.hint_stun, ProtocolStats {1, 1, static_cast<std::uint64_t>(stun_packet.size()), static_cast<std::uint64_t>(stun_packet.size())});
+        expect_protocol_stats(summary.hint_bittorrent, ProtocolStats {1, 1, static_cast<std::uint64_t>(bittorrent_packet.size()), static_cast<std::uint64_t>(bittorrent_packet.size())});
+        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size()), static_cast<std::uint64_t>(unknown_packet.size())});
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
@@ -271,9 +278,9 @@ void run_protocol_summary_tests() {
         const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
             summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count + summary.hint_mdns.packet_count + summary.hint_possible_tls.packet_count + summary.hint_possible_quic.packet_count + summary.hint_unknown.packet_count;
-        const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
-            summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes + summary.hint_mdns.total_bytes + summary.hint_possible_tls.total_bytes + summary.hint_possible_quic.total_bytes + summary.hint_unknown.total_bytes;
+        const auto hint_byte_total = summary.hint_http.original_bytes + summary.hint_tls.original_bytes + summary.hint_dns.original_bytes +
+            summary.hint_quic.original_bytes + summary.hint_ssh.original_bytes + summary.hint_stun.original_bytes +
+            summary.hint_bittorrent.original_bytes + summary.hint_mail_protocols.original_bytes + summary.hint_dhcp.original_bytes + summary.hint_mdns.original_bytes + summary.hint_possible_tls.original_bytes + summary.hint_possible_quic.original_bytes + summary.hint_unknown.original_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);
@@ -308,19 +315,20 @@ void run_protocol_summary_tests() {
         PFL_EXPECT(session.open_capture(capture_path));
         const auto summary = session.protocol_summary();
 
-        expect_protocol_stats(summary.hint_smtp, ProtocolStats {1, 1, static_cast<std::uint64_t>(smtp_packet.size())});
-        expect_protocol_stats(summary.hint_pop3, ProtocolStats {1, 1, static_cast<std::uint64_t>(pop3_packet.size())});
-        expect_protocol_stats(summary.hint_imap, ProtocolStats {1, 1, static_cast<std::uint64_t>(imap_packet.size())});
+        expect_protocol_stats(summary.hint_smtp, ProtocolStats {1, 1, static_cast<std::uint64_t>(smtp_packet.size()), static_cast<std::uint64_t>(smtp_packet.size())});
+        expect_protocol_stats(summary.hint_pop3, ProtocolStats {1, 1, static_cast<std::uint64_t>(pop3_packet.size()), static_cast<std::uint64_t>(pop3_packet.size())});
+        expect_protocol_stats(summary.hint_imap, ProtocolStats {1, 1, static_cast<std::uint64_t>(imap_packet.size()), static_cast<std::uint64_t>(imap_packet.size())});
         expect_protocol_stats(summary.hint_mail_protocols, ProtocolStats {
             3,
             3,
+            static_cast<std::uint64_t>(smtp_packet.size() + pop3_packet.size() + imap_packet.size()),
             static_cast<std::uint64_t>(smtp_packet.size() + pop3_packet.size() + imap_packet.size())
         });
-        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size())});
+        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size()), static_cast<std::uint64_t>(unknown_packet.size())});
 
         PFL_EXPECT(summary.hint_mail_protocols.flow_count == summary.hint_smtp.flow_count + summary.hint_pop3.flow_count + summary.hint_imap.flow_count);
         PFL_EXPECT(summary.hint_mail_protocols.packet_count == summary.hint_smtp.packet_count + summary.hint_pop3.packet_count + summary.hint_imap.packet_count);
-        PFL_EXPECT(summary.hint_mail_protocols.total_bytes == summary.hint_smtp.total_bytes + summary.hint_pop3.total_bytes + summary.hint_imap.total_bytes);
+        PFL_EXPECT(summary.hint_mail_protocols.original_bytes == summary.hint_smtp.original_bytes + summary.hint_pop3.original_bytes + summary.hint_imap.original_bytes);
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
@@ -328,9 +336,9 @@ void run_protocol_summary_tests() {
         const auto hint_packet_total = summary.hint_http.packet_count + summary.hint_tls.packet_count + summary.hint_dns.packet_count +
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
             summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count + summary.hint_mdns.packet_count + summary.hint_possible_tls.packet_count + summary.hint_possible_quic.packet_count + summary.hint_unknown.packet_count;
-        const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
-            summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes + summary.hint_mdns.total_bytes + summary.hint_possible_tls.total_bytes + summary.hint_possible_quic.total_bytes + summary.hint_unknown.total_bytes;
+        const auto hint_byte_total = summary.hint_http.original_bytes + summary.hint_tls.original_bytes + summary.hint_dns.original_bytes +
+            summary.hint_quic.original_bytes + summary.hint_ssh.original_bytes + summary.hint_stun.original_bytes +
+            summary.hint_bittorrent.original_bytes + summary.hint_mail_protocols.original_bytes + summary.hint_dhcp.original_bytes + summary.hint_mdns.original_bytes + summary.hint_possible_tls.original_bytes + summary.hint_possible_quic.original_bytes + summary.hint_unknown.original_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);
@@ -360,9 +368,9 @@ void run_protocol_summary_tests() {
         PFL_EXPECT(session.open_capture(capture_path));
         const auto summary = session.protocol_summary();
 
-        expect_protocol_stats(summary.hint_dhcp, ProtocolStats {1, 1, static_cast<std::uint64_t>(dhcp_packet.size())});
-        expect_protocol_stats(summary.hint_mdns, ProtocolStats {1, 1, static_cast<std::uint64_t>(mdns_packet.size())});
-        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size())});
+        expect_protocol_stats(summary.hint_dhcp, ProtocolStats {1, 1, static_cast<std::uint64_t>(dhcp_packet.size()), static_cast<std::uint64_t>(dhcp_packet.size())});
+        expect_protocol_stats(summary.hint_mdns, ProtocolStats {1, 1, static_cast<std::uint64_t>(mdns_packet.size()), static_cast<std::uint64_t>(mdns_packet.size())});
+        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size()), static_cast<std::uint64_t>(unknown_packet.size())});
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
@@ -372,10 +380,10 @@ void run_protocol_summary_tests() {
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
             summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count +
             summary.hint_mdns.packet_count + summary.hint_unknown.packet_count;
-        const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
-            summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes +
-            summary.hint_mdns.total_bytes + summary.hint_unknown.total_bytes;
+        const auto hint_byte_total = summary.hint_http.original_bytes + summary.hint_tls.original_bytes + summary.hint_dns.original_bytes +
+            summary.hint_quic.original_bytes + summary.hint_ssh.original_bytes + summary.hint_stun.original_bytes +
+            summary.hint_bittorrent.original_bytes + summary.hint_mail_protocols.original_bytes + summary.hint_dhcp.original_bytes +
+            summary.hint_mdns.original_bytes + summary.hint_unknown.original_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);
@@ -417,11 +425,11 @@ void run_protocol_summary_tests() {
         }));
         const auto summary = session.protocol_summary();
 
-        expect_protocol_stats(summary.hint_tls, ProtocolStats {1, 1, static_cast<std::uint64_t>(confirmed_tls_packet.size())});
-        expect_protocol_stats(summary.hint_quic, ProtocolStats {1, 1, static_cast<std::uint64_t>(confirmed_quic_packet.size())});
-        expect_protocol_stats(summary.hint_possible_tls, ProtocolStats {1, 1, static_cast<std::uint64_t>(possible_tls_packet.size())});
-        expect_protocol_stats(summary.hint_possible_quic, ProtocolStats {1, 1, static_cast<std::uint64_t>(possible_quic_packet.size())});
-        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size())});
+        expect_protocol_stats(summary.hint_tls, ProtocolStats {1, 1, static_cast<std::uint64_t>(confirmed_tls_packet.size()), static_cast<std::uint64_t>(confirmed_tls_packet.size())});
+        expect_protocol_stats(summary.hint_quic, ProtocolStats {1, 1, static_cast<std::uint64_t>(confirmed_quic_packet.size()), static_cast<std::uint64_t>(confirmed_quic_packet.size())});
+        expect_protocol_stats(summary.hint_possible_tls, ProtocolStats {1, 1, static_cast<std::uint64_t>(possible_tls_packet.size()), static_cast<std::uint64_t>(possible_tls_packet.size())});
+        expect_protocol_stats(summary.hint_possible_quic, ProtocolStats {1, 1, static_cast<std::uint64_t>(possible_quic_packet.size()), static_cast<std::uint64_t>(possible_quic_packet.size())});
+        expect_protocol_stats(summary.hint_unknown, ProtocolStats {1, 1, static_cast<std::uint64_t>(unknown_packet.size()), static_cast<std::uint64_t>(unknown_packet.size())});
 
         const auto hint_flow_total = summary.hint_http.flow_count + summary.hint_tls.flow_count + summary.hint_dns.flow_count +
             summary.hint_quic.flow_count + summary.hint_ssh.flow_count + summary.hint_stun.flow_count +
@@ -431,10 +439,10 @@ void run_protocol_summary_tests() {
             summary.hint_quic.packet_count + summary.hint_ssh.packet_count + summary.hint_stun.packet_count +
             summary.hint_bittorrent.packet_count + summary.hint_mail_protocols.packet_count + summary.hint_dhcp.packet_count +
             summary.hint_mdns.packet_count + summary.hint_possible_tls.packet_count + summary.hint_possible_quic.packet_count + summary.hint_unknown.packet_count;
-        const auto hint_byte_total = summary.hint_http.total_bytes + summary.hint_tls.total_bytes + summary.hint_dns.total_bytes +
-            summary.hint_quic.total_bytes + summary.hint_ssh.total_bytes + summary.hint_stun.total_bytes +
-            summary.hint_bittorrent.total_bytes + summary.hint_mail_protocols.total_bytes + summary.hint_dhcp.total_bytes +
-            summary.hint_mdns.total_bytes + summary.hint_possible_tls.total_bytes + summary.hint_possible_quic.total_bytes + summary.hint_unknown.total_bytes;
+        const auto hint_byte_total = summary.hint_http.original_bytes + summary.hint_tls.original_bytes + summary.hint_dns.original_bytes +
+            summary.hint_quic.original_bytes + summary.hint_ssh.original_bytes + summary.hint_stun.original_bytes +
+            summary.hint_bittorrent.original_bytes + summary.hint_mail_protocols.original_bytes + summary.hint_dhcp.original_bytes +
+            summary.hint_mdns.original_bytes + summary.hint_possible_tls.original_bytes + summary.hint_possible_quic.original_bytes + summary.hint_unknown.original_bytes;
 
         PFL_EXPECT(hint_flow_total == session.summary().flow_count);
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);

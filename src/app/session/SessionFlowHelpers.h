@@ -16,6 +16,7 @@ struct ListedConnectionRef {
 
 std::vector<ListedConnectionRef> list_connections(const CaptureState& state);
 std::uint64_t packet_count(const ListedConnectionRef& connection) noexcept;
+std::uint64_t captured_bytes(const ListedConnectionRef& connection) noexcept;
 std::uint64_t total_bytes(const ListedConnectionRef& connection) noexcept;
 ProtocolId protocol_id(const ListedConnectionRef& connection) noexcept;
 FlowProtocolHint effective_protocol_hint(const ListedConnectionRef& connection, const AnalysisSettings& settings) noexcept;
