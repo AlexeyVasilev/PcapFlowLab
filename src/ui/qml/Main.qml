@@ -991,6 +991,27 @@ ApplicationWindow {
                 }
             }
         }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.currentTabIndex === 0 && mainController.selectedFlowCount > 0
+            implicitHeight: selectionStatusLabel.implicitHeight + 12
+            color: "#f8fafc"
+            border.color: "#e2e8f0"
+            radius: 6
+
+            Label {
+                id: selectionStatusLabel
+                anchors.fill: parent
+                anchors.margins: 6
+                verticalAlignment: Text.AlignVCenter
+                color: "#64748b"
+                font.pixelSize: 12
+                text: mainController.selectedFlowCount === 1
+                    ? "1 flow selected"
+                    : (mainController.selectedFlowCount + " flows selected")
+            }
+        }
     }
 
     Rectangle {
