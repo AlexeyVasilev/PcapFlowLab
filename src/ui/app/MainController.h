@@ -193,6 +193,7 @@ class MainController final : public QObject {
     Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
+    Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
@@ -382,6 +383,7 @@ public:
     [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
+    [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
@@ -431,6 +433,7 @@ public:
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
     void setUsePossibleTlsQuic(bool enabled);
+    void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
@@ -448,6 +451,7 @@ signals:
     void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
     void usePossibleTlsQuicChanged();
+    void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
     void selectedFlowWiresharkFilterChanged();
     void currentTabIndexChanged();
@@ -531,6 +535,7 @@ private:
     QString status_text_ {};
     QString last_directory_path_ {};
     AnalysisSettings pending_analysis_settings_ {};
+    bool validate_selected_packet_checksums_ {false};
     bool show_wireshark_filter_for_selected_flow_ {true};
     int statistics_mode_ {0};
     int capture_open_mode_ {0};

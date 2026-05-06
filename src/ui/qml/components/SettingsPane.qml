@@ -7,10 +7,12 @@ Item {
 
     property bool httpUsePathAsServiceHint: false
     property bool usePossibleTlsQuic: false
+    property bool validateSelectedPacketChecksums: false
     property bool showWiresharkFilterForSelectedFlow: true
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
     signal usePossibleTlsQuicChangedByUser(bool enabled)
+    signal validateSelectedPacketChecksumsChangedByUser(bool enabled)
     signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
 
     implicitWidth: 560
@@ -68,6 +70,27 @@ Item {
                 color: "#64748b"
                 font.pixelSize: 12
                 text: "Applied immediately to the current view and statistics"
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            CheckBox {
+                Layout.fillWidth: true
+                text: "Validate IPv4/TCP/UDP checksums for selected packet"
+                checked: root.validateSelectedPacketChecksums
+                onToggled: root.validateSelectedPacketChecksumsChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Applied immediately to Packet Details for the currently selected packet"
             }
         }
 

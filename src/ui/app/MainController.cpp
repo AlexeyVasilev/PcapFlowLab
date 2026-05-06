@@ -569,6 +569,471 @@ void appendSection(QStringList& lines, const QString& title, const QStringList& 
     }
 }
 
+enum class ChecksumValidationStatus {
+    valid,
+    invalid,
+    unavailable,
+    not_checked,
+};
+
+struct ChecksumValidationResult {
+    ChecksumValidationStatus status {ChecksumValidationStatus::unavailable};
+    QString note {};
+};
+
+struct PacketChecksumSections {
+    QStringList summary_lines {};
+    QStringList warnings {};
+};
+
+QString checksum_status_text(const ChecksumValidationStatus status) {
+    switch (status) {
+    case ChecksumValidationStatus::valid:
+        return QStringLiteral("valid");
+    case ChecksumValidationStatus::invalid:
+        return QStringLiteral("invalid");
+    case ChecksumValidationStatus::unavailable:
+        return QStringLiteral("unavailable");
+    case ChecksumValidationStatus::not_checked:
+        return QStringLiteral("not checked");
+    }
+
+    return QStringLiteral("unavailable");
+}
+
+void append_be16_bytes(std::vector<std::uint8_t>& bytes, const std::uint16_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+void append_be32_bytes(std::vector<std::uint8_t>& bytes, const std::uint32_t value) {
+    bytes.push_back(static_cast<std::uint8_t>((value >> 24U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
+}
+
+std::uint16_t compute_internet_checksum(std::span<const std::uint8_t> bytes) {
+    std::uint32_t sum = 0U;
+    std::size_t index = 0U;
+    while (index + 1U < bytes.size()) {
+        sum += static_cast<std::uint32_t>(
+            (static_cast<std::uint16_t>(bytes[index]) << 8U) |
+            static_cast<std::uint16_t>(bytes[index + 1U])
+        );
+        index += 2U;
+    }
+
+    if (index < bytes.size()) {
+        sum += static_cast<std::uint32_t>(static_cast<std::uint16_t>(bytes[index]) << 8U);
+    }
+
+    while ((sum >> 16U) != 0U) {
+        sum = (sum & 0xFFFFU) + (sum >> 16U);
+    }
+
+    return static_cast<std::uint16_t>(~sum & 0xFFFFU);
+}
+
+std::vector<std::uint8_t> copy_zeroed_range(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t offset,
+    const std::size_t length,
+    const std::size_t zero_offset,
+    const std::size_t zero_length
+) {
+    std::vector<std::uint8_t> copied(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+                                     bytes.begin() + static_cast<std::ptrdiff_t>(offset + length));
+    if (zero_offset >= offset && zero_offset + zero_length <= offset + length) {
+        const auto local_offset = zero_offset - offset;
+        for (std::size_t index = 0; index < zero_length; ++index) {
+            copied[local_offset + index] = 0U;
+        }
+    }
+    return copied;
+}
+
+ChecksumValidationResult validate_ipv4_header_checksum(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketDetails& details,
+    const PacketRef& packet
+) {
+    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+    if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv4) {
+        return {};
+    }
+
+    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, envelope->payload_offset);
+    if (!ipv4_bounds.has_value()) {
+        return {};
+    }
+
+    const auto checksum_offset = envelope->payload_offset + 10U;
+    if (checksum_offset + 2U > packet_bytes.size()) {
+        return {};
+    }
+
+    const auto stored_checksum = detail::read_be16(packet_bytes, checksum_offset);
+    const auto header_bytes = copy_zeroed_range(
+        packet_bytes,
+        envelope->payload_offset,
+        ipv4_bounds->header_length,
+        checksum_offset,
+        2U
+    );
+    const auto computed_checksum = compute_internet_checksum(header_bytes);
+    if (computed_checksum == stored_checksum) {
+        return ChecksumValidationResult {
+            .status = ChecksumValidationStatus::valid,
+        };
+    }
+
+    if (details.ipv4_bounds_from_captured_bytes) {
+        return ChecksumValidationResult {
+            .status = ChecksumValidationStatus::unavailable,
+            .note = QStringLiteral("Possible pre-offload packet; IPv4 checksum may be incomplete or not finalized."),
+        };
+    }
+
+    return ChecksumValidationResult {
+        .status = ChecksumValidationStatus::invalid,
+    };
+}
+
+ChecksumValidationResult validate_tcp_checksum(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketDetails& details,
+    const PacketRef& packet
+) {
+    if (packet.is_ip_fragmented) {
+        return ChecksumValidationResult {
+            .status = ChecksumValidationStatus::unavailable,
+            .note = QStringLiteral("TCP checksum not validated for IP-fragmented packet."),
+        };
+    }
+
+    if (details.has_ipv4) {
+        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv4) {
+            return {};
+        }
+
+        const auto ipv4_offset = envelope->payload_offset;
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
+            return {};
+        }
+
+        if (details.ipv4_bounds_from_captured_bytes) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("Possible pre-offload packet; TCP checksum may be incomplete or not finalized."),
+            };
+        }
+
+        if (packet.captured_length < packet.original_length || packet_bytes.size() < ipv4_bounds->nominal_packet_end) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("Packet is truncated in capture; full TCP segment bytes are unavailable."),
+            };
+        }
+
+        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        if (transport_offset + detail::kTcpMinimumHeaderSize > packet_bytes.size()) {
+            return {};
+        }
+
+        const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+        const auto segment_length = static_cast<std::size_t>(ipv4_bounds->total_length) - ipv4_bounds->header_length;
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            transport_offset + segment_length > packet_bytes.size() ||
+            segment_length < tcp_header_length) {
+            return {};
+        }
+
+        const auto checksum_offset = transport_offset + 16U;
+        const auto stored_checksum = detail::read_be16(packet_bytes, checksum_offset);
+
+        std::vector<std::uint8_t> checksum_bytes {};
+        checksum_bytes.reserve(12U + segment_length + (segment_length % 2U));
+        append_be32_bytes(checksum_bytes, details.ipv4.src_addr);
+        append_be32_bytes(checksum_bytes, details.ipv4.dst_addr);
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(detail::kIpProtocolTcp);
+        append_be16_bytes(checksum_bytes, static_cast<std::uint16_t>(segment_length));
+        const auto segment_bytes = copy_zeroed_range(packet_bytes, transport_offset, segment_length, checksum_offset, 2U);
+        checksum_bytes.insert(checksum_bytes.end(), segment_bytes.begin(), segment_bytes.end());
+
+        return ChecksumValidationResult {
+            .status = compute_internet_checksum(checksum_bytes) == stored_checksum
+                ? ChecksumValidationStatus::valid
+                : ChecksumValidationStatus::invalid,
+        };
+    }
+
+    if (details.has_ipv6) {
+        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv6) {
+            return {};
+        }
+
+        const auto ipv6_offset = envelope->payload_offset;
+        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        if (!payload.has_value() || payload->has_fragment_header) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("TCP checksum not validated for fragmented IPv6 packet."),
+            };
+        }
+
+        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
+        const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
+        if (packet.captured_length < packet.original_length || packet_bytes.size() < nominal_packet_end) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("Packet is truncated in capture; full TCP segment bytes are unavailable."),
+            };
+        }
+
+        const auto transport_offset = payload->payload_offset;
+        if (transport_offset + detail::kTcpMinimumHeaderSize > packet_bytes.size()) {
+            return {};
+        }
+
+        const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+        const auto segment_length = nominal_packet_end - transport_offset;
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            transport_offset + segment_length > packet_bytes.size() ||
+            segment_length < tcp_header_length) {
+            return {};
+        }
+
+        const auto checksum_offset = transport_offset + 16U;
+        const auto stored_checksum = detail::read_be16(packet_bytes, checksum_offset);
+
+        std::vector<std::uint8_t> checksum_bytes {};
+        checksum_bytes.reserve(40U + segment_length + (segment_length % 2U));
+        checksum_bytes.insert(checksum_bytes.end(), details.ipv6.src_addr.begin(), details.ipv6.src_addr.end());
+        checksum_bytes.insert(checksum_bytes.end(), details.ipv6.dst_addr.begin(), details.ipv6.dst_addr.end());
+        append_be32_bytes(checksum_bytes, static_cast<std::uint32_t>(segment_length));
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(detail::kIpProtocolTcp);
+        const auto segment_bytes = copy_zeroed_range(packet_bytes, transport_offset, segment_length, checksum_offset, 2U);
+        checksum_bytes.insert(checksum_bytes.end(), segment_bytes.begin(), segment_bytes.end());
+
+        return ChecksumValidationResult {
+            .status = compute_internet_checksum(checksum_bytes) == stored_checksum
+                ? ChecksumValidationStatus::valid
+                : ChecksumValidationStatus::invalid,
+        };
+    }
+
+    return {};
+}
+
+ChecksumValidationResult validate_udp_checksum(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketDetails& details,
+    const PacketRef& packet
+) {
+    if (packet.is_ip_fragmented) {
+        return ChecksumValidationResult {
+            .status = ChecksumValidationStatus::unavailable,
+            .note = QStringLiteral("UDP checksum not validated for IP-fragmented packet."),
+        };
+    }
+
+    if (details.has_ipv4) {
+        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv4) {
+            return {};
+        }
+
+        const auto ipv4_offset = envelope->payload_offset;
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
+            return {};
+        }
+
+        if (details.ipv4_bounds_from_captured_bytes) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("Possible pre-offload packet; UDP checksum may be incomplete or not finalized."),
+            };
+        }
+
+        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        if (transport_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+            return {};
+        }
+
+        const auto datagram_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
+        if (datagram_length < detail::kUdpHeaderSize ||
+            transport_offset + datagram_length > ipv4_bounds->nominal_packet_end) {
+            return {};
+        }
+
+        const auto stored_checksum = detail::read_be16(packet_bytes, transport_offset + 6U);
+        if (stored_checksum == 0U) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::not_checked,
+                .note = QStringLiteral("UDP checksum is not present in this IPv4 packet."),
+            };
+        }
+
+        if (packet.captured_length < packet.original_length || packet_bytes.size() < transport_offset + datagram_length) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("Packet is truncated in capture; full UDP datagram bytes are unavailable."),
+            };
+        }
+
+        std::vector<std::uint8_t> checksum_bytes {};
+        checksum_bytes.reserve(12U + datagram_length + (datagram_length % 2U));
+        append_be32_bytes(checksum_bytes, details.ipv4.src_addr);
+        append_be32_bytes(checksum_bytes, details.ipv4.dst_addr);
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(detail::kIpProtocolUdp);
+        append_be16_bytes(checksum_bytes, static_cast<std::uint16_t>(datagram_length));
+        const auto datagram_bytes = copy_zeroed_range(packet_bytes, transport_offset, datagram_length, transport_offset + 6U, 2U);
+        checksum_bytes.insert(checksum_bytes.end(), datagram_bytes.begin(), datagram_bytes.end());
+
+        return ChecksumValidationResult {
+            .status = compute_internet_checksum(checksum_bytes) == stored_checksum
+                ? ChecksumValidationStatus::valid
+                : ChecksumValidationStatus::invalid,
+        };
+    }
+
+    if (details.has_ipv6) {
+        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv6) {
+            return {};
+        }
+
+        const auto ipv6_offset = envelope->payload_offset;
+        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        if (!payload.has_value() || payload->has_fragment_header) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("UDP checksum not validated for fragmented IPv6 packet."),
+            };
+        }
+
+        const auto transport_offset = payload->payload_offset;
+        if (transport_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+            return {};
+        }
+
+        const auto datagram_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
+        const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length);
+        if (datagram_length < detail::kUdpHeaderSize || transport_offset + datagram_length > nominal_packet_end) {
+            return {};
+        }
+
+        const auto stored_checksum = detail::read_be16(packet_bytes, transport_offset + 6U);
+        if (stored_checksum == 0U) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::invalid,
+                .note = QStringLiteral("UDP checksum is required for IPv6 packets."),
+            };
+        }
+
+        if (packet.captured_length < packet.original_length || packet_bytes.size() < transport_offset + datagram_length) {
+            return ChecksumValidationResult {
+                .status = ChecksumValidationStatus::unavailable,
+                .note = QStringLiteral("Packet is truncated in capture; full UDP datagram bytes are unavailable."),
+            };
+        }
+
+        std::vector<std::uint8_t> checksum_bytes {};
+        checksum_bytes.reserve(40U + datagram_length + (datagram_length % 2U));
+        checksum_bytes.insert(checksum_bytes.end(), details.ipv6.src_addr.begin(), details.ipv6.src_addr.end());
+        checksum_bytes.insert(checksum_bytes.end(), details.ipv6.dst_addr.begin(), details.ipv6.dst_addr.end());
+        append_be32_bytes(checksum_bytes, static_cast<std::uint32_t>(datagram_length));
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(0U);
+        checksum_bytes.push_back(detail::kIpProtocolUdp);
+        const auto datagram_bytes = copy_zeroed_range(packet_bytes, transport_offset, datagram_length, transport_offset + 6U, 2U);
+        checksum_bytes.insert(checksum_bytes.end(), datagram_bytes.begin(), datagram_bytes.end());
+
+        return ChecksumValidationResult {
+            .status = compute_internet_checksum(checksum_bytes) == stored_checksum
+                ? ChecksumValidationStatus::valid
+                : ChecksumValidationStatus::invalid,
+        };
+    }
+
+    return {};
+}
+
+void append_checksum_line(QStringList& lines, const QString& label, const ChecksumValidationResult& result) {
+    lines.push_back(QStringLiteral("%1: %2").arg(label, checksum_status_text(result.status)));
+    if (!result.note.isEmpty()) {
+        lines.push_back(QStringLiteral("%1 note: %2").arg(label, result.note));
+    }
+}
+
+bool should_promote_checksum_note_to_warning(const ChecksumValidationResult& result) noexcept {
+    return !result.note.isEmpty() &&
+        result.status != ChecksumValidationStatus::valid &&
+        result.status != ChecksumValidationStatus::not_checked;
+}
+
+QString checksum_warning_text(const QString& label, const ChecksumValidationResult& result) {
+    if (result.status == ChecksumValidationStatus::invalid) {
+        return result.note.isEmpty()
+            ? QStringLiteral("%1 is invalid.").arg(label)
+            : QStringLiteral("%1 is invalid. %2").arg(label, result.note);
+    }
+
+    if (should_promote_checksum_note_to_warning(result)) {
+        return result.note;
+    }
+
+    return {};
+}
+
+PacketChecksumSections build_packet_checksum_sections(
+    const PacketDetails& details,
+    const PacketRef& packet,
+    std::span<const std::uint8_t> packet_bytes
+) {
+    PacketChecksumSections sections {};
+
+    if (details.has_ipv4) {
+        const auto ipv4_result = validate_ipv4_header_checksum(packet_bytes, details, packet);
+        append_checksum_line(sections.summary_lines, QStringLiteral("IPv4 checksum"), ipv4_result);
+        const auto warning = checksum_warning_text(QStringLiteral("IPv4 checksum"), ipv4_result);
+        if (!warning.isEmpty()) {
+            sections.warnings.push_back(warning);
+        }
+    }
+
+    if (details.has_tcp) {
+        const auto tcp_result = validate_tcp_checksum(packet_bytes, details, packet);
+        append_checksum_line(sections.summary_lines, QStringLiteral("TCP checksum"), tcp_result);
+        const auto warning = checksum_warning_text(QStringLiteral("TCP checksum"), tcp_result);
+        if (!warning.isEmpty()) {
+            sections.warnings.push_back(warning);
+        }
+    }
+
+    if (details.has_udp) {
+        const auto udp_result = validate_udp_checksum(packet_bytes, details, packet);
+        append_checksum_line(sections.summary_lines, QStringLiteral("UDP checksum"), udp_result);
+        const auto warning = checksum_warning_text(QStringLiteral("UDP checksum"), udp_result);
+        if (!warning.isEmpty()) {
+            sections.warnings.push_back(warning);
+        }
+    }
+
+    return sections;
+}
+
 QString buildPayloadText(const PacketDetails& details, const std::string& payloadHexDump) {
     if (!payloadHexDump.empty()) {
         return QString::fromStdString(payloadHexDump);
@@ -1332,7 +1797,11 @@ QString format_partial_open_warning_message(const OpenFailureInfo& failure) {
     return message;
 }
 
-QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet) {
+QString buildPacketSummary(
+    const PacketDetails& details,
+    const PacketRef& packet,
+    const PacketChecksumSections& checksum_sections = {}
+) {
     QStringList lines {};
 
     appendSection(lines, QStringLiteral("Packet"), {
@@ -1355,7 +1824,9 @@ QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet
         warnings.push_back(QStringLiteral("IPv4 total length is unavailable; packet was parsed using captured bytes only"));
         warnings.push_back(QStringLiteral("Header interpretation is conservative (possible pre-offload packet)"));
     }
+    warnings.append(checksum_sections.warnings);
     appendSection(lines, QStringLiteral("Warnings"), warnings);
+    appendSection(lines, QStringLiteral("Checksums"), checksum_sections.summary_lines);
 
     if (details.has_ethernet) {
         appendSection(lines, QStringLiteral("Ethernet"), {
@@ -2444,6 +2915,10 @@ bool MainController::usePossibleTlsQuic() const noexcept {
     return pending_analysis_settings_.use_possible_tls_quic;
 }
 
+bool MainController::validateSelectedPacketChecksums() const noexcept {
+    return validate_selected_packet_checksums_;
+}
+
 
 bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
     return show_wireshark_filter_for_selected_flow_;
@@ -2940,6 +3415,20 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
         emit stateChanged();
     }
     emit usePossibleTlsQuicChanged();
+}
+
+void MainController::setValidateSelectedPacketChecksums(const bool enabled) {
+    if (validate_selected_packet_checksums_ == enabled) {
+        return;
+    }
+
+    validate_selected_packet_checksums_ = enabled;
+    emit validateSelectedPacketChecksumsChanged();
+
+    if (details_selection_context_ == DetailsSelectionContext::packet &&
+        selected_packet_index_ != kInvalidPacketSelection) {
+        reloadSelectedPacketDetails();
+    }
 }
 
 void MainController::setShowWiresharkFilterForSelectedFlow(const bool enabled) {
@@ -3788,8 +4277,17 @@ void MainController::reloadSelectedPacketDetails() {
         packet->packet_index,
         QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
     );
+    PacketChecksumSections checksum_sections {};
+    if (validate_selected_packet_checksums_) {
+        const auto packetBytes = session_.read_packet_data(*packet);
+        checksum_sections = build_packet_checksum_sections(
+            *details,
+            *packet,
+            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size())
+        );
+    }
 
-    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet));
+    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));

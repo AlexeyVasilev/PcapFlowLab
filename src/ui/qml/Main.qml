@@ -242,12 +242,16 @@ ApplicationWindow {
         contentItem: SettingsPane {
             httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
             usePossibleTlsQuic: mainController.usePossibleTlsQuic
+            validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
             showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
             onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
                 mainController.httpUsePathAsServiceHint = enabled
             }
             onUsePossibleTlsQuicChangedByUser: function(enabled) {
                 mainController.usePossibleTlsQuic = enabled
+            }
+            onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
+                mainController.validateSelectedPacketChecksums = enabled
             }
             onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
                 mainController.showWiresharkFilterForSelectedFlow = enabled
