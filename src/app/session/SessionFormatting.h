@@ -12,6 +12,7 @@
 namespace pfl::session_detail {
 
 std::string format_packet_timestamp(const PacketRef& packet);
+std::string format_packet_timestamp_full(const PacketRef& packet);
 std::string format_tcp_flags_text(std::uint8_t flags);
 std::string format_ipv4_address(std::uint32_t address);
 std::string format_ipv4_address(const std::array<std::uint8_t, 4>& address);

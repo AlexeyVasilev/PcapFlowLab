@@ -1,5 +1,6 @@
 #include "app/session/SessionFormatting.h"
 
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 
@@ -16,6 +17,28 @@ std::string format_packet_timestamp(const PacketRef& packet) {
               << std::setw(2) << hours << ':'
               << std::setw(2) << minutes << ':'
               << std::setw(2) << seconds << '.'
+              << std::setw(6) << packet.ts_usec;
+    return timestamp.str();
+}
+
+std::string format_packet_timestamp_full(const PacketRef& packet) {
+    const auto time = static_cast<std::time_t>(packet.ts_sec);
+
+    std::tm utc {};
+#ifdef _WIN32
+    gmtime_s(&utc, &time);
+#else
+    gmtime_r(&time, &utc);
+#endif
+
+    std::ostringstream timestamp {};
+    timestamp << std::setfill('0')
+              << std::setw(4) << (utc.tm_year + 1900) << '-'
+              << std::setw(2) << (utc.tm_mon + 1) << '-'
+              << std::setw(2) << utc.tm_mday << ' '
+              << std::setw(2) << utc.tm_hour << ':'
+              << std::setw(2) << utc.tm_min << ':'
+              << std::setw(2) << utc.tm_sec << '.'
               << std::setw(6) << packet.ts_usec;
     return timestamp.str();
 }

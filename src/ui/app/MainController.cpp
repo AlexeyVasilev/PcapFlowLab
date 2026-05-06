@@ -1,5 +1,7 @@
 ﻿#include "ui/app/MainController.h"
 
+#include "app/session/SessionFormatting.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -1155,6 +1157,7 @@ QString buildPacketSummary(const PacketDetails& details, const PacketRef& packet
 
     appendSection(lines, QStringLiteral("Packet"), {
         QStringLiteral("Packet index in file: %1").arg(details.packet_index),
+        QStringLiteral("Time: %1").arg(QString::fromStdString(session_detail::format_packet_timestamp_full(packet))),
         QStringLiteral("Captured Length: %1").arg(details.captured_length),
         QStringLiteral("Original Length: %1").arg(details.original_length),
     });
