@@ -6,6 +6,8 @@ Frame {
     id: root
 
     property var streamModel: null
+    property bool flowSelected: false
+    property bool sourceCaptureAvailable: true
     property var selectedStreamItemIndex: 0
     property bool streamLoading: false
     property bool streamPartiallyLoaded: false
@@ -81,7 +83,11 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: root.streamLoading || root.loadedStreamItemCount > 0 || root.totalStreamItemCount > 0 || root.streamPacketWindowPartial
+            visible: (!root.sourceCaptureAvailable && root.flowSelected)
+                || root.streamLoading
+                || root.loadedStreamItemCount > 0
+                || root.totalStreamItemCount > 0
+                || root.streamPacketWindowPartial
             spacing: 6
 
             ColumnLayout {
@@ -90,8 +96,10 @@ Frame {
 
                 Label {
                     Layout.fillWidth: true
-                    color: "#6b7280"
-                    text: root.streamLoading
+                    color: !root.sourceCaptureAvailable && root.flowSelected ? "#8a6a12" : "#6b7280"
+                    text: !root.sourceCaptureAvailable && root.flowSelected
+                        ? "Source capture unavailable"
+                        : root.streamLoading
                         ? "Building stream view..."
                         : root.streamPartiallyLoaded
                             ? (root.totalStreamItemCount > 0
@@ -102,16 +110,18 @@ Frame {
 
                 Label {
                     Layout.fillWidth: true
-                    visible: root.streamPacketWindowPartial && !root.streamLoading
+                    visible: root.sourceCaptureAvailable && root.streamPacketWindowPartial && !root.streamLoading
                     color: "#8a6a12"
                     text: "Built from the first %1 packets".arg(root.streamPacketWindowCount)
                 }
 
                 Label {
                     Layout.fillWidth: true
-                    visible: root.canLoadMoreStreamItems && !root.streamLoading
-                    color: "#6b7280"
-                    text: "Load more packets to extend the stream view"
+                    visible: (!root.sourceCaptureAvailable && root.flowSelected) || (root.canLoadMoreStreamItems && !root.streamLoading)
+                    color: !root.sourceCaptureAvailable && root.flowSelected ? "#92400e" : "#6b7280"
+                    text: !root.sourceCaptureAvailable && root.flowSelected
+                        ? "Reattach the original capture file to inspect stream items."
+                        : "Load more packets to extend the stream view"
                 }
             }
 
@@ -253,7 +263,11 @@ Frame {
                 anchors.centerIn: parent
                 visible: !root.streamLoading && streamListView.count === 0
                 color: "#64748b"
-                text: "No stream items available for this flow"
+                text: !root.flowSelected
+                    ? "Select a flow to inspect stream items"
+                    : !root.sourceCaptureAvailable
+                        ? "Stream reconstruction requires the original source capture"
+                        : "No stream items available for this flow"
             }
         }
     }

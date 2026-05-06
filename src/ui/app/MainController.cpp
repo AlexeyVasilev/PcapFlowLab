@@ -605,6 +605,44 @@ QString stream_protocol_unavailable_text() {
     return QStringLiteral("Protocol details are not available for this stream item.");
 }
 
+QString source_capture_unavailable_status_text() {
+    return QStringLiteral("Original source capture is unavailable. Metadata views remain available, but raw bytes, stream reconstruction, and flow export are disabled.");
+}
+
+QString source_capture_unavailable_packet_summary_text() {
+    return QStringLiteral(
+        "Original source capture unavailable.\n\n"
+        "Byte-backed packet details are unavailable for this session.\n\n"
+        "Reattach the original capture file to inspect raw bytes, payload, and protocol details.");
+}
+
+QString source_capture_unavailable_packet_raw_text() {
+    return QStringLiteral("Raw packet bytes are unavailable because the original source capture cannot be read.");
+}
+
+QString source_capture_unavailable_packet_payload_text() {
+    return QStringLiteral("Packet payload is unavailable because the original source capture cannot be read.");
+}
+
+QString source_capture_unavailable_packet_protocol_text() {
+    return QStringLiteral("Byte-backed protocol details are unavailable because the original source capture cannot be read.");
+}
+
+QString source_capture_unavailable_stream_summary_text() {
+    return QStringLiteral(
+        "Original source capture unavailable.\n\n"
+        "Stream reconstruction requires source packet bytes.\n\n"
+        "Reattach the original capture file to inspect stream items and stream-backed details.");
+}
+
+QString source_capture_unavailable_stream_payload_text() {
+    return QStringLiteral("Stream payload is unavailable because the original source capture cannot be read.");
+}
+
+QString source_capture_unavailable_stream_protocol_text() {
+    return QStringLiteral("Stream protocol details are unavailable because the original source capture cannot be read.");
+}
+
 struct ProtocolField {
     QString label {};
     QString value {};
@@ -1302,7 +1340,7 @@ bool MainController::hasCapture() const noexcept {
 }
 
 bool MainController::hasSourceCapture() const noexcept {
-    return session_.has_source_capture();
+    return session_.has_source_capture() && session_.source_capture_accessible();
 }
 
 bool MainController::openedFromIndex() const noexcept {
@@ -1310,11 +1348,11 @@ bool MainController::openedFromIndex() const noexcept {
 }
 
 bool MainController::canAttachSourceCapture() const noexcept {
-    return !is_opening_ && session_.opened_from_index() && !session_.has_source_capture();
+    return !is_opening_ && session_.has_capture() && !hasSourceCapture();
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return !is_opening_ && session_.has_capture() && session_.has_source_capture() && !session_.is_partial_open();
+    return !is_opening_ && session_.has_capture() && hasSourceCapture() && !session_.is_partial_open();
 }
 
 bool MainController::partialOpen() const noexcept {
@@ -1328,7 +1366,7 @@ QString MainController::partialOpenWarningText() const {
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return !is_opening_ && session_.has_source_capture() && selected_flow_index_ >= 0;
+    return !is_opening_ && hasSourceCapture() && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::selectedFlowCount() const noexcept {
@@ -1336,11 +1374,11 @@ qulonglong MainController::selectedFlowCount() const noexcept {
 }
 
 bool MainController::canExportSelectedFlows() const noexcept {
-    return !is_opening_ && session_.has_source_capture() && flow_model_.checkedFlowCount() > 0;
+    return !is_opening_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
 }
 
 bool MainController::canExportUnselectedFlows() const noexcept {
-    return !is_opening_ && session_.has_source_capture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+    return !is_opening_ && hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
 }
 
 bool MainController::isOpening() const noexcept {
@@ -2315,6 +2353,7 @@ bool MainController::attachSourceCapture(const QString& path) {
     }
 
     setLastDirectoryFromPath(filesystemPath);
+    source_capture_unavailable_notice_shown_ = false;
     if (selected_flow_index_ >= 0) {
         current_stream_items_.clear();
         stream_model_.clear();
@@ -2387,6 +2426,10 @@ bool MainController::saveAnalysisIndex(const QString& path) {
         return false;
     }
 
+    if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to save an analysis index."))) {
+        return false;
+    }
+
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
     const bool saved = session_.save_index(filesystemPath);
     if (!saved) {
@@ -2408,6 +2451,10 @@ bool MainController::exportFlows(
 ) {
     if (flowIndices.empty()) {
         setStatusText(emptySelectionMessage, true);
+        return false;
+    }
+
+    if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to export flows."))) {
         return false;
     }
 
@@ -2625,16 +2672,21 @@ void MainController::setFlowDetailsTabIndex(const int index) {
 
     stream_tab_active_ = streamActive;
     if (stream_tab_active_ && selected_flow_index_ >= 0 && !stream_state_materialized_for_selected_flow_) {
-        stream_loading_ = true;
-        emit streamListStateChanged();
-        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
-        refreshSelectedStreamItems(true);
+        if (ensureSourceCaptureAvailable()) {
+            stream_loading_ = true;
+            emit streamListStateChanged();
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
+            refreshSelectedStreamItems(true);
+        }
     }
 
     if (stream_tab_active_) {
         if (selected_stream_item_index_ != kInvalidStreamSelection) {
             details_selection_context_ = DetailsSelectionContext::stream;
             reloadSelectedStreamDetails();
+        } else if (selected_flow_index_ >= 0 && !session_.has_source_capture()) {
+            details_selection_context_ = DetailsSelectionContext::none;
+            showSourceUnavailableStreamDetailsPlaceholder();
         } else {
             details_selection_context_ = DetailsSelectionContext::none;
             packet_details_model_.clear();
@@ -2781,6 +2833,7 @@ void MainController::setSelectedFlowIndex(const int index) {
     if (selected_flow_index_ >= 0) {
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
         refreshSelectedFlowPackets(true);
+        ensureSourceCaptureAvailable();
         maybeEnrichSelectedFlowServiceHint();
         if (stream_tab_active_) {
             refreshSelectedStreamItems(true);
@@ -2841,6 +2894,92 @@ void MainController::setFlowFilterText(const QString& text) {
     emit flowFilterTextChanged();
 }
 
+bool MainController::ensureSourceCaptureAvailable(const QString& unavailableActionText) {
+    if (!session_.has_capture()) {
+        return false;
+    }
+
+    if (session_.has_source_capture() && !session_.source_capture_accessible()) {
+        handleSourceCaptureUnavailable();
+    }
+
+    if (session_.has_source_capture()) {
+        return true;
+    }
+
+    if (!unavailableActionText.isEmpty()) {
+        setStatusText(unavailableActionText, true);
+    }
+    return false;
+}
+
+void MainController::handleSourceCaptureUnavailable() {
+    if (!session_.has_source_capture()) {
+        return;
+    }
+
+    session_.clear_source_capture_attachment();
+    prepared_tcp_contribution_packet_window_count_ = 0U;
+    current_suspected_retransmission_packet_indices_.clear();
+
+    const bool streamSelectionChanged = selected_stream_item_index_ != kInvalidStreamSelection;
+    selected_stream_item_index_ = kInvalidStreamSelection;
+
+    const bool streamStateChanged = stream_loading_ || loaded_stream_item_count_ != 0U || total_stream_item_count_ != 0U ||
+        stream_packet_window_count_ != 0U || stream_item_budget_count_ != 0U || can_load_more_stream_items_ || stream_state_materialized_for_selected_flow_ ||
+        !current_stream_items_.empty() || stream_model_.rowCount() != 0;
+    current_stream_items_.clear();
+    stream_model_.clear();
+    stream_loading_ = false;
+    loaded_stream_item_count_ = 0U;
+    total_stream_item_count_ = 0U;
+    stream_packet_window_count_ = 0U;
+    stream_item_budget_count_ = 0U;
+    can_load_more_stream_items_ = false;
+    stream_state_materialized_for_selected_flow_ = false;
+
+    if (details_selection_context_ == DetailsSelectionContext::packet && selected_packet_index_ != kInvalidPacketSelection) {
+        showSourceUnavailablePacketDetailsPlaceholder();
+    } else if (stream_tab_active_ && selected_flow_index_ >= 0) {
+        details_selection_context_ = DetailsSelectionContext::none;
+        showSourceUnavailableStreamDetailsPlaceholder();
+    }
+
+    if (!source_capture_unavailable_notice_shown_) {
+        setStatusText(source_capture_unavailable_status_text());
+        source_capture_unavailable_notice_shown_ = true;
+    }
+
+    if (streamSelectionChanged) {
+        emit selectedStreamItemIndexChanged();
+    }
+    if (streamStateChanged) {
+        emit streamListStateChanged();
+    }
+    emit sourceAvailabilityChanged();
+    emit actionAvailabilityChanged();
+}
+
+void MainController::showSourceUnavailablePacketDetailsPlaceholder() {
+    packet_details_model_.setDetailsTitle(QStringLiteral("Packet Details"));
+    packet_details_model_.clearStreamItemPresentation();
+    packet_details_model_.setPacketDetailsText(source_capture_unavailable_packet_summary_text());
+    packet_details_model_.setHexText(source_capture_unavailable_packet_raw_text());
+    packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
+    packet_details_model_.setPayloadText(source_capture_unavailable_packet_payload_text());
+    packet_details_model_.setProtocolText(source_capture_unavailable_packet_protocol_text());
+}
+
+void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
+    packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
+    packet_details_model_.clearStreamItemPresentation();
+    packet_details_model_.setPacketDetailsText(source_capture_unavailable_stream_summary_text());
+    packet_details_model_.setHexText({});
+    packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
+    packet_details_model_.setPayloadText(source_capture_unavailable_stream_payload_text());
+    packet_details_model_.setProtocolText(source_capture_unavailable_stream_protocol_text());
+}
+
 void MainController::prepareSelectedFlowTcpContributionState(const std::size_t maxPacketsToScan) {
     if (selected_flow_index_ < 0 || maxPacketsToScan == 0U) {
         current_suspected_retransmission_packet_indices_.clear();
@@ -2866,7 +3005,7 @@ void MainController::prepareSelectedFlowTcpContributionState(const std::size_t m
 }
 
 void MainController::maybeEnrichSelectedFlowServiceHint() {
-    if (selected_flow_index_ < 0 || !session_.has_source_capture()) {
+    if (selected_flow_index_ < 0 || !ensureSourceCaptureAvailable()) {
         return;
     }
 
@@ -2985,6 +3124,26 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     const auto previousCanLoadMore = can_load_more_stream_items_;
 
     if (selected_flow_index_ < 0) {
+        current_stream_items_.clear();
+        stream_model_.clear();
+        stream_loading_ = false;
+        loaded_stream_item_count_ = 0U;
+        total_stream_item_count_ = 0U;
+        stream_packet_window_count_ = 0U;
+        stream_item_budget_count_ = 0U;
+        can_load_more_stream_items_ = false;
+        stream_state_materialized_for_selected_flow_ = false;
+        if (previousLoading != stream_loading_
+            || previousLoaded != loaded_stream_item_count_
+            || previousTotal != total_stream_item_count_
+            || previousPacketWindow != stream_packet_window_count_
+            || previousCanLoadMore != can_load_more_stream_items_) {
+            emit streamListStateChanged();
+        }
+        return;
+    }
+
+    if (!ensureSourceCaptureAvailable()) {
         current_stream_items_.clear();
         stream_model_.clear();
         stream_loading_ = false;
@@ -3178,6 +3337,7 @@ void MainController::synchronizeFlowSelection() {
 
 void MainController::resetLoadedState() {
     setApplyingSession(false);
+    source_capture_unavailable_notice_shown_ = false;
     current_input_path_.clear();
     finishOpenProgress();
     session_ = {};
@@ -3218,6 +3378,7 @@ void MainController::resetLoadedState() {
 }
 
 void MainController::applyLoadedState(const QString& path) {
+    source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
     quic_recognition_stats_ = session_.quic_recognition_stats();
@@ -3422,6 +3583,11 @@ void MainController::reloadSelectedPacketDetails() {
         return;
     }
 
+    if (!ensureSourceCaptureAvailable()) {
+        showSourceUnavailablePacketDetailsPlaceholder();
+        return;
+    }
+
     const auto details = session_.read_packet_details(*packet);
     if (!details.has_value()) {
         packet_details_model_.clear();
@@ -3446,6 +3612,11 @@ void MainController::reloadSelectedPacketDetails() {
 
 void MainController::reloadSelectedStreamDetails() {
     if (selected_stream_item_index_ == kInvalidStreamSelection) {
+        return;
+    }
+
+    if (!ensureSourceCaptureAvailable()) {
+        showSourceUnavailableStreamDetailsPlaceholder();
         return;
     }
 

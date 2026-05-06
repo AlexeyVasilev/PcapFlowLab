@@ -471,6 +471,10 @@ private:
     void reloadSelectedPacketDetails();
     void reloadSelectedStreamDetails();
     void reloadActiveDetails();
+    bool ensureSourceCaptureAvailable(const QString& unavailableActionText = {});
+    void handleSourceCaptureUnavailable();
+    void showSourceUnavailablePacketDetailsPlaceholder();
+    void showSourceUnavailableStreamDetailsPlaceholder();
     void maybeEnrichSelectedFlowServiceHint();
     void ensureSelectedFlowPacketNumbers(std::size_t packetWindowCount);
     void prepareSelectedFlowTcpContributionState(std::size_t maxPacketsToScan);
@@ -551,6 +555,7 @@ private:
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
+    bool source_capture_unavailable_notice_shown_ {false};
     qulonglong active_analysis_request_id_ {0};
     qulonglong active_analysis_sequence_export_job_id_ {0};
     qulonglong open_progress_packets_ {0};

@@ -11,6 +11,7 @@
 #include <cassert>
 #include <chrono>
 #include <array>
+#include <fstream>
 #include <iostream>
 #include <iomanip>
 #include <limits>
@@ -941,6 +942,20 @@ bool CaptureSession::has_source_capture() const noexcept {
     return !capture_path_.empty();
 }
 
+bool CaptureSession::source_capture_accessible() const noexcept {
+    if (capture_path_.empty()) {
+        return false;
+    }
+
+    std::error_code error {};
+    if (!std::filesystem::is_regular_file(capture_path_, error) || error) {
+        return false;
+    }
+
+    std::ifstream stream {capture_path_, std::ios::binary};
+    return stream.is_open();
+}
+
 bool CaptureSession::opened_from_index() const noexcept {
     return opened_from_index_;
 }
@@ -958,7 +973,7 @@ const std::string& CaptureSession::last_open_error_text() const noexcept {
 }
 
 bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
-    if (!opened_from_index_) {
+    if (!has_loaded_state_) {
         return false;
     }
 
@@ -971,6 +986,12 @@ bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
     source_info_.capture_path = path;
     selected_flow_packet_cache_.reset();
     return true;
+}
+
+void CaptureSession::clear_source_capture_attachment() noexcept {
+    capture_path_.clear();
+    selected_flow_packet_cache_.reset();
+    selected_flow_tcp_payload_suppression_.reset();
 }
 
 const std::filesystem::path& CaptureSession::capture_path() const noexcept {

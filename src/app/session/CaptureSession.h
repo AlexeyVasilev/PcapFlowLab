@@ -43,11 +43,13 @@ public:
     bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] bool has_source_capture() const noexcept;
+    [[nodiscard]] bool source_capture_accessible() const noexcept;
     [[nodiscard]] bool opened_from_index() const noexcept;
     [[nodiscard]] bool is_partial_open() const noexcept;
     [[nodiscard]] const OpenFailureInfo& partial_open_failure() const noexcept;
     [[nodiscard]] const std::string& last_open_error_text() const noexcept;
     bool attach_source_capture(const std::filesystem::path& path);
+    void clear_source_capture_attachment() noexcept;
     [[nodiscard]] const std::filesystem::path& capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& attached_source_capture_path() const noexcept;
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;

@@ -464,6 +464,9 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         spacing: 8
                         visible: mainController.openedFromIndex
+                            || (mainController.hasCapture
+                                && !mainController.hasSourceCapture
+                                && mainController.expectedSourceCapturePath.length > 0)
 
                         Label {
                             text: "Source PCAP:"
@@ -480,7 +483,7 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 text: mainController.hasSourceCapture
                                     ? mainController.activeSourceCapturePath
-                                    : "NOT FOUND"
+                                    : "UNAVAILABLE"
                                 color: mainController.hasSourceCapture ? "#0f172a" : "#b45309"
                                 elide: Text.ElideMiddle
                                 verticalAlignment: Text.AlignVCenter
@@ -502,7 +505,7 @@ ApplicationWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
-                        visible: mainController.openedFromIndex && !mainController.hasSourceCapture && mainController.expectedSourceCapturePath.length > 0
+                        visible: mainController.hasCapture && !mainController.hasSourceCapture && mainController.expectedSourceCapturePath.length > 0
 
                         Label {
                             text: "Expected source path:"
@@ -541,7 +544,7 @@ ApplicationWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            visible: mainController.openedFromIndex && !mainController.hasSourceCapture
+            visible: mainController.hasCapture && !mainController.hasSourceCapture && mainController.expectedSourceCapturePath.length > 0
             color: "#fef3c7"
             border.color: "#f59e0b"
             radius: 6
@@ -555,13 +558,13 @@ ApplicationWindow {
 
                 Label {
                     Layout.fillWidth: true
-                    text: "Opened from index only. Attach the original capture to inspect raw packets and byte-backed details."
+                    text: "Original source capture unavailable. Metadata views remain available, but raw packet bytes, stream reconstruction, and flow export require the original capture file."
                     color: "#92400e"
                     wrapMode: Text.WordWrap
                 }
 
                 Button {
-                    text: "Attach Source Capture"
+                    text: "Locate Source Capture"
                     enabled: mainController.canAttachSourceCapture
                     onClicked: mainController.browseAttachSourceCapture()
                 }
@@ -790,6 +793,7 @@ ApplicationWindow {
             FlowWorkspacePane {
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
+                sourceCaptureAvailable: mainController.hasSourceCapture
                 filterText: mainController.flowFilterText
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter

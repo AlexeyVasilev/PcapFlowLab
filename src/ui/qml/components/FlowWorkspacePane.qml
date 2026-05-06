@@ -7,6 +7,7 @@ Item {
 
     property var flowModel: null
     property int selectedFlowIndex: -1
+    property bool sourceCaptureAvailable: true
     property string filterText: ""
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
@@ -170,6 +171,8 @@ Item {
                         }
 
                         StreamView {
+                            flowSelected: root.selectedFlowIndex >= 0
+                            sourceCaptureAvailable: root.sourceCaptureAvailable
                             streamModel: root.streamModel
                             selectedStreamItemIndex: root.selectedStreamItemIndex
                             streamLoading: root.streamLoading
