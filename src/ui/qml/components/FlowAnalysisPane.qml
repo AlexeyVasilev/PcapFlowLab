@@ -1428,7 +1428,7 @@ Frame {
                             Label { text: "Delta"; Layout.preferredWidth: 82 }
                             Label { text: "Captured"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
                             Label { text: "Original"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
-                            Label { text: "Payload"; Layout.preferredWidth: 60; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Transport payload"; Layout.preferredWidth: 110; horizontalAlignment: Text.AlignRight }
                             Label { text: "Time"; Layout.fillWidth: true }
                         }
 
@@ -1469,7 +1469,12 @@ Frame {
                                     Layout.preferredWidth: 70
                                     horizontalAlignment: Text.AlignRight
                                 }
-                                Label { text: modelData.payloadLength; Layout.preferredWidth: 60; horizontalAlignment: Text.AlignRight }
+                                Label {
+                                    text: modelData.transportPayloadText !== undefined ? modelData.transportPayloadText
+                                                                                      : (modelData.payloadLength !== undefined ? modelData.payloadLength : "-")
+                                    Layout.preferredWidth: 110
+                                    horizontalAlignment: Text.AlignRight
+                                }
                                 Label { text: modelData.timestampText; Layout.fillWidth: true; color: "#475569" }
                             }
                         }

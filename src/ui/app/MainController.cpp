@@ -1,6 +1,7 @@
 ﻿#include "ui/app/MainController.h"
 
 #include "app/session/SessionFormatting.h"
+#include "core/decode/PacketDecodeSupport.h"
 
 #include <algorithm>
 #include <array>
@@ -9,6 +10,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <span>
 
 #include <QClipboard>
 #include <QCoreApplication>
@@ -60,7 +62,7 @@ struct AnalysisSequenceExportRow {
     std::uint64_t delta_us {0};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};
-    std::uint32_t payload_length {0};
+    std::optional<std::uint32_t> transport_payload_length {};
     std::string tcp_flags_text {};
     std::string protocol_hint_text {};
 };
@@ -277,6 +279,143 @@ std::string escape_csv_field(const std::string& field) {
     return escaped;
 }
 
+std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet
+) {
+    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+    if (!envelope.has_value()) {
+        return std::nullopt;
+    }
+
+    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = envelope->payload_offset;
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
+            return std::nullopt;
+        }
+
+        const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
+        if ((flags_fragment & 0x3FFFU) != 0U) {
+            return std::nullopt;
+        }
+
+        const auto protocol = packet_bytes[ipv4_offset + 9U];
+        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        if (protocol == detail::kIpProtocolTcp) {
+            if (transport_offset + detail::kTcpMinimumHeaderSize > packet_bytes.size()) {
+                return std::nullopt;
+            }
+
+            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+            if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+                transport_offset + tcp_header_length > packet_bytes.size()) {
+                return std::nullopt;
+            }
+
+            if (!ipv4_bounds->bounds_from_captured_bytes) {
+                if (ipv4_bounds->total_length < ipv4_bounds->header_length + tcp_header_length) {
+                    return std::nullopt;
+                }
+
+                return static_cast<std::uint32_t>(
+                    static_cast<std::size_t>(ipv4_bounds->total_length) - ipv4_bounds->header_length - tcp_header_length
+                );
+            }
+
+            const auto transport_payload_offset = transport_offset + tcp_header_length;
+            if (packet.original_length < transport_payload_offset) {
+                return std::nullopt;
+            }
+
+            return static_cast<std::uint32_t>(packet.original_length - transport_payload_offset);
+        }
+
+        if (protocol == detail::kIpProtocolUdp) {
+            if (transport_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+                return std::nullopt;
+            }
+
+            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
+            if (udp_length < detail::kUdpHeaderSize) {
+                return std::nullopt;
+            }
+
+            if (!ipv4_bounds->bounds_from_captured_bytes && transport_offset + udp_length > ipv4_bounds->nominal_packet_end) {
+                return std::nullopt;
+            }
+
+            return static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
+        }
+
+        return std::nullopt;
+    }
+
+    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = envelope->payload_offset;
+        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U);
+        if (version != 6U) {
+            return std::nullopt;
+        }
+
+        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
+        const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
+        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        if (!payload.has_value() || payload->has_fragment_header) {
+            return std::nullopt;
+        }
+
+        if (payload->next_header == detail::kIpProtocolTcp) {
+            if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_bytes.size()) {
+                return std::nullopt;
+            }
+
+            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+            if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+                payload->payload_offset + tcp_header_length > packet_bytes.size() ||
+                payload->payload_offset + tcp_header_length > nominal_packet_end) {
+                return std::nullopt;
+            }
+
+            return static_cast<std::uint32_t>(nominal_packet_end - (payload->payload_offset + tcp_header_length));
+        }
+
+        if (payload->next_header == detail::kIpProtocolUdp) {
+            if (payload->payload_offset + detail::kUdpHeaderSize > packet_bytes.size()) {
+                return std::nullopt;
+            }
+
+            const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
+            if (udp_length < detail::kUdpHeaderSize || payload->payload_offset + udp_length > nominal_packet_end) {
+                return std::nullopt;
+            }
+
+            return static_cast<std::uint32_t>(udp_length - detail::kUdpHeaderSize);
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
+    const CaptureSession& session,
+    const PacketRef& packet
+) {
+    const auto packet_bytes = session.read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    return derive_transport_payload_length_from_headers(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet
+    );
+}
+
 std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -313,7 +452,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .payload_length = packet.payload_length,
+            .transport_payload_length = derive_transport_payload_length_from_headers(session, packet),
             .tcp_flags_text = packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
@@ -333,7 +472,7 @@ bool write_analysis_sequence_csv(const std::vector<AnalysisSequenceExportRow>& r
         return false;
     }
 
-    stream << "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,payload_length,tcp_flags,protocol_hint\n";
+    stream << "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,transport_payload_length,tcp_flags,protocol_hint\n";
     for (const auto& row : rows) {
         stream << row.flow_packet_index << ','
                << row.packet_index << ','
@@ -342,7 +481,7 @@ bool write_analysis_sequence_csv(const std::vector<AnalysisSequenceExportRow>& r
                << row.delta_us << ','
                << row.captured_length << ','
                << row.original_length << ','
-               << row.payload_length << ','
+               << (row.transport_payload_length.has_value() ? std::to_string(*row.transport_payload_length) : std::string {}) << ','
                << escape_csv_field(row.tcp_flags_text) << ','
                << escape_csv_field(row.protocol_hint_text) << '\n';
     }
@@ -2025,15 +2164,34 @@ QVariantList MainController::analysisSequencePreview() const {
         return rows;
     }
 
+    std::vector<PacketRef> ordered_packets {};
+    if (selected_flow_index_ >= 0) {
+        if (const auto packets = session_.flow_packets(static_cast<std::size_t>(selected_flow_index_)); packets.has_value()) {
+            ordered_packets = *packets;
+            std::stable_sort(ordered_packets.begin(), ordered_packets.end(), [](const PacketRef& left, const PacketRef& right) {
+                return packet_timestamp_us(left) < packet_timestamp_us(right);
+            });
+        }
+    }
+
     rows.reserve(static_cast<qsizetype>(current_flow_analysis_->sequence_preview_rows.size()));
-    for (const auto& preview_row : current_flow_analysis_->sequence_preview_rows) {
+    for (std::size_t index = 0; index < current_flow_analysis_->sequence_preview_rows.size(); ++index) {
+        const auto& preview_row = current_flow_analysis_->sequence_preview_rows[index];
+        QString transport_payload_text {QStringLiteral("-")};
+        if (index < ordered_packets.size()) {
+            if (const auto transport_payload_length = derive_transport_payload_length_from_headers(session_, ordered_packets[index]);
+                transport_payload_length.has_value()) {
+                transport_payload_text = QString::number(*transport_payload_length);
+            }
+        }
+
         QVariantMap row {};
         row.insert(QStringLiteral("packetNumber"), static_cast<qulonglong>(preview_row.flow_packet_number));
         row.insert(QStringLiteral("direction"), QString::fromStdString(preview_row.direction_text));
         row.insert(QStringLiteral("deltaTimeText"), format_duration_ms(preview_row.delta_time_us));
         row.insert(QStringLiteral("capturedLength"), preview_row.captured_length);
         row.insert(QStringLiteral("originalLength"), preview_row.original_length);
-        row.insert(QStringLiteral("payloadLength"), preview_row.payload_length);
+        row.insert(QStringLiteral("transportPayloadText"), transport_payload_text);
         row.insert(QStringLiteral("timestampText"), QString::fromStdString(preview_row.timestamp_text));
         rows.push_back(row);
     }

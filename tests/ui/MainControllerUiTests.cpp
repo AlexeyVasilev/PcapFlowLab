@@ -711,7 +711,7 @@ int main(int argc, char* argv[]) {
                 {QStringLiteral("deltaTimeText"), QStringLiteral("0.000 ms")},
                 {QStringLiteral("capturedLength"), 100U},
                 {QStringLiteral("originalLength"), 128U},
-                {QStringLiteral("payloadLength"), 46U},
+                {QStringLiteral("transportPayloadText"), QStringLiteral("46")},
                 {QStringLiteral("timestampText"), QStringLiteral("00:00:01.000000")},
             },
             QVariantMap {
@@ -720,7 +720,7 @@ int main(int argc, char* argv[]) {
                 {QStringLiteral("deltaTimeText"), QStringLiteral("250.000 ms")},
                 {QStringLiteral("capturedLength"), 200U},
                 {QStringLiteral("originalLength"), 200U},
-                {QStringLiteral("payloadLength"), 146U},
+                {QStringLiteral("transportPayloadText"), QStringLiteral("146")},
                 {QStringLiteral("timestampText"), QStringLiteral("00:00:01.250000")},
             },
         });
@@ -1061,6 +1061,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(first_sequence_row.value(QStringLiteral("deltaTimeText")).toString() == QStringLiteral("0.000 ms"));
     UI_EXPECT(first_sequence_row.value(QStringLiteral("capturedLength")).toUInt() == static_cast<uint>(http_flow.size()));
     UI_EXPECT(first_sequence_row.value(QStringLiteral("originalLength")).toUInt() == static_cast<uint>(http_flow.size()));
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("transportPayloadText")).toString() == QString::number(make_http_request_payload().size()));
     auto* controller_packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
     UI_EXPECT(controller_packet_model != nullptr);
     UI_EXPECT(controller_packet_model->rowCount() == 1);
@@ -1523,7 +1524,7 @@ int main(int argc, char* argv[]) {
 
     const auto sequence_csv_lines = read_text_file_lines(sequence_export_path);
     UI_EXPECT(sequence_csv_lines.size() == 26U);
-    UI_EXPECT(sequence_csv_lines.front() == "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,payload_length,tcp_flags,protocol_hint");
+    UI_EXPECT(sequence_csv_lines.front() == "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,transport_payload_length,tcp_flags,protocol_hint");
 
     const auto first_export_row = split_csv_line(sequence_csv_lines[1]);
     UI_EXPECT(first_export_row.size() == 10U);
