@@ -59,6 +59,7 @@ struct AnalysisSequenceExportRow {
     std::string timestamp_text {};
     std::uint64_t delta_us {0};
     std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
     std::uint32_t payload_length {0};
     std::string tcp_flags_text {};
     std::string protocol_hint_text {};
@@ -311,6 +312,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .timestamp_text = packet_row.timestamp_text,
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
+            .original_length = packet.original_length,
             .payload_length = packet.payload_length,
             .tcp_flags_text = packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
@@ -331,7 +333,7 @@ bool write_analysis_sequence_csv(const std::vector<AnalysisSequenceExportRow>& r
         return false;
     }
 
-    stream << "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,payload_length,tcp_flags,protocol_hint\n";
+    stream << "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,payload_length,tcp_flags,protocol_hint\n";
     for (const auto& row : rows) {
         stream << row.flow_packet_index << ','
                << row.packet_index << ','
@@ -339,6 +341,7 @@ bool write_analysis_sequence_csv(const std::vector<AnalysisSequenceExportRow>& r
                << escape_csv_field(row.timestamp_text) << ','
                << row.delta_us << ','
                << row.captured_length << ','
+               << row.original_length << ','
                << row.payload_length << ','
                << escape_csv_field(row.tcp_flags_text) << ','
                << escape_csv_field(row.protocol_hint_text) << '\n';
@@ -2029,6 +2032,7 @@ QVariantList MainController::analysisSequencePreview() const {
         row.insert(QStringLiteral("direction"), QString::fromStdString(preview_row.direction_text));
         row.insert(QStringLiteral("deltaTimeText"), format_duration_ms(preview_row.delta_time_us));
         row.insert(QStringLiteral("capturedLength"), preview_row.captured_length);
+        row.insert(QStringLiteral("originalLength"), preview_row.original_length);
         row.insert(QStringLiteral("payloadLength"), preview_row.payload_length);
         row.insert(QStringLiteral("timestampText"), QString::fromStdString(preview_row.timestamp_text));
         rows.push_back(row);

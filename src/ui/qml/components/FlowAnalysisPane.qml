@@ -1425,9 +1425,10 @@ Frame {
 
                             Label { text: "#"; Layout.preferredWidth: 34 }
                             Label { text: "Dir"; Layout.preferredWidth: 48 }
-                            Label { text: "Delta"; Layout.preferredWidth: 90 }
+                            Label { text: "Delta"; Layout.preferredWidth: 82 }
                             Label { text: "Captured"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
-                            Label { text: "Payload"; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Original"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
+                            Label { text: "Payload"; Layout.preferredWidth: 60; horizontalAlignment: Text.AlignRight }
                             Label { text: "Time"; Layout.fillWidth: true }
                         }
 
@@ -1442,7 +1443,7 @@ Frame {
 
                             delegate: RowLayout {
                                 required property var modelData
-                            Layout.fillWidth: true
+                                Layout.fillWidth: true
                                 spacing: root.histogramColumnSpacing
 
                                 Label { text: modelData.packetNumber; Layout.preferredWidth: 34 }
@@ -1461,9 +1462,14 @@ Frame {
                                         color: root.sequenceDirectionTextColor(modelData.direction)
                                     }
                                 }
-                                Label { text: modelData.deltaTimeText; Layout.preferredWidth: 90 }
+                                Label { text: modelData.deltaTimeText; Layout.preferredWidth: 82 }
                                 Label { text: modelData.capturedLength; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
-                                Label { text: modelData.payloadLength; Layout.preferredWidth: 64; horizontalAlignment: Text.AlignRight }
+                                Label {
+                                    text: modelData.originalLength !== undefined ? modelData.originalLength : modelData.capturedLength
+                                    Layout.preferredWidth: 70
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                                Label { text: modelData.payloadLength; Layout.preferredWidth: 60; horizontalAlignment: Text.AlignRight }
                                 Label { text: modelData.timestampText; Layout.fillWidth: true; color: "#475569" }
                             }
                         }

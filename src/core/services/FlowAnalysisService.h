@@ -13,6 +13,7 @@ struct FlowAnalysisSequencePreviewRow {
     std::string direction_text {};
     std::uint64_t delta_time_us {0};
     std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
     std::uint32_t payload_length {0};
     std::string timestamp_text {};
 };

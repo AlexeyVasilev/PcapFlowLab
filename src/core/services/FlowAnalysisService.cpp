@@ -267,10 +267,10 @@ FlowAnalysisRateGraph build_rate_graph(const std::vector<PacketPreviewCandidate>
 
         auto& window = windows[window_index];
         if (ordered_packet.direction == FlowDirection::a_to_b) {
-            window.bytes_a_to_b += ordered_packet.packet->captured_length;
+            window.bytes_a_to_b += ordered_packet.packet->original_length;
             window.packets_a_to_b += 1U;
         } else {
-            window.bytes_b_to_a += ordered_packet.packet->captured_length;
+            window.bytes_b_to_a += ordered_packet.packet->original_length;
             window.packets_b_to_a += 1U;
         }
     }
@@ -344,6 +344,7 @@ std::vector<FlowAnalysisSequencePreviewRow> build_sequence_preview_rows(const Co
             .direction_text = flow_direction_text(candidate.direction),
             .delta_time_us = delta_time_us,
             .captured_length = candidate.packet->captured_length,
+            .original_length = candidate.packet->original_length,
             .payload_length = candidate.packet->payload_length,
             .timestamp_text = format_packet_timestamp(*candidate.packet),
         });
@@ -367,14 +368,14 @@ std::vector<Row> rows_from_counts(const auto& bucket_specs, const auto& counts) 
     return rows;
 }
 
-std::size_t packet_size_bucket_index(const std::uint32_t captured_length) {
+std::size_t packet_size_bucket_index(const std::uint32_t packet_length) {
     for (std::size_t index = 0; index < kPacketSizeBuckets.size(); ++index) {
         const auto& bucket = kPacketSizeBuckets[index];
-        if (captured_length < bucket.min_length) {
+        if (packet_length < bucket.min_length) {
             continue;
         }
 
-        if (!bucket.max_length.has_value() || captured_length <= *bucket.max_length) {
+        if (!bucket.max_length.has_value() || packet_length <= *bucket.max_length) {
             return index;
         }
     }
@@ -400,7 +401,7 @@ std::size_t inter_arrival_bucket_index(const std::uint64_t delta_us) {
 template <typename Flow>
 void accumulate_packet_size_histogram(const Flow& flow, std::array<std::uint64_t, kPacketSizeBuckets.size()>& counts) {
     for (const auto& packet : flow.packets) {
-        counts[packet_size_bucket_index(packet.captured_length)] += 1U;
+        counts[packet_size_bucket_index(packet.original_length)] += 1U;
     }
 }
 
@@ -561,20 +562,20 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     }
 
     if (!connection.flow_a.packets.empty()) {
-        result.min_packet_size_a_to_b_bytes = connection.flow_a.packets.front().captured_length;
-        result.max_packet_size_a_to_b_bytes = connection.flow_a.packets.front().captured_length;
+        result.min_packet_size_a_to_b_bytes = connection.flow_a.packets.front().original_length;
+        result.max_packet_size_a_to_b_bytes = connection.flow_a.packets.front().original_length;
         for (const auto& packet : connection.flow_a.packets) {
-            result.min_packet_size_a_to_b_bytes = std::min(result.min_packet_size_a_to_b_bytes, packet.captured_length);
-            result.max_packet_size_a_to_b_bytes = std::max(result.max_packet_size_a_to_b_bytes, packet.captured_length);
+            result.min_packet_size_a_to_b_bytes = std::min(result.min_packet_size_a_to_b_bytes, packet.original_length);
+            result.max_packet_size_a_to_b_bytes = std::max(result.max_packet_size_a_to_b_bytes, packet.original_length);
         }
     }
 
     if (!connection.flow_b.packets.empty()) {
-        result.min_packet_size_b_to_a_bytes = connection.flow_b.packets.front().captured_length;
-        result.max_packet_size_b_to_a_bytes = connection.flow_b.packets.front().captured_length;
+        result.min_packet_size_b_to_a_bytes = connection.flow_b.packets.front().original_length;
+        result.max_packet_size_b_to_a_bytes = connection.flow_b.packets.front().original_length;
         for (const auto& packet : connection.flow_b.packets) {
-            result.min_packet_size_b_to_a_bytes = std::min(result.min_packet_size_b_to_a_bytes, packet.captured_length);
-            result.max_packet_size_b_to_a_bytes = std::max(result.max_packet_size_b_to_a_bytes, packet.captured_length);
+            result.min_packet_size_b_to_a_bytes = std::min(result.min_packet_size_b_to_a_bytes, packet.original_length);
+            result.max_packet_size_b_to_a_bytes = std::max(result.max_packet_size_b_to_a_bytes, packet.original_length);
         }
     }
 
@@ -583,8 +584,8 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     if (!ordered_packets.empty()) {
         result.first_packet_timestamp_text = format_packet_timestamp(*ordered_packets.front().packet);
         result.last_packet_timestamp_text = format_packet_timestamp(*ordered_packets.back().packet);
-        result.min_packet_size_bytes = ordered_packets.front().packet->captured_length;
-        result.max_packet_size_bytes = ordered_packets.front().packet->captured_length;
+        result.min_packet_size_bytes = ordered_packets.front().packet->original_length;
+        result.max_packet_size_bytes = ordered_packets.front().packet->original_length;
     }
 
     std::optional<std::uint64_t> previous_timestamp_us {};
@@ -595,12 +596,12 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
     bool current_run_is_burst = false;
     for (const auto& ordered_packet : ordered_packets) {
         const auto* packet = ordered_packet.packet;
-        result.min_packet_size_bytes = std::min(result.min_packet_size_bytes, packet->captured_length);
-        result.max_packet_size_bytes = std::max(result.max_packet_size_bytes, packet->captured_length);
+        result.min_packet_size_bytes = std::min(result.min_packet_size_bytes, packet->original_length);
+        result.max_packet_size_bytes = std::max(result.max_packet_size_bytes, packet->original_length);
 
         if (current_burst_packet_count == 0U) {
             current_burst_packet_count = 1U;
-            current_burst_bytes = packet->captured_length;
+            current_burst_bytes = packet->original_length;
         }
 
         const auto current_timestamp_us = packet_timestamp_us(*packet);
@@ -612,12 +613,12 @@ FlowAnalysisResult analyze_connection(const Connection& connection) {
 
             if (delta_us < kBurstThresholdUs) {
                 current_burst_packet_count += 1U;
-                current_burst_bytes += packet->captured_length;
+                current_burst_bytes += packet->original_length;
                 current_run_is_burst = true;
             } else {
                 finalize_burst(current_run_is_burst, current_burst_packet_count, current_burst_bytes, result);
                 current_burst_packet_count = 1U;
-                current_burst_bytes = packet->captured_length;
+                current_burst_bytes = packet->original_length;
                 current_run_is_burst = false;
             }
 

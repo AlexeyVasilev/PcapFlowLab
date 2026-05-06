@@ -710,6 +710,7 @@ int main(int argc, char* argv[]) {
                 {QStringLiteral("direction"), QStringLiteral("A->B")},
                 {QStringLiteral("deltaTimeText"), QStringLiteral("0.000 ms")},
                 {QStringLiteral("capturedLength"), 100U},
+                {QStringLiteral("originalLength"), 128U},
                 {QStringLiteral("payloadLength"), 46U},
                 {QStringLiteral("timestampText"), QStringLiteral("00:00:01.000000")},
             },
@@ -718,6 +719,7 @@ int main(int argc, char* argv[]) {
                 {QStringLiteral("direction"), QStringLiteral("B->A")},
                 {QStringLiteral("deltaTimeText"), QStringLiteral("250.000 ms")},
                 {QStringLiteral("capturedLength"), 200U},
+                {QStringLiteral("originalLength"), 200U},
                 {QStringLiteral("payloadLength"), 146U},
                 {QStringLiteral("timestampText"), QStringLiteral("00:00:01.250000")},
             },
@@ -1058,6 +1060,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(first_sequence_row.value(QStringLiteral("direction")).toString() == QStringLiteral("A->B"));
     UI_EXPECT(first_sequence_row.value(QStringLiteral("deltaTimeText")).toString() == QStringLiteral("0.000 ms"));
     UI_EXPECT(first_sequence_row.value(QStringLiteral("capturedLength")).toUInt() == static_cast<uint>(http_flow.size()));
+    UI_EXPECT(first_sequence_row.value(QStringLiteral("originalLength")).toUInt() == static_cast<uint>(http_flow.size()));
     auto* controller_packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
     UI_EXPECT(controller_packet_model != nullptr);
     UI_EXPECT(controller_packet_model->rowCount() == 1);
@@ -1520,39 +1523,42 @@ int main(int argc, char* argv[]) {
 
     const auto sequence_csv_lines = read_text_file_lines(sequence_export_path);
     UI_EXPECT(sequence_csv_lines.size() == 26U);
-    UI_EXPECT(sequence_csv_lines.front() == "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,payload_length,tcp_flags,protocol_hint");
+    UI_EXPECT(sequence_csv_lines.front() == "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,payload_length,tcp_flags,protocol_hint");
 
     const auto first_export_row = split_csv_line(sequence_csv_lines[1]);
-    UI_EXPECT(first_export_row.size() == 9U);
+    UI_EXPECT(first_export_row.size() == 10U);
     UI_EXPECT(first_export_row[0] == "1");
     UI_EXPECT(first_export_row[1] == "0");
     UI_EXPECT(first_export_row[2] == "A->B");
     UI_EXPECT(first_export_row[3] == "00:00:01.000100");
     UI_EXPECT(first_export_row[4] == "0");
     UI_EXPECT(first_export_row[5] == std::to_string(sequence_packet_a.size()));
-    UI_EXPECT(first_export_row[6] == "12");
-    UI_EXPECT(first_export_row[7] == "SYN");
-    UI_EXPECT(first_export_row[8].empty());
+    UI_EXPECT(first_export_row[6] == std::to_string(sequence_packet_a.size()));
+    UI_EXPECT(first_export_row[7] == "12");
+    UI_EXPECT(first_export_row[8] == "SYN");
+    UI_EXPECT(first_export_row[9].empty());
 
     const auto second_export_row = split_csv_line(sequence_csv_lines[2]);
-    UI_EXPECT(second_export_row.size() == 9U);
+    UI_EXPECT(second_export_row.size() == 10U);
     UI_EXPECT(second_export_row[0] == "2");
     UI_EXPECT(second_export_row[1] == "1");
     UI_EXPECT(second_export_row[2] == "B->A");
     UI_EXPECT(second_export_row[3] == "00:00:02.000250");
     UI_EXPECT(second_export_row[4] == "1000150");
-    UI_EXPECT(second_export_row[7] == "ACK|SYN");
-    UI_EXPECT(second_export_row[8].empty());
+    UI_EXPECT(second_export_row[7] == "8");
+    UI_EXPECT(second_export_row[8] == "ACK|SYN");
+    UI_EXPECT(second_export_row[9].empty());
 
     const auto third_export_row = split_csv_line(sequence_csv_lines[3]);
-    UI_EXPECT(third_export_row.size() == 9U);
+    UI_EXPECT(third_export_row.size() == 10U);
     UI_EXPECT(third_export_row[0] == "3");
     UI_EXPECT(third_export_row[1] == "2");
     UI_EXPECT(third_export_row[2] == "A->B");
     UI_EXPECT(third_export_row[3] == "00:00:03.000500");
     UI_EXPECT(third_export_row[4] == "1000250");
-    UI_EXPECT(third_export_row[7] == "ACK|PSH");
-    UI_EXPECT(third_export_row[8].empty());
+    UI_EXPECT(third_export_row[7] == "4");
+    UI_EXPECT(third_export_row[8] == "ACK|PSH");
+    UI_EXPECT(third_export_row[9].empty());
 
     const auto invalid_sequence_export_path = std::filesystem::temp_directory_path() / "pfl_missing_sequence_export_dir" / "selected_flow_sequence.csv";
     std::filesystem::remove(invalid_sequence_export_path, remove_error);
