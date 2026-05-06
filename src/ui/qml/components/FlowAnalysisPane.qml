@@ -322,6 +322,8 @@ Frame {
     property string totalPacketsText: ""
     property var totalBytes: 0
     property string totalBytesText: ""
+    property var capturedBytes: 0
+    property string capturedBytesText: ""
     property string endpointSummaryText: ""
     property string packetsPerSecondText: ""
     property string packetsPerSecondAToBText: ""
@@ -624,8 +626,11 @@ Frame {
                                     Label { text: "Total packets" }
                                     Label { text: root.totalPacketsText.length > 0 ? root.totalPacketsText : "0" }
 
-                                    Label { text: "Total bytes" }
+                                    Label { text: "Original bytes" }
                                     Label { text: root.totalBytesText.length > 0 ? root.totalBytesText : "0 B" }
+
+                                    Label { text: "Captured bytes" }
+                                    Label { text: root.capturedBytesText.length > 0 ? root.capturedBytesText : "0 B" }
 
                                     Label { text: "Protocol hint" }
                                     Label { text: root.protocolHint.length > 0 ? root.protocolHint : "-" }
@@ -1428,7 +1433,23 @@ Frame {
                             Label { text: "Delta"; Layout.preferredWidth: 82 }
                             Label { text: "Captured"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
                             Label { text: "Original"; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignRight }
-                            Label { text: "Transport payload"; Layout.preferredWidth: 110; horizontalAlignment: Text.AlignRight }
+                            Label {
+                                text: "Transport payload"
+                                Layout.preferredWidth: 110
+                                horizontalAlignment: Text.AlignRight
+
+                                ToolTip.visible: transportPayloadHeaderMouseArea.containsMouse
+                                ToolTip.delay: 250
+                                ToolTip.timeout: 8000
+                                ToolTip.text: "TCP/UDP payload length derived from packet headers. May exceed captured payload in shortened or truncated packets."
+
+                                MouseArea {
+                                    id: transportPayloadHeaderMouseArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
+                                }
+                            }
                             Label { text: "Time"; Layout.fillWidth: true }
                         }
 

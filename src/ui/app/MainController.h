@@ -85,6 +85,8 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisTotalPacketsText READ analysisTotalPacketsText NOTIFY analysisStateChanged)
     Q_PROPERTY(qulonglong analysisTotalBytes READ analysisTotalBytes NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTotalBytesText READ analysisTotalBytesText NOTIFY analysisStateChanged)
+    Q_PROPERTY(qulonglong analysisCapturedBytes READ analysisCapturedBytes NOTIFY analysisStateChanged)
+    Q_PROPERTY(QString analysisCapturedBytesText READ analysisCapturedBytesText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisEndpointSummaryText READ analysisEndpointSummaryText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketsPerSecondText READ analysisPacketsPerSecondText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisPacketsPerSecondAToBText READ analysisPacketsPerSecondAToBText NOTIFY analysisStateChanged)
@@ -272,6 +274,8 @@ public:
     [[nodiscard]] QString analysisTotalPacketsText() const;
     [[nodiscard]] qulonglong analysisTotalBytes() const noexcept;
     [[nodiscard]] QString analysisTotalBytesText() const;
+    [[nodiscard]] qulonglong analysisCapturedBytes() const noexcept;
+    [[nodiscard]] QString analysisCapturedBytesText() const;
     [[nodiscard]] QString analysisEndpointSummaryText() const;
     [[nodiscard]] QString analysisPacketsPerSecondText() const;
     [[nodiscard]] QString analysisPacketsPerSecondAToBText() const;

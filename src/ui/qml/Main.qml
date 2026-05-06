@@ -872,6 +872,8 @@ ApplicationWindow {
                 analysisTotalPacketsText: mainController.analysisTotalPacketsText
                 analysisTotalBytes: mainController.analysisTotalBytes
                 analysisTotalBytesText: mainController.analysisTotalBytesText
+                analysisCapturedBytes: mainController.analysisCapturedBytes
+                analysisCapturedBytesText: mainController.analysisCapturedBytesText
                 analysisEndpointSummaryText: mainController.analysisEndpointSummaryText
                 analysisPacketsPerSecondText: mainController.analysisPacketsPerSecondText
                 analysisPacketsPerSecondAToBText: mainController.analysisPacketsPerSecondAToBText

@@ -28,6 +28,8 @@ Item {
     property string analysisTotalPacketsText: ""
     property var analysisTotalBytes: 0
     property string analysisTotalBytesText: ""
+    property var analysisCapturedBytes: 0
+    property string analysisCapturedBytesText: ""
     property string analysisEndpointSummaryText: ""
     property string analysisPacketsPerSecondText: ""
     property string analysisPacketsPerSecondAToBText: ""
@@ -262,6 +264,8 @@ Item {
             totalPacketsText: root.analysisTotalPacketsText
             totalBytes: root.analysisTotalBytes
             totalBytesText: root.analysisTotalBytesText
+            capturedBytes: root.analysisCapturedBytes
+            capturedBytesText: root.analysisCapturedBytesText
             endpointSummaryText: root.analysisEndpointSummaryText
             packetsPerSecondText: root.analysisPacketsPerSecondText
             packetsPerSecondAToBText: root.analysisPacketsPerSecondAToBText

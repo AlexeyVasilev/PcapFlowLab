@@ -1733,6 +1733,30 @@ QString MainController::analysisTotalBytesText() const {
         : QString {};
 }
 
+qulonglong MainController::analysisCapturedBytes() const noexcept {
+    if (!current_flow_analysis_.has_value() || selected_flow_index_ < 0) {
+        return 0U;
+    }
+
+    const auto packets = session_.flow_packets(static_cast<std::size_t>(selected_flow_index_));
+    if (!packets.has_value()) {
+        return 0U;
+    }
+
+    std::uint64_t captured_bytes = 0U;
+    for (const auto& packet : *packets) {
+        captured_bytes += packet.captured_length;
+    }
+
+    return static_cast<qulonglong>(captured_bytes);
+}
+
+QString MainController::analysisCapturedBytesText() const {
+    return current_flow_analysis_.has_value()
+        ? format_size_value(analysisCapturedBytes())
+        : QString {};
+}
+
 QString MainController::analysisEndpointSummaryText() const {
     return current_flow_analysis_.has_value()
         ? selected_flow_endpoint_summary(flow_model_, selected_flow_index_)
