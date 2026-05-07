@@ -35,6 +35,13 @@ constexpr int kFlowTabIndex = 0;
 constexpr int kAnalysisTabIndex = 1;
 constexpr int kStatsTabIndex = 2;
 constexpr int kSettingsTabIndex = 3;
+constexpr int kSmartExportFlowScopeCurrentFlow = 0;
+constexpr int kSmartExportFlowScopeSelectedFlows = 1;
+constexpr int kSmartExportFlowScopeUnselectedFlows = 2;
+constexpr int kSmartExportFlowScopeAllFlows = 3;
+constexpr int kSmartExportBaseModeAllPackets = 0;
+constexpr int kSmartExportBaseModeFirstNPackets = 1;
+constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
 constexpr int kStatisticsModeFlows = 0;
 constexpr int kStatisticsModePackets = 1;
 constexpr int kStatisticsModeBytes = 2;
@@ -277,6 +284,16 @@ std::string escape_csv_field(const std::string& field) {
     }
     escaped.push_back('"');
     return escaped;
+}
+
+std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
+    bool ok = false;
+    const auto value = text.trimmed().toULongLong(&ok);
+    if (!ok || value == 0U) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint64_t>(value);
 }
 
 std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
@@ -3230,6 +3247,128 @@ bool MainController::exportUnselectedFlows(const QString& path) {
     );
 }
 
+bool MainController::exportSmartFlows(
+    const QString& path,
+    const int flowScopeMode,
+    const int baseSelectionMode,
+    const QString& packetCountText,
+    const QString& originalBytesText,
+    const bool includeLastPacket,
+    const bool includeEveryKthPacket,
+    const QString& everyKText
+) {
+    if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to export flows."))) {
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    std::vector<int> flow_indices {};
+    QString empty_selection_message {};
+    switch (flowScopeMode) {
+    case kSmartExportFlowScopeCurrentFlow:
+        flow_indices = (selected_flow_index_ >= 0) ? std::vector<int>{selected_flow_index_} : std::vector<int>{};
+        empty_selection_message = QStringLiteral("No current flow selected for smart export.");
+        break;
+    case kSmartExportFlowScopeSelectedFlows:
+        flow_indices = flow_model_.checkedFlowIndices();
+        empty_selection_message = QStringLiteral("No selected flows for smart export.");
+        break;
+    case kSmartExportFlowScopeUnselectedFlows:
+        flow_indices = flow_model_.uncheckedFlowIndices();
+        empty_selection_message = QStringLiteral("No unselected flows for smart export.");
+        break;
+    case kSmartExportFlowScopeAllFlows: {
+        const auto rows = session_.list_flows();
+        flow_indices.reserve(rows.size());
+        for (const auto& row : rows) {
+            if (row.index > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+                setStatusText(QStringLiteral("Smart export flow index is out of range."), true);
+                return false;
+            }
+            flow_indices.push_back(static_cast<int>(row.index));
+        }
+        empty_selection_message = QStringLiteral("No flows available for smart export.");
+        break;
+    }
+    default:
+        setStatusText(QStringLiteral("Invalid smart export flow selection."), true);
+        return false;
+    }
+
+    if (flow_indices.empty()) {
+        setStatusText(empty_selection_message, true);
+        return false;
+    }
+
+    SmartFlowExportRequest request {};
+    request.flow_indices.reserve(flow_indices.size());
+    for (const auto flow_index : flow_indices) {
+        if (flow_index < 0) {
+            setStatusText(QStringLiteral("Failed to prepare smart export flow list."), true);
+            return false;
+        }
+        request.flow_indices.push_back(static_cast<std::size_t>(flow_index));
+    }
+
+    switch (baseSelectionMode) {
+    case kSmartExportBaseModeAllPackets:
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+        break;
+    case kSmartExportBaseModeFirstNPackets: {
+        const auto value = parse_positive_u64(packetCountText);
+        if (!value.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive packet count for smart export."), true);
+            return false;
+        }
+        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.first_n_packets = *value;
+        break;
+    }
+    case kSmartExportBaseModeFirstMOriginalBytes: {
+        const auto value = parse_positive_u64(originalBytesText);
+        if (!value.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive original-byte limit for smart export."), true);
+            return false;
+        }
+        request.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
+        request.first_m_original_bytes = *value;
+        break;
+    }
+    default:
+        setStatusText(QStringLiteral("Invalid smart export base selection."), true);
+        return false;
+    }
+
+    if (request.base_mode != SmartFlowExportBaseMode::all_packets) {
+        request.include_last_packet = includeLastPacket;
+        request.include_every_kth_packet_after_base = includeEveryKthPacket;
+        if (includeEveryKthPacket) {
+            const auto value = parse_positive_u64(everyKText);
+            if (!value.has_value()) {
+                setStatusText(QStringLiteral("Enter a positive K value for sparse smart export retention."), true);
+                return false;
+            }
+            request.every_kth_packet = *value;
+        }
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    const bool exported = session_.export_smart_flows_to_pcap(request, filesystemPath);
+    if (!exported) {
+        setStatusText(QStringLiteral("Failed to smart-export flows."), true);
+        return false;
+    }
+
+    setLastDirectoryFromPath(filesystemPath);
+    setStatusText(QStringLiteral("Smart export completed successfully."));
+    return true;
+}
+
 void MainController::browseCaptureFile() {
     const QString path = chooseFile(false);
     if (!path.isEmpty()) {
@@ -3284,6 +3423,32 @@ void MainController::browseExportUnselectedFlows() {
     if (!path.isEmpty()) {
         exportUnselectedFlows(path);
     }
+}
+
+bool MainController::browseSmartExportFlows(
+    const int flowScopeMode,
+    const int baseSelectionMode,
+    const QString& packetCountText,
+    const QString& originalBytesText,
+    const bool includeLastPacket,
+    const bool includeEveryKthPacket,
+    const QString& everyKText
+) {
+    const QString path = chooseSaveFile(false);
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    return exportSmartFlows(
+        path,
+        flowScopeMode,
+        baseSelectionMode,
+        packetCountText,
+        originalBytesText,
+        includeLastPacket,
+        includeEveryKthPacket,
+        everyKText
+    );
 }
 
 void MainController::copySelectedFlowWiresharkFilter() {

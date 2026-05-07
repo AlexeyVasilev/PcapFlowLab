@@ -2137,6 +2137,81 @@ std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t f
     return collect_packets(*connections[flow_index].ipv6);
 }
 
+namespace {
+
+void mark_packet_for_smart_export(std::vector<std::uint8_t>& packet_selection, const PacketRef& packet) {
+    if (packet.packet_index < packet_selection.size()) {
+        packet_selection[static_cast<std::size_t>(packet.packet_index)] = 1U;
+    }
+}
+
+std::size_t mark_smart_export_base_prefix(
+    const std::vector<PacketRef>& flow_packets,
+    const SmartFlowExportRequest& request,
+    std::vector<std::uint8_t>& packet_selection
+) {
+    switch (request.base_mode) {
+    case SmartFlowExportBaseMode::all_packets:
+        for (const auto& packet : flow_packets) {
+            mark_packet_for_smart_export(packet_selection, packet);
+        }
+        return flow_packets.size();
+
+    case SmartFlowExportBaseMode::first_n_packets: {
+        const auto packet_count = static_cast<std::size_t>(
+            std::min<std::uint64_t>(request.first_n_packets, static_cast<std::uint64_t>(flow_packets.size()))
+        );
+        for (std::size_t index = 0; index < packet_count; ++index) {
+            mark_packet_for_smart_export(packet_selection, flow_packets[index]);
+        }
+        return packet_count;
+    }
+
+    case SmartFlowExportBaseMode::first_m_original_bytes: {
+        std::uint64_t accumulated_bytes = 0U;
+        std::size_t packet_count = 0U;
+        for (const auto& packet : flow_packets) {
+            mark_packet_for_smart_export(packet_selection, packet);
+            accumulated_bytes += packet.original_length;
+            ++packet_count;
+            if (accumulated_bytes >= request.first_m_original_bytes) {
+                break;
+            }
+        }
+        return packet_count;
+    }
+    }
+
+    return 0U;
+}
+
+void mark_smart_export_additional_packets(
+    const std::vector<PacketRef>& flow_packets,
+    const SmartFlowExportRequest& request,
+    const std::size_t base_prefix_packet_count,
+    std::vector<std::uint8_t>& packet_selection
+) {
+    if (request.base_mode == SmartFlowExportBaseMode::all_packets || flow_packets.empty()) {
+        return;
+    }
+
+    if (request.include_last_packet) {
+        mark_packet_for_smart_export(packet_selection, flow_packets.back());
+    }
+
+    if (request.include_every_kth_packet_after_base && request.every_kth_packet > 0U) {
+        const auto step = static_cast<std::size_t>(request.every_kth_packet);
+        if (base_prefix_packet_count < flow_packets.size()) {
+            for (std::size_t after_base_index = step; base_prefix_packet_count + after_base_index - 1U < flow_packets.size(); after_base_index += step) {
+                const auto packet_index = base_prefix_packet_count + after_base_index - 1U;
+                mark_packet_for_smart_export(packet_selection, flow_packets[packet_index]);
+            }
+        }
+    }
+}
+
+}  // namespace
+
 bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const {
     return export_flows_to_pcap({flow_index}, output_path);
 }
@@ -2169,6 +2244,64 @@ bool CaptureSession::export_flows_to_pcap(const std::vector<std::size_t>& flow_i
 
     FlowExportService service {};
     return service.export_packets_to_pcap(output_path, packets, capture_path());
+}
+
+bool CaptureSession::export_smart_flows_to_pcap(
+    const SmartFlowExportRequest& request,
+    const std::filesystem::path& output_path
+) const {
+    if (!has_source_capture() || request.flow_indices.empty()) {
+        return false;
+    }
+
+    if (request.base_mode == SmartFlowExportBaseMode::first_n_packets && request.first_n_packets == 0U) {
+        return false;
+    }
+
+    if (request.base_mode == SmartFlowExportBaseMode::first_m_original_bytes && request.first_m_original_bytes == 0U) {
+        return false;
+    }
+
+    if (request.base_mode != SmartFlowExportBaseMode::all_packets &&
+        request.include_every_kth_packet_after_base &&
+        request.every_kth_packet == 0U) {
+        return false;
+    }
+
+    if (summary().packet_count == 0U) {
+        return false;
+    }
+
+    if (summary().packet_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+
+    std::vector<std::uint8_t> packet_selection(static_cast<std::size_t>(summary().packet_count), 0U);
+    bool marked_any_packet = false;
+
+    for (const auto flow_index : request.flow_indices) {
+        const auto packets = flow_packets(flow_index);
+        if (!packets.has_value()) {
+            return false;
+        }
+
+        const auto base_prefix_packet_count = mark_smart_export_base_prefix(*packets, request, packet_selection);
+        mark_smart_export_additional_packets(*packets, request, base_prefix_packet_count, packet_selection);
+    }
+
+    for (const auto selected : packet_selection) {
+        if (selected != 0U) {
+            marked_any_packet = true;
+            break;
+        }
+    }
+
+    if (!marked_any_packet) {
+        return false;
+    }
+
+    FlowExportService service {};
+    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path());
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {

@@ -79,6 +79,13 @@ ApplicationWindow {
     }
 
     Action {
+        id: smartExportAction
+        text: "Smart Export..."
+        enabled: mainController.hasCapture && mainController.hasSourceCapture
+        onTriggered: smartExportDialog.open()
+    }
+
+    Action {
         id: showSettingsAction
         text: "Settings"
         onTriggered: settingsDialog.open()
@@ -115,6 +122,8 @@ ApplicationWindow {
             MenuItem { action: exportCurrentFlowAction }
             MenuItem { action: exportSelectedFlowsAction }
             MenuItem { action: exportUnselectedFlowsAction }
+            MenuSeparator {}
+            MenuItem { action: smartExportAction }
         }
 
         Menu {
@@ -262,6 +271,24 @@ ApplicationWindow {
             standardButtons: DialogButtonBox.Ok | DialogButtonBox.Cancel
             onAccepted: settingsDialog.close()
             onRejected: settingsDialog.close()
+        }
+    }
+
+    SmartExportDialog {
+        id: smartExportDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        onExportRequested: function(flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, includeLastPacket, includeEveryKthPacket, everyKText) {
+            mainController.browseSmartExportFlows(
+                flowScopeMode,
+                baseSelectionMode,
+                packetCountText,
+                originalBytesText,
+                includeLastPacket,
+                includeEveryKthPacket,
+                everyKText
+            )
         }
     }
 

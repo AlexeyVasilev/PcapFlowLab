@@ -155,6 +155,108 @@ void run_export_tests() {
         PFL_EXPECT(!session.export_flow_to_pcap(99, output_path));
         PFL_EXPECT(!std::filesystem::exists(output_path));
     }
+
+    {
+        const auto flow_a_packet_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 10, 0, 1), ipv4(10, 10, 0, 2), 11001, 443, std::vector<std::uint8_t>{0xA1}, 0x18);
+        const auto flow_a_packet_2 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 10, 0, 1), ipv4(10, 10, 0, 2), 11001, 443, std::vector<std::uint8_t>{0xA2}, 0x18);
+        const auto flow_a_packet_3 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 10, 0, 1), ipv4(10, 10, 0, 2), 11001, 443, std::vector<std::uint8_t>{0xA3}, 0x18);
+        const auto flow_a_packet_4 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 10, 0, 1), ipv4(10, 10, 0, 2), 11001, 443, std::vector<std::uint8_t>{0xA4}, 0x18);
+        const auto flow_b_packet_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 22001, 53, std::vector<std::uint8_t>{0xB1});
+        const auto flow_b_packet_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 22001, 53, std::vector<std::uint8_t>{0xB2});
+        const auto flow_b_packet_3 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 22001, 53, std::vector<std::uint8_t>{0xB3});
+        const auto flow_b_packet_4 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 22001, 53, std::vector<std::uint8_t>{0xB4});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_sparse_source.pcap",
+            make_classic_pcap({
+                {100, flow_a_packet_1},
+                {200, flow_b_packet_1},
+                {300, flow_a_packet_2},
+                {400, flow_b_packet_2},
+                {500, flow_a_packet_3},
+                {600, flow_b_packet_3},
+                {700, flow_a_packet_4},
+                {800, flow_b_packet_4},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_sparse_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 2);
+
+        SmartFlowExportRequest request {};
+        for (const auto& row : rows) {
+            request.flow_indices.push_back(row.index);
+        }
+        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.first_n_packets = 1U;
+        request.include_last_packet = true;
+        request.include_every_kth_packet_after_base = true;
+        request.every_kth_packet = 2U;
+
+        PFL_EXPECT(session.export_smart_flows_to_pcap(request, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 6U);
+        PFL_EXPECT(exported_packets[0].bytes == flow_a_packet_1);
+        PFL_EXPECT(exported_packets[1].bytes == flow_b_packet_1);
+        PFL_EXPECT(exported_packets[2].bytes == flow_a_packet_3);
+        PFL_EXPECT(exported_packets[3].bytes == flow_b_packet_3);
+        PFL_EXPECT(exported_packets[4].bytes == flow_a_packet_4);
+        PFL_EXPECT(exported_packets[5].bytes == flow_b_packet_4);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[5].ts_usec == 800U);
+    }
+
+    {
+        const auto packet_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 1), ipv4(172, 16, 0, 2), 33001, 33002, std::vector<std::uint8_t>{0x01});
+        const auto packet_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 1), ipv4(172, 16, 0, 2), 33001, 33002, std::vector<std::uint8_t>{0x02});
+        const auto packet_3 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 16, 0, 1), ipv4(172, 16, 0, 2), 33001, 33002, std::vector<std::uint8_t>{0x03});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_original_bytes_source.pcap",
+            make_classic_pcap_with_captured_lengths({
+                {.ts_usec = 100U, .captured_bytes = packet_1, .original_length = 100U},
+                {.ts_usec = 200U, .captured_bytes = packet_2, .original_length = 100U},
+                {.ts_usec = 300U, .captured_bytes = packet_3, .original_length = 100U},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_original_bytes_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices.push_back(rows.front().index);
+        request.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
+        request.first_m_original_bytes = 150U;
+
+        PFL_EXPECT(session.export_smart_flows_to_pcap(request, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].bytes == packet_1);
+        PFL_EXPECT(exported_packets[1].bytes == packet_2);
+        PFL_EXPECT(exported_packets[0].original_length == 100U);
+        PFL_EXPECT(exported_packets[1].original_length == 100U);
+    }
 }
 
 }  // namespace pfl::tests

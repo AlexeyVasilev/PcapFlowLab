@@ -21,6 +21,22 @@ struct OpenContext;
 
 namespace pfl {
 
+enum class SmartFlowExportBaseMode : std::uint8_t {
+    all_packets = 0,
+    first_n_packets = 1,
+    first_m_original_bytes = 2,
+};
+
+struct SmartFlowExportRequest {
+    std::vector<std::size_t> flow_indices {};
+    SmartFlowExportBaseMode base_mode {SmartFlowExportBaseMode::all_packets};
+    std::uint64_t first_n_packets {0};
+    std::uint64_t first_m_original_bytes {0};
+    bool include_last_packet {false};
+    bool include_every_kth_packet_after_base {false};
+    std::uint64_t every_kth_packet {0};
+};
+
 struct SelectedFlowPacketCacheInfo {
     std::size_t flow_index {0};
     std::size_t cached_packet_window_count {0};
@@ -102,6 +118,7 @@ public:
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
+    bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;

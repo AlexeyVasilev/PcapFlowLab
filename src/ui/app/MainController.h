@@ -421,6 +421,15 @@ public:
     Q_INVOKABLE void browseExportSelectedFlowSequenceCsv();
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
+    Q_INVOKABLE bool browseSmartExportFlows(
+        int flowScopeMode,
+        int baseSelectionMode,
+        const QString& packetCountText,
+        const QString& originalBytesText,
+        bool includeLastPacket,
+        bool includeEveryKthPacket,
+        const QString& everyKText
+    );
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
     Q_INVOKABLE void sortFlows(int column);
@@ -498,6 +507,16 @@ private:
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
     bool exportFlows(const QString& path, const std::vector<int>& flowIndices, const QString& emptySelectionMessage, const QString& failureMessage, const QString& successMessage);
+    bool exportSmartFlows(
+        const QString& path,
+        int flowScopeMode,
+        int baseSelectionMode,
+        const QString& packetCountText,
+        const QString& originalBytesText,
+        bool includeLastPacket,
+        bool includeEveryKthPacket,
+        const QString& everyKText
+    );
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
     void cleanupAnalysisSequenceExportThread();
