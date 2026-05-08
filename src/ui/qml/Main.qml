@@ -279,12 +279,15 @@ ApplicationWindow {
         parent: window.contentItem
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
-        onExportRequested: function(flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, includeLastPacket, includeEveryKthPacket, everyKText) {
+        chooseDestinationFolderCallback: function() { return mainController.chooseSmartExportDestinationFolder() }
+        onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, includeLastPacket, includeEveryKthPacket, everyKText) {
             mainController.browseSmartExportFlows(
+                outputMode,
                 flowScopeMode,
                 baseSelectionMode,
                 packetCountText,
                 originalBytesText,
+                destinationFolderText,
                 includeLastPacket,
                 includeEveryKthPacket,
                 everyKText

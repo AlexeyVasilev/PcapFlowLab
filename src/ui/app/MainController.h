@@ -422,14 +422,17 @@ public:
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
     Q_INVOKABLE bool browseSmartExportFlows(
+        int outputMode,
         int flowScopeMode,
         int baseSelectionMode,
         const QString& packetCountText,
         const QString& originalBytesText,
+        const QString& destinationFolderText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         const QString& everyKText
     );
+    Q_INVOKABLE QString chooseSmartExportDestinationFolder() const;
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
     Q_INVOKABLE void sortFlows(int column);
@@ -509,6 +512,7 @@ private:
     bool exportFlows(const QString& path, const std::vector<int>& flowIndices, const QString& emptySelectionMessage, const QString& failureMessage, const QString& successMessage);
     bool exportSmartFlows(
         const QString& path,
+        int outputMode,
         int flowScopeMode,
         int baseSelectionMode,
         const QString& packetCountText,
@@ -532,6 +536,7 @@ private:
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
     QString chooseSequenceCsvSaveFile() const;
+    QString chooseDirectory(const QString& title) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
     CaptureSession session_ {};

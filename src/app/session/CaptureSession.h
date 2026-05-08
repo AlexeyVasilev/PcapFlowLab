@@ -119,6 +119,7 @@ public:
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
+    bool export_smart_flows_to_folder(const SmartFlowExportRequest& request, const std::filesystem::path& output_directory) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;

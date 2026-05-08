@@ -2139,21 +2139,49 @@ std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t f
 
 namespace {
 
-void mark_packet_for_smart_export(std::vector<std::uint8_t>& packet_selection, const PacketRef& packet) {
-    if (packet.packet_index < packet_selection.size()) {
-        packet_selection[static_cast<std::size_t>(packet.packet_index)] = 1U;
+[[nodiscard]] bool ensure_packet_marker_capacity(std::vector<std::uint8_t>& packet_selection, const std::uint64_t packet_index) {
+    if (packet_index >= static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
     }
+
+    const auto required_size = static_cast<std::size_t>(packet_index + 1U);
+    if (required_size > packet_selection.size()) {
+        packet_selection.resize(required_size, 0U);
+    }
+    return true;
 }
 
-std::size_t mark_smart_export_base_prefix(
+[[nodiscard]] bool ensure_packet_owner_capacity(std::vector<std::uint32_t>& packet_owner, const std::uint64_t packet_index) {
+    if (packet_index >= static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+
+    const auto required_size = static_cast<std::size_t>(packet_index + 1U);
+    if (required_size > packet_owner.size()) {
+        packet_owner.resize(required_size, 0U);
+    }
+    return true;
+}
+
+[[nodiscard]] bool mark_packet_for_smart_export(std::vector<std::uint8_t>& packet_selection, const PacketRef& packet) {
+    if (!ensure_packet_marker_capacity(packet_selection, packet.packet_index)) {
+        return false;
+    }
+
+    packet_selection[static_cast<std::size_t>(packet.packet_index)] = 1U;
+    return true;
+}
+
+template <typename MarkSelectedPacketFn>
+std::size_t visit_smart_export_base_prefix_packets(
     const std::vector<PacketRef>& flow_packets,
     const SmartFlowExportRequest& request,
-    std::vector<std::uint8_t>& packet_selection
+    MarkSelectedPacketFn&& mark_selected_packet
 ) {
     switch (request.base_mode) {
     case SmartFlowExportBaseMode::all_packets:
         for (const auto& packet : flow_packets) {
-            mark_packet_for_smart_export(packet_selection, packet);
+            mark_selected_packet(packet);
         }
         return flow_packets.size();
 
@@ -2162,7 +2190,7 @@ std::size_t mark_smart_export_base_prefix(
             std::min<std::uint64_t>(request.first_n_packets, static_cast<std::uint64_t>(flow_packets.size()))
         );
         for (std::size_t index = 0; index < packet_count; ++index) {
-            mark_packet_for_smart_export(packet_selection, flow_packets[index]);
+            mark_selected_packet(flow_packets[index]);
         }
         return packet_count;
     }
@@ -2171,7 +2199,7 @@ std::size_t mark_smart_export_base_prefix(
         std::uint64_t accumulated_bytes = 0U;
         std::size_t packet_count = 0U;
         for (const auto& packet : flow_packets) {
-            mark_packet_for_smart_export(packet_selection, packet);
+            mark_selected_packet(packet);
             accumulated_bytes += packet.original_length;
             ++packet_count;
             if (accumulated_bytes >= request.first_m_original_bytes) {
@@ -2185,18 +2213,19 @@ std::size_t mark_smart_export_base_prefix(
     return 0U;
 }
 
-void mark_smart_export_additional_packets(
+template <typename MarkSelectedPacketFn>
+void visit_smart_export_additional_packets(
     const std::vector<PacketRef>& flow_packets,
     const SmartFlowExportRequest& request,
     const std::size_t base_prefix_packet_count,
-    std::vector<std::uint8_t>& packet_selection
+    MarkSelectedPacketFn&& mark_selected_packet
 ) {
     if (request.base_mode == SmartFlowExportBaseMode::all_packets || flow_packets.empty()) {
         return;
     }
 
     if (request.include_last_packet) {
-        mark_packet_for_smart_export(packet_selection, flow_packets.back());
+        mark_selected_packet(flow_packets.back());
     }
 
     if (request.include_every_kth_packet_after_base && request.every_kth_packet > 0U) {
@@ -2204,10 +2233,189 @@ void mark_smart_export_additional_packets(
         if (base_prefix_packet_count < flow_packets.size()) {
             for (std::size_t after_base_index = step; base_prefix_packet_count + after_base_index - 1U < flow_packets.size(); after_base_index += step) {
                 const auto packet_index = base_prefix_packet_count + after_base_index - 1U;
-                mark_packet_for_smart_export(packet_selection, flow_packets[packet_index]);
+                mark_selected_packet(flow_packets[packet_index]);
             }
         }
     }
+}
+
+struct SmartPerFlowManifestRow {
+    std::uint32_t export_flow_id {0};
+    std::filesystem::path output_path {};
+    std::string family {};
+    std::string transport {};
+    std::string protocol {};
+    std::string protocol_hint {};
+    std::string src_ip {};
+    std::uint16_t src_port {0};
+    std::string dst_ip {};
+    std::uint16_t dst_port {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t original_bytes {0};
+    std::string first_timestamp {};
+    std::string last_timestamp {};
+    std::uint64_t duration_us {0};
+    std::uint64_t exported_packet_count {0};
+    std::uint64_t exported_captured_bytes {0};
+    std::uint64_t exported_original_bytes {0};
+};
+
+std::string escape_csv_field(std::string_view text) {
+    if (text.find_first_of(",\"\n\r") == std::string_view::npos) {
+        return std::string(text);
+    }
+
+    std::string escaped;
+    escaped.reserve(text.size() + 2U);
+    escaped.push_back('"');
+    for (const auto ch : text) {
+        if (ch == '"') {
+            escaped.push_back('"');
+        }
+        escaped.push_back(ch);
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+std::string family_text(const FlowAddressFamily family) {
+    switch (family) {
+    case FlowAddressFamily::ipv4:
+        return "IPv4";
+    case FlowAddressFamily::ipv6:
+        return "IPv6";
+    }
+
+    return "unknown";
+}
+
+std::string normalize_manifest_protocol(const FlowRow& row) {
+    if (!row.protocol_hint.empty()) {
+        return row.protocol_hint;
+    }
+    return "unknown";
+}
+
+std::string normalize_manifest_protocol_hint(const FlowRow& row) {
+    if (!row.service_hint.empty()) {
+        return row.service_hint;
+    }
+    return "unknown";
+}
+
+std::string format_manifest_timestamp(const PacketRef& packet) {
+    std::ostringstream stream {};
+    stream << packet.ts_sec << '.' << std::setw(6) << std::setfill('0') << packet.ts_usec;
+    return stream.str();
+}
+
+std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
+    return static_cast<std::uint64_t>(packet.ts_sec) * 1'000'000ULL + static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+std::string sanitize_filename_component(std::string_view component) {
+    std::string sanitized {};
+    sanitized.reserve(component.size());
+
+    bool last_was_separator = false;
+    for (const auto ch : component) {
+        const auto unsigned_ch = static_cast<unsigned char>(ch);
+        const bool is_ascii_alnum =
+            (unsigned_ch >= static_cast<unsigned char>('0') && unsigned_ch <= static_cast<unsigned char>('9')) ||
+            (unsigned_ch >= static_cast<unsigned char>('A') && unsigned_ch <= static_cast<unsigned char>('Z')) ||
+            (unsigned_ch >= static_cast<unsigned char>('a') && unsigned_ch <= static_cast<unsigned char>('z'));
+        const bool is_safe_symbol = unsigned_ch == static_cast<unsigned char>('_');
+        const bool should_keep = is_ascii_alnum || is_safe_symbol;
+
+        if (!should_keep) {
+            if (!last_was_separator) {
+                sanitized.push_back('_');
+                last_was_separator = true;
+            }
+            continue;
+        }
+
+        sanitized.push_back(static_cast<char>(unsigned_ch));
+        last_was_separator = false;
+    }
+
+    while (!sanitized.empty() && sanitized.front() == '_') {
+        sanitized.erase(sanitized.begin());
+    }
+    while (!sanitized.empty() && sanitized.back() == '_') {
+        sanitized.pop_back();
+    }
+
+    if (sanitized.empty()) {
+        sanitized = "unknown";
+    }
+
+    constexpr std::size_t kMaxComponentLength = 32U;
+    if (sanitized.size() > kMaxComponentLength) {
+        sanitized.resize(kMaxComponentLength);
+    }
+
+    return sanitized;
+}
+
+std::filesystem::path build_smart_per_flow_output_path(const FlowRow& row, const std::uint32_t export_flow_id, const std::filesystem::path& output_directory) {
+    std::ostringstream flow_id_stream {};
+    flow_id_stream << std::setw(6) << std::setfill('0') << export_flow_id;
+
+    const auto protocol = sanitize_filename_component(normalize_manifest_protocol(row));
+    const auto hint = sanitize_filename_component(normalize_manifest_protocol_hint(row));
+    const auto transport = sanitize_filename_component(row.protocol_text.empty() ? std::string("unknown") : row.protocol_text);
+    const auto src_ip = sanitize_filename_component(row.address_a);
+    const auto dst_ip = sanitize_filename_component(row.address_b);
+
+    std::ostringstream file_name {};
+    file_name << flow_id_stream.str()
+              << '_' << protocol
+              << '_' << hint
+              << '_' << transport
+              << '_' << src_ip
+              << '_' << row.port_a
+              << '-' << dst_ip
+              << '_' << row.port_b
+              << ".pcap";
+
+    return output_directory / file_name.str();
+}
+
+bool write_smart_per_flow_manifest_csv(
+    const std::filesystem::path& output_directory,
+    std::span<const SmartPerFlowManifestRow> rows
+) {
+    std::ofstream stream {output_directory / "flows_manifest.csv", std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        return false;
+    }
+
+    stream << "flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,exported_packet_count,exported_captured_bytes,exported_original_bytes\n";
+    for (const auto& row : rows) {
+        stream << row.export_flow_id << ','
+               << escape_csv_field(row.output_path.filename().string()) << ','
+               << escape_csv_field(row.family) << ','
+               << escape_csv_field(row.transport) << ','
+               << escape_csv_field(row.protocol) << ','
+               << escape_csv_field(row.protocol_hint) << ','
+               << escape_csv_field(row.src_ip) << ','
+               << row.src_port << ','
+               << escape_csv_field(row.dst_ip) << ','
+               << row.dst_port << ','
+               << row.packet_count << ','
+               << row.captured_bytes << ','
+               << row.original_bytes << ','
+               << escape_csv_field(row.first_timestamp) << ','
+               << escape_csv_field(row.last_timestamp) << ','
+               << row.duration_us << ','
+               << row.exported_packet_count << ','
+               << row.exported_captured_bytes << ','
+               << row.exported_original_bytes << '\n';
+    }
+
+    return stream.good();
 }
 
 }  // namespace
@@ -2272,12 +2480,9 @@ bool CaptureSession::export_smart_flows_to_pcap(
         return false;
     }
 
-    if (summary().packet_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
-        return false;
-    }
-
-    std::vector<std::uint8_t> packet_selection(static_cast<std::size_t>(summary().packet_count), 0U);
+    std::vector<std::uint8_t> packet_selection {};
     bool marked_any_packet = false;
+    bool marking_ok = true;
 
     for (const auto flow_index : request.flow_indices) {
         const auto packets = flow_packets(flow_index);
@@ -2285,8 +2490,19 @@ bool CaptureSession::export_smart_flows_to_pcap(
             return false;
         }
 
-        const auto base_prefix_packet_count = mark_smart_export_base_prefix(*packets, request, packet_selection);
-        mark_smart_export_additional_packets(*packets, request, base_prefix_packet_count, packet_selection);
+        const auto base_prefix_packet_count = visit_smart_export_base_prefix_packets(*packets, request, [&packet_selection, &marking_ok](const PacketRef& packet) {
+            if (!mark_packet_for_smart_export(packet_selection, packet)) {
+                marking_ok = false;
+            }
+        });
+        visit_smart_export_additional_packets(*packets, request, base_prefix_packet_count, [&packet_selection, &marking_ok](const PacketRef& packet) {
+            if (!mark_packet_for_smart_export(packet_selection, packet)) {
+                marking_ok = false;
+            }
+        });
+        if (!marking_ok) {
+            return false;
+        }
     }
 
     for (const auto selected : packet_selection) {
@@ -2302,6 +2518,135 @@ bool CaptureSession::export_smart_flows_to_pcap(
 
     FlowExportService service {};
     return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path());
+}
+
+bool CaptureSession::export_smart_flows_to_folder(
+    const SmartFlowExportRequest& request,
+    const std::filesystem::path& output_directory
+) const {
+    if (!has_source_capture() || request.flow_indices.empty()) {
+        return false;
+    }
+
+    if (request.base_mode == SmartFlowExportBaseMode::first_n_packets && request.first_n_packets == 0U) {
+        return false;
+    }
+
+    if (request.base_mode == SmartFlowExportBaseMode::first_m_original_bytes && request.first_m_original_bytes == 0U) {
+        return false;
+    }
+
+    if (request.base_mode != SmartFlowExportBaseMode::all_packets &&
+        request.include_every_kth_packet_after_base &&
+        request.every_kth_packet == 0U) {
+        return false;
+    }
+
+    if (summary().packet_count == 0U) {
+        return false;
+    }
+
+    if (request.flow_indices.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max() - 1U)) {
+        return false;
+    }
+
+    std::error_code filesystem_error {};
+    std::filesystem::create_directories(output_directory, filesystem_error);
+    if (filesystem_error) {
+        return false;
+    }
+
+    const auto listed_flows = list_flows();
+    std::vector<std::uint32_t> packet_owner {};
+    std::vector<PerFlowExportTarget> targets {};
+    std::vector<SmartPerFlowManifestRow> manifest_rows {};
+    targets.reserve(request.flow_indices.size());
+    manifest_rows.reserve(request.flow_indices.size());
+
+    std::uint32_t next_export_flow_id = 1U;
+    for (const auto flow_index : request.flow_indices) {
+        const auto listed_row = std::find_if(listed_flows.begin(), listed_flows.end(), [flow_index](const FlowRow& row) {
+            return row.index == flow_index;
+        });
+        if (listed_row == listed_flows.end()) {
+            return false;
+        }
+
+        const auto packets = flow_packets(flow_index);
+        if (!packets.has_value() || packets->empty()) {
+            return false;
+        }
+
+        const auto& row = *listed_row;
+        std::uint64_t captured_bytes = 0U;
+        for (const auto& packet : *packets) {
+            captured_bytes += packet.captured_length;
+        }
+
+        const auto first_timestamp = packet_timestamp_us(packets->front());
+        const auto last_timestamp = packet_timestamp_us(packets->back());
+
+        manifest_rows.push_back(SmartPerFlowManifestRow {
+            .export_flow_id = next_export_flow_id,
+            .output_path = build_smart_per_flow_output_path(row, next_export_flow_id, output_directory),
+            .family = family_text(row.family),
+            .transport = row.protocol_text.empty() ? std::string("unknown") : row.protocol_text,
+            .protocol = normalize_manifest_protocol(row),
+            .protocol_hint = normalize_manifest_protocol_hint(row),
+            .src_ip = row.address_a,
+            .src_port = row.port_a,
+            .dst_ip = row.address_b,
+            .dst_port = row.port_b,
+            .packet_count = row.packet_count,
+            .captured_bytes = captured_bytes,
+            .original_bytes = row.total_bytes,
+            .first_timestamp = format_manifest_timestamp(packets->front()),
+            .last_timestamp = format_manifest_timestamp(packets->back()),
+            .duration_us = last_timestamp >= first_timestamp ? last_timestamp - first_timestamp : 0U,
+        });
+        targets.push_back(PerFlowExportTarget {
+            .export_flow_id = next_export_flow_id,
+            .output_path = manifest_rows.back().output_path,
+        });
+
+        bool ownership_ok = true;
+        auto mark_owned_packet = [&packet_owner, &manifest = manifest_rows.back(), &ownership_ok](const PacketRef& packet) {
+            if (!ensure_packet_owner_capacity(packet_owner, packet.packet_index)) {
+                ownership_ok = false;
+                return;
+            }
+
+            auto& owner = packet_owner[static_cast<std::size_t>(packet.packet_index)];
+            if (owner == 0U) {
+                owner = manifest.export_flow_id;
+                ++manifest.exported_packet_count;
+                manifest.exported_captured_bytes += packet.captured_length;
+                manifest.exported_original_bytes += packet.original_length;
+            }
+            if (owner != manifest.export_flow_id) {
+                ownership_ok = false;
+            }
+        };
+
+        const auto base_prefix_packet_count = visit_smart_export_base_prefix_packets(*packets, request, mark_owned_packet);
+        visit_smart_export_additional_packets(*packets, request, base_prefix_packet_count, mark_owned_packet);
+        if (!ownership_ok) {
+            return false;
+        }
+
+        if (manifest_rows.back().exported_packet_count == 0U) {
+            return false;
+        }
+
+        ++next_export_flow_id;
+    }
+
+    FlowExportService service {};
+    if (!service.export_owned_packets_to_pcaps(targets, packet_owner, capture_path())) {
+        return false;
+    }
+
+    return write_smart_per_flow_manifest_csv(output_directory, manifest_rows);
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {

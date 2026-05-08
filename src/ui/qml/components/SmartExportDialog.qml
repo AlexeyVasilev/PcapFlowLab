@@ -6,31 +6,38 @@ Dialog {
     id: root
 
     signal exportRequested(
+        int outputMode,
         int flowScopeMode,
         int baseSelectionMode,
         string packetCountText,
         string originalBytesText,
+        string destinationFolderText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         string everyKText
     )
 
+    property var chooseDestinationFolderCallback: null
     modal: true
     focus: true
     title: "Smart Export"
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     standardButtons: Dialog.Ok | Dialog.Cancel
 
+    property int outputMode: singleOutputFileRadio.checked ? 0 : 1
     property int flowScopeMode: currentFlowRadio.checked ? 0 : selectedFlowsRadio.checked ? 1 : unselectedFlowsRadio.checked ? 2 : 3
     property int baseSelectionMode: allPacketsRadio.checked ? 0 : firstNPacketsRadio.checked ? 1 : 2
     readonly property bool extrasEnabled: !allPacketsRadio.checked
+    readonly property bool perFlowOutputMode: separateFilePerFlowRadio.checked
 
     onAccepted: {
         exportRequested(
+            outputMode,
             flowScopeMode,
             baseSelectionMode,
             packetCountField.text,
             originalBytesField.text,
+            destinationFolderField.text,
             includeLastPacketCheck.checked,
             includeEveryKthPacketCheck.checked,
             everyKField.text
@@ -188,6 +195,61 @@ Dialog {
                         text: root.extrasEnabled
                             ? "Packets are exported when they match the base rule or one of the enabled extras."
                             : "Additional retention is disabled when base mode is All packets."
+                        color: "#64748b"
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 12
+                    }
+                }
+            }
+
+            GroupBox {
+                Layout.fillWidth: true
+                title: "Output mode"
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 8
+
+                    RadioButton {
+                        id: singleOutputFileRadio
+                        text: "Single output file"
+                        checked: true
+                    }
+
+                    RadioButton {
+                        id: separateFilePerFlowRadio
+                        text: "Separate file per flow"
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: root.perFlowOutputMode
+                        spacing: 10
+
+                        TextField {
+                            id: destinationFolderField
+                            Layout.fillWidth: true
+                            placeholderText: "Destination folder"
+                        }
+
+                        Button {
+                            text: "Browse..."
+                            onClicked: {
+                                if (!root.chooseDestinationFolderCallback) {
+                                    return
+                                }
+                                const path = root.chooseDestinationFolderCallback()
+                                if (path && path.length > 0) {
+                                    destinationFolderField.text = path
+                                }
+                            }
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.perFlowOutputMode
+                        text: "One PCAP will be written per bidirectional flow, and flows_manifest.csv will be written into the same folder."
                         color: "#64748b"
                         wrapMode: Text.WordWrap
                         font.pixelSize: 12

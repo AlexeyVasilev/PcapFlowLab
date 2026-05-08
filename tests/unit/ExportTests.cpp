@@ -1,4 +1,6 @@
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <vector>
 
 #include "TestSupport.h"
@@ -256,6 +258,82 @@ void run_export_tests() {
         PFL_EXPECT(exported_packets[1].bytes == packet_2);
         PFL_EXPECT(exported_packets[0].original_length == 100U);
         PFL_EXPECT(exported_packets[1].original_length == 100U);
+    }
+
+    {
+        const auto flow_a_ab_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), 15001, 443, std::vector<std::uint8_t>{0xA1}, 0x18);
+        const auto flow_a_ba_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 50, 0, 2), ipv4(10, 50, 0, 1), 443, 15001, std::vector<std::uint8_t>{0xA2}, 0x18);
+        const auto flow_a_ab_2 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), 15001, 443, std::vector<std::uint8_t>{0xA3}, 0x18);
+        const auto flow_b_ab_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 26001, 53, std::vector<std::uint8_t>{0xB1});
+        const auto flow_b_ba_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 60, 0, 2), ipv4(10, 60, 0, 1), 53, 26001, std::vector<std::uint8_t>{0xB2});
+        const auto flow_b_ab_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 26001, 53, std::vector<std::uint8_t>{0xB3});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_per_flow_source.pcap",
+            make_classic_pcap({
+                {100, flow_a_ab_1},
+                {200, flow_b_ab_1},
+                {300, flow_a_ba_1},
+                {400, flow_b_ba_1},
+                {500, flow_a_ab_2},
+                {600, flow_b_ab_2},
+            })
+        );
+
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_smart_export_per_flow_output";
+        std::filesystem::remove_all(output_directory);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 2U);
+
+        SmartFlowExportRequest request {};
+        for (const auto& row : rows) {
+            request.flow_indices.push_back(row.index);
+        }
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        PFL_EXPECT(session.export_smart_flows_to_folder(request, output_directory));
+
+        const auto manifest_path = output_directory / "flows_manifest.csv";
+        PFL_EXPECT(std::filesystem::exists(manifest_path));
+        std::ifstream manifest_stream {manifest_path, std::ios::binary};
+        PFL_EXPECT(manifest_stream.is_open());
+        const std::string manifest_text {std::istreambuf_iterator<char>(manifest_stream), std::istreambuf_iterator<char>()};
+        PFL_EXPECT(manifest_text.find("flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,exported_packet_count,exported_captured_bytes,exported_original_bytes") != std::string::npos);
+
+        std::vector<std::filesystem::path> exported_pcaps {};
+        for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".pcap") {
+                exported_pcaps.push_back(entry.path());
+            }
+        }
+        PFL_EXPECT(exported_pcaps.size() == 2U);
+
+        bool found_tcp_flow = false;
+        bool found_udp_flow = false;
+        for (const auto& exported_path : exported_pcaps) {
+            const auto exported_packets = read_all_packets(exported_path);
+            if (exported_packets.size() == 3U && exported_packets[0].bytes == flow_a_ab_1) {
+                PFL_EXPECT(exported_packets[1].bytes == flow_a_ba_1);
+                PFL_EXPECT(exported_packets[2].bytes == flow_a_ab_2);
+                found_tcp_flow = true;
+            } else if (exported_packets.size() == 3U && exported_packets[0].bytes == flow_b_ab_1) {
+                PFL_EXPECT(exported_packets[1].bytes == flow_b_ba_1);
+                PFL_EXPECT(exported_packets[2].bytes == flow_b_ab_2);
+                found_udp_flow = true;
+            }
+        }
+
+        PFL_EXPECT(found_tcp_flow);
+        PFL_EXPECT(found_udp_flow);
     }
 }
 

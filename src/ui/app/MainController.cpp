@@ -39,6 +39,8 @@ constexpr int kSmartExportFlowScopeCurrentFlow = 0;
 constexpr int kSmartExportFlowScopeSelectedFlows = 1;
 constexpr int kSmartExportFlowScopeUnselectedFlows = 2;
 constexpr int kSmartExportFlowScopeAllFlows = 3;
+constexpr int kSmartExportOutputModeSingleFile = 0;
+constexpr int kSmartExportOutputModeSeparateFilePerFlow = 1;
 constexpr int kSmartExportBaseModeAllPackets = 0;
 constexpr int kSmartExportBaseModeFirstNPackets = 1;
 constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
@@ -3249,6 +3251,7 @@ bool MainController::exportUnselectedFlows(const QString& path) {
 
 bool MainController::exportSmartFlows(
     const QString& path,
+    const int outputMode,
     const int flowScopeMode,
     const int baseSelectionMode,
     const QString& packetCountText,
@@ -3263,7 +3266,17 @@ bool MainController::exportSmartFlows(
 
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
-        setStatusText(QStringLiteral("No output file selected."), true);
+        setStatusText(
+            outputMode == kSmartExportOutputModeSeparateFilePerFlow
+                ? QStringLiteral("No destination folder selected for smart export.")
+                : QStringLiteral("No output file selected."),
+            true
+        );
+        return false;
+    }
+
+    if (outputMode != kSmartExportOutputModeSingleFile && outputMode != kSmartExportOutputModeSeparateFilePerFlow) {
+        setStatusText(QStringLiteral("Invalid smart export output mode."), true);
         return false;
     }
 
@@ -3358,14 +3371,18 @@ bool MainController::exportSmartFlows(
     }
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    const bool exported = session_.export_smart_flows_to_pcap(request, filesystemPath);
+    const bool exported = outputMode == kSmartExportOutputModeSeparateFilePerFlow
+        ? session_.export_smart_flows_to_folder(request, filesystemPath)
+        : session_.export_smart_flows_to_pcap(request, filesystemPath);
     if (!exported) {
         setStatusText(QStringLiteral("Failed to smart-export flows."), true);
         return false;
     }
 
     setLastDirectoryFromPath(filesystemPath);
-    setStatusText(QStringLiteral("Smart export completed successfully."));
+    setStatusText(outputMode == kSmartExportOutputModeSeparateFilePerFlow
+        ? QStringLiteral("Smart per-flow export completed successfully.")
+        : QStringLiteral("Smart export completed successfully."));
     return true;
 }
 
@@ -3426,21 +3443,29 @@ void MainController::browseExportUnselectedFlows() {
 }
 
 bool MainController::browseSmartExportFlows(
+    const int outputMode,
     const int flowScopeMode,
     const int baseSelectionMode,
     const QString& packetCountText,
     const QString& originalBytesText,
+    const QString& destinationFolderText,
     const bool includeLastPacket,
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
-    const QString path = chooseSaveFile(false);
+    const QString path = outputMode == kSmartExportOutputModeSeparateFilePerFlow
+        ? destinationFolderText.trimmed()
+        : chooseSaveFile(false);
     if (path.isEmpty()) {
+        if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
+            setStatusText(QStringLiteral("No destination folder selected for smart export."), true);
+        }
         return false;
     }
 
     return exportSmartFlows(
         path,
+        outputMode,
         flowScopeMode,
         baseSelectionMode,
         packetCountText,
@@ -3449,6 +3474,10 @@ bool MainController::browseSmartExportFlows(
         includeEveryKthPacket,
         everyKText
     );
+}
+
+QString MainController::chooseSmartExportDestinationFolder() const {
+    return chooseDirectory(QStringLiteral("Choose Smart Export Destination Folder"));
 }
 
 void MainController::copySelectedFlowWiresharkFilter() {
@@ -4671,6 +4700,15 @@ QString MainController::chooseSaveFile(const bool forIndex) const {
 
     const QStringList files = dialog.selectedFiles();
     return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseDirectory(const QString& title) const {
+    return QFileDialog::getExistingDirectory(
+        nullptr,
+        title,
+        last_directory_path_,
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
+    );
 }
 
 QString MainController::chooseSequenceCsvSaveFile() const {
