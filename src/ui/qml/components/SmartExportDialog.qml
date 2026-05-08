@@ -12,6 +12,7 @@ Dialog {
         string packetCountText,
         string originalBytesText,
         string destinationFolderText,
+        string bufferBudgetMbText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         string everyKText
@@ -38,6 +39,7 @@ Dialog {
             packetCountField.text,
             originalBytesField.text,
             destinationFolderField.text,
+            bufferBudgetField.text,
             includeLastPacketCheck.checked,
             includeEveryKthPacketCheck.checked,
             everyKField.text
@@ -253,6 +255,24 @@ Dialog {
                         color: "#64748b"
                         wrapMode: Text.WordWrap
                         font.pixelSize: 12
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: root.perFlowOutputMode
+                        spacing: 10
+
+                        Label {
+                            text: "Buffer memory budget (MB)"
+                            color: "#0f172a"
+                        }
+
+                        TextField {
+                            id: bufferBudgetField
+                            Layout.preferredWidth: 140
+                            placeholderText: "MB"
+                            text: "128"
+                        }
                     }
                 }
             }

@@ -75,6 +75,11 @@ class MainController final : public QObject {
     Q_PROPERTY(bool analysisSequenceExportInProgress READ analysisSequenceExportInProgress NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(QString analysisSequenceExportStatusText READ analysisSequenceExportStatusText NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(bool analysisSequenceExportStatusIsError READ analysisSequenceExportStatusIsError NOTIFY analysisSequenceExportStateChanged)
+    Q_PROPERTY(bool smartExportInProgress READ smartExportInProgress NOTIFY smartExportStateChanged)
+    Q_PROPERTY(qulonglong smartExportProgressPackets READ smartExportProgressPackets NOTIFY smartExportStateChanged)
+    Q_PROPERTY(qulonglong smartExportProgressTotalPackets READ smartExportProgressTotalPackets NOTIFY smartExportStateChanged)
+    Q_PROPERTY(double smartExportProgressPercent READ smartExportProgressPercent NOTIFY smartExportStateChanged)
+    Q_PROPERTY(QString smartExportProgressText READ smartExportProgressText NOTIFY smartExportStateChanged)
     Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineFirstPacketTime READ analysisTimelineFirstPacketTime NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineLastPacketTime READ analysisTimelineLastPacketTime NOTIFY analysisStateChanged)
@@ -265,6 +270,11 @@ public:
     [[nodiscard]] bool analysisSequenceExportInProgress() const noexcept;
     [[nodiscard]] QString analysisSequenceExportStatusText() const;
     [[nodiscard]] bool analysisSequenceExportStatusIsError() const noexcept;
+    [[nodiscard]] bool smartExportInProgress() const noexcept;
+    [[nodiscard]] qulonglong smartExportProgressPackets() const noexcept;
+    [[nodiscard]] qulonglong smartExportProgressTotalPackets() const noexcept;
+    [[nodiscard]] double smartExportProgressPercent() const noexcept;
+    [[nodiscard]] QString smartExportProgressText() const;
     [[nodiscard]] QString analysisDurationText() const;
     [[nodiscard]] QString analysisTimelineFirstPacketTime() const;
     [[nodiscard]] QString analysisTimelineLastPacketTime() const;
@@ -428,6 +438,7 @@ public:
         const QString& packetCountText,
         const QString& originalBytesText,
         const QString& destinationFolderText,
+        const QString& bufferBudgetMbText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         const QString& everyKText
@@ -478,6 +489,7 @@ signals:
     void streamListStateChanged();
     void analysisStateChanged();
     void analysisSequenceExportStateChanged();
+    void smartExportStateChanged();
     void sessionApplicationStateChanged();
 
 private:
@@ -517,12 +529,16 @@ private:
         int baseSelectionMode,
         const QString& packetCountText,
         const QString& originalBytesText,
+        const QString& bufferBudgetMbText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         const QString& everyKText
     );
+    void updateSmartExportProgress(qulonglong jobId, qulonglong packetsProcessed, qulonglong totalPackets, qulonglong exportedPacketsWritten);
+    void completeSmartExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
+    void cleanupSmartExportThread();
     void cleanupAnalysisSequenceExportThread();
     void cleanupOpenThread();
     void releaseOpenContext();
@@ -532,6 +548,7 @@ private:
     void setApplyingSession(bool applying);
     void setOpenErrorText(const QString& text);
     void setAnalysisSequenceExportState(bool inProgress, const QString& statusText, bool statusIsError);
+    void setSmartExportState(bool inProgress, qulonglong packetsProcessed, qulonglong totalPackets, const QString& progressText);
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
@@ -585,12 +602,17 @@ private:
     std::size_t prepared_tcp_contribution_packet_window_count_ {0U};
     bool analysis_loading_ {false};
     bool analysis_sequence_export_in_progress_ {false};
+    bool smart_export_in_progress_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
+    qulonglong smart_export_progress_packets_ {0};
+    qulonglong smart_export_progress_total_packets_ {0};
+    QString smart_export_progress_text_ {};
     bool source_capture_unavailable_notice_shown_ {false};
     qulonglong active_analysis_request_id_ {0};
     qulonglong active_analysis_sequence_export_job_id_ {0};
+    qulonglong active_smart_export_job_id_ {0};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
@@ -598,6 +620,7 @@ private:
     qulonglong active_open_job_id_ {0};
     bool active_open_as_index_ {false};
     QThread* analysis_sequence_export_thread_ {nullptr};
+    QThread* smart_export_thread_ {nullptr};
     QThread* open_thread_ {nullptr};
     std::shared_ptr<OpenContext> active_open_context_ {};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};

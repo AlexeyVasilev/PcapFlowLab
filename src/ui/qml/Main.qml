@@ -29,7 +29,7 @@ ApplicationWindow {
     Action {
         id: openCaptureFastAction
         text: "Open Capture (Fast)"
-        enabled: !mainController.isOpening
+        enabled: !mainController.isOpening && !mainController.smartExportInProgress
         shortcut: StandardKey.Open
         onTriggered: window.browseCaptureWithMode(0)
     }
@@ -37,7 +37,7 @@ ApplicationWindow {
     Action {
         id: openCaptureDeepAction
         text: "Open Capture (Deep)"
-        enabled: !mainController.isOpening
+        enabled: !mainController.isOpening && !mainController.smartExportInProgress
         shortcut: "Ctrl+Shift+O"
         onTriggered: window.browseCaptureWithMode(1)
     }
@@ -45,7 +45,7 @@ ApplicationWindow {
     Action {
         id: openIndexAction
         text: "Open Index"
-        enabled: !mainController.isOpening
+        enabled: !mainController.isOpening && !mainController.smartExportInProgress
         onTriggered: mainController.browseIndexFile()
     }
 
@@ -81,7 +81,7 @@ ApplicationWindow {
     Action {
         id: smartExportAction
         text: "Smart Export..."
-        enabled: mainController.hasCapture && mainController.hasSourceCapture
+        enabled: mainController.hasCapture && mainController.hasSourceCapture && !mainController.smartExportInProgress
         onTriggered: smartExportDialog.open()
     }
 
@@ -280,7 +280,7 @@ ApplicationWindow {
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         chooseDestinationFolderCallback: function() { return mainController.chooseSmartExportDestinationFolder() }
-        onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, includeLastPacket, includeEveryKthPacket, everyKText) {
+        onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, bufferBudgetMbText, includeLastPacket, includeEveryKthPacket, everyKText) {
             mainController.browseSmartExportFlows(
                 outputMode,
                 flowScopeMode,
@@ -288,6 +288,7 @@ ApplicationWindow {
                 packetCountText,
                 originalBytesText,
                 destinationFolderText,
+                bufferBudgetMbText,
                 includeLastPacket,
                 includeEveryKthPacket,
                 everyKText
@@ -307,7 +308,7 @@ ApplicationWindow {
             Button {
                 id: openCaptureButton
                 text: "Open Capture..."
-                enabled: !mainController.isOpening
+                enabled: !mainController.isOpening && !mainController.smartExportInProgress
                 implicitHeight: 40
                 leftPadding: 16
                 rightPadding: 18
@@ -354,7 +355,7 @@ ApplicationWindow {
 
             ComboBox {
                 id: captureModeComboBox
-                enabled: !mainController.isOpening
+                enabled: !mainController.isOpening && !mainController.smartExportInProgress
                 model: ["Fast", "Deep"]
                 currentIndex: mainController.captureOpenMode
                 implicitHeight: openCaptureButton.implicitHeight
@@ -731,6 +732,44 @@ ApplicationWindow {
                         enabled: mainController.isOpening
                         onClicked: mainController.cancelOpen()
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.smartExportInProgress
+            color: "#f8fafc"
+            border.color: "#cbd5e1"
+            radius: 6
+            implicitHeight: smartExportProgressLayout.implicitHeight + 16
+
+            ColumnLayout {
+                id: smartExportProgressLayout
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 4
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Smart export in progress"
+                    color: "#64748b"
+                    font.pixelSize: 12
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: mainController.smartExportProgressText
+                    color: "#0f172a"
+                    wrapMode: Text.WordWrap
+                }
+
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 1
+                    value: mainController.smartExportProgressPercent
+                    indeterminate: mainController.smartExportProgressTotalPackets === 0
                 }
             }
         }

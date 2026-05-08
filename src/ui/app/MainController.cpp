@@ -1934,6 +1934,7 @@ MainController::MainController(QObject* parent)
 }
 
 MainController::~MainController() {
+    cleanupSmartExportThread();
     cleanupAnalysisSequenceExportThread();
     cleanupOpenThread();
 }
@@ -1980,11 +1981,11 @@ bool MainController::openedFromIndex() const noexcept {
 }
 
 bool MainController::canAttachSourceCapture() const noexcept {
-    return !is_opening_ && session_.has_capture() && !hasSourceCapture();
+    return !is_opening_ && !smart_export_in_progress_ && session_.has_capture() && !hasSourceCapture();
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return !is_opening_ && session_.has_capture() && hasSourceCapture() && !session_.is_partial_open();
+    return !is_opening_ && !smart_export_in_progress_ && session_.has_capture() && hasSourceCapture() && !session_.is_partial_open();
 }
 
 bool MainController::partialOpen() const noexcept {
@@ -1998,7 +1999,7 @@ QString MainController::partialOpenWarningText() const {
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return !is_opening_ && hasSourceCapture() && selected_flow_index_ >= 0;
+    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::selectedFlowCount() const noexcept {
@@ -2006,11 +2007,11 @@ qulonglong MainController::selectedFlowCount() const noexcept {
 }
 
 bool MainController::canExportSelectedFlows() const noexcept {
-    return !is_opening_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
+    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
 }
 
 bool MainController::canExportUnselectedFlows() const noexcept {
-    return !is_opening_ && hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
 }
 
 bool MainController::isOpening() const noexcept {
@@ -2165,6 +2166,34 @@ QString MainController::analysisSequenceExportStatusText() const {
 
 bool MainController::analysisSequenceExportStatusIsError() const noexcept {
     return analysis_sequence_export_status_is_error_;
+}
+
+bool MainController::smartExportInProgress() const noexcept {
+    return smart_export_in_progress_;
+}
+
+qulonglong MainController::smartExportProgressPackets() const noexcept {
+    return smart_export_progress_packets_;
+}
+
+qulonglong MainController::smartExportProgressTotalPackets() const noexcept {
+    return smart_export_progress_total_packets_;
+}
+
+double MainController::smartExportProgressPercent() const noexcept {
+    if (smart_export_progress_total_packets_ == 0U) {
+        return 0.0;
+    }
+
+    return std::clamp(
+        static_cast<double>(smart_export_progress_packets_) / static_cast<double>(smart_export_progress_total_packets_),
+        0.0,
+        1.0
+    );
+}
+
+QString MainController::smartExportProgressText() const {
+    return smart_export_progress_text_;
 }
 
 QString MainController::analysisDurationText() const {
@@ -3007,14 +3036,27 @@ bool MainController::flowSortAscending() const noexcept {
 }
 
 bool MainController::openCaptureFile(const QString& path) {
+    if (smart_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another capture."), true);
+        return false;
+    }
     return openPath(path, false);
 }
 
 bool MainController::openIndexFile(const QString& path) {
+    if (smart_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another session."), true);
+        return false;
+    }
     return openPath(path, true);
 }
 
 bool MainController::attachSourceCapture(const QString& path) {
+    if (smart_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before changing the source capture."), true);
+        return false;
+    }
+
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
         setStatusText(QStringLiteral("No source capture selected."), true);
@@ -3095,6 +3137,11 @@ void MainController::sendSelectedFlowToAnalysis() {
 }
 
 bool MainController::saveAnalysisIndex(const QString& path) {
+    if (smart_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before saving an analysis index."), true);
+        return false;
+    }
+
     const QString trimmedPath = path.trimmed();
     if (trimmedPath.isEmpty()) {
         setStatusText(QStringLiteral("No output file selected."), true);
@@ -3256,11 +3303,17 @@ bool MainController::exportSmartFlows(
     const int baseSelectionMode,
     const QString& packetCountText,
     const QString& originalBytesText,
+    const QString& bufferBudgetMbText,
     const bool includeLastPacket,
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
     if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to export flows."))) {
+        return false;
+    }
+
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("A smart export is already in progress."), true);
         return false;
     }
 
@@ -3371,18 +3424,67 @@ bool MainController::exportSmartFlows(
     }
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    const bool exported = outputMode == kSmartExportOutputModeSeparateFilePerFlow
-        ? session_.export_smart_flows_to_folder(request, filesystemPath)
-        : session_.export_smart_flows_to_pcap(request, filesystemPath);
+    setLastDirectoryFromPath(filesystemPath);
+    if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
+        const auto buffer_budget_mb = parse_positive_u64(bufferBudgetMbText);
+        if (!buffer_budget_mb.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive buffer memory budget in MB for per-flow smart export."), true);
+            return false;
+        }
+        if (*buffer_budget_mb < 1U) {
+            setStatusText(QStringLiteral("Per-flow smart export buffer memory budget must be at least 1 MB."), true);
+            return false;
+        }
+
+        const auto max_megabytes = static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max() / (1024ULL * 1024ULL));
+        if (*buffer_budget_mb > max_megabytes) {
+            setStatusText(QStringLiteral("Per-flow smart export buffer memory budget is out of range."), true);
+            return false;
+        }
+
+        ++active_smart_export_job_id_;
+        const auto job_id = active_smart_export_job_id_;
+
+        const SmartPerFlowExportOptions options {
+            .buffer_budget_bytes = static_cast<std::size_t>(*buffer_budget_mb * 1024ULL * 1024ULL),
+            .progress_callback = [this, job_id](const SmartPerFlowExportProgress& progress) {
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, job_id, progress]() {
+                        updateSmartExportProgress(
+                            job_id,
+                            static_cast<qulonglong>(progress.packets_processed),
+                            static_cast<qulonglong>(progress.total_packets_to_scan),
+                            static_cast<qulonglong>(progress.exported_packets_written)
+                        );
+                    },
+                    Qt::QueuedConnection
+                );
+            },
+        };
+
+        setSmartExportState(true, 0U, 0U, QStringLiteral("Preparing per-flow smart export..."));
+        setStatusText(QStringLiteral("Smart per-flow export started."));
+        smart_export_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath, request, options]() mutable {
+            std::string error_text {};
+            const bool exported = session_.export_smart_flows_to_folder(request, filesystemPath, options, &error_text);
+            QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, error = QString::fromStdString(error_text)]() {
+                completeSmartExport(job_id, trimmedPath, exported, error);
+            }, Qt::QueuedConnection);
+        });
+
+        QObject::connect(smart_export_thread_, &QThread::finished, smart_export_thread_, &QObject::deleteLater);
+        smart_export_thread_->start();
+        return true;
+    }
+
+    const bool exported = session_.export_smart_flows_to_pcap(request, filesystemPath);
     if (!exported) {
         setStatusText(QStringLiteral("Failed to smart-export flows."), true);
         return false;
     }
 
-    setLastDirectoryFromPath(filesystemPath);
-    setStatusText(outputMode == kSmartExportOutputModeSeparateFilePerFlow
-        ? QStringLiteral("Smart per-flow export completed successfully.")
-        : QStringLiteral("Smart export completed successfully."));
+    setStatusText(QStringLiteral("Smart export completed successfully."));
     return true;
 }
 
@@ -3449,6 +3551,7 @@ bool MainController::browseSmartExportFlows(
     const QString& packetCountText,
     const QString& originalBytesText,
     const QString& destinationFolderText,
+    const QString& bufferBudgetMbText,
     const bool includeLastPacket,
     const bool includeEveryKthPacket,
     const QString& everyKText
@@ -3470,6 +3573,7 @@ bool MainController::browseSmartExportFlows(
         baseSelectionMode,
         packetCountText,
         originalBytesText,
+        bufferBudgetMbText,
         includeLastPacket,
         includeEveryKthPacket,
         everyKText
@@ -4410,6 +4514,52 @@ void MainController::completeAnalysisSequenceExport(
     setAnalysisSequenceExportState(false, QStringLiteral("Flow sequence CSV exported: %1").arg(outputPath), false);
 }
 
+void MainController::updateSmartExportProgress(
+    const qulonglong jobId,
+    const qulonglong packetsProcessed,
+    const qulonglong totalPackets,
+    const qulonglong exportedPacketsWritten
+) {
+    if (jobId != active_smart_export_job_id_) {
+        return;
+    }
+
+    const auto total_text = totalPackets > 0U ? QString::number(totalPackets) : QStringLiteral("...");
+    setSmartExportState(
+        true,
+        packetsProcessed,
+        totalPackets,
+        QStringLiteral("Scanned %1 / %2 packets, wrote %3 packets.")
+            .arg(QString::number(packetsProcessed), total_text, QString::number(exportedPacketsWritten))
+    );
+}
+
+void MainController::completeSmartExport(
+    const qulonglong jobId,
+    const QString& outputPath,
+    const bool exported,
+    const QString& errorText
+) {
+    if (jobId != active_smart_export_job_id_) {
+        return;
+    }
+
+    active_smart_export_job_id_ = 0;
+    cleanupSmartExportThread();
+
+    if (!exported) {
+        const auto message = errorText.isEmpty()
+            ? QStringLiteral("Failed to smart-export flows.")
+            : errorText;
+        setSmartExportState(false, 0U, 0U, {});
+        setStatusText(message, true);
+        return;
+    }
+
+    setSmartExportState(false, 0U, 0U, {});
+    setStatusText(QStringLiteral("Smart per-flow export completed successfully: %1").arg(outputPath));
+}
+
 void MainController::cleanupAnalysisSequenceExportThread() {
     if (analysis_sequence_export_thread_ == nullptr) {
         return;
@@ -4420,6 +4570,18 @@ void MainController::cleanupAnalysisSequenceExportThread() {
     }
 
     analysis_sequence_export_thread_ = nullptr;
+}
+
+void MainController::cleanupSmartExportThread() {
+    if (smart_export_thread_ == nullptr) {
+        return;
+    }
+
+    if (smart_export_thread_->isRunning()) {
+        smart_export_thread_->wait();
+    }
+
+    smart_export_thread_ = nullptr;
 }
 
 void MainController::cleanupOpenThread() {
@@ -4653,6 +4815,31 @@ void MainController::setAnalysisSequenceExportState(const bool inProgress, const
     analysis_sequence_export_status_is_error_ = statusIsError;
     emit analysisSequenceExportStateChanged();
     if (progressChanged) {
+        emit actionAvailabilityChanged();
+    }
+}
+
+void MainController::setSmartExportState(
+    const bool inProgress,
+    const qulonglong packetsProcessed,
+    const qulonglong totalPackets,
+    const QString& progressText
+) {
+    const bool progress_changed = smart_export_in_progress_ != inProgress ||
+        smart_export_progress_packets_ != packetsProcessed ||
+        smart_export_progress_total_packets_ != totalPackets ||
+        smart_export_progress_text_ != progressText;
+    if (!progress_changed) {
+        return;
+    }
+
+    const bool availability_changed = smart_export_in_progress_ != inProgress;
+    smart_export_in_progress_ = inProgress;
+    smart_export_progress_packets_ = packetsProcessed;
+    smart_export_progress_total_packets_ = totalPackets;
+    smart_export_progress_text_ = progressText;
+    emit smartExportStateChanged();
+    if (availability_changed) {
         emit actionAvailabilityChanged();
     }
 }

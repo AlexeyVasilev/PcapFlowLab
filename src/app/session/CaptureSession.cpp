@@ -2385,10 +2385,14 @@ std::filesystem::path build_smart_per_flow_output_path(const FlowRow& row, const
 
 bool write_smart_per_flow_manifest_csv(
     const std::filesystem::path& output_directory,
-    std::span<const SmartPerFlowManifestRow> rows
+    std::span<const SmartPerFlowManifestRow> rows,
+    std::string* out_error_text
 ) {
     std::ofstream stream {output_directory / "flows_manifest.csv", std::ios::binary | std::ios::trunc};
     if (!stream.is_open()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to create flows manifest CSV.";
+        }
         return false;
     }
 
@@ -2415,7 +2419,14 @@ bool write_smart_per_flow_manifest_csv(
                << row.exported_original_bytes << '\n';
     }
 
-    return stream.good();
+    if (!stream.good()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    return true;
 }
 
 }  // namespace
@@ -2524,35 +2535,73 @@ bool CaptureSession::export_smart_flows_to_folder(
     const SmartFlowExportRequest& request,
     const std::filesystem::path& output_directory
 ) const {
+    std::string error_text {};
+    return export_smart_flows_to_folder(request, output_directory, SmartPerFlowExportOptions {}, &error_text);
+}
+
+bool CaptureSession::export_smart_flows_to_folder(
+    const SmartFlowExportRequest& request,
+    const std::filesystem::path& output_directory,
+    const SmartPerFlowExportOptions& options,
+    std::string* out_error_text
+) const {
     if (!has_source_capture() || request.flow_indices.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No source capture or no flows were selected for per-flow smart export.";
+        }
         return false;
     }
 
     if (request.base_mode == SmartFlowExportBaseMode::first_n_packets && request.first_n_packets == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Per-flow smart export requires a positive packet count.";
+        }
         return false;
     }
 
     if (request.base_mode == SmartFlowExportBaseMode::first_m_original_bytes && request.first_m_original_bytes == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Per-flow smart export requires a positive original-byte limit.";
+        }
         return false;
     }
 
     if (request.base_mode != SmartFlowExportBaseMode::all_packets &&
         request.include_every_kth_packet_after_base &&
         request.every_kth_packet == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Per-flow smart export requires a positive K value.";
+        }
         return false;
     }
 
     if (summary().packet_count == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets are available for per-flow smart export.";
+        }
         return false;
     }
 
     if (request.flow_indices.size() > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max() - 1U)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Too many flows were selected for per-flow smart export.";
+        }
+        return false;
+    }
+
+    if (options.buffer_budget_bytes == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Per-flow smart export buffer budget must be at least 1 byte.";
+        }
         return false;
     }
 
     std::error_code filesystem_error {};
     std::filesystem::create_directories(output_directory, filesystem_error);
     if (filesystem_error) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to create destination folder for per-flow smart export.";
+        }
         return false;
     }
 
@@ -2569,11 +2618,17 @@ bool CaptureSession::export_smart_flows_to_folder(
             return row.index == flow_index;
         });
         if (listed_row == listed_flows.end()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to resolve a selected flow for per-flow smart export.";
+            }
             return false;
         }
 
         const auto packets = flow_packets(flow_index);
         if (!packets.has_value() || packets->empty()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to load packets for a selected flow during per-flow smart export.";
+            }
             return false;
         }
 
@@ -2631,10 +2686,16 @@ bool CaptureSession::export_smart_flows_to_folder(
         const auto base_prefix_packet_count = visit_smart_export_base_prefix_packets(*packets, request, mark_owned_packet);
         visit_smart_export_additional_packets(*packets, request, base_prefix_packet_count, mark_owned_packet);
         if (!ownership_ok) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Per-flow smart export was interrupted by an internal ownership/state error.";
+            }
             return false;
         }
 
         if (manifest_rows.back().exported_packet_count == 0U) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Per-flow smart export selected zero packets for one of the chosen flows.";
+            }
             return false;
         }
 
@@ -2642,11 +2703,24 @@ bool CaptureSession::export_smart_flows_to_folder(
     }
 
     FlowExportService service {};
-    if (!service.export_owned_packets_to_pcaps(targets, packet_owner, capture_path())) {
+    const PerFlowExportOptions export_options {
+        .buffer_budget_bytes = options.buffer_budget_bytes,
+        .max_open_file_handles = 64U,
+        .progress_callback = [callback = options.progress_callback](const PerFlowExportProgress& progress) {
+            if (callback) {
+                callback(SmartPerFlowExportProgress {
+                    .packets_processed = progress.packets_processed,
+                    .total_packets_to_scan = progress.total_packets_to_scan,
+                    .exported_packets_written = progress.exported_packets_written,
+                });
+            }
+        },
+    };
+    if (!service.export_owned_packets_to_pcaps(targets, packet_owner, capture_path(), export_options, out_error_text)) {
         return false;
     }
 
-    return write_smart_per_flow_manifest_csv(output_directory, manifest_rows);
+    return write_smart_per_flow_manifest_csv(output_directory, manifest_rows, out_error_text);
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {

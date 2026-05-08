@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -35,6 +36,19 @@ struct SmartFlowExportRequest {
     bool include_last_packet {false};
     bool include_every_kth_packet_after_base {false};
     std::uint64_t every_kth_packet {0};
+};
+
+struct SmartPerFlowExportProgress {
+    std::uint64_t packets_processed {0};
+    std::uint64_t total_packets_to_scan {0};
+    std::uint64_t exported_packets_written {0};
+};
+
+using SmartPerFlowExportProgressCallback = std::function<void(const SmartPerFlowExportProgress&)>;
+
+struct SmartPerFlowExportOptions {
+    std::size_t buffer_budget_bytes {128U * 1024U * 1024U};
+    SmartPerFlowExportProgressCallback progress_callback {};
 };
 
 struct SelectedFlowPacketCacheInfo {
@@ -120,6 +134,12 @@ public:
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_folder(const SmartFlowExportRequest& request, const std::filesystem::path& output_directory) const;
+    bool export_smart_flows_to_folder(
+        const SmartFlowExportRequest& request,
+        const std::filesystem::path& output_directory,
+        const SmartPerFlowExportOptions& options,
+        std::string* out_error_text
+    ) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
