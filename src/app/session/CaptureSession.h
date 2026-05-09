@@ -55,6 +55,7 @@ using SmartPerFlowExportProgressCallback = std::function<void(const SmartPerFlow
 struct SmartPerFlowExportOptions {
     std::size_t buffer_budget_bytes {128U * 1024U * 1024U};
     SmartPerFlowExportProgressCallback progress_callback {};
+    std::function<bool()> cancel_requested {};
 };
 
 struct SelectedFlowPacketCacheInfo {

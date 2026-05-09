@@ -771,6 +771,12 @@ ApplicationWindow {
                     value: mainController.smartExportProgressPercent
                     indeterminate: mainController.smartExportProgressTotalPackets === 0
                 }
+
+                Button {
+                    text: mainController.smartExportCancelRequested ? "Cancelling..." : "Cancel"
+                    enabled: mainController.smartExportInProgress && !mainController.smartExportCancelRequested
+                    onClicked: mainController.cancelSmartExport()
+                }
             }
         }
 

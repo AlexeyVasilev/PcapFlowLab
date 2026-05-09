@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -76,6 +77,7 @@ class MainController final : public QObject {
     Q_PROPERTY(QString analysisSequenceExportStatusText READ analysisSequenceExportStatusText NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(bool analysisSequenceExportStatusIsError READ analysisSequenceExportStatusIsError NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(bool smartExportInProgress READ smartExportInProgress NOTIFY smartExportStateChanged)
+    Q_PROPERTY(bool smartExportCancelRequested READ smartExportCancelRequested NOTIFY smartExportStateChanged)
     Q_PROPERTY(qulonglong smartExportProgressPackets READ smartExportProgressPackets NOTIFY smartExportStateChanged)
     Q_PROPERTY(qulonglong smartExportProgressTotalPackets READ smartExportProgressTotalPackets NOTIFY smartExportStateChanged)
     Q_PROPERTY(double smartExportProgressPercent READ smartExportProgressPercent NOTIFY smartExportStateChanged)
@@ -271,6 +273,7 @@ public:
     [[nodiscard]] QString analysisSequenceExportStatusText() const;
     [[nodiscard]] bool analysisSequenceExportStatusIsError() const noexcept;
     [[nodiscard]] bool smartExportInProgress() const noexcept;
+    [[nodiscard]] bool smartExportCancelRequested() const noexcept;
     [[nodiscard]] qulonglong smartExportProgressPackets() const noexcept;
     [[nodiscard]] qulonglong smartExportProgressTotalPackets() const noexcept;
     [[nodiscard]] double smartExportProgressPercent() const noexcept;
@@ -443,6 +446,7 @@ public:
         bool includeEveryKthPacket,
         const QString& everyKText
     );
+    Q_INVOKABLE void cancelSmartExport();
     Q_INVOKABLE QString chooseSmartExportDestinationFolder() const;
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
@@ -541,7 +545,7 @@ private:
         qulonglong totalPackets,
         qulonglong exportedPacketsWritten
     );
-    void completeSmartExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
+    void completeSmartExport(qulonglong jobId, const QString& outputPath, bool exported, bool cancelled, const QString& errorText);
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
     void cleanupSmartExportThread();
@@ -609,6 +613,7 @@ private:
     bool analysis_loading_ {false};
     bool analysis_sequence_export_in_progress_ {false};
     bool smart_export_in_progress_ {false};
+    bool smart_export_cancel_requested_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
@@ -628,6 +633,7 @@ private:
     QThread* analysis_sequence_export_thread_ {nullptr};
     QThread* smart_export_thread_ {nullptr};
     QThread* open_thread_ {nullptr};
+    std::shared_ptr<std::atomic_bool> smart_export_cancel_token_ {};
     std::shared_ptr<OpenContext> active_open_context_ {};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };

@@ -2240,20 +2240,22 @@ void visit_smart_export_additional_packets(
 }
 
 template <typename VisitPacketFn>
-void visit_smart_export_flow_packets(
+bool visit_smart_export_flow_packets(
     const std::vector<PacketRef>& flow_packets,
     const SmartFlowExportRequest& request,
     VisitPacketFn&& visit_packet
 ) {
     if (flow_packets.empty()) {
-        return;
+        return true;
     }
 
     if (request.base_mode == SmartFlowExportBaseMode::all_packets) {
         for (const auto& packet : flow_packets) {
-            visit_packet(packet, true);
+            if (!visit_packet(packet, true)) {
+                return false;
+            }
         }
-        return;
+        return true;
     }
 
     const auto include_every_kth = request.include_every_kth_packet_after_base && request.every_kth_packet > 0U;
@@ -2273,9 +2275,11 @@ void visit_smart_export_flow_packets(
                 const auto after_base_index = index - base_prefix_packet_count + 1U;
                 selected = (after_base_index % every_kth_step) == 0U;
             }
-            visit_packet(flow_packets[index], selected);
+            if (!visit_packet(flow_packets[index], selected)) {
+                return false;
+            }
         }
-        return;
+        return true;
     }
 
     std::uint64_t accumulated_original_bytes = 0U;
@@ -2298,8 +2302,11 @@ void visit_smart_export_flow_packets(
             const auto after_base_index = index - base_prefix_packet_count + 1U;
             selected = (after_base_index % every_kth_step) == 0U;
         }
-        visit_packet(flow_packets[index], selected);
+        if (!visit_packet(flow_packets[index], selected)) {
+            return false;
+        }
     }
+    return true;
 }
 
 struct SmartPerFlowManifestRow {
@@ -2723,6 +2730,7 @@ bool CaptureSession::export_smart_flows_to_folder(
 
     const auto total_selected_flows = static_cast<std::uint64_t>(request.flow_indices.size());
     std::uint64_t processed_selected_flows = 0U;
+    constexpr std::size_t kPreparationCancellationCheckPacketInterval = 4096U;
     if (options.progress_callback) {
         options.progress_callback(SmartPerFlowExportProgress {
             .phase = SmartPerFlowExportPhase::preparing,
@@ -2734,6 +2742,13 @@ bool CaptureSession::export_smart_flows_to_folder(
 
     std::uint32_t next_export_flow_id = 1U;
     for (const auto flow_index : request.flow_indices) {
+        if (options.cancel_requested && options.cancel_requested()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Smart export cancelled by user.";
+            }
+            return false;
+        }
+
         const auto listed_row = std::find_if(listed_flows.begin(), listed_flows.end(), [flow_index](const FlowRow& row) {
             return row.index == flow_index;
         });
@@ -2785,6 +2800,8 @@ bool CaptureSession::export_smart_flows_to_folder(
         });
 
         bool ownership_ok = true;
+        bool cancelled = false;
+        std::size_t packets_since_cancel_check = 0U;
         auto mark_owned_packet = [&packet_owner, &manifest = manifest_rows.back(), &ownership_ok](const PacketRef& packet) {
             if (!ensure_packet_owner_capacity(packet_owner, packet.packet_index)) {
                 ownership_ok = false;
@@ -2803,11 +2820,30 @@ bool CaptureSession::export_smart_flows_to_folder(
             }
         };
 
-        visit_smart_export_flow_packets(*packets, request, [&](const PacketRef& packet, const bool selected) {
+        if (!visit_smart_export_flow_packets(*packets, request, [&](const PacketRef& packet, const bool selected) {
             if (selected) {
                 mark_owned_packet(packet);
             }
-        });
+            if (!ownership_ok) {
+                return false;
+            }
+
+            ++packets_since_cancel_check;
+            if (options.cancel_requested &&
+                packets_since_cancel_check >= kPreparationCancellationCheckPacketInterval &&
+                options.cancel_requested()) {
+                cancelled = true;
+                return false;
+            }
+            return true;
+        })) {
+            if (cancelled) {
+                if (out_error_text != nullptr) {
+                    *out_error_text = "Smart export cancelled by user.";
+                }
+                return false;
+            }
+        }
         if (!ownership_ok) {
             if (out_error_text != nullptr) {
                 *out_error_text = "Per-flow smart export was interrupted by an internal ownership/state error.";
@@ -2835,6 +2871,13 @@ bool CaptureSession::export_smart_flows_to_folder(
         ++next_export_flow_id;
     }
 
+    if (options.cancel_requested && options.cancel_requested()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Smart export cancelled by user.";
+        }
+        return false;
+    }
+
     FlowExportService service {};
     const PerFlowExportOptions export_options {
         .buffer_budget_bytes = options.buffer_budget_bytes,
@@ -2849,8 +2892,16 @@ bool CaptureSession::export_smart_flows_to_folder(
                 });
             }
         },
+        .cancel_requested = options.cancel_requested,
     };
     if (!service.export_owned_packets_to_pcaps(targets, packet_owner, capture_path(), export_options, out_error_text)) {
+        return false;
+    }
+
+    if (options.cancel_requested && options.cancel_requested()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Smart export cancelled by user.";
+        }
         return false;
     }
 

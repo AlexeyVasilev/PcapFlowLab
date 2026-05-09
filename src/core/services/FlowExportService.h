@@ -33,6 +33,7 @@ struct PerFlowExportOptions {
     std::size_t buffer_budget_bytes {128U * 1024U * 1024U};
     std::size_t max_open_file_handles {64U};
     PerFlowExportProgressCallback progress_callback {};
+    std::function<bool()> cancel_requested {};
 };
 
 class FlowExportService {

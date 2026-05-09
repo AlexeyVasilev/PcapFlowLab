@@ -25,6 +25,7 @@ constexpr std::uint16_t kPcapVersionMajor = 2U;
 constexpr std::uint16_t kPcapVersionMinor = 4U;
 constexpr std::uint32_t kPcapSnapLength = 65535U;
 constexpr std::size_t kProgressReportPacketInterval = 1000U;
+constexpr std::size_t kCancellationCheckPacketInterval = 1024U;
 constexpr std::size_t kPerFlowBufferSlotSizeBytes = 32U * 1024U;
 
 void set_error_text(std::string* out_error_text, std::string message) {
@@ -524,8 +525,21 @@ bool export_owned_packets_with_reader(
         });
     }
 
+    auto cancel_export = [&](std::string* error_text) {
+        if (!exporter.flush_all(error_text)) {
+            return false;
+        }
+        set_error_text(error_text, "Smart export cancelled by user.");
+        return false;
+    };
+
     while (const auto raw_packet = reader.read_next()) {
         const auto processed_packets = raw_packet->packet_index + 1U;
+        if (options.cancel_requested &&
+            ((processed_packets % kCancellationCheckPacketInterval) == 0U) &&
+            options.cancel_requested()) {
+            return cancel_export(out_error_text);
+        }
         if (raw_packet->packet_index >= packet_owner.size()) {
             break;
         }
@@ -563,6 +577,10 @@ bool export_owned_packets_with_reader(
                 .exported_packets_written = exporter.exported_packets_written(),
             });
         }
+    }
+
+    if (options.cancel_requested && options.cancel_requested()) {
+        return cancel_export(out_error_text);
     }
 
     if (reader.has_error()) {

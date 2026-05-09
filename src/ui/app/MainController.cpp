@@ -2172,6 +2172,10 @@ bool MainController::smartExportInProgress() const noexcept {
     return smart_export_in_progress_;
 }
 
+bool MainController::smartExportCancelRequested() const noexcept {
+    return smart_export_cancel_requested_;
+}
+
 qulonglong MainController::smartExportProgressPackets() const noexcept {
     return smart_export_progress_packets_;
 }
@@ -3444,6 +3448,8 @@ bool MainController::exportSmartFlows(
 
         ++active_smart_export_job_id_;
         const auto job_id = active_smart_export_job_id_;
+        smart_export_cancel_token_ = std::make_shared<std::atomic_bool>(false);
+        smart_export_cancel_requested_ = false;
 
         const SmartPerFlowExportOptions options {
             .buffer_budget_bytes = static_cast<std::size_t>(*buffer_budget_mb * 1024ULL * 1024ULL),
@@ -3462,6 +3468,9 @@ bool MainController::exportSmartFlows(
                     Qt::QueuedConnection
                 );
             },
+            .cancel_requested = [token = smart_export_cancel_token_]() {
+                return token != nullptr && token->load(std::memory_order_relaxed);
+            },
         };
 
         setSmartExportState(
@@ -3474,8 +3483,9 @@ bool MainController::exportSmartFlows(
         smart_export_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath, request, options]() mutable {
             std::string error_text {};
             const bool exported = session_.export_smart_flows_to_folder(request, filesystemPath, options, &error_text);
-            QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, error = QString::fromStdString(error_text)]() {
-                completeSmartExport(job_id, trimmedPath, exported, error);
+            const bool cancelled = error_text == "Smart export cancelled by user.";
+            QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, cancelled, error = QString::fromStdString(error_text)]() {
+                completeSmartExport(job_id, trimmedPath, exported, cancelled, error);
             }, Qt::QueuedConnection);
         });
 
@@ -4550,7 +4560,7 @@ void MainController::updateSmartExportProgress(
         true,
         packetsProcessed,
         totalPackets,
-        progress_text
+        smart_export_cancel_requested_ ? progress_text + QStringLiteral(" Cancelling...") : progress_text
     );
 }
 
@@ -4558,6 +4568,7 @@ void MainController::completeSmartExport(
     const qulonglong jobId,
     const QString& outputPath,
     const bool exported,
+    const bool cancelled,
     const QString& errorText
 ) {
     if (jobId != active_smart_export_job_id_) {
@@ -4565,19 +4576,47 @@ void MainController::completeSmartExport(
     }
 
     active_smart_export_job_id_ = 0;
+    smart_export_cancel_token_.reset();
+    const bool had_cancel_request = smart_export_cancel_requested_;
+    smart_export_cancel_requested_ = false;
     cleanupSmartExportThread();
+    setSmartExportState(false, 0U, 0U, {});
+
+    if (cancelled || had_cancel_request) {
+        setStatusText(QStringLiteral("Smart export cancelled."));
+        return;
+    }
 
     if (!exported) {
         const auto message = errorText.isEmpty()
             ? QStringLiteral("Failed to smart-export flows.")
             : errorText;
-        setSmartExportState(false, 0U, 0U, {});
         setStatusText(message, true);
         return;
     }
 
-    setSmartExportState(false, 0U, 0U, {});
     setStatusText(QStringLiteral("Smart per-flow export completed successfully: %1").arg(outputPath));
+}
+
+void MainController::cancelSmartExport() {
+    if (!smart_export_in_progress_ || smart_export_cancel_requested_) {
+        return;
+    }
+
+    smart_export_cancel_requested_ = true;
+    if (smart_export_cancel_token_ != nullptr) {
+        smart_export_cancel_token_->store(true, std::memory_order_relaxed);
+    }
+    const auto cancelling_text = smart_export_progress_text_.isEmpty()
+        ? QStringLiteral("Cancelling smart export...")
+        : smart_export_progress_text_ + QStringLiteral(" Cancelling...");
+    setSmartExportState(
+        true,
+        smart_export_progress_packets_,
+        smart_export_progress_total_packets_,
+        cancelling_text
+    );
+    setStatusText(QStringLiteral("Cancelling smart export..."));
 }
 
 void MainController::cleanupAnalysisSequenceExportThread() {
