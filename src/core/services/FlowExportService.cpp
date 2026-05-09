@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <limits>
+#include <optional>
 #include <vector>
 
 #include "core/index/CaptureIndex.h"
@@ -23,6 +25,7 @@ constexpr std::uint16_t kPcapVersionMajor = 2U;
 constexpr std::uint16_t kPcapVersionMinor = 4U;
 constexpr std::uint32_t kPcapSnapLength = 65535U;
 constexpr std::size_t kProgressReportPacketInterval = 1000U;
+constexpr std::size_t kPerFlowBufferSlotSizeBytes = 32U * 1024U;
 
 void set_error_text(std::string* out_error_text, std::string message) {
     if (out_error_text != nullptr) {
@@ -151,6 +154,7 @@ class BufferedPerFlowPcapExporter {
 public:
     BufferedPerFlowPcapExporter(std::span<const PerFlowExportTarget> targets, const PerFlowExportOptions& options)
         : buffer_budget_bytes_(std::max<std::size_t>(1U, options.buffer_budget_bytes)),
+          buffer_slot_count_(std::max<std::size_t>(1U, buffer_budget_bytes_ / kPerFlowBufferSlotSizeBytes)),
           max_open_file_handles_(std::max<std::size_t>(1U, options.max_open_file_handles)) {
         states_.reserve(targets.size());
         for (const auto& target : targets) {
@@ -159,6 +163,8 @@ public:
                 .output_path = target.output_path,
             });
         }
+
+        slots_.resize(buffer_slot_count_);
     }
 
     ~BufferedPerFlowPcapExporter() {
@@ -186,22 +192,30 @@ public:
         serialize_pcap_packet_record(packet, packet_record_scratch_);
         const auto record_size = packet_record_scratch_.size();
 
-        if (record_size > buffer_budget_bytes_) {
-            if (!flush_state_buffer(state, out_error_text)) {
+        if (record_size > kPerFlowBufferSlotSizeBytes) {
+            if (!flush_flow_slot(target_index, out_error_text)) {
                 return false;
             }
+            touch_flow_slot(target_index);
             if (!append_bytes_to_file(state, packet_record_scratch_, out_error_text)) {
                 return false;
             }
         } else {
-            if (!ensure_global_buffer_budget(record_size, owner, out_error_text)) {
+            const auto slot_index = acquire_slot_for_flow(target_index, out_error_text);
+            if (!slot_index.has_value()) {
                 return false;
             }
 
-            state.buffer.insert(state.buffer.end(), packet_record_scratch_.begin(), packet_record_scratch_.end());
-            state.buffered_bytes = state.buffer.size();
-            total_buffered_bytes_ += record_size;
-            state.last_buffer_touch = ++buffer_touch_generation_;
+            auto& slot = slots_[*slot_index];
+            if (slot.used_bytes + record_size > slot.bytes.size()) {
+                if (!flush_slot(*slot_index, out_error_text)) {
+                    return false;
+                }
+            }
+
+            std::memcpy(slot.bytes.data() + slot.used_bytes, packet_record_scratch_.data(), record_size);
+            slot.used_bytes += record_size;
+            slot.last_touch = ++slot_touch_generation_;
         }
 
         ++state.exported_packet_count;
@@ -212,8 +226,8 @@ public:
     }
 
     bool flush_all(std::string* out_error_text) {
-        for (auto& state : states_) {
-            if (!flush_state_buffer(state, out_error_text)) {
+        for (std::size_t slot_index = 0; slot_index < slots_.size(); ++slot_index) {
+            if (!flush_slot(slot_index, out_error_text)) {
                 return false;
             }
         }
@@ -227,51 +241,65 @@ public:
     }
 
 private:
+    static constexpr std::size_t kInvalidSlotIndex = std::numeric_limits<std::size_t>::max();
+
     struct FlowState {
         std::uint32_t export_flow_id {0};
         std::filesystem::path output_path {};
         bool file_initialized {false};
         bool link_type_initialized {false};
         std::uint32_t link_type {kLinkTypeEthernet};
-        std::vector<std::uint8_t> buffer {};
-        std::size_t buffered_bytes {0};
+        std::size_t slot_index {kInvalidSlotIndex};
         std::uint64_t exported_packet_count {0};
         std::uint64_t exported_captured_bytes {0};
         std::uint64_t exported_original_bytes {0};
-        std::uint64_t last_buffer_touch {0};
         std::uint64_t last_handle_touch {0};
         bool handle_open {false};
         std::ofstream handle {};
     };
 
-    [[nodiscard]] FlowState* find_lru_buffer_victim(const std::uint32_t preferred_flow_id) {
-        FlowState* fallback = nullptr;
-        for (auto& state : states_) {
-            if (state.buffer.empty()) {
+    struct BufferSlot {
+        std::array<std::uint8_t, kPerFlowBufferSlotSizeBytes> bytes {};
+        std::size_t owner_flow_index {kInvalidSlotIndex};
+        std::size_t used_bytes {0};
+        std::uint64_t last_touch {0};
+    };
+
+    [[nodiscard]] bool flow_has_slot(const std::size_t flow_index) const noexcept {
+        return flow_index < states_.size() && states_[flow_index].slot_index != kInvalidSlotIndex;
+    }
+
+    void touch_flow_slot(const std::size_t flow_index) {
+        if (!flow_has_slot(flow_index)) {
+            return;
+        }
+
+        auto& slot = slots_[states_[flow_index].slot_index];
+        slot.last_touch = ++slot_touch_generation_;
+    }
+
+    [[nodiscard]] std::optional<std::size_t> find_free_slot_index() const noexcept {
+        for (std::size_t index = 0; index < slots_.size(); ++index) {
+            if (slots_[index].owner_flow_index == kInvalidSlotIndex) {
+                return index;
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::size_t> find_lru_slot_index() const noexcept {
+        std::optional<std::size_t> oldest_index {};
+        for (std::size_t index = 0; index < slots_.size(); ++index) {
+            const auto& slot = slots_[index];
+            if (slot.owner_flow_index == kInvalidSlotIndex) {
                 continue;
             }
 
-            if (state.export_flow_id != preferred_flow_id &&
-                (fallback == nullptr || state.last_buffer_touch < fallback->last_buffer_touch)) {
-                fallback = &state;
+            if (!oldest_index.has_value() || slot.last_touch < slots_[*oldest_index].last_touch) {
+                oldest_index = index;
             }
         }
-        if (fallback != nullptr) {
-            return fallback;
-        }
-
-        FlowState* oldest = nullptr;
-        for (auto& state : states_) {
-            if (state.buffer.empty()) {
-                continue;
-            }
-
-            if (oldest == nullptr || state.last_buffer_touch < oldest->last_buffer_touch) {
-                oldest = &state;
-            }
-        }
-
-        return oldest;
+        return oldest_index;
     }
 
     [[nodiscard]] FlowState* find_lru_open_handle() {
@@ -288,36 +316,78 @@ private:
         return oldest;
     }
 
-    void release_state_buffer_memory(FlowState& state) {
-        if (state.buffer.empty()) {
-            state.buffered_bytes = 0U;
-            return;
+    void detach_slot_from_owner(const std::size_t slot_index) {
+        auto& slot = slots_[slot_index];
+        if (slot.owner_flow_index != kInvalidSlotIndex && slot.owner_flow_index < states_.size()) {
+            states_[slot.owner_flow_index].slot_index = kInvalidSlotIndex;
         }
-
-        total_buffered_bytes_ -= state.buffer.size();
-        std::vector<std::uint8_t> released {};
-        state.buffer.swap(released);
-        state.buffered_bytes = 0U;
+        slot.owner_flow_index = kInvalidSlotIndex;
+        slot.used_bytes = 0U;
     }
 
-    bool ensure_global_buffer_budget(
-        const std::size_t additional_bytes,
-        const std::uint32_t preferred_flow_id,
-        std::string* out_error_text
-    ) {
-        while (total_buffered_bytes_ + additional_bytes > buffer_budget_bytes_) {
-            auto* victim = find_lru_buffer_victim(preferred_flow_id);
-            if (victim == nullptr) {
-                set_error_text(out_error_text, "Smart export buffer budget could not be satisfied.");
-                return false;
-            }
-
-            if (!flush_state_buffer(*victim, out_error_text)) {
-                return false;
-            }
+    bool flush_slot(const std::size_t slot_index, std::string* out_error_text) {
+        auto& slot = slots_[slot_index];
+        if (slot.used_bytes == 0U) {
+            return true;
+        }
+        if (slot.owner_flow_index == kInvalidSlotIndex || slot.owner_flow_index >= states_.size()) {
+            set_error_text(out_error_text, "Internal smart export error: buffer slot owner is invalid.");
+            return false;
         }
 
+        auto& state = states_[slot.owner_flow_index];
+        if (!append_bytes_to_file(state, std::span<const std::uint8_t>(slot.bytes.data(), slot.used_bytes), out_error_text)) {
+            return false;
+        }
+
+        slot.used_bytes = 0U;
         return true;
+    }
+
+    bool flush_flow_slot(const std::size_t flow_index, std::string* out_error_text) {
+        if (!flow_has_slot(flow_index)) {
+            return true;
+        }
+
+        return flush_slot(states_[flow_index].slot_index, out_error_text);
+    }
+
+    [[nodiscard]] std::optional<std::size_t> acquire_slot_for_flow(
+        const std::size_t flow_index,
+        std::string* out_error_text
+    ) {
+        if (flow_has_slot(flow_index)) {
+            auto& slot = slots_[states_[flow_index].slot_index];
+            slot.last_touch = ++slot_touch_generation_;
+            return states_[flow_index].slot_index;
+        }
+
+        if (const auto free_slot = find_free_slot_index(); free_slot.has_value()) {
+            auto& slot = slots_[*free_slot];
+            slot.owner_flow_index = flow_index;
+            slot.used_bytes = 0U;
+            slot.last_touch = ++slot_touch_generation_;
+            states_[flow_index].slot_index = *free_slot;
+            return *free_slot;
+        }
+
+        const auto victim_slot = find_lru_slot_index();
+        if (!victim_slot.has_value()) {
+            set_error_text(out_error_text, "Internal smart export error: no resident buffer slot is available.");
+            return std::nullopt;
+        }
+
+        if (!flush_slot(*victim_slot, out_error_text)) {
+            return std::nullopt;
+        }
+
+        detach_slot_from_owner(*victim_slot);
+        auto& slot = slots_[*victim_slot];
+        slot.owner_flow_index = flow_index;
+        slot.used_bytes = 0U;
+        slot.last_touch = ++slot_touch_generation_;
+        states_[flow_index].slot_index = *victim_slot;
+        return *victim_slot;
     }
 
     bool ensure_output_handle_open(FlowState& state, std::string* out_error_text) {
@@ -392,19 +462,6 @@ private:
         return true;
     }
 
-    bool flush_state_buffer(FlowState& state, std::string* out_error_text) {
-        if (state.buffer.empty()) {
-            return true;
-        }
-
-        if (!append_bytes_to_file(state, state.buffer, out_error_text)) {
-            return false;
-        }
-
-        release_state_buffer_memory(state);
-        return true;
-    }
-
     void close_all_handles() {
         for (auto& state : states_) {
             if (state.handle_open) {
@@ -416,12 +473,13 @@ private:
     }
 
     std::size_t buffer_budget_bytes_ {0};
+    std::size_t buffer_slot_count_ {0};
     std::size_t max_open_file_handles_ {0};
     std::vector<FlowState> states_ {};
+    std::vector<BufferSlot> slots_ {};
     std::vector<std::uint8_t> packet_record_scratch_ {};
-    std::size_t total_buffered_bytes_ {0};
     std::size_t open_handle_count_ {0};
-    std::uint64_t buffer_touch_generation_ {0};
+    std::uint64_t slot_touch_generation_ {0};
     std::uint64_t handle_touch_generation_ {0};
     std::uint64_t exported_packets_written_ {0};
 };

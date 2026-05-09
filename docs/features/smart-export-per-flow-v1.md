@@ -188,8 +188,23 @@ Per-flow mode must not keep one output file open per flow for the entire export.
 
 Instead, use:
 
-- per-flow memory buffers
+- a shared pool of fixed-size resident buffer slots
 - plus a small bounded open-file-handle cache
+
+Per-flow mode must not use one dynamically growing per-flow buffer under only a global byte cap.
+
+## Shared fixed-size buffer pool
+
+Per-flow output must use:
+
+- a shared pool of fixed-size buffer slots
+- not one dynamically growing per-flow buffer per exported flow
+
+## Buffer size
+
+Use a fixed buffer size of:
+
+- `32 KB` per buffer slot
 
 ## Buffer memory budget
 
@@ -211,24 +226,38 @@ Validation:
 
 - minimum `1 MB`
 
-This budget limits the total memory used by per-flow output buffers during export.
+This budget determines the number of resident buffer slots.
+
+Formula:
+
+- `buffer_count = floor(memory_budget_bytes / 32 KB)`
+- ensure at least one buffer slot exists
 
 ## Per-flow buffer state
+
+Distinguish clearly between:
+
+1. lightweight flow state objects:
+   - one per exported flow
+2. resident data buffers:
+   - only as many as fit in the fixed-size pool
+
+A flow may exist without currently owning a resident buffer slot.
 
 Each exported flow should have a lightweight state object containing at least:
 
 - `export_flow_id`
 - output path
 - whether the file has already been initialized
-- in-memory output buffer
-- buffered byte count
+- current resident buffer slot ownership, if any
 - exported packet counters
 - exported byte counters
-- LRU bookkeeping
+
+Each resident buffer slot should keep its own LRU bookkeeping.
 
 ## Buffer contents
 
-Each per-flow buffer should store:
+Each resident buffer slot should store:
 
 - already serialized output bytes for packet records
 
@@ -237,36 +266,29 @@ Do NOT store:
 - packet refs
 - high-level temporary export structures
 
-## Memory budget model
+## Buffer-slot ownership
 
-Use one global total memory budget across all active per-flow buffers.
+Each resident buffer slot can belong to at most one flow at a time.
 
-Source of the budget:
+A flow may have:
 
-- `Buffer memory budget (MB)` from the dialog
-
-Required behavior:
-
-- total buffered bytes across all flow buffers must stay within that budget
-- if adding more buffered data would exceed the budget:
-  - evict least-recently-used buffers
-  - flush them to file
-  - reclaim their memory
+- one current buffer slot
+- or no current buffer slot
 
 ## Buffer eviction policy
 
-Use LRU for per-flow buffers.
+Use LRU across resident buffer slots.
 
 Evict when:
 
-- adding data would exceed total buffer budget
-- or a new flow buffer must become resident and the budget is already exhausted
+- a flow needs a buffer slot and none are free
 
 Eviction action:
 
-- flush buffered bytes to file
-- clear or release buffer memory
-- keep only lightweight flow state
+- select the least-recently-used slot
+- flush its contents to file
+- detach it from its old flow
+- reassign it to the new flow
 
 ## Open file handle cache
 
@@ -301,11 +323,11 @@ Later writes:
 
 ## Oversized packet rule
 
-If one serialized packet record is larger than the normal flow-buffer capacity or should not be buffered normally:
+If one serialized packet record is larger than the fixed buffer size:
 
 - flush that flow's current buffer first
 - write the oversized packet directly to the destination file
-- do not require the oversized packet to fit inside the normal in-memory flow buffer
+- do not require the oversized packet to fit inside a resident buffer slot
 
 ## Manifest robustness
 
