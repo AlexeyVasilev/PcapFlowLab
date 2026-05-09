@@ -2422,6 +2422,52 @@ std::string sanitize_filename_component(std::string_view component) {
     return sanitized;
 }
 
+std::string sanitize_filename_address_component(std::string_view component) {
+    std::string sanitized {};
+    sanitized.reserve(component.size());
+
+    bool last_was_separator = false;
+    for (const auto ch : component) {
+        const auto unsigned_ch = static_cast<unsigned char>(ch);
+        const bool is_ascii_alnum =
+            (unsigned_ch >= static_cast<unsigned char>('0') && unsigned_ch <= static_cast<unsigned char>('9')) ||
+            (unsigned_ch >= static_cast<unsigned char>('A') && unsigned_ch <= static_cast<unsigned char>('Z')) ||
+            (unsigned_ch >= static_cast<unsigned char>('a') && unsigned_ch <= static_cast<unsigned char>('z'));
+        const bool is_safe_symbol =
+            unsigned_ch == static_cast<unsigned char>('_') ||
+            unsigned_ch == static_cast<unsigned char>('.');
+        const bool should_keep = is_ascii_alnum || is_safe_symbol;
+
+        if (!should_keep) {
+            if (!last_was_separator) {
+                sanitized.push_back('_');
+                last_was_separator = true;
+            }
+            continue;
+        }
+
+        sanitized.push_back(static_cast<char>(unsigned_ch));
+        last_was_separator = false;
+    }
+
+    while (!sanitized.empty() && sanitized.front() == '_') {
+        sanitized.erase(sanitized.begin());
+    }
+    while (!sanitized.empty() && sanitized.back() == '_') {
+        sanitized.pop_back();
+    }
+
+    if (sanitized.empty()) {
+        sanitized = "unknown";
+    }
+
+    if (sanitized.size() > 32U) {
+        sanitized.resize(32U);
+    }
+
+    return sanitized;
+}
+
 std::filesystem::path build_smart_per_flow_output_path(const FlowRow& row, const std::uint32_t export_flow_id, const std::filesystem::path& output_directory) {
     std::ostringstream flow_id_stream {};
     flow_id_stream << std::setw(6) << std::setfill('0') << export_flow_id;
@@ -2429,8 +2475,8 @@ std::filesystem::path build_smart_per_flow_output_path(const FlowRow& row, const
     const auto protocol = sanitize_filename_component(normalize_manifest_protocol(row));
     const auto hint = sanitize_filename_component(normalize_manifest_protocol_hint(row));
     const auto transport = sanitize_filename_component(row.protocol_text.empty() ? std::string("unknown") : row.protocol_text);
-    const auto src_ip = sanitize_filename_component(row.address_a);
-    const auto dst_ip = sanitize_filename_component(row.address_b);
+    const auto src_ip = sanitize_filename_address_component(row.address_a);
+    const auto dst_ip = sanitize_filename_address_component(row.address_b);
 
     std::ostringstream file_name {};
     file_name << flow_id_stream.str()
