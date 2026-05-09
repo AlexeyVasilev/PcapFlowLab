@@ -438,7 +438,7 @@ public:
         const QString& packetCountText,
         const QString& originalBytesText,
         const QString& destinationFolderText,
-        const QString& bufferBudgetMbText,
+        const QString& bufferBudgetPresetText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         const QString& everyKText
@@ -529,12 +529,18 @@ private:
         int baseSelectionMode,
         const QString& packetCountText,
         const QString& originalBytesText,
-        const QString& bufferBudgetMbText,
+        const QString& bufferBudgetPresetText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         const QString& everyKText
     );
-    void updateSmartExportProgress(qulonglong jobId, qulonglong packetsProcessed, qulonglong totalPackets, qulonglong exportedPacketsWritten);
+    void updateSmartExportProgress(
+        qulonglong jobId,
+        SmartPerFlowExportPhase phase,
+        qulonglong packetsProcessed,
+        qulonglong totalPackets,
+        qulonglong exportedPacketsWritten
+    );
     void completeSmartExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);

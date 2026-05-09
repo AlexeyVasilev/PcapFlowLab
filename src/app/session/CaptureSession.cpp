@@ -2239,6 +2239,69 @@ void visit_smart_export_additional_packets(
     }
 }
 
+template <typename VisitPacketFn>
+void visit_smart_export_flow_packets(
+    const std::vector<PacketRef>& flow_packets,
+    const SmartFlowExportRequest& request,
+    VisitPacketFn&& visit_packet
+) {
+    if (flow_packets.empty()) {
+        return;
+    }
+
+    if (request.base_mode == SmartFlowExportBaseMode::all_packets) {
+        for (const auto& packet : flow_packets) {
+            visit_packet(packet, true);
+        }
+        return;
+    }
+
+    const auto include_every_kth = request.include_every_kth_packet_after_base && request.every_kth_packet > 0U;
+    const auto every_kth_step = static_cast<std::size_t>(request.every_kth_packet);
+    const auto packet_count = flow_packets.size();
+
+    if (request.base_mode == SmartFlowExportBaseMode::first_n_packets) {
+        const auto base_prefix_packet_count = static_cast<std::size_t>(
+            std::min<std::uint64_t>(request.first_n_packets, static_cast<std::uint64_t>(packet_count))
+        );
+        for (std::size_t index = 0; index < packet_count; ++index) {
+            bool selected = index < base_prefix_packet_count;
+            if (!selected && request.include_last_packet && index + 1U == packet_count) {
+                selected = true;
+            }
+            if (!selected && include_every_kth && index >= base_prefix_packet_count) {
+                const auto after_base_index = index - base_prefix_packet_count + 1U;
+                selected = (after_base_index % every_kth_step) == 0U;
+            }
+            visit_packet(flow_packets[index], selected);
+        }
+        return;
+    }
+
+    std::uint64_t accumulated_original_bytes = 0U;
+    std::size_t base_prefix_packet_count = packet_count;
+    bool base_prefix_complete = false;
+    for (std::size_t index = 0; index < packet_count; ++index) {
+        bool selected = false;
+        if (!base_prefix_complete) {
+            selected = true;
+            accumulated_original_bytes += flow_packets[index].original_length;
+            if (accumulated_original_bytes >= request.first_m_original_bytes) {
+                base_prefix_complete = true;
+                base_prefix_packet_count = index + 1U;
+            }
+        }
+        if (!selected && request.include_last_packet && index + 1U == packet_count) {
+            selected = true;
+        }
+        if (!selected && include_every_kth && base_prefix_complete && index >= base_prefix_packet_count) {
+            const auto after_base_index = index - base_prefix_packet_count + 1U;
+            selected = (after_base_index % every_kth_step) == 0U;
+        }
+        visit_packet(flow_packets[index], selected);
+    }
+}
+
 struct SmartPerFlowManifestRow {
     std::uint32_t export_flow_id {0};
     std::filesystem::path output_path {};
@@ -2606,13 +2669,19 @@ bool CaptureSession::export_smart_flows_to_folder(
     }
 
     const auto listed_flows = list_flows();
+    struct PreparedSmartExportFlow {
+        std::size_t flow_index {0};
+        const FlowRow* row {nullptr};
+    };
+    std::vector<PreparedSmartExportFlow> prepared_flows {};
     std::vector<std::uint32_t> packet_owner {};
     std::vector<PerFlowExportTarget> targets {};
     std::vector<SmartPerFlowManifestRow> manifest_rows {};
+    prepared_flows.reserve(request.flow_indices.size());
     targets.reserve(request.flow_indices.size());
     manifest_rows.reserve(request.flow_indices.size());
 
-    std::uint32_t next_export_flow_id = 1U;
+    std::uint64_t total_candidate_packet_refs = 0U;
     for (const auto flow_index : request.flow_indices) {
         const auto listed_row = std::find_if(listed_flows.begin(), listed_flows.end(), [flow_index](const FlowRow& row) {
             return row.index == flow_index;
@@ -2632,7 +2701,36 @@ bool CaptureSession::export_smart_flows_to_folder(
             return false;
         }
 
-        const auto& row = *listed_row;
+        prepared_flows.push_back(PreparedSmartExportFlow {
+            .flow_index = flow_index,
+            .row = &(*listed_row),
+        });
+        total_candidate_packet_refs += static_cast<std::uint64_t>(packets->size());
+    }
+
+    constexpr std::uint64_t kPreparationProgressReportPacketInterval = 4096U;
+    std::uint64_t processed_candidate_packet_refs = 0U;
+    std::uint64_t next_preparation_progress_report = kPreparationProgressReportPacketInterval;
+    if (options.progress_callback) {
+        options.progress_callback(SmartPerFlowExportProgress {
+            .phase = SmartPerFlowExportPhase::preparing,
+            .packets_processed = 0U,
+            .total_packets_to_scan = total_candidate_packet_refs,
+            .exported_packets_written = 0U,
+        });
+    }
+
+    std::uint32_t next_export_flow_id = 1U;
+    for (const auto& prepared_flow : prepared_flows) {
+        const auto packets = flow_packets(prepared_flow.flow_index);
+        if (!packets.has_value() || packets->empty()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to load packets for a selected flow during per-flow smart export.";
+            }
+            return false;
+        }
+
+        const auto& row = *prepared_flow.row;
         std::uint64_t captured_bytes = 0U;
         for (const auto& packet : *packets) {
             captured_bytes += packet.captured_length;
@@ -2683,8 +2781,26 @@ bool CaptureSession::export_smart_flows_to_folder(
             }
         };
 
-        const auto base_prefix_packet_count = visit_smart_export_base_prefix_packets(*packets, request, mark_owned_packet);
-        visit_smart_export_additional_packets(*packets, request, base_prefix_packet_count, mark_owned_packet);
+        visit_smart_export_flow_packets(*packets, request, [&](const PacketRef& packet, const bool selected) {
+            if (selected) {
+                mark_owned_packet(packet);
+            }
+
+            ++processed_candidate_packet_refs;
+            if (options.progress_callback &&
+                (processed_candidate_packet_refs >= next_preparation_progress_report ||
+                 processed_candidate_packet_refs >= total_candidate_packet_refs)) {
+                options.progress_callback(SmartPerFlowExportProgress {
+                    .phase = SmartPerFlowExportPhase::preparing,
+                    .packets_processed = processed_candidate_packet_refs,
+                    .total_packets_to_scan = total_candidate_packet_refs,
+                    .exported_packets_written = 0U,
+                });
+                while (next_preparation_progress_report <= processed_candidate_packet_refs) {
+                    next_preparation_progress_report += kPreparationProgressReportPacketInterval;
+                }
+            }
+        });
         if (!ownership_ok) {
             if (out_error_text != nullptr) {
                 *out_error_text = "Per-flow smart export was interrupted by an internal ownership/state error.";
@@ -2702,6 +2818,15 @@ bool CaptureSession::export_smart_flows_to_folder(
         ++next_export_flow_id;
     }
 
+    if (options.progress_callback) {
+        options.progress_callback(SmartPerFlowExportProgress {
+            .phase = SmartPerFlowExportPhase::preparing,
+            .packets_processed = total_candidate_packet_refs,
+            .total_packets_to_scan = total_candidate_packet_refs,
+            .exported_packets_written = 0U,
+        });
+    }
+
     FlowExportService service {};
     const PerFlowExportOptions export_options {
         .buffer_budget_bytes = options.buffer_budget_bytes,
@@ -2709,6 +2834,7 @@ bool CaptureSession::export_smart_flows_to_folder(
         .progress_callback = [callback = options.progress_callback](const PerFlowExportProgress& progress) {
             if (callback) {
                 callback(SmartPerFlowExportProgress {
+                    .phase = SmartPerFlowExportPhase::writing,
                     .packets_processed = progress.packets_processed,
                     .total_packets_to_scan = progress.total_packets_to_scan,
                     .exported_packets_written = progress.exported_packets_written,

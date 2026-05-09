@@ -16,7 +16,12 @@ struct PerFlowExportTarget {
     std::filesystem::path output_path {};
 };
 
+enum class PerFlowExportPhase {
+    writing,
+};
+
 struct PerFlowExportProgress {
+    PerFlowExportPhase phase {PerFlowExportPhase::writing};
     std::uint64_t packets_processed {0};
     std::uint64_t total_packets_to_scan {0};
     std::uint64_t exported_packets_written {0};

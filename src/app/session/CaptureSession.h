@@ -35,10 +35,16 @@ struct SmartFlowExportRequest {
     std::uint64_t first_m_original_bytes {0};
     bool include_last_packet {false};
     bool include_every_kth_packet_after_base {false};
-    std::uint64_t every_kth_packet {0};
+  std::uint64_t every_kth_packet {0};
+};
+
+enum class SmartPerFlowExportPhase {
+    preparing,
+    writing,
 };
 
 struct SmartPerFlowExportProgress {
+    SmartPerFlowExportPhase phase {SmartPerFlowExportPhase::preparing};
     std::uint64_t packets_processed {0};
     std::uint64_t total_packets_to_scan {0};
     std::uint64_t exported_packets_written {0};

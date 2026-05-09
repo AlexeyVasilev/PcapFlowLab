@@ -216,15 +216,15 @@ When Separate file per flow is selected, the dialog must also show:
 
 UI form:
 
-- numeric field in MB
-
-Default:
+- preset selector
 
 - `128 MB`
+- `512 MB`
+- `1024 MB`
 
-Validation:
+Default preset:
 
-- minimum `1 MB`
+- `128 MB`
 
 This budget determines the number of resident buffer slots.
 
@@ -340,9 +340,17 @@ If one serialized packet record is larger than the fixed buffer size:
 
 Separate-file export can be long-running and must expose progress.
 
-Preferred progress basis:
+- preparation progress based on processed packet refs across the chosen flows
+- writing progress based on source packet scan progress
 
-- source packet scan progress
+Preferred visible text:
+
+- `Preparing export: X / Y packets`
+- `Writing output: X / Y packets`
+
+Update policy:
+
+- progress should be published in reasonable chunks rather than on every packet
 
 Suggested visible progress:
 

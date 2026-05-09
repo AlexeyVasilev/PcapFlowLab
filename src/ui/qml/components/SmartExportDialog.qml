@@ -12,7 +12,7 @@ Dialog {
         string packetCountText,
         string originalBytesText,
         string destinationFolderText,
-        string bufferBudgetMbText,
+        string bufferBudgetPresetText,
         bool includeLastPacket,
         bool includeEveryKthPacket,
         string everyKText
@@ -30,6 +30,12 @@ Dialog {
     property int baseSelectionMode: allPacketsRadio.checked ? 0 : firstNPacketsRadio.checked ? 1 : 2
     readonly property bool extrasEnabled: !allPacketsRadio.checked
     readonly property bool perFlowOutputMode: separateFilePerFlowRadio.checked
+    readonly property var bufferBudgetPresetModel: [
+        { label: "128 MB", value: "128" },
+        { label: "512 MB", value: "512" },
+        { label: "1024 MB", value: "1024" }
+    ]
+    readonly property string bufferBudgetPresetText: bufferBudgetPresetModel[bufferBudgetPresetCombo.currentIndex].value
 
     onAccepted: {
         exportRequested(
@@ -39,7 +45,7 @@ Dialog {
             packetCountField.text,
             originalBytesField.text,
             destinationFolderField.text,
-            bufferBudgetField.text,
+            bufferBudgetPresetText,
             includeLastPacketCheck.checked,
             includeEveryKthPacketCheck.checked,
             everyKField.text
@@ -263,16 +269,27 @@ Dialog {
                         spacing: 10
 
                         Label {
-                            text: "Buffer memory budget (MB)"
+                            text: "Buffer memory budget"
                             color: "#0f172a"
                         }
 
-                        TextField {
-                            id: bufferBudgetField
-                            Layout.preferredWidth: 140
-                            placeholderText: "MB"
-                            text: "128"
+                        ComboBox {
+                            id: bufferBudgetPresetCombo
+                            Layout.preferredWidth: 160
+                            textRole: "label"
+                            valueRole: "value"
+                            model: root.bufferBudgetPresetModel
+                            currentIndex: 0
                         }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: root.perFlowOutputMode
+                        text: "Higher values may improve large per-flow export speed at the cost of more memory."
+                        color: "#64748b"
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 12
                     }
                 }
             }

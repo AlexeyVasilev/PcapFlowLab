@@ -280,7 +280,7 @@ ApplicationWindow {
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         chooseDestinationFolderCallback: function() { return mainController.chooseSmartExportDestinationFolder() }
-        onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, bufferBudgetMbText, includeLastPacket, includeEveryKthPacket, everyKText) {
+        onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, bufferBudgetPresetText, includeLastPacket, includeEveryKthPacket, everyKText) {
             mainController.browseSmartExportFlows(
                 outputMode,
                 flowScopeMode,
@@ -288,7 +288,7 @@ ApplicationWindow {
                 packetCountText,
                 originalBytesText,
                 destinationFolderText,
-                bufferBudgetMbText,
+                bufferBudgetPresetText,
                 includeLastPacket,
                 includeEveryKthPacket,
                 everyKText

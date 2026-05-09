@@ -517,6 +517,7 @@ bool export_owned_packets_with_reader(
     BufferedPerFlowPcapExporter exporter {targets, options};
     if (options.progress_callback) {
         options.progress_callback(PerFlowExportProgress {
+            .phase = PerFlowExportPhase::writing,
             .packets_processed = 0U,
             .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
             .exported_packets_written = 0U,
@@ -543,6 +544,7 @@ bool export_owned_packets_with_reader(
 
                 if (options.progress_callback) {
                     options.progress_callback(PerFlowExportProgress {
+                        .phase = PerFlowExportPhase::writing,
                         .packets_processed = static_cast<std::uint64_t>(total_packets_to_scan),
                         .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
                         .exported_packets_written = exporter.exported_packets_written(),
@@ -555,6 +557,7 @@ bool export_owned_packets_with_reader(
         if (options.progress_callback &&
             ((processed_packets % kProgressReportPacketInterval) == 0U || processed_packets >= total_packets_to_scan)) {
             options.progress_callback(PerFlowExportProgress {
+                .phase = PerFlowExportPhase::writing,
                 .packets_processed = processed_packets,
                 .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
                 .exported_packets_written = exporter.exported_packets_written(),
@@ -578,6 +581,7 @@ bool export_owned_packets_with_reader(
 
     if (options.progress_callback) {
         options.progress_callback(PerFlowExportProgress {
+            .phase = PerFlowExportPhase::writing,
             .packets_processed = static_cast<std::uint64_t>(total_packets_to_scan),
             .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
             .exported_packets_written = exporter.exported_packets_written(),

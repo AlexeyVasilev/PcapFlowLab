@@ -3303,7 +3303,7 @@ bool MainController::exportSmartFlows(
     const int baseSelectionMode,
     const QString& packetCountText,
     const QString& originalBytesText,
-    const QString& bufferBudgetMbText,
+    const QString& bufferBudgetPresetText,
     const bool includeLastPacket,
     const bool includeEveryKthPacket,
     const QString& everyKText
@@ -3426,13 +3426,13 @@ bool MainController::exportSmartFlows(
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
     setLastDirectoryFromPath(filesystemPath);
     if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
-        const auto buffer_budget_mb = parse_positive_u64(bufferBudgetMbText);
+        const auto buffer_budget_mb = parse_positive_u64(bufferBudgetPresetText);
         if (!buffer_budget_mb.has_value()) {
-            setStatusText(QStringLiteral("Enter a positive buffer memory budget in MB for per-flow smart export."), true);
+            setStatusText(QStringLiteral("Select a valid buffer memory budget preset for per-flow smart export."), true);
             return false;
         }
-        if (*buffer_budget_mb < 1U) {
-            setStatusText(QStringLiteral("Per-flow smart export buffer memory budget must be at least 1 MB."), true);
+        if (*buffer_budget_mb != 128U && *buffer_budget_mb != 512U && *buffer_budget_mb != 1024U) {
+            setStatusText(QStringLiteral("Unsupported buffer memory budget preset for per-flow smart export."), true);
             return false;
         }
 
@@ -3453,6 +3453,7 @@ bool MainController::exportSmartFlows(
                     [this, job_id, progress]() {
                         updateSmartExportProgress(
                             job_id,
+                            progress.phase,
                             static_cast<qulonglong>(progress.packets_processed),
                             static_cast<qulonglong>(progress.total_packets_to_scan),
                             static_cast<qulonglong>(progress.exported_packets_written)
@@ -3551,7 +3552,7 @@ bool MainController::browseSmartExportFlows(
     const QString& packetCountText,
     const QString& originalBytesText,
     const QString& destinationFolderText,
-    const QString& bufferBudgetMbText,
+    const QString& bufferBudgetPresetText,
     const bool includeLastPacket,
     const bool includeEveryKthPacket,
     const QString& everyKText
@@ -3573,7 +3574,7 @@ bool MainController::browseSmartExportFlows(
         baseSelectionMode,
         packetCountText,
         originalBytesText,
-        bufferBudgetMbText,
+        bufferBudgetPresetText,
         includeLastPacket,
         includeEveryKthPacket,
         everyKText
@@ -4516,6 +4517,7 @@ void MainController::completeAnalysisSequenceExport(
 
 void MainController::updateSmartExportProgress(
     const qulonglong jobId,
+    const SmartPerFlowExportPhase phase,
     const qulonglong packetsProcessed,
     const qulonglong totalPackets,
     const qulonglong exportedPacketsWritten
@@ -4525,12 +4527,25 @@ void MainController::updateSmartExportProgress(
     }
 
     const auto total_text = totalPackets > 0U ? QString::number(totalPackets) : QStringLiteral("...");
+    QString progress_text {};
+    switch (phase) {
+    case SmartPerFlowExportPhase::preparing:
+        progress_text = QStringLiteral("Preparing export: %1 / %2 packets.")
+            .arg(QString::number(packetsProcessed), total_text);
+        break;
+    case SmartPerFlowExportPhase::writing:
+        progress_text = QStringLiteral("Writing output: %1 / %2 packets.")
+            .arg(QString::number(packetsProcessed), total_text);
+        if (exportedPacketsWritten > 0U) {
+            progress_text += QStringLiteral(" Wrote %1 packets.").arg(QString::number(exportedPacketsWritten));
+        }
+        break;
+    }
     setSmartExportState(
         true,
         packetsProcessed,
         totalPackets,
-        QStringLiteral("Scanned %1 / %2 packets, wrote %3 packets.")
-            .arg(QString::number(packetsProcessed), total_text, QString::number(exportedPacketsWritten))
+        progress_text
     );
 }
 
