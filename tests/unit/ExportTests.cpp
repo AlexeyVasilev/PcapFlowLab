@@ -1,6 +1,8 @@
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <vector>
 
 #include "TestSupport.h"
@@ -23,6 +25,20 @@ std::vector<RawPcapPacket> read_all_packets(const std::filesystem::path& path) {
     }
 
     return packets;
+}
+
+std::vector<std::filesystem::path> list_exported_pcaps(const std::filesystem::path& directory) {
+    std::vector<std::filesystem::path> paths {};
+    if (!std::filesystem::exists(directory)) {
+        return paths;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".pcap") {
+            paths.push_back(entry.path());
+        }
+    }
+    return paths;
 }
 
 }  // namespace
@@ -334,6 +350,212 @@ void run_export_tests() {
 
         PFL_EXPECT(found_tcp_flow);
         PFL_EXPECT(found_udp_flow);
+    }
+
+    {
+        const auto packet_1 = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(192, 0, 2, 10), ipv4(198, 51, 100, 20), 40001, 443, std::vector<std::uint8_t>{0x11}, 0x18);
+        const auto packet_2 = make_ethernet_ipv6_udp_with_hop_by_hop_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),
+            5353,
+            53
+        );
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_filename_sanitization_source.pcap",
+            make_classic_pcap({
+                {100, packet_1},
+                {200, packet_2},
+            })
+        );
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_smart_export_filename_sanitization_output";
+        std::filesystem::remove_all(output_directory);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 2U);
+
+        SmartFlowExportRequest request {};
+        for (const auto& row : rows) {
+            request.flow_indices.push_back(row.index);
+        }
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        PFL_EXPECT(session.export_smart_flows_to_folder(request, output_directory));
+
+        const auto exported_pcaps = list_exported_pcaps(output_directory);
+        PFL_EXPECT(exported_pcaps.size() == 2U);
+
+        bool saw_dotted_ipv4_name = false;
+        bool saw_sanitized_ipv6_name = false;
+        for (const auto& exported_path : exported_pcaps) {
+            const auto file_name = exported_path.filename().string();
+            PFL_EXPECT(file_name.rfind("00000", 0U) == 0U);
+            if (file_name.find("192.0.2.10_40001-198.51.100.20_443") != std::string::npos) {
+                saw_dotted_ipv4_name = true;
+            }
+            if (file_name.find("2001") != std::string::npos &&
+                file_name.find("db8") != std::string::npos) {
+                PFL_EXPECT(file_name.find(':') == std::string::npos);
+                saw_sanitized_ipv6_name = true;
+            }
+        }
+
+        PFL_EXPECT(saw_dotted_ipv4_name);
+        PFL_EXPECT(saw_sanitized_ipv6_name);
+    }
+
+    {
+        const auto packet_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 37001, 37002, std::vector<std::uint8_t>{0x01});
+        const auto packet_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 37001, 37002, std::vector<std::uint8_t>{0x02});
+        const auto packet_3 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 37001, 37002, std::vector<std::uint8_t>{0x03});
+        const auto packet_4 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 37001, 37002, std::vector<std::uint8_t>{0x04});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_overlap_dedup_source.pcap",
+            make_classic_pcap({
+                {100, packet_1},
+                {200, packet_2},
+                {300, packet_3},
+                {400, packet_4},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_overlap_dedup_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices.push_back(rows.front().index);
+        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.first_n_packets = 1U;
+        request.include_last_packet = true;
+        request.include_every_kth_packet_after_base = true;
+        request.every_kth_packet = 1U;
+
+        PFL_EXPECT(session.export_smart_flows_to_pcap(request, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 4U);
+        PFL_EXPECT(exported_packets[0].bytes == packet_1);
+        PFL_EXPECT(exported_packets[1].bytes == packet_2);
+        PFL_EXPECT(exported_packets[2].bytes == packet_3);
+        PFL_EXPECT(exported_packets[3].bytes == packet_4);
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+        packets.reserve(4);
+        packets.push_back({100, make_ethernet_ipv4_tcp_packet(ipv4(10, 80, 0, 1), ipv4(10, 80, 0, 2), 38001, 443)});
+        packets.push_back({200, make_ethernet_ipv4_tcp_packet(ipv4(10, 81, 0, 1), ipv4(10, 81, 0, 2), 38002, 443)});
+        packets.push_back({300, make_ethernet_ipv4_tcp_packet(ipv4(10, 82, 0, 1), ipv4(10, 82, 0, 2), 38003, 443)});
+        packets.push_back({400, make_ethernet_ipv4_tcp_packet(ipv4(10, 83, 0, 1), ipv4(10, 83, 0, 2), 38004, 443)});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_cancel_preparing_source.pcap",
+            make_classic_pcap(packets)
+        );
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_smart_export_cancel_preparing_output";
+        std::filesystem::remove_all(output_directory);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 4U);
+
+        SmartFlowExportRequest request {};
+        for (const auto& row : rows) {
+            request.flow_indices.push_back(row.index);
+        }
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        std::atomic_bool cancel_requested {false};
+        std::uint64_t preparing_updates = 0U;
+        const SmartPerFlowExportOptions options {
+            .buffer_budget_bytes = 128U * 1024U * 1024U,
+            .progress_callback = [&](const SmartPerFlowExportProgress& progress) {
+                if (progress.phase == SmartPerFlowExportPhase::preparing && progress.packets_processed >= 1U) {
+                    ++preparing_updates;
+                    cancel_requested.store(true);
+                }
+            },
+            .cancel_requested = [&]() {
+                return cancel_requested.load();
+            },
+        };
+
+        std::string error_text {};
+        PFL_EXPECT(!session.export_smart_flows_to_folder(request, output_directory, options, &error_text));
+        PFL_EXPECT(error_text == "Smart export cancelled by user.");
+        PFL_EXPECT(preparing_updates >= 1U);
+        PFL_EXPECT(!std::filesystem::exists(output_directory / "flows_manifest.csv"));
+    }
+
+    {
+        std::vector<ClassicPcapCapturedRecord> packets {};
+        packets.reserve(1500);
+        for (std::uint32_t packet_index = 0; packet_index < 1500U; ++packet_index) {
+            packets.push_back(ClassicPcapCapturedRecord {
+                .ts_usec = 100U + packet_index,
+                .captured_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 90, 0, 1), ipv4(10, 90, 0, 2), 39001, 39002, std::vector<std::uint8_t>{static_cast<std::uint8_t>(packet_index & 0xFFU)}
+                ),
+                .original_length = 200U,
+            });
+        }
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_cancel_writing_source.pcap",
+            make_classic_pcap_with_captured_lengths(packets)
+        );
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_smart_export_cancel_writing_output";
+        std::filesystem::remove_all(output_directory);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices.push_back(rows.front().index);
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        std::atomic_bool cancel_requested {false};
+        std::uint64_t writing_updates = 0U;
+        const SmartPerFlowExportOptions options {
+            .buffer_budget_bytes = 1U * 1024U * 1024U,
+            .progress_callback = [&](const SmartPerFlowExportProgress& progress) {
+                if (progress.phase == SmartPerFlowExportPhase::writing && progress.packets_processed >= 1000U) {
+                    ++writing_updates;
+                    cancel_requested.store(true);
+                }
+            },
+            .cancel_requested = [&]() {
+                return cancel_requested.load();
+            },
+        };
+
+        std::string error_text {};
+        PFL_EXPECT(!session.export_smart_flows_to_folder(request, output_directory, options, &error_text));
+        PFL_EXPECT(error_text == "Smart export cancelled by user.");
+        PFL_EXPECT(writing_updates >= 1U);
+        PFL_EXPECT(!std::filesystem::exists(output_directory / "flows_manifest.csv"));
+        const auto exported_pcaps = list_exported_pcaps(output_directory);
+        PFL_EXPECT(exported_pcaps.size() == 1U);
+        PFL_EXPECT(!read_all_packets(exported_pcaps.front()).empty());
+
+        std::string retry_error_text {};
+        PFL_EXPECT(session.export_smart_flows_to_folder(request, output_directory, SmartPerFlowExportOptions {}, &retry_error_text));
+        PFL_EXPECT(std::filesystem::exists(output_directory / "flows_manifest.csv"));
     }
 }
 

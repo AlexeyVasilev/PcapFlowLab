@@ -192,6 +192,12 @@ bool wait_for_open_to_finish(QApplication& app, pfl::MainController& controller,
     }, timeoutMs);
 }
 
+bool wait_for_smart_export_to_finish(QApplication& app, pfl::MainController& controller, const int timeoutMs = 15000) {
+    return wait_until(app, [&controller]() {
+        return !controller.smartExportInProgress();
+    }, timeoutMs);
+}
+
 bool open_capture_and_wait(QApplication& app, pfl::MainController& controller, const std::filesystem::path& path) {
     if (!controller.openCaptureFile(QString::fromStdWString(path.wstring()))) {
         return false;
@@ -2389,6 +2395,67 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(0, 0), StreamListModel::StreamItemIndexRole).toULongLong() == 1U);
     UI_EXPECT(stream_loading_stream_model->data(stream_loading_stream_model->index(stream_loading_stream_model->rowCount() - 1, 0), StreamListModel::StreamItemIndexRole).toULongLong() == small_loaded);
     UI_EXPECT(stream_loading_details_model->summaryText().isEmpty());
+
+    {
+        std::vector<pfl::tests::ClassicPcapCapturedRecord> cancel_packets {};
+        cancel_packets.reserve(1500);
+        for (std::uint32_t packetIndex = 0; packetIndex < 1500U; ++packetIndex) {
+            cancel_packets.push_back(pfl::tests::ClassicPcapCapturedRecord {
+                .ts_usec = 5000U + packetIndex,
+                .captured_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(203, 0, 113, 50), ipv4(203, 0, 113, 60), 61000, 61001,
+                    std::vector<std::uint8_t>{static_cast<std::uint8_t>(packetIndex & 0xFFU)}
+                ),
+                .original_length = 200U,
+            });
+        }
+
+        const auto cancel_capture_path = write_temp_pcap(
+            "pfl_ui_smart_export_cancel.pcap",
+            make_classic_pcap_with_captured_lengths(cancel_packets)
+        );
+        const auto cancel_output_directory = std::filesystem::temp_directory_path() / "pfl_ui_smart_export_cancel_output";
+        std::filesystem::remove_all(cancel_output_directory);
+
+        MainController cancel_export_controller {};
+        UI_EXPECT(open_capture_and_wait(app, cancel_export_controller, cancel_capture_path));
+        UI_EXPECT(cancel_export_controller.browseSmartExportFlows(
+            1,
+            3,
+            0,
+            QStringLiteral(""),
+            QStringLiteral(""),
+            QString::fromStdWString(cancel_output_directory.wstring()),
+            QStringLiteral("128"),
+            false,
+            false,
+            QStringLiteral("")
+        ));
+        UI_EXPECT(cancel_export_controller.smartExportInProgress());
+        cancel_export_controller.cancelSmartExport();
+        UI_EXPECT(cancel_export_controller.smartExportCancelRequested());
+        UI_EXPECT(wait_for_smart_export_to_finish(app, cancel_export_controller));
+        UI_EXPECT(!cancel_export_controller.smartExportInProgress());
+        UI_EXPECT(!cancel_export_controller.smartExportCancelRequested());
+        UI_EXPECT(cancel_export_controller.statusText() == QStringLiteral("Smart export cancelled."));
+
+        const auto retry_output_directory = std::filesystem::temp_directory_path() / "pfl_ui_smart_export_retry_output";
+        std::filesystem::remove_all(retry_output_directory);
+        UI_EXPECT(cancel_export_controller.browseSmartExportFlows(
+            1,
+            3,
+            0,
+            QStringLiteral(""),
+            QStringLiteral(""),
+            QString::fromStdWString(retry_output_directory.wstring()),
+            QStringLiteral("128"),
+            false,
+            false,
+            QStringLiteral("")
+        ));
+        UI_EXPECT(wait_for_smart_export_to_finish(app, cancel_export_controller));
+        UI_EXPECT(!cancel_export_controller.smartExportInProgress());
+    }
 
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json");
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_02_expectations.json");
