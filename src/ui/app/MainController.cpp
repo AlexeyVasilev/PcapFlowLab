@@ -2276,7 +2276,7 @@ qulonglong MainController::analysisCapturedBytes() const noexcept {
 
 QString MainController::analysisCapturedBytesText() const {
     return current_flow_analysis_.has_value()
-        ? format_size_value(analysisCapturedBytes())
+        ? format_size_value(static_cast<std::uint64_t>(analysisCapturedBytes()))
         : QString {};
 }
 
