@@ -340,22 +340,23 @@ If one serialized packet record is larger than the fixed buffer size:
 
 Separate-file export can be long-running and must expose progress.
 
-- preparation progress based on processed packet refs across the chosen flows
+- preparation progress based on processed chosen flows
 - writing progress based on source packet scan progress
 
 Preferred visible text:
 
-- `Preparing export: X / Y packets`
+- `Preparing export: flow X / Y`
 - `Writing output: X / Y packets`
 
 Update policy:
 
-- progress should be published in reasonable chunks rather than on every packet
+- do not perform an extra packet-total pre-count pass just for preparation progress
+- progress should be published in reasonable chunks rather than on every packet during writing
 
 Suggested visible progress:
 
 - progress bar
-- optionally processed packets / total packets
+- optionally processed flows or packets / total
 
 ## Error reporting
 

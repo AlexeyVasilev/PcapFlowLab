@@ -2669,19 +2669,24 @@ bool CaptureSession::export_smart_flows_to_folder(
     }
 
     const auto listed_flows = list_flows();
-    struct PreparedSmartExportFlow {
-        std::size_t flow_index {0};
-        const FlowRow* row {nullptr};
-    };
-    std::vector<PreparedSmartExportFlow> prepared_flows {};
     std::vector<std::uint32_t> packet_owner {};
     std::vector<PerFlowExportTarget> targets {};
     std::vector<SmartPerFlowManifestRow> manifest_rows {};
-    prepared_flows.reserve(request.flow_indices.size());
     targets.reserve(request.flow_indices.size());
     manifest_rows.reserve(request.flow_indices.size());
 
-    std::uint64_t total_candidate_packet_refs = 0U;
+    const auto total_selected_flows = static_cast<std::uint64_t>(request.flow_indices.size());
+    std::uint64_t processed_selected_flows = 0U;
+    if (options.progress_callback) {
+        options.progress_callback(SmartPerFlowExportProgress {
+            .phase = SmartPerFlowExportPhase::preparing,
+            .packets_processed = 0U,
+            .total_packets_to_scan = total_selected_flows,
+            .exported_packets_written = 0U,
+        });
+    }
+
+    std::uint32_t next_export_flow_id = 1U;
     for (const auto flow_index : request.flow_indices) {
         const auto listed_row = std::find_if(listed_flows.begin(), listed_flows.end(), [flow_index](const FlowRow& row) {
             return row.index == flow_index;
@@ -2701,36 +2706,7 @@ bool CaptureSession::export_smart_flows_to_folder(
             return false;
         }
 
-        prepared_flows.push_back(PreparedSmartExportFlow {
-            .flow_index = flow_index,
-            .row = &(*listed_row),
-        });
-        total_candidate_packet_refs += static_cast<std::uint64_t>(packets->size());
-    }
-
-    constexpr std::uint64_t kPreparationProgressReportPacketInterval = 4096U;
-    std::uint64_t processed_candidate_packet_refs = 0U;
-    std::uint64_t next_preparation_progress_report = kPreparationProgressReportPacketInterval;
-    if (options.progress_callback) {
-        options.progress_callback(SmartPerFlowExportProgress {
-            .phase = SmartPerFlowExportPhase::preparing,
-            .packets_processed = 0U,
-            .total_packets_to_scan = total_candidate_packet_refs,
-            .exported_packets_written = 0U,
-        });
-    }
-
-    std::uint32_t next_export_flow_id = 1U;
-    for (const auto& prepared_flow : prepared_flows) {
-        const auto packets = flow_packets(prepared_flow.flow_index);
-        if (!packets.has_value() || packets->empty()) {
-            if (out_error_text != nullptr) {
-                *out_error_text = "Failed to load packets for a selected flow during per-flow smart export.";
-            }
-            return false;
-        }
-
-        const auto& row = *prepared_flow.row;
+        const auto& row = *listed_row;
         std::uint64_t captured_bytes = 0U;
         for (const auto& packet : *packets) {
             captured_bytes += packet.captured_length;
@@ -2785,21 +2761,6 @@ bool CaptureSession::export_smart_flows_to_folder(
             if (selected) {
                 mark_owned_packet(packet);
             }
-
-            ++processed_candidate_packet_refs;
-            if (options.progress_callback &&
-                (processed_candidate_packet_refs >= next_preparation_progress_report ||
-                 processed_candidate_packet_refs >= total_candidate_packet_refs)) {
-                options.progress_callback(SmartPerFlowExportProgress {
-                    .phase = SmartPerFlowExportPhase::preparing,
-                    .packets_processed = processed_candidate_packet_refs,
-                    .total_packets_to_scan = total_candidate_packet_refs,
-                    .exported_packets_written = 0U,
-                });
-                while (next_preparation_progress_report <= processed_candidate_packet_refs) {
-                    next_preparation_progress_report += kPreparationProgressReportPacketInterval;
-                }
-            }
         });
         if (!ownership_ok) {
             if (out_error_text != nullptr) {
@@ -2815,16 +2776,17 @@ bool CaptureSession::export_smart_flows_to_folder(
             return false;
         }
 
-        ++next_export_flow_id;
-    }
+        ++processed_selected_flows;
+        if (options.progress_callback) {
+            options.progress_callback(SmartPerFlowExportProgress {
+                .phase = SmartPerFlowExportPhase::preparing,
+                .packets_processed = processed_selected_flows,
+                .total_packets_to_scan = total_selected_flows,
+                .exported_packets_written = 0U,
+            });
+        }
 
-    if (options.progress_callback) {
-        options.progress_callback(SmartPerFlowExportProgress {
-            .phase = SmartPerFlowExportPhase::preparing,
-            .packets_processed = total_candidate_packet_refs,
-            .total_packets_to_scan = total_candidate_packet_refs,
-            .exported_packets_written = 0U,
-        });
+        ++next_export_flow_id;
     }
 
     FlowExportService service {};

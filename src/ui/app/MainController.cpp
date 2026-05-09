@@ -3464,7 +3464,12 @@ bool MainController::exportSmartFlows(
             },
         };
 
-        setSmartExportState(true, 0U, 0U, QStringLiteral("Preparing per-flow smart export..."));
+        setSmartExportState(
+            true,
+            0U,
+            static_cast<qulonglong>(request.flow_indices.size()),
+            QStringLiteral("Preparing export: flow 0 / %1").arg(QString::number(request.flow_indices.size()))
+        );
         setStatusText(QStringLiteral("Smart per-flow export started."));
         smart_export_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath, request, options]() mutable {
             std::string error_text {};
@@ -4530,7 +4535,7 @@ void MainController::updateSmartExportProgress(
     QString progress_text {};
     switch (phase) {
     case SmartPerFlowExportPhase::preparing:
-        progress_text = QStringLiteral("Preparing export: %1 / %2 packets.")
+        progress_text = QStringLiteral("Preparing export: flow %1 / %2")
             .arg(QString::number(packetsProcessed), total_text);
         break;
     case SmartPerFlowExportPhase::writing:
