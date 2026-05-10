@@ -2204,6 +2204,111 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Packet is truncated in capture")));
     UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Captured Length: %1").arg(captured_truncated_packet.size())));
     UI_EXPECT(truncated_details_model->summaryText().contains(QStringLiteral("Original Length: %1").arg(full_truncated_packet.size())));
+
+    const auto expect_packet_payload_row = [](PacketListModel* model,
+                                              const int row,
+                                              const std::uint32_t expected_payload_length,
+                                              const std::uint32_t expected_captured_length,
+                                              const std::uint32_t expected_original_length) {
+        const auto model_index = model->index(row, 0);
+        UI_EXPECT(model_index.isValid());
+        UI_EXPECT(model->data(model_index, PacketListModel::PayloadLengthRole).toUInt() == expected_payload_length);
+        UI_EXPECT(model->data(model_index, PacketListModel::CapturedLengthRole).toUInt() == expected_captured_length);
+        UI_EXPECT(model->data(model_index, PacketListModel::OriginalLengthRole).toUInt() == expected_original_length);
+    };
+
+    const auto quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "quic_constricted_1.pcap";
+    MainController quic_constricted_controller {};
+    UI_EXPECT(open_capture_and_wait(app, quic_constricted_controller, quic_constricted_fixture_path));
+    quic_constricted_controller.setSelectedFlowIndex(0);
+    auto* quic_constricted_packet_model = qobject_cast<PacketListModel*>(quic_constricted_controller.packetModel());
+    auto* quic_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(quic_constricted_controller.packetDetailsModel());
+    UI_EXPECT(quic_constricted_packet_model != nullptr);
+    UI_EXPECT(quic_constricted_details_model != nullptr);
+    UI_EXPECT(quic_constricted_packet_model->rowCount() == 18);
+    expect_packet_payload_row(quic_constricted_packet_model, 0, 1252U, 1294U, 1294U);
+    expect_packet_payload_row(quic_constricted_packet_model, 10, 42U, 84U, 84U);
+    expect_packet_payload_row(quic_constricted_packet_model, 12, 677U, 686U, 723U);
+    expect_packet_payload_row(quic_constricted_packet_model, 14, 131U, 150U, 173U);
+    expect_packet_payload_row(quic_constricted_packet_model, 15, 78U, 74U, 120U);
+    expect_packet_payload_row(quic_constricted_packet_model, 16, 766U, 74U, 808U);
+    expect_packet_payload_row(quic_constricted_packet_model, 17, 736U, 74U, 778U);
+    quic_constricted_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&quic_constricted_controller]() {
+        return !quic_constricted_controller.analysisLoading() && quic_constricted_controller.analysisAvailable();
+    }));
+    const auto quic_constricted_preview = quic_constricted_controller.analysisSequencePreview();
+    UI_EXPECT(quic_constricted_preview.size() == 18);
+    const auto quic_preview_packet_thirteen = quic_constricted_preview[12].toMap();
+    UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("capturedLength")).toUInt() == 686U);
+    UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("originalLength")).toUInt() == 723U);
+    UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("677"));
+
+    const auto quic_packet_thirteen_index = quic_constricted_packet_model->data(
+        quic_constricted_packet_model->index(12, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    quic_constricted_controller.setSelectedPacketIndex(quic_packet_thirteen_index);
+    const auto quic_truncated_summary = quic_constricted_details_model->summaryText();
+    UI_EXPECT(quic_truncated_summary.contains(QStringLiteral("Real Payload Length: 640")));
+    UI_EXPECT(quic_truncated_summary.contains(QStringLiteral("Original Payload Length: 677")));
+
+    const auto quic_packet_one_index = quic_constricted_packet_model->data(
+        quic_constricted_packet_model->index(0, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    quic_constricted_controller.setSelectedPacketIndex(quic_packet_one_index);
+    const auto quic_non_truncated_summary = quic_constricted_details_model->summaryText();
+    UI_EXPECT(quic_non_truncated_summary.contains(QStringLiteral("Payload Length: 1252")));
+    UI_EXPECT(!quic_non_truncated_summary.contains(QStringLiteral("Real Payload Length:")));
+    UI_EXPECT(!quic_non_truncated_summary.contains(QStringLiteral("Original Payload Length:")));
+
+    const auto tls_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
+    MainController tls_constricted_controller {};
+    UI_EXPECT(open_capture_and_wait(app, tls_constricted_controller, tls_constricted_fixture_path));
+    tls_constricted_controller.setSelectedFlowIndex(0);
+    auto* tls_constricted_packet_model = qobject_cast<PacketListModel*>(tls_constricted_controller.packetModel());
+    auto* tls_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(tls_constricted_controller.packetDetailsModel());
+    UI_EXPECT(tls_constricted_packet_model != nullptr);
+    UI_EXPECT(tls_constricted_details_model != nullptr);
+    UI_EXPECT(tls_constricted_packet_model->rowCount() == 14);
+    expect_packet_payload_row(tls_constricted_packet_model, 3, 666U, 720U, 720U);
+    expect_packet_payload_row(tls_constricted_packet_model, 5, 2920U, 199U, 2978U);
+    expect_packet_payload_row(tls_constricted_packet_model, 6, 274U, 66U, 332U);
+    expect_packet_payload_row(tls_constricted_packet_model, 8, 64U, 68U, 118U);
+    expect_packet_payload_row(tls_constricted_packet_model, 9, 1007U, 62U, 1061U);
+    expect_packet_payload_row(tls_constricted_packet_model, 11, 928U, 516U, 986U);
+    expect_packet_payload_row(tls_constricted_packet_model, 13, 87U, 66U, 145U);
+    tls_constricted_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&tls_constricted_controller]() {
+        return !tls_constricted_controller.analysisLoading() && tls_constricted_controller.analysisAvailable();
+    }));
+    const auto tls_constricted_preview = tls_constricted_controller.analysisSequencePreview();
+    UI_EXPECT(tls_constricted_preview.size() == 14);
+    const auto tls_preview_packet_six = tls_constricted_preview[5].toMap();
+    UI_EXPECT(tls_preview_packet_six.value(QStringLiteral("capturedLength")).toUInt() == 199U);
+    UI_EXPECT(tls_preview_packet_six.value(QStringLiteral("originalLength")).toUInt() == 2978U);
+    UI_EXPECT(tls_preview_packet_six.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("2920"));
+
+    const auto tls_packet_six_index = tls_constricted_packet_model->data(
+        tls_constricted_packet_model->index(5, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    tls_constricted_controller.setSelectedPacketIndex(tls_packet_six_index);
+    const auto tls_truncated_summary = tls_constricted_details_model->summaryText();
+    UI_EXPECT(tls_truncated_summary.contains(QStringLiteral("Real Payload Length: 141")));
+    UI_EXPECT(tls_truncated_summary.contains(QStringLiteral("Original Payload Length: 2920")));
+
+    const auto tls_packet_four_index = tls_constricted_packet_model->data(
+        tls_constricted_packet_model->index(3, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    tls_constricted_controller.setSelectedPacketIndex(tls_packet_four_index);
+    const auto tls_non_truncated_summary = tls_constricted_details_model->summaryText();
+    UI_EXPECT(tls_non_truncated_summary.contains(QStringLiteral("Payload Length: 666")));
+    UI_EXPECT(!tls_non_truncated_summary.contains(QStringLiteral("Real Payload Length:")));
+    UI_EXPECT(!tls_non_truncated_summary.contains(QStringLiteral("Original Payload Length:")));
+
     const auto fragmented_packet = make_ethernet_ipv4_fragment_packet(
         ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 6, 0x2000U, {0x16, 0x03, 0x03, 0x00, 0x10});
     const auto fragmented_capture_path = write_temp_pcap(

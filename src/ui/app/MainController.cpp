@@ -76,6 +76,11 @@ struct AnalysisSequenceExportRow {
     std::string protocol_hint_text {};
 };
 
+struct TransportPayloadLengths {
+    std::optional<std::uint32_t> real_payload_length {};
+    std::optional<std::uint32_t> original_payload_length {};
+};
+
 FlowListModel::SortKey sort_key_from_column(const int column) {
     switch (column) {
     case 0:
@@ -433,6 +438,35 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
         std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
         packet
     );
+}
+
+TransportPayloadLengths resolve_transport_payload_lengths(
+    const PacketDetails& details,
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet
+) {
+    if (!details.has_tcp && !details.has_udp) {
+        return {};
+    }
+
+    return TransportPayloadLengths {
+        .real_payload_length = packet.payload_length,
+        .original_payload_length = derive_transport_payload_length_from_headers(packet_bytes, packet),
+    };
+}
+
+void apply_original_transport_payload_lengths(CaptureSession& session, std::vector<PacketRow>& rows) {
+    for (auto& row : rows) {
+        const auto packet = session.find_packet(row.packet_index);
+        if (!packet.has_value()) {
+            continue;
+        }
+
+        if (const auto original_transport_payload_length = derive_transport_payload_length_from_headers(session, *packet);
+            original_transport_payload_length.has_value()) {
+            row.payload_length = *original_transport_payload_length;
+        }
+    }
 }
 
 std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
@@ -1819,7 +1853,8 @@ QString format_partial_open_warning_message(const OpenFailureInfo& failure) {
 QString buildPacketSummary(
     const PacketDetails& details,
     const PacketRef& packet,
-    const PacketChecksumSections& checksum_sections = {}
+    const PacketChecksumSections& checksum_sections = {},
+    const TransportPayloadLengths& payload_lengths = {}
 ) {
     QStringList lines {};
 
@@ -1889,18 +1924,42 @@ QString buildPacketSummary(
     }
 
     if (details.has_tcp) {
-        appendSection(lines, QStringLiteral("TCP"), {
+        QStringList tcp_lines {
             QStringLiteral("Source Port: %1").arg(details.tcp.src_port),
             QStringLiteral("Destination Port: %1").arg(details.tcp.dst_port),
             QStringLiteral("Flags: %1").arg(formatTcpFlags(details.tcp.flags)),
-        });
+        };
+        if (payload_lengths.original_payload_length.has_value()) {
+            if (payload_lengths.real_payload_length.has_value() &&
+                *payload_lengths.real_payload_length != *payload_lengths.original_payload_length) {
+                tcp_lines.push_back(QStringLiteral("Real Payload Length: %1").arg(*payload_lengths.real_payload_length));
+                tcp_lines.push_back(QStringLiteral("Original Payload Length: %1").arg(*payload_lengths.original_payload_length));
+            } else {
+                tcp_lines.push_back(QStringLiteral("Payload Length: %1").arg(*payload_lengths.original_payload_length));
+            }
+        } else if (payload_lengths.real_payload_length.has_value()) {
+            tcp_lines.push_back(QStringLiteral("Payload Length: %1").arg(*payload_lengths.real_payload_length));
+        }
+        appendSection(lines, QStringLiteral("TCP"), tcp_lines);
     }
 
     if (details.has_udp) {
-        appendSection(lines, QStringLiteral("UDP"), {
+        QStringList udp_lines {
             QStringLiteral("Source Port: %1").arg(details.udp.src_port),
             QStringLiteral("Destination Port: %1").arg(details.udp.dst_port),
-        });
+        };
+        if (payload_lengths.original_payload_length.has_value()) {
+            if (payload_lengths.real_payload_length.has_value() &&
+                *payload_lengths.real_payload_length != *payload_lengths.original_payload_length) {
+                udp_lines.push_back(QStringLiteral("Real Payload Length: %1").arg(*payload_lengths.real_payload_length));
+                udp_lines.push_back(QStringLiteral("Original Payload Length: %1").arg(*payload_lengths.original_payload_length));
+            } else {
+                udp_lines.push_back(QStringLiteral("Payload Length: %1").arg(*payload_lengths.original_payload_length));
+            }
+        } else if (payload_lengths.real_payload_length.has_value()) {
+            udp_lines.push_back(QStringLiteral("Payload Length: %1").arg(*payload_lengths.real_payload_length));
+        }
+        appendSection(lines, QStringLiteral("UDP"), udp_lines);
     }
 
     if (details.has_icmp) {
@@ -4075,6 +4134,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     if (!rows.empty()) {
         session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
         prepareSelectedFlowTcpContributionState(offset + rows.size());
+        apply_original_transport_payload_lengths(session_, rows);
     }
 
     for (auto& packet_row : rows) {
@@ -4692,9 +4752,14 @@ void MainController::reloadSelectedPacketDetails() {
         packet->packet_index,
         QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
     );
+    const auto packetBytes = session_.read_packet_data(*packet);
+    const auto payload_lengths = resolve_transport_payload_lengths(
+        *details,
+        std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+        *packet
+    );
     PacketChecksumSections checksum_sections {};
     if (validate_selected_packet_checksums_) {
-        const auto packetBytes = session_.read_packet_data(*packet);
         checksum_sections = build_packet_checksum_sections(
             *details,
             *packet,
@@ -4702,7 +4767,7 @@ void MainController::reloadSelectedPacketDetails() {
         );
     }
 
-    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections));
+    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
