@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "app/session/CaptureSession.h"
+#include "core/decode/PacketDecodeSupport.h"
 #include "core/services/PacketDetailsService.h"
 
 namespace pfl::session_detail {
@@ -29,8 +30,94 @@ struct DecodedTcpPayloadPacket {
     PacketRef packet {};
     std::uint64_t sequence_number {0};
     std::uint32_t acknowledgement_number {0};
+    std::size_t original_payload_length {0};
     std::vector<std::uint8_t> payload_bytes {};
 };
+
+std::optional<std::size_t> derive_original_tcp_payload_length_from_headers(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet
+) {
+    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
+    if (!envelope.has_value()) {
+        return std::nullopt;
+    }
+
+    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = envelope->payload_offset;
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
+            return std::nullopt;
+        }
+
+        const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
+        if ((flags_fragment & 0x3FFFU) != 0U || packet_bytes[ipv4_offset + 9U] != detail::kIpProtocolTcp) {
+            return std::nullopt;
+        }
+
+        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        if (transport_offset + detail::kTcpMinimumHeaderSize > packet_bytes.size()) {
+            return std::nullopt;
+        }
+
+        const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            transport_offset + tcp_header_length > packet_bytes.size()) {
+            return std::nullopt;
+        }
+
+        if (!ipv4_bounds->bounds_from_captured_bytes) {
+            if (ipv4_bounds->total_length < ipv4_bounds->header_length + tcp_header_length) {
+                return std::nullopt;
+            }
+
+            return static_cast<std::size_t>(
+                static_cast<std::size_t>(ipv4_bounds->total_length) - ipv4_bounds->header_length - tcp_header_length
+            );
+        }
+
+        const auto transport_payload_offset = transport_offset + tcp_header_length;
+        if (packet.original_length < transport_payload_offset) {
+            return std::nullopt;
+        }
+
+        return static_cast<std::size_t>(packet.original_length - transport_payload_offset);
+    }
+
+    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = envelope->payload_offset;
+        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U);
+        if (version != 6U) {
+            return std::nullopt;
+        }
+
+        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
+        const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
+        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        if (!payload.has_value() || payload->has_fragment_header || payload->next_header != detail::kIpProtocolTcp) {
+            return std::nullopt;
+        }
+
+        if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_bytes.size()) {
+            return std::nullopt;
+        }
+
+        const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            payload->payload_offset + tcp_header_length > packet_bytes.size() ||
+            payload->payload_offset + tcp_header_length > nominal_packet_end) {
+            return std::nullopt;
+        }
+
+        return nominal_packet_end - (payload->payload_offset + tcp_header_length);
+    }
+
+    return std::nullopt;
+}
 
 struct TcpContributionTracker {
     bool has_contiguous_stream {false};
@@ -85,10 +172,16 @@ std::optional<DecodedTcpPayloadPacket> decode_tcp_payload_packet(
         return std::nullopt;
     }
 
+    const auto original_payload_length = derive_original_tcp_payload_length_from_headers(
+        std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()),
+        packet
+    ).value_or(payload_bytes.size());
+
     return DecodedTcpPayloadPacket {
         .packet = packet,
         .sequence_number = details->tcp.seq_number,
         .acknowledgement_number = details->tcp.ack_number,
+        .original_payload_length = original_payload_length,
         .payload_bytes = std::move(payload_bytes),
     };
 }
@@ -128,7 +221,7 @@ TcpDirectionalContributionAnalysis analyze_selected_flow_tcp_payload_suppression
 
         const auto payload_size = decoded->payload_bytes.size();
         const auto sequence_start = decoded->sequence_number;
-        const auto sequence_end = sequence_start + payload_size;
+        const auto sequence_end = sequence_start + decoded->original_payload_length;
 
         if (!tracker.has_contiguous_stream) {
             tracker.has_contiguous_stream = true;

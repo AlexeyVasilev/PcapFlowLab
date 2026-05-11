@@ -234,10 +234,10 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
     const std::size_t flow_index,
     const std::string_view direction_text,
     const Direction direction,
-    const std::size_t max_packets_to_scan
+    std::span<const PacketRef> direction_packets
 ) {
     DirectionalStreamPolicy policy {};
-    const auto presentation = build_tls_stream_items_from_reassembly(session, flow_index, direction, max_packets_to_scan);
+    const auto presentation = build_tls_stream_items_from_reassembly(session, flow_index, direction, direction_packets);
     for (const auto& item : presentation.items) {
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
@@ -652,13 +652,27 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
         const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
             ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
             : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
+        const auto direction_packets_a = connection.family == FlowAddressFamily::ipv4
+            ? std::span<const PacketRef>(
+                connection.ipv4->flow_a.packets.data(),
+                std::min(prefix_count_a, connection.ipv4->flow_a.packets.size()))
+            : std::span<const PacketRef>(
+                connection.ipv6->flow_a.packets.data(),
+                std::min(prefix_count_a, connection.ipv6->flow_a.packets.size()));
+        const auto direction_packets_b = connection.family == FlowAddressFamily::ipv4
+            ? std::span<const PacketRef>(
+                connection.ipv4->flow_b.packets.data(),
+                std::min(prefix_count_b, connection.ipv4->flow_b.packets.size()))
+            : std::span<const PacketRef>(
+                connection.ipv6->flow_b.packets.data(),
+                std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
         direction_policy_a = append_tls_stream_items_from_reassembly(
             rows,
             session,
             flow_index,
             kDirectionAToB,
             Direction::a_to_b,
-            prefix_count_a
+            direction_packets_a
         );
         direction_policy_b = append_tls_stream_items_from_reassembly(
             rows,
@@ -666,7 +680,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             flow_index,
             kDirectionBToA,
             Direction::b_to_a,
-            prefix_count_b
+            direction_packets_b
         );
         if (!direction_policy_a.used_reassembly) {
             direction_policy_a = append_http_stream_items_from_reassembly(

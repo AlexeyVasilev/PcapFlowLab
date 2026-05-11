@@ -2136,6 +2136,79 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
     UI_EXPECT(split_tls_details_model->payloadTabTitle() == QStringLiteral("Item Payload"));
 
+    const auto tls_constricted_stream_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
+    MainController tls_constricted_stream_controller {};
+    UI_EXPECT(open_capture_and_wait(app, tls_constricted_stream_controller, tls_constricted_stream_fixture_path));
+    auto* tls_constricted_flow_model = qobject_cast<FlowListModel*>(tls_constricted_stream_controller.flowModel());
+    UI_EXPECT(tls_constricted_flow_model != nullptr);
+    UI_EXPECT(tls_constricted_flow_model->rowCount() == 1);
+    UI_EXPECT(tls_constricted_flow_model->data(tls_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
+
+    tls_constricted_stream_controller.setFlowDetailsTabIndex(1);
+    tls_constricted_stream_controller.setSelectedFlowIndex(0);
+    auto* tls_constricted_stream_model = qobject_cast<StreamListModel*>(tls_constricted_stream_controller.streamModel());
+    auto* tls_constricted_stream_details_model = qobject_cast<PacketDetailsViewModel*>(tls_constricted_stream_controller.packetDetailsModel());
+    UI_EXPECT(tls_constricted_stream_model != nullptr);
+    UI_EXPECT(tls_constricted_stream_details_model != nullptr);
+    UI_EXPECT(tls_constricted_stream_model->rowCount() == 10);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS ClientHello"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == 666U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(0, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #4"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(1, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS ServerHello"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(1, 0), StreamListModel::ByteCountRole).toUInt() == 127U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(1, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #6"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(2, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS ChangeCipherSpec"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(2, 0), StreamListModel::ByteCountRole).toUInt() == 6U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(2, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #6"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::ByteCountRole).toUInt() == 3061U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::PacketCountRole).toUInt() == 2U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packets #6,#7"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(4, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS ChangeCipherSpec"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(4, 0), StreamListModel::ByteCountRole).toUInt() == 6U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(4, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #9"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(5, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(5, 0), StreamListModel::ByteCountRole).toUInt() == 58U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(5, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #9"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::ByteCountRole).toUInt() == 1007U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #10"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(7, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(7, 0), StreamListModel::ByteCountRole).toUInt() == 450U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(7, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #12"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(8, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(8, 0), StreamListModel::ByteCountRole).toUInt() == 478U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(8, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #12"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::ByteCountRole).toUInt() == 87U);
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #14"));
+    for (int row = 0; row < tls_constricted_stream_model->rowCount(); ++row) {
+        UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(row, 0), StreamListModel::LabelRole).toString() != QStringLiteral("TLS Gap"));
+    }
+
+    const auto tls_constricted_stream_item_index = tls_constricted_stream_model->data(
+        tls_constricted_stream_model->index(3, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    tls_constricted_stream_controller.setSelectedStreamItemIndex(tls_constricted_stream_item_index);
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Label: TLS AppData")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Source packets: #6,#7")));
+    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
+    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Length: 3056")));
+    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));
+    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #7: captured 66 / original 332 bytes.")));
+
+    tls_constricted_stream_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&tls_constricted_stream_controller]() {
+        return !tls_constricted_stream_controller.analysisLoading() && tls_constricted_stream_controller.analysisAvailable();
+    }));
+    UI_EXPECT(tls_constricted_stream_controller.analysisProtocolHint() == QStringLiteral("TLS"));
+    UI_EXPECT(tls_constricted_stream_controller.analysisSequencePreview().size() == 14);
+    const auto tls_constricted_sequence_packet_six = tls_constricted_stream_controller.analysisSequencePreview()[5].toMap();
+    UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("capturedLength")).toUInt() == 199U);
+    UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("originalLength")).toUInt() == 2978U);
+    UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("2920"));
+
     const auto quic_crypto_frame_bytes = make_quic_crypto_frame_bytes();
     const auto quic_ack_frame_bytes = make_quic_ack_frame_bytes();
     const auto quic_size_capture_path = write_temp_pcap(

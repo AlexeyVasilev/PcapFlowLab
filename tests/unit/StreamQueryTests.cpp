@@ -1368,6 +1368,51 @@ void run_stream_query_tests() {
 
     {
         CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/ipv4_tls_constricted_1.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 10U);
+        PFL_EXPECT(rows[0].label == "TLS ClientHello");
+        PFL_EXPECT(rows[0].byte_count == 666U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {3U});
+        PFL_EXPECT(rows[1].label == "TLS ServerHello");
+        PFL_EXPECT(rows[1].byte_count == 127U);
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t> {5U});
+        PFL_EXPECT(rows[2].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[2].byte_count == 6U);
+        PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t> {5U});
+        PFL_EXPECT(rows[3].label == "TLS AppData");
+        PFL_EXPECT(rows[3].byte_count == 3061U);
+        PFL_EXPECT(rows[3].packet_indices == std::vector<std::uint64_t>({5U, 6U}));
+        PFL_EXPECT(rows[3].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
+        PFL_EXPECT(rows[3].protocol_text.find("Record Length: 3056") != std::string::npos);
+        PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #6: captured 199 / original 2978 bytes.") != std::string::npos);
+        PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #7: captured 66 / original 332 bytes.") != std::string::npos);
+        PFL_EXPECT(rows[4].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[4].byte_count == 6U);
+        PFL_EXPECT(rows[4].packet_indices == std::vector<std::uint64_t> {8U});
+        PFL_EXPECT(rows[5].label == "TLS AppData");
+        PFL_EXPECT(rows[5].byte_count == 58U);
+        PFL_EXPECT(rows[5].packet_indices == std::vector<std::uint64_t> {8U});
+        PFL_EXPECT(rows[6].label == "TLS AppData");
+        PFL_EXPECT(rows[6].byte_count == 1007U);
+        PFL_EXPECT(rows[6].packet_indices == std::vector<std::uint64_t> {9U});
+        PFL_EXPECT(rows[7].label == "TLS AppData");
+        PFL_EXPECT(rows[7].byte_count == 450U);
+        PFL_EXPECT(rows[7].packet_indices == std::vector<std::uint64_t> {11U});
+        PFL_EXPECT(rows[8].label == "TLS AppData");
+        PFL_EXPECT(rows[8].byte_count == 478U);
+        PFL_EXPECT(rows[8].packet_indices == std::vector<std::uint64_t> {11U});
+        PFL_EXPECT(rows[9].label == "TLS AppData");
+        PFL_EXPECT(rows[9].byte_count == 87U);
+        PFL_EXPECT(rows[9].packet_indices == std::vector<std::uint64_t> {13U});
+        PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.label == "TLS Gap";
+        }));
+    }
+
+    {
+        CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_server_handshake_retransmit_6.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);

@@ -115,7 +115,8 @@ void run_malformed_packet_handling_tests() {
         auto truncated_tcp_payload = make_ethernet_ipv4_tcp_packet_with_payload(
             ipv4(10, 5, 0, 1), ipv4(10, 5, 0, 2), 4567, 443, 5, 0x18);
         truncated_tcp_payload.resize(truncated_tcp_payload.size() - 2U);
-        PFL_EXPECT(payload_service.extract_transport_payload(truncated_tcp_payload).empty());
+        const auto truncated_payload = payload_service.extract_transport_payload(truncated_tcp_payload);
+        PFL_EXPECT(truncated_payload.size() == 3U);
     }
 
     {

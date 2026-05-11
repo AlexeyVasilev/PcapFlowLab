@@ -51,9 +51,6 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         const auto packet_end = ipv4_bounds->packet_end;
 
         if (protocol == detail::kIpProtocolTcp) {
-            if (!ipv4_bounds->bounds_from_captured_bytes && packet_bytes.size() < nominal_packet_end) {
-                return {};
-            }
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end) {
                 return {};
             }
@@ -99,9 +96,6 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         }
 
         if (payload->next_header == detail::kIpProtocolTcp) {
-            if (packet_bytes.size() < nominal_packet_end) {
-                return {};
-            }
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end) {
                 return {};
             }
