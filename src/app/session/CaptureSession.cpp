@@ -126,7 +126,10 @@ StreamItemRow make_stream_item_row(
     const std::size_t byte_count,
     const std::vector<std::uint64_t>& packet_indices,
     const std::string& payload_hex_text = {},
-    const std::string& protocol_text = {}
+    const std::string& protocol_text = {},
+    const bool has_constricted_contribution = false,
+    const std::vector<std::string>& constricted_contribution_notes = {},
+    const std::vector<std::string>& constricted_packet_notes = {}
 ) {
     return StreamItemRow {
         .stream_item_index = stream_item_index,
@@ -135,6 +138,9 @@ StreamItemRow make_stream_item_row(
         .byte_count = static_cast<std::uint32_t>(byte_count),
         .packet_count = static_cast<std::uint32_t>(packet_indices.size()),
         .packet_indices = packet_indices,
+        .has_constricted_contribution = has_constricted_contribution,
+        .constricted_contribution_notes = constricted_contribution_notes,
+        .constricted_packet_notes = constricted_packet_notes,
         .payload_hex_text = payload_hex_text,
         .protocol_text = protocol_text,
     };
@@ -156,7 +162,10 @@ StreamItemRow make_stream_item_row(
         byte_count,
         std::vector<std::uint64_t> {packet.packet_index},
         payload_hex_text,
-        protocol_text
+        protocol_text,
+        false,
+        {},
+        {}
     );
 }
 
@@ -178,7 +187,10 @@ bool append_tls_stream_items(
             item.byte_count,
             item.packet_indices,
             item.payload_hex_text,
-            item.protocol_text
+            item.protocol_text,
+            item.has_constricted_contribution,
+            item.constricted_contribution_notes,
+            item.constricted_packet_notes
         ));
     }
 
@@ -246,7 +258,10 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
             item.byte_count,
             item.packet_indices,
             item.payload_hex_text,
-            item.protocol_text
+            item.protocol_text,
+            item.has_constricted_contribution,
+            item.constricted_contribution_notes,
+            item.constricted_packet_notes
         ));
     }
 

@@ -2164,6 +2164,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::ByteCountRole).toUInt() == 3061U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::PacketCountRole).toUInt() == 2U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packets #6,#7"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(3, 0), StreamListModel::HasConstrictedContributionRole).toBool());
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(4, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS ChangeCipherSpec"));
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(4, 0), StreamListModel::ByteCountRole).toUInt() == 6U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(4, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #9"));
@@ -2173,6 +2174,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::ByteCountRole).toUInt() == 1007U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #10"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(6, 0), StreamListModel::HasConstrictedContributionRole).toBool());
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(7, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(7, 0), StreamListModel::ByteCountRole).toUInt() == 450U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(7, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #12"));
@@ -2182,6 +2184,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS AppData"));
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::ByteCountRole).toUInt() == 87U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #14"));
+    UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(9, 0), StreamListModel::HasConstrictedContributionRole).toBool());
     for (int row = 0; row < tls_constricted_stream_model->rowCount(); ++row) {
         UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(row, 0), StreamListModel::LabelRole).toString() != QStringLiteral("TLS Gap"));
     }
@@ -2193,10 +2196,31 @@ int main(int argc, char* argv[]) {
     tls_constricted_stream_controller.setSelectedStreamItemIndex(tls_constricted_stream_item_index);
     UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Label: TLS AppData")));
     UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Source packets: #6,#7")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted contributions:")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("#6 contributed 8 / 2787 bytes")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("#7 contributed 8 / 274 bytes")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #7: captured 66 / original 332 bytes.")));
     UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
     UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Length: 3056")));
-    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));
-    UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #7: captured 66 / original 332 bytes.")));
+    UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));
+    UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #7: captured 66 / original 332 bytes.")));
+
+    const auto tls_constricted_single_item_index = tls_constricted_stream_model->data(
+        tls_constricted_stream_model->index(6, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    tls_constricted_stream_controller.setSelectedStreamItemIndex(tls_constricted_single_item_index);
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #10 contributed 8 / 1007 bytes")));
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #10: captured 62 / original 1061 bytes.")));
+
+    const auto tls_constricted_packet_fourteen_item_index = tls_constricted_stream_model->data(
+        tls_constricted_stream_model->index(9, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    tls_constricted_stream_controller.setSelectedStreamItemIndex(tls_constricted_packet_fourteen_item_index);
+    UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #14: captured 66 / original 145 bytes.")));
+    UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #14: captured 66 / original 145 bytes.")));
 
     tls_constricted_stream_controller.sendSelectedFlowToAnalysis();
     UI_EXPECT(wait_until(app, [&tls_constricted_stream_controller]() {

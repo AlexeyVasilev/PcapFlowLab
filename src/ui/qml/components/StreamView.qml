@@ -160,6 +160,7 @@ Frame {
                     required property int byteCount
                     required property int packetCount
                     required property string sourcePacketsText
+                    required property bool hasConstrictedContribution
 
                     readonly property bool selected: root.isSelected(streamItemIndex)
                     readonly property bool forward: root.isForward(directionText)
@@ -229,11 +230,14 @@ Frame {
                             anchors.leftMargin: 9
                             anchors.rightMargin: 9
                             anchors.topMargin: 4
-                            implicitHeight: metadataTextItem.implicitHeight
+                            implicitHeight: Math.max(metadataTextItem.implicitHeight, constrictedBadge.visible ? constrictedBadge.implicitHeight : 0)
 
                             Label {
                                 id: metadataTextItem
-                                anchors.fill: parent
+                                anchors.left: parent.left
+                                anchors.right: constrictedBadge.visible ? constrictedBadge.left : parent.right
+                                anchors.rightMargin: constrictedBadge.visible ? 6 : 0
+                                anchors.verticalCenter: parent.verticalCenter
                                 text: metadataText
                                 color: "#475569"
                                 elide: Text.ElideRight
@@ -250,6 +254,28 @@ Frame {
 
                             ToolTip.visible: metadataHoverArea.containsMouse && metadataTextItem.truncated
                             ToolTip.text: byteCount + " bytes | " + (sourcePacketsText.length > 0 ? sourcePacketsText : (packetCount > 1 ? packetCount + " packets" : "1 packet"))
+                            
+                            Rectangle {
+                                id: constrictedBadge
+                                visible: hasConstrictedContribution
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                radius: 8
+                                color: selected ? "#fff3cd" : "#fff7dd"
+                                border.color: selected ? "#e0be63" : "#e7ca78"
+                                border.width: 1
+                                implicitWidth: constrictedBadgeText.implicitWidth + 10
+                                implicitHeight: constrictedBadgeText.implicitHeight + 4
+
+                                Label {
+                                    id: constrictedBadgeText
+                                    anchors.centerIn: parent
+                                    text: "Constricted"
+                                    color: "#8a6a12"
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+                            }
                         }
 
                         TapHandler {

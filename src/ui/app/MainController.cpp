@@ -1217,6 +1217,9 @@ QString stream_item_header_secondary_text(
 }
 
 QString stream_item_header_badge_text(const StreamItemRow& item) {
+    if (item.has_constricted_contribution) {
+        return QStringLiteral("Constricted");
+    }
     const auto label = QString::fromStdString(item.label);
     if (label.contains(QStringLiteral("partial"), Qt::CaseInsensitive)) {
         return QStringLiteral("Partial");
@@ -1228,6 +1231,31 @@ QString stream_item_header_badge_text(const StreamItemRow& item) {
         return QStringLiteral("Reassembled");
     }
     return {};
+}
+
+QStringList stream_item_constricted_summary_lines(const StreamItemRow& item) {
+    if (!item.has_constricted_contribution && item.constricted_packet_notes.empty()) {
+        return {};
+    }
+
+    QStringList lines {};
+    if (!item.constricted_contribution_notes.empty()) {
+        lines.push_back(item.constricted_contribution_notes.size() == 1U
+            ? QStringLiteral("Constricted contribution: %1").arg(QString::fromStdString(item.constricted_contribution_notes.front()))
+            : QStringLiteral("Constricted contributions:"));
+
+        if (item.constricted_contribution_notes.size() > 1U) {
+            for (const auto& note : item.constricted_contribution_notes) {
+                lines.push_back(QStringLiteral("%1").arg(QString::fromStdString(note)));
+            }
+        }
+    }
+
+    for (const auto& note : item.constricted_packet_notes) {
+        lines.push_back(QString::fromStdString(note));
+    }
+
+    return lines;
 }
 
 bool is_quic_stream_item_label(const QString& label) {
@@ -1822,6 +1850,10 @@ QString buildStreamItemSummary(
 
     if (const auto framesHint = stream_item_frames_hint_text(item); !framesHint.isEmpty()) {
         lines.insert(2, framesHint);
+    }
+    if (const auto constrictedLines = stream_item_constricted_summary_lines(item); !constrictedLines.isEmpty()) {
+        lines.push_back(QString {});
+        lines.append(constrictedLines);
     }
 
     return lines.join(QLatin1Char('\n'));

@@ -73,6 +73,8 @@ QVariant StreamListModel::data(const QModelIndex& index, const int role) const {
         return item.packet_count;
     case SourcePacketsTextRole:
         return item.source_packets_text;
+    case HasConstrictedContributionRole:
+        return item.has_constricted_contribution;
     default:
         return {};
     }
@@ -86,6 +88,7 @@ QHash<int, QByteArray> StreamListModel::roleNames() const {
         {ByteCountRole, "byteCount"},
         {PacketCountRole, "packetCount"},
         {SourcePacketsTextRole, "sourcePacketsText"},
+        {HasConstrictedContributionRole, "hasConstrictedContribution"},
     };
 }
 
@@ -102,6 +105,7 @@ void StreamListModel::refresh(const std::vector<StreamItemRow>& rows, const std:
             .byte_count = row.byte_count,
             .packet_count = row.packet_count,
             .source_packets_text = format_source_packets_text(row, flowPacketNumbers),
+            .has_constricted_contribution = row.has_constricted_contribution,
         });
     }
 
@@ -126,6 +130,7 @@ void StreamListModel::append(const std::vector<StreamItemRow>& rows, const std::
             .byte_count = row.byte_count,
             .packet_count = row.packet_count,
             .source_packets_text = format_source_packets_text(row, flowPacketNumbers),
+            .has_constricted_contribution = row.has_constricted_contribution,
         });
     }
 

@@ -1384,10 +1384,19 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[3].label == "TLS AppData");
         PFL_EXPECT(rows[3].byte_count == 3061U);
         PFL_EXPECT(rows[3].packet_indices == std::vector<std::uint64_t>({5U, 6U}));
+        PFL_EXPECT(rows[3].has_constricted_contribution);
+        PFL_EXPECT(rows[3].constricted_contribution_notes == std::vector<std::string>({
+            "#6 contributed 8 / 2787 bytes",
+            "#7 contributed 8 / 274 bytes",
+        }));
+        PFL_EXPECT(rows[3].constricted_packet_notes == std::vector<std::string>({
+            "  Constricted packet #6: captured 199 / original 2978 bytes.",
+            "  Constricted packet #7: captured 66 / original 332 bytes.",
+        }));
         PFL_EXPECT(rows[3].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
         PFL_EXPECT(rows[3].protocol_text.find("Record Length: 3056") != std::string::npos);
-        PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #6: captured 199 / original 2978 bytes.") != std::string::npos);
-        PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #7: captured 66 / original 332 bytes.") != std::string::npos);
+        PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #6: captured 199 / original 2978 bytes.") == std::string::npos);
+        PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #7: captured 66 / original 332 bytes.") == std::string::npos);
         PFL_EXPECT(rows[4].label == "TLS ChangeCipherSpec");
         PFL_EXPECT(rows[4].byte_count == 6U);
         PFL_EXPECT(rows[4].packet_indices == std::vector<std::uint64_t> {8U});
@@ -1397,6 +1406,10 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[6].label == "TLS AppData");
         PFL_EXPECT(rows[6].byte_count == 1007U);
         PFL_EXPECT(rows[6].packet_indices == std::vector<std::uint64_t> {9U});
+        PFL_EXPECT(rows[6].has_constricted_contribution);
+        PFL_EXPECT(rows[6].constricted_contribution_notes == std::vector<std::string>({
+            "#10 contributed 8 / 1007 bytes",
+        }));
         PFL_EXPECT(rows[7].label == "TLS AppData");
         PFL_EXPECT(rows[7].byte_count == 450U);
         PFL_EXPECT(rows[7].packet_indices == std::vector<std::uint64_t> {11U});

@@ -1231,6 +1231,8 @@ struct PendingTlsRecord {
     std::size_t remaining_original_bytes {0U};
     std::vector<std::uint64_t> packet_indices {};
     std::vector<std::uint8_t> captured_bytes {};
+    bool has_constricted_contribution {false};
+    std::vector<std::string> constricted_contribution_notes {};
     std::string protocol_text {};
     std::vector<std::string> constricted_notes {};
 };
@@ -1247,6 +1249,24 @@ void append_constricted_packet_note(PendingTlsRecord& record, const PacketRef& p
     record.constricted_notes.push_back(note.str());
 }
 
+void append_constricted_contribution_note(
+    PendingTlsRecord& record,
+    const PacketRef& packet,
+    const std::size_t captured_contribution,
+    const std::size_t original_contribution
+) {
+    if (packet.captured_length >= packet.original_length || captured_contribution >= original_contribution) {
+        return;
+    }
+
+    std::ostringstream note {};
+    note << "#" << (packet.packet_index + 1U)
+         << " contributed " << captured_contribution
+         << " / " << original_contribution << " bytes";
+    record.has_constricted_contribution = true;
+    record.constricted_contribution_notes.push_back(note.str());
+}
+
 void append_unique_packet_index(std::vector<std::uint64_t>& packet_indices, const std::uint64_t packet_index) {
     if (packet_indices.empty() || packet_indices.back() != packet_index) {
         packet_indices.push_back(packet_index);
@@ -1257,24 +1277,15 @@ TlsStreamPresentationItem finalize_pending_tls_record(
     PendingTlsRecord&& record,
     HexDumpService& hex_dump_service
 ) {
-    auto protocol_text = std::move(record.protocol_text);
-    if (!record.constricted_notes.empty()) {
-        protocol_text += "\n";
-        for (const auto& note : record.constricted_notes) {
-            protocol_text += note;
-            protocol_text += "\n";
-        }
-        if (!protocol_text.empty() && protocol_text.back() == '\n') {
-            protocol_text.pop_back();
-        }
-    }
-
     return TlsStreamPresentationItem {
         .label = std::move(record.label),
         .byte_count = record.total_byte_count,
         .packet_indices = std::move(record.packet_indices),
+        .has_constricted_contribution = record.has_constricted_contribution,
+        .constricted_contribution_notes = std::move(record.constricted_contribution_notes),
+        .constricted_packet_notes = std::move(record.constricted_notes),
         .payload_hex_text = hex_dump_service.format(record.captured_bytes),
-        .protocol_text = std::move(protocol_text),
+        .protocol_text = std::move(record.protocol_text),
     };
 }
 
@@ -1666,6 +1677,12 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                 );
                 if (packet.captured_length < packet.original_length && captured_contribution < contributed_original_bytes) {
                     append_constricted_packet_note(*pending_record, packet);
+                    append_constricted_contribution_note(
+                        *pending_record,
+                        packet,
+                        captured_contribution,
+                        contributed_original_bytes
+                    );
                 }
                 pending_record->remaining_original_bytes -= contributed_original_bytes;
                 unique_original_remaining -= contributed_original_bytes;
@@ -1740,6 +1757,12 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             if (packet.captured_length < packet.original_length && captured_contribution < record_size) {
                 append_constricted_packet_note(record, packet);
             }
+            append_constricted_contribution_note(
+                record,
+                packet,
+                captured_contribution,
+                contributed_original_bytes
+            );
 
             record_budget_remaining -= contributed_original_bytes;
             unique_original_remaining -= contributed_unique_bytes;

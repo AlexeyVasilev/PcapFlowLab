@@ -23,6 +23,7 @@ public:
         ByteCountRole,
         PacketCountRole,
         SourcePacketsTextRole,
+        HasConstrictedContributionRole,
     };
 
     explicit StreamListModel(QObject* parent = nullptr);
@@ -43,6 +44,7 @@ private:
         uint byte_count {0};
         uint packet_count {0};
         QString source_packets_text {};
+        bool has_constricted_contribution {false};
     };
 
     std::vector<Item> items_ {};
