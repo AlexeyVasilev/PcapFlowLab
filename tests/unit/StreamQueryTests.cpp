@@ -1024,7 +1024,8 @@ void run_stream_query_tests() {
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(!rows.empty());
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
-            return starts_with(row.label, "QUIC ") || row.label == "Handshake" || row.label == "Protected payload" || row.label == "0-RTT";
+            return row.label == "QUIC Initial: ACK" || row.label == "QUIC Initial: CRYPTO" ||
+                   starts_with(row.label, "QUIC ") || row.label == "Handshake" || row.label == "Protected payload" || row.label == "0-RTT";
         }));
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label == "QUIC Initial: CRYPTO";
@@ -1305,7 +1306,11 @@ void run_stream_query_tests() {
             return row.packet_indices == std::vector<std::uint64_t> {2U};
         });
         PFL_EXPECT(server_tail_row != rows.end());
-        PFL_EXPECT(starts_with(server_tail_row->label, "QUIC "));
+        PFL_EXPECT(
+            starts_with(server_tail_row->label, "QUIC ") ||
+            server_tail_row->label == "QUIC Initial: CRYPTO" ||
+            server_tail_row->label == "QUIC Initial: ACK"
+        );
 
         const auto server_tail_context = session.derive_quic_protocol_details_for_packet_context(0, server_tail_row->packet_indices);
         PFL_EXPECT(server_tail_context.has_value());
@@ -1421,6 +1426,119 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[9].packet_indices == std::vector<std::uint64_t> {13U});
         PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label == "TLS Gap";
+        }));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_constricted_1.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 21U);
+
+        PFL_EXPECT(rows.size() > 20U);
+        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[0].byte_count == 855U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(!rows[0].has_constricted_contribution);
+        PFL_EXPECT(rows[1].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[1].byte_count == 99U);
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(!rows[1].has_constricted_contribution);
+        PFL_EXPECT(rows[2].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[2].byte_count == 950U);
+        PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t>({1U}));
+        PFL_EXPECT(!rows[2].has_constricted_contribution);
+        PFL_EXPECT(rows[3].label == "QUIC Initial: ACK");
+        PFL_EXPECT(rows[3].byte_count == 6U);
+        PFL_EXPECT(rows[3].packet_indices == std::vector<std::uint64_t>({2U}));
+        PFL_EXPECT(!rows[3].has_constricted_contribution);
+        PFL_EXPECT(rows[4].label == "QUIC Initial: ACK");
+        PFL_EXPECT(rows[4].byte_count == 6U);
+        PFL_EXPECT(rows[4].packet_indices == std::vector<std::uint64_t>({3U}));
+        PFL_EXPECT(!rows[4].has_constricted_contribution);
+        PFL_EXPECT(rows[5].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[5].byte_count == 1170U);
+        PFL_EXPECT(rows[5].packet_indices == std::vector<std::uint64_t>({4U}));
+        PFL_EXPECT(!rows[5].has_constricted_contribution);
+        PFL_EXPECT(rows[6].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[6].byte_count == 5U);
+        PFL_EXPECT(rows[6].packet_indices == std::vector<std::uint64_t>({5U}));
+        PFL_EXPECT(!rows[6].has_constricted_contribution);
+        PFL_EXPECT(rows[7].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[7].byte_count == 15U);
+        PFL_EXPECT(rows[7].packet_indices == std::vector<std::uint64_t>({6U}));
+        PFL_EXPECT(!rows[7].has_constricted_contribution);
+        PFL_EXPECT(rows[8].label == "QUIC Initial: ACK");
+        PFL_EXPECT(rows[8].byte_count == 6U);
+        PFL_EXPECT(rows[8].packet_indices == std::vector<std::uint64_t>({7U}));
+        PFL_EXPECT(!rows[8].has_constricted_contribution);
+        PFL_EXPECT(rows[9].label == "Handshake");
+        PFL_EXPECT(rows[9].byte_count == 1252U);
+        PFL_EXPECT(rows[9].packet_indices == std::vector<std::uint64_t>({8U}));
+        PFL_EXPECT(!rows[9].has_constricted_contribution);
+        PFL_EXPECT(rows[10].label == "Handshake");
+        PFL_EXPECT(rows[10].byte_count == 1252U);
+        PFL_EXPECT(rows[10].packet_indices == std::vector<std::uint64_t>({9U}));
+        PFL_EXPECT(!rows[10].has_constricted_contribution);
+        PFL_EXPECT(rows[11].label == "Handshake");
+        PFL_EXPECT(rows[11].byte_count == 42U);
+        PFL_EXPECT(rows[11].packet_indices == std::vector<std::uint64_t>({10U}));
+        PFL_EXPECT(!rows[11].has_constricted_contribution);
+        PFL_EXPECT(rows[12].label == "Handshake");
+        PFL_EXPECT(rows[12].byte_count == 1252U);
+        PFL_EXPECT(rows[12].packet_indices == std::vector<std::uint64_t>({11U}));
+        PFL_EXPECT(!rows[12].has_constricted_contribution);
+        PFL_EXPECT(rows[13].label == "Handshake");
+        PFL_EXPECT(rows[13].byte_count == 608U);
+        PFL_EXPECT(rows[13].packet_indices == std::vector<std::uint64_t>({12U}));
+        PFL_EXPECT(!rows[13].has_constricted_contribution);
+        PFL_EXPECT(rows[14].label == "Protected payload");
+        PFL_EXPECT(rows[14].byte_count == 69U);
+        PFL_EXPECT(rows[14].packet_indices == std::vector<std::uint64_t>({12U}));
+        PFL_EXPECT(rows[14].has_constricted_contribution);
+        PFL_EXPECT(rows[15].label == "Handshake");
+        PFL_EXPECT(rows[15].byte_count == 43U);
+        PFL_EXPECT(rows[15].packet_indices == std::vector<std::uint64_t>({13U}));
+        PFL_EXPECT(!rows[15].has_constricted_contribution);
+        PFL_EXPECT(rows[16].label == "Handshake");
+        PFL_EXPECT(rows[16].byte_count == 76U);
+        PFL_EXPECT(rows[16].packet_indices == std::vector<std::uint64_t>({14U}));
+        PFL_EXPECT(!rows[16].has_constricted_contribution);
+        PFL_EXPECT(rows[17].label == "Protected payload");
+        PFL_EXPECT(rows[17].byte_count == 55U);
+        PFL_EXPECT(rows[17].packet_indices == std::vector<std::uint64_t>({14U}));
+        PFL_EXPECT(rows[17].has_constricted_contribution);
+        PFL_EXPECT(rows[18].label == "Protected payload");
+        PFL_EXPECT(rows[18].byte_count == 78U);
+        PFL_EXPECT(rows[18].packet_indices == std::vector<std::uint64_t>({15U}));
+        PFL_EXPECT(rows[18].has_constricted_contribution);
+        PFL_EXPECT(rows[19].label == "Protected payload");
+        PFL_EXPECT(rows[19].byte_count == 766U);
+        PFL_EXPECT(rows[19].packet_indices == std::vector<std::uint64_t>({16U}));
+        PFL_EXPECT(rows[19].has_constricted_contribution);
+        PFL_EXPECT(rows[20].label == "Protected payload");
+        PFL_EXPECT(rows[20].byte_count == 736U);
+        PFL_EXPECT(rows[20].packet_indices == std::vector<std::uint64_t>({17U}));
+        PFL_EXPECT(rows[20].has_constricted_contribution);
+
+        PFL_EXPECT(rows[14].constricted_contribution_notes == std::vector<std::string>({
+            "#13 contributed 32 / 69 bytes",
+        }));
+        PFL_EXPECT(rows[17].constricted_contribution_notes == std::vector<std::string>({
+            "#15 contributed 32 / 55 bytes",
+        }));
+        PFL_EXPECT(rows[18].constricted_contribution_notes == std::vector<std::string>({
+            "#16 contributed 32 / 78 bytes",
+        }));
+        PFL_EXPECT(rows[19].constricted_contribution_notes == std::vector<std::string>({
+            "#17 contributed 32 / 766 bytes",
+        }));
+        PFL_EXPECT(rows[20].constricted_contribution_notes == std::vector<std::string>({
+            "#18 contributed 32 / 736 bytes",
+        }));
+        PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.label == "QUIC Initial";
         }));
     }
 

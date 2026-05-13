@@ -50,6 +50,11 @@ struct QuicSemanticItemInfo {
     std::size_t byte_count {0U};
 };
 
+struct QuicConstrictedContribution {
+    bool has_constricted_contribution {false};
+    std::vector<std::string> constricted_contribution_notes {};
+};
+
 std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) noexcept {
     return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
            (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
@@ -213,6 +218,41 @@ std::string quic_stream_label_from_result(const QuicPresentationResult& result) 
     default:
         return "UDP Payload";
     }
+}
+
+std::optional<std::size_t> derive_original_udp_payload_length(const PacketRef& packet) {
+    if (packet.captured_length < packet.payload_length) {
+        return std::nullopt;
+    }
+
+    const auto transport_payload_offset =
+        static_cast<std::size_t>(packet.captured_length) - static_cast<std::size_t>(packet.payload_length);
+    if (packet.original_length < transport_payload_offset) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::size_t>(packet.original_length) - transport_payload_offset;
+}
+
+QuicConstrictedContribution make_quic_constricted_contribution(
+    const PacketRef& packet,
+    const std::size_t captured_contribution_length,
+    const std::size_t original_contribution_length
+) {
+    if (captured_contribution_length >= original_contribution_length) {
+        return {};
+    }
+
+    std::ostringstream note {};
+    note << '#' << (packet.packet_index + 1U)
+         << " contributed " << captured_contribution_length
+         << " / " << original_contribution_length
+         << " bytes";
+
+    return QuicConstrictedContribution {
+        .has_constricted_contribution = true,
+        .constricted_contribution_notes = {note.str()},
+    };
 }
 
 std::optional<std::uint64_t> quic_read_varint(std::span<const std::uint8_t> bytes, std::size_t& offset) {
@@ -695,10 +735,18 @@ std::optional<std::vector<std::uint8_t>> decrypt_quic_initial_plaintext_for_dire
     const bool is_client_to_server,
     std::span<const std::uint8_t> initial_secret_connection_id = {}
 ) {
-    return initial_parser.decrypt_initial_plaintext(
+    const auto plaintext = initial_parser.decrypt_initial_plaintext(
         udp_payload,
         !is_client_to_server,
         initial_secret_connection_id
+    );
+    if (plaintext.has_value() || initial_secret_connection_id.empty()) {
+        return plaintext;
+    }
+
+    return initial_parser.decrypt_initial_plaintext(
+        udp_payload,
+        !is_client_to_server
     );
 }
 
@@ -898,7 +946,8 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             result.additional_shell_types.push_back(shell_type);
         }
     }
-    if (anchor_it->parsed.frame_summary.has_value()) {
+    if (anchor_it->parsed.shell_type != QuicPresentationShellType::initial &&
+        anchor_it->parsed.frame_summary.has_value()) {
         result.semantics = quic_semantics_from_summary(*anchor_it->parsed.frame_summary);
     }
 
@@ -941,6 +990,9 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
             if (is_anchor_packet && summary.has_value()) {
                 result.semantics = quic_semantics_from_summary(*summary);
             }
+            if (is_anchor_packet) {
+                result.selected_initial_plaintext_payload = *plaintext;
+            }
 
             if (!summary.has_value() || !summary->crypto) {
                 continue;
@@ -958,6 +1010,13 @@ std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direc
 
             crypto_plaintexts.push_back(*plaintext);
             crypto_packet_indices.push_back(candidate.packet.packet_index);
+        }
+
+        if (result.selected_initial_plaintext_payload.empty() &&
+            anchor_it->parsed.frame_summary.has_value() &&
+            !anchor_it->parsed.plaintext_payload_candidate.empty()) {
+            result.semantics = quic_semantics_from_summary(*anchor_it->parsed.frame_summary);
+            result.selected_initial_plaintext_payload = anchor_it->parsed.plaintext_payload_candidate;
         }
 
         if (!crypto_plaintexts.empty()) {
@@ -1072,10 +1131,18 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
     QuicInitialParser initial_parser {};
 
     std::size_t packet_offset = 0U;
+    auto original_payload_length = derive_original_udp_payload_length(packet);
+    std::size_t remaining_original_payload_length = original_payload_length.value_or(payload_span.size());
     for (const auto& parsed_packet : datagram_packets) {
         const auto packet_slice_length = std::min(parsed_packet.packet_bytes_consumed, payload_span.size() - packet_offset);
         const auto packet_slice = payload_span.subspan(packet_offset, packet_slice_length);
         packet_offset += packet_slice_length;
+        const auto original_packet_slice_length = std::min(
+            remaining_original_payload_length,
+            parsed_packet.shell.header_form == "Short"
+                ? remaining_original_payload_length
+                : parsed_packet.packet_bytes_consumed
+        );
 
         if (parsed_packet.shell_type == QuicPresentationShellType::initial) {
             QuicPresentationResult aggregate_result {};
@@ -1087,27 +1154,43 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
             aggregate_result.crypto_packet_indices = context_result.has_value() ? context_result->crypto_packet_indices : std::vector<std::uint64_t> {};
             aggregate_result.used_bounded_crypto_assembly = context_result.has_value() && context_result->used_bounded_crypto_assembly;
 
-            std::optional<QuicFramePresenceSummary> aggregate_summary = parsed_packet.frame_summary;
-            std::vector<QuicSemanticItemInfo> semantic_items = quic_semantic_items_from_plaintext(parsed_packet.plaintext_payload_candidate);
-            if (!aggregate_summary.has_value() || semantic_items.empty()) {
-                const auto plaintext = decrypt_quic_initial_plaintext_for_direction(
-                    initial_parser,
-                    packet_slice,
-                    client_to_server,
-                    initial_secret_connection_id
+            std::optional<QuicFramePresenceSummary> aggregate_summary {};
+            std::vector<QuicSemanticItemInfo> semantic_items {};
+            const auto plaintext = decrypt_quic_initial_plaintext_for_direction(
+                initial_parser,
+                packet_slice,
+                client_to_server,
+                initial_secret_connection_id
+            );
+            if (plaintext.has_value()) {
+                aggregate_summary = summarize_quic_plaintext_frames(
+                    std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
                 );
-                if (plaintext.has_value()) {
-                    aggregate_summary = summarize_quic_plaintext_frames(
-                        std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
-                    );
-                    semantic_items = quic_semantic_items_from_plaintext(
-                        std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
-                    );
-                }
+                semantic_items = quic_semantic_items_from_plaintext(
+                    std::span<const std::uint8_t>(plaintext->data(), plaintext->size())
+                );
+            }
+            if ((!aggregate_summary.has_value() || semantic_items.empty()) &&
+                context_result.has_value() &&
+                !context_result->selected_initial_plaintext_payload.empty()) {
+                const auto plaintext_span = std::span<const std::uint8_t>(
+                    context_result->selected_initial_plaintext_payload.data(),
+                    context_result->selected_initial_plaintext_payload.size()
+                );
+                aggregate_summary = summarize_quic_plaintext_frames(plaintext_span);
+                semantic_items = quic_semantic_items_from_plaintext(plaintext_span);
+            }
+            if ((!aggregate_summary.has_value() || semantic_items.empty()) &&
+                parsed_packet.frame_summary.has_value() &&
+                !parsed_packet.plaintext_payload_candidate.empty()) {
+                aggregate_summary = parsed_packet.frame_summary;
+                semantic_items = quic_semantic_items_from_plaintext(parsed_packet.plaintext_payload_candidate);
             }
 
             if (aggregate_summary.has_value()) {
                 aggregate_result.semantics = quic_semantics_from_summary(*aggregate_summary);
+            } else if (context_result.has_value()) {
+                aggregate_result.semantics = context_result->semantics;
             }
 
             const auto protocol_text = merge_quic_protocol_text(
@@ -1127,23 +1210,32 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
                         .protocol_text = protocol_text.value_or(std::string {}),
                     });
                 }
+                remaining_original_payload_length =
+                    remaining_original_payload_length > original_packet_slice_length
+                        ? (remaining_original_payload_length - original_packet_slice_length)
+                        : 0U;
                 continue;
             }
 
             if (should_emit_quic_stream_item(aggregate_result)) {
                 presentation.items.push_back(QuicStreamPacketItem {
                     .label = quic_stream_label_from_result(aggregate_result),
-                    .byte_count = packet_slice_length,
+                    .byte_count = original_packet_slice_length,
                     .protocol_text = protocol_text.value_or(std::string {}),
                 });
             }
+            remaining_original_payload_length =
+                remaining_original_payload_length > original_packet_slice_length
+                    ? (remaining_original_payload_length - original_packet_slice_length)
+                    : 0U;
             continue;
         }
 
         QuicPresentationResult result {};
         result.shell_type = parsed_packet.shell_type;
         result.shell = parsed_packet.shell;
-        if (parsed_packet.frame_summary.has_value()) {
+        if (parsed_packet.shell_type == QuicPresentationShellType::initial &&
+            parsed_packet.frame_summary.has_value()) {
             result.semantics = quic_semantics_from_summary(*parsed_packet.frame_summary);
         }
         result.selected_packet_indices = {packet.packet_index};
@@ -1155,11 +1247,22 @@ QuicStreamPacketPresentation build_quic_stream_packet_presentation_impl(
         }
 
         const auto protocol_text = format_quic_presentation_protocol_text(result);
+        const auto constricted_contribution = make_quic_constricted_contribution(
+            packet,
+            packet_slice_length,
+            original_packet_slice_length
+        );
         presentation.items.push_back(QuicStreamPacketItem {
             .label = quic_stream_label_from_result(result),
-            .byte_count = packet_slice_length,
+            .byte_count = original_packet_slice_length,
+            .has_constricted_contribution = constricted_contribution.has_constricted_contribution,
+            .constricted_contribution_notes = constricted_contribution.constricted_contribution_notes,
             .protocol_text = protocol_text.value_or(std::string {}),
         });
+        remaining_original_payload_length =
+            remaining_original_payload_length > original_packet_slice_length
+                ? (remaining_original_payload_length - original_packet_slice_length)
+                : 0U;
     }
 
     return presentation;

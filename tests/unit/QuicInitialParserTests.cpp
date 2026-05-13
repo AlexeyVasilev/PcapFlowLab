@@ -379,7 +379,34 @@ void run_quic_initial_parser_tests() {
         const auto sni = parser.extract_client_initial_sni_from_crypto_payloads(payloads);
         PFL_EXPECT(!sni.has_value());
     }
+
+    {
+        // Real QUIC Initial packet #8 from quic_constricted_1.pcap. The sender transmits a
+        // truncated packet number, so successful decrypt requires recovering the full packet
+        // number before building the AEAD nonce.
+        const std::vector<std::uint8_t> udp_payload {
+            0xC9U, 0x00U, 0x00U, 0x00U, 0x01U, 0x08U, 0xF3U, 0xAAU,
+            0xE5U, 0x6FU, 0x5BU, 0x5CU, 0xCEU, 0xF6U, 0x03U, 0x51U,
+            0x50U, 0xB9U, 0x00U, 0x40U, 0x17U, 0xA4U, 0x14U, 0x68U,
+            0x01U, 0xF5U, 0x02U, 0x10U, 0x44U, 0x88U, 0x9BU, 0x17U,
+            0x9EU, 0x16U, 0x8FU, 0x3FU, 0x15U, 0x12U, 0xAAU, 0xEDU,
+            0x68U, 0x2FU, 0x18U, 0x6DU,
+        };
+        const std::vector<std::uint8_t> initial_secret_connection_id {
+            0x13U, 0xAAU, 0xE5U, 0x6FU, 0x5BU, 0x5CU, 0xCEU, 0xF6U,
+        };
+        const std::vector<std::uint8_t> expected_plaintext {
+            0x02U, 0x05U, 0x40U, 0x5EU, 0x00U, 0x04U,
+        };
+
+        const auto plaintext = parser.decrypt_initial_plaintext(
+            std::span<const std::uint8_t>(udp_payload.data(), udp_payload.size()),
+            false,
+            std::span<const std::uint8_t>(initial_secret_connection_id.data(), initial_secret_connection_id.size())
+        );
+        PFL_EXPECT(plaintext.has_value());
+        PFL_EXPECT(*plaintext == expected_plaintext);
+    }
 }
 
 }  // namespace pfl::tests
-

@@ -50,6 +50,7 @@ struct QuicPresentationResult {
     std::vector<QuicPresentationShellType> additional_shell_types {};
     std::vector<std::uint64_t> selected_packet_indices {};
     std::vector<std::uint64_t> crypto_packet_indices {};
+    std::vector<std::uint8_t> selected_initial_plaintext_payload {};
     std::optional<std::string> sni {};
     std::optional<TlsHandshakeDetails> tls_handshake {};
     bool used_bounded_crypto_assembly {false};
@@ -58,6 +59,8 @@ struct QuicPresentationResult {
 struct QuicStreamPacketItem {
     std::string label {};
     std::size_t byte_count {0};
+    bool has_constricted_contribution {false};
+    std::vector<std::string> constricted_contribution_notes {};
     std::string protocol_text {};
 };
 

@@ -685,6 +685,7 @@ std::optional<ParsedClientInitialHeader> parse_client_initial_header(std::span<c
 struct UnprotectedInitialHeader {
     std::vector<std::uint8_t> associated_data {};
     std::uint64_t packet_number {0U};
+    std::uint64_t truncated_packet_number {0U};
     std::size_t packet_number_length {0U};
 };
 
@@ -722,6 +723,7 @@ std::optional<UnprotectedInitialHeader> remove_initial_header_protection(std::sp
     return UnprotectedInitialHeader {
         .associated_data = std::move(associated_data),
         .packet_number = packet_number,
+        .truncated_packet_number = packet_number,
         .packet_number_length = packet_number_length,
     };
 }
@@ -736,6 +738,33 @@ std::array<std::uint8_t, kQuicIvSize> build_quic_nonce(std::span<const std::uint
     }
 
     return nonce;
+}
+
+std::optional<std::vector<std::uint8_t>> decrypt_initial_ciphertext(
+    std::span<const std::uint8_t> key,
+    std::span<const std::uint8_t> iv,
+    const UnprotectedInitialHeader& unprotected_header,
+    std::span<const std::uint8_t> ciphertext,
+    std::span<const std::uint8_t> tag,
+    const std::uint64_t packet_number
+) {
+    const auto nonce = build_quic_nonce(iv, packet_number);
+    return aes_128_gcm_decrypt(key, nonce, unprotected_header.associated_data, ciphertext, tag);
+}
+
+std::optional<std::uint64_t> next_quic_packet_number_candidate(
+    const std::uint64_t truncated_packet_number,
+    const std::size_t packet_number_length,
+    const std::uint32_t attempt_index
+) {
+    if (packet_number_length == 0U || packet_number_length >= sizeof(std::uint64_t)) {
+        return std::nullopt;
+    }
+
+    const auto packet_number_bits = static_cast<unsigned>(packet_number_length * 8U);
+    const auto packet_number_window = std::uint64_t {1} << packet_number_bits;
+    const auto candidate = truncated_packet_number + (packet_number_window * static_cast<std::uint64_t>(attempt_index));
+    return candidate;
 }
 
 struct CryptoFragment {
@@ -1062,6 +1091,8 @@ std::optional<std::vector<std::uint8_t>> decrypt_initial_plaintext_with_perspect
     const bool use_server_initial_secret,
     std::span<const std::uint8_t> initial_secret_connection_id_override = {}
 ) {
+    constexpr std::uint32_t kMaxPacketNumberWindowsToTry = 64U;
+
     const auto header = parse_client_initial_header(udp_payload);
     if (!header.has_value()) {
         return std::nullopt;
@@ -1113,9 +1144,47 @@ std::optional<std::vector<std::uint8_t>> decrypt_initial_plaintext_with_perspect
     const auto ciphertext_length = header->packet_end - ciphertext_offset - kQuicTagSize;
     const auto ciphertext = udp_payload.subspan(ciphertext_offset, ciphertext_length);
     const auto tag = udp_payload.subspan(header->packet_end - kQuicTagSize, kQuicTagSize);
-    const auto nonce = build_quic_nonce(*iv, unprotected_header->packet_number);
 
-    return aes_128_gcm_decrypt(*key, nonce, unprotected_header->associated_data, ciphertext, tag);
+    if (const auto plaintext = decrypt_initial_ciphertext(
+            *key,
+            *iv,
+            *unprotected_header,
+            ciphertext,
+            tag,
+            unprotected_header->packet_number);
+        plaintext.has_value()) {
+        return plaintext;
+    }
+
+    // QUIC transmits a truncated packet number in the header. For early Initial packets
+    // we can recover the full packet number by trying later packet-number windows until
+    // authenticated decryption succeeds.
+    for (std::uint32_t attempt_index = 1U; attempt_index <= kMaxPacketNumberWindowsToTry; ++attempt_index) {
+        const auto packet_number = next_quic_packet_number_candidate(
+            unprotected_header->truncated_packet_number,
+            unprotected_header->packet_number_length,
+            attempt_index
+        );
+        if (!packet_number.has_value()) {
+            break;
+        }
+
+        const auto plaintext = decrypt_initial_ciphertext(
+            *key,
+            *iv,
+            *unprotected_header,
+            ciphertext,
+            tag,
+            *packet_number
+        );
+        if (!plaintext.has_value()) {
+            continue;
+        }
+
+        return plaintext;
+    }
+
+    return std::nullopt;
 }
 
 void append_bounded_crypto_fragments(std::vector<CryptoFragment>& destination,

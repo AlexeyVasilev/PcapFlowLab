@@ -2340,6 +2340,10 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("capturedLength")).toUInt() == 686U);
     UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("originalLength")).toUInt() == 723U);
     UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("677"));
+    const auto quic_preview_packet_seventeen = quic_constricted_preview[16].toMap();
+    UI_EXPECT(quic_preview_packet_seventeen.value(QStringLiteral("capturedLength")).toUInt() == 74U);
+    UI_EXPECT(quic_preview_packet_seventeen.value(QStringLiteral("originalLength")).toUInt() == 808U);
+    UI_EXPECT(quic_preview_packet_seventeen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("766"));
 
     const auto quic_packet_thirteen_index = quic_constricted_packet_model->data(
         quic_constricted_packet_model->index(12, 0),
@@ -2359,6 +2363,107 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_non_truncated_summary.contains(QStringLiteral("Payload Length: 1252")));
     UI_EXPECT(!quic_non_truncated_summary.contains(QStringLiteral("Real Payload Length:")));
     UI_EXPECT(!quic_non_truncated_summary.contains(QStringLiteral("Original Payload Length:")));
+    auto* quic_constricted_flow_model = qobject_cast<FlowListModel*>(quic_constricted_controller.flowModel());
+    UI_EXPECT(quic_constricted_flow_model != nullptr);
+    UI_EXPECT(quic_constricted_flow_model->rowCount() == 1);
+    UI_EXPECT(quic_constricted_flow_model->data(quic_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+
+    quic_constricted_controller.setFlowDetailsTabIndex(1);
+    auto* quic_constricted_stream_model = qobject_cast<StreamListModel*>(quic_constricted_controller.streamModel());
+    UI_EXPECT(quic_constricted_stream_model != nullptr);
+    UI_EXPECT(quic_constricted_stream_model->rowCount() == 21);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == 855U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(0, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #1"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(0, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(1, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(1, 0), StreamListModel::ByteCountRole).toUInt() == 99U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(1, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #1"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(1, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(2, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(2, 0), StreamListModel::ByteCountRole).toUInt() == 950U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(2, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #2"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(2, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(3, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: ACK"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(3, 0), StreamListModel::ByteCountRole).toUInt() == 6U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(3, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #3"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(3, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(4, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: ACK"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(4, 0), StreamListModel::ByteCountRole).toUInt() == 6U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(4, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #4"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(4, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(5, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(5, 0), StreamListModel::ByteCountRole).toUInt() == 1170U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(5, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #5"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(5, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(6, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(6, 0), StreamListModel::ByteCountRole).toUInt() == 5U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(6, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #6"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(6, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(7, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: CRYPTO"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(7, 0), StreamListModel::ByteCountRole).toUInt() == 15U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(7, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #7"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(7, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(8, 0), StreamListModel::LabelRole).toString() == QStringLiteral("QUIC Initial: ACK"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(8, 0), StreamListModel::ByteCountRole).toUInt() == 6U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(8, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #8"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(8, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(9, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(9, 0), StreamListModel::ByteCountRole).toUInt() == 1252U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(9, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #9"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(9, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(10, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(10, 0), StreamListModel::ByteCountRole).toUInt() == 1252U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(10, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #10"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(10, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(11, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(11, 0), StreamListModel::ByteCountRole).toUInt() == 42U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(11, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #11"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(11, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(12, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(12, 0), StreamListModel::ByteCountRole).toUInt() == 1252U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(12, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #12"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(12, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(13, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(13, 0), StreamListModel::ByteCountRole).toUInt() == 608U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(13, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #13"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(13, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(14, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Protected payload"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(14, 0), StreamListModel::ByteCountRole).toUInt() == 69U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(14, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #13"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(14, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(15, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(15, 0), StreamListModel::ByteCountRole).toUInt() == 43U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(15, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #14"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(15, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(16, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Handshake"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(16, 0), StreamListModel::ByteCountRole).toUInt() == 76U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(16, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #15"));
+    UI_EXPECT(!quic_constricted_stream_model->data(quic_constricted_stream_model->index(16, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(17, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Protected payload"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(17, 0), StreamListModel::ByteCountRole).toUInt() == 55U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(17, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #15"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(17, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(18, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Protected payload"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(18, 0), StreamListModel::ByteCountRole).toUInt() == 78U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(18, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #16"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(18, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(19, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Protected payload"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(19, 0), StreamListModel::ByteCountRole).toUInt() == 766U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(19, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #17"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(19, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(20, 0), StreamListModel::LabelRole).toString() == QStringLiteral("Protected payload"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(20, 0), StreamListModel::ByteCountRole).toUInt() == 736U);
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(20, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #18"));
+    UI_EXPECT(quic_constricted_stream_model->data(quic_constricted_stream_model->index(20, 0), StreamListModel::HasConstrictedContributionRole).toBool());
+
+    const auto quic_constricted_stream_item_index = quic_constricted_stream_model->data(
+        quic_constricted_stream_model->index(14, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    quic_constricted_controller.setSelectedStreamItemIndex(quic_constricted_stream_item_index);
+    UI_EXPECT(quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #13 contributed 32 / 69 bytes")));
+    UI_EXPECT(quic_constricted_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
 
     const auto tls_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
     MainController tls_constricted_controller {};

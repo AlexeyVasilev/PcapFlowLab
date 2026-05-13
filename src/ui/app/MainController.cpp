@@ -1260,6 +1260,10 @@ QStringList stream_item_constricted_summary_lines(const StreamItemRow& item) {
 
 bool is_quic_stream_item_label(const QString& label) {
     return label.startsWith(QStringLiteral("QUIC ")) ||
+           label == QStringLiteral("QUIC Initial: ACK") ||
+           label == QStringLiteral("QUIC Initial: CRYPTO") ||
+           label == QStringLiteral("ACK") ||
+           label == QStringLiteral("CRYPTO") ||
            label == QStringLiteral("0-RTT") ||
            label == QStringLiteral("Handshake") ||
            label == QStringLiteral("Protected payload");

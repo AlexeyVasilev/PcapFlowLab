@@ -153,7 +153,10 @@ StreamItemRow make_stream_item_row(
     const std::size_t byte_count,
     const PacketRef& packet,
     const std::string& payload_hex_text = {},
-    const std::string& protocol_text = {}
+    const std::string& protocol_text = {},
+    const bool has_constricted_contribution = false,
+    const std::vector<std::string>& constricted_contribution_notes = {},
+    const std::vector<std::string>& constricted_packet_notes = {}
 ) {
     return make_stream_item_row(
         stream_item_index,
@@ -163,9 +166,9 @@ StreamItemRow make_stream_item_row(
         std::vector<std::uint64_t> {packet.packet_index},
         payload_hex_text,
         protocol_text,
-        false,
-        {},
-        {}
+        has_constricted_contribution,
+        constricted_contribution_notes,
+        constricted_packet_notes
     );
 }
 
@@ -381,7 +384,10 @@ bool append_quic_stream_items_for_packet(
             item.byte_count,
             packet,
             packet_hex_dump,
-            item.protocol_text
+            item.protocol_text,
+            item.has_constricted_contribution,
+            item.constricted_contribution_notes,
+            {}
         ));
         emitted_any = true;
     }
