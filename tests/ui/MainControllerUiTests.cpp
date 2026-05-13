@@ -2314,6 +2314,49 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(model->data(model_index, PacketListModel::OriginalLengthRole).toUInt() == expected_original_length);
     };
 
+    const auto expect_quic_packet_eight_stream_label = [&](const std::filesystem::path& fixture_path,
+                                                           const QString& expected_label,
+                                                           const QString& forbidden_label) {
+        MainController controller {};
+        UI_EXPECT(open_capture_and_wait(app, controller, fixture_path));
+        controller.setFlowDetailsTabIndex(1);
+        controller.setSelectedFlowIndex(0);
+
+        auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        auto* stream_model = qobject_cast<StreamListModel*>(controller.streamModel());
+        UI_EXPECT(flow_model != nullptr);
+        UI_EXPECT(stream_model != nullptr);
+        UI_EXPECT(flow_model->rowCount() == 1);
+        UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+
+        int packet_eight_row = -1;
+        for (int row = 0; row < stream_model->rowCount(); ++row) {
+            if (stream_model->data(stream_model->index(row, 0), StreamListModel::SourcePacketsTextRole).toString()
+                == QStringLiteral("packet #8")) {
+                packet_eight_row = row;
+                break;
+            }
+        }
+
+        UI_EXPECT(packet_eight_row >= 0);
+        UI_EXPECT(stream_model->data(stream_model->index(packet_eight_row, 0), StreamListModel::LabelRole).toString() == expected_label);
+        UI_EXPECT(stream_model->data(stream_model->index(packet_eight_row, 0), StreamListModel::LabelRole).toString() != forbidden_label);
+    };
+
+    // Correct packet-number handling lets packet #8 decrypt to an ACK item.
+    expect_quic_packet_eight_stream_label(
+        ui_test_root() / "data" / "parsing" / "quic" / "quic_initial_ack_decrypt_ok_1.pcap",
+        QStringLiteral("QUIC Initial: ACK"),
+        QStringLiteral("QUIC Initial")
+    );
+
+    // The intentionally wrong packet number keeps packet #8 on the coarse fallback label.
+    expect_quic_packet_eight_stream_label(
+        ui_test_root() / "data" / "parsing" / "quic" / "quic_initial_ack_wrong_pkn_1.pcap",
+        QStringLiteral("QUIC Initial"),
+        QStringLiteral("QUIC Initial: ACK")
+    );
+
     const auto quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "quic_constricted_1.pcap";
     MainController quic_constricted_controller {};
     UI_EXPECT(open_capture_and_wait(app, quic_constricted_controller, quic_constricted_fixture_path));

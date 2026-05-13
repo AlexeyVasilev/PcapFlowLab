@@ -1543,6 +1543,45 @@ void run_stream_query_tests() {
     }
 
     {
+        // Correct packet-number handling lets packet #8 decrypt and expose its ACK frame.
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ack_decrypt_ok_1.pcap"), fast_options));
+
+        const auto flows = session.list_flows();
+        PFL_EXPECT(flows.size() == 1U);
+        PFL_EXPECT(flows[0].protocol_hint == "quic");
+        PFL_EXPECT(flows[0].packet_count == 8U);
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto packet_eight_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {7U};
+        });
+        PFL_EXPECT(packet_eight_row != rows.end());
+        PFL_EXPECT(packet_eight_row->label == "QUIC Initial: ACK");
+        PFL_EXPECT(packet_eight_row->label != "QUIC Initial");
+        PFL_EXPECT(packet_eight_row->protocol_text.find("Frame Presence: ACK") != std::string::npos);
+    }
+
+    {
+        // This fixture intentionally uses the wrong packet number, so packet #8 must fall back.
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ack_wrong_pkn_1.pcap"), fast_options));
+
+        const auto flows = session.list_flows();
+        PFL_EXPECT(flows.size() == 1U);
+        PFL_EXPECT(flows[0].protocol_hint == "quic");
+        PFL_EXPECT(flows[0].packet_count == 8U);
+
+        const auto rows = session.list_flow_stream_items(0);
+        const auto packet_eight_row = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.packet_indices == std::vector<std::uint64_t> {7U};
+        });
+        PFL_EXPECT(packet_eight_row != rows.end());
+        PFL_EXPECT(packet_eight_row->label == "QUIC Initial");
+        PFL_EXPECT(packet_eight_row->label != "QUIC Initial: ACK");
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_server_handshake_retransmit_6.pcap"), fast_options));
 
