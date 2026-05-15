@@ -135,6 +135,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/tls/tls_1_3_server_hello_6.pcap", .expected_protocol_hint = "tls"},
         {.relative_path = "parsing/tls/tls_1_3_app_data_7.pcap", .expected_protocol_hint = "tls"},
         {.relative_path = "parsing/tls/tls_1_3_change_cipher_spec_8.pcap", .expected_protocol_hint = "tls"},
+        {.relative_path = "parsing/tls/ipv6_tls_constricted_1.pcap", .expected_protocol_hint = "tls", .expected_service_hint = "www.youtube.com"},
         {.relative_path = "parsing/quic/quic_initial_ch_1.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_initial_sh_2.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_handshake_3.pcap", .expected_protocol_hint = "quic"},
