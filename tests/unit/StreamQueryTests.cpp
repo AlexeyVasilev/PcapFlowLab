@@ -1493,6 +1493,78 @@ void run_stream_query_tests() {
 
     {
         CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/ipv6_tls_strong_constrict_1.pcap"), fast_options));
+
+        const auto flows = session.list_flows();
+        PFL_EXPECT(flows.size() == 1U);
+        PFL_EXPECT(flows[0].protocol_hint == "tls");
+        PFL_EXPECT(flows[0].service_hint == "www.youtube.com");
+        PFL_EXPECT(flows[0].packet_count == 19U);
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 9U);
+        PFL_EXPECT(rows[0].label == "TLS ClientHello");
+        PFL_EXPECT(rows[0].byte_count == 1890U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {3U});
+        PFL_EXPECT(rows[1].label == "TLS ServerHello");
+        PFL_EXPECT(rows[1].byte_count == 1215U);
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({5U, 7U}));
+        PFL_EXPECT(!rows[1].has_constricted_contribution);
+        PFL_EXPECT(rows[2].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[2].byte_count == 6U);
+        PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t> {7U});
+        PFL_EXPECT(!rows[2].has_constricted_contribution);
+        PFL_EXPECT(rows[3].label == "TLS AppData");
+        PFL_EXPECT(rows[3].byte_count == 6485U);
+        PFL_EXPECT(rows[3].packet_indices == std::vector<std::uint64_t>({7U, 8U, 9U, 13U}));
+        PFL_EXPECT(rows[3].has_constricted_contribution);
+        PFL_EXPECT(rows[3].constricted_contribution_notes == std::vector<std::string>({
+            "#8 contributed 8 / 1195 bytes",
+            "#9 contributed 8 / 2416 bytes",
+            "#10 contributed 8 / 2416 bytes",
+            "#14 contributed 8 / 458 bytes",
+        }));
+        PFL_EXPECT(rows[3].protocol_text.find("Record Type: ApplicationData") != std::string::npos);
+        PFL_EXPECT(rows[3].protocol_text.find("Record Length: 6480") != std::string::npos);
+        PFL_EXPECT(rows[4].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[4].byte_count == 6U);
+        PFL_EXPECT(rows[4].packet_indices == std::vector<std::uint64_t> {15U});
+        PFL_EXPECT(!rows[4].has_constricted_contribution);
+        PFL_EXPECT(rows[5].label == "TLS AppData");
+        PFL_EXPECT(rows[5].byte_count == 58U);
+        PFL_EXPECT(rows[5].packet_indices == std::vector<std::uint64_t> {15U});
+        PFL_EXPECT(rows[5].has_constricted_contribution);
+        PFL_EXPECT(rows[5].constricted_contribution_notes == std::vector<std::string>({
+            "#16 contributed 8 / 58 bytes",
+        }));
+        PFL_EXPECT(rows[6].label == "TLS AppData");
+        PFL_EXPECT(rows[6].byte_count == 92U);
+        PFL_EXPECT(rows[6].packet_indices == std::vector<std::uint64_t> {16U});
+        PFL_EXPECT(rows[6].has_constricted_contribution);
+        PFL_EXPECT(rows[6].constricted_contribution_notes == std::vector<std::string>({
+            "#17 contributed 8 / 92 bytes",
+        }));
+        PFL_EXPECT(rows[7].label == "TLS AppData");
+        PFL_EXPECT(rows[7].byte_count == 362U);
+        PFL_EXPECT(rows[7].packet_indices == std::vector<std::uint64_t> {17U});
+        PFL_EXPECT(rows[7].has_constricted_contribution);
+        PFL_EXPECT(rows[7].constricted_contribution_notes == std::vector<std::string>({
+            "#18 contributed 8 / 362 bytes",
+        }));
+        PFL_EXPECT(rows[8].label == "TLS AppData");
+        PFL_EXPECT(rows[8].byte_count == 62U);
+        PFL_EXPECT(rows[8].packet_indices == std::vector<std::uint64_t> {18U});
+        PFL_EXPECT(rows[8].has_constricted_contribution);
+        PFL_EXPECT(rows[8].constricted_contribution_notes == std::vector<std::string>({
+            "#19 contributed 8 / 62 bytes",
+        }));
+        PFL_EXPECT(std::none_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return row.label == "TLS Gap" || row.label == "TCP Payload";
+        }));
+    }
+
+    {
+        CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_constricted_1.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);

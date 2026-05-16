@@ -2820,6 +2820,207 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_tls_constricted_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
     UI_EXPECT(!ipv6_tls_constricted_details_model->protocolText().contains(QStringLiteral("Constricted packet #16: captured 100 / original 150 bytes.")));
 
+    const auto ipv6_tls_strong_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv6_tls_strong_constrict_1.pcap";
+    MainController ipv6_tls_strong_constricted_controller {};
+    UI_EXPECT(open_capture_and_wait(app, ipv6_tls_strong_constricted_controller, ipv6_tls_strong_constricted_fixture_path));
+    auto* ipv6_tls_strong_flow_model = qobject_cast<FlowListModel*>(ipv6_tls_strong_constricted_controller.flowModel());
+    UI_EXPECT(ipv6_tls_strong_flow_model != nullptr);
+    UI_EXPECT(ipv6_tls_strong_flow_model->rowCount() == 1);
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
+
+    ipv6_tls_strong_constricted_controller.setSelectedFlowIndex(0);
+    auto* ipv6_tls_strong_packet_model = qobject_cast<PacketListModel*>(ipv6_tls_strong_constricted_controller.packetModel());
+    auto* ipv6_tls_strong_details_model = qobject_cast<PacketDetailsViewModel*>(ipv6_tls_strong_constricted_controller.packetDetailsModel());
+    UI_EXPECT(ipv6_tls_strong_packet_model != nullptr);
+    UI_EXPECT(ipv6_tls_strong_details_model != nullptr);
+    UI_EXPECT(ipv6_tls_strong_packet_model->rowCount() == 19);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 3, 1890U, 1976U, 1976U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 7, 1208U, 107U, 1294U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 8, 2416U, 94U, 2502U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 9, 2416U, 94U, 2502U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 13, 458U, 94U, 544U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 15, 64U, 100U, 150U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 16, 92U, 94U, 178U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 17, 362U, 94U, 448U);
+    expect_packet_payload_row(ipv6_tls_strong_packet_model, 18, 62U, 94U, 148U);
+
+    ipv6_tls_strong_constricted_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&ipv6_tls_strong_constricted_controller]() {
+        return !ipv6_tls_strong_constricted_controller.analysisLoading() && ipv6_tls_strong_constricted_controller.analysisAvailable();
+    }));
+    UI_EXPECT(ipv6_tls_strong_constricted_controller.analysisProtocolHint() == QStringLiteral("TLS"));
+    UI_EXPECT(ipv6_tls_strong_constricted_controller.analysisServiceHint() == QStringLiteral("www.youtube.com"));
+    const auto ipv6_tls_strong_preview = ipv6_tls_strong_constricted_controller.analysisSequencePreview();
+    UI_EXPECT(ipv6_tls_strong_preview.size() == 19);
+    const auto ipv6_tls_strong_preview_packet_four = ipv6_tls_strong_preview[3].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_four.value(QStringLiteral("capturedLength")).toUInt() == 1976U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_four.value(QStringLiteral("originalLength")).toUInt() == 1976U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_four.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("1890"));
+    const auto ipv6_tls_strong_preview_packet_eight = ipv6_tls_strong_preview[7].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_eight.value(QStringLiteral("capturedLength")).toUInt() == 107U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_eight.value(QStringLiteral("originalLength")).toUInt() == 1294U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_eight.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("1208"));
+    const auto ipv6_tls_strong_preview_packet_nine = ipv6_tls_strong_preview[8].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_nine.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_nine.value(QStringLiteral("originalLength")).toUInt() == 2502U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_nine.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("2416"));
+    const auto ipv6_tls_strong_preview_packet_ten = ipv6_tls_strong_preview[9].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_ten.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_ten.value(QStringLiteral("originalLength")).toUInt() == 2502U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_ten.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("2416"));
+    const auto ipv6_tls_strong_preview_packet_fourteen = ipv6_tls_strong_preview[13].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_fourteen.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_fourteen.value(QStringLiteral("originalLength")).toUInt() == 544U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_fourteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("458"));
+    const auto ipv6_tls_strong_preview_packet_sixteen = ipv6_tls_strong_preview[15].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_sixteen.value(QStringLiteral("capturedLength")).toUInt() == 100U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_sixteen.value(QStringLiteral("originalLength")).toUInt() == 150U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_sixteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("64"));
+    const auto ipv6_tls_strong_preview_packet_seventeen = ipv6_tls_strong_preview[16].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_seventeen.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_seventeen.value(QStringLiteral("originalLength")).toUInt() == 178U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_seventeen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("92"));
+    const auto ipv6_tls_strong_preview_packet_eighteen = ipv6_tls_strong_preview[17].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_eighteen.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_eighteen.value(QStringLiteral("originalLength")).toUInt() == 448U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_eighteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("362"));
+    const auto ipv6_tls_strong_preview_packet_nineteen = ipv6_tls_strong_preview[18].toMap();
+    UI_EXPECT(ipv6_tls_strong_preview_packet_nineteen.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_nineteen.value(QStringLiteral("originalLength")).toUInt() == 148U);
+    UI_EXPECT(ipv6_tls_strong_preview_packet_nineteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("62"));
+
+    const auto ipv6_tls_strong_packet_four_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(3, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_four_index);
+    const auto ipv6_tls_strong_packet_four_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_four_summary.contains(QStringLiteral("Payload Length: 1890")));
+    UI_EXPECT(!ipv6_tls_strong_packet_four_summary.contains(QStringLiteral("Real Payload Length:")));
+    UI_EXPECT(!ipv6_tls_strong_packet_four_summary.contains(QStringLiteral("Original Payload Length:")));
+
+    const auto ipv6_tls_strong_packet_eight_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(7, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_eight_index);
+    const auto ipv6_tls_strong_packet_eight_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_eight_summary.contains(QStringLiteral("Real Payload Length: 21")));
+    UI_EXPECT(ipv6_tls_strong_packet_eight_summary.contains(QStringLiteral("Original Payload Length: 1208")));
+
+    const auto ipv6_tls_strong_packet_nine_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(8, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_nine_index);
+    const auto ipv6_tls_strong_packet_nine_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_nine_summary.contains(QStringLiteral("Real Payload Length: 8")));
+    UI_EXPECT(ipv6_tls_strong_packet_nine_summary.contains(QStringLiteral("Original Payload Length: 2416")));
+
+    const auto ipv6_tls_strong_packet_ten_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(9, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_ten_index);
+    const auto ipv6_tls_strong_packet_ten_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_ten_summary.contains(QStringLiteral("Real Payload Length: 8")));
+    UI_EXPECT(ipv6_tls_strong_packet_ten_summary.contains(QStringLiteral("Original Payload Length: 2416")));
+
+    const auto ipv6_tls_strong_packet_fourteen_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(13, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_fourteen_index);
+    const auto ipv6_tls_strong_packet_fourteen_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_fourteen_summary.contains(QStringLiteral("Real Payload Length: 8")));
+    UI_EXPECT(ipv6_tls_strong_packet_fourteen_summary.contains(QStringLiteral("Original Payload Length: 458")));
+
+    const auto ipv6_tls_strong_packet_sixteen_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(15, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_sixteen_index);
+    const auto ipv6_tls_strong_packet_sixteen_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_sixteen_summary.contains(QStringLiteral("Real Payload Length: 14")));
+    UI_EXPECT(ipv6_tls_strong_packet_sixteen_summary.contains(QStringLiteral("Original Payload Length: 64")));
+
+    const auto ipv6_tls_strong_packet_seventeen_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(16, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_seventeen_index);
+    const auto ipv6_tls_strong_packet_seventeen_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_seventeen_summary.contains(QStringLiteral("Real Payload Length: 8")));
+    UI_EXPECT(ipv6_tls_strong_packet_seventeen_summary.contains(QStringLiteral("Original Payload Length: 92")));
+
+    const auto ipv6_tls_strong_packet_eighteen_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(17, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_eighteen_index);
+    const auto ipv6_tls_strong_packet_eighteen_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_eighteen_summary.contains(QStringLiteral("Real Payload Length: 8")));
+    UI_EXPECT(ipv6_tls_strong_packet_eighteen_summary.contains(QStringLiteral("Original Payload Length: 362")));
+
+    const auto ipv6_tls_strong_packet_nineteen_index = ipv6_tls_strong_packet_model->data(
+        ipv6_tls_strong_packet_model->index(18, 0),
+        PacketListModel::PacketIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedPacketIndex(ipv6_tls_strong_packet_nineteen_index);
+    const auto ipv6_tls_strong_packet_nineteen_summary = ipv6_tls_strong_details_model->summaryText();
+    UI_EXPECT(ipv6_tls_strong_packet_nineteen_summary.contains(QStringLiteral("Real Payload Length: 8")));
+    UI_EXPECT(ipv6_tls_strong_packet_nineteen_summary.contains(QStringLiteral("Original Payload Length: 62")));
+
+    ipv6_tls_strong_constricted_controller.setFlowDetailsTabIndex(1);
+    auto* ipv6_tls_strong_stream_model = qobject_cast<StreamListModel*>(ipv6_tls_strong_constricted_controller.streamModel());
+    UI_EXPECT(ipv6_tls_strong_stream_model != nullptr);
+    UI_EXPECT(ipv6_tls_strong_stream_model->rowCount() == 9);
+
+    const auto expect_ipv6_tls_strong_stream_row = [&](const int row,
+                                                       const QString& expected_label,
+                                                       const uint expected_bytes,
+                                                       const QString& expected_packets,
+                                                       const bool expected_constricted) {
+        UI_EXPECT(ipv6_tls_strong_stream_model->data(ipv6_tls_strong_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == expected_label);
+        UI_EXPECT(ipv6_tls_strong_stream_model->data(ipv6_tls_strong_stream_model->index(row, 0), StreamListModel::ByteCountRole).toUInt() == expected_bytes);
+        UI_EXPECT(ipv6_tls_strong_stream_model->data(ipv6_tls_strong_stream_model->index(row, 0), StreamListModel::SourcePacketsTextRole).toString() == expected_packets);
+        UI_EXPECT(ipv6_tls_strong_stream_model->data(ipv6_tls_strong_stream_model->index(row, 0), StreamListModel::HasConstrictedContributionRole).toBool() == expected_constricted);
+    };
+
+    expect_ipv6_tls_strong_stream_row(0, QStringLiteral("TLS ClientHello"), 1890U, QStringLiteral("packet #4"), false);
+    expect_ipv6_tls_strong_stream_row(1, QStringLiteral("TLS ServerHello"), 1215U, QStringLiteral("packets #6,#8"), false);
+    expect_ipv6_tls_strong_stream_row(2, QStringLiteral("TLS ChangeCipherSpec"), 6U, QStringLiteral("packet #8"), false);
+    expect_ipv6_tls_strong_stream_row(3, QStringLiteral("TLS AppData"), 6485U, QStringLiteral("packets #8,#9,#10,#14"), true);
+    expect_ipv6_tls_strong_stream_row(4, QStringLiteral("TLS ChangeCipherSpec"), 6U, QStringLiteral("packet #16"), false);
+    expect_ipv6_tls_strong_stream_row(5, QStringLiteral("TLS AppData"), 58U, QStringLiteral("packet #16"), true);
+    expect_ipv6_tls_strong_stream_row(6, QStringLiteral("TLS AppData"), 92U, QStringLiteral("packet #17"), true);
+    expect_ipv6_tls_strong_stream_row(7, QStringLiteral("TLS AppData"), 362U, QStringLiteral("packet #18"), true);
+    expect_ipv6_tls_strong_stream_row(8, QStringLiteral("TLS AppData"), 62U, QStringLiteral("packet #19"), true);
+
+    for (int row = 0; row < ipv6_tls_strong_stream_model->rowCount(); ++row) {
+        UI_EXPECT(ipv6_tls_strong_stream_model->data(ipv6_tls_strong_stream_model->index(row, 0), StreamListModel::LabelRole).toString() != QStringLiteral("TLS Gap"));
+        UI_EXPECT(ipv6_tls_strong_stream_model->data(ipv6_tls_strong_stream_model->index(row, 0), StreamListModel::LabelRole).toString() != QStringLiteral("TCP Payload"));
+    }
+
+    const auto ipv6_tls_strong_stream_item_index = ipv6_tls_strong_stream_model->data(
+        ipv6_tls_strong_stream_model->index(3, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    ipv6_tls_strong_constricted_controller.setSelectedStreamItemIndex(ipv6_tls_strong_stream_item_index);
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("Label: TLS AppData")));
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("Source packets: #8,#9,#10,#14")));
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("Constricted contributions:")));
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#8 contributed 8 / 1195 bytes")));
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#9 contributed 8 / 2416 bytes")));
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#10 contributed 8 / 2416 bytes")));
+    UI_EXPECT(ipv6_tls_strong_details_model->summaryText().contains(QStringLiteral("#14 contributed 8 / 458 bytes")));
+    UI_EXPECT(ipv6_tls_strong_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
+    UI_EXPECT(ipv6_tls_strong_details_model->protocolText().contains(QStringLiteral("Record Length: 6480")));
+
     const auto fragmented_packet = make_ethernet_ipv4_fragment_packet(
         ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 6, 0x2000U, {0x16, 0x03, 0x03, 0x00, 0x10});
     const auto fragmented_capture_path = write_temp_pcap(
