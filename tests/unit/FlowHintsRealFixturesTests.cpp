@@ -139,6 +139,7 @@ void run_flow_hints_real_fixtures_tests() {
         {.relative_path = "parsing/quic/quic_initial_ch_1.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_initial_sh_2.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_handshake_3.pcap", .expected_protocol_hint = "quic"},
+        {.relative_path = "parsing/quic/ipv6_quic_constricted_1.pcap", .expected_protocol_hint = "quic"},
         {.relative_path = "parsing/quic/quic_protected_payload_4.pcap", .expected_protocol_hint = ""},
         {.relative_path = "parsing/quic/quic_test_3.pcap", .expected_protocol_hint = "quic"},
     };

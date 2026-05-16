@@ -2508,6 +2508,128 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #13 contributed 32 / 69 bytes")));
     UI_EXPECT(quic_constricted_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
 
+    const auto ipv6_quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "ipv6_quic_constricted_1.pcap";
+    MainController ipv6_quic_constricted_controller {};
+    UI_EXPECT(open_capture_and_wait(app, ipv6_quic_constricted_controller, ipv6_quic_constricted_fixture_path));
+    auto* ipv6_quic_constricted_flow_model = qobject_cast<FlowListModel*>(ipv6_quic_constricted_controller.flowModel());
+    UI_EXPECT(ipv6_quic_constricted_flow_model != nullptr);
+    UI_EXPECT(ipv6_quic_constricted_flow_model->rowCount() == 1);
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::PortARole).toUInt() == 443U ||
+              ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::PortBRole).toUInt() == 443U);
+
+    ipv6_quic_constricted_controller.setSelectedFlowIndex(0);
+    auto* ipv6_quic_constricted_packet_model = qobject_cast<PacketListModel*>(ipv6_quic_constricted_controller.packetModel());
+    auto* ipv6_quic_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(ipv6_quic_constricted_controller.packetDetailsModel());
+    UI_EXPECT(ipv6_quic_constricted_packet_model != nullptr);
+    UI_EXPECT(ipv6_quic_constricted_details_model != nullptr);
+    UI_EXPECT(ipv6_quic_constricted_packet_model->rowCount() == 16);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 0, 1232U, 1294U, 1294U);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 7, 80U, 94U, 142U);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 9, 203U, 170U, 265U);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 10, 64U, 94U, 126U);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 11, 348U, 94U, 410U);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 12, 3755U, 3790U, 3817U);
+    expect_packet_payload_row(ipv6_quic_constricted_packet_model, 15, 160U, 94U, 222U);
+
+    ipv6_quic_constricted_controller.sendSelectedFlowToAnalysis();
+    UI_EXPECT(wait_until(app, [&ipv6_quic_constricted_controller]() {
+        return !ipv6_quic_constricted_controller.analysisLoading() && ipv6_quic_constricted_controller.analysisAvailable();
+    }));
+    UI_EXPECT(ipv6_quic_constricted_controller.analysisProtocolHint() == QStringLiteral("QUIC"));
+    const auto ipv6_quic_constricted_preview = ipv6_quic_constricted_controller.analysisSequencePreview();
+    UI_EXPECT(ipv6_quic_constricted_preview.size() == 16);
+    const auto ipv6_quic_preview_packet_one = ipv6_quic_constricted_preview[0].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_one.value(QStringLiteral("capturedLength")).toUInt() == 1294U);
+    UI_EXPECT(ipv6_quic_preview_packet_one.value(QStringLiteral("originalLength")).toUInt() == 1294U);
+    UI_EXPECT(ipv6_quic_preview_packet_one.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("1232"));
+    const auto ipv6_quic_preview_packet_eight = ipv6_quic_constricted_preview[7].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_eight.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_quic_preview_packet_eight.value(QStringLiteral("originalLength")).toUInt() == 142U);
+    UI_EXPECT(ipv6_quic_preview_packet_eight.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("80"));
+    const auto ipv6_quic_preview_packet_ten = ipv6_quic_constricted_preview[9].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_ten.value(QStringLiteral("capturedLength")).toUInt() == 170U);
+    UI_EXPECT(ipv6_quic_preview_packet_ten.value(QStringLiteral("originalLength")).toUInt() == 265U);
+    UI_EXPECT(ipv6_quic_preview_packet_ten.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("203"));
+    const auto ipv6_quic_preview_packet_eleven = ipv6_quic_constricted_preview[10].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_eleven.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_quic_preview_packet_eleven.value(QStringLiteral("originalLength")).toUInt() == 126U);
+    UI_EXPECT(ipv6_quic_preview_packet_eleven.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("64"));
+    const auto ipv6_quic_preview_packet_twelve = ipv6_quic_constricted_preview[11].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_twelve.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_quic_preview_packet_twelve.value(QStringLiteral("originalLength")).toUInt() == 410U);
+    UI_EXPECT(ipv6_quic_preview_packet_twelve.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("348"));
+    const auto ipv6_quic_preview_packet_thirteen = ipv6_quic_constricted_preview[12].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_thirteen.value(QStringLiteral("capturedLength")).toUInt() == 3790U);
+    UI_EXPECT(ipv6_quic_preview_packet_thirteen.value(QStringLiteral("originalLength")).toUInt() == 3817U);
+    UI_EXPECT(ipv6_quic_preview_packet_thirteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("3755"));
+    const auto ipv6_quic_preview_packet_sixteen = ipv6_quic_constricted_preview[15].toMap();
+    UI_EXPECT(ipv6_quic_preview_packet_sixteen.value(QStringLiteral("capturedLength")).toUInt() == 94U);
+    UI_EXPECT(ipv6_quic_preview_packet_sixteen.value(QStringLiteral("originalLength")).toUInt() == 222U);
+    UI_EXPECT(ipv6_quic_preview_packet_sixteen.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("160"));
+
+    ipv6_quic_constricted_controller.setFlowDetailsTabIndex(1);
+    auto* ipv6_quic_constricted_stream_model = qobject_cast<StreamListModel*>(ipv6_quic_constricted_controller.streamModel());
+    UI_EXPECT(ipv6_quic_constricted_stream_model != nullptr);
+    UI_EXPECT(ipv6_quic_constricted_stream_model->rowCount() == 27);
+
+    const auto expect_ipv6_quic_stream_row = [&](const int row,
+                                                 const QString& expected_label,
+                                                 const uint expected_bytes,
+                                                 const QString& expected_packets,
+                                                 const bool expected_constricted) {
+        UI_EXPECT(ipv6_quic_constricted_stream_model->data(ipv6_quic_constricted_stream_model->index(row, 0), StreamListModel::LabelRole).toString() == expected_label);
+        UI_EXPECT(ipv6_quic_constricted_stream_model->data(ipv6_quic_constricted_stream_model->index(row, 0), StreamListModel::ByteCountRole).toUInt() == expected_bytes);
+        UI_EXPECT(ipv6_quic_constricted_stream_model->data(ipv6_quic_constricted_stream_model->index(row, 0), StreamListModel::SourcePacketsTextRole).toString() == expected_packets);
+        UI_EXPECT(ipv6_quic_constricted_stream_model->data(ipv6_quic_constricted_stream_model->index(row, 0), StreamListModel::HasConstrictedContributionRole).toBool() == expected_constricted);
+    };
+
+    expect_ipv6_quic_stream_row(0, QStringLiteral("QUIC Initial: CRYPTO"), 820U, QStringLiteral("packet #1"), false);
+    expect_ipv6_quic_stream_row(1, QStringLiteral("QUIC Initial: CRYPTO"), 111U, QStringLiteral("packet #1"), false);
+    expect_ipv6_quic_stream_row(2, QStringLiteral("QUIC Initial: CRYPTO"), 928U, QStringLiteral("packet #2"), false);
+    expect_ipv6_quic_stream_row(3, QStringLiteral("QUIC Initial: CRYPTO"), 820U, QStringLiteral("packet #3"), false);
+    expect_ipv6_quic_stream_row(4, QStringLiteral("QUIC Initial: CRYPTO"), 111U, QStringLiteral("packet #3"), false);
+    expect_ipv6_quic_stream_row(5, QStringLiteral("QUIC Initial: CRYPTO"), 928U, QStringLiteral("packet #4"), false);
+    expect_ipv6_quic_stream_row(6, QStringLiteral("QUIC Initial: CRYPTO"), 1182U, QStringLiteral("packet #5"), false);
+    expect_ipv6_quic_stream_row(7, QStringLiteral("QUIC Initial: ACK"), 6U, QStringLiteral("packet #5"), false);
+    expect_ipv6_quic_stream_row(8, QStringLiteral("QUIC Initial: ACK"), 9U, QStringLiteral("packet #6"), false);
+    expect_ipv6_quic_stream_row(9, QStringLiteral("Handshake"), 1232U, QStringLiteral("packet #7"), false);
+    expect_ipv6_quic_stream_row(10, QStringLiteral("Handshake"), 1232U, QStringLiteral("packet #7"), false);
+    expect_ipv6_quic_stream_row(11, QStringLiteral("Handshake"), 1232U, QStringLiteral("packet #7"), false);
+    expect_ipv6_quic_stream_row(12, QStringLiteral("Handshake"), 661U, QStringLiteral("packet #7"), false);
+    expect_ipv6_quic_stream_row(13, QStringLiteral("Protected payload"), 80U, QStringLiteral("packet #8"), true);
+    expect_ipv6_quic_stream_row(14, QStringLiteral("Handshake"), 46U, QStringLiteral("packet #9"), false);
+    expect_ipv6_quic_stream_row(15, QStringLiteral("Handshake"), 76U, QStringLiteral("packet #10"), false);
+    expect_ipv6_quic_stream_row(16, QStringLiteral("Protected payload"), 127U, QStringLiteral("packet #10"), true);
+    expect_ipv6_quic_stream_row(17, QStringLiteral("Protected payload"), 64U, QStringLiteral("packet #11"), true);
+    expect_ipv6_quic_stream_row(18, QStringLiteral("Protected payload"), 348U, QStringLiteral("packet #12"), true);
+    expect_ipv6_quic_stream_row(19, QStringLiteral("QUIC Initial: ACK"), 6U, QStringLiteral("packet #13"), false);
+    expect_ipv6_quic_stream_row(20, QStringLiteral("Handshake"), 1232U, QStringLiteral("packet #13"), false);
+    expect_ipv6_quic_stream_row(21, QStringLiteral("Handshake"), 1232U, QStringLiteral("packet #13"), false);
+    expect_ipv6_quic_stream_row(22, QStringLiteral("Protected payload"), 59U, QStringLiteral("packet #13"), true);
+    expect_ipv6_quic_stream_row(23, QStringLiteral("Handshake"), 86U, QStringLiteral("packet #14"), false);
+    expect_ipv6_quic_stream_row(24, QStringLiteral("Protected payload"), 36U, QStringLiteral("packet #14"), false);
+    expect_ipv6_quic_stream_row(25, QStringLiteral("Handshake"), 42U, QStringLiteral("packet #15"), false);
+    expect_ipv6_quic_stream_row(26, QStringLiteral("Protected payload"), 160U, QStringLiteral("packet #16"), true);
+
+    for (int row = 0; row < ipv6_quic_constricted_stream_model->rowCount(); ++row) {
+        const auto label = ipv6_quic_constricted_stream_model->data(ipv6_quic_constricted_stream_model->index(row, 0), StreamListModel::LabelRole).toString();
+        UI_EXPECT(!label.contains(QStringLiteral("PADDING")));
+        UI_EXPECT(label != QStringLiteral("QUIC Initial"));
+    }
+
+    const auto ipv6_quic_stream_item_index = ipv6_quic_constricted_stream_model->data(
+        ipv6_quic_constricted_stream_model->index(13, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    ipv6_quic_constricted_controller.setSelectedStreamItemIndex(ipv6_quic_stream_item_index);
+    UI_EXPECT(ipv6_quic_constricted_details_model->summaryText().contains(QStringLiteral("Constricted contribution: #8 contributed 32 / 80 bytes")));
+    UI_EXPECT(ipv6_quic_constricted_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
+
     const auto tls_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
     MainController tls_constricted_controller {};
     UI_EXPECT(open_capture_and_wait(app, tls_constricted_controller, tls_constricted_fixture_path));
