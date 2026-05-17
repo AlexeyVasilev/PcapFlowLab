@@ -176,6 +176,44 @@ void run_import_tests() {
     }
 
     {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tcp" / "ipv4_pre_offload_like_tcp_1.pcap"
+        ));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto packet = session.find_packet(0);
+        PFL_EXPECT(packet.has_value());
+        PFL_EXPECT(packet->captured_length == 60U);
+        PFL_EXPECT(packet->original_length == 60U);
+
+        const auto rows = session.list_flow_packets(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows.front().captured_length == 60U);
+        PFL_EXPECT(rows.front().original_length == 60U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "udp" / "udp_truncated_manual_1.pcap"
+        ));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto packet = session.find_packet(0);
+        PFL_EXPECT(packet.has_value());
+        PFL_EXPECT(packet->captured_length == 60U);
+        PFL_EXPECT(packet->original_length == 142U);
+
+        const auto rows = session.list_flow_packets(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows.front().captured_length == 60U);
+        PFL_EXPECT(rows.front().original_length == 142U);
+    }
+
+    {
         const auto reverse_tcp_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 2), ipv4(10, 0, 0, 1), 443, 12345);
         const auto path = write_temp_pcap(
             "pfl_import_reverse_flow.pcap",

@@ -21,6 +21,7 @@
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickStyle>
+#include <QStringList>
 #include <QVariantMap>
 
 #include "app/session/CaptureSession.h"
@@ -2086,6 +2087,31 @@ int main(int argc, char* argv[]) {
     unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
     UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
 
+    const auto expect_checksum_fixture_summary = [&](const std::filesystem::path& fixture_path,
+                                                     const QStringList& expected_snippets,
+                                                     const QStringList& forbidden_snippets = {}) {
+        MainController controller {};
+        controller.setValidateSelectedPacketChecksums(true);
+        UI_EXPECT(open_capture_and_wait(app, controller, fixture_path));
+        controller.setSelectedFlowIndex(0);
+
+        auto* packet_model = qobject_cast<PacketListModel*>(controller.packetModel());
+        auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());
+        UI_EXPECT(packet_model != nullptr);
+        UI_EXPECT(details_model != nullptr);
+        UI_EXPECT(packet_model->rowCount() == 1);
+
+        const auto packet_index = packet_model->data(packet_model->index(0, 0), PacketListModel::PacketIndexRole).toULongLong();
+        controller.setSelectedPacketIndex(packet_index);
+        const auto summary = details_model->summaryText();
+        for (const auto& expected : expected_snippets) {
+            UI_EXPECT(summary.contains(expected));
+        }
+        for (const auto& forbidden : forbidden_snippets) {
+            UI_EXPECT(!summary.contains(forbidden));
+        }
+    };
+
     {
         auto stream_view = load_qml_component("src/ui/qml/components/StreamView.qml", "StreamView");
         const auto forward_direction = stream_view.object->property("forwardDirection").toString();
@@ -2125,6 +2151,75 @@ int main(int argc, char* argv[]) {
         ));
         UI_EXPECT(bubble_color.toString() == QStringLiteral("#7ca9de"));
     }
+
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "tcp" / "ipv4_tcp_valid_checksum_1.pcap",
+        {QStringLiteral("IPv4 checksum: valid"), QStringLiteral("TCP checksum: valid")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "tcp" / "ipv4_tcp_bad_checksum_1.pcap",
+        {QStringLiteral("IPv4 checksum: valid"), QStringLiteral("TCP checksum: invalid"), QStringLiteral("TCP checksum is invalid.")},
+        {QStringLiteral("TCP checksum: valid")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "tcp" / "ipv4_bad_ip_checksum_1.pcap",
+        {QStringLiteral("IPv4 checksum: invalid"), QStringLiteral("TCP checksum: valid"), QStringLiteral("IPv4 checksum is invalid.")},
+        {QStringLiteral("IPv4 checksum: valid")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "udp" / "ipv4_udp_valid_checksum_1.pcap",
+        {QStringLiteral("IPv4 checksum: valid"), QStringLiteral("UDP checksum: valid")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "udp" / "ipv4_udp_bad_checksum_1.pcap",
+        {QStringLiteral("IPv4 checksum: valid"), QStringLiteral("UDP checksum: invalid"), QStringLiteral("UDP checksum is invalid.")},
+        {QStringLiteral("UDP checksum: valid")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "udp" / "ipv4_udp_checksum_zero_1.pcap",
+        {
+            QStringLiteral("IPv4 checksum: valid"),
+            QStringLiteral("UDP checksum: not checked"),
+            QStringLiteral("UDP checksum note: UDP checksum is not present in this IPv4 packet.")
+        },
+        {QStringLiteral("UDP checksum is invalid.")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "udp" / "ipv6_udp_bad_checksum_1.pcap",
+        {QStringLiteral("UDP checksum: invalid"), QStringLiteral("UDP checksum is invalid.")},
+        {QStringLiteral("IPv4 checksum:")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "udp" / "ipv6_udp_checksum_zero_1.pcap",
+        {
+            QStringLiteral("UDP checksum: invalid"),
+            QStringLiteral("UDP checksum note: UDP checksum is required for IPv6 packets."),
+            QStringLiteral("UDP checksum is invalid. UDP checksum is required for IPv6 packets.")
+        }
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "tcp" / "ipv4_pre_offload_like_tcp_1.pcap",
+        {
+            QStringLiteral("IPv4 total length is unavailable; packet was parsed using captured bytes only"),
+            QStringLiteral("Header interpretation is conservative (possible pre-offload packet)"),
+            QStringLiteral("IPv4 checksum: unavailable"),
+            QStringLiteral("IPv4 checksum note: Possible pre-offload packet; IPv4 checksum may be incomplete or not finalized."),
+            QStringLiteral("TCP checksum: unavailable"),
+            QStringLiteral("TCP checksum note: Possible pre-offload packet; TCP checksum may be incomplete or not finalized.")
+        },
+        {QStringLiteral("Packet is truncated in capture")}
+    );
+    expect_checksum_fixture_summary(
+        ui_test_root() / "data" / "parsing" / "udp" / "udp_truncated_manual_1.pcap",
+        {
+            QStringLiteral("Packet is truncated in capture"),
+            QStringLiteral("Captured Length: 60"),
+            QStringLiteral("Original Length: 142"),
+            QStringLiteral("IPv4 checksum: valid"),
+            QStringLiteral("UDP checksum: unavailable"),
+            QStringLiteral("UDP checksum note: Packet is truncated in capture; full UDP datagram bytes are unavailable.")
+        }
+    );
 
     MainController stream_controller {};
     UI_EXPECT(open_capture_and_wait(app, stream_controller, moved_capture_path));
