@@ -234,10 +234,10 @@ struct LoadedQmlObject {
     std::unique_ptr<QObject> object {};
 };
 
-LoadedQmlObject load_flow_analysis_pane_component() {
+LoadedQmlObject load_qml_component(const std::filesystem::path& relative_path, const char* component_name) {
     auto engine = std::make_unique<QQmlEngine>();
     const auto project_root = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path();
-    const auto component_path = project_root / "src" / "ui" / "qml" / "components" / "FlowAnalysisPane.qml";
+    const auto component_path = project_root / relative_path;
     QQmlComponent component(engine.get(), QUrl::fromLocalFile(QString::fromStdWString(component_path.wstring())));
     if (component.status() != QQmlComponent::Ready) {
         throw std::runtime_error(component.errorString().toStdString());
@@ -245,13 +245,17 @@ LoadedQmlObject load_flow_analysis_pane_component() {
 
     QObject* object = component.create();
     if (object == nullptr) {
-        throw std::runtime_error("Failed to create FlowAnalysisPane component");
+        throw std::runtime_error(std::string("Failed to create ") + component_name + " component");
     }
 
     return LoadedQmlObject {
         .engine = std::move(engine),
         .object = std::unique_ptr<QObject>(object),
     };
+}
+
+LoadedQmlObject load_flow_analysis_pane_component() {
+    return load_qml_component("src/ui/qml/components/FlowAnalysisPane.qml", "FlowAnalysisPane");
 }
 
 bool item_visible(QObject* root, const char* objectName) {
@@ -931,6 +935,15 @@ int main(int argc, char* argv[]) {
     );
 
     controller.setSelectedFlowIndex(wireshark_http_flow_index);
+    UI_EXPECT(controller.selectedFlowHasWiresharkFilter());
+    UI_EXPECT(
+        controller.selectedFlowWiresharkFilter() ==
+        QStringLiteral("ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 1111")
+    );
+    controller.setShowWiresharkFilterForSelectedFlow(false);
+    UI_EXPECT(!controller.selectedFlowHasWiresharkFilter());
+    UI_EXPECT(controller.selectedFlowWiresharkFilter().isEmpty());
+    controller.setShowWiresharkFilterForSelectedFlow(true);
     UI_EXPECT(controller.selectedFlowHasWiresharkFilter());
     UI_EXPECT(
         controller.selectedFlowWiresharkFilter() ==
@@ -2007,6 +2020,30 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(settings_flow_model->rowCount() == 1);
     UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("/fallback/ui"));
 
+    {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* wireshark_setting_checkbox = named_object(settings_pane.object.get(), "showWiresharkFilterForSelectedFlowCheckBox");
+        UI_EXPECT(wireshark_setting_checkbox != nullptr);
+        UI_EXPECT(wireshark_setting_checkbox->property("visible").toBool());
+        settings_pane.object->setProperty("showWiresharkFilterForSelectedFlow", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!wireshark_setting_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("showWiresharkFilterForSelectedFlow", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(wireshark_setting_checkbox->property("checked").toBool());
+    }
+
+    {
+        auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
+        UI_EXPECT(named_object(flow_table.object.get(), "wiresharkFilterRow") != nullptr);
+        flow_table.object->setProperty("wiresharkFilterVisible", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(flow_table.object.get(), "wiresharkFilterRow"));
+        flow_table.object->setProperty("wiresharkFilterVisible", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(flow_table.object.get(), "wiresharkFilterRow"));
+    }
+
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",
         make_classic_pcap({
@@ -2048,6 +2085,46 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(find_flow_index_by_protocol_hint(possible_hint_flow_model, QStringLiteral("Possible QUIC")) < 0);
     unknown_row = find_protocol_distribution_row(possible_hint_controller.protocolHintDistribution(), QStringLiteral("Unknown"));
     UI_EXPECT(unknown_row.value(QStringLiteral("flows")).toULongLong() == 3U);
+
+    {
+        auto stream_view = load_qml_component("src/ui/qml/components/StreamView.qml", "StreamView");
+        const auto forward_direction = stream_view.object->property("forwardDirection").toString();
+        const auto reverse_direction = stream_view.object->property("reverseDirection").toString();
+
+        QVariant bubble_color {};
+        UI_EXPECT(QMetaObject::invokeMethod(
+            stream_view.object.get(),
+            "bubbleColor",
+            Q_RETURN_ARG(QVariant, bubble_color),
+            Q_ARG(QVariant, QVariant(forward_direction)),
+            Q_ARG(QVariant, QVariant(false))
+        ));
+        UI_EXPECT(bubble_color.toString() == QStringLiteral("#eefaf2"));
+        UI_EXPECT(QMetaObject::invokeMethod(
+            stream_view.object.get(),
+            "bubbleColor",
+            Q_RETURN_ARG(QVariant, bubble_color),
+            Q_ARG(QVariant, QVariant(reverse_direction)),
+            Q_ARG(QVariant, QVariant(false))
+        ));
+        UI_EXPECT(bubble_color.toString() == QStringLiteral("#eef6ff"));
+        UI_EXPECT(QMetaObject::invokeMethod(
+            stream_view.object.get(),
+            "bubbleBorderColor",
+            Q_RETURN_ARG(QVariant, bubble_color),
+            Q_ARG(QVariant, QVariant(forward_direction)),
+            Q_ARG(QVariant, QVariant(true))
+        ));
+        UI_EXPECT(bubble_color.toString() == QStringLiteral("#79b38a"));
+        UI_EXPECT(QMetaObject::invokeMethod(
+            stream_view.object.get(),
+            "bubbleBorderColor",
+            Q_RETURN_ARG(QVariant, bubble_color),
+            Q_ARG(QVariant, QVariant(reverse_direction)),
+            Q_ARG(QVariant, QVariant(true))
+        ));
+        UI_EXPECT(bubble_color.toString() == QStringLiteral("#7ca9de"));
+    }
 
     MainController stream_controller {};
     UI_EXPECT(open_capture_and_wait(app, stream_controller, moved_capture_path));

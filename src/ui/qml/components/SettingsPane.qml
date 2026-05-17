@@ -99,6 +99,7 @@ Item {
             spacing: 4
 
             CheckBox {
+                objectName: "showWiresharkFilterForSelectedFlowCheckBox"
                 Layout.fillWidth: true
                 text: "Show Wireshark filter for selected flow"
                 checked: root.showWiresharkFilterForSelectedFlow

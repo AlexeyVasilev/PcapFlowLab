@@ -123,6 +123,7 @@ Frame {
         }
 
         RowLayout {
+            objectName: "wiresharkFilterRow"
             Layout.fillWidth: true
             Layout.rightMargin: flowListView.rightGutter
             spacing: 8

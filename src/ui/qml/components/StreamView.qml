@@ -45,18 +45,18 @@ Frame {
 
     function bubbleColor(directionText, selected) {
         if (selected) {
-            return isForward(directionText) ? "#dcecff" : "#dcf4e4"
+            return isForward(directionText) ? "#dcf4e4" : "#dcecff"
         }
 
-        return isForward(directionText) ? "#eef6ff" : "#eefaf2"
+        return isForward(directionText) ? "#eefaf2" : "#eef6ff"
     }
 
     function bubbleBorderColor(directionText, selected) {
         if (selected) {
-            return isForward(directionText) ? "#7ca9de" : "#79b38a"
+            return isForward(directionText) ? "#79b38a" : "#7ca9de"
         }
 
-        return isForward(directionText) ? "#c8dbf2" : "#c9e7d1"
+        return isForward(directionText) ? "#c9e7d1" : "#c8dbf2"
     }
 
     background: Rectangle {

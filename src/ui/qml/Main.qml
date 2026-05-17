@@ -242,28 +242,36 @@ ApplicationWindow {
         x: Math.round((window.width - width) / 2)
         y: Math.round((window.height - height) / 2)
         width: 560
-        height: 300
+        height: 360
         modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape
         title: "Settings"
 
-        contentItem: SettingsPane {
-            httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
-            usePossibleTlsQuic: mainController.usePossibleTlsQuic
-            validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
-            showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
-            onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
-                mainController.httpUsePathAsServiceHint = enabled
-            }
-            onUsePossibleTlsQuicChangedByUser: function(enabled) {
-                mainController.usePossibleTlsQuic = enabled
-            }
-            onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
-                mainController.validateSelectedPacketChecksums = enabled
-            }
-            onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
-                mainController.showWiresharkFilterForSelectedFlow = enabled
+        contentItem: ScrollView {
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            SettingsPane {
+                id: settingsPane
+                width: parent.width
+                httpUsePathAsServiceHint: mainController.httpUsePathAsServiceHint
+                usePossibleTlsQuic: mainController.usePossibleTlsQuic
+                validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
+                showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
+                onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
+                    mainController.httpUsePathAsServiceHint = enabled
+                }
+                onUsePossibleTlsQuicChangedByUser: function(enabled) {
+                    mainController.usePossibleTlsQuic = enabled
+                }
+                onValidateSelectedPacketChecksumsChangedByUser: function(enabled) {
+                    mainController.validateSelectedPacketChecksums = enabled
+                }
+                onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
+                    mainController.showWiresharkFilterForSelectedFlow = enabled
+                }
             }
         }
 
