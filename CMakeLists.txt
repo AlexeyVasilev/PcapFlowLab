@@ -2,8 +2,8 @@
 
 project(
     pcap_flow_lab
-    VERSION 0.1.0
-    DESCRIPTION "Flow-centric PCAP analyzer for large network captures"
+    VERSION 0.2.0
+    DESCRIPTION "Flow-based PCAP analyzer for large network captures"
     LANGUAGES CXX
 )
 

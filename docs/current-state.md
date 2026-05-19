@@ -13,7 +13,7 @@
 - Selected-packet protocol details now depend on packet-bytes availability, not Deep mode alone.
 - Selected-flow QUIC inspection now exposes bounded packet-aware details for `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `Protected Payload`, and practical frame-level cases such as `CRYPTO`, `ACK`, and `PADDING`, with conservative fallback where confidence is limited.
 - QUIC packet and Stream details now use direction-aware, ownership-aware selected-flow TLS attachment so `ClientHello` / `ServerHello` details are not reused across the wrong packet or Stream item context.
-- Selected-flow QUIC packet and Stream presentation now share one bounded internal model: Packet Details stays shell-oriented but Stream labeling is more semantic when confidently isolated (`CRYPTO`, `ACK`) and suppresses standalone `PADDING` / `PING` noise.
+- Selected-flow QUIC packet and Stream presentation now share one bounded internal model: Packet Details stays shell-oriented but Stream labeling is more semantic when confidently isolated (`QUIC Initial: CRYPTO`, `QUIC Initial: ACK`) and suppresses standalone `PADDING` / `PING` noise.
 - Bounded selected-flow QUIC TLS attachment now also surfaces handshake-aware details such as `ClientHello` and `ServerHello` when enough parseable CRYPTO bytes are available; otherwise it remains conservatively QUIC-only.
 
 ## Analysis tab
@@ -33,6 +33,7 @@
 - Navigation is menu-based.
 - The selected-flow Analysis workspace is stable.
 - Large-capture open progress and cooperative cancellation are implemented.
+- Smart Export includes progress reporting, cooperative cancellation, and a separate per-flow output mode.
 
 ## Known gaps
 

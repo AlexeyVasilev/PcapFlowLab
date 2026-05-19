@@ -1,10 +1,10 @@
 # Pcap Flow Lab
 
-**Flow-first PCAP analyzer for large captures.**
+**Flow-based PCAP analyzer for large captures.**
 
 Pcap Flow Lab is an open-source C++20 project with a CLI and an optional Qt Quick desktop UI. It is designed for a specific workflow: open large captures quickly, navigate by flow instead of packet-first hunting, save reusable indexes, and inspect only the selected flow in more detail when that deeper work is worth doing.
 
-It is not trying to be a Wireshark replacement. It is trying to be a practical flow-oriented tool for large capture exploration that stays fast, bounded, and honest about its limits.
+It is not trying to be a Wireshark replacement. It is trying to be a practical flow-based tool for large-capture exploration that stays fast, bounded, and honest about its limits.
 
 <p align="center">
 	<img src="docs/images/branding/logo-banner.png" alt="Pcap Flow Lab banner" width="520">
@@ -26,7 +26,7 @@ This makes the project especially useful when the first question is not "what do
 
 Pcap Flow Lab deliberately optimizes for a narrower job than Wireshark.
 
-- It is flow-first rather than packet-first.
+- It is flow-based rather than packet-first.
 - It emphasizes large-capture usability and index-based reopen workflows.
 - It keeps deeper work selected-flow-only instead of doing global stream reconstruction during open.
 - It aims for practical, bounded inspection rather than maximum protocol breadth.
@@ -46,8 +46,11 @@ That also means it intentionally does not compete on every axis:
 - Selected-flow Analysis workspace with metadata-first summaries, derived metrics, histograms, timeline, directional ratios, and rate graph.
 - Selected-flow Stream inspection for practical TCP, TLS, HTTP, and meaningful bounded QUIC cases.
 - Packet details in Summary, Raw, and Protocol views.
-- Flow export to classic PCAP and selected-flow sequence export to CSV.
+- Flow export to classic PCAP, selected-flow sequence export to CSV, and Smart Export workflows including per-flow output.
 - Selected-flow Stream construction suppresses retransmitted packets in the current bounded model.
+- Smart Export progress and cooperative cancellation for long-running exports.
+- Optional checksum validation for the selected packet in Packet Details.
+- Constricted packet handling that keeps captured/original length semantics explicit in packet lists, packet details, Analysis, and bounded Stream presentation.
 - Conservative behavior on imperfect captures, including bounded fallback paths instead of over-claiming semantic certainty.
 
 ## Screenshots
@@ -72,7 +75,7 @@ That also means it intentionally does not compete on every axis:
 
 ## Current scope and limitations
 
-The current project direction is suitable for an initial `v0.1.0` release if the core workflows are solid and the limitations stay explicit.
+The current project direction is suitable for a small public release as long as the core workflows stay solid and the limitations stay explicit.
 
 Current strengths:
 
@@ -80,6 +83,7 @@ Current strengths:
 - fast open plus reusable index reopen workflows
 - selected-flow Analysis from metadata only
 - useful selected-flow Stream behavior for supported TCP, TLS, HTTP, and meaningful bounded QUIC cases
+- practical export workflows, including Smart Export and per-flow output for selected scenarios
 
 Current limitations:
 
@@ -87,7 +91,7 @@ Current limitations:
 - no deep TCP recovery after gaps, major reordering, or loss
 - Stream results are heuristic and can differ from Wireshark on difficult captures
 - HTTP Stream reconstruction is bounded and selected-flow-only; requests and responses, including bodies, may be assembled across multiple TCP segments, but recovery is not transport-complete
-- QUIC inspection is meaningful but intentionally bounded; selected-flow analysis can expose frame-level and handshake-aware details, but full QUIC coverage and decryption remain out of scope
+- QUIC inspection is meaningful but intentionally bounded; selected-flow Stream and packet details can expose practical frame-level and handshake-aware details for supported cases, but full QUIC session reconstruction and broad decryption coverage remain out of scope
 - packet details are intentionally shallower than Wireshark
 - index and checkpoint loading currently use an exact-version policy
 
@@ -112,6 +116,9 @@ Current protocol-aware inspection is strongest in:
 - TLS record-oriented Stream parsing with bounded directional reassembly
 - narrow TLS detail exposure for complete `ClientHello`, `ServerHello`, and `Certificate` cases
 - meaningful selected-flow QUIC inspection with bounded frame-level and handshake-aware details for practical cases such as `Initial`, `Handshake`, `Retry`, `Version Negotiation`, `CRYPTO`, `ACK`, `PADDING`, and protected payload fallback
+- Smart Export with shared packet-selection rules, per-flow output mode, manifest export, progress reporting, and cooperative cancellation
+- selected-packet checksum validation for IPv4, TCP, and UDP when enabled in settings
+- clearer handling of shortened or truncated packets across packet lists, packet details, Analysis, and bounded Stream views
 
 Near-term work remains focused on reliability, Stream correctness, bounded analysis, and incremental protocol enrichment.
 
@@ -125,12 +132,12 @@ Requirements:
 
 The CLI and core library can build without Qt. If Qt 6 is not found, the UI target is skipped.
 
-Manual `v0.1.0` release status:
+Current manual release status:
 
 - Windows: a prebuilt UI zip archive is intended for the release.
 - Ubuntu: a prebuilt archive should be published only if it is manually built and manually verified for that release; otherwise treat Ubuntu as source-build-only for that tag.
-- macOS: source-build-only for `v0.1.0`.
-- `v0.1.0` release artifacts are expected to be prepared manually rather than through automated packaging or release infrastructure.
+- macOS: source-build-only unless a manually verified binary is prepared for that release.
+- Release artifacts are expected to be prepared manually rather than through automated packaging or release infrastructure.
 
 Example configure and build steps:
 
@@ -150,7 +157,7 @@ Example test command:
 ctest --test-dir build --output-on-failure --build-config Release
 ```
 
-Current checked workflow in the repository is a Windows-oriented development path. Treat broader platform coverage as best-effort unless the release notes for a specific tag explicitly say that a platform artifact or source-build path was manually checked for that release.
+Current checked workflow in the repository is still centered on Windows release packaging, but Linux source builds and manual validation are also part of normal project use. Treat platform guarantees as release-specific: only claim a prebuilt artifact or a verified source-build path for a platform when that exact release was manually checked on that platform.
 
 ## Quick usage examples
 
@@ -177,9 +184,9 @@ pcap-flow-lab-ui
 
 - [docs/architecture.md](docs/architecture.md): architecture, persistence boundaries, and runtime paths
 - [docs/current-state.md](docs/current-state.md): implemented behavior and current gaps
-- [docs/release-checklist-v0.1.0.md](docs/release-checklist-v0.1.0.md): first public release readiness checklist
-- [docs/release-notes-v0.1.0-draft.md](docs/release-notes-v0.1.0-draft.md): draft public release notes for the first manual release
-- [docs/manual-release-publish-checklist-v0.1.0.md](docs/manual-release-publish-checklist-v0.1.0.md): compact final publish checklist for the manual GitHub release
+- [docs/release-checklist.md](docs/release-checklist.md): release readiness checklist for the next manual public release
+- [docs/release-notes-draft.md](docs/release-notes-draft.md): draft public release notes for the next manual release
+- [docs/manual-release-publish-checklist.md](docs/manual-release-publish-checklist.md): compact final publish checklist for the manual GitHub release
 - [docs/contributing.md](docs/contributing.md): contribution expectations
 
 ## License
@@ -189,8 +196,6 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 ## Developer note
 
 Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is developer-only instrumentation for local regression tracking and has no effect in normal usage.
-
-
 
 
 

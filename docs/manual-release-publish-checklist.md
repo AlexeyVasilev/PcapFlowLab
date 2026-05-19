@@ -1,13 +1,13 @@
-# Manual Release Publish Checklist v0.1.0
+# Manual Release Publish Checklist
 
 Use this as the final compact pass before publishing the GitHub release.
 
 ## Product and version checks
 
 - [ ] The intended release commit is final.
-- [ ] The git tag is exactly `v0.1.0`.
-- [ ] The visible application version string is `0.1.0`.
-- [ ] The About dialog shows `0.1.0`.
+- [ ] The git tag matches the chosen release version exactly.
+- [ ] The visible application version string matches the chosen release version.
+- [ ] The About dialog shows the chosen release version.
 
 ## Basic Windows release verification
 
@@ -21,7 +21,7 @@ Use this as the final compact pass before publishing the GitHub release.
 - [ ] README platform wording matches the actual artifacts being published.
 - [ ] Release notes platform wording matches the actual artifacts being published.
 - [ ] Screenshots are current enough to match the visible UI.
-- [ ] The release notes still describe the tool as flow-first, bounded, and not a Wireshark replacement.
+- [ ] The release notes still describe the tool as flow-based, bounded, and not a Wireshark replacement.
 
 ## Archive review
 
@@ -35,11 +35,11 @@ Use this as the final compact pass before publishing the GitHub release.
 
 - [ ] Windows is described as having a prebuilt archive.
 - [ ] Ubuntu is described as having a prebuilt archive only if one was manually built and manually verified; otherwise it is described as source-build-only.
-- [ ] macOS is described as source-build-only for `v0.1.0`.
+- [ ] macOS is described as source-build-only unless a verified binary is explicitly attached.
 
 ## GitHub release page check
 
-- [ ] The release title and tag match `v0.1.0`.
+- [ ] The release title and tag match the chosen release version.
 - [ ] The release body uses the prepared draft notes.
 - [ ] Attached files match the wording in the release body.
 - [ ] The release page does not imply automated packaging or broader platform guarantees than were actually verified.

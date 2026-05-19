@@ -1,6 +1,6 @@
 # Architecture
 
-Pcap Flow Lab is a flow-first packet-capture analyzer. The persistent model is packet and flow metadata; richer Stream analysis is derived on demand for the currently selected flow and is not part of the saved state.
+Pcap Flow Lab is a flow-based packet-capture analyzer. The persistent model is packet and flow metadata; richer Stream analysis is derived on demand for the currently selected flow and is not part of the saved state.
 
 ## Main components
 
