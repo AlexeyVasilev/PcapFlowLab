@@ -144,10 +144,10 @@ if(PFL_BUILD_UI)
             src/ui/app/StreamListModel.h
         )
 
-        target_compile_definitions(
-            pcap_flow_lab_ui
-            PRIVATE
-                PFL_APP_VERSION="${PROJECT_VERSION}"
+        set_source_files_properties(
+            src/ui/app/main.cpp
+            PROPERTIES
+                COMPILE_DEFINITIONS "PFL_APP_VERSION=\"${PROJECT_VERSION}\""
         )
 
         qt_add_qml_module(
@@ -181,13 +181,26 @@ if(PFL_BUILD_UI)
                 assets/icons/app.ico
         )
 
-        if(WIN32)
+        if(WIN32 AND NOT MINGW)
+            configure_file(
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/ui/app/app_icon.rc.in"
+                "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc"
+                @ONLY
+            )
+            configure_file(
+                "${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/app.ico"
+                "${CMAKE_CURRENT_BINARY_DIR}/app.ico"
+                COPYONLY
+            )
+
             target_sources(
                 pcap_flow_lab_ui
                 PRIVATE
-                    src/ui/app/app_icon.rc
+                    "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc"
             )
+        endif()
 
+        if(WIN32)
             set_target_properties(
                 pcap_flow_lab_ui
                 PROPERTIES
