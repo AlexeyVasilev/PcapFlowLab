@@ -81,7 +81,9 @@ add_library(
     src/core/services/FlowHintService.cpp
     src/core/services/QuicInitialParser.cpp
     src/core/services/HexDumpService.cpp
+    src/app/frontend/FrontendSessionAdapter.cpp
     src/app/session/CaptureSession.cpp
+    src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp
     src/app/session/SessionOpenHelpers.cpp

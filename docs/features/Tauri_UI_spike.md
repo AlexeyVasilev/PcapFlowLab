@@ -113,6 +113,16 @@ Recommended implementation strategy:
 - let that adapter own selected-flow state and DTO shaping
 - do not expose Qt models or `MainController` directly to Tauri
 
+Current implementation status:
+
+- a first backend-facing adapter layer now exists for:
+  - `open_capture(path, open_mode)`
+  - `get_overview()`
+  - `get_flows()`
+  - `select_flow(flow_index)`
+  - `get_selected_flow_packets(offset, limit)`
+- stream remains intentionally out of scope for this first adapter pass
+
 Recommended first spike scope:
 
 1. open capture

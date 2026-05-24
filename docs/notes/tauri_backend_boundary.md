@@ -6,6 +6,16 @@ This note maps the current Qt-facing UI boundary to the existing application/ses
 
 It does not propose core packet-processing changes.
 
+Current status:
+
+- the first adapter layer now exists as `FrontendSessionAdapter`
+- the first implemented slice is:
+  - open capture
+  - get overview
+  - get flows
+  - select flow
+  - get selected-flow packets
+
 ## Files inspected most heavily
 
 - `src/ui/app/MainController.h`
