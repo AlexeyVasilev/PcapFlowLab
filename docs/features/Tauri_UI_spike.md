@@ -148,6 +148,7 @@ Current frontend-shell status:
 - the selected flow now exposes a conservative Wireshark display filter string plus best-effort clipboard copy
 - selected-flow packets now page through the existing `offset` / `limit` backend API
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
+- selected packet inspection is now organized as compact Summary / Raw / Payload / Protocol tabs inside the Tauri details panel
 - packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
 - the Flows tab keeps flows on top and shows packets plus selected-packet details side by side in the lower area
 - the Statistics tab currently contains only the basic overview cards/data
@@ -157,8 +158,9 @@ Current frontend-shell status:
 Current packet-details limitations:
 
 - the Tauri packet-details panel is intentionally basic and does not aim for full Qt packet-details parity yet
-- payload preview is bounded to a small preview window
+- raw and payload previews are bounded to small preview windows
 - byte-backed details can be unavailable in index-only sessions or when the original source capture cannot be read
+- the Raw tab only exposes a bounded preview through the existing session inspection path; it is not a full raw-byte viewer
 
 Current flow-filter / Wireshark-filter limitations:
 

@@ -83,6 +83,8 @@ struct FrontendPacketDetailsDto {
     bool packet_found {false};
     bool source_capture_accessible {false};
     bool details_available {false};
+    bool raw_preview_available {false};
+    bool raw_preview_truncated {false};
     bool payload_preview_available {false};
     bool payload_preview_truncated {false};
     std::size_t flow_index {0};
@@ -97,7 +99,10 @@ struct FrontendPacketDetailsDto {
     std::string network_summary_text {};
     std::string transport_summary_text {};
     std::string protocol_details_text {};
+    std::string raw_preview_text {};
+    std::string raw_preview_unavailable_text {};
     std::string payload_preview_text {};
+    std::string payload_preview_unavailable_text {};
     std::string unavailable_text {};
     std::string error_text {};
 };

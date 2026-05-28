@@ -132,17 +132,29 @@
                     <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
                   </div>
                 </div>
+                <div class="inspector-tabbar" aria-label="Packet details tabs">
+                  <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
+                  <button type="button" class="inspector-tab" data-packet-details-tab="raw">Raw</button>
+                  <button type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
+                  <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
+                </div>
                 <div class="details-scroll">
                   <p id="packetDetailsStateText" class="status-text"></p>
-                  <div id="packetDetailsSummary" class="details-grid"></div>
-                  <div class="details-block">
-                    <h3>Protocol Details</h3>
-                    <pre id="packetDetailsProtocolText" class="details-pre">No packet selected.</pre>
-                  </div>
-                  <div class="details-block">
-                    <h3>Payload Preview</h3>
+                  <section class="packet-details-tab-panel active" data-packet-details-panel="summary">
+                    <div id="packetDetailsSummary" class="summary-grid"></div>
+                  </section>
+                  <section class="packet-details-tab-panel" data-packet-details-panel="raw">
+                    <p id="packetDetailsRawStateText" class="status-text compact-status-text"></p>
+                    <pre id="packetDetailsRawText" class="details-pre">No packet selected.</pre>
+                  </section>
+                  <section class="packet-details-tab-panel" data-packet-details-panel="payload">
+                    <p id="packetDetailsPayloadStateText" class="status-text compact-status-text"></p>
                     <pre id="packetDetailsPayloadText" class="details-pre">No packet selected.</pre>
-                  </div>
+                  </section>
+                  <section class="packet-details-tab-panel" data-packet-details-panel="protocol">
+                    <p id="packetDetailsProtocolStateText" class="status-text compact-status-text"></p>
+                    <pre id="packetDetailsProtocolText" class="details-pre">No packet selected.</pre>
+                  </section>
                 </div>
               </section>
             </section>

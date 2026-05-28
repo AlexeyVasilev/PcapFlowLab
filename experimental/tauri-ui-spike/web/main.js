@@ -22,6 +22,7 @@
     packetErrorText: "",
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
+    packetDetailsTab: "summary",
     wiresharkFilterStatusText: "",
     wiresharkFilterStatusKind: "neutral",
   };
@@ -48,9 +49,15 @@
     packetPrevButton: document.getElementById("packetPrevButton"),
     packetNextButton: document.getElementById("packetNextButton"),
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
+    packetDetailsTabButtons: Array.from(document.querySelectorAll(".inspector-tab")),
+    packetDetailsTabPanels: Array.from(document.querySelectorAll(".packet-details-tab-panel")),
     packetDetailsStateText: document.getElementById("packetDetailsStateText"),
     packetDetailsSummary: document.getElementById("packetDetailsSummary"),
+    packetDetailsRawStateText: document.getElementById("packetDetailsRawStateText"),
+    packetDetailsRawText: document.getElementById("packetDetailsRawText"),
+    packetDetailsPayloadStateText: document.getElementById("packetDetailsPayloadStateText"),
     packetDetailsProtocolText: document.getElementById("packetDetailsProtocolText"),
+    packetDetailsProtocolStateText: document.getElementById("packetDetailsProtocolStateText"),
     packetDetailsPayloadText: document.getElementById("packetDetailsPayloadText"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
@@ -195,6 +202,16 @@
 
     for (const panel of elements.tabPanels) {
       panel.classList.toggle("active", panel.dataset.tabPanel === state.activeTab);
+    }
+  }
+
+  function renderPacketDetailsTabs() {
+    for (const button of elements.packetDetailsTabButtons) {
+      button.classList.toggle("active", button.dataset.packetDetailsTab === state.packetDetailsTab);
+    }
+
+    for (const panel of elements.packetDetailsTabPanels) {
+      panel.classList.toggle("active", panel.dataset.packetDetailsPanel === state.packetDetailsTab);
     }
   }
 
@@ -391,13 +408,26 @@
 
   function renderPacketDetails() {
     elements.packetDetailsStateText.className = "status-text";
+    elements.packetDetailsRawStateText.className = "status-text compact-status-text";
+    elements.packetDetailsPayloadStateText.className = "status-text compact-status-text";
+    elements.packetDetailsProtocolStateText.className = "status-text compact-status-text";
     elements.packetDetailsSummary.innerHTML = "";
+    elements.packetDetailsRawStateText.textContent = "";
+    elements.packetDetailsPayloadStateText.textContent = "";
+    elements.packetDetailsProtocolStateText.textContent = "";
+    elements.packetDetailsRawText.classList.remove("is-muted");
+    elements.packetDetailsPayloadText.classList.remove("is-muted");
+    elements.packetDetailsProtocolText.classList.remove("is-muted");
 
     if (state.packetDetailsState === "loading") {
       elements.packetDetailsMeta.textContent = state.selectedPacketIndex == null
         ? "Loading packet details..."
         : `Loading details for packet ${state.selectedPacketIndex}...`;
       elements.packetDetailsStateText.textContent = "Loading packet details...";
+      elements.packetDetailsRawStateText.textContent = "Loading raw preview...";
+      elements.packetDetailsPayloadStateText.textContent = "Loading payload preview...";
+      elements.packetDetailsProtocolStateText.textContent = "Loading protocol details...";
+      elements.packetDetailsRawText.textContent = "Loading packet details...";
       elements.packetDetailsProtocolText.textContent = "Loading packet details...";
       elements.packetDetailsPayloadText.textContent = "Loading packet details...";
       return;
@@ -406,8 +436,12 @@
     if (state.selectedPacketRow == null) {
       elements.packetDetailsMeta.textContent = "Select a packet to inspect details.";
       elements.packetDetailsStateText.textContent = "";
+      elements.packetDetailsRawText.textContent = "No packet selected.";
       elements.packetDetailsProtocolText.textContent = "No packet selected.";
       elements.packetDetailsPayloadText.textContent = "No packet selected.";
+      elements.packetDetailsRawText.classList.add("is-muted");
+      elements.packetDetailsProtocolText.classList.add("is-muted");
+      elements.packetDetailsPayloadText.classList.add("is-muted");
       return;
     }
 
@@ -426,9 +460,9 @@
 
     elements.packetDetailsSummary.innerHTML = summaryItems
       .map(([label, value]) => `
-        <div class="detail-card">
-          <span class="detail-card-label">${escapeHtml(label)}</span>
-          <span class="detail-card-value">${escapeHtml(value)}</span>
+        <div class="summary-row">
+          <span class="summary-label">${escapeHtml(label)}</span>
+          <span class="summary-value">${escapeHtml(value)}</span>
         </div>
       `)
       .join("");
@@ -437,42 +471,106 @@
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;
       elements.packetDetailsStateText.textContent = state.packetDetailsErrorText || "Failed to load packet details.";
       elements.packetDetailsStateText.classList.add("is-error");
+      elements.packetDetailsRawStateText.textContent = "Raw preview unavailable.";
+      elements.packetDetailsPayloadStateText.textContent = "Payload preview unavailable.";
+      elements.packetDetailsProtocolStateText.textContent = "Protocol details unavailable.";
+      elements.packetDetailsRawStateText.classList.add("is-error");
+      elements.packetDetailsPayloadStateText.classList.add("is-error");
+      elements.packetDetailsProtocolStateText.classList.add("is-error");
+      elements.packetDetailsRawText.textContent = "Raw packet preview is unavailable because the backend request failed.";
       elements.packetDetailsProtocolText.textContent = "Packet details are unavailable because the backend request failed.";
       elements.packetDetailsPayloadText.textContent = "Packet payload preview is unavailable because the backend request failed.";
+      elements.packetDetailsRawText.classList.add("is-muted");
+      elements.packetDetailsProtocolText.classList.add("is-muted");
+      elements.packetDetailsPayloadText.classList.add("is-muted");
       return;
     }
 
-    if (state.packetDetailsState === "unavailable") {
-      elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} metadata loaded, byte-backed details unavailable.`;
-      elements.packetDetailsStateText.textContent = details?.unavailable_text || "Packet details are unavailable for this session.";
-      elements.packetDetailsStateText.classList.add("is-error");
-      elements.packetDetailsProtocolText.textContent = details?.protocol_details_text || "Byte-backed protocol details are unavailable.";
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_text || "Packet payload preview is unavailable.";
-      return;
-    }
-
-    elements.packetDetailsMeta.textContent = details?.payload_preview_truncated
-      ? `Packet ${selectedPacket.packet_index} details loaded. Payload preview is truncated.`
-      : `Packet ${selectedPacket.packet_index} details loaded.`;
-    elements.packetDetailsStateText.textContent = "";
-
-    const summarySections = [
+    const protocolSections = [
       details?.link_summary_text,
       details?.network_summary_text,
       details?.transport_summary_text,
       details?.protocol_details_text,
     ].filter((value) => value && value.trim().length > 0);
-
-    elements.packetDetailsProtocolText.textContent = summarySections.length > 0
-      ? summarySections.join("\n\n")
+    const protocolText = protocolSections.length > 0
+      ? protocolSections.join("\n\n")
       : "No additional protocol details are available for this packet.";
-    elements.packetDetailsPayloadText.textContent = details?.payload_preview_text
-      || details?.unavailable_text
-      || "No transport payload preview is available for this packet.";
+
+    if (state.packetDetailsState === "unavailable") {
+      const unavailableText = details?.unavailable_text || "Packet details are unavailable for this session.";
+      elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} metadata loaded, byte-backed details unavailable.`;
+      elements.packetDetailsStateText.textContent = unavailableText;
+      elements.packetDetailsStateText.classList.add("is-error");
+      elements.packetDetailsRawStateText.textContent = details?.raw_preview_unavailable_text || unavailableText;
+      elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || unavailableText;
+      elements.packetDetailsProtocolStateText.textContent = unavailableText;
+      elements.packetDetailsRawStateText.classList.add("is-error");
+      elements.packetDetailsPayloadStateText.classList.add("is-error");
+      elements.packetDetailsProtocolStateText.classList.add("is-error");
+      elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || unavailableText;
+      elements.packetDetailsProtocolText.textContent = details?.protocol_details_text || "Byte-backed protocol details are unavailable.";
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "Packet payload preview is unavailable.";
+      elements.packetDetailsRawText.classList.add("is-muted");
+      if (!details?.protocol_details_text) {
+        elements.packetDetailsProtocolText.classList.add("is-muted");
+      }
+      elements.packetDetailsPayloadText.classList.add("is-muted");
+      return;
+    }
+
+    const rawLoaded = Boolean(details?.raw_preview_available);
+    const payloadLoaded = Boolean(details?.payload_preview_available);
+    const rawTruncated = Boolean(details?.raw_preview_truncated);
+    const payloadTruncated = Boolean(details?.payload_preview_truncated);
+
+    const metaSuffix = [];
+    if (rawTruncated) {
+      metaSuffix.push("raw preview truncated");
+    }
+    if (payloadTruncated) {
+      metaSuffix.push("payload preview truncated");
+    }
+
+    elements.packetDetailsMeta.textContent = metaSuffix.length > 0
+      ? `Packet ${selectedPacket.packet_index} details loaded (${metaSuffix.join(", ")}).`
+      : `Packet ${selectedPacket.packet_index} details loaded.`;
+    elements.packetDetailsStateText.textContent = "";
+    elements.packetDetailsProtocolStateText.textContent = protocolSections.length > 0
+      ? "Protocol details loaded."
+      : "No additional protocol details are available.";
+    elements.packetDetailsProtocolText.textContent = protocolText;
+    if (protocolSections.length === 0) {
+      elements.packetDetailsProtocolText.classList.add("is-muted");
+    }
+
+    if (rawLoaded) {
+      elements.packetDetailsRawStateText.textContent = rawTruncated
+        ? "Raw preview loaded (truncated)."
+        : "Raw preview loaded.";
+      elements.packetDetailsRawText.textContent = details?.raw_preview_text || "";
+    } else {
+      elements.packetDetailsRawStateText.textContent = details?.raw_preview_unavailable_text || "Raw preview is unavailable.";
+      elements.packetDetailsRawStateText.classList.add("is-error");
+      elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || "Raw preview is unavailable.";
+      elements.packetDetailsRawText.classList.add("is-muted");
+    }
+
+    if (payloadLoaded) {
+      elements.packetDetailsPayloadStateText.textContent = payloadTruncated
+        ? "Payload preview loaded (truncated)."
+        : "Payload preview loaded.";
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_text || "";
+    } else {
+      elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || "No payload preview is available.";
+      elements.packetDetailsPayloadStateText.classList.add("is-error");
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No payload preview is available.";
+      elements.packetDetailsPayloadText.classList.add("is-muted");
+    }
   }
 
   function render() {
     renderTabs();
+    renderPacketDetailsTabs();
     renderOpenState();
     renderStatus();
     renderOverview();
@@ -710,6 +808,12 @@
   for (const button of elements.tabButtons) {
     button.addEventListener("click", () => {
       state.activeTab = button.dataset.tab || "flows";
+      render();
+    });
+  }
+  for (const button of elements.packetDetailsTabButtons) {
+    button.addEventListener("click", () => {
+      state.packetDetailsTab = button.dataset.packetDetailsTab || "summary";
       render();
     });
   }

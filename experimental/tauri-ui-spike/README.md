@@ -13,6 +13,7 @@ Implemented slice:
 - load the selected-flow packet list
 - select a packet from the current packet page
 - inspect basic selected-packet details
+- inspect selected packets through compact Summary / Raw / Payload / Protocol tabs
 - frontend-only tabs for Flows, Statistics, and Analysis
 - viewport-oriented analyzer layout with internal panel scrolling
 - compact desktop-style density pass for the Flows workspace
@@ -46,6 +47,10 @@ Not implemented yet:
 - Clicking a flow row loads that flow's packets and resets packet paging to the first page.
 - If the current filter hides the selected flow, the Tauri shell clears the visible flow/packet/details selection to avoid stale UI state.
 - Clicking a packet row loads packet details and a bounded payload preview when byte-backed inspection is available.
+- The selected-packet inspector is now tabbed: Summary, Raw, Payload, and Protocol.
+- Summary keeps compact packet metadata visible without large cards.
+- Raw and Payload previews are intentionally bounded to small previews instead of full packet dumps.
+- Raw and Payload previews can be unavailable in index-only sessions or when the source capture cannot be read.
 - The packets panel shows loading, empty, and error states and reports the current visible range.
 - Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
 - The Flows tab now keeps the main workflow in one analyzer view: flows above, packets and packet details below.
@@ -72,7 +77,8 @@ Not implemented yet:
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
 - The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
-- In index-only mode or when the original source capture is unavailable, byte-backed packet details and payload preview can be unavailable even though packet metadata is still shown.
+- In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
+- Raw and Payload tabs intentionally show bounded previews only; they do not implement full raw-byte or payload viewers.
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 

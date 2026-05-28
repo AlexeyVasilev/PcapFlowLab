@@ -125,6 +125,19 @@ std::pair<std::string, bool> build_payload_preview(
     };
 }
 
+std::pair<std::string, bool> build_raw_preview(const std::vector<std::uint8_t>& packet_bytes) {
+    if (packet_bytes.empty()) {
+        return {};
+    }
+
+    const auto preview_size = std::min<std::size_t>(kPacketPreviewBytes, packet_bytes.size());
+    HexDumpService hex_dump_service {};
+    return {
+        hex_dump_service.format(std::span<const std::uint8_t>(packet_bytes.data(), preview_size)),
+        packet_bytes.size() > preview_size,
+    };
+}
+
 }  // namespace
 
 FrontendOpenResult FrontendSessionAdapter::open_capture(
@@ -249,6 +262,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         .packet_found = false,
         .source_capture_accessible = session_.source_capture_accessible(),
         .details_available = false,
+        .raw_preview_available = false,
+        .raw_preview_truncated = false,
         .payload_preview_available = false,
         .payload_preview_truncated = false,
         .flow_index = selected_flow_index_.value_or(0U),
@@ -291,6 +306,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     if (!result.source_capture_accessible) {
         result.unavailable_text =
             "Byte-backed packet details are unavailable because the original source capture cannot be read.";
+        result.raw_preview_unavailable_text = result.unavailable_text;
+        result.payload_preview_unavailable_text = result.unavailable_text;
         return result;
     }
 
@@ -307,15 +324,26 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     result.protocol_details_text = session_.read_packet_protocol_details_text(packet);
 
     const auto packet_bytes = session_.read_packet_data(packet);
+    const auto [raw_preview_text, raw_preview_truncated] = build_raw_preview(packet_bytes);
+    result.raw_preview_text = raw_preview_text;
+    result.raw_preview_truncated = raw_preview_truncated;
+    result.raw_preview_available = !raw_preview_text.empty();
+    result.raw_preview_unavailable_text = result.raw_preview_available
+        ? std::string {}
+        : "Raw packet preview is unavailable for this packet.";
+
     const auto [payload_preview_text, payload_preview_truncated] = build_payload_preview(packet_bytes, packet);
     result.payload_preview_text = payload_preview_text;
     result.payload_preview_truncated = payload_preview_truncated;
     result.payload_preview_available = !payload_preview_text.empty();
+    result.payload_preview_unavailable_text = result.payload_preview_available
+        ? std::string {}
+        : ((details->has_tcp || details->has_udp)
+            ? "No transport payload is available for this packet."
+            : "Transport payload preview is not available for this packet.");
 
     if (!result.payload_preview_available) {
-        result.unavailable_text = (details->has_tcp || details->has_udp)
-            ? "No transport payload is available for this packet."
-            : "Transport payload preview is not available for this packet.";
+        result.unavailable_text = result.payload_preview_unavailable_text;
     }
 
     return result;
