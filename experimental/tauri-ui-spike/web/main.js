@@ -9,6 +9,7 @@
     statusText: "",
     overview: null,
     flows: [],
+    flowFilterText: "",
     selectedFlowIndex: null,
     packets: [],
     packetsTotalCount: 0,
@@ -21,6 +22,8 @@
     packetErrorText: "",
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
+    wiresharkFilterStatusText: "",
+    wiresharkFilterStatusKind: "neutral",
   };
 
   const elements = {
@@ -33,7 +36,13 @@
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
     overviewMeta: document.getElementById("overviewMeta"),
     flowMeta: document.getElementById("flowMeta"),
+    flowFilterInput: document.getElementById("flowFilterInput"),
+    clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     flowTableBody: document.getElementById("flowTableBody"),
+    wiresharkFilterMeta: document.getElementById("wiresharkFilterMeta"),
+    wiresharkFilterText: document.getElementById("wiresharkFilterText"),
+    wiresharkFilterStatusText: document.getElementById("wiresharkFilterStatusText"),
+    copyWiresharkFilterButton: document.getElementById("copyWiresharkFilterButton"),
     packetMeta: document.getElementById("packetMeta"),
     packetTableBody: document.getElementById("packetTableBody"),
     packetPrevButton: document.getElementById("packetPrevButton"),
@@ -69,6 +78,11 @@
     state.statusKind = kind;
   }
 
+  function setWiresharkFilterStatus(text, kind = "neutral") {
+    state.wiresharkFilterStatusText = text || "";
+    state.wiresharkFilterStatusKind = kind;
+  }
+
   function clearOverview() {
     state.overview = null;
   }
@@ -83,8 +97,10 @@
 
   function clearFlows() {
     state.flows = [];
+    state.flowFilterText = "";
     state.selectedFlowIndex = null;
     state.flowState = "idle";
+    setWiresharkFilterStatus("", "neutral");
   }
 
   function clearPackets() {
@@ -117,6 +133,59 @@
     } else if (state.statusKind === "success") {
       elements.statusText.classList.add("is-success");
     }
+  }
+
+  function filteredFlows() {
+    const filterText = state.flowFilterText.trim().toLowerCase();
+    if (filterText.length === 0) {
+      return state.flows;
+    }
+
+    return state.flows.filter((flow) => {
+      const haystack = [
+        flow.protocol_text,
+        flow.protocol_hint,
+        flow.service_hint,
+        flow.endpoint_a,
+        flow.endpoint_b,
+        flow.address_a,
+        flow.address_b,
+        String(flow.port_a ?? ""),
+        String(flow.port_b ?? ""),
+        String(flow.packet_count ?? ""),
+        String(flow.total_bytes ?? ""),
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(filterText);
+    });
+  }
+
+  function buildWiresharkDisplayFilter(flow) {
+    if (!flow) {
+      return "";
+    }
+
+    const addressField = flow.family === "ipv6" ? "ipv6.addr" : "ip.addr";
+    const protocolText = String(flow.protocol_text || "").toLowerCase();
+    const portField = protocolText === "udp"
+      ? "udp.port"
+      : protocolText === "tcp"
+        ? "tcp.port"
+        : "";
+
+    const clauses = [
+      `${addressField} == ${flow.address_a}`,
+      `${addressField} == ${flow.address_b}`,
+    ];
+
+    if (portField) {
+      clauses.push(`${portField} == ${flow.port_a}`);
+      clauses.push(`${portField} == ${flow.port_b}`);
+    }
+
+    return clauses.join(" && ");
   }
 
   function renderTabs() {
@@ -165,6 +234,11 @@
 
   function renderFlows() {
     const flows = state.flows;
+    const visibleFlows = filteredFlows();
+    const selectedFlowVisible = visibleFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+
+    elements.flowFilterInput.value = state.flowFilterText;
+    elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.flowMeta.textContent = "Loading flows...";
@@ -190,10 +264,16 @@
       return;
     }
 
-    elements.flowMeta.textContent = `${formatNumber(flows.length)} flows loaded. Click a row to load packets.`;
-    elements.flowTableBody.innerHTML = flows
+    if (visibleFlows.length === 0) {
+      elements.flowMeta.textContent = `Showing 0 of ${formatNumber(flows.length)} flows.`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">No flows match the current filter.</td></tr>`;
+      return;
+    }
+
+    elements.flowMeta.textContent = `Showing ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows. Click a row to load packets.`;
+    elements.flowTableBody.innerHTML = visibleFlows
       .map((flow) => {
-        const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
+        const selected = selectedFlowVisible && state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         return `
           <tr class="flow-row${selected}" data-flow-index="${flow.flow_index}">
             <td>${flow.flow_index}</td>
@@ -215,6 +295,30 @@
         await selectFlow(flowIndex);
       });
     }
+  }
+
+  function renderWiresharkFilter() {
+    const selectedFlow = state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
+    const filterText = buildWiresharkDisplayFilter(selectedFlow);
+
+    elements.wiresharkFilterStatusText.textContent = state.wiresharkFilterStatusText;
+    elements.wiresharkFilterStatusText.className = "status-text";
+    if (state.wiresharkFilterStatusKind === "error") {
+      elements.wiresharkFilterStatusText.classList.add("is-error");
+    } else if (state.wiresharkFilterStatusKind === "success") {
+      elements.wiresharkFilterStatusText.classList.add("is-success");
+    }
+
+    if (selectedFlow == null) {
+      elements.wiresharkFilterMeta.textContent = "Select a flow to generate a filter.";
+      elements.wiresharkFilterText.textContent = "No flow selected.";
+      elements.copyWiresharkFilterButton.disabled = true;
+      return;
+    }
+
+    elements.wiresharkFilterMeta.textContent = `Generated from flow ${selectedFlow.flow_index} using current flow DTO fields.`;
+    elements.wiresharkFilterText.textContent = filterText || "No conservative display filter is available for this flow.";
+    elements.copyWiresharkFilterButton.disabled = filterText.length === 0;
   }
 
   function renderPackets() {
@@ -373,6 +477,7 @@
     renderStatus();
     renderOverview();
     renderFlows();
+    renderWiresharkFilter();
     renderPackets();
     renderPacketDetails();
   }
@@ -485,6 +590,7 @@
       state.packetErrorText = "";
       state.packetState = "loading";
       clearPacketDetails();
+      setWiresharkFilterStatus("", "neutral");
       setStatus(`Selected flow ${flowIndex}.`, "success");
       render();
       await loadSelectedFlowPackets();
@@ -561,6 +667,46 @@
   }
 
   elements.openButton.addEventListener("click", openCapture);
+  elements.flowFilterInput.addEventListener("input", () => {
+    state.flowFilterText = elements.flowFilterInput.value;
+    setWiresharkFilterStatus("", "neutral");
+
+    const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
+    if (!selectedFlowVisible) {
+      state.selectedFlowIndex = null;
+      clearPackets();
+      setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
+    }
+
+    render();
+  });
+  elements.clearFlowFilterButton.addEventListener("click", () => {
+    state.flowFilterText = "";
+    setWiresharkFilterStatus("", "neutral");
+    render();
+  });
+  elements.copyWiresharkFilterButton.addEventListener("click", async () => {
+    const selectedFlow = state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
+    const filterText = buildWiresharkDisplayFilter(selectedFlow);
+    if (!filterText) {
+      setWiresharkFilterStatus("No Wireshark display filter is available for the selected flow.", "error");
+      render();
+      return;
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API is unavailable.");
+      }
+
+      await navigator.clipboard.writeText(filterText);
+      setWiresharkFilterStatus("Wireshark filter copied to the clipboard.", "success");
+    } catch (error) {
+      setWiresharkFilterStatus(`Failed to copy filter: ${String(error)}`, "error");
+    }
+
+    render();
+  });
   for (const button of elements.tabButtons) {
     button.addEventListener("click", () => {
       state.activeTab = button.dataset.tab || "flows";

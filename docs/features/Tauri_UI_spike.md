@@ -142,7 +142,9 @@ Current frontend-shell status:
 - the shell uses a compact top session bar plus frontend-only main tabs: Flows, Statistics, and Analysis
 - the long vertically stacked page has been replaced with a viewport-oriented desktop layout
 - the open workflow clears stale overview/flow/packet state before each new open attempt
+- the flow table now supports a frontend-only case-insensitive filter over the loaded flow DTOs
 - flow selection is stable and visually highlighted in the flow table
+- the selected flow now exposes a conservative Wireshark display filter string plus best-effort clipboard copy
 - selected-flow packets now page through the existing `offset` / `limit` backend API
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
@@ -156,6 +158,12 @@ Current packet-details limitations:
 - the Tauri packet-details panel is intentionally basic and does not aim for full Qt packet-details parity yet
 - payload preview is bounded to a small preview window
 - byte-backed details can be unavailable in index-only sessions or when the original source capture cannot be read
+
+Current flow-filter / Wireshark-filter limitations:
+
+- the flow filter is frontend-only and only searches across fields already present in the loaded flow DTOs
+- when a filter hides the selected flow, the Tauri shell clears the visible flow/packet/details selection instead of trying to preserve hidden selection state
+- the Wireshark display filter is generated conservatively from current DTO fields and does not aim for full Qt parity yet
 
 Recommended first spike scope:
 

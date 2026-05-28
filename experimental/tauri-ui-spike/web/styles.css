@@ -156,7 +156,7 @@ label {
 
 .flows-layout {
   display: grid;
-  grid-template-rows: minmax(240px, 46%) minmax(280px, 54%);
+  grid-template-rows: minmax(360px, 58%) minmax(220px, 42%);
   gap: 14px;
   height: 100%;
   min-height: 0;
@@ -179,6 +179,13 @@ label {
   min-height: 0;
 }
 
+.flows-panel > .fill-scroll,
+.packets-panel > .fill-scroll,
+.statistics-panel > .fill-scroll,
+.packet-details-panel > .details-scroll {
+  flex: 1 1 auto;
+}
+
 .statistics-panel {
   height: 100%;
 }
@@ -187,6 +194,53 @@ label {
 .details-scroll {
   min-height: 0;
   overflow: auto;
+}
+
+.flows-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.flows-tools {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1.2fr);
+  gap: 12px;
+  margin-bottom: 12px;
+  flex: 0 0 auto;
+}
+
+.flow-filter-panel {
+  min-width: 0;
+}
+
+.flow-filter-field {
+  display: flex;
+  flex: 1 1 320px;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.flow-helper-panel {
+  padding: 12px;
+  border: 1px solid #ebe4d8;
+  border-radius: 14px;
+  background: #fcfaf5;
+  min-width: 0;
+}
+
+.compact-heading {
+  margin-bottom: 10px;
+}
+
+.compact-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.single-pre {
+  min-height: 44px;
 }
 
 .details-scroll {
@@ -309,6 +363,7 @@ select:disabled {
 }
 
 .table-wrap {
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 14px;
 }
@@ -469,6 +524,7 @@ select:disabled {
     grid-template-rows: auto auto;
   }
 
+  .flows-tools,
   .flows-bottom {
     grid-template-columns: 1fr;
   }

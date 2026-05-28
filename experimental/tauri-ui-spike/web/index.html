@@ -58,6 +58,28 @@
                   <p id="flowMeta" class="panel-subtitle">No capture loaded.</p>
                 </div>
               </div>
+              <div class="flows-tools">
+                <div class="flow-filter-panel">
+                  <div class="flows-toolbar">
+                    <label class="flow-filter-field" for="flowFilterInput">
+                      <span>Filter flows</span>
+                      <input id="flowFilterInput" type="text" placeholder="protocol, hint, service, endpoint, port..." />
+                    </label>
+                    <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
+                  </div>
+                </div>
+                <div class="flow-helper-panel">
+                  <div class="panel-heading compact-heading">
+                    <div>
+                      <h3>Wireshark Display Filter</h3>
+                      <p id="wiresharkFilterMeta" class="panel-subtitle">Select a flow to generate a filter.</p>
+                    </div>
+                    <button id="copyWiresharkFilterButton" type="button" class="secondary-button">Copy</button>
+                  </div>
+                  <pre id="wiresharkFilterText" class="details-pre single-pre">No flow selected.</pre>
+                  <p id="wiresharkFilterStatusText" class="status-text"></p>
+                </div>
+              </div>
               <div class="table-wrap fill-scroll">
                 <table class="data-table">
                   <thead>
