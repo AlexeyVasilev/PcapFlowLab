@@ -11,6 +11,8 @@ Implemented slice:
 - load flow list
 - select a flow
 - load the selected-flow packet list
+- select a packet from the current packet page
+- inspect basic selected-packet details
 - open workflow state handling: idle, opening, opened, error
 - flow-row selection highlighting
 - selected-flow packet pagination with Previous/Next controls
@@ -18,7 +20,7 @@ Implemented slice:
 Not implemented yet:
 
 - stream view
-- packet details
+- full packet details parity
 - analysis
 - Smart Export
 - settings
@@ -32,7 +34,9 @@ Not implemented yet:
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
 - Clicking a flow row loads that flow's packets and resets packet paging to the first page.
+- Clicking a packet row loads packet details and a bounded payload preview when byte-backed inspection is available.
 - The packets panel shows loading, empty, and error states and reports the current visible range.
+- Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
 
 ## Structure
 
@@ -51,6 +55,8 @@ Not implemented yet:
 
 - Browse is intentionally deferred for now. A file dialog is possible in Tauri, but wiring it cleanly would expand the current capability and shell surface beyond this small navigation-focused pass.
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
+- Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
+- In index-only mode or when the original source capture is unavailable, byte-backed packet details and payload preview can be unavailable even though packet metadata is still shown.
 
 ## Notes
 

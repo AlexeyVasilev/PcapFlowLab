@@ -24,6 +24,10 @@ char* pfl_frontend_session_adapter_get_selected_flow_packets_json(
     std::size_t offset,
     std::size_t limit
 );
+char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint64_t packet_index
+);
 
 void pfl_frontend_string_free(char* value);
 

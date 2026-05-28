@@ -77,4 +77,29 @@ struct FrontendSelectedFlowPacketsResult {
     std::vector<FrontendPacketDto> packets {};
 };
 
+struct FrontendPacketDetailsDto {
+    bool has_capture {false};
+    bool has_selected_flow {false};
+    bool packet_found {false};
+    bool source_capture_accessible {false};
+    bool details_available {false};
+    bool payload_preview_available {false};
+    bool payload_preview_truncated {false};
+    std::size_t flow_index {0};
+    std::uint64_t packet_index {0};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::uint32_t payload_length {0};
+    bool is_ip_fragmented {false};
+    std::string tcp_flags_text {};
+    std::string link_summary_text {};
+    std::string network_summary_text {};
+    std::string transport_summary_text {};
+    std::string protocol_details_text {};
+    std::string payload_preview_text {};
+    std::string unavailable_text {};
+    std::string error_text {};
+};
+
 }  // namespace pfl

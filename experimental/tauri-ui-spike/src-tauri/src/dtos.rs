@@ -115,3 +115,29 @@ pub struct SelectedFlowPacketsDto {
 pub struct SelectionResultDto {
     pub selected: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketDetailsDto {
+    pub has_capture: bool,
+    pub has_selected_flow: bool,
+    pub packet_found: bool,
+    pub source_capture_accessible: bool,
+    pub details_available: bool,
+    pub payload_preview_available: bool,
+    pub payload_preview_truncated: bool,
+    pub flow_index: usize,
+    pub packet_index: u64,
+    pub timestamp_text: String,
+    pub captured_length: u32,
+    pub original_length: u32,
+    pub payload_length: u32,
+    pub is_ip_fragmented: bool,
+    pub tcp_flags_text: String,
+    pub link_summary_text: String,
+    pub network_summary_text: String,
+    pub transport_summary_text: String,
+    pub protocol_details_text: String,
+    pub payload_preview_text: String,
+    pub unavailable_text: String,
+    pub error_text: String,
+}

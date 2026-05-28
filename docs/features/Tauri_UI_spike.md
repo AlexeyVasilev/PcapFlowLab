@@ -142,7 +142,15 @@ Current frontend-shell status:
 - the open workflow clears stale overview/flow/packet state before each new open attempt
 - flow selection is stable and visually highlighted in the flow table
 - selected-flow packets now page through the existing `offset` / `limit` backend API
+- selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
+- packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
 - the current shell remains typed-path only; Browse is intentionally deferred for a later pass
+
+Current packet-details limitations:
+
+- the Tauri packet-details panel is intentionally basic and does not aim for full Qt packet-details parity yet
+- payload preview is bounded to a small preview window
+- byte-backed details can be unavailable in index-only sessions or when the original source capture cannot be read
 
 Recommended first spike scope:
 

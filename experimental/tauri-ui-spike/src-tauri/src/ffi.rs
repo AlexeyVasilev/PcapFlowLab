@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    FlowDto, OpenCaptureResultDto, OverviewDto, SelectedFlowPacketsDto, SelectionResultDto,
+    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowPacketsDto, SelectionResultDto,
 };
 
 #[repr(C)]
@@ -33,6 +33,10 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         offset: usize,
         limit: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        packet_index: u64,
     ) -> *mut c_char;
     fn pfl_frontend_string_free(value: *mut c_char);
 }
@@ -94,6 +98,13 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_get_selected_flow_packets_json(self.handle, offset, limit)
         };
         parse_json_owned::<SelectedFlowPacketsDto>(json)
+    }
+
+    pub fn get_selected_flow_packet_details(&self, packet_index: u64) -> Result<PacketDetailsDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_selected_flow_packet_details_json(self.handle, packet_index)
+        };
+        parse_json_owned::<PacketDetailsDto>(json)
     }
 }
 

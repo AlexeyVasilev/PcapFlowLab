@@ -12,9 +12,14 @@
     packets: [],
     packetsTotalCount: 0,
     packetOffset: 0,
+    selectedPacketIndex: null,
+    selectedPacketRow: null,
+    packetDetails: null,
     flowState: "idle",
     packetState: "idle",
     packetErrorText: "",
+    packetDetailsState: "idle",
+    packetDetailsErrorText: "",
   };
 
   const elements = {
@@ -30,6 +35,11 @@
     packetTableBody: document.getElementById("packetTableBody"),
     packetPrevButton: document.getElementById("packetPrevButton"),
     packetNextButton: document.getElementById("packetNextButton"),
+    packetDetailsMeta: document.getElementById("packetDetailsMeta"),
+    packetDetailsStateText: document.getElementById("packetDetailsStateText"),
+    packetDetailsSummary: document.getElementById("packetDetailsSummary"),
+    packetDetailsProtocolText: document.getElementById("packetDetailsProtocolText"),
+    packetDetailsPayloadText: document.getElementById("packetDetailsPayloadText"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
     metricBytes: document.getElementById("metricBytes"),
@@ -60,6 +70,14 @@
     state.overview = null;
   }
 
+  function clearPacketDetails() {
+    state.selectedPacketIndex = null;
+    state.selectedPacketRow = null;
+    state.packetDetails = null;
+    state.packetDetailsState = "idle";
+    state.packetDetailsErrorText = "";
+  }
+
   function clearFlows() {
     state.flows = [];
     state.selectedFlowIndex = null;
@@ -72,6 +90,7 @@
     state.packetOffset = 0;
     state.packetState = "idle";
     state.packetErrorText = "";
+    clearPacketDetails();
   }
 
   function resetForNewOpen() {
@@ -225,22 +244,114 @@
     elements.packetMeta.textContent = `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${state.selectedFlowIndex}.`;
 
     elements.packetTableBody.innerHTML = state.packets
-      .map((packet) => `
-        <tr>
-          <td>${packet.row_number}</td>
-          <td>${packet.packet_index}</td>
-          <td>${escapeHtml(packet.direction_text)}</td>
-          <td>${escapeHtml(packet.timestamp_text)}</td>
-          <td>${packet.captured_length}</td>
-          <td>${packet.original_length}</td>
-          <td>${packet.payload_length}</td>
-          <td>${escapeHtml(packet.tcp_flags_text)}</td>
-        </tr>
-      `)
+      .map((packet) => {
+        const selected = state.selectedPacketIndex === packet.packet_index ? " selected" : "";
+        return `
+          <tr class="packet-row${selected}" data-packet-index="${packet.packet_index}">
+            <td>${packet.row_number}</td>
+            <td>${packet.packet_index}</td>
+            <td>${escapeHtml(packet.direction_text)}</td>
+            <td>${escapeHtml(packet.timestamp_text)}</td>
+            <td>${packet.captured_length}</td>
+            <td>${packet.original_length}</td>
+            <td>${packet.payload_length}</td>
+            <td>${escapeHtml(packet.tcp_flags_text)}</td>
+          </tr>
+        `;
+      })
       .join("");
+
+    for (const row of elements.packetTableBody.querySelectorAll(".packet-row")) {
+      row.addEventListener("click", async () => {
+        const packetIndex = Number(row.dataset.packetIndex);
+        await selectPacket(packetIndex);
+      });
+    }
 
     elements.packetPrevButton.disabled = state.packetOffset === 0;
     elements.packetNextButton.disabled = state.packetOffset + state.packets.length >= state.packetsTotalCount;
+  }
+
+  function renderPacketDetails() {
+    elements.packetDetailsStateText.className = "status-text";
+    elements.packetDetailsSummary.innerHTML = "";
+
+    if (state.packetDetailsState === "loading") {
+      elements.packetDetailsMeta.textContent = state.selectedPacketIndex == null
+        ? "Loading packet details..."
+        : `Loading details for packet ${state.selectedPacketIndex}...`;
+      elements.packetDetailsStateText.textContent = "Loading packet details...";
+      elements.packetDetailsProtocolText.textContent = "Loading packet details...";
+      elements.packetDetailsPayloadText.textContent = "Loading packet details...";
+      return;
+    }
+
+    if (state.selectedPacketRow == null) {
+      elements.packetDetailsMeta.textContent = "Select a packet to inspect details.";
+      elements.packetDetailsStateText.textContent = "";
+      elements.packetDetailsProtocolText.textContent = "No packet selected.";
+      elements.packetDetailsPayloadText.textContent = "No packet selected.";
+      return;
+    }
+
+    const details = state.packetDetails;
+    const selectedPacket = state.selectedPacketRow;
+    const summaryItems = [
+      ["Packet Index", selectedPacket.packet_index],
+      ["Flow Index", state.selectedFlowIndex ?? "-"],
+      ["Direction", selectedPacket.direction_text || "-"],
+      ["Timestamp", details?.timestamp_text || selectedPacket.timestamp_text || "-"],
+      ["Captured Length", formatNumber(details?.captured_length ?? selectedPacket.captured_length)],
+      ["Original Length", formatNumber(details?.original_length ?? selectedPacket.original_length)],
+      ["Payload Length", formatNumber(details?.payload_length ?? selectedPacket.payload_length)],
+      ["TCP Flags", details?.tcp_flags_text || selectedPacket.tcp_flags_text || "-"],
+    ];
+
+    elements.packetDetailsSummary.innerHTML = summaryItems
+      .map(([label, value]) => `
+        <div class="detail-card">
+          <span class="detail-card-label">${escapeHtml(label)}</span>
+          <span class="detail-card-value">${escapeHtml(value)}</span>
+        </div>
+      `)
+      .join("");
+
+    if (state.packetDetailsState === "error") {
+      elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;
+      elements.packetDetailsStateText.textContent = state.packetDetailsErrorText || "Failed to load packet details.";
+      elements.packetDetailsStateText.classList.add("is-error");
+      elements.packetDetailsProtocolText.textContent = "Packet details are unavailable because the backend request failed.";
+      elements.packetDetailsPayloadText.textContent = "Packet payload preview is unavailable because the backend request failed.";
+      return;
+    }
+
+    if (state.packetDetailsState === "unavailable") {
+      elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} metadata loaded, byte-backed details unavailable.`;
+      elements.packetDetailsStateText.textContent = details?.unavailable_text || "Packet details are unavailable for this session.";
+      elements.packetDetailsStateText.classList.add("is-error");
+      elements.packetDetailsProtocolText.textContent = details?.protocol_details_text || "Byte-backed protocol details are unavailable.";
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_text || "Packet payload preview is unavailable.";
+      return;
+    }
+
+    elements.packetDetailsMeta.textContent = details?.payload_preview_truncated
+      ? `Packet ${selectedPacket.packet_index} details loaded. Payload preview is truncated.`
+      : `Packet ${selectedPacket.packet_index} details loaded.`;
+    elements.packetDetailsStateText.textContent = "";
+
+    const summarySections = [
+      details?.link_summary_text,
+      details?.network_summary_text,
+      details?.transport_summary_text,
+      details?.protocol_details_text,
+    ].filter((value) => value && value.trim().length > 0);
+
+    elements.packetDetailsProtocolText.textContent = summarySections.length > 0
+      ? summarySections.join("\n\n")
+      : "No additional protocol details are available for this packet.";
+    elements.packetDetailsPayloadText.textContent = details?.payload_preview_text
+      || details?.unavailable_text
+      || "No transport payload preview is available for this packet.";
   }
 
   function render() {
@@ -249,6 +360,7 @@
     renderOverview();
     renderFlows();
     renderPackets();
+    renderPacketDetails();
   }
 
   async function loadOverviewAndFlows() {
@@ -272,6 +384,7 @@
       return;
     }
 
+    clearPacketDetails();
     state.packetState = "loading";
     state.packetErrorText = "";
     render();
@@ -292,6 +405,45 @@
       state.packetState = "error";
       state.packetErrorText = `Failed to load packets: ${String(error)}`;
       setStatus(state.packetErrorText, "error");
+    }
+
+    render();
+  }
+
+  async function loadSelectedPacketDetails() {
+    if (state.selectedPacketIndex == null) {
+      clearPacketDetails();
+      render();
+      return;
+    }
+
+    state.packetDetailsState = "loading";
+    state.packetDetailsErrorText = "";
+    state.packetDetails = null;
+    render();
+
+    try {
+      const details = await invoke("get_selected_flow_packet_details", {
+        packet_index: state.selectedPacketIndex,
+      });
+
+      state.packetDetails = details;
+      if (details?.error_text) {
+        state.packetDetailsState = "error";
+        state.packetDetailsErrorText = details.error_text;
+        setStatus(details.error_text, "error");
+      } else if (details?.unavailable_text && !details?.details_available) {
+        state.packetDetailsState = "unavailable";
+      } else if (details?.unavailable_text && !details?.payload_preview_available) {
+        state.packetDetailsState = "loaded";
+      } else {
+        state.packetDetailsState = "loaded";
+      }
+    } catch (error) {
+      state.packetDetails = null;
+      state.packetDetailsState = "error";
+      state.packetDetailsErrorText = `Failed to load packet details: ${String(error)}`;
+      setStatus(state.packetDetailsErrorText, "error");
     }
 
     render();
@@ -318,15 +470,36 @@
       state.packetsTotalCount = 0;
       state.packetErrorText = "";
       state.packetState = "loading";
+      clearPacketDetails();
       setStatus(`Selected flow ${flowIndex}.`, "success");
       render();
       await loadSelectedFlowPackets();
     } catch (error) {
       state.packetState = "error";
       state.packetErrorText = `Failed to select flow ${flowIndex}: ${String(error)}`;
+      clearPacketDetails();
       setStatus(state.packetErrorText, "error");
       render();
     }
+  }
+
+  async function selectPacket(packetIndex) {
+    const packet = state.packets.find((candidate) => candidate.packet_index === packetIndex) || null;
+    if (packet == null) {
+      clearPacketDetails();
+      setStatus("The selected packet is not available on the current page.", "error");
+      render();
+      return;
+    }
+
+    state.selectedPacketIndex = packetIndex;
+    state.selectedPacketRow = packet;
+    state.packetDetails = null;
+    state.packetDetailsState = "loading";
+    state.packetDetailsErrorText = "";
+    setStatus(`Selected packet ${packetIndex}.`, "success");
+    render();
+    await loadSelectedPacketDetails();
   }
 
   async function openCapture() {
@@ -380,6 +553,7 @@
     }
 
     state.packetOffset = Math.max(0, state.packetOffset - packetPageSize);
+    clearPacketDetails();
     await loadSelectedFlowPackets();
   });
   elements.packetNextButton.addEventListener("click", async () => {
@@ -393,6 +567,7 @@
     }
 
     state.packetOffset = nextOffset;
+    clearPacketDetails();
     await loadSelectedFlowPackets();
   });
 

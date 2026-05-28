@@ -19,6 +19,7 @@ public:
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] bool select_flow(std::size_t flow_index);
     [[nodiscard]] FrontendSelectedFlowPacketsResult get_selected_flow_packets(std::size_t offset, std::size_t limit);
+    [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(std::uint64_t packet_index) const;
 
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] std::optional<std::size_t> selected_flow_index() const noexcept;

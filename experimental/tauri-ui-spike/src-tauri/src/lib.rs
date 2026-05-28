@@ -4,7 +4,7 @@ mod ffi;
 use std::sync::Mutex;
 
 use dtos::{
-    FlowDto, OpenCaptureResultDto, OverviewDto, SelectedFlowPacketsDto, SelectionResultDto,
+    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowPacketsDto, SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
 use tauri::State;
@@ -69,6 +69,17 @@ fn get_selected_flow_packets(
     state.adapter.get_selected_flow_packets(offset, limit)
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn get_selected_flow_packet_details(
+    state: State<'_, Mutex<AdapterState>>,
+    packet_index: u64,
+) -> Result<PacketDetailsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_selected_flow_packet_details(packet_index)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let adapter = CppFrontendSessionAdapter::new()
@@ -81,7 +92,8 @@ pub fn run() {
             get_overview,
             get_flows,
             select_flow,
-            get_selected_flow_packets
+            get_selected_flow_packets,
+            get_selected_flow_packet_details
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri UI spike");

@@ -137,6 +137,25 @@
           </table>
         </div>
       </section>
+
+      <section class="panel packet-details-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Selected Packet Details</h2>
+            <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
+          </div>
+        </div>
+        <p id="packetDetailsStateText" class="status-text"></p>
+        <div id="packetDetailsSummary" class="details-grid"></div>
+        <div class="details-block">
+          <h3>Protocol Details</h3>
+          <pre id="packetDetailsProtocolText" class="details-pre">No packet selected.</pre>
+        </div>
+        <div class="details-block">
+          <h3>Payload Preview</h3>
+          <pre id="packetDetailsPayloadText" class="details-pre">No packet selected.</pre>
+        </div>
+      </section>
     </main>
 
     <script src="./main.js"></script>

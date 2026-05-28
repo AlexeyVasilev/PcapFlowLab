@@ -289,6 +289,18 @@ select:disabled {
   background: var(--selected);
 }
 
+.data-table tbody tr.packet-row {
+  cursor: pointer;
+}
+
+.data-table tbody tr.packet-row:hover {
+  background: #f7f4ec;
+}
+
+.data-table tbody tr.packet-row.selected {
+  background: var(--selected);
+}
+
 .empty-row td {
   color: var(--muted);
   font-style: italic;
@@ -301,4 +313,53 @@ select:disabled {
 
 .table-state-row.is-error td {
   color: var(--danger);
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.detail-card {
+  padding: 12px;
+  border: 1px solid #ebe4d8;
+  border-radius: 14px;
+  background: #fcfaf5;
+}
+
+.detail-card-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.detail-card-value {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.details-block + .details-block {
+  margin-top: 16px;
+}
+
+.details-block h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.details-pre {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #ebe4d8;
+  border-radius: 14px;
+  background: #fbf8f1;
+  color: var(--text);
+  font: 13px/1.45 "Cascadia Mono", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
