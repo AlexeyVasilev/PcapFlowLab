@@ -136,6 +136,14 @@ UI direction note:
 - the existing Qt UI remains the primary product UI for now
 - the Tauri path is still an experimental parallel frontend spike
 
+Current frontend-shell status:
+
+- the Tauri shell now has explicit open states: idle, opening, opened, and error
+- the open workflow clears stale overview/flow/packet state before each new open attempt
+- flow selection is stable and visually highlighted in the flow table
+- selected-flow packets now page through the existing `offset` / `limit` backend API
+- the current shell remains typed-path only; Browse is intentionally deferred for a later pass
+
 Recommended first spike scope:
 
 1. open capture

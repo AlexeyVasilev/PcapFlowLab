@@ -14,24 +14,45 @@
       </header>
 
       <section class="panel open-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Open Capture</h2>
+            <p class="panel-subtitle">Typed path workflow for capture and index files.</p>
+          </div>
+          <span id="openStateBadge" class="state-badge state-idle">Idle</span>
+        </div>
+
         <div class="field-row">
           <label for="capturePath">Capture or index path</label>
           <input id="capturePath" type="text" placeholder="C:\captures\sample.pcap" />
         </div>
-        <div class="field-row inline-row">
-          <label for="openMode">Open mode</label>
-          <select id="openMode">
-            <option value="fast">Fast</option>
-            <option value="deep">Deep</option>
-          </select>
+
+        <div class="field-row inline-row controls-row">
+          <div class="control-group">
+            <label for="openMode">Open mode</label>
+            <select id="openMode">
+              <option value="fast">Fast</option>
+              <option value="deep">Deep</option>
+            </select>
+          </div>
           <button id="openButton" type="button">Open Capture</button>
         </div>
+
+        <p id="openWorkflowNote" class="workflow-note">
+          Browse is not wired yet in this spike; use a typed path for now.
+        </p>
         <p id="statusText" class="status-text"></p>
       </section>
 
-      <section class="grid">
-        <section class="panel">
-          <h2>Overview</h2>
+      <section class="content-grid">
+        <section class="panel overview-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Overview</h2>
+              <p id="overviewMeta" class="panel-subtitle">No capture loaded.</p>
+            </div>
+          </div>
+
           <div id="overviewContent" class="overview-grid">
             <div class="metric">
               <span class="metric-label">Packets</span>
@@ -60,9 +81,13 @@
           </div>
         </section>
 
-        <section class="panel">
-          <h2>Flows</h2>
-          <div id="flowMeta" class="section-meta">No capture loaded.</div>
+        <section class="panel flows-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Flows</h2>
+              <p id="flowMeta" class="panel-subtitle">No capture loaded.</p>
+            </div>
+          </div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
@@ -83,9 +108,17 @@
         </section>
       </section>
 
-      <section class="panel">
-        <h2>Selected-Flow Packets</h2>
-        <div id="packetMeta" class="section-meta">Select a flow to load packets.</div>
+      <section class="panel packets-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>Selected-Flow Packets</h2>
+            <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
+          </div>
+          <div class="pager-controls">
+            <button id="packetPrevButton" type="button" class="secondary-button">Previous</button>
+            <button id="packetNextButton" type="button" class="secondary-button">Next</button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="data-table packets-table">
             <thead>

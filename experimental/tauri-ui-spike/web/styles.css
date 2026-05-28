@@ -8,6 +8,10 @@
   --accent: #1f6f78;
   --accent-soft: #dff1f2;
   --selected: #f2efe3;
+  --danger: #9f2b2b;
+  --danger-soft: #f8dede;
+  --success-soft: #e3f3e5;
+  --warning-soft: #efe6c8;
 }
 
 * {
@@ -55,7 +59,7 @@ body {
   margin-bottom: 18px;
 }
 
-.grid {
+.content-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 18px;
@@ -63,9 +67,28 @@ body {
 }
 
 @media (min-width: 1100px) {
-  .grid {
+  .content-grid {
     grid-template-columns: 320px 1fr;
   }
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.panel-heading h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.panel-subtitle {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .field-row {
@@ -78,6 +101,17 @@ body {
 .inline-row {
   flex-direction: row;
   align-items: end;
+  flex-wrap: wrap;
+}
+
+.controls-row {
+  gap: 12px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 label {
@@ -115,10 +149,69 @@ button:hover {
   filter: brightness(1.03);
 }
 
+button:disabled,
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.secondary-button {
+  background: #edf2f3;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.workflow-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .status-text {
   min-height: 22px;
   margin: 0;
   color: var(--muted);
+}
+
+.status-text.is-error {
+  color: var(--danger);
+}
+
+.status-text.is-success {
+  color: #2d6b3f;
+}
+
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.state-idle {
+  background: #f4f1e8;
+  color: #5d635f;
+}
+
+.state-opening {
+  background: var(--warning-soft);
+  color: #6f5b12;
+}
+
+.state-opened {
+  background: var(--success-soft);
+  color: #2d6b3f;
+}
+
+.state-error {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .overview-grid {
@@ -149,6 +242,11 @@ button:hover {
   margin-bottom: 12px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.pager-controls {
+  display: flex;
+  gap: 8px;
 }
 
 .table-wrap {
@@ -194,4 +292,13 @@ button:hover {
 .empty-row td {
   color: var(--muted);
   font-style: italic;
+}
+
+.table-state-row td {
+  padding: 18px 12px;
+  color: var(--muted);
+}
+
+.table-state-row.is-error td {
+  color: var(--danger);
 }
