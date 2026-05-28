@@ -33,17 +33,16 @@
             <span id="openStateBadge" class="state-badge state-idle">Idle</span>
           </div>
         </div>
+        <div class="topbar-meta">
+          <p id="openWorkflowNote" class="workflow-note">
+            Browse is not wired yet in this spike; use a typed path for now.
+          </p>
+          <p id="statusText" class="status-text"></p>
+        </div>
       </header>
 
-      <section class="topbar-status panel">
-        <p id="openWorkflowNote" class="workflow-note">
-          Browse is not wired yet in this spike; use a typed path for now.
-        </p>
-        <p id="statusText" class="status-text"></p>
-      </section>
-
       <section class="workspace-shell">
-        <nav class="tabbar panel" aria-label="Main tabs">
+        <nav class="tabbar" aria-label="Main tabs">
           <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
           <button id="tabStatistics" type="button" class="tab-button" data-tab="statistics">Statistics</button>
           <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
@@ -59,26 +58,22 @@
                 </div>
               </div>
               <div class="flows-tools">
-                <div class="flow-filter-panel">
-                  <div class="flows-toolbar">
-                    <label class="flow-filter-field" for="flowFilterInput">
-                      <span>Filter flows</span>
-                      <input id="flowFilterInput" type="text" placeholder="protocol, hint, service, endpoint, port..." />
-                    </label>
-                    <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
-                  </div>
+                <div class="flows-toolbar">
+                  <label class="flow-filter-field" for="flowFilterInput">
+                    <span>Filter flows</span>
+                    <input id="flowFilterInput" type="text" placeholder="protocol, hint, service, endpoint, port..." />
+                  </label>
+                  <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
                 </div>
-                <div class="flow-helper-panel">
-                  <div class="panel-heading compact-heading">
-                    <div>
-                      <h3>Wireshark Display Filter</h3>
-                      <p id="wiresharkFilterMeta" class="panel-subtitle">Select a flow to generate a filter.</p>
-                    </div>
-                    <button id="copyWiresharkFilterButton" type="button" class="secondary-button">Copy</button>
+                <div class="flow-wireshark-row">
+                  <div class="flow-inline-meta">
+                    <span class="inline-label">Wireshark filter</span>
+                    <span id="wiresharkFilterMeta" class="inline-note">Select a flow to generate a filter.</span>
                   </div>
-                  <pre id="wiresharkFilterText" class="details-pre single-pre">No flow selected.</pre>
-                  <p id="wiresharkFilterStatusText" class="status-text"></p>
+                  <pre id="wiresharkFilterText" class="details-pre compact-filter-pre">No flow selected.</pre>
+                  <button id="copyWiresharkFilterButton" type="button" class="secondary-button">Copy</button>
                 </div>
+                <p id="wiresharkFilterStatusText" class="status-text compact-status-text"></p>
               </div>
               <div class="table-wrap fill-scroll">
                 <table class="data-table">

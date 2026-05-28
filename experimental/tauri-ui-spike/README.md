@@ -15,6 +15,7 @@ Implemented slice:
 - inspect basic selected-packet details
 - frontend-only tabs for Flows, Statistics, and Analysis
 - viewport-oriented analyzer layout with internal panel scrolling
+- compact desktop-style density pass for the Flows workspace
 - frontend flow filter/search on the loaded flow list
 - generated Wireshark display filter text for the selected flow
 - open workflow state handling: idle, opening, opened, error
@@ -36,6 +37,7 @@ Not implemented yet:
 - The spike keeps the typed capture/index path workflow.
 - The shell now uses a compact top session bar instead of a long vertically stacked page.
 - Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
+- The current Tauri shell is intentionally denser than a typical web layout: smaller controls, tighter tabs, denser tables, and more compact packet-details presentation.
 - The Flows tab now supports case-insensitive frontend filtering over already loaded flow rows.
 - Flow filtering shows a visible result count and does not trigger backend filtering calls.
 - Opening a new path clears stale overview, flows, packets, and prior errors before the next backend call.
