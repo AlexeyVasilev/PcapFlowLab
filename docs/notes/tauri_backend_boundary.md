@@ -15,6 +15,8 @@ Current status:
   - get flows
   - select flow
   - get selected-flow packets
+- a minimal Tauri scaffold now exists under `experimental/tauri-ui-spike/`
+- backend state in the spike is held as one active adapter/session instance in the Tauri backend layer
 
 ## Files inspected most heavily
 

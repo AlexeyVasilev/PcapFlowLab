@@ -121,7 +121,20 @@ Current implementation status:
   - `get_flows()`
   - `select_flow(flow_index)`
   - `get_selected_flow_packets(offset, limit)`
+- a minimal Tauri scaffold now exists under `experimental/tauri-ui-spike/`
+- the first wired commands are:
+  - `open_capture`
+  - `get_overview`
+  - `get_flows`
+  - `select_flow`
+  - `get_selected_flow_packets`
+- the current Tauri frontend only covers overview + flows + selected-flow packets
 - stream remains intentionally out of scope for this first adapter pass
+
+UI direction note:
+
+- the existing Qt UI remains the primary product UI for now
+- the Tauri path is still an experimental parallel frontend spike
 
 Recommended first spike scope:
 

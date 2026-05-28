@@ -1,0 +1,19 @@
+[package]
+name = "pcap-flow-lab-tauri-spike"
+version = "0.2.0"
+description = "Experimental Tauri frontend spike for Pcap Flow Lab"
+authors = ["Pcap Flow Lab contributors"]
+edition = "2021"
+
+[lib]
+name = "pcap_flow_lab_tauri_spike_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+cc = "1"
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }

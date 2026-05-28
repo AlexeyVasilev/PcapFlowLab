@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pcap Flow Lab Tauri UI Spike</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="hero">
+        <h1>Pcap Flow Lab</h1>
+        <p>Experimental Tauri spike. Qt remains the primary UI.</p>
+      </header>
+
+      <section class="panel open-panel">
+        <div class="field-row">
+          <label for="capturePath">Capture or index path</label>
+          <input id="capturePath" type="text" placeholder="C:\captures\sample.pcap" />
+        </div>
+        <div class="field-row inline-row">
+          <label for="openMode">Open mode</label>
+          <select id="openMode">
+            <option value="fast">Fast</option>
+            <option value="deep">Deep</option>
+          </select>
+          <button id="openButton" type="button">Open Capture</button>
+        </div>
+        <p id="statusText" class="status-text"></p>
+      </section>
+
+      <section class="grid">
+        <section class="panel">
+          <h2>Overview</h2>
+          <div id="overviewContent" class="overview-grid">
+            <div class="metric">
+              <span class="metric-label">Packets</span>
+              <span id="metricPackets" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Flows</span>
+              <span id="metricFlows" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">Total Bytes</span>
+              <span id="metricBytes" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">TCP Flows</span>
+              <span id="metricTcpFlows" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">UDP Flows</span>
+              <span id="metricUdpFlows" class="metric-value">-</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">QUIC Flows</span>
+              <span id="metricQuicFlows" class="metric-value">-</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Flows</h2>
+          <div id="flowMeta" class="section-meta">No capture loaded.</div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Protocol</th>
+                  <th>Hint</th>
+                  <th>Service</th>
+                  <th>Endpoint A</th>
+                  <th>Endpoint B</th>
+                  <th>Packets</th>
+                  <th>Bytes</th>
+                </tr>
+              </thead>
+              <tbody id="flowTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel">
+        <h2>Selected-Flow Packets</h2>
+        <div id="packetMeta" class="section-meta">Select a flow to load packets.</div>
+        <div class="table-wrap">
+          <table class="data-table packets-table">
+            <thead>
+              <tr>
+                <th>Flow #</th>
+                <th>Packet Index</th>
+                <th>Direction</th>
+                <th>Timestamp</th>
+                <th>Captured</th>
+                <th>Original</th>
+                <th>Payload</th>
+                <th>TCP Flags</th>
+              </tr>
+            </thead>
+            <tbody id="packetTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="./main.js"></script>
+  </body>
+  </html>
