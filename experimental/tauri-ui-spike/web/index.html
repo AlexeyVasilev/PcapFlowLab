@@ -8,156 +8,185 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="hero">
-        <h1>Pcap Flow Lab</h1>
-        <p>Experimental Tauri spike. Qt remains the primary UI.</p>
+      <header class="topbar panel">
+        <div class="topbar-brand">
+          <h1>Pcap Flow Lab</h1>
+          <p>Experimental Tauri spike. Qt remains the primary UI.</p>
+        </div>
+
+        <div class="topbar-session">
+          <label class="path-field" for="capturePath">
+            <span>Capture or index path</span>
+            <input id="capturePath" type="text" placeholder="C:\captures\sample.pcap" />
+          </label>
+
+          <div class="toolbar-controls">
+            <label class="toolbar-group" for="openMode">
+              <span>Open mode</span>
+              <select id="openMode">
+                <option value="fast">Fast</option>
+                <option value="deep">Deep</option>
+              </select>
+            </label>
+
+            <button id="openButton" type="button">Open Capture</button>
+            <span id="openStateBadge" class="state-badge state-idle">Idle</span>
+          </div>
+        </div>
       </header>
 
-      <section class="panel open-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Open Capture</h2>
-            <p class="panel-subtitle">Typed path workflow for capture and index files.</p>
-          </div>
-          <span id="openStateBadge" class="state-badge state-idle">Idle</span>
-        </div>
-
-        <div class="field-row">
-          <label for="capturePath">Capture or index path</label>
-          <input id="capturePath" type="text" placeholder="C:\captures\sample.pcap" />
-        </div>
-
-        <div class="field-row inline-row controls-row">
-          <div class="control-group">
-            <label for="openMode">Open mode</label>
-            <select id="openMode">
-              <option value="fast">Fast</option>
-              <option value="deep">Deep</option>
-            </select>
-          </div>
-          <button id="openButton" type="button">Open Capture</button>
-        </div>
-
+      <section class="topbar-status panel">
         <p id="openWorkflowNote" class="workflow-note">
           Browse is not wired yet in this spike; use a typed path for now.
         </p>
         <p id="statusText" class="status-text"></p>
       </section>
 
-      <section class="content-grid">
-        <section class="panel overview-panel">
-          <div class="panel-heading">
-            <div>
-              <h2>Overview</h2>
-              <p id="overviewMeta" class="panel-subtitle">No capture loaded.</p>
-            </div>
-          </div>
+      <section class="workspace-shell">
+        <nav class="tabbar panel" aria-label="Main tabs">
+          <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
+          <button id="tabStatistics" type="button" class="tab-button" data-tab="statistics">Statistics</button>
+          <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
+        </nav>
 
-          <div id="overviewContent" class="overview-grid">
-            <div class="metric">
-              <span class="metric-label">Packets</span>
-              <span id="metricPackets" class="metric-value">-</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Flows</span>
-              <span id="metricFlows" class="metric-value">-</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">Total Bytes</span>
-              <span id="metricBytes" class="metric-value">-</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">TCP Flows</span>
-              <span id="metricTcpFlows" class="metric-value">-</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">UDP Flows</span>
-              <span id="metricUdpFlows" class="metric-value">-</span>
-            </div>
-            <div class="metric">
-              <span class="metric-label">QUIC Flows</span>
-              <span id="metricQuicFlows" class="metric-value">-</span>
-            </div>
+        <section id="tabPanelFlows" class="tab-panel active" data-tab-panel="flows">
+          <div class="flows-layout">
+            <section class="panel flows-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Flows</h2>
+                  <p id="flowMeta" class="panel-subtitle">No capture loaded.</p>
+                </div>
+              </div>
+              <div class="table-wrap fill-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Protocol</th>
+                      <th>Hint</th>
+                      <th>Service</th>
+                      <th>Endpoint A</th>
+                      <th>Endpoint B</th>
+                      <th>Packets</th>
+                      <th>Bytes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flowTableBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="flows-bottom">
+              <section class="panel packets-panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Selected-Flow Packets</h2>
+                    <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
+                  </div>
+                  <div class="pager-controls">
+                    <button id="packetPrevButton" type="button" class="secondary-button">Previous</button>
+                    <button id="packetNextButton" type="button" class="secondary-button">Next</button>
+                  </div>
+                </div>
+                <div class="table-wrap fill-scroll">
+                  <table class="data-table packets-table">
+                    <thead>
+                      <tr>
+                        <th>Flow #</th>
+                        <th>Packet Index</th>
+                        <th>Direction</th>
+                        <th>Timestamp</th>
+                        <th>Captured</th>
+                        <th>Original</th>
+                        <th>Payload</th>
+                        <th>TCP Flags</th>
+                      </tr>
+                    </thead>
+                    <tbody id="packetTableBody"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="panel packet-details-panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2>Selected Packet Details</h2>
+                    <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
+                  </div>
+                </div>
+                <div class="details-scroll">
+                  <p id="packetDetailsStateText" class="status-text"></p>
+                  <div id="packetDetailsSummary" class="details-grid"></div>
+                  <div class="details-block">
+                    <h3>Protocol Details</h3>
+                    <pre id="packetDetailsProtocolText" class="details-pre">No packet selected.</pre>
+                  </div>
+                  <div class="details-block">
+                    <h3>Payload Preview</h3>
+                    <pre id="packetDetailsPayloadText" class="details-pre">No packet selected.</pre>
+                  </div>
+                </div>
+              </section>
+            </section>
           </div>
         </section>
 
-        <section class="panel flows-panel">
-          <div class="panel-heading">
-            <div>
-              <h2>Flows</h2>
-              <p id="flowMeta" class="panel-subtitle">No capture loaded.</p>
+        <section id="tabPanelStatistics" class="tab-panel" data-tab-panel="statistics">
+          <section class="panel statistics-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Statistics</h2>
+                <p id="overviewMeta" class="panel-subtitle">No capture loaded.</p>
+              </div>
             </div>
-          </div>
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Protocol</th>
-                  <th>Hint</th>
-                  <th>Service</th>
-                  <th>Endpoint A</th>
-                  <th>Endpoint B</th>
-                  <th>Packets</th>
-                  <th>Bytes</th>
-                </tr>
-              </thead>
-              <tbody id="flowTableBody"></tbody>
-            </table>
-          </div>
+
+            <div id="overviewContent" class="overview-grid">
+              <div class="metric">
+                <span class="metric-label">Packets</span>
+                <span id="metricPackets" class="metric-value">-</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Flows</span>
+                <span id="metricFlows" class="metric-value">-</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Total Bytes</span>
+                <span id="metricBytes" class="metric-value">-</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">TCP Flows</span>
+                <span id="metricTcpFlows" class="metric-value">-</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">UDP Flows</span>
+                <span id="metricUdpFlows" class="metric-value">-</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">QUIC Flows</span>
+                <span id="metricQuicFlows" class="metric-value">-</span>
+              </div>
+            </div>
+          </section>
         </section>
-      </section>
 
-      <section class="panel packets-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Selected-Flow Packets</h2>
-            <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
-          </div>
-          <div class="pager-controls">
-            <button id="packetPrevButton" type="button" class="secondary-button">Previous</button>
-            <button id="packetNextButton" type="button" class="secondary-button">Next</button>
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="data-table packets-table">
-            <thead>
-              <tr>
-                <th>Flow #</th>
-                <th>Packet Index</th>
-                <th>Direction</th>
-                <th>Timestamp</th>
-                <th>Captured</th>
-                <th>Original</th>
-                <th>Payload</th>
-                <th>TCP Flags</th>
-              </tr>
-            </thead>
-            <tbody id="packetTableBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="panel packet-details-panel">
-        <div class="panel-heading">
-          <div>
-            <h2>Selected Packet Details</h2>
-            <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
-          </div>
-        </div>
-        <p id="packetDetailsStateText" class="status-text"></p>
-        <div id="packetDetailsSummary" class="details-grid"></div>
-        <div class="details-block">
-          <h3>Protocol Details</h3>
-          <pre id="packetDetailsProtocolText" class="details-pre">No packet selected.</pre>
-        </div>
-        <div class="details-block">
-          <h3>Payload Preview</h3>
-          <pre id="packetDetailsPayloadText" class="details-pre">No packet selected.</pre>
-        </div>
+        <section id="tabPanelAnalysis" class="tab-panel" data-tab-panel="analysis">
+          <section class="panel placeholder-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Analysis</h2>
+                <p class="panel-subtitle">Placeholder only in the Tauri spike.</p>
+              </div>
+            </div>
+            <div class="placeholder-copy">
+              <p>Analysis is not implemented in the experimental Tauri UI yet.</p>
+              <p>The Qt desktop UI remains the primary analyzer path for deep analysis workflows.</p>
+            </div>
+          </section>
+        </section>
       </section>
     </main>
 
     <script src="./main.js"></script>
   </body>
-  </html>
+</html>

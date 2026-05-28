@@ -3,6 +3,7 @@
   const packetPageSize = 60;
 
   const state = {
+    activeTab: "flows",
     openState: "idle",
     statusKind: "neutral",
     statusText: "",
@@ -28,6 +29,8 @@
     openButton: document.getElementById("openButton"),
     openStateBadge: document.getElementById("openStateBadge"),
     statusText: document.getElementById("statusText"),
+    tabButtons: Array.from(document.querySelectorAll(".tab-button")),
+    tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
     overviewMeta: document.getElementById("overviewMeta"),
     flowMeta: document.getElementById("flowMeta"),
     flowTableBody: document.getElementById("flowTableBody"),
@@ -113,6 +116,16 @@
       elements.statusText.classList.add("is-error");
     } else if (state.statusKind === "success") {
       elements.statusText.classList.add("is-success");
+    }
+  }
+
+  function renderTabs() {
+    for (const button of elements.tabButtons) {
+      button.classList.toggle("active", button.dataset.tab === state.activeTab);
+    }
+
+    for (const panel of elements.tabPanels) {
+      panel.classList.toggle("active", panel.dataset.tabPanel === state.activeTab);
     }
   }
 
@@ -355,6 +368,7 @@
   }
 
   function render() {
+    renderTabs();
     renderOpenState();
     renderStatus();
     renderOverview();
@@ -547,6 +561,12 @@
   }
 
   elements.openButton.addEventListener("click", openCapture);
+  for (const button of elements.tabButtons) {
+    button.addEventListener("click", () => {
+      state.activeTab = button.dataset.tab || "flows";
+      render();
+    });
+  }
   elements.packetPrevButton.addEventListener("click", async () => {
     if (state.packetOffset === 0 || state.packetState === "loading") {
       return;

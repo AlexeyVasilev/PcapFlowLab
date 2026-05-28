@@ -139,11 +139,16 @@ UI direction note:
 Current frontend-shell status:
 
 - the Tauri shell now has explicit open states: idle, opening, opened, and error
+- the shell uses a compact top session bar plus frontend-only main tabs: Flows, Statistics, and Analysis
+- the long vertically stacked page has been replaced with a viewport-oriented desktop layout
 - the open workflow clears stale overview/flow/packet state before each new open attempt
 - flow selection is stable and visually highlighted in the flow table
 - selected-flow packets now page through the existing `offset` / `limit` backend API
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
+- the Flows tab keeps flows on top and shows packets plus selected-packet details side by side in the lower area
+- the Statistics tab currently contains only the basic overview cards/data
+- the Analysis tab is currently a frontend placeholder with no backend behavior
 - the current shell remains typed-path only; Browse is intentionally deferred for a later pass
 
 Current packet-details limitations:

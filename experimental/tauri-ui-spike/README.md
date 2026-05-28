@@ -13,6 +13,8 @@ Implemented slice:
 - load the selected-flow packet list
 - select a packet from the current packet page
 - inspect basic selected-packet details
+- frontend-only tabs for Flows, Statistics, and Analysis
+- viewport-oriented analyzer layout with internal panel scrolling
 - open workflow state handling: idle, opening, opened, error
 - flow-row selection highlighting
 - selected-flow packet pagination with Previous/Next controls
@@ -30,6 +32,8 @@ Not implemented yet:
 ## Current behavior
 
 - The spike keeps the typed capture/index path workflow.
+- The shell now uses a compact top session bar instead of a long vertically stacked page.
+- Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
 - Opening a new path clears stale overview, flows, packets, and prior errors before the next backend call.
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
@@ -37,6 +41,9 @@ Not implemented yet:
 - Clicking a packet row loads packet details and a bounded payload preview when byte-backed inspection is available.
 - The packets panel shows loading, empty, and error states and reports the current visible range.
 - Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
+- The Flows tab now keeps the main workflow in one analyzer view: flows above, packets and packet details below.
+- The Statistics tab currently contains only the basic overview cards/data.
+- The Analysis tab is a placeholder only and does not implement analysis behavior yet.
 
 ## Structure
 
@@ -55,6 +62,7 @@ Not implemented yet:
 
 - Browse is intentionally deferred for now. A file dialog is possible in Tauri, but wiring it cleanly would expand the current capability and shell surface beyond this small navigation-focused pass.
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
+- The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details and payload preview can be unavailable even though packet metadata is still shown.
 
