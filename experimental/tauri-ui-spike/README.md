@@ -48,8 +48,10 @@ Not implemented yet:
 - If the current filter hides the selected flow, the Tauri shell clears the visible flow/packet/details selection to avoid stale UI state.
 - Clicking a packet row loads packet details and a bounded payload preview when byte-backed inspection is available.
 - The selected-packet inspector is now tabbed: Summary, Raw, Payload, and Protocol.
+- The lower Flows workspace now gives more width to the packet inspector than to the packet list so Raw and Protocol inspection stay readable at normal desktop sizes.
 - Summary keeps compact packet metadata visible without large cards.
 - Raw and Payload previews are intentionally bounded to small previews instead of full packet dumps.
+- Raw and Payload previews use monospace, preformatted blocks with internal horizontal scrolling when lines are long.
 - Raw and Payload previews can be unavailable in index-only sessions or when the source capture cannot be read.
 - The packets panel shows loading, empty, and error states and reports the current visible range.
 - Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
