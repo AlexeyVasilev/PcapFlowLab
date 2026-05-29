@@ -21,6 +21,8 @@
           </label>
 
           <div class="toolbar-controls">
+            <button id="openFileButton" type="button">Open File...</button>
+
             <label class="toolbar-group" for="openMode">
               <span>Open mode</span>
               <select id="openMode">
@@ -29,13 +31,13 @@
               </select>
             </label>
 
-            <button id="openButton" type="button">Open Capture</button>
+            <button id="openButton" type="button" class="secondary-button">Open Typed Path</button>
             <span id="openStateBadge" class="state-badge state-idle">Idle</span>
           </div>
         </div>
         <div class="topbar-meta">
           <p id="openWorkflowNote" class="workflow-note">
-            Browse is not wired yet in this spike; use a typed path for now.
+            Use Open File for the native picker, or keep a typed path as a manual fallback.
           </p>
           <p id="statusText" class="status-text"></p>
         </div>

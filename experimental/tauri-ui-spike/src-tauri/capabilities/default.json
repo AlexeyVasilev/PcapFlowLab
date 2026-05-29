@@ -4,6 +4,7 @@
   "description": "Default capability set for the Tauri UI spike.",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:allow-open"
   ]
 }

@@ -160,6 +160,8 @@ Current frontend-shell status:
 - the Statistics tab currently contains only the basic overview cards/data
 - the Analysis tab is currently a frontend placeholder with no backend behavior
 - the current shell remains typed-path only; Browse is intentionally deferred for a later pass
+- the current shell now supports a native Open File dialog as the primary desktop open workflow
+- the typed path remains available as a compact manual fallback
 
 Current packet-details limitations:
 
@@ -190,3 +192,8 @@ Recommended first spike scope:
 5. show selected-flow packet list
 
 Stream should be a follow-up slice after the packet-list adapter is stable, because the current stream path still depends on controller-owned packet-window and cache orchestration.
+
+Current open-workflow notes:
+
+- native file picking now uses Tauri's dialog path with filters for `*.pcap`, `*.pcapng`, `*.idx`, and `*.pflidx`
+- the same backend open path is still used after file selection, so capture/index detection behavior does not change

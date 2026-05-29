@@ -7,6 +7,7 @@ This directory contains the first experimental Tauri frontend for Pcap Flow Lab.
 Implemented slice:
 
 - open capture
+- open capture through a native Open File dialog
 - load overview
 - load flow list
 - select a flow
@@ -39,6 +40,8 @@ Not implemented yet:
 ## Current behavior
 
 - The spike keeps the typed capture/index path workflow.
+- The spike now uses a native Open File dialog as the primary open workflow.
+- The typed capture/index path remains available as a compact manual fallback.
 - The shell now uses a compact top session bar instead of a long vertically stacked page.
 - Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
 - The current Tauri shell is intentionally denser than a typical web layout: smaller controls, tighter tabs, denser tables, and more compact packet-details presentation.
@@ -47,6 +50,7 @@ Not implemented yet:
 - The flow table now surfaces address family and fragmentation state from the current shared flow DTO.
 - Flow filtering shows a visible result count and does not trigger backend filtering calls.
 - Opening a new path clears stale overview, flows, packets, and prior errors before the next backend call.
+- The native file dialog uses filters for `*.pcap`, `*.pcapng`, and index files (`*.idx`, `*.pflidx`).
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
 - Clicking a flow row loads that flow's packets and resets packet paging to the first page.
@@ -86,6 +90,7 @@ Not implemented yet:
 ## Deferred items
 
 - Browse is intentionally deferred for now. A file dialog is possible in Tauri, but wiring it cleanly would expand the current capability and shell surface beyond this small navigation-focused pass.
+- The spike now uses Tauri's native dialog path for file picking, but attach-source and broader file-management workflows are still deferred.
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
 - The Stream tab is still experimental and exposes only a small subset of the current Qt stream presentation fields.
 - The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.

@@ -8,7 +8,8 @@ use dtos::{
     SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_dialog::DialogExt;
 
 struct AdapterState {
     adapter: CppFrontendSessionAdapter,
@@ -29,6 +30,25 @@ fn open_capture(
     };
 
     state.adapter.open_capture(&path, mode)
+}
+
+#[tauri::command]
+fn pick_open_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("All supported captures and indexes", &["pcap", "pcapng", "idx", "pflidx"])
+        .add_filter("PCAP files", &["pcap"])
+        .add_filter("PCAPNG files", &["pcapng"])
+        .add_filter("Index files", &["idx", "pflidx"])
+        .blocking_pick_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| resolved.to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
 }
 
 #[tauri::command]
@@ -99,8 +119,10 @@ pub fn run() {
         .expect("failed to create FrontendSessionAdapter bridge");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(AdapterState { adapter }))
         .invoke_handler(tauri::generate_handler![
+            pick_open_path,
             open_capture,
             get_overview,
             get_flows,

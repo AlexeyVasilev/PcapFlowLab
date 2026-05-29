@@ -49,6 +49,7 @@
   const elements = {
     capturePath: document.getElementById("capturePath"),
     openMode: document.getElementById("openMode"),
+    openFileButton: document.getElementById("openFileButton"),
     openButton: document.getElementById("openButton"),
     openStateBadge: document.getElementById("openStateBadge"),
     openWorkflowNote: document.getElementById("openWorkflowNote"),
@@ -136,7 +137,7 @@
 
   function sourceAvailabilityNoteText() {
     const availability = currentSourceAvailability();
-    const baseNote = "Browse is not wired yet in this spike; use a typed path for now.";
+    const baseNote = "Use Open File for the native picker, or keep a typed path as a manual fallback.";
 
     if (state.openState !== "opened") {
       return baseNote;
@@ -258,6 +259,7 @@
   function setOpenControlsDisabled(disabled) {
     elements.capturePath.disabled = disabled;
     elements.openMode.disabled = disabled;
+    elements.openFileButton.disabled = disabled;
     elements.openButton.disabled = disabled;
   }
 
@@ -1014,14 +1016,14 @@
     await loadSelectedPacketDetails();
   }
 
-  async function openCapture() {
+  async function openCapture(pathOverride = null) {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
       render();
       return;
     }
 
-    const path = elements.capturePath.value.trim();
+    const path = String(pathOverride ?? elements.capturePath.value).trim();
     const openMode = elements.openMode.value;
 
     resetForNewOpen();
@@ -1059,6 +1061,28 @@
     }
   }
 
+  async function openCaptureFromDialog() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_open_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      elements.capturePath.value = selectedPath;
+      await openCapture(selectedPath);
+    } catch (error) {
+      setStatus(`Failed to open the native file dialog: ${String(error)}`, "error");
+      render();
+    }
+  }
+
+  elements.openFileButton.addEventListener("click", openCaptureFromDialog);
   elements.openButton.addEventListener("click", openCapture);
   elements.flowFilterInput.addEventListener("input", () => {
     state.flowFilterText = elements.flowFilterInput.value;
