@@ -4,7 +4,8 @@ mod ffi;
 use std::sync::Mutex;
 
 use dtos::{
-    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowPacketsDto, SelectionResultDto,
+    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto,
+    SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
 use tauri::State;
@@ -70,6 +71,18 @@ fn get_selected_flow_packets(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_selected_flow_stream(
+    state: State<'_, Mutex<AdapterState>>,
+    max_packets_to_scan: usize,
+    limit: usize,
+) -> Result<SelectedFlowStreamDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_selected_flow_stream(max_packets_to_scan, limit)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_selected_flow_packet_details(
     state: State<'_, Mutex<AdapterState>>,
     packet_index: u64,
@@ -93,6 +106,7 @@ pub fn run() {
             get_flows,
             select_flow,
             get_selected_flow_packets,
+            get_selected_flow_stream,
             get_selected_flow_packet_details
         ])
         .run(tauri::generate_context!())

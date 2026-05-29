@@ -2,7 +2,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowPacketsDto, SelectionResultDto,
+    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto,
+    SelectionResultDto,
 };
 
 #[repr(C)]
@@ -32,6 +33,11 @@ extern "C" {
     fn pfl_frontend_session_adapter_get_selected_flow_packets_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         offset: usize,
+        limit: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_selected_flow_stream_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        max_packets_to_scan: usize,
         limit: usize,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
@@ -98,6 +104,17 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_get_selected_flow_packets_json(self.handle, offset, limit)
         };
         parse_json_owned::<SelectedFlowPacketsDto>(json)
+    }
+
+    pub fn get_selected_flow_stream(
+        &self,
+        max_packets_to_scan: usize,
+        limit: usize,
+    ) -> Result<SelectedFlowStreamDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_selected_flow_stream_json(self.handle, max_packets_to_scan, limit)
+        };
+        parse_json_owned::<SelectedFlowStreamDto>(json)
     }
 
     pub fn get_selected_flow_packet_details(&self, packet_index: u64) -> Result<PacketDetailsDto, String> {

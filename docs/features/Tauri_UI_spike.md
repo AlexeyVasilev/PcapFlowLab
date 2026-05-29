@@ -128,8 +128,8 @@ Current implementation status:
   - `get_flows`
   - `select_flow`
   - `get_selected_flow_packets`
-- the current Tauri frontend only covers overview + flows + selected-flow packets
-- stream remains intentionally out of scope for this first adapter pass
+- the current Tauri frontend now covers overview + flows + selected-flow packets + a basic selected-flow stream tab
+- stream remains intentionally limited to a bounded, selected-flow-only slice in the current spike
 
 UI direction note:
 
@@ -147,10 +147,12 @@ Current frontend-shell status:
 - flow selection is stable and visually highlighted in the flow table
 - the selected flow now exposes a conservative Wireshark display filter string plus best-effort clipboard copy
 - selected-flow packets now page through the existing `offset` / `limit` backend API
+- a basic selected-flow Stream tab can now query bounded stream items on demand for the active flow only
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - selected packet inspection is now organized as compact Summary / Raw / Payload / Protocol tabs inside the Tauri details panel
 - packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
 - the Flows tab keeps flows on top and shows packets plus selected-packet details side by side in the lower area
+- the lower-left Flows workspace now has Packets and Stream tabs; Stream remains lazy, bounded, and selected-flow-only
 - the Statistics tab currently contains only the basic overview cards/data
 - the Analysis tab is currently a frontend placeholder with no backend behavior
 - the current shell remains typed-path only; Browse is intentionally deferred for a later pass
@@ -161,6 +163,12 @@ Current packet-details limitations:
 - raw and payload previews are bounded to small preview windows
 - byte-backed details can be unavailable in index-only sessions or when the original source capture cannot be read
 - the Raw tab only exposes a bounded preview through the existing session inspection path; it is not a full raw-byte viewer
+
+Current stream limitations:
+
+- the Tauri Stream tab is intentionally basic and does not try to reproduce the full Qt stream presentation
+- stream items are loaded on demand for the selected flow only
+- stream reconstruction stays bounded by packet-window and item budgets instead of attempting unbounded reconstruction
 
 Current flow-filter / Wireshark-filter limitations:
 

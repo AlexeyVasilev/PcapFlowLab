@@ -112,6 +112,37 @@ pub struct SelectedFlowPacketsDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamItemDto {
+    pub stream_item_index: u64,
+    pub direction_text: String,
+    pub label: String,
+    pub byte_count: u32,
+    pub packet_count: u32,
+    pub source_packets_text: String,
+    pub has_constricted_contribution: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelectedFlowStreamDto {
+    pub has_capture: bool,
+    pub has_selected_flow: bool,
+    pub source_capture_accessible: bool,
+    pub stream_available: bool,
+    pub stream_partially_loaded: bool,
+    pub packet_window_partial: bool,
+    pub can_load_more: bool,
+    pub flow_index: usize,
+    pub packet_window_count: usize,
+    pub total_flow_packet_count: usize,
+    pub requested_item_limit: usize,
+    pub loaded_item_count: usize,
+    pub total_item_count: usize,
+    pub unavailable_text: String,
+    pub error_text: String,
+    pub items: Vec<StreamItemDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionResultDto {
     pub selected: bool,
 }

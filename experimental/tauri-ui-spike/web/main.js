@@ -1,9 +1,14 @@
 (function () {
   const invoke = window.__TAURI__?.core?.invoke;
   const packetPageSize = 60;
+  const initialStreamItems = 15;
+  const streamItemBatchSize = 15;
+  const initialStreamPacketBudget = 30;
+  const streamPacketBatchSize = 30;
 
   const state = {
     activeTab: "flows",
+    flowViewTab: "packets",
     openState: "idle",
     statusKind: "neutral",
     statusText: "",
@@ -20,6 +25,19 @@
     flowState: "idle",
     packetState: "idle",
     packetErrorText: "",
+    streamItems: [],
+    streamState: "idle",
+    streamErrorText: "",
+    streamUnavailableText: "",
+    streamLoadedItemCount: 0,
+    streamTotalItemCount: 0,
+    streamPacketWindowCount: 0,
+    streamCanLoadMore: false,
+    streamPartiallyLoaded: false,
+    streamPacketWindowPartial: false,
+    streamRequestedItemLimit: initialStreamItems,
+    streamRequestedPacketBudget: initialStreamPacketBudget,
+    streamLoadedForFlowIndex: null,
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
     packetDetailsTab: "summary",
@@ -35,6 +53,8 @@
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
+    flowViewTabButtons: Array.from(document.querySelectorAll(".subtab-button")),
+    flowViewPanels: Array.from(document.querySelectorAll(".flow-view-panel")),
     overviewMeta: document.getElementById("overviewMeta"),
     flowMeta: document.getElementById("flowMeta"),
     flowFilterInput: document.getElementById("flowFilterInput"),
@@ -48,6 +68,9 @@
     packetTableBody: document.getElementById("packetTableBody"),
     packetPrevButton: document.getElementById("packetPrevButton"),
     packetNextButton: document.getElementById("packetNextButton"),
+    streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
+    flowViewTitle: document.getElementById("flowViewTitle"),
+    streamTableBody: document.getElementById("streamTableBody"),
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
     packetDetailsTabButtons: Array.from(document.querySelectorAll(".inspector-tab")),
     packetDetailsTabPanels: Array.from(document.querySelectorAll(".packet-details-tab-panel")),
@@ -102,6 +125,22 @@
     state.packetDetailsErrorText = "";
   }
 
+  function clearStream() {
+    state.streamItems = [];
+    state.streamState = "idle";
+    state.streamErrorText = "";
+    state.streamUnavailableText = "";
+    state.streamLoadedItemCount = 0;
+    state.streamTotalItemCount = 0;
+    state.streamPacketWindowCount = 0;
+    state.streamCanLoadMore = false;
+    state.streamPartiallyLoaded = false;
+    state.streamPacketWindowPartial = false;
+    state.streamRequestedItemLimit = initialStreamItems;
+    state.streamRequestedPacketBudget = initialStreamPacketBudget;
+    state.streamLoadedForFlowIndex = null;
+  }
+
   function clearFlows() {
     state.flows = [];
     state.flowFilterText = "";
@@ -123,6 +162,7 @@
     clearOverview();
     clearFlows();
     clearPackets();
+    clearStream();
     setStatus("", "neutral");
   }
 
@@ -203,6 +243,25 @@
     for (const panel of elements.tabPanels) {
       panel.classList.toggle("active", panel.dataset.tabPanel === state.activeTab);
     }
+  }
+
+  function renderFlowViewTabs() {
+    for (const button of elements.flowViewTabButtons) {
+      button.classList.toggle("active", button.dataset.flowViewTab === state.flowViewTab);
+    }
+
+    for (const panel of elements.flowViewPanels) {
+      panel.classList.toggle("active", panel.dataset.flowViewPanel === state.flowViewTab);
+    }
+
+    elements.flowViewTitle.textContent = state.flowViewTab === "stream"
+      ? "Selected-Flow Stream"
+      : "Selected-Flow Packets";
+
+    const showingPackets = state.flowViewTab === "packets";
+    elements.packetPrevButton.style.display = showingPackets ? "" : "none";
+    elements.packetNextButton.style.display = showingPackets ? "" : "none";
+    elements.streamLoadMoreButton.style.display = showingPackets ? "none" : "";
   }
 
   function renderPacketDetailsTabs() {
@@ -339,6 +398,10 @@
   }
 
   function renderPackets() {
+    if (state.flowViewTab !== "packets") {
+      return;
+    }
+
     if (state.packetState === "loading") {
       elements.packetMeta.textContent = state.selectedFlowIndex == null
         ? "Loading packets..."
@@ -404,6 +467,97 @@
 
     elements.packetPrevButton.disabled = state.packetOffset === 0;
     elements.packetNextButton.disabled = state.packetOffset + state.packets.length >= state.packetsTotalCount;
+  }
+
+  function renderStream() {
+    if (state.flowViewTab !== "stream") {
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.openState === "opening" || state.streamState === "loading") {
+      elements.packetMeta.textContent = "Loading stream items...";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">Loading stream items...</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.openState === "error") {
+      elements.packetMeta.textContent = "No stream view is available after open failure.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="7">Open failed. Stream items were cleared.</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.openState !== "opened") {
+      elements.packetMeta.textContent = "Open a capture or index to inspect stream items.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">Open a capture or index to load stream items.</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.selectedFlowIndex == null) {
+      elements.packetMeta.textContent = "Select a flow to inspect stream items.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">No selected flow.</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.streamState === "error") {
+      elements.packetMeta.textContent = state.streamErrorText || "Failed to load stream items.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="7">${escapeHtml(state.streamErrorText || "Failed to load stream items.")}</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.streamState === "unavailable") {
+      elements.packetMeta.textContent = state.streamUnavailableText || "Stream view is unavailable for this flow.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="7">${escapeHtml(state.streamUnavailableText || "Stream view is unavailable for this flow.")}</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.streamState === "idle") {
+      elements.packetMeta.textContent = "Stream items load on demand for the selected flow.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">Stream items have not been loaded for this flow yet.</td></tr>`;
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.streamItems.length === 0) {
+      elements.packetMeta.textContent = "No stream items are available for the selected flow.";
+      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">No stream items available for this flow.</td></tr>`;
+      elements.streamLoadMoreButton.disabled = !state.streamCanLoadMore;
+      return;
+    }
+
+    if (state.streamPartiallyLoaded) {
+      elements.packetMeta.textContent = state.streamTotalItemCount > 0
+        ? `Showing ${formatNumber(state.streamLoadedItemCount)} of ${formatNumber(state.streamTotalItemCount)} stream items.`
+        : `Showing first ${formatNumber(state.streamLoadedItemCount)} stream items.`;
+    } else {
+      elements.packetMeta.textContent = `Showing all ${formatNumber(state.streamTotalItemCount || state.streamLoadedItemCount)} stream items.`;
+    }
+
+    if (state.streamPacketWindowPartial) {
+      elements.packetMeta.textContent += ` Built from the first ${formatNumber(state.streamPacketWindowCount)} packets.`;
+    }
+
+    elements.streamTableBody.innerHTML = state.streamItems
+      .map((item) => `
+        <tr class="stream-row">
+          <td>${item.stream_item_index}</td>
+          <td>${escapeHtml(item.direction_text)}</td>
+          <td>${escapeHtml(item.label)}</td>
+          <td>${formatNumber(item.byte_count)}</td>
+          <td>${formatNumber(item.packet_count)}</td>
+          <td>${escapeHtml(item.source_packets_text)}</td>
+          <td>${item.has_constricted_contribution ? "Constricted" : ""}</td>
+        </tr>
+      `)
+      .join("");
+
+    elements.streamLoadMoreButton.disabled = !state.streamCanLoadMore || state.streamState === "loading";
   }
 
   function renderPacketDetails() {
@@ -570,6 +724,7 @@
 
   function render() {
     renderTabs();
+    renderFlowViewTabs();
     renderPacketDetailsTabs();
     renderOpenState();
     renderStatus();
@@ -577,6 +732,7 @@
     renderFlows();
     renderWiresharkFilter();
     renderPackets();
+    renderStream();
     renderPacketDetails();
   }
 
@@ -622,6 +778,55 @@
       state.packetState = "error";
       state.packetErrorText = `Failed to load packets: ${String(error)}`;
       setStatus(state.packetErrorText, "error");
+    }
+
+    render();
+  }
+
+  async function loadSelectedFlowStream() {
+    if (state.selectedFlowIndex == null) {
+      clearStream();
+      render();
+      return;
+    }
+
+    state.streamState = "loading";
+    state.streamErrorText = "";
+    state.streamUnavailableText = "";
+    render();
+
+    try {
+      const streamResult = await invoke("get_selected_flow_stream", {
+        max_packets_to_scan: state.streamRequestedPacketBudget,
+        limit: state.streamRequestedItemLimit,
+      });
+
+      state.streamItems = streamResult?.items || [];
+      state.streamLoadedItemCount = streamResult?.loaded_item_count || state.streamItems.length;
+      state.streamTotalItemCount = streamResult?.total_item_count || 0;
+      state.streamPacketWindowCount = streamResult?.packet_window_count || 0;
+      state.streamCanLoadMore = Boolean(streamResult?.can_load_more);
+      state.streamPartiallyLoaded = Boolean(streamResult?.stream_partially_loaded);
+      state.streamPacketWindowPartial = Boolean(streamResult?.packet_window_partial);
+      state.streamLoadedForFlowIndex = state.selectedFlowIndex;
+
+      if (streamResult?.error_text) {
+        state.streamState = "error";
+        state.streamErrorText = streamResult.error_text;
+        setStatus(streamResult.error_text, "error");
+      } else if (streamResult?.unavailable_text && !streamResult?.stream_available) {
+        state.streamState = "unavailable";
+        state.streamUnavailableText = streamResult.unavailable_text;
+      } else {
+        state.streamState = "loaded";
+        state.streamUnavailableText = streamResult?.unavailable_text || "";
+      }
+    } catch (error) {
+      state.streamItems = [];
+      state.streamState = "error";
+      state.streamErrorText = `Failed to load stream items: ${String(error)}`;
+      state.streamLoadedForFlowIndex = null;
+      setStatus(state.streamErrorText, "error");
     }
 
     render();
@@ -687,14 +892,19 @@
       state.packetsTotalCount = 0;
       state.packetErrorText = "";
       state.packetState = "loading";
+      clearStream();
       clearPacketDetails();
       setWiresharkFilterStatus("", "neutral");
       setStatus(`Selected flow ${flowIndex}.`, "success");
       render();
       await loadSelectedFlowPackets();
+      if (state.flowViewTab === "stream") {
+        await loadSelectedFlowStream();
+      }
     } catch (error) {
       state.packetState = "error";
       state.packetErrorText = `Failed to select flow ${flowIndex}: ${String(error)}`;
+      clearStream();
       clearPacketDetails();
       setStatus(state.packetErrorText, "error");
       render();
@@ -773,6 +983,7 @@
     if (!selectedFlowVisible) {
       state.selectedFlowIndex = null;
       clearPackets();
+      clearStream();
       setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
     }
 
@@ -811,6 +1022,20 @@
       render();
     });
   }
+  for (const button of elements.flowViewTabButtons) {
+    button.addEventListener("click", async () => {
+      state.flowViewTab = button.dataset.flowViewTab || "packets";
+      render();
+
+      if (
+        state.flowViewTab === "stream"
+        && state.selectedFlowIndex != null
+        && state.streamLoadedForFlowIndex !== state.selectedFlowIndex
+      ) {
+        await loadSelectedFlowStream();
+      }
+    });
+  }
   for (const button of elements.packetDetailsTabButtons) {
     button.addEventListener("click", () => {
       state.packetDetailsTab = button.dataset.packetDetailsTab || "summary";
@@ -839,6 +1064,15 @@
     state.packetOffset = nextOffset;
     clearPacketDetails();
     await loadSelectedFlowPackets();
+  });
+  elements.streamLoadMoreButton.addEventListener("click", async () => {
+    if (!state.streamCanLoadMore || state.streamState === "loading") {
+      return;
+    }
+
+    state.streamRequestedPacketBudget += streamPacketBatchSize;
+    state.streamRequestedItemLimit += streamItemBatchSize;
+    await loadSelectedFlowStream();
   });
 
   render();

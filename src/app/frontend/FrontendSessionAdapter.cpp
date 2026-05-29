@@ -103,6 +103,49 @@ std::string format_transport_summary(const PacketDetails& details) {
     return {};
 }
 
+std::string format_stream_source_packets_text(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) {
+    std::vector<std::string> packet_numbers {};
+    packet_numbers.reserve(row.packet_indices.size());
+
+    bool used_flow_numbers = true;
+    for (const auto packet_index : row.packet_indices) {
+        const auto flow_it = flow_packet_numbers.find(packet_index);
+        if (flow_it == flow_packet_numbers.end()) {
+            used_flow_numbers = false;
+            break;
+        }
+        packet_numbers.push_back("#" + std::to_string(flow_it->second));
+    }
+
+    if (!used_flow_numbers) {
+        packet_numbers.clear();
+        packet_numbers.reserve(row.packet_indices.size());
+        for (const auto packet_index : row.packet_indices) {
+            packet_numbers.push_back("#" + std::to_string(packet_index));
+        }
+    }
+
+    if (packet_numbers.empty()) {
+        return row.packet_count == 1U
+            ? "1 packet"
+            : std::to_string(row.packet_count) + " packets";
+    }
+
+    std::ostringstream out {};
+    out << (packet_numbers.size() == 1U ? "packet " : "packets ");
+    for (std::size_t index = 0; index < packet_numbers.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_numbers[index];
+    }
+
+    return out.str();
+}
+
 std::pair<std::string, bool> build_payload_preview(
     const std::vector<std::uint8_t>& packet_bytes,
     const PacketRef& packet
@@ -255,6 +298,83 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
     return result;
 }
 
+FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_stream(
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit
+) const {
+    FrontendSelectedFlowStreamResult result {
+        .has_capture = session_.has_capture(),
+        .has_selected_flow = selected_flow_index_.has_value(),
+        .source_capture_accessible = session_.source_capture_accessible(),
+        .stream_available = false,
+        .stream_partially_loaded = false,
+        .packet_window_partial = false,
+        .can_load_more = false,
+        .flow_index = selected_flow_index_.value_or(0U),
+        .packet_window_count = 0U,
+        .total_flow_packet_count = 0U,
+        .requested_item_limit = limit,
+        .loaded_item_count = 0U,
+        .total_item_count = 0U,
+    };
+
+    if (!result.has_capture) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (!result.has_selected_flow) {
+        result.error_text = "No flow is selected.";
+        return result;
+    }
+
+    if (!result.source_capture_accessible) {
+        result.unavailable_text =
+            "Stream reconstruction requires the original source capture to be attached and readable.";
+        return result;
+    }
+
+    const auto flow_index = *selected_flow_index_;
+    const auto total_flow_packet_count = session_.flow_packet_count(flow_index);
+    result.total_flow_packet_count = total_flow_packet_count;
+
+    if (limit == 0U || max_packets_to_scan == 0U || total_flow_packet_count == 0U) {
+        result.stream_available = true;
+        return result;
+    }
+
+    result.packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
+    result.packet_window_partial = result.packet_window_count < total_flow_packet_count;
+
+    session_.prepare_selected_flow_packet_cache(flow_index, result.packet_window_count);
+    auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, result.packet_window_count, limit + 1U);
+
+    const bool has_more_items = rows.size() > limit;
+    if (has_more_items) {
+        rows.resize(limit);
+    }
+
+    result.stream_available = true;
+    result.loaded_item_count = rows.size();
+    result.can_load_more = result.packet_window_partial || has_more_items;
+    result.stream_partially_loaded = result.can_load_more;
+    result.total_item_count = result.can_load_more ? 0U : result.loaded_item_count;
+
+    std::map<std::uint64_t, std::uint64_t> flow_packet_numbers {};
+    if (const auto flow_packets = session_.flow_packets(flow_index); flow_packets.has_value()) {
+        for (std::size_t index = 0; index < flow_packets->size(); ++index) {
+            flow_packet_numbers.emplace((*flow_packets)[index].packet_index, static_cast<std::uint64_t>(index + 1U));
+        }
+    }
+
+    result.items.reserve(rows.size());
+    for (const auto& row : rows) {
+        result.items.push_back(to_frontend_stream_item(row, flow_packet_numbers));
+    }
+
+    return result;
+}
+
 FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_details(const std::uint64_t packet_index) const {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
@@ -395,6 +515,21 @@ FrontendPacketDto FrontendSessionAdapter::to_frontend_packet(const PacketRow& ro
         .is_ip_fragmented = row.is_ip_fragmented,
         .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
         .tcp_flags_text = row.tcp_flags_text,
+    };
+}
+
+FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) const {
+    return FrontendStreamItemDto {
+        .stream_item_index = row.stream_item_index,
+        .direction_text = row.direction_text,
+        .label = row.label,
+        .byte_count = row.byte_count,
+        .packet_count = row.packet_count,
+        .source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers),
+        .has_constricted_contribution = row.has_constricted_contribution,
     };
 }
 

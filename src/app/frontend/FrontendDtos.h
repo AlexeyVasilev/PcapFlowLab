@@ -77,6 +77,35 @@ struct FrontendSelectedFlowPacketsResult {
     std::vector<FrontendPacketDto> packets {};
 };
 
+struct FrontendStreamItemDto {
+    std::uint64_t stream_item_index {0};
+    std::string direction_text {};
+    std::string label {};
+    std::uint32_t byte_count {0};
+    std::uint32_t packet_count {0};
+    std::string source_packets_text {};
+    bool has_constricted_contribution {false};
+};
+
+struct FrontendSelectedFlowStreamResult {
+    bool has_capture {false};
+    bool has_selected_flow {false};
+    bool source_capture_accessible {false};
+    bool stream_available {false};
+    bool stream_partially_loaded {false};
+    bool packet_window_partial {false};
+    bool can_load_more {false};
+    std::size_t flow_index {0};
+    std::size_t packet_window_count {0};
+    std::size_t total_flow_packet_count {0};
+    std::size_t requested_item_limit {0};
+    std::size_t loaded_item_count {0};
+    std::size_t total_item_count {0};
+    std::string unavailable_text {};
+    std::string error_text {};
+    std::vector<FrontendStreamItemDto> items {};
+};
+
 struct FrontendPacketDetailsDto {
     bool has_capture {false};
     bool has_selected_flow {false};

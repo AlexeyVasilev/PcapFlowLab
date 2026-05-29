@@ -96,17 +96,22 @@
 
             <section class="flows-bottom">
               <section class="panel packets-panel">
+                <div class="subtabbar" aria-label="Selected flow views">
+                  <button type="button" class="subtab-button active" data-flow-view-tab="packets">Packets</button>
+                  <button type="button" class="subtab-button" data-flow-view-tab="stream">Stream</button>
+                </div>
                 <div class="panel-heading">
                   <div>
-                    <h2>Selected-Flow Packets</h2>
+                    <h2 id="flowViewTitle">Selected-Flow Packets</h2>
                     <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
                   </div>
                   <div class="pager-controls">
                     <button id="packetPrevButton" type="button" class="secondary-button">Previous</button>
                     <button id="packetNextButton" type="button" class="secondary-button">Next</button>
+                    <button id="streamLoadMoreButton" type="button" class="secondary-button">Load More</button>
                   </div>
                 </div>
-                <div class="table-wrap fill-scroll">
+                <div class="table-wrap fill-scroll flow-view-panel active" data-flow-view-panel="packets">
                   <table class="data-table packets-table">
                     <thead>
                       <tr>
@@ -121,6 +126,22 @@
                       </tr>
                     </thead>
                     <tbody id="packetTableBody"></tbody>
+                  </table>
+                </div>
+                <div class="table-wrap fill-scroll flow-view-panel" data-flow-view-panel="stream">
+                  <table class="data-table stream-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Direction</th>
+                        <th>Label</th>
+                        <th>Bytes</th>
+                        <th>Packets</th>
+                        <th>Source Packets</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="streamTableBody"></tbody>
                   </table>
                 </div>
               </section>

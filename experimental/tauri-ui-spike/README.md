@@ -11,6 +11,7 @@ Implemented slice:
 - load flow list
 - select a flow
 - load the selected-flow packet list
+- load a basic selected-flow stream view on demand
 - select a packet from the current packet page
 - inspect basic selected-packet details
 - inspect selected packets through compact Summary / Raw / Payload / Protocol tabs
@@ -22,6 +23,7 @@ Implemented slice:
 - open workflow state handling: idle, opening, opened, error
 - flow-row selection highlighting
 - selected-flow packet pagination with Previous/Next controls
+- selected-flow Stream tab with on-demand bounded loading and Load More
 
 Not implemented yet:
 
@@ -45,6 +47,7 @@ Not implemented yet:
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
 - Clicking a flow row loads that flow's packets and resets packet paging to the first page.
+- The lower-left Flows workspace now has Packets and Stream tabs; Stream is loaded lazily for the selected flow only.
 - If the current filter hides the selected flow, the Tauri shell clears the visible flow/packet/details selection to avoid stale UI state.
 - Clicking a packet row loads packet details and a bounded payload preview when byte-backed inspection is available.
 - The selected-packet inspector is now tabbed: Summary, Raw, Payload, and Protocol.
@@ -54,6 +57,7 @@ Not implemented yet:
 - Raw and Payload previews use monospace, preformatted blocks with internal horizontal scrolling when lines are long.
 - Raw and Payload previews can be unavailable in index-only sessions or when the source capture cannot be read.
 - The packets panel shows loading, empty, and error states and reports the current visible range.
+- The Stream tab shows loading, empty, unavailable, and error states and keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
 - Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
 - The Flows tab now keeps the main workflow in one analyzer view: flows above, packets and packet details below.
 - The selected flow also shows a conservative Wireshark display filter string with a Copy button that uses the browser clipboard API when available.
@@ -77,6 +81,7 @@ Not implemented yet:
 
 - Browse is intentionally deferred for now. A file dialog is possible in Tauri, but wiring it cleanly would expand the current capability and shell surface beyond this small navigation-focused pass.
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
+- The Stream tab is still experimental and exposes only a small subset of the current Qt stream presentation fields.
 - The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.

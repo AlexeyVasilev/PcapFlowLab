@@ -379,6 +379,30 @@ select:disabled {
   flex-wrap: wrap;
 }
 
+.subtabbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex: 0 0 auto;
+}
+
+.subtab-button {
+  min-height: 26px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f5f2ea;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.subtab-button.active {
+  background: var(--accent);
+  border-color: transparent;
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .inspector-tabbar {
   display: flex;
   gap: 6px;
@@ -412,6 +436,14 @@ select:disabled {
 
 .packets-panel .table-wrap {
   overflow: auto;
+}
+
+.flow-view-panel {
+  display: none;
+}
+
+.flow-view-panel.active {
+  display: block;
 }
 
 .data-table {
@@ -553,6 +585,10 @@ select:disabled {
 
 .packets-table {
   min-width: 760px;
+}
+
+.stream-table {
+  min-width: 680px;
 }
 
 .byte-preview-pre {
