@@ -41,6 +41,7 @@ struct FrontendFlowDto {
     FlowAddressFamily family {FlowAddressFamily::ipv4};
     std::string protocol_text {};
     std::string protocol_hint {};
+    std::string protocol_hint_display {};
     std::string service_hint {};
     bool has_fragmented_packets {false};
     std::uint64_t fragmented_packet_count {0};
@@ -52,6 +53,7 @@ struct FrontendFlowDto {
     std::string endpoint_b {};
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
+    std::string wireshark_display_filter {};
 };
 
 struct FrontendPacketDto {

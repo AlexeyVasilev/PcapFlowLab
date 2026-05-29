@@ -8,6 +8,7 @@
 #include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
+#include <cctype>
 #include <span>
 #include <sstream>
 #include <set>
@@ -26,6 +27,41 @@ CaptureImportOptions import_options_for_frontend_mode(const FrontendOpenMode mod
 
 std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
+}
+
+std::string format_protocol_hint_display(const std::string& value) {
+    if (value == "possible_tls") {
+        return "Possible TLS";
+    }
+    if (value == "possible_quic") {
+        return "Possible QUIC";
+    }
+
+    std::string formatted = value;
+    std::transform(formatted.begin(), formatted.end(), formatted.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return formatted;
+}
+
+std::string build_wireshark_display_filter(const FlowRow& row) {
+    const std::string address_term = row.family == FlowAddressFamily::ipv6 ? "ipv6.addr" : "ip.addr";
+
+    std::string port_term {};
+    if (row.protocol_text == "TCP") {
+        port_term = "tcp.port";
+    } else if (row.protocol_text == "UDP") {
+        port_term = "udp.port";
+    }
+
+    if (address_term.empty() || port_term.empty() || row.address_a.empty() || row.address_b.empty()) {
+        return {};
+    }
+
+    const auto selected_port = std::max(row.port_a, row.port_b);
+    return address_term + " == " + row.address_a
+        + " && " + address_term + " == " + row.address_b
+        + " && " + port_term + " == " + std::to_string(selected_port);
 }
 
 std::string format_link_summary(const PacketDetails& details) {
@@ -489,6 +525,7 @@ FrontendFlowDto FrontendSessionAdapter::to_frontend_flow(const FlowRow& row) {
         .family = row.family,
         .protocol_text = row.protocol_text,
         .protocol_hint = row.protocol_hint,
+        .protocol_hint_display = format_protocol_hint_display(row.protocol_hint),
         .service_hint = row.service_hint,
         .has_fragmented_packets = row.has_fragmented_packets,
         .fragmented_packet_count = row.fragmented_packet_count,
@@ -500,6 +537,7 @@ FrontendFlowDto FrontendSessionAdapter::to_frontend_flow(const FlowRow& row) {
         .endpoint_b = row.endpoint_b,
         .packet_count = row.packet_count,
         .total_bytes = row.total_bytes,
+        .wireshark_display_filter = build_wireshark_display_filter(row),
     };
 }
 

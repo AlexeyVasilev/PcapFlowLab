@@ -159,6 +159,7 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"family\":" << family_to_json(flow.family) << ','
             << "\"protocol_text\":" << json_string(flow.protocol_text) << ','
             << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
+            << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
             << "\"service_hint\":" << json_string(flow.service_hint) << ','
             << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
             << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
@@ -169,7 +170,8 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"port_b\":" << flow.port_b << ','
             << "\"endpoint_b\":" << json_string(flow.endpoint_b) << ','
             << "\"packet_count\":" << flow.packet_count << ','
-            << "\"total_bytes\":" << flow.total_bytes
+            << "\"total_bytes\":" << flow.total_bytes << ','
+            << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
             << '}';
     }
     out << ']';

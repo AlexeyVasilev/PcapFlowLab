@@ -24,10 +24,11 @@ Implemented slice:
 - flow-row selection highlighting
 - selected-flow packet pagination with Previous/Next controls
 - selected-flow Stream tab with on-demand bounded loading and Load More
+- compact flow-family / fragmentation surfacing in the Tauri flow table
+- compact packet-row markers for IP fragmentation and suspected TCP retransmission
 
 Not implemented yet:
 
-- stream view
 - full packet details parity
 - analysis
 - Smart Export
@@ -42,6 +43,8 @@ Not implemented yet:
 - Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
 - The current Tauri shell is intentionally denser than a typical web layout: smaller controls, tighter tabs, denser tables, and more compact packet-details presentation.
 - The Flows tab now supports case-insensitive frontend filtering over already loaded flow rows.
+- The flow table now shows a user-facing 1-based flow number while keeping stable `flow_index` internally for selection and backend calls.
+- The flow table now surfaces address family and fragmentation state from the current shared flow DTO.
 - Flow filtering shows a visible result count and does not trigger backend filtering calls.
 - Opening a new path clears stale overview, flows, packets, and prior errors before the next backend call.
 - Open controls are disabled while an open is in flight.
@@ -61,6 +64,8 @@ Not implemented yet:
 - Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
 - The Flows tab now keeps the main workflow in one analyzer view: flows above, packets and packet details below.
 - The selected flow also shows a conservative Wireshark display filter string with a Copy button that uses the browser clipboard API when available.
+- The current Tauri shell now consumes the shared Wireshark display filter field from the frontend-neutral flow DTO instead of rebuilding the filter only in JavaScript.
+- Protocol hints now use the shared display-oriented hint text from the frontend-neutral flow DTO when available.
 - The Statistics tab currently contains only the basic overview cards/data.
 - The Analysis tab is a placeholder only and does not implement analysis behavior yet.
 
@@ -87,6 +92,7 @@ Not implemented yet:
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
 - Raw and Payload tabs intentionally show bounded previews only; they do not implement full raw-byte or payload viewers.
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
+- Packet rows now surface compact marker text for fragmented packets and suspected TCP retransmissions, but the overall packet table still remains intentionally compact.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 
 ## Notes

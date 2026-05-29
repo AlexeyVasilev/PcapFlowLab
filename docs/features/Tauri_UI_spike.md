@@ -144,9 +144,12 @@ Current frontend-shell status:
 - the current shell has had a compact density pass to move it closer to a desktop analyzer and away from a card-heavy web layout
 - the open workflow clears stale overview/flow/packet state before each new open attempt
 - the flow table now supports a frontend-only case-insensitive filter over the loaded flow DTOs
+- the flow table now shows a user-facing 1-based flow number while keeping stable backend `flow_index` internally
+- the current flow table now also surfaces address family and fragmentation state from the shared flow DTO
 - flow selection is stable and visually highlighted in the flow table
-- the selected flow now exposes a conservative Wireshark display filter string plus best-effort clipboard copy
+- the selected flow now exposes a conservative Wireshark display filter string from the shared flow DTO plus best-effort clipboard copy
 - selected-flow packets now page through the existing `offset` / `limit` backend API
+- the packet table now surfaces compact markers for IP fragmentation and suspected TCP retransmission using existing packet-row DTO fields
 - a basic selected-flow Stream tab can now query bounded stream items on demand for the active flow only
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - selected packet inspection is now organized as compact Summary / Raw / Payload / Protocol tabs inside the Tauri details panel

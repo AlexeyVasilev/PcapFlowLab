@@ -73,6 +73,7 @@ pub struct FlowDto {
     pub family: String,
     pub protocol_text: String,
     pub protocol_hint: String,
+    pub protocol_hint_display: String,
     pub service_hint: String,
     pub has_fragmented_packets: bool,
     pub fragmented_packet_count: u64,
@@ -84,6 +85,7 @@ pub struct FlowDto {
     pub endpoint_b: String,
     pub packet_count: u64,
     pub total_bytes: u64,
+    pub wireshark_display_filter: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

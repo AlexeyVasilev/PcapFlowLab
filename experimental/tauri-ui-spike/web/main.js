@@ -108,6 +108,39 @@
     state.statusKind = kind;
   }
 
+  function flowDisplayNumber(flow) {
+    return Number(flow?.flow_index ?? 0) + 1;
+  }
+
+  function formatProtocolHint(flow) {
+    return String(flow?.protocol_hint_display || flow?.protocol_hint || "");
+  }
+
+  function formatFlowFamily(flow) {
+    return flow?.family === "ipv6" ? "IPv6" : "IPv4";
+  }
+
+  function formatFlowFragmentMarker(flow) {
+    if (!flow?.has_fragmented_packets) {
+      return "";
+    }
+
+    return flow.fragmented_packet_count > 0
+      ? `Frag (${formatNumber(flow.fragmented_packet_count)})`
+      : "Frag";
+  }
+
+  function formatPacketMarker(packet) {
+    const markers = [];
+    if (packet?.is_ip_fragmented) {
+      markers.push("Frag");
+    }
+    if (packet?.suspected_tcp_retransmission) {
+      markers.push("Retrans");
+    }
+    return markers.join(", ");
+  }
+
   function setWiresharkFilterStatus(text, kind = "neutral") {
     state.wiresharkFilterStatusText = text || "";
     state.wiresharkFilterStatusKind = kind;
@@ -190,8 +223,10 @@
 
     return state.flows.filter((flow) => {
       const haystack = [
+        formatFlowFamily(flow),
         flow.protocol_text,
         flow.protocol_hint,
+        flow.protocol_hint_display,
         flow.service_hint,
         flow.endpoint_a,
         flow.endpoint_b,
@@ -199,6 +234,8 @@
         flow.address_b,
         String(flow.port_a ?? ""),
         String(flow.port_b ?? ""),
+        String(flow.fragmented_packet_count ?? ""),
+        flow.has_fragmented_packets ? "frag fragmented" : "",
         String(flow.packet_count ?? ""),
         String(flow.total_bytes ?? ""),
       ]
@@ -207,32 +244,6 @@
 
       return haystack.includes(filterText);
     });
-  }
-
-  function buildWiresharkDisplayFilter(flow) {
-    if (!flow) {
-      return "";
-    }
-
-    const addressField = flow.family === "ipv6" ? "ipv6.addr" : "ip.addr";
-    const protocolText = String(flow.protocol_text || "").toLowerCase();
-    const portField = protocolText === "udp"
-      ? "udp.port"
-      : protocolText === "tcp"
-        ? "tcp.port"
-        : "";
-
-    const clauses = [
-      `${addressField} == ${flow.address_a}`,
-      `${addressField} == ${flow.address_b}`,
-    ];
-
-    if (portField) {
-      clauses.push(`${portField} == ${flow.port_a}`);
-      clauses.push(`${portField} == ${flow.port_b}`);
-    }
-
-    return clauses.join(" && ");
   }
 
   function renderTabs() {
@@ -318,31 +329,31 @@
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.flowMeta.textContent = "Loading flows...";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">Loading flows...</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">Loading flows...</td></tr>`;
       return;
     }
 
     if (state.openState === "error") {
       elements.flowMeta.textContent = "No flows available after open failure.";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="8">Open failed. No flows were loaded.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="10">Open failed. No flows were loaded.</td></tr>`;
       return;
     }
 
     if (state.openState !== "opened") {
       elements.flowMeta.textContent = "No capture loaded.";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">Open a capture or index to load flows.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">Open a capture or index to load flows.</td></tr>`;
       return;
     }
 
     if (flows.length === 0) {
       elements.flowMeta.textContent = "No flows were found in the opened capture.";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">No flows available.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">No flows available.</td></tr>`;
       return;
     }
 
     if (visibleFlows.length === 0) {
       elements.flowMeta.textContent = `Showing 0 of ${formatNumber(flows.length)} flows.`;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">No flows match the current filter.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">No flows match the current filter.</td></tr>`;
       return;
     }
 
@@ -352,10 +363,12 @@
         const selected = selectedFlowVisible && state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         return `
           <tr class="flow-row${selected}" data-flow-index="${flow.flow_index}">
-            <td>${flow.flow_index}</td>
+            <td>${flowDisplayNumber(flow)}</td>
+            <td>${escapeHtml(formatFlowFamily(flow))}</td>
             <td>${escapeHtml(flow.protocol_text)}</td>
-            <td>${escapeHtml(flow.protocol_hint)}</td>
+            <td>${escapeHtml(formatProtocolHint(flow))}</td>
             <td>${escapeHtml(flow.service_hint)}</td>
+            <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
             <td>${escapeHtml(flow.address_a)}:${flow.port_a}</td>
             <td>${escapeHtml(flow.address_b)}:${flow.port_b}</td>
             <td>${formatNumber(flow.packet_count)}</td>
@@ -375,7 +388,7 @@
 
   function renderWiresharkFilter() {
     const selectedFlow = state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
-    const filterText = buildWiresharkDisplayFilter(selectedFlow);
+    const filterText = String(selectedFlow?.wireshark_display_filter || "");
 
     elements.wiresharkFilterStatusText.textContent = state.wiresharkFilterStatusText;
     elements.wiresharkFilterStatusText.className = "status-text";
@@ -392,7 +405,7 @@
       return;
     }
 
-    elements.wiresharkFilterMeta.textContent = `Generated from flow ${selectedFlow.flow_index} using current flow DTO fields.`;
+    elements.wiresharkFilterMeta.textContent = `Generated from flow ${flowDisplayNumber(selectedFlow)} using shared flow DTO fields.`;
     elements.wiresharkFilterText.textContent = filterText || "No conservative display filter is available for this flow.";
     elements.copyWiresharkFilterButton.disabled = filterText.length === 0;
   }
@@ -405,8 +418,8 @@
     if (state.packetState === "loading") {
       elements.packetMeta.textContent = state.selectedFlowIndex == null
         ? "Loading packets..."
-        : `Loading packets for flow ${state.selectedFlowIndex}...`;
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">Loading packets...</td></tr>`;
+        : `Loading packets for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">Loading packets...</td></tr>`;
       elements.packetPrevButton.disabled = true;
       elements.packetNextButton.disabled = true;
       return;
@@ -414,7 +427,7 @@
 
     if (state.packetState === "error") {
       elements.packetMeta.textContent = state.packetErrorText || "Failed to load packets.";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="8">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="9">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
       elements.packetPrevButton.disabled = true;
       elements.packetNextButton.disabled = true;
       return;
@@ -422,15 +435,15 @@
 
     if (state.selectedFlowIndex == null) {
       elements.packetMeta.textContent = "Select a flow to load packets.";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">No selected flow.</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">No selected flow.</td></tr>`;
       elements.packetPrevButton.disabled = true;
       elements.packetNextButton.disabled = true;
       return;
     }
 
     if (state.packetsTotalCount === 0) {
-      elements.packetMeta.textContent = `Flow ${state.selectedFlowIndex} has no packets.`;
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="8">No packets available for the selected flow.</td></tr>`;
+      elements.packetMeta.textContent = `Flow ${formatNumber(state.selectedFlowIndex + 1)} has no packets.`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">No packets available for the selected flow.</td></tr>`;
       elements.packetPrevButton.disabled = true;
       elements.packetNextButton.disabled = true;
       return;
@@ -438,7 +451,7 @@
 
     const start = state.packetOffset + 1;
     const end = state.packetOffset + state.packets.length;
-    elements.packetMeta.textContent = `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${state.selectedFlowIndex}.`;
+    elements.packetMeta.textContent = `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${formatNumber(state.selectedFlowIndex + 1)}.`;
 
     elements.packetTableBody.innerHTML = state.packets
       .map((packet) => {
@@ -453,6 +466,7 @@
             <td>${packet.original_length}</td>
             <td>${packet.payload_length}</td>
             <td>${escapeHtml(packet.tcp_flags_text)}</td>
+            <td title="${escapeHtml(formatPacketMarker(packet))}">${escapeHtml(formatPacketMarker(packet))}</td>
           </tr>
         `;
       })
