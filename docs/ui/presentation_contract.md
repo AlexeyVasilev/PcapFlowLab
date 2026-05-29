@@ -11,7 +11,12 @@ This document defines the intended user-facing presentation contract for Pcap Fl
 
 Qt is currently the reference implementation because it exposes the broadest surface area today, but the contract described here is not intended to be Qt-specific. The goal is to converge on shared presentation semantics and shared backend-facing data expectations even if different frontends render them differently.
 
-This document is intentionally presentation-oriented. It describes what the product should display, what state transitions matter to users, and what kinds of backend/session data frontends should request.
+This document is intentionally presentation-oriented. It describes:
+
+- what the product should display;
+- what state transitions matter to users;
+- what kinds of backend/session data frontends should request;
+- what should later become shared frontend-neutral DTO shape.
 
 ## Scope And Non-Goals
 
@@ -21,6 +26,7 @@ This document is intentionally presentation-oriented. It describes what the prod
 - Defining the expected fields shown in the flows list, selected-flow packets list, packet inspector, selected-flow stream view, statistics view, and analysis workspace.
 - Describing expected loading, empty, unavailable, and error states.
 - Highlighting which fields should ideally come from structured backend/session DTOs versus which can remain frontend formatting.
+- Recording initial ownership decisions for core, session, frontend-neutral DTOs, frontend controllers, rendering, and CLI surfaces.
 
 ### Out of scope
 
@@ -29,6 +35,182 @@ This document is intentionally presentation-oriented. It describes what the prod
 - Moving deep analysis into capture-open processing.
 - Changing reassembly, stream, persistence, export, or source-attachment policy.
 - Defining final CLI UX or command syntax.
+- Freezing final C++ types.
+
+## Architecture Alignment Constraints
+
+This contract must remain aligned with the current backend/session architecture:
+
+- fast open remains packet-oriented;
+- deep stream/reassembly work is not moved into capture-open processing;
+- stream remains selected-flow-only, bounded, and ephemeral;
+- raw packet bytes are read lazily when byte-backed inspection is needed;
+- index-only / source-unavailable behavior remains explicit;
+- no session-wide stream reconstruction for all flows at open time;
+- no unbounded packet or payload preview loading.
+
+## Terminology And Identifier Semantics
+
+The contract should use consistent identifier vocabulary across Qt, Tauri, and future CLI surfaces.
+
+### Stable identifiers
+
+- `flow_index`
+  - stable backend/session flow identifier;
+  - follows backend/session indexing semantics;
+  - should not be confused with visible row position after filtering or sorting.
+- `packet_index`
+  - stable global packet index in the capture/file/session;
+  - should not be confused with row number within the selected-flow packet list.
+- `stream_item_index`
+  - stable index within the selected-flow stream result for the current selected flow and current stream query shape;
+  - should not be treated as a global packet identifier.
+
+### Display numbers
+
+- `flow_display_number` or `flow_display_id`
+  - optional user-facing display number for flows;
+  - may be 1-based when the UI presents flows that way;
+  - should be derived from `flow_index` or current presentation policy, not treated as the stable backend identifier.
+- `flow_packet_row` or `flow_packet_number`
+  - row number within the selected-flow packet list;
+  - not the same as `packet_index`;
+  - may be 1-based for human readability.
+- `stream_item_display_number`
+  - optional user-facing row number in the stream table;
+  - not required to be the same thing as `stream_item_index`.
+
+### Selection semantics
+
+- `selected_flow`
+  - should reference a stable flow identifier where possible;
+  - should not be stored only as a visible filtered/sorted row.
+- `selected_packet`
+  - should reference `packet_index` where possible;
+  - should not be stored only as a visible packet-table row.
+- `selected_stream_item`
+  - should reference the stable stream item identifier used by the current selected-flow stream result where possible;
+  - should not be stored only as a visible stream-table row.
+
+### Practical implication
+
+Frontends may still track visible row indexes locally for table widgets, but the shared contract should be defined in terms of stable identifiers and explicit display-number fields rather than row-position assumptions.
+
+## Ownership Model
+
+This section defines which layer should own which kind of logic.
+
+### Core / domain / core services
+
+Core should own:
+
+- packet facts;
+- capture facts;
+- decoded metadata;
+- flow aggregation;
+- packet references;
+- protocol hints;
+- bounded reassembly primitives;
+- protocol parsing and packet inspection facts.
+
+Core should not own:
+
+- UI wording;
+- tab labels;
+- row highlighting rules;
+- pixel layout;
+- frontend-specific filtering widgets;
+- view-local selection orchestration.
+
+### App / session
+
+Session should own:
+
+- opening captures and indexes;
+- application-facing read queries;
+- selected-flow packet queries;
+- selected-flow stream queries;
+- source availability state;
+- expected source path where relevant;
+- lazy byte-backed inspection;
+- bounded and on-demand behavior;
+- action availability facts that depend on session/source state.
+
+Session should not become a visual presentation layer.
+
+### App / frontend-neutral DTO layer
+
+Frontend-neutral DTOs should own:
+
+- stable structured fields needed by Qt, Tauri, and future CLI;
+- shared unavailable/truncated/source-state metadata;
+- shared bounded-preview metadata;
+- optional display-ready text when it represents shared product semantics rather than styling.
+
+Examples of acceptable display-ready shared semantics:
+
+- protocol details text;
+- bounded raw preview text;
+- bounded payload preview text;
+- generated Wireshark display filter string.
+
+Examples that should remain frontend-only:
+
+- colors;
+- chip/badge styling;
+- exact button text for most local actions;
+- exact column widths;
+- hover/tool-tip timing.
+
+### Frontend controller / model layer
+
+Frontend controller/model logic should own:
+
+- local selection state;
+- visible sorting and filtering state;
+- pagination/load-more UI state;
+- tab activation;
+- reset orchestration based on shared rules;
+- local table-row mapping;
+- clipboard interaction.
+
+### Frontend rendering layer
+
+Frontend rendering should own:
+
+- colors;
+- row highlighting;
+- column widths;
+- compact vs comfortable density;
+- truncation and elision;
+- exact visual layout;
+- local responsive behavior.
+
+### CLI
+
+CLI should:
+
+- prefer structured output first;
+- optionally expose display-ready text fields when they are part of the shared DTO contract;
+- avoid inventing a separate semantic model for flows, packets, details, or stream items.
+
+## Initial Decisions
+
+These are the initial stabilization decisions for future follow-up work.
+
+- Core should not become a UI presentation layer.
+- Frontend-neutral DTOs should expose structured facts first.
+- Frontend-neutral DTOs may include display-ready text only when it represents shared product semantics, such as:
+  - protocol details text;
+  - bounded hex preview text;
+  - bounded payload preview text;
+  - generated Wireshark filter string.
+- Visual styling remains frontend-only.
+- Filtering and sorting can remain frontend-side for now, but should operate over documented DTO fields.
+- Selection and reset semantics are part of the shared presentation contract.
+- Raw and payload previews must remain bounded and must carry truncated / unavailable / no-payload state explicitly.
+- Stream remains selected-flow-only, on-demand, bounded, ephemeral, and not persisted.
+- Analysis remains reference behavior for now, not a frozen shared DTO contract.
 
 ## Global Application Shell
 
@@ -150,7 +332,7 @@ Shared expectations:
 - generated from structured selected-flow data;
 - conservative and display-oriented;
 - copy action should be available when a filter exists;
-- missing/unsupported filter data should result in “no filter available”, not a fabricated filter.
+- missing or unsupported filter data should result in `no filter available`, not a fabricated filter.
 
 Whether the final filter text is fully assembled in the backend or assembled in the frontend from structured fields remains a follow-up decision.
 
@@ -323,7 +505,7 @@ Expected semantics:
 
 - current protocol-specific details text only;
 - no implication that new deep protocol analysis must be added;
-- clear “no protocol details” / unavailable state when appropriate.
+- clear `no protocol details` / unavailable state when appropriate.
 
 ### Packet details state model
 
@@ -397,7 +579,7 @@ Shared expectations:
 
 - stream reconstruction quality/boundedness should be surfaced clearly;
 - stream view may show item-count and packet-window state separately;
-- “load more” extends bounded reconstruction for the selected flow only.
+- `load more` extends bounded reconstruction for the selected flow only.
 
 ### Empty, loading, unavailable, and error states
 
@@ -420,7 +602,7 @@ Stream view should distinguish:
 
 ## Statistics / Overview View
 
-Qt currently exposes a broader statistics surface than the current Tauri spike. The shared contract should at least preserve what Qt already shows and separate “basic overview” from “extended statistics”.
+Qt currently exposes a broader statistics surface than the current Tauri spike. The shared contract should at least preserve what Qt already shows and separate `basic overview` from `extended statistics`.
 
 ### Basic overview metrics
 
@@ -463,7 +645,7 @@ Qt currently shows a detected-protocol-hints table with:
   - Confirmed;
   - Possible;
   - Unknown;
-- protocol/hint title;
+- protocol / hint title;
 - flow count;
 - packet count;
 - captured bytes;
@@ -544,17 +726,17 @@ Qt currently exposes a broad analysis surface including:
 
 - analysis flow list in the left pane;
 - selected-flow analysis details in the right pane;
-- duration/timeline metrics;
+- duration / timeline metrics;
 - endpoint summary;
 - total packets / total bytes / captured bytes;
 - packets-per-second and bytes-per-second metrics;
 - direction split metrics;
-- average/min/max packet size metrics;
+- average / min / max packet size metrics;
 - inter-arrival metrics;
 - protocol hint / service / protocol-version text;
 - TCP control counts when applicable;
 - burst and idle-gap metrics;
-- rate graph availability/status/window text;
+- rate graph availability / status / window text;
 - histogram data:
   - inter-arrival;
   - packet size;
@@ -600,9 +782,164 @@ Visible UI actions influence the shared presentation contract because they shape
 
 The contract does not require every frontend to expose every action immediately. It does require that:
 
-- actions depend on clearly defined session/selection/source-availability state;
+- actions depend on clearly defined session / selection / source-availability state;
 - unavailable actions should be explainable through shared state semantics;
 - export and attach-source workflows should use the same backend-facing meaning across frontends.
+
+## Field Ownership And Stabilization Table
+
+| Area | Contract item | Preferred owner | Status | Initial decision | Follow-up |
+|---|---|---|---|---|---|
+| Shell | open state | app/session + frontend-neutral DTO | stable | shared state semantics, frontend-specific rendering | decide final DTO naming |
+| Shell | source availability | app/session + frontend-neutral DTO | stable | explicit source-attached / unavailable / expected-path state | unify wording later |
+| Flows | flow list fields | frontend-neutral DTO | stable | structured facts first | align Qt/Tauri/CLI naming |
+| Flows | flow filtering | frontend controller/model | frontend-only | keep frontend-side for now | standardize matching fields only |
+| Flows | flow sorting | frontend controller/model | frontend-only | keep frontend-side for now | standardize sortable fields only |
+| Flows | Wireshark display filter | frontend-neutral DTO or frontend assembly from DTO fields | candidate | allow shared display string if semantics are shared | decide backend-vs-frontend ownership |
+| Packets | selected-flow packet rows | frontend-neutral DTO | stable | structured row DTO is a good target | align row-number semantics |
+| Packets | packet pagination / load-more | app/session + frontend controller/model | stable | bounded selected-flow-only behavior is shared | refine common status metadata |
+| Inspector | packet details summary | frontend-neutral DTO | candidate | move toward structured summary fields | avoid overfreezing final text layout |
+| Inspector | raw preview | frontend-neutral DTO | candidate | bounded preview plus truncated/unavailable metadata | decide text-only vs structured preview shape |
+| Inspector | payload preview | frontend-neutral DTO | candidate | bounded preview plus no-payload/truncated/unavailable metadata | align payload label semantics |
+| Inspector | protocol details text | frontend-neutral DTO | stable | shared product text is acceptable here | keep deep analysis out of scope |
+| Stream | stream item rows | frontend-neutral DTO | candidate | align with current Qt-visible stream fields | refine source-packet-reference structure |
+| Stream | stream load-more / boundedness | app/session + frontend-neutral DTO | stable | bounded selected-flow-only semantics are shared | expose packet-window metadata consistently |
+| Stream | stream item details | frontend-neutral DTO | deferred | do not freeze yet | revisit after packet inspector DTO stabilizes |
+| Statistics | counters | app/session + frontend-neutral DTO | stable | structured counters first | keep frontend formatting local |
+| Statistics | grouping / labels | frontend rendering or optional shared display semantics | needs decision | do not force into core | revisit after CLI requirements are clearer |
+| Analysis | analysis workspace | app/session + frontend-specific presentation | deferred | treat Qt as reference behavior | revisit after flows/packets/details/stream stabilize |
+| Actions | export / action availability | app/session | stable | session should own factual availability | standardize reason/unavailable metadata later |
+
+## DTO Stabilization Plan
+
+This is a staged plan for future code follow-ups. It is descriptive only and does not imply immediate implementation work.
+
+### Stage 1: Clarify Flow DTO and Packet Row DTO fields
+
+Why it matters:
+
+- flows and packet rows are already the most shared surfaces across Qt, Tauri, and future CLI;
+- these are the least controversial DTOs to stabilize first.
+
+What should change later:
+
+- document and implement explicit structured flow fields;
+- document and implement explicit structured packet-row fields;
+- align identifier semantics and row-number semantics.
+
+What should not change:
+
+- no change to core packet-processing behavior;
+- no move of filtering/sorting into core;
+- no change to open-time processing.
+
+### Stage 2: Introduce or refine PacketInspector DTO
+
+Why it matters:
+
+- packet details are currently one of the most Qt-shaped presentation areas;
+- Tauri and CLI will both benefit from a shared shape.
+
+What should change later:
+
+- add structured summary fields;
+- add bounded raw preview metadata;
+- add bounded payload preview metadata;
+- carry explicit truncated / unavailable / no-payload state.
+
+What should not change:
+
+- no unbounded byte loading;
+- no new deep protocol analysis implied;
+- no conversion of core into a UI formatting layer.
+
+### Stage 3: Refine Stream DTO
+
+Why it matters:
+
+- stream is already selected-flow-only and bounded in backend/session behavior;
+- the remaining divergence is mostly presentation shape.
+
+What should change later:
+
+- align stream item fields with current Qt-visible semantics;
+- add source packet references;
+- add bounded packet-window metadata;
+- add constricted / quality flags where relevant.
+
+What should not change:
+
+- stream must stay selected-flow-only;
+- stream must stay on-demand;
+- stream must stay bounded and ephemeral.
+
+### Stage 4: Refine SourceAvailabilityState and common unavailable/error semantics
+
+Why it matters:
+
+- source-unavailable behavior affects packet details, stream, export, and source-attachment flows;
+- today the semantics are shared, but the wording is scattered.
+
+What should change later:
+
+- define one common source-availability shape;
+- define shared unavailable-state metadata used by Qt, Tauri, and CLI.
+
+What should not change:
+
+- no hiding of index-only mode;
+- no fake raw/payload/stream data when source bytes are unavailable.
+
+### Stage 5: Align Tauri UI with the shared DTO contract
+
+Why it matters:
+
+- Tauri is already close enough to benefit from a shared contract;
+- this reduces Qt/Tauri drift.
+
+What should change later:
+
+- align Tauri field names and presentation semantics with stabilized DTOs;
+- remove local shape drift where possible.
+
+What should not change:
+
+- no broad rewrite;
+- no forced Qt pixel parity.
+
+### Stage 6: Design CLI commands using the same DTO contract
+
+Why it matters:
+
+- CLI should not invent a third semantic model;
+- CLI is a good test of which fields are truly shared versus view-specific.
+
+What should change later:
+
+- design CLI commands around shared DTOs for flows, packets, details, and stream;
+- decide where CLI should emit structured fields, display text, or both.
+
+What should not change:
+
+- no requirement that CLI mimic Qt layout;
+- no dependence on frontend-only visual concepts.
+
+### Stage 7: Revisit Statistics and Analysis DTOs
+
+Why it matters:
+
+- statistics and analysis are the richest and least-stabilized surfaces;
+- they should be revisited after the lower-risk DTOs are settled.
+
+What should change later:
+
+- decide which statistics are core shared contract versus optional rich-UI sections;
+- decide what part of analysis becomes shared DTO shape.
+
+What should not change:
+
+- do not freeze the entire Qt analysis workspace too early;
+- do not move analysis work into open-time processing.
 
 ## Backend / Session DTO Implications
 
@@ -649,11 +986,11 @@ This section is intentionally forward-looking. These are candidate frontend-neut
 
 - stream item index;
 - direction;
-- item label/type;
+- item label / type;
 - byte count;
 - contributing packet count;
 - source packet references;
-- constricted/quality indicator;
+- constricted / quality indicator;
 - packet-window and load-more metadata aligned with Qt presentation.
 
 ### Shared shell / state DTO candidates
@@ -663,26 +1000,67 @@ This section is intentionally forward-looking. These are candidate frontend-neut
 - common unavailable/error/source-state semantics;
 - explicit selected-flow / selected-packet / selected-stream-item identifiers for frontend coordination.
 
+## Do Not Standardize Yet
+
+The following areas should remain deliberately flexible for now:
+
+- exact visual layout;
+- colors and badges;
+- exact wording of most UI status text;
+- full Analysis DTO shape;
+- full Export workflow parity;
+- stream-item-to-packet navigation behavior;
+- whether all statistics sections are required in CLI;
+- exact compact-vs-comfortable density decisions;
+- exact tab/panel arrangement outside the shared semantic contract.
+
 ## Open Questions
 
-- Exact shared column order and naming:
-  - should all frontends preserve Qt column names exactly, or only field semantics?
-- CLI shape:
-  - should future CLI output expose structured fields, display-ready text, or both?
-- Formatting boundary:
-  - how much display formatting should live in frontend-neutral DTOs versus UI code?
-- Wireshark filter generation:
-  - should the backend provide the final display filter string, or only structured endpoint/protocol fields?
-- Packet details formatting:
-  - should Summary become a fully structured field grid across all frontends, or remain formatted text plus structured metadata?
-- Stream-item details:
-  - should stream-item selection drive the same inspector contract as packet selection in all frontends?
-- Stream-to-packet navigation:
-  - should stream items always point back to source packets in a standardized way?
-- Statistics scope:
-  - which parts of Qt’s extended statistics are required for the future CLI versus optional?
-- Source-unavailable behavior:
-  - how should index-only mode and detached-source mode be normalized across all frontends?
-- Analysis contract:
-  - which parts of Qt’s analysis workspace should be considered stable shared contract now, and which remain exploratory/reference-only?
+### Identifiers and display numbering
+
+- Should every frontend expose both stable identifiers and user-facing display numbers explicitly?
+- Should `flow_display_number` always be `flow_index + 1`, or remain a presentation choice?
+- Should stream rows expose both `stream_item_index` and `stream_item_display_number`?
+
+### DTO vs frontend formatting
+
+- How much display formatting should live in frontend-neutral DTOs versus UI code?
+- Should packet summary remain formatted text, become fully structured, or support both?
+- Should statistics grouping labels such as `Confirmed`, `Possible`, and `Unknown` be shared semantics or frontend-local wording?
+
+### CLI output format
+
+- Should future CLI output expose structured fields, display-ready text, or both?
+- Which fields are required for machine-readable JSON versus human-readable text output?
+
+### Wireshark filter generation
+
+- Should the backend provide the final display filter string, or only structured endpoint/protocol fields?
+- If the final filter string is shared, where should protocol/family-specific formatting rules live?
+
+### Packet inspector structure
+
+- Should the packet inspector contract stabilize around structured summary fields plus bounded preview text?
+- Which fields belong in shared packet-summary structure versus protocol details text?
+
+### Stream item details and navigation
+
+- Should stream-item selection drive the same inspector contract as packet selection in all frontends?
+- Should stream items always point back to source packets in a standardized way?
+- How much stream-item detail is worth standardizing before packet-inspector DTOs settle?
+
+### Statistics scope
+
+- Which parts of Qt's extended statistics are required for the future CLI versus optional?
+- Should top-talkers drill-down semantics be part of the shared contract or remain UI-specific?
+
+### Analysis maturity
+
+- Which parts of Qt's analysis workspace should be considered stable shared contract now?
+- Which parts should remain reference-only until flows/packets/details/stream DTOs stabilize?
+
+### Source-unavailable behavior
+
+- How should index-only mode and detached-source mode be normalized across all frontends?
+- Which unavailable messages should remain frontend wording and which should become shared semantic states?
 
