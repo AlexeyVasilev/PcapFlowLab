@@ -58,6 +58,7 @@ Not implemented yet:
 - If the current filter hides the selected flow, the Tauri shell clears the visible flow/packet/details selection to avoid stale UI state.
 - Clicking a packet row loads packet details and a bounded payload preview when byte-backed inspection is available.
 - The selected-packet inspector is now tabbed: Summary, Raw, Payload, and Protocol.
+- The packet inspector now consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and an explicit no-payload state.
 - The lower Flows workspace now gives more width to the packet inspector than to the packet list so Raw and Protocol inspection stay readable at normal desktop sizes.
 - Summary keeps compact packet metadata visible without large cards.
 - Raw and Payload previews are intentionally bounded to small previews instead of full packet dumps.

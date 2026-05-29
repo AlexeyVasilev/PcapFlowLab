@@ -74,9 +74,11 @@
     streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
     flowViewTitle: document.getElementById("flowViewTitle"),
     streamTableBody: document.getElementById("streamTableBody"),
+    packetDetailsTitle: document.getElementById("packetDetailsTitle"),
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
     packetDetailsTabButtons: Array.from(document.querySelectorAll(".inspector-tab")),
     packetDetailsTabPanels: Array.from(document.querySelectorAll(".packet-details-tab-panel")),
+    packetDetailsPayloadTabButton: document.getElementById("packetDetailsPayloadTabButton"),
     packetDetailsStateText: document.getElementById("packetDetailsStateText"),
     packetDetailsSummary: document.getElementById("packetDetailsSummary"),
     packetDetailsRawStateText: document.getElementById("packetDetailsRawStateText"),
@@ -634,6 +636,12 @@
   }
 
   function renderPacketDetails() {
+    const details = state.packetDetails;
+    const packetDetailsTitle = String(details?.details_title || "Selected Packet Details");
+    const payloadTabTitle = String(details?.payload_tab_title || "Payload");
+
+    elements.packetDetailsTitle.textContent = packetDetailsTitle;
+    elements.packetDetailsPayloadTabButton.textContent = payloadTabTitle;
     elements.packetDetailsStateText.className = "status-text";
     elements.packetDetailsRawStateText.className = "status-text compact-status-text";
     elements.packetDetailsPayloadStateText.className = "status-text compact-status-text";
@@ -672,7 +680,6 @@
       return;
     }
 
-    const details = state.packetDetails;
     const selectedPacket = state.selectedPacketRow;
     const sourceAvailability = packetDetailsSourceAvailability(details);
     const summaryItems = [
@@ -791,6 +798,11 @@
         ? "Payload preview loaded (truncated)."
         : "Payload preview loaded.";
       elements.packetDetailsPayloadText.textContent = details?.payload_preview_text || "";
+    } else if (details?.payload_preview_no_payload) {
+      elements.packetDetailsPayloadStateText.textContent = "No payload is available for this packet.";
+      elements.packetDetailsPayloadStateText.classList.add("is-error");
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No transport payload is available for this packet.";
+      elements.packetDetailsPayloadText.classList.add("is-muted");
     } else {
       elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || "No payload preview is available.";
       elements.packetDetailsPayloadStateText.classList.add("is-error");

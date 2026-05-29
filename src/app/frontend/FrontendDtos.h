@@ -130,8 +130,11 @@ struct FrontendPacketDetailsDto {
     bool raw_preview_truncated {false};
     bool payload_preview_available {false};
     bool payload_preview_truncated {false};
+    bool payload_preview_no_payload {false};
     std::size_t flow_index {0};
     std::uint64_t packet_index {0};
+    std::string details_title {};
+    std::string payload_tab_title {};
     std::string timestamp_text {};
     std::uint32_t captured_length {0};
     std::uint32_t original_length {0};

@@ -154,14 +154,14 @@
               <section class="panel packet-details-panel">
                 <div class="panel-heading">
                   <div>
-                    <h2>Selected Packet Details</h2>
+                    <h2 id="packetDetailsTitle">Selected Packet Details</h2>
                     <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
                   </div>
                 </div>
                 <div class="inspector-tabbar" aria-label="Packet details tabs">
                   <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
                   <button type="button" class="inspector-tab" data-packet-details-tab="raw">Raw</button>
-                  <button type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
+                  <button id="packetDetailsPayloadTabButton" type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
                   <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
                 </div>
                 <div class="details-scroll">

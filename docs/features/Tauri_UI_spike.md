@@ -154,6 +154,7 @@ Current frontend-shell status:
 - a basic selected-flow Stream tab can now query bounded stream items on demand for the active flow only
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - selected packet inspection is now organized as compact Summary / Raw / Payload / Protocol tabs inside the Tauri details panel
+- the packet-details panel now consumes shared packet-inspector DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload metadata
 - packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
 - the Flows tab keeps flows on top and shows packets plus selected-packet details side by side in the lower area
 - the lower-left Flows workspace now has Packets and Stream tabs; Stream remains lazy, bounded, and selected-flow-only

@@ -139,6 +139,20 @@ std::string format_transport_summary(const PacketDetails& details) {
     return {};
 }
 
+std::string packet_details_title() {
+    return "Packet Details";
+}
+
+std::string packet_payload_tab_title(const PacketDetails& details) {
+    if (details.has_tcp) {
+        return "TCP Payload";
+    }
+    if (details.has_udp) {
+        return "UDP Payload";
+    }
+    return "Payload";
+}
+
 std::string format_stream_source_packets_text(
     const StreamItemRow& row,
     const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
@@ -438,8 +452,11 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         .raw_preview_truncated = false,
         .payload_preview_available = false,
         .payload_preview_truncated = false,
+        .payload_preview_no_payload = false,
         .flow_index = selected_flow_index_.value_or(0U),
         .packet_index = packet_index,
+        .details_title = packet_details_title(),
+        .payload_tab_title = "Payload",
         .source_availability = current_source_availability(),
     };
 
@@ -491,6 +508,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     }
 
     result.details_available = true;
+    result.payload_tab_title = packet_payload_tab_title(*details);
     result.link_summary_text = format_link_summary(*details);
     result.network_summary_text = format_network_summary(*details);
     result.transport_summary_text = format_transport_summary(*details);
@@ -509,9 +527,11 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     result.payload_preview_text = payload_preview_text;
     result.payload_preview_truncated = payload_preview_truncated;
     result.payload_preview_available = !payload_preview_text.empty();
+    result.payload_preview_no_payload =
+        !result.payload_preview_available && (details->has_tcp || details->has_udp) && packet.payload_length == 0U;
     result.payload_preview_unavailable_text = result.payload_preview_available
         ? std::string {}
-        : ((details->has_tcp || details->has_udp)
+        : (result.payload_preview_no_payload
             ? "No transport payload is available for this packet."
             : "Transport payload preview is not available for this packet.");
 

@@ -70,7 +70,10 @@ This document is an audit only. It does not introduce a new contract and does no
 - Flow DTO alignment.
 - Packet Row DTO alignment.
 - SourceAvailabilityState alignment.
-- PacketInspector DTO refinement.
+- PacketInspector DTO refinement has started:
+  - shared `details_title`;
+  - shared `payload_tab_title`;
+  - explicit `payload_preview_no_payload` metadata.
 - Stream DTO refinement.
 
 ## Mapping Table: Global Shell / Session State
@@ -135,14 +138,14 @@ This document is an audit only. It does not introduce a new contract and does no
 
 | Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
 |---|---|---|---|---|---|---|
-| details title / header fields | `PacketDetailsViewModel.detailsTitle`, `headerPrimaryText`, `headerSecondaryText`, `badgeText` | none in `FrontendPacketDetailsDto` | Tauri hardcodes panel title and summary labels in `main.js` | strongly Qt-specific today | deferred PacketInspector DTO refinement | Medium |
+| details title / header fields | `PacketDetailsViewModel.detailsTitle`, `headerPrimaryText`, `headerSecondaryText`, `badgeText` | `FrontendPacketDetailsDto.details_title` now carries the shared packet-details title; header/badge fields are still absent | Tauri now consumes shared `details_title`; summary labels remain local | title is partially aligned, header/badge remain Qt-specific today | frontend-neutral DTO for shared title, deferred for header/badge | Improved |
 | summary text | `PacketDetailsViewModel.summaryText`; built in `MainController::buildPacketSummary(...)` | no summary text field | Tauri reconstructs compact summary UI from packet row + details fields | text-first in Qt, structured-ish in Tauri | candidate structured summary DTO | High |
 | structured summary fields | Qt mostly does not expose them as DTO roles; summary is text-first | `FrontendPacketDetailsDto` exposes `timestamp_text`, lengths, flags, `link/network/transport_summary_text` | Tauri uses these fields in summary grid | partially aligned, but still hybrid | frontend-neutral DTO | High |
 | raw preview text | `PacketDetailsViewModel.hexText` | `FrontendPacketDetailsDto.raw_preview_text` | `PacketDetailsDto.raw_preview_text` | aligned | frontend-neutral DTO | High |
 | raw preview truncated metadata | Qt text and UI state imply it, but not clearly as a standalone property | `FrontendPacketDetailsDto.raw_preview_truncated`, `raw_preview_available`, `raw_preview_unavailable_text` | Tauri uses them explicitly | Tauri/frontend-neutral shape is cleaner than Qt VM surface here | frontend-neutral DTO | High |
 | payload preview text | `PacketDetailsViewModel.payloadText` | `FrontendPacketDetailsDto.payload_preview_text` | `PacketDetailsDto.payload_preview_text` | aligned | frontend-neutral DTO | High |
-| payload tab title | `PacketDetailsViewModel.payloadTabTitle` | none in frontend-neutral DTO | Tauri currently hardcodes `Payload` tab | contract drift; Qt supports protocol-specific payload labels, adapter/Tauri do not | candidate PacketInspector DTO field | Medium |
-| payload no-payload/truncated/unavailable metadata | Qt currently encodes much of this through text content and tab title | `FrontendPacketDetailsDto.payload_preview_available`, `payload_preview_truncated`, `payload_preview_unavailable_text`, `unavailable_text` | Tauri uses explicit state texts | adapter/Tauri shape is more explicit than Qt surface | frontend-neutral DTO | High |
+| payload tab title | `PacketDetailsViewModel.payloadTabTitle` | `FrontendPacketDetailsDto.payload_tab_title` now carries protocol-specific labels such as `TCP Payload` / `UDP Payload` | Tauri now consumes shared `payload_tab_title` instead of hardcoding `Payload` | aligned for current packet path | frontend-neutral DTO | Improved |
+| payload no-payload/truncated/unavailable metadata | Qt currently encodes much of this through text content and tab title | `FrontendPacketDetailsDto.payload_preview_available`, `payload_preview_truncated`, `payload_preview_no_payload`, `payload_preview_unavailable_text`, `unavailable_text` | Tauri uses explicit state texts and now distinguishes `no payload` from general unavailable | adapter/Tauri shape is more explicit than Qt surface | frontend-neutral DTO | Improved |
 | protocol details text | `PacketDetailsViewModel.protocolText` | `FrontendPacketDetailsDto.protocol_details_text` | `PacketDetailsDto.protocol_details_text` | aligned | frontend-neutral DTO | High |
 | packet details loading state | Qt controller `reloadSelectedPacketDetails()` path, not DTO-owned | no explicit loading field | Tauri `packetDetailsState = loading/...` | frontend/controller-only by design | frontend controller/model | Low |
 | packet details error state | Qt clears or shows placeholders; not formalized as separate DTO | `FrontendPacketDetailsDto.error_text`, `details_available`, `packet_found` | Tauri uses explicit `error` state and text | partial alignment | frontend-neutral DTO + frontend controller | Medium |
