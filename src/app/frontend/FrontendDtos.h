@@ -16,6 +16,16 @@ enum class FrontendOpenMode : std::uint8_t {
     deep,
 };
 
+struct FrontendSourceAvailabilityDto {
+    bool has_source_capture {false};
+    bool source_capture_accessible {false};
+    bool opened_from_index {false};
+    bool partial_open {false};
+    bool byte_backed_inspection_available {false};
+    std::string active_source_capture_path {};
+    std::string expected_source_capture_path {};
+};
+
 struct FrontendOpenResult {
     bool opened {false};
     bool opened_from_index {false};
@@ -26,6 +36,7 @@ struct FrontendOpenResult {
     std::string active_source_capture_path {};
     std::string expected_source_capture_path {};
     std::string error_text {};
+    FrontendSourceAvailabilityDto source_availability {};
 };
 
 struct FrontendOverviewDto {
@@ -105,6 +116,7 @@ struct FrontendSelectedFlowStreamResult {
     std::size_t total_item_count {0};
     std::string unavailable_text {};
     std::string error_text {};
+    FrontendSourceAvailabilityDto source_availability {};
     std::vector<FrontendStreamItemDto> items {};
 };
 
@@ -136,6 +148,7 @@ struct FrontendPacketDetailsDto {
     std::string payload_preview_unavailable_text {};
     std::string unavailable_text {};
     std::string error_text {};
+    FrontendSourceAvailabilityDto source_availability {};
 };
 
 }  // namespace pfl

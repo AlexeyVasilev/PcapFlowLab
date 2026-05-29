@@ -150,6 +150,7 @@ Current frontend-shell status:
 - the selected flow now exposes a conservative Wireshark display filter string from the shared flow DTO plus best-effort clipboard copy
 - selected-flow packets now page through the existing `offset` / `limit` backend API
 - the packet table now surfaces compact markers for IP fragmentation and suspected TCP retransmission using existing packet-row DTO fields
+- a small grouped frontend-neutral source-availability state now backs Tauri shell warnings plus packet-details / stream unavailable fallbacks
 - a basic selected-flow Stream tab can now query bounded stream items on demand for the active flow only
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - selected packet inspection is now organized as compact Summary / Raw / Payload / Protocol tabs inside the Tauri details panel
@@ -165,6 +166,7 @@ Current packet-details limitations:
 - the Tauri packet-details panel is intentionally basic and does not aim for full Qt packet-details parity yet
 - raw and payload previews are bounded to small preview windows
 - byte-backed details can be unavailable in index-only sessions or when the original source capture cannot be read
+- source-availability facts are now grouped in the frontend-neutral adapter for Tauri, but Qt still uses existing controller/view-model placeholders
 - the Raw tab only exposes a bounded preview through the existing session inspection path; it is not a full raw-byte viewer
 
 Current stream limitations:

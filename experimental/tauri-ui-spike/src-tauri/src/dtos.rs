@@ -1,6 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceAvailabilityDto {
+    pub has_source_capture: bool,
+    pub source_capture_accessible: bool,
+    pub opened_from_index: bool,
+    pub partial_open: bool,
+    pub byte_backed_inspection_available: bool,
+    pub active_source_capture_path: String,
+    pub expected_source_capture_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenCaptureResultDto {
     pub opened: bool,
     pub opened_from_index: bool,
@@ -11,6 +22,7 @@ pub struct OpenCaptureResultDto {
     pub active_source_capture_path: String,
     pub expected_source_capture_path: String,
     pub error_text: String,
+    pub source_availability: SourceAvailabilityDto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +153,7 @@ pub struct SelectedFlowStreamDto {
     pub total_item_count: usize,
     pub unavailable_text: String,
     pub error_text: String,
+    pub source_availability: SourceAvailabilityDto,
     pub items: Vec<StreamItemDto>,
 }
 
@@ -178,4 +191,5 @@ pub struct PacketDetailsDto {
     pub payload_preview_unavailable_text: String,
     pub unavailable_text: String,
     pub error_text: String,
+    pub source_availability: SourceAvailabilityDto,
 }

@@ -28,6 +28,7 @@ public:
     void clear_selection() noexcept;
 
 private:
+    [[nodiscard]] FrontendSourceAvailabilityDto current_source_availability() const;
     [[nodiscard]] static FrontendFlowDto to_frontend_flow(const FlowRow& row);
     [[nodiscard]] static FrontendPacketDto to_frontend_packet(const PacketRow& row);
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(

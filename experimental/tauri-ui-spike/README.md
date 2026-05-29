@@ -66,6 +66,7 @@ Not implemented yet:
 - The selected flow also shows a conservative Wireshark display filter string with a Copy button that uses the browser clipboard API when available.
 - The current Tauri shell now consumes the shared Wireshark display filter field from the frontend-neutral flow DTO instead of rebuilding the filter only in JavaScript.
 - Protocol hints now use the shared display-oriented hint text from the frontend-neutral flow DTO when available.
+- The current Tauri shell now also consumes a grouped frontend-neutral source-availability shape for shell warnings plus packet-details / stream unavailable fallbacks.
 - The Statistics tab currently contains only the basic overview cards/data.
 - The Analysis tab is a placeholder only and does not implement analysis behavior yet.
 
@@ -90,6 +91,7 @@ Not implemented yet:
 - The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
+- Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.
 - Raw and Payload tabs intentionally show bounded previews only; they do not implement full raw-byte or payload viewers.
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
 - Packet rows now surface compact marker text for fragmented packets and suspected TCP retransmissions, but the overall packet table still remains intentionally compact.

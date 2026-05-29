@@ -58,6 +58,9 @@ This document is an audit only. It does not introduce a new contract and does no
 - Packet inspector:
   - Qt is text-first via `PacketDetailsViewModel`;
   - Tauri is partially structured in UI but still backed by text-oriented adapter fields.
+- Source availability:
+  - frontend-neutral grouping has started through a shared `SourceAvailability` shape in open/details/stream results;
+  - Qt still consumes equivalent facts mostly through controller/view-model properties and placeholder builders.
 - Stream:
   - Qt supports selected stream item and stream-item details;
   - Tauri currently shows stream rows only and does not yet model selected stream item.
@@ -78,9 +81,9 @@ This document is an audit only. It does not introduce a new contract and does no
 | open source kind: capture/index | `MainController.openedFromIndex`, `Main.qml` displays `PCAP:` or `Index:` | `FrontendOpenResult.opened_from_index`; `CaptureSession::opened_from_index()` | `OpenCaptureResultDto.opened_from_index`; Tauri uses it indirectly, not as dedicated shell display model | semantics available, but shell shape not standardized | app/session + frontend-neutral shell DTO | High |
 | open mode | `MainController.captureOpenMode`, `Main.qml` combo box | `FrontendOpenMode`; adapter `open_capture(path, mode)` | `open_mode` string in Tauri command, local select value in `main.js` | currently request-only in adapter; no persistent shell DTO field | app/session + frontend controller | Medium |
 | open state | Qt splits this across `isOpening`, `openErrorText`, `statusText`, success state by loaded session | no explicit frontend-neutral open-state enum | Tauri `main.js` explicit `idle/opening/opened/error` | mismatch in shape; Tauri has cleaner explicit state | frontend-neutral shell DTO candidate | High |
-| source availability | `MainController.hasSourceCapture`, source warnings, unavailable placeholders | `FrontendOpenResult.has_source_capture`, `source_capture_accessible`; `CaptureSession::has_source_capture()`, `source_capture_accessible()` | `OpenCaptureResultDto.has_source_capture`, `source_capture_accessible`; Tauri uses unavailable/error text paths in packet/stream rendering | good facts exist, but common shell/source state is not unified | app/session + frontend-neutral SourceAvailabilityState | High |
-| expected source path | `MainController.expectedSourceCapturePath`, `Main.qml` warning block | `FrontendOpenResult.expected_source_capture_path`; `CaptureSession::expected_source_capture_path()` | `OpenCaptureResultDto.expected_source_capture_path`; not surfaced strongly in Tauri shell | available but underused outside Qt | app/session + frontend-neutral SourceAvailabilityState | Medium |
-| partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendOpenResult.partial_open`; `CaptureSession::is_partial_open()` | `OpenCaptureResultDto.partial_open`; warning text itself not exposed by adapter | boolean is shared; warning message semantics are Qt-only today | app/session for fact, frontend-neutral DTO candidate for message/reason later | Medium |
+| source availability | `MainController.hasSourceCapture`, source warnings, unavailable placeholders | `FrontendSourceAvailabilityDto` nested in open/details/stream results; `CaptureSession::has_source_capture()`, `source_capture_accessible()` | Tauri now consumes grouped `source_availability` in shell warning text and unavailable fallbacks | grouped facts exist, but Qt still does not consume one shared DTO shape | app/session + frontend-neutral SourceAvailabilityState | Improved |
+| expected source path | `MainController.expectedSourceCapturePath`, `Main.qml` warning block | `FrontendSourceAvailabilityDto.expected_source_capture_path`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state in shell/unavailable fallbacks | legacy scalars still coexist during migration | app/session + frontend-neutral SourceAvailabilityState | Improved |
+| partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendSourceAvailabilityDto.partial_open`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state for compact shell warning note | warning wording remains frontend-specific | app/session for fact, frontend rendering for wording | Improved |
 | selected flow | `MainController.selectedFlowIndex` | `FrontendSessionAdapter::selected_flow_index()` only internally; `select_flow(flow_index)` mutation API | `state.selectedFlowIndex` in `main.js`; set by flow row click | no read DTO for selected-flow shell state; mutation-only | frontend controller/model with stable `flow_index` | High |
 | selected packet | `MainController.selectedPacketIndex` | no adapter-level explicit selected-packet query; packet details API takes `packet_index` | `state.selectedPacketIndex` and `state.selectedPacketRow` in `main.js` | selection state is frontend-local today | frontend controller/model with stable `packet_index` | Medium |
 | selected stream item | `MainController.selectedStreamItemIndex` | no frontend-neutral API for selecting/querying stream item details | none in current Tauri shell | Tauri gap; no shared frontend-neutral stream-item selection path yet | deferred frontend-neutral DTO / controller work | Medium |
@@ -212,7 +215,7 @@ Analysis remains reference/deferred. The mapping below records what is staticall
 - Stable packet-row fields in `PacketRow` -> `FrontendPacketDto` -> Tauri `PacketDto`
 - Basic selected-flow stream row fields in `StreamItemRow` -> `FrontendStreamItemDto` -> Tauri `StreamItemDto`
 - Basic overview counters and recognition stats in `FrontendOverviewDto`
-- Source-availability facts in `CaptureSession` and `FrontendOpenResult`
+- Grouped source-availability facts in `CaptureSession` -> frontend-neutral `SourceAvailability` -> Tauri open/details/stream DTOs
 
 ### Naming mismatch only
 
@@ -228,6 +231,7 @@ Analysis remains reference/deferred. The mapping below records what is staticall
 - top endpoints / top ports data
 - stream-item details path in the right-hand inspector
 - analysis workspace shape
+- Qt source-unavailable placeholders still live in controller/view-model logic rather than consuming one grouped source-availability DTO directly
 
 ### Available in Tauri but not contract-aligned
 

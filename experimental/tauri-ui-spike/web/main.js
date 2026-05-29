@@ -12,6 +12,7 @@
     openState: "idle",
     statusKind: "neutral",
     statusText: "",
+    sourceAvailability: null,
     overview: null,
     flows: [],
     flowFilterText: "",
@@ -50,6 +51,7 @@
     openMode: document.getElementById("openMode"),
     openButton: document.getElementById("openButton"),
     openStateBadge: document.getElementById("openStateBadge"),
+    openWorkflowNote: document.getElementById("openWorkflowNote"),
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
@@ -106,6 +108,59 @@
   function setStatus(text, kind = "neutral") {
     state.statusText = text || "";
     state.statusKind = kind;
+  }
+
+  function sourceAvailabilityOrDefault(sourceAvailability) {
+    return {
+      has_source_capture: Boolean(sourceAvailability?.has_source_capture),
+      source_capture_accessible: Boolean(sourceAvailability?.source_capture_accessible),
+      opened_from_index: Boolean(sourceAvailability?.opened_from_index),
+      partial_open: Boolean(sourceAvailability?.partial_open),
+      byte_backed_inspection_available: Boolean(sourceAvailability?.byte_backed_inspection_available),
+      active_source_capture_path: String(sourceAvailability?.active_source_capture_path || ""),
+      expected_source_capture_path: String(sourceAvailability?.expected_source_capture_path || ""),
+    };
+  }
+
+  function currentSourceAvailability() {
+    return sourceAvailabilityOrDefault(state.sourceAvailability);
+  }
+
+  function packetDetailsSourceAvailability(details) {
+    return sourceAvailabilityOrDefault(details?.source_availability || state.sourceAvailability);
+  }
+
+  function streamSourceAvailability(streamResult) {
+    return sourceAvailabilityOrDefault(streamResult?.source_availability || state.sourceAvailability);
+  }
+
+  function sourceAvailabilityNoteText() {
+    const availability = currentSourceAvailability();
+    const baseNote = "Browse is not wired yet in this spike; use a typed path for now.";
+
+    if (state.openState !== "opened") {
+      return baseNote;
+    }
+
+    if (availability.partial_open) {
+      return `${baseNote} Opened with partial results; some byte-backed actions can stay limited.`;
+    }
+
+    if (!availability.byte_backed_inspection_available) {
+      if (availability.expected_source_capture_path) {
+        return `${baseNote} Byte-backed inspection is unavailable until the source capture is attached/readable: ${availability.expected_source_capture_path}`;
+      }
+
+      if (availability.opened_from_index) {
+        return `${baseNote} Byte-backed inspection is unavailable in this index-backed session because the source capture is not attached or readable.`;
+      }
+
+      if (availability.has_source_capture && !availability.source_capture_accessible) {
+        return `${baseNote} Byte-backed inspection is unavailable because the source capture cannot be read.`;
+      }
+    }
+
+    return baseNote;
   }
 
   function flowDisplayNumber(flow) {
@@ -196,6 +251,7 @@
     clearFlows();
     clearPackets();
     clearStream();
+    state.sourceAvailability = null;
     setStatus("", "neutral");
   }
 
@@ -208,6 +264,7 @@
   function renderStatus() {
     elements.statusText.textContent = state.statusText;
     elements.statusText.className = "status-text";
+    elements.openWorkflowNote.textContent = sourceAvailabilityNoteText();
     if (state.statusKind === "error") {
       elements.statusText.classList.add("is-error");
     } else if (state.statusKind === "success") {
@@ -615,6 +672,7 @@
 
     const details = state.packetDetails;
     const selectedPacket = state.selectedPacketRow;
+    const sourceAvailability = packetDetailsSourceAvailability(details);
     const summaryItems = [
       ["Packet Index", selectedPacket.packet_index],
       ["Flow Index", state.selectedFlowIndex ?? "-"],
@@ -665,7 +723,10 @@
       : "No additional protocol details are available for this packet.";
 
     if (state.packetDetailsState === "unavailable") {
-      const unavailableText = details?.unavailable_text || "Packet details are unavailable for this session.";
+      const unavailableText = details?.unavailable_text
+        || (sourceAvailability.expected_source_capture_path
+          ? `Byte-backed packet details are unavailable until the source capture is attached/readable: ${sourceAvailability.expected_source_capture_path}`
+          : "Packet details are unavailable for this session.");
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} metadata loaded, byte-backed details unavailable.`;
       elements.packetDetailsStateText.textContent = unavailableText;
       elements.packetDetailsStateText.classList.add("is-error");
@@ -814,6 +875,7 @@
         max_packets_to_scan: state.streamRequestedPacketBudget,
         limit: state.streamRequestedItemLimit,
       });
+      const sourceAvailability = streamSourceAvailability(streamResult);
 
       state.streamItems = streamResult?.items || [];
       state.streamLoadedItemCount = streamResult?.loaded_item_count || state.streamItems.length;
@@ -831,6 +893,11 @@
       } else if (streamResult?.unavailable_text && !streamResult?.stream_available) {
         state.streamState = "unavailable";
         state.streamUnavailableText = streamResult.unavailable_text;
+      } else if (!sourceAvailability.byte_backed_inspection_available && !streamResult?.stream_available) {
+        state.streamState = "unavailable";
+        state.streamUnavailableText = sourceAvailability.expected_source_capture_path
+          ? `Stream reconstruction requires the original source capture to be attached and readable: ${sourceAvailability.expected_source_capture_path}`
+          : "Stream reconstruction requires the original source capture to be attached and readable.";
       } else {
         state.streamState = "loaded";
         state.streamUnavailableText = streamResult?.unavailable_text || "";
@@ -862,6 +929,7 @@
       const details = await invoke("get_selected_flow_packet_details", {
         packet_index: state.selectedPacketIndex,
       });
+      const sourceAvailability = packetDetailsSourceAvailability(details);
 
       state.packetDetails = details;
       if (details?.error_text) {
@@ -869,6 +937,8 @@
         state.packetDetailsErrorText = details.error_text;
         setStatus(details.error_text, "error");
       } else if (details?.unavailable_text && !details?.details_available) {
+        state.packetDetailsState = "unavailable";
+      } else if (!sourceAvailability.byte_backed_inspection_available && !details?.details_available) {
         state.packetDetailsState = "unavailable";
       } else if (details?.unavailable_text && !details?.payload_preview_available) {
         state.packetDetailsState = "loaded";
@@ -974,6 +1044,7 @@
         return;
       }
 
+      state.sourceAvailability = sourceAvailabilityOrDefault(result?.source_availability);
       await loadOverviewAndFlows();
       state.openState = "opened";
 
@@ -1010,7 +1081,7 @@
   });
   elements.copyWiresharkFilterButton.addEventListener("click", async () => {
     const selectedFlow = state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
-    const filterText = buildWiresharkDisplayFilter(selectedFlow);
+    const filterText = String(selectedFlow?.wireshark_display_filter || "");
     if (!filterText) {
       setWiresharkFilterStatus("No Wireshark display filter is available for the selected flow.", "error");
       render();

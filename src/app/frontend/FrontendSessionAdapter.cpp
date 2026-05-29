@@ -219,6 +219,18 @@ std::pair<std::string, bool> build_raw_preview(const std::vector<std::uint8_t>& 
 
 }  // namespace
 
+FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availability() const {
+    return FrontendSourceAvailabilityDto {
+        .has_source_capture = session_.has_source_capture(),
+        .source_capture_accessible = session_.source_capture_accessible(),
+        .opened_from_index = session_.opened_from_index(),
+        .partial_open = session_.is_partial_open(),
+        .byte_backed_inspection_available = session_.has_source_capture() && session_.source_capture_accessible(),
+        .active_source_capture_path = path_to_string(session_.attached_source_capture_path()),
+        .expected_source_capture_path = path_to_string(session_.expected_source_capture_path()),
+    };
+}
+
 FrontendOpenResult FrontendSessionAdapter::open_capture(
     const std::filesystem::path& path,
     const FrontendOpenMode open_mode
@@ -237,16 +249,19 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
         ? session_.load_index(path)
         : session_.open_capture(path, import_options_for_frontend_mode(open_mode));
 
+    const auto source_availability = current_source_availability();
+
     return FrontendOpenResult {
         .opened = opened,
-        .opened_from_index = session_.opened_from_index(),
-        .partial_open = session_.is_partial_open(),
-        .has_source_capture = session_.has_source_capture(),
-        .source_capture_accessible = session_.source_capture_accessible(),
+        .opened_from_index = source_availability.opened_from_index,
+        .partial_open = source_availability.partial_open,
+        .has_source_capture = source_availability.has_source_capture,
+        .source_capture_accessible = source_availability.source_capture_accessible,
         .input_path = path_to_string(path),
-        .active_source_capture_path = path_to_string(session_.attached_source_capture_path()),
-        .expected_source_capture_path = path_to_string(session_.expected_source_capture_path()),
+        .active_source_capture_path = source_availability.active_source_capture_path,
+        .expected_source_capture_path = source_availability.expected_source_capture_path,
         .error_text = opened ? std::string {} : session_.last_open_error_text(),
+        .source_availability = source_availability,
     };
 }
 
@@ -352,6 +367,7 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
         .requested_item_limit = limit,
         .loaded_item_count = 0U,
         .total_item_count = 0U,
+        .source_availability = current_source_availability(),
     };
 
     if (!result.has_capture) {
@@ -424,6 +440,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         .payload_preview_truncated = false,
         .flow_index = selected_flow_index_.value_or(0U),
         .packet_index = packet_index,
+        .source_availability = current_source_availability(),
     };
 
     if (!result.has_capture) {
