@@ -261,8 +261,38 @@ std::string stream_result_json(const pfl::FrontendSelectedFlowStreamResult& resu
             << "\"label\":" << json_string(item.label) << ','
             << "\"byte_count\":" << item.byte_count << ','
             << "\"packet_count\":" << item.packet_count << ','
+            << "\"source_packet_indices\":[";
+
+        for (std::size_t packet_index = 0; packet_index < item.source_packet_indices.size(); ++packet_index) {
+            if (packet_index != 0U) {
+                out << ',';
+            }
+            out << item.source_packet_indices[packet_index];
+        }
+
+        out << "],"
             << "\"source_packets_text\":" << json_string(item.source_packets_text) << ','
-            << "\"has_constricted_contribution\":" << bool_json(item.has_constricted_contribution)
+            << "\"has_constricted_contribution\":" << bool_json(item.has_constricted_contribution) << ','
+            << "\"constricted_contribution_notes\":[";
+
+        for (std::size_t note_index = 0; note_index < item.constricted_contribution_notes.size(); ++note_index) {
+            if (note_index != 0U) {
+                out << ',';
+            }
+            out << json_string(item.constricted_contribution_notes[note_index]);
+        }
+
+        out << "],"
+            << "\"constricted_packet_notes\":[";
+
+        for (std::size_t note_index = 0; note_index < item.constricted_packet_notes.size(); ++note_index) {
+            if (note_index != 0U) {
+                out << ',';
+            }
+            out << json_string(item.constricted_packet_notes[note_index]);
+        }
+
+        out << "]"
             << '}';
     }
 

@@ -96,8 +96,11 @@ struct FrontendStreamItemDto {
     std::string label {};
     std::uint32_t byte_count {0};
     std::uint32_t packet_count {0};
+    std::vector<std::uint64_t> source_packet_indices {};
     std::string source_packets_text {};
     bool has_constricted_contribution {false};
+    std::vector<std::string> constricted_contribution_notes {};
+    std::vector<std::string> constricted_packet_notes {};
 };
 
 struct FrontendSelectedFlowStreamResult {

@@ -199,6 +199,26 @@
     return markers.join(", ");
   }
 
+  function formatStreamSourcePacketRefs(item) {
+    const packetIndices = Array.isArray(item?.source_packet_indices) ? item.source_packet_indices : [];
+    if (packetIndices.length === 0) {
+      return "";
+    }
+
+    return packetIndices.map((packetIndex) => `#${packetIndex}`).join(", ");
+  }
+
+  function formatStreamConstrictedNotes(item) {
+    const contributionNotes = Array.isArray(item?.constricted_contribution_notes)
+      ? item.constricted_contribution_notes.filter((note) => String(note || "").trim().length > 0)
+      : [];
+    const packetNotes = Array.isArray(item?.constricted_packet_notes)
+      ? item.constricted_packet_notes.filter((note) => String(note || "").trim().length > 0)
+      : [];
+
+    return [...contributionNotes, ...packetNotes];
+  }
+
   function setWiresharkFilterStatus(text, kind = "neutral") {
     state.wiresharkFilterStatusText = text || "";
     state.wiresharkFilterStatusKind = kind;
@@ -619,17 +639,28 @@
     }
 
     elements.streamTableBody.innerHTML = state.streamItems
-      .map((item) => `
+      .map((item) => {
+        const sourcePacketRefs = formatStreamSourcePacketRefs(item);
+        const constrictedNotes = formatStreamConstrictedNotes(item);
+        const sourcePacketsTitle = sourcePacketRefs.length > 0
+          ? `Source packet indices: ${sourcePacketRefs}`
+          : item.source_packets_text || "";
+        const constrictedTitle = constrictedNotes.length > 0
+          ? constrictedNotes.join("\n")
+          : (item.has_constricted_contribution ? "Constricted contribution." : "");
+
+        return `
         <tr class="stream-row">
           <td>${item.stream_item_index}</td>
           <td>${escapeHtml(item.direction_text)}</td>
           <td>${escapeHtml(item.label)}</td>
           <td>${formatNumber(item.byte_count)}</td>
           <td>${formatNumber(item.packet_count)}</td>
-          <td>${escapeHtml(item.source_packets_text)}</td>
-          <td>${item.has_constricted_contribution ? "Constricted" : ""}</td>
+          <td title="${escapeHtml(sourcePacketsTitle)}">${escapeHtml(item.source_packets_text)}</td>
+          <td title="${escapeHtml(constrictedTitle)}">${item.has_constricted_contribution ? "Constricted" : ""}</td>
         </tr>
-      `)
+      `;
+      })
       .join("");
 
     elements.streamLoadMoreButton.disabled = !state.streamCanLoadMore || state.streamState === "loading";

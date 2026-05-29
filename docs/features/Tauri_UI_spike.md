@@ -152,6 +152,7 @@ Current frontend-shell status:
 - the packet table now surfaces compact markers for IP fragmentation and suspected TCP retransmission using existing packet-row DTO fields
 - a small grouped frontend-neutral source-availability state now backs Tauri shell warnings plus packet-details / stream unavailable fallbacks
 - a basic selected-flow Stream tab can now query bounded stream items on demand for the active flow only
+- the Stream tab now keeps shared structured source-packet references and constricted notes in its DTO path, while still rendering a compact non-selectable stream list
 - selected packets can now be inspected through a small packet-details panel backed by the frontend-neutral adapter
 - selected packet inspection is now organized as compact Summary / Raw / Payload / Protocol tabs inside the Tauri details panel
 - the packet-details panel now consumes shared packet-inspector DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload metadata

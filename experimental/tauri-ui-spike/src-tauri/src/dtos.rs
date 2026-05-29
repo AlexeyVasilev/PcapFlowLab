@@ -132,8 +132,11 @@ pub struct StreamItemDto {
     pub label: String,
     pub byte_count: u32,
     pub packet_count: u32,
+    pub source_packet_indices: Vec<u64>,
     pub source_packets_text: String,
     pub has_constricted_contribution: bool,
+    pub constricted_contribution_notes: Vec<String>,
+    pub constricted_packet_notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

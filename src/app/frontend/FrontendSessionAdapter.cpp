@@ -603,8 +603,11 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .label = row.label,
         .byte_count = row.byte_count,
         .packet_count = row.packet_count,
+        .source_packet_indices = row.packet_indices,
         .source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers),
         .has_constricted_contribution = row.has_constricted_contribution,
+        .constricted_contribution_notes = row.constricted_contribution_notes,
+        .constricted_packet_notes = row.constricted_packet_notes,
     };
 }
 

@@ -66,6 +66,7 @@ Not implemented yet:
 - Raw and Payload previews can be unavailable in index-only sessions or when the source capture cannot be read.
 - The packets panel shows loading, empty, and error states and reports the current visible range.
 - The Stream tab shows loading, empty, unavailable, and error states and keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
+- The shared stream DTO path now also preserves structured source-packet indices and constricted notes, even though the current Tauri Stream tab still uses a compact non-selectable list.
 - Packet details are reset on new open attempts, open failures, flow changes, and packet page changes.
 - The Flows tab now keeps the main workflow in one analyzer view: flows above, packets and packet details below.
 - The selected flow also shows a conservative Wireshark display filter string with a Copy button that uses the browser clipboard API when available.

@@ -74,7 +74,10 @@ This document is an audit only. It does not introduce a new contract and does no
   - shared `details_title`;
   - shared `payload_tab_title`;
   - explicit `payload_preview_no_payload` metadata.
-- Stream DTO refinement.
+- Stream DTO refinement has started:
+  - shared `source_packet_indices`;
+  - shared `constricted_contribution_notes`;
+  - shared `constricted_packet_notes`.
 
 ## Mapping Table: Global Shell / Session State
 
@@ -161,9 +164,9 @@ This document is an audit only. It does not introduce a new contract and does no
 | label / type / kind | `StreamItemRow.label`; `LabelRole` | `FrontendStreamItemDto.label` | `StreamItemDto.label` | aligned | frontend-neutral DTO | High |
 | byte length | `StreamItemRow.byte_count`; `ByteCountRole` | `FrontendStreamItemDto.byte_count` | `StreamItemDto.byte_count` | aligned | frontend-neutral DTO | High |
 | contributing packet count | `StreamItemRow.packet_count`; `PacketCountRole` | `FrontendStreamItemDto.packet_count` | `StreamItemDto.packet_count` | aligned | frontend-neutral DTO | High |
-| source packet references | `StreamItemRow.packet_indices` in session row, `StreamListModel` turns this into text | adapter receives raw `packet_indices` but only exports formatted `source_packets_text` | Tauri only sees `source_packets_text` | structured refs lost at frontend-neutral boundary | candidate Stream DTO refinement | High |
-| source packet display text | `StreamListModel.SourcePacketsTextRole`; `StreamView.qml` further compacts for UI | `FrontendStreamItemDto.source_packets_text` | `StreamItemDto.source_packets_text` | aligned as text-only | frontend-neutral DTO may keep shared text, plus structured refs later | Medium |
-| constricted / quality flags | `StreamItemRow.has_constricted_contribution`; notes exist in session row but not Qt model roles beyond bool | `FrontendStreamItemDto.has_constricted_contribution` only | `StreamItemDto.has_constricted_contribution`; shown as `Constricted` note | notes/truncation semantics not carried across adapter | candidate Stream DTO refinement | Medium |
+| source packet references | `StreamItemRow.packet_indices` in session row, `StreamListModel` turns this into text | `FrontendStreamItemDto.source_packet_indices` now carries structured refs alongside display text | `StreamItemDto.source_packet_indices`; Tauri currently uses them for tooltip/detail hints only | structured refs are now preserved at the frontend-neutral boundary; stream-item selection/details are still deferred | frontend-neutral DTO | Improved |
+| source packet display text | `StreamListModel.SourcePacketsTextRole`; `StreamView.qml` further compacts for UI | `FrontendStreamItemDto.source_packets_text` | `StreamItemDto.source_packets_text`; still the compact visible string in Tauri | aligned as shared display text with structured refs kept in parallel | frontend-neutral DTO | Improved |
+| constricted / quality flags | `StreamItemRow.has_constricted_contribution`; notes exist in session row but not Qt model roles beyond bool | `FrontendStreamItemDto.has_constricted_contribution`, `constricted_contribution_notes`, `constricted_packet_notes` | Tauri shows the existing `Constricted` marker and now keeps shared notes available for tooltip/detail hints | Qt still owns richer stream-item details presentation, but notes are no longer dropped by the adapter | frontend-neutral DTO | Improved |
 | bounded packet window metadata | Qt controller exposes `streamPacketWindowCount`, `streamPacketWindowPartial` | `FrontendSelectedFlowStreamResult.packet_window_count`, `total_flow_packet_count`, `packet_window_partial` | Tauri `SelectedFlowStreamDto` and local state use them | aligned | frontend-neutral DTO | High |
 | `can_load_more` / load-more state | Qt `canLoadMoreStreamItems`, `streamPartiallyLoaded`, `loadedStreamItemCount`, `totalStreamItemCount` | `FrontendSelectedFlowStreamResult.can_load_more`, `stream_partially_loaded`, `loaded_item_count`, `total_item_count` | Tauri uses same fields | aligned | frontend-neutral DTO | High |
 | stream loading state | Qt `MainController.streamLoading` and tab-activation logic | no explicit loading field in result DTO | Tauri `streamState = idle/loading/loaded/error/unavailable` | frontend/controller-owned | frontend controller/model | Low |
@@ -248,7 +251,6 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 
 - explicit shell/session-state DTO
 - explicit selected-stream-item frontend-neutral path
-- structured source packet references for stream items
 - structured packet inspector summary fields
 - top-talker statistics DTO
 
