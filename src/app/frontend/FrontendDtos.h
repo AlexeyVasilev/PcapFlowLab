@@ -39,6 +39,27 @@ struct FrontendOpenResult {
     FrontendSourceAvailabilityDto source_availability {};
 };
 
+struct FrontendProtocolHintStatsDto {
+    std::string group {};
+    std::string protocol_label {};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t original_bytes {0};
+};
+
+struct FrontendTopEndpointDto {
+    std::string endpoint_label {};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
+struct FrontendTopPortDto {
+    std::uint16_t port {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t total_bytes {0};
+};
+
 struct FrontendOverviewDto {
     bool has_capture {false};
     CaptureSummary summary {};
@@ -47,6 +68,9 @@ struct FrontendOverviewDto {
     CaptureProtocolSummary protocol_summary {};
     QuicRecognitionStats quic_recognition {};
     TlsRecognitionStats tls_recognition {};
+    std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
+    std::vector<FrontendTopEndpointDto> top_endpoints {};
+    std::vector<FrontendTopPortDto> top_ports {};
 };
 
 struct FrontendFlowDto {

@@ -44,6 +44,70 @@ std::string format_protocol_hint_display(const std::string& value) {
     return formatted;
 }
 
+FrontendProtocolHintStatsDto make_protocol_hint_stats(
+    const char* group,
+    const char* protocol_label,
+    const ProtocolStats& stats
+) {
+    return FrontendProtocolHintStatsDto {
+        .group = group,
+        .protocol_label = protocol_label,
+        .flow_count = stats.flow_count,
+        .packet_count = stats.packet_count,
+        .captured_bytes = stats.captured_bytes,
+        .original_bytes = stats.original_bytes,
+    };
+}
+
+std::vector<FrontendProtocolHintStatsDto> build_protocol_hint_stats(const CaptureProtocolSummary& summary) {
+    std::vector<FrontendProtocolHintStatsDto> rows {};
+    rows.reserve(13U);
+    rows.push_back(make_protocol_hint_stats("Confirmed", "HTTP", summary.hint_http));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "TLS", summary.hint_tls));
+    rows.push_back(make_protocol_hint_stats("Possible", "Possible TLS", summary.hint_possible_tls));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "DNS", summary.hint_dns));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "QUIC", summary.hint_quic));
+    rows.push_back(make_protocol_hint_stats("Possible", "Possible QUIC", summary.hint_possible_quic));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "SSH", summary.hint_ssh));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "STUN", summary.hint_stun));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "BitTorrent", summary.hint_bittorrent));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "Mail protocols", summary.hint_mail_protocols));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "DHCP", summary.hint_dhcp));
+    rows.push_back(make_protocol_hint_stats("Confirmed", "mDNS", summary.hint_mdns));
+    rows.push_back(make_protocol_hint_stats("Unknown", "Unknown", summary.hint_unknown));
+    return rows;
+}
+
+std::vector<FrontendTopEndpointDto> build_top_endpoints(const CaptureTopSummary& summary) {
+    std::vector<FrontendTopEndpointDto> rows {};
+    rows.reserve(summary.endpoints_by_bytes.size());
+
+    for (const auto& endpoint : summary.endpoints_by_bytes) {
+        rows.push_back(FrontendTopEndpointDto {
+            .endpoint_label = endpoint.endpoint,
+            .packet_count = endpoint.packet_count,
+            .total_bytes = endpoint.total_bytes,
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary) {
+    std::vector<FrontendTopPortDto> rows {};
+    rows.reserve(summary.ports_by_bytes.size());
+
+    for (const auto& port : summary.ports_by_bytes) {
+        rows.push_back(FrontendTopPortDto {
+            .port = port.port,
+            .packet_count = port.packet_count,
+            .total_bytes = port.total_bytes,
+        });
+    }
+
+    return rows;
+}
+
 std::string build_wireshark_display_filter(const FlowRow& row) {
     const std::string address_term = row.family == FlowAddressFamily::ipv6 ? "ipv6.addr" : "ip.addr";
 
@@ -281,6 +345,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
+    const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = session_.summary(),
@@ -289,6 +354,9 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .protocol_summary = protocol_summary,
         .quic_recognition = session_.quic_recognition_stats(),
         .tls_recognition = session_.tls_recognition_stats(),
+        .protocol_hints = build_protocol_hint_stats(protocol_summary),
+        .top_endpoints = build_top_endpoints(top_summary),
+        .top_ports = build_top_ports(top_summary),
     };
 }
 

@@ -160,7 +160,7 @@ Current frontend-shell status:
 - packet selection resets on open, flow change, packet-page change, and open failure to avoid stale detail state
 - the Flows tab keeps flows on top and shows packets plus selected-packet details side by side in the lower area
 - the lower-left Flows workspace now has Packets and Stream tabs; Stream remains lazy, bounded, and selected-flow-only
-- the Statistics tab now shows basic overview cards plus compact transport, IP family, QUIC, and TLS summary sections from the frontend-neutral overview DTO
+- the Statistics tab now shows basic overview cards plus compact transport, IP family, protocol-hint, QUIC, TLS, top-endpoint, and top-port summary sections from the frontend-neutral overview DTO
 - the Analysis tab is currently a frontend placeholder with no backend behavior
 - the current shell remains typed-path only; Browse is intentionally deferred for a later pass
 - the current shell now supports a native Open File dialog as the primary desktop open workflow
@@ -183,7 +183,8 @@ Current stream limitations:
 
 Current statistics limitations:
 
-- top endpoints, top ports, protocol-hint grouped statistics, and drill-down actions remain deferred because they are not yet surfaced through the frontend-neutral overview DTO
+- statistics drill-down actions and Qt-style percentage formatting remain deferred
+- the Tauri Statistics tab still does not implement the richer Qt top-talker drill-down behavior
 
 Current flow-filter / Wireshark-filter limitations:
 

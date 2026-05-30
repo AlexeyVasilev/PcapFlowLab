@@ -275,18 +275,96 @@
                 </div>
               </div>
 
+              <div class="statistics-section">
+                <div class="statistics-section-heading">
+                  <h3>Detected Protocol Hints</h3>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact-stats-table protocol-hints-table">
+                    <thead>
+                      <tr>
+                        <th>Group</th>
+                        <th>Protocol</th>
+                        <th>Flows</th>
+                        <th>Packets</th>
+                        <th>Captured Bytes</th>
+                        <th>Original Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="protocolHintStatsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
               <div class="statistics-split">
                 <div class="statistics-section">
                   <div class="statistics-section-heading">
                     <h3>QUIC Recognition</h3>
                   </div>
-                  <div id="quicStatsGrid" class="overview-grid compact-overview-grid"></div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table recognition-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody id="quicStatsBody"></tbody>
+                    </table>
+                  </div>
                 </div>
                 <div class="statistics-section">
                   <div class="statistics-section-heading">
                     <h3>TLS Recognition</h3>
                   </div>
-                  <div id="tlsStatsGrid" class="overview-grid compact-overview-grid"></div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table recognition-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tlsStatsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="statistics-split">
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>Top Endpoints</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table top-talkers-table">
+                      <thead>
+                        <tr>
+                          <th>Endpoint</th>
+                          <th>Packets</th>
+                          <th>Bytes</th>
+                        </tr>
+                      </thead>
+                      <tbody id="topEndpointsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>Top Ports</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table top-talkers-table">
+                      <thead>
+                        <tr>
+                          <th>Port</th>
+                          <th>Packets</th>
+                          <th>Bytes</th>
+                        </tr>
+                      </thead>
+                      <tbody id="topPortsBody"></tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>

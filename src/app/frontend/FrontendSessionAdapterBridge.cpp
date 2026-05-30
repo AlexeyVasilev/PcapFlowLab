@@ -157,7 +157,58 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"version_tls12\":" << overview.tls_recognition.version_tls12 << ','
         << "\"version_tls13\":" << overview.tls_recognition.version_tls13 << ','
         << "\"version_unknown\":" << overview.tls_recognition.version_unknown
-        << '}'
+        << "},"
+        << "\"protocol_hints\":[";
+
+    for (std::size_t index = 0; index < overview.protocol_hints.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        const auto& row = overview.protocol_hints[index];
+        out << '{'
+            << "\"group\":" << json_string(row.group) << ','
+            << "\"protocol_label\":" << json_string(row.protocol_label) << ','
+            << "\"flow_count\":" << row.flow_count << ','
+            << "\"packet_count\":" << row.packet_count << ','
+            << "\"captured_bytes\":" << row.captured_bytes << ','
+            << "\"original_bytes\":" << row.original_bytes
+            << '}';
+    }
+
+    out << "],"
+        << "\"top_endpoints\":[";
+
+    for (std::size_t index = 0; index < overview.top_endpoints.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        const auto& row = overview.top_endpoints[index];
+        out << '{'
+            << "\"endpoint_label\":" << json_string(row.endpoint_label) << ','
+            << "\"packet_count\":" << row.packet_count << ','
+            << "\"total_bytes\":" << row.total_bytes
+            << '}';
+    }
+
+    out << "],"
+        << "\"top_ports\":[";
+
+    for (std::size_t index = 0; index < overview.top_ports.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        const auto& row = overview.top_ports[index];
+        out << '{'
+            << "\"port\":" << row.port << ','
+            << "\"packet_count\":" << row.packet_count << ','
+            << "\"total_bytes\":" << row.total_bytes
+            << '}';
+    }
+
+    out << ']'
         << '}';
     return out.str();
 }

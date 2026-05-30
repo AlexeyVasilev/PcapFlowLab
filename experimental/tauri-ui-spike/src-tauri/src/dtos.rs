@@ -73,12 +73,39 @@ pub struct TlsRecognitionDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolHintStatsDto {
+    pub group: String,
+    pub protocol_label: String,
+    pub flow_count: u64,
+    pub packet_count: u64,
+    pub captured_bytes: u64,
+    pub original_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopEndpointDto {
+    pub endpoint_label: String,
+    pub packet_count: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TopPortDto {
+    pub port: u16,
+    pub packet_count: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewDto {
     pub has_capture: bool,
     pub summary: OverviewSummaryDto,
     pub protocol_summary: OverviewProtocolSummaryDto,
     pub quic_recognition: QuicRecognitionDto,
     pub tls_recognition: TlsRecognitionDto,
+    pub protocol_hints: Vec<ProtocolHintStatsDto>,
+    pub top_endpoints: Vec<TopEndpointDto>,
+    pub top_ports: Vec<TopPortDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

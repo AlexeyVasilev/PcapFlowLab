@@ -102,8 +102,11 @@
     metricOriginalBytes: document.getElementById("metricOriginalBytes"),
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
-    quicStatsGrid: document.getElementById("quicStatsGrid"),
-    tlsStatsGrid: document.getElementById("tlsStatsGrid"),
+    protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
+    quicStatsBody: document.getElementById("quicStatsBody"),
+    tlsStatsBody: document.getElementById("tlsStatsBody"),
+    topEndpointsBody: document.getElementById("topEndpointsBody"),
+    topPortsBody: document.getElementById("topPortsBody"),
   };
 
   function formatNumber(value) {
@@ -117,6 +120,32 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#39;");
+  }
+
+  function renderStatsStateRow(colspan, text, kind = "neutral") {
+    const className = kind === "error" ? "table-state-row is-error" : "table-state-row";
+    return `<tr class="${className}"><td colspan="${colspan}">${escapeHtml(text)}</td></tr>`;
+  }
+
+  function formatPercent(part, total) {
+    const safePart = Number(part ?? 0);
+    const safeTotal = Number(total ?? 0);
+    if (safeTotal <= 0 || safePart <= 0) {
+      return "0%";
+    }
+
+    const value = (safePart * 100) / safeTotal;
+    if (value < 0.01) {
+      return "<0.01%";
+    }
+    if (value < 1) {
+      return `${value.toFixed(2)}%`;
+    }
+    return `${Math.round(value)}%`;
+  }
+
+  function formatFlowPercentAndCount(part, total) {
+    return `${formatPercent(part, total)} (${formatNumber(part)} flows)`;
   }
 
   function setStatus(text, kind = "neutral") {
@@ -409,23 +438,12 @@
       ["IPv4", overview.protocol_summary?.ipv4],
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
-    const quicMetrics = overview ? [
-      ["Flows", overview.quic_recognition?.total_flows],
-      ["With SNI", overview.quic_recognition?.with_sni],
-      ["Without SNI", overview.quic_recognition?.without_sni],
-      ["v1", overview.quic_recognition?.version_v1],
-      ["draft-29", overview.quic_recognition?.version_draft29],
-      ["v2", overview.quic_recognition?.version_v2],
-      ["Unknown", overview.quic_recognition?.version_unknown],
-    ] : [];
-    const tlsMetrics = overview ? [
-      ["Flows", overview.tls_recognition?.total_flows],
-      ["With SNI", overview.tls_recognition?.with_sni],
-      ["Without SNI", overview.tls_recognition?.without_sni],
-      ["TLS 1.2", overview.tls_recognition?.version_tls12],
-      ["TLS 1.3", overview.tls_recognition?.version_tls13],
-      ["Unknown", overview.tls_recognition?.version_unknown],
-    ] : [];
+    const protocolHintRows = Array.isArray(overview?.protocol_hints) ? overview.protocol_hints : [];
+    const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
+    const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
+    const topTalkersVisible = Number(overview?.summary?.flow_count ?? 0) > 30;
+    const quicRecognition = overview?.quic_recognition || null;
+    const tlsRecognition = overview?.tls_recognition || null;
 
     elements.metricPackets.textContent = overview ? formatNumber(overview.summary?.packet_count) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
@@ -434,12 +452,15 @@
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";
-      elements.transportStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading transport statistics...</td></tr>`;
-      elements.familyStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading IP family statistics...</td></tr>`;
-      elements.quicStatsGrid.innerHTML = "";
-      elements.tlsStatsGrid.innerHTML = "";
+      elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Loading transport statistics...");
+      elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Loading IP family statistics...");
+      elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Loading protocol-hint statistics...");
+      elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Loading top endpoints...");
+      elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Loading top ports...");
+      elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Loading QUIC recognition...");
+      elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, "Loading TLS recognition...");
     } else if (state.openState === "opened" && overview) {
-      elements.overviewMeta.textContent = "Overview, transport, family, QUIC, and TLS summaries loaded from the active capture or index.";
+      elements.overviewMeta.textContent = "Overview, transport, family, protocol-hint, QUIC/TLS, and top-talker summaries loaded from the active capture or index.";
       elements.transportStatsBody.innerHTML = transportRows
         .map(([label, stats]) => `
           <tr>
@@ -459,37 +480,106 @@
             <td>${formatNumber(stats?.packet_count)}</td>
             <td>${formatNumber(stats?.captured_bytes)}</td>
             <td>${formatNumber(stats?.original_bytes)}</td>
+            </tr>
+          `)
+          .join("");
+      elements.protocolHintStatsBody.innerHTML = protocolHintRows.length > 0
+        ? protocolHintRows
+          .map((row) => `
+            <tr>
+              <td>${escapeHtml(row.group)}</td>
+              <td>${escapeHtml(row.protocol_label)}</td>
+              <td>${formatNumber(row.flow_count)}</td>
+              <td>${formatNumber(row.packet_count)}</td>
+              <td>${formatNumber(row.captured_bytes)}</td>
+              <td>${formatNumber(row.original_bytes)}</td>
+            </tr>
+          `)
+          .join("")
+        : renderStatsStateRow(6, "No protocol-hint statistics are available.");
+      elements.quicStatsBody.innerHTML = [
+        ["Flows", formatNumber(quicRecognition?.total_flows)],
+        ["Recognised Initial", formatFlowPercentAndCount(quicRecognition?.with_sni, quicRecognition?.total_flows)],
+        ["Unrecognised", formatFlowPercentAndCount(quicRecognition?.without_sni, quicRecognition?.total_flows)],
+        ["v1", formatNumber(quicRecognition?.version_v1)],
+        ["draft-29", formatNumber(quicRecognition?.version_draft29)],
+        ["v2", formatNumber(quicRecognition?.version_v2)],
+        ["Version unavailable", formatNumber(quicRecognition?.version_unknown)],
+      ]
+        .map(([label, value]) => `
+          <tr>
+            <td>${escapeHtml(label)}</td>
+            <td>${escapeHtml(value)}</td>
           </tr>
         `)
         .join("");
-      elements.quicStatsGrid.innerHTML = quicMetrics
+      elements.tlsStatsBody.innerHTML = [
+        ["Flows", formatNumber(tlsRecognition?.total_flows)],
+        ["With SNI", formatFlowPercentAndCount(tlsRecognition?.with_sni, tlsRecognition?.total_flows)],
+        ["Without SNI", formatFlowPercentAndCount(tlsRecognition?.without_sni, tlsRecognition?.total_flows)],
+        ["TLS 1.2", formatNumber(tlsRecognition?.version_tls12)],
+        ["TLS 1.3", formatNumber(tlsRecognition?.version_tls13)],
+        ["Version unavailable", formatNumber(tlsRecognition?.version_unknown)],
+      ]
         .map(([label, value]) => `
-          <div class="metric">
-            <span class="metric-label">${escapeHtml(label)}</span>
-            <span class="metric-value">${formatNumber(value)}</span>
-          </div>
+          <tr>
+            <td>${escapeHtml(label)}</td>
+            <td>${escapeHtml(value)}</td>
+          </tr>
         `)
         .join("");
-      elements.tlsStatsGrid.innerHTML = tlsMetrics
-        .map(([label, value]) => `
-          <div class="metric">
-            <span class="metric-label">${escapeHtml(label)}</span>
-            <span class="metric-value">${formatNumber(value)}</span>
-          </div>
-        `)
-        .join("");
+      elements.topEndpointsBody.innerHTML = topEndpoints.length > 0
+        && topTalkersVisible
+        ? topEndpoints
+          .map((row) => `
+            <tr>
+              <td>${escapeHtml(row.endpoint_label)}</td>
+              <td>${formatNumber(row.packet_count)}</td>
+              <td>${formatNumber(row.total_bytes)}</td>
+            </tr>
+          `)
+          .join("")
+        : renderStatsStateRow(
+          3,
+          topTalkersVisible
+            ? "No top-endpoint summary is available for this capture."
+            : "Top-endpoint summary appears once more than 30 flows are present."
+        );
+      elements.topPortsBody.innerHTML = topPorts.length > 0
+        && topTalkersVisible
+        ? topPorts
+          .map((row) => `
+            <tr>
+              <td>${formatNumber(row.port)}</td>
+              <td>${formatNumber(row.packet_count)}</td>
+              <td>${formatNumber(row.total_bytes)}</td>
+            </tr>
+          `)
+          .join("")
+        : renderStatsStateRow(
+          3,
+          topTalkersVisible
+            ? "No top-port summary is available for this capture."
+            : "Top-port summary appears once more than 30 flows are present."
+        );
     } else if (state.openState === "error") {
       elements.overviewMeta.textContent = "No overview available after open failure.";
-      elements.transportStatsBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. No transport statistics were loaded.</td></tr>`;
-      elements.familyStatsBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. No IP family statistics were loaded.</td></tr>`;
-      elements.quicStatsGrid.innerHTML = "";
-      elements.tlsStatsGrid.innerHTML = "";
+      elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
+      elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No IP family statistics were loaded.", "error");
+      elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open failed. No protocol-hint statistics were loaded.", "error");
+      elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-endpoint summary was loaded.", "error");
+      elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-port summary was loaded.", "error");
+      elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Open failed. No QUIC recognition was loaded.", "error");
+      elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, "Open failed. No TLS recognition was loaded.", "error");
     } else {
       elements.overviewMeta.textContent = "No capture loaded.";
-      elements.transportStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to load transport statistics.</td></tr>`;
-      elements.familyStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to load IP family statistics.</td></tr>`;
-      elements.quicStatsGrid.innerHTML = "";
-      elements.tlsStatsGrid.innerHTML = "";
+      elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load transport statistics.");
+      elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load IP family statistics.");
+      elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open a capture or index to load protocol-hint statistics.");
+      elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top endpoints.");
+      elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top ports.");
+      elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Open a capture or index to load QUIC recognition.");
+      elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, "Open a capture or index to load TLS recognition.");
     }
   }
 
