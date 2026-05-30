@@ -121,6 +121,8 @@
     analysisBurstIdleSummary: document.getElementById("analysisBurstIdleSummary"),
     analysisTcpControlsSection: document.getElementById("analysisTcpControlsSection"),
     analysisTcpControls: document.getElementById("analysisTcpControls"),
+    analysisSequencePreviewSection: document.getElementById("analysisSequencePreviewSection"),
+    analysisSequencePreviewBody: document.getElementById("analysisSequencePreviewBody"),
     analysisOpenInFlowsButton: document.getElementById("analysisOpenInFlowsButton"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
@@ -1453,10 +1455,12 @@
     elements.analysisTimingSize.innerHTML = "";
     elements.analysisBurstIdleSummary.innerHTML = "";
     elements.analysisTcpControls.innerHTML = "";
+    elements.analysisSequencePreviewBody.innerHTML = "";
     elements.analysisProtocolPanelSection.style.display = "none";
     elements.analysisDerivedMetricsSection.style.display = "none";
     elements.analysisBurstIdleSection.style.display = "none";
     elements.analysisTcpControlsSection.style.display = "none";
+    elements.analysisSequencePreviewSection.style.display = "none";
     elements.analysisContent.classList.remove("is-hidden");
     elements.analysisOpenInFlowsButton.disabled = state.selectedFlowIndex == null;
 
@@ -1648,6 +1652,26 @@
         ["FIN Packets", analysis.tcp_fin_packets_text || formatNumber(analysis.tcp_fin_packets)],
         ["RST Packets", analysis.tcp_rst_packets_text || formatNumber(analysis.tcp_rst_packets)],
       ]);
+    }
+
+    elements.analysisSequencePreviewSection.style.display = "";
+    const sequencePreviewRows = analysis.sequence_preview_rows || [];
+    if (sequencePreviewRows.length === 0) {
+      elements.analysisSequencePreviewBody.innerHTML = renderStatsStateRow(7, "No sequence preview rows are available.");
+    } else {
+      elements.analysisSequencePreviewBody.innerHTML = sequencePreviewRows
+        .map((row) => `
+          <tr>
+            <td>${formatNumber(row.flow_packet_number)}</td>
+            <td>${escapeHtml(row.direction_text || "-")}</td>
+            <td>${escapeHtml(row.delta_time_text || "-")}</td>
+            <td>${formatNumber(row.captured_length)}</td>
+            <td>${formatNumber(row.original_length)}</td>
+            <td>${formatNumber(row.payload_length)}</td>
+            <td>${escapeHtml(row.timestamp_text || "-")}</td>
+          </tr>
+        `)
+        .join("");
     }
   }
 

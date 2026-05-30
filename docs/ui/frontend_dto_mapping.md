@@ -210,7 +210,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 | burst/idle-gap metrics | `analysisBurstCountText`, `analysisLargestIdleGapText` | `FrontendSelectedFlowAnalysisDto` now carries burst / longest-burst / largest-burst-bytes / idle-gap text | Tauri now renders a compact Burst / Idle Summary section | no charts or sequence preview context | frontend-neutral DTO + frontend rendering | Improved |
 | rate graph status/window | `analysisRateGraphAvailable`, status/window text, series props | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Low |
 | histograms | packet size and inter-arrival histogram properties | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Low |
-| sequence preview | `analysisSequencePreview` | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Low |
+| sequence preview | `analysisSequencePreview` | `FrontendSelectedFlowAnalysisDto.sequence_preview_rows` now exposes a compact preview row subset from the existing session analysis result | Tauri now renders a compact Sequence Preview table in the Analysis pane | packet index, TCP flags, and export path remain deferred | frontend-neutral DTO + frontend rendering | Improved |
 | analysis export action | `browseExportSelectedFlowSequenceCsv()` and availability props | no frontend-neutral adapter API | none | Qt-only today | deferred | Low |
 
 ## Gap Classification

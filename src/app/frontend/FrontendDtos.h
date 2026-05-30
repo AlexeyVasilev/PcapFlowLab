@@ -183,6 +183,16 @@ struct FrontendPacketDetailsDto {
     FrontendSourceAvailabilityDto source_availability {};
 };
 
+struct FrontendAnalysisSequencePreviewRowDto {
+    std::uint64_t flow_packet_number {0};
+    std::string direction_text {};
+    std::string delta_time_text {};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::uint32_t payload_length {0};
+};
+
 struct FrontendSelectedFlowAnalysisDto {
     bool has_capture {false};
     bool has_selected_flow {false};
@@ -248,6 +258,7 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string largest_idle_gap_text {};
     std::string unavailable_text {};
     std::string error_text {};
+    std::vector<FrontendAnalysisSequencePreviewRowDto> sequence_preview_rows {};
 };
 
 }  // namespace pfl

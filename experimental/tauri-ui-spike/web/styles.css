@@ -670,6 +670,20 @@ select:disabled {
   white-space: nowrap;
 }
 
+.analysis-sequence-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+}
+
+.analysis-sequence-table {
+  min-width: 620px;
+}
+
+.analysis-sequence-table td,
+.analysis-sequence-table th {
+  white-space: nowrap;
+}
+
 .statistics-section {
   display: flex;
   flex-direction: column;

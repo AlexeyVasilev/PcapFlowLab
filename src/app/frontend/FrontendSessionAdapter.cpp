@@ -801,6 +801,18 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.largest_burst_bytes_text = format_size_value(analysis->largest_burst_bytes);
     result.idle_gap_count_text = format_grouped_integer(analysis->idle_gap_count);
     result.largest_idle_gap_text = format_duration_us(analysis->largest_idle_gap_us);
+    result.sequence_preview_rows.reserve(analysis->sequence_preview_rows.size());
+    for (const auto& row_preview : analysis->sequence_preview_rows) {
+        result.sequence_preview_rows.push_back(FrontendAnalysisSequencePreviewRowDto {
+            .flow_packet_number = row_preview.flow_packet_number,
+            .direction_text = row_preview.direction_text,
+            .delta_time_text = format_duration_us(row_preview.delta_time_us),
+            .timestamp_text = row_preview.timestamp_text,
+            .captured_length = row_preview.captured_length,
+            .original_length = row_preview.original_length,
+            .payload_length = row_preview.payload_length,
+        });
+    }
 
     return result;
 }

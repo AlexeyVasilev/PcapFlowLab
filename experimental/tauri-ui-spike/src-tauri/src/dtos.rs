@@ -230,6 +230,17 @@ pub struct PacketDetailsDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisSequencePreviewRowDto {
+    pub flow_packet_number: u64,
+    pub direction_text: String,
+    pub delta_time_text: String,
+    pub timestamp_text: String,
+    pub captured_length: u32,
+    pub original_length: u32,
+    pub payload_length: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectedFlowAnalysisDto {
     pub has_capture: bool,
     pub has_selected_flow: bool,
@@ -295,4 +306,5 @@ pub struct SelectedFlowAnalysisDto {
     pub largest_idle_gap_text: String,
     pub unavailable_text: String,
     pub error_text: String,
+    pub sequence_preview_rows: Vec<AnalysisSequencePreviewRowDto>,
 }

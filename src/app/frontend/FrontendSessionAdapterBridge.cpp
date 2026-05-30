@@ -392,6 +392,28 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
 }
 
 std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) {
+    auto sequence_preview_rows_json = [&analysis]() {
+        std::ostringstream rows_out {};
+        rows_out << '[';
+        for (std::size_t index = 0; index < analysis.sequence_preview_rows.size(); ++index) {
+            if (index != 0U) {
+                rows_out << ',';
+            }
+            const auto& row = analysis.sequence_preview_rows[index];
+            rows_out << '{'
+                << "\"flow_packet_number\":" << row.flow_packet_number << ','
+                << "\"direction_text\":" << json_string(row.direction_text) << ','
+                << "\"delta_time_text\":" << json_string(row.delta_time_text) << ','
+                << "\"timestamp_text\":" << json_string(row.timestamp_text) << ','
+                << "\"captured_length\":" << row.captured_length << ','
+                << "\"original_length\":" << row.original_length << ','
+                << "\"payload_length\":" << row.payload_length
+                << '}';
+        }
+        rows_out << ']';
+        return rows_out.str();
+    };
+
     std::ostringstream out {};
     out << '{'
         << "\"has_capture\":" << bool_json(analysis.has_capture) << ','
@@ -457,7 +479,8 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"idle_gap_count_text\":" << json_string(analysis.idle_gap_count_text) << ','
         << "\"largest_idle_gap_text\":" << json_string(analysis.largest_idle_gap_text) << ','
         << "\"unavailable_text\":" << json_string(analysis.unavailable_text) << ','
-        << "\"error_text\":" << json_string(analysis.error_text)
+        << "\"error_text\":" << json_string(analysis.error_text) << ','
+        << "\"sequence_preview_rows\":" << sequence_preview_rows_json()
         << '}';
     return out.str();
 }
@@ -559,7 +582,7 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
 
 char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"analysis_available\":false,\"has_tcp_control_counts\":false,\"flow_index\":0,\"total_packets\":0,\"total_bytes\":0,\"captured_bytes\":0,\"packets_a_to_b\":0,\"packets_b_to_a\":0,\"bytes_a_to_b\":0,\"bytes_b_to_a\":0,\"tcp_syn_packets\":0,\"tcp_fin_packets\":0,\"tcp_rst_packets\":0,\"endpoint_summary_text\":\"\",\"protocol_text\":\"\",\"protocol_hint_display\":\"\",\"service_hint_text\":\"\",\"protocol_version_text\":\"\",\"protocol_service_text\":\"\",\"protocol_fallback_text\":\"\",\"first_packet_time_text\":\"\",\"last_packet_time_text\":\"\",\"duration_text\":\"\",\"largest_gap_text\":\"\",\"packets_considered_text\":\"\",\"total_packets_text\":\"\",\"total_bytes_text\":\"\",\"captured_bytes_text\":\"\",\"packets_a_to_b_text\":\"\",\"packets_b_to_a_text\":\"\",\"bytes_a_to_b_text\":\"\",\"bytes_b_to_a_text\":\"\",\"packet_ratio_text\":\"\",\"byte_ratio_text\":\"\",\"packet_direction_text\":\"\",\"data_direction_text\":\"\",\"packets_per_second_text\":\"\",\"packets_per_second_a_to_b_text\":\"\",\"packets_per_second_b_to_a_text\":\"\",\"bytes_per_second_text\":\"\",\"bytes_per_second_a_to_b_text\":\"\",\"bytes_per_second_b_to_a_text\":\"\",\"average_packet_size_text\":\"\",\"average_packet_size_a_to_b_text\":\"\",\"average_packet_size_b_to_a_text\":\"\",\"average_inter_arrival_text\":\"\",\"min_packet_size_text\":\"\",\"min_packet_size_a_to_b_text\":\"\",\"min_packet_size_b_to_a_text\":\"\",\"max_packet_size_text\":\"\",\"max_packet_size_a_to_b_text\":\"\",\"max_packet_size_b_to_a_text\":\"\",\"tcp_syn_packets_text\":\"\",\"tcp_fin_packets_text\":\"\",\"tcp_rst_packets_text\":\"\",\"burst_count_text\":\"\",\"longest_burst_packet_count_text\":\"\",\"largest_burst_bytes_text\":\"\",\"idle_gap_count_text\":\"\",\"largest_idle_gap_text\":\"\",\"unavailable_text\":\"Adapter handle is unavailable.\",\"error_text\":\"Adapter handle is unavailable.\"}");
+        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"analysis_available\":false,\"has_tcp_control_counts\":false,\"flow_index\":0,\"total_packets\":0,\"total_bytes\":0,\"captured_bytes\":0,\"packets_a_to_b\":0,\"packets_b_to_a\":0,\"bytes_a_to_b\":0,\"bytes_b_to_a\":0,\"tcp_syn_packets\":0,\"tcp_fin_packets\":0,\"tcp_rst_packets\":0,\"endpoint_summary_text\":\"\",\"protocol_text\":\"\",\"protocol_hint_display\":\"\",\"service_hint_text\":\"\",\"protocol_version_text\":\"\",\"protocol_service_text\":\"\",\"protocol_fallback_text\":\"\",\"first_packet_time_text\":\"\",\"last_packet_time_text\":\"\",\"duration_text\":\"\",\"largest_gap_text\":\"\",\"packets_considered_text\":\"\",\"total_packets_text\":\"\",\"total_bytes_text\":\"\",\"captured_bytes_text\":\"\",\"packets_a_to_b_text\":\"\",\"packets_b_to_a_text\":\"\",\"bytes_a_to_b_text\":\"\",\"bytes_b_to_a_text\":\"\",\"packet_ratio_text\":\"\",\"byte_ratio_text\":\"\",\"packet_direction_text\":\"\",\"data_direction_text\":\"\",\"packets_per_second_text\":\"\",\"packets_per_second_a_to_b_text\":\"\",\"packets_per_second_b_to_a_text\":\"\",\"bytes_per_second_text\":\"\",\"bytes_per_second_a_to_b_text\":\"\",\"bytes_per_second_b_to_a_text\":\"\",\"average_packet_size_text\":\"\",\"average_packet_size_a_to_b_text\":\"\",\"average_packet_size_b_to_a_text\":\"\",\"average_inter_arrival_text\":\"\",\"min_packet_size_text\":\"\",\"min_packet_size_a_to_b_text\":\"\",\"min_packet_size_b_to_a_text\":\"\",\"max_packet_size_text\":\"\",\"max_packet_size_a_to_b_text\":\"\",\"max_packet_size_b_to_a_text\":\"\",\"tcp_syn_packets_text\":\"\",\"tcp_fin_packets_text\":\"\",\"tcp_rst_packets_text\":\"\",\"burst_count_text\":\"\",\"longest_burst_packet_count_text\":\"\",\"largest_burst_bytes_text\":\"\",\"idle_gap_count_text\":\"\",\"largest_idle_gap_text\":\"\",\"unavailable_text\":\"Adapter handle is unavailable.\",\"error_text\":\"Adapter handle is unavailable.\",\"sequence_preview_rows\":[]}");
     }
 
     return make_c_string(analysis_json(handle->adapter.get_selected_flow_analysis()));
