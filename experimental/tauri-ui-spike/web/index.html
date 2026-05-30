@@ -119,6 +119,7 @@
                 <table class="data-table">
                   <thead>
                     <tr>
+                      <th class="flow-check-column">Sel</th>
                       <th id="flowSortIndex" class="sortable-header" data-flow-sort-key="index">#</th>
                       <th id="flowSortFamily" class="sortable-header" data-flow-sort-key="family">Family</th>
                       <th id="flowSortProtocol" class="sortable-header" data-flow-sort-key="protocol">Protocol</th>
@@ -133,6 +134,9 @@
                   </thead>
                   <tbody id="flowTableBody"></tbody>
                 </table>
+              </div>
+              <div id="checkedFlowsStatusBar" class="checked-flows-statusbar" aria-live="polite">
+                <span id="checkedFlowsStatusText"></span>
               </div>
             </section>
 

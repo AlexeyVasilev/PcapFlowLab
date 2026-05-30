@@ -19,6 +19,7 @@ Implemented slice:
 - frontend-neutral `Flows` workflow:
   - filtering
   - sorting
+  - separate checked-flow selection state for batch-oriented workflows
   - Wireshark filter display and copy
   - selected-flow packets
   - packet markers for fragmentation and suspected retransmission
@@ -70,8 +71,10 @@ Implemented slice:
 - Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
 - The Flows tab supports case-insensitive frontend filtering over already loaded flow rows.
 - The Flows table supports frontend-local sorting over already loaded flow DTOs.
+- The Flows table also keeps a separate checked-flow selection state for future batch workflows without changing the active selected flow.
 - The flow table shows a user-facing 1-based flow number while keeping stable `flow_index` internally.
 - The flow table surfaces address family and fragmentation state from the shared flow DTO.
+- When one or more flow checkboxes are active, the Flows workspace shows a compact bottom status bar with the checked-flow count.
 - Opening a new path clears stale overview, flows, packets, stream, analysis, and prior errors before the next backend call.
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
@@ -110,6 +113,7 @@ Implemented slice:
   - `File -> Save Index`
   - `Flow -> Export Current Flow`
   - selected-flow Analysis sequence CSV export
+- Checked-flow selection exists in the Flows table, but batch export actions such as `Export Selected Flows`, `Export Unselected Flows`, and `Smart Export...` are still deferred.
 - Other export workflows are still absent in Tauri.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
 - Save/open index workflow details are still thinner than Qt and need a smaller parity polish pass.

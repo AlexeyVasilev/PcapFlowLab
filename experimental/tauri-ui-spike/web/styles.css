@@ -692,6 +692,42 @@ select:disabled {
   background: var(--selected);
 }
 
+.data-table tbody tr.flow-row.checked:not(.selected) {
+  background: #eef5f6;
+}
+
+.flow-check-column,
+.flow-check-cell {
+  width: 42px;
+  text-align: center;
+}
+
+.flow-check-cell input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.checked-flows-statusbar {
+  display: none;
+  align-items: center;
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f5f8fa;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checked-flows-statusbar.is-visible {
+  display: flex;
+}
+
 .table-state-row td {
   padding: 10px 8px;
   color: var(--muted);

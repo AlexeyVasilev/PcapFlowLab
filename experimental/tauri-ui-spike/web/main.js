@@ -30,6 +30,7 @@
     flowFilterText: "",
     flowSortKey: "index",
     flowSortDirection: "asc",
+    checkedFlowIndices: new Set(),
     selectedFlowIndex: null,
     packets: [],
     packetsTotalCount: 0,
@@ -100,6 +101,8 @@
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     flowSortHeaders: Array.from(document.querySelectorAll("[data-flow-sort-key]")),
     flowTableBody: document.getElementById("flowTableBody"),
+    checkedFlowsStatusBar: document.getElementById("checkedFlowsStatusBar"),
+    checkedFlowsStatusText: document.getElementById("checkedFlowsStatusText"),
     wiresharkFilterMeta: document.getElementById("wiresharkFilterMeta"),
     wiresharkFilterText: document.getElementById("wiresharkFilterText"),
     wiresharkFilterStatusText: document.getElementById("wiresharkFilterStatusText"),
@@ -430,6 +433,20 @@
     state.wiresharkFilterStatusKind = kind;
   }
 
+  function checkedFlowCount() {
+    return state.checkedFlowIndices.size;
+  }
+
+  function clearCurrentFlowExportStatusIfPresent() {
+    if (
+      state.statusText === "Flow exported successfully."
+      || state.statusText === "Failed to export selected flow."
+      || state.statusText.startsWith("Failed to export selected flow:")
+    ) {
+      setStatus("", "neutral");
+    }
+  }
+
   function applyFlowFilterState(filterText) {
     state.flowFilterText = String(filterText || "");
     setWiresharkFilterStatus("", "neutral");
@@ -506,6 +523,7 @@
   function clearFlows() {
     state.flows = [];
     state.flowFilterText = "";
+    state.checkedFlowIndices.clear();
     state.selectedFlowIndex = null;
     state.flowState = "idle";
     clearAnalysis();
@@ -587,13 +605,15 @@
             || state.saveIndexInProgress
             || state.exportCurrentFlowInProgress;
         } else if (
-          action === "export-current-flow"
-          || action === "export-selected-flows"
+          action === "export-selected-flows"
           || action === "export-unselected-flows"
           || action === "smart-export"
           || action === "settings"
         ) {
           item.disabled = true;
+          if (action === "export-selected-flows" || action === "export-unselected-flows") {
+            item.title = "Checked-flow selection is available, but batch export is still deferred.";
+          }
         }
       }
 
@@ -955,37 +975,40 @@
     const flows = state.flows;
     const visibleFlows = getVisibleFlows();
     const selectedFlowVisible = visibleFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const checkedCount = checkedFlowCount();
 
     elements.flowFilterInput.value = state.flowFilterText;
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
+    elements.checkedFlowsStatusBar.classList.toggle("is-visible", checkedCount > 0);
+    elements.checkedFlowsStatusText.textContent = checkedCount === 1 ? "1 flow selected" : `${formatNumber(checkedCount)} flows selected`;
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.flowMeta.textContent = "Loading flows...";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">Loading flows...</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Loading flows...</td></tr>`;
       return;
     }
 
     if (state.openState === "error") {
       elements.flowMeta.textContent = "No flows available after open failure.";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="10">Open failed. No flows were loaded.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="11">Open failed. No flows were loaded.</td></tr>`;
       return;
     }
 
     if (state.openState !== "opened") {
       elements.flowMeta.textContent = "No capture loaded.";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">Open a capture or index to load flows.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Open a capture or index to load flows.</td></tr>`;
       return;
     }
 
     if (flows.length === 0) {
       elements.flowMeta.textContent = "No flows were found in the opened capture.";
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">No flows available.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows available.</td></tr>`;
       return;
     }
 
     if (visibleFlows.length === 0) {
       elements.flowMeta.textContent = `Showing 0 of ${formatNumber(flows.length)} flows.`;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="10">No flows match the current filter.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows match the current filter.</td></tr>`;
       return;
     }
 
@@ -993,8 +1016,10 @@
     elements.flowTableBody.innerHTML = visibleFlows
       .map((flow) => {
         const selected = selectedFlowVisible && state.selectedFlowIndex === flow.flow_index ? " selected" : "";
+        const checked = state.checkedFlowIndices.has(flow.flow_index) ? " checked" : "";
         return `
-          <tr class="flow-row${selected}" data-flow-index="${flow.flow_index}">
+          <tr class="flow-row${selected}${checked}" data-flow-index="${flow.flow_index}">
+            <td class="flow-check-cell"><input type="checkbox" class="flow-check-input" data-flow-check-index="${flow.flow_index}" ${state.checkedFlowIndices.has(flow.flow_index) ? "checked" : ""} aria-label="Select flow ${flowDisplayNumber(flow)} for batch actions" /></td>
             <td>${flowDisplayNumber(flow)}</td>
             <td>${escapeHtml(formatFlowFamily(flow))}</td>
             <td>${escapeHtml(flow.protocol_text)}</td>
@@ -1014,6 +1039,21 @@
       row.addEventListener("click", async () => {
         const flowIndex = Number(row.dataset.flowIndex);
         await selectFlow(flowIndex);
+      });
+    }
+
+    for (const checkbox of elements.flowTableBody.querySelectorAll(".flow-check-input")) {
+      checkbox.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      checkbox.addEventListener("change", () => {
+        const flowIndex = Number(checkbox.dataset.flowCheckIndex);
+        if (checkbox.checked) {
+          state.checkedFlowIndices.add(flowIndex);
+        } else {
+          state.checkedFlowIndices.delete(flowIndex);
+        }
+        render();
       });
     }
   }
@@ -2176,6 +2216,7 @@
       }
 
       state.selectedFlowIndex = flowIndex;
+      clearCurrentFlowExportStatusIfPresent();
       state.packetOffset = 0;
       state.packets = [];
       state.packetsTotalCount = 0;
@@ -2185,7 +2226,6 @@
       clearAnalysis();
       clearPacketDetails();
       setWiresharkFilterStatus("", "neutral");
-      setStatus(`Selected flow ${flowIndex}.`, "success");
       render();
       await loadSelectedFlowPackets();
       if (state.flowViewTab === "stream") {
@@ -2219,7 +2259,6 @@
     state.packetDetails = null;
     state.packetDetailsState = "loading";
     state.packetDetailsErrorText = "";
-    setStatus(`Selected packet ${packetIndex}.`, "success");
     render();
     await loadSelectedPacketDetails();
   }
@@ -2236,7 +2275,6 @@
 
     state.selectedStreamItemIndex = streamItemIndex;
     state.selectedStreamItem = item;
-    setStatus(`Selected stream item ${streamItemIndex}.`, "success");
     render();
   }
 

@@ -84,6 +84,7 @@ The `Flows` tab now supports:
 
 - frontend-only case-insensitive filtering over already loaded flow DTOs
 - frontend-only sorting over already loaded flow DTOs
+- separate checked-flow selection state for batch-oriented workflows
 - user-facing 1-based flow numbering while keeping stable backend `flow_index`
 - address family and fragmentation state from shared flow DTOs
 - conservative shared Wireshark display filter text plus copy
@@ -95,6 +96,7 @@ The `Flows` tab now supports:
   - `Payload`
   - `Protocol`
 - byte-backed packet details can recover after a valid source-capture attach
+- a compact checked-flow status bar shown only when one or more flows are checked
 - the menu shell currently wires:
   - `File -> Open Capture (Fast)`
   - `File -> Open Capture (Deep)`
@@ -168,6 +170,7 @@ Analysis remains:
 - reuses the existing session export path
 - writes `.pcap`
 - requires the original source capture to be readable
+- coexists with frontend-local checked-flow selection, but batch export actions remain deferred
 
 The source-attach workflow:
 
@@ -181,6 +184,7 @@ The source-attach workflow:
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - export workflows
+- batch checked-flow export workflows beyond `Flow -> Export Current Flow`
 - save/open index workflow polish
 - settings/preferences
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
@@ -195,6 +199,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 ## Current deferred items
 
 - Export workflows beyond `Flow -> Export Current Flow`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
+- Batch checked-flow exports (`Export Selected Flows`, `Export Unselected Flows`, `Smart Export`) still remain deferred even though Tauri now tracks checked-flow selection in the Flows table
 - Save/open index workflow polish
 - Settings/preferences
 - Stream-to-packet navigation

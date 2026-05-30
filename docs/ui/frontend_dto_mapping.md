@@ -38,7 +38,7 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ### What is mostly Qt-specific today
 
-- Flow filtering, sorting, and checked-flow batch-selection semantics.
+- Flow filtering and sorting semantics.
 - Packet inspector structure and most packet-details presentation composition.
 - Stream-item details presentation in the right-hand inspector.
 - Large parts of Statistics grouping/presentation.
@@ -109,7 +109,7 @@ This document is an audit only. It does not introduce a new contract and does no
 | fragmentation indicator/count | `has_fragmented_packets`, `fragmented_packet_count`; `Frag` column in Qt | `FrontendFlowDto.has_fragmented_packets`, `fragmented_packet_count` | `FlowDto.has_fragmented_packets`, `fragmented_packet_count`; now surfaced as compact `Frag` marker text in Tauri | aligned enough for compact table | frontend-neutral DTO | Resolved |
 | packet count | `FlowRow.packet_count`; `FlowListModel.PacketsRole` | `FrontendFlowDto.packet_count` | `FlowDto.packet_count`; shown and filterable in Tauri | aligned | frontend-neutral DTO | High |
 | byte count | `FlowRow.total_bytes`; `FlowListModel.BytesRole` | `FrontendFlowDto.total_bytes` | `FlowDto.total_bytes`; shown and filterable in Tauri | aligned | frontend-neutral DTO | High |
-| selected/checked state | `FlowListModel.CheckedRole`, `setFlowChecked()`, checked count/export selection | none in frontend-neutral adapter DTO | Tauri has selected row only, no checked batch-selection state | major Qt-only gap | deferred frontend-neutral DTO or frontend-only if batch selection stays UI-specific | Medium |
+| selected/checked state | `FlowListModel.CheckedRole`, `setFlowChecked()`, checked count/export selection | none in frontend-neutral adapter DTO | Tauri now keeps separate frontend-local checked-flow state in `main.js`, keyed by stable `flow_index`, with row checkboxes and a compact checked-count status bar; active selected flow remains separate | batch-selection facts are still frontend-local and batch export actions remain deferred | frontend controller/model unless a later shared batch-export contract needs more | Improved |
 | filter/search fields | Qt `FlowListModel.setFilterText()` matches family, protocol, hint, service, addresses, endpoints, ports, fragmentation | no dedicated query API; relies on already-structured flow fields | Tauri `main.js` filters over `protocol_text`, `protocol_hint`, `service_hint`, endpoints, addresses, ports, packets, bytes | same idea, but field set differs and logic is duplicated | frontend controller/model over shared flow DTO fields | High |
 | sort fields | Qt `FlowListModel.SortKey`, `MainController.sortFlows()` | no frontend-neutral sort API | Tauri now sorts flows frontend-side after applying the existing filter, using the already loaded flow DTO fields | still no shared/frontend-neutral sort contract; behavior remains UI-local by design for now | frontend controller/model | Improved |
 | Wireshark display filter | Qt `MainController.selectedFlowWiresharkFilter()` via shared helper over flow model | `FrontendFlowDto.wireshark_display_filter` now carries a conservative generated string through the adapter | Tauri now consumes `FlowDto.wireshark_display_filter` instead of rebuilding locally | generation is now shared at adapter layer, but semantics still need periodic parity review with Qt helper | frontend-neutral DTO | Improved |
@@ -231,7 +231,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 
 ### Available in Qt but not frontend-neutral
 
-- checked/selected-for-batch-export flow state
+- checked/selected-for-batch-export flow state in a shared/frontend-neutral contract
 - stream-item details path in the right-hand inspector
 - Qt source-unavailable placeholders still live in controller/view-model logic rather than consuming one grouped source-availability DTO directly
 
@@ -283,6 +283,7 @@ Why first now:
 - the Tauri spike already covers the main read-side analyzer surfaces reasonably well;
 - the biggest visible gaps are now the remaining workflow gaps rather than missing read-only panels;
 - `Save Index`, `Export Current Flow`, and attach-source are now wired, so the next value is in the broader export surface.
+- checked-flow selection now exists in Tauri, which makes the remaining batch-export gap more concrete and easier to stage incrementally.
 
 Expected risk:
 
