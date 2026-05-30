@@ -200,6 +200,12 @@ struct FrontendAnalysisHistogramRowDto {
     std::uint64_t count_b_to_a {0};
 };
 
+struct FrontendAnalysisSequenceExportResultDto {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 struct FrontendSelectedFlowAnalysisDto {
     bool has_capture {false};
     bool has_selected_flow {false};

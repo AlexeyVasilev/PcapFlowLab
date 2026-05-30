@@ -506,6 +506,16 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
     return out.str();
 }
 
+std::string analysis_sequence_export_result_json(const pfl::FrontendAnalysisSequenceExportResultDto& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"exported\":" << bool_json(result.exported) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string selection_json(const bool selected) {
     return std::string {"{\"selected\":"} + bool_json(selected) + '}';
 }
@@ -607,6 +617,22 @@ char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSe
     }
 
     return make_c_string(analysis_json(handle->adapter.get_selected_flow_analysis()));
+}
+
+char* pfl_frontend_session_adapter_export_selected_flow_analysis_sequence_csv_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const auto path = path_utf8 == nullptr
+        ? std::filesystem::path {}
+        : std::filesystem::u8path(path_utf8);
+    return make_c_string(analysis_sequence_export_result_json(
+        handle->adapter.export_selected_flow_analysis_sequence_csv(path)
+    ));
 }
 
 void pfl_frontend_string_free(char* value) {

@@ -135,6 +135,7 @@ The `Analysis` tab now supports a first selected-flow-only, on-demand analysis w
 - packet size histogram
 - inter-arrival histogram
 - sequence preview
+- selected-flow sequence CSV export
 - `Open in Flows`
 
 Analysis remains:
@@ -143,6 +144,7 @@ Analysis remains:
 - on-demand
 - not computed during capture open
 - not computed globally for all flows
+- sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
 
 ## Current limitations and remaining Qt gaps
 
@@ -158,7 +160,6 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - Analysis still misses:
   - rate graph
   - richer charts
-  - sequence export
   - fuller Qt analysis workspace parity
 - large-capture performance work, virtualization, and more advanced pagination strategies are still unaddressed
 
@@ -172,7 +173,6 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
 - Analysis rate graph
-- Analysis sequence export
 - fuller Analysis parity
 - large-capture performance and virtualization pass
 

@@ -23,6 +23,9 @@ public:
     [[nodiscard]] FrontendSelectedFlowStreamResult get_selected_flow_stream(std::size_t max_packets_to_scan, std::size_t limit) const;
     [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(std::uint64_t packet_index) const;
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
+    [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
+        const std::filesystem::path& output_path
+    ) const;
 
     [[nodiscard]] bool has_capture() const noexcept;
     [[nodiscard]] std::optional<std::size_t> selected_flow_index() const noexcept;

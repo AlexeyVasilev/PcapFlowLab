@@ -48,6 +48,9 @@
     analysisErrorText: "",
     analysisUnavailableText: "",
     analysisLoadedForFlowIndex: null,
+    analysisSequenceExportInProgress: false,
+    analysisSequenceExportStatusText: "",
+    analysisSequenceExportStatusKind: "neutral",
     analysisPacketSizeHistogramMode: "all",
     analysisInterArrivalHistogramMode: "all",
     packetDetailsState: "idle",
@@ -137,6 +140,8 @@
     analysisInterArrivalHistogramModeBToA: document.getElementById("analysisInterArrivalHistogramModeBToA"),
     analysisSequencePreviewSection: document.getElementById("analysisSequencePreviewSection"),
     analysisSequencePreviewBody: document.getElementById("analysisSequencePreviewBody"),
+    analysisExportSequenceCsvButton: document.getElementById("analysisExportSequenceCsvButton"),
+    analysisExportSequenceCsvStatusText: document.getElementById("analysisExportSequenceCsvStatusText"),
     analysisOpenInFlowsButton: document.getElementById("analysisOpenInFlowsButton"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
@@ -429,8 +434,20 @@
     state.analysisErrorText = "";
     state.analysisUnavailableText = "";
     state.analysisLoadedForFlowIndex = null;
+    state.analysisSequenceExportInProgress = false;
+    state.analysisSequenceExportStatusText = "";
+    state.analysisSequenceExportStatusKind = "neutral";
     state.analysisPacketSizeHistogramMode = "all";
     state.analysisInterArrivalHistogramMode = "all";
+  }
+
+  function canExportAnalysisSequenceCsv() {
+    return state.openState === "opened"
+      && state.selectedFlowIndex != null
+      && state.analysisState === "loaded"
+      && Array.isArray(state.analysis?.sequence_preview_rows)
+      && state.analysis.sequence_preview_rows.length > 0
+      && !state.analysisSequenceExportInProgress;
   }
 
   function clearFlows() {
@@ -1527,6 +1544,17 @@
     elements.analysisInterArrivalHistogramRows.innerHTML = "";
     elements.analysisInterArrivalHistogramMax.textContent = "";
     elements.analysisSequencePreviewBody.innerHTML = "";
+    elements.analysisExportSequenceCsvStatusText.textContent = state.analysisSequenceExportStatusText;
+    elements.analysisExportSequenceCsvStatusText.className = "compact-status-text";
+    if (state.analysisSequenceExportStatusKind === "error") {
+      elements.analysisExportSequenceCsvStatusText.classList.add("is-error");
+    } else if (state.analysisSequenceExportStatusKind === "success") {
+      elements.analysisExportSequenceCsvStatusText.classList.add("is-success");
+    }
+    elements.analysisExportSequenceCsvButton.disabled = !canExportAnalysisSequenceCsv();
+    elements.analysisExportSequenceCsvButton.textContent = state.analysisSequenceExportInProgress
+      ? "Exporting..."
+      : "Export sequence CSV";
     elements.analysisProtocolPanelSection.style.display = "none";
     elements.analysisDerivedMetricsSection.style.display = "none";
     elements.analysisBurstIdleSection.style.display = "none";
@@ -2135,6 +2163,53 @@
     }
   }
 
+  async function exportAnalysisSequenceCsv() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canExportAnalysisSequenceCsv()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_analysis_sequence_csv_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.analysisSequenceExportInProgress = true;
+      state.analysisSequenceExportStatusText = "";
+      state.analysisSequenceExportStatusKind = "neutral";
+      render();
+
+      const result = await invoke("export_selected_flow_analysis_sequence_csv", {
+        path: selectedPath,
+      });
+
+      if (result?.exported) {
+        state.analysisSequenceExportStatusText = `Sequence CSV exported: ${result.output_path || selectedPath}`;
+        state.analysisSequenceExportStatusKind = "success";
+        setStatus("Selected-flow sequence CSV exported.", "success");
+      } else {
+        const errorText = result?.error_text || "Failed to export flow sequence CSV.";
+        state.analysisSequenceExportStatusText = errorText;
+        state.analysisSequenceExportStatusKind = "error";
+        setStatus(errorText, "error");
+      }
+    } catch (error) {
+      const errorText = `Failed to export flow sequence CSV: ${String(error)}`;
+      state.analysisSequenceExportStatusText = errorText;
+      state.analysisSequenceExportStatusKind = "error";
+      setStatus(errorText, "error");
+    } finally {
+      state.analysisSequenceExportInProgress = false;
+      render();
+    }
+  }
+
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
   elements.openButton.addEventListener("click", openCapture);
   elements.flowFilterInput.addEventListener("input", () => {
@@ -2254,6 +2329,7 @@
     state.activeTab = "flows";
     render();
   });
+  elements.analysisExportSequenceCsvButton.addEventListener("click", exportAnalysisSequenceCsv);
 
   elements.analysisPacketSizeHistogramModeAll.addEventListener("click", () => {
     state.analysisPacketSizeHistogramMode = "all";

@@ -1,10 +1,11 @@
 mod dtos;
 mod ffi;
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use dtos::{
-    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
@@ -49,6 +50,31 @@ fn pick_open_path(app: AppHandle) -> Result<Option<String>, String> {
             .map(|resolved| resolved.to_string_lossy().into_owned())
             .unwrap_or(display_fallback)
     }))
+}
+
+#[tauri::command]
+fn pick_save_analysis_sequence_csv_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("CSV files", &["csv"])
+        .set_file_name("flow-sequence.csv")
+        .blocking_save_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| ensure_csv_extension(resolved).to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
+}
+
+fn ensure_csv_extension(path: PathBuf) -> PathBuf {
+    if path.extension().is_some() {
+        return path;
+    }
+
+    path.with_extension("csv")
 }
 
 #[tauri::command]
@@ -123,6 +149,17 @@ fn get_selected_flow_analysis(
     state.adapter.get_selected_flow_analysis()
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn export_selected_flow_analysis_sequence_csv(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+) -> Result<AnalysisSequenceExportResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_selected_flow_analysis_sequence_csv(&path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let adapter = CppFrontendSessionAdapter::new()
@@ -133,6 +170,7 @@ pub fn run() {
         .manage(Mutex::new(AdapterState { adapter }))
         .invoke_handler(tauri::generate_handler![
             pick_open_path,
+            pick_save_analysis_sequence_csv_path,
             open_capture,
             get_overview,
             get_flows,
@@ -140,7 +178,8 @@ pub fn run() {
             get_selected_flow_packets,
             get_selected_flow_stream,
             get_selected_flow_packet_details,
-            get_selected_flow_analysis
+            get_selected_flow_analysis,
+            export_selected_flow_analysis_sequence_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri UI spike");

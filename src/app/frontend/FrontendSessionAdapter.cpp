@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <fstream>
 #include <iomanip>
 #include <map>
 #include <span>
@@ -21,6 +22,19 @@ namespace pfl {
 namespace {
 
 constexpr std::size_t kPacketPreviewBytes = 128U;
+
+struct AnalysisSequenceExportRow {
+    std::uint64_t flow_packet_index {0};
+    std::uint64_t packet_index {0};
+    std::string direction_text {};
+    std::string timestamp_text {};
+    std::uint64_t delta_us {0};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::optional<std::uint32_t> transport_payload_length {};
+    std::string tcp_flags_text {};
+    std::string protocol_hint_text {};
+};
 
 CaptureImportOptions import_options_for_frontend_mode(const FrontendOpenMode mode) {
     return CaptureImportOptions {
@@ -493,6 +507,122 @@ std::string build_analysis_endpoint_summary(const FlowRow& row) {
     return out.str();
 }
 
+std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
+    return (static_cast<std::uint64_t>(packet.ts_sec) * 1'000'000ULL) + static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+std::string normalize_sequence_direction(const std::string& direction_text) {
+    if (direction_text == "A\xE2\x86\x92" "B") {
+        return "A->B";
+    }
+    if (direction_text == "B\xE2\x86\x92" "A") {
+        return "B->A";
+    }
+
+    return direction_text;
+}
+
+std::string escape_csv_field(const std::string& field) {
+    if (field.find_first_of(",\"\r\n") == std::string::npos) {
+        return field;
+    }
+
+    std::string escaped {};
+    escaped.reserve(field.size() + 2U);
+    escaped.push_back('"');
+    for (const auto ch : field) {
+        if (ch == '"') {
+            escaped.push_back('"');
+        }
+        escaped.push_back(ch);
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_export_rows(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::string& protocol_hint_text
+) {
+    const auto packet_rows = session.list_flow_packets(flow_index);
+    const auto packets = session.flow_packets(flow_index);
+    if (!packets.has_value() || packet_rows.size() != packets->size()) {
+        return std::nullopt;
+    }
+
+    std::vector<AnalysisSequenceExportRow> rows {};
+    rows.reserve(packet_rows.size());
+
+    std::optional<std::uint64_t> previous_timestamp_us {};
+    for (std::size_t index = 0; index < packet_rows.size(); ++index) {
+        const auto& packet_row = packet_rows[index];
+        const auto& packet = packets->at(index);
+        if (packet_row.packet_index != packet.packet_index) {
+            return std::nullopt;
+        }
+
+        const auto timestamp_us = packet_timestamp_us(packet);
+        const auto delta_us = previous_timestamp_us.has_value() && timestamp_us >= *previous_timestamp_us
+            ? timestamp_us - *previous_timestamp_us
+            : 0U;
+
+        rows.push_back(AnalysisSequenceExportRow {
+            .flow_packet_index = packet_row.row_number,
+            .packet_index = packet.packet_index,
+            .direction_text = normalize_sequence_direction(packet_row.direction_text),
+            .timestamp_text = packet_row.timestamp_text,
+            .delta_us = delta_us,
+            .captured_length = packet.captured_length,
+            .original_length = packet.original_length,
+            .transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session, packet),
+            .tcp_flags_text = packet_row.tcp_flags_text,
+            .protocol_hint_text = protocol_hint_text,
+        });
+
+        previous_timestamp_us = timestamp_us;
+    }
+
+    return rows;
+}
+
+bool write_analysis_sequence_csv(
+    const std::vector<AnalysisSequenceExportRow>& rows,
+    const std::filesystem::path& output_path,
+    std::string* error_text
+) {
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        if (error_text != nullptr) {
+            *error_text = "Failed to open output CSV file.";
+        }
+        return false;
+    }
+
+    stream << "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,transport_payload_length,tcp_flags,protocol_hint\n";
+    for (const auto& row : rows) {
+        stream << row.flow_packet_index << ','
+               << row.packet_index << ','
+               << escape_csv_field(row.direction_text) << ','
+               << escape_csv_field(row.timestamp_text) << ','
+               << row.delta_us << ','
+               << row.captured_length << ','
+               << row.original_length << ','
+               << (row.transport_payload_length.has_value() ? std::to_string(*row.transport_payload_length) : std::string {}) << ','
+               << escape_csv_field(row.tcp_flags_text) << ','
+               << escape_csv_field(row.protocol_hint_text) << '\n';
+    }
+
+    if (!stream.good()) {
+        if (error_text != nullptr) {
+            *error_text = "Failed to write flow sequence CSV.";
+        }
+        return false;
+    }
+
+    return true;
+}
+
 }  // namespace
 
 FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availability() const {
@@ -858,6 +988,51 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
         });
     }
 
+    return result;
+}
+
+FrontendAnalysisSequenceExportResultDto FrontendSessionAdapter::export_selected_flow_analysis_sequence_csv(
+    const std::filesystem::path& output_path
+) const {
+    FrontendAnalysisSequenceExportResultDto result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (!selected_flow_index_.has_value()) {
+        result.error_text = "No flow selected for sequence export.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    const auto flow_index = *selected_flow_index_;
+    const auto row = selected_flow_row(session_, flow_index);
+    if (!row.has_value()) {
+        result.error_text = "The selected flow is unavailable.";
+        return result;
+    }
+
+    const auto protocol_hint_text = format_protocol_hint_display(row->protocol_hint);
+    const auto rows = build_analysis_sequence_export_rows(session_, flow_index, protocol_hint_text);
+    if (!rows.has_value()) {
+        result.error_text = "Failed to prepare flow sequence export.";
+        return result;
+    }
+
+    std::string write_error_text {};
+    if (!write_analysis_sequence_csv(*rows, output_path, &write_error_text)) {
+        result.error_text = write_error_text.empty() ? "Failed to write flow sequence CSV." : write_error_text;
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
     return result;
 }
 

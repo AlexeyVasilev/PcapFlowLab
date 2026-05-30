@@ -249,6 +249,13 @@ pub struct AnalysisHistogramRowDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisSequenceExportResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectedFlowAnalysisDto {
     pub has_capture: bool,
     pub has_selected_flow: bool,

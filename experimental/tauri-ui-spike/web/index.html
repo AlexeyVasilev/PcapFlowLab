@@ -477,7 +477,11 @@
                     <div id="analysisInterArrivalHistogramRows" class="analysis-histogram-rows"></div>
                   </section>
                   <section id="analysisSequencePreviewSection" class="analysis-section">
-                    <h3>Sequence Preview</h3>
+                    <div class="analysis-section-header">
+                      <h3>Sequence Preview</h3>
+                      <button id="analysisExportSequenceCsvButton" type="button" class="secondary-button">Export sequence CSV</button>
+                    </div>
+                    <p id="analysisExportSequenceCsvStatusText" class="compact-status-text"></p>
                     <div class="table-wrap analysis-sequence-table-wrap">
                       <table class="data-table compact-stats-table analysis-sequence-table">
                         <thead>

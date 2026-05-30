@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 
@@ -46,6 +46,10 @@ extern "C" {
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_analysis_json(
         handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_selected_flow_analysis_sequence_csv_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_string_free(value: *mut c_char);
 }
@@ -130,6 +134,20 @@ impl CppFrontendSessionAdapter {
     pub fn get_selected_flow_analysis(&self) -> Result<SelectedFlowAnalysisDto, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_selected_flow_analysis_json(self.handle) };
         parse_json_owned::<SelectedFlowAnalysisDto>(json)
+    }
+
+    pub fn export_selected_flow_analysis_sequence_csv(
+        &self,
+        path: &str,
+    ) -> Result<AnalysisSequenceExportResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_selected_flow_analysis_sequence_csv_json(
+                self.handle,
+                path.as_ptr(),
+            )
+        };
+        parse_json_owned::<AnalysisSequenceExportResultDto>(json)
     }
 }
 

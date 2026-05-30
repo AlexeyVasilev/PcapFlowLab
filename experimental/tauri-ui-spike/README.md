@@ -48,6 +48,7 @@ Implemented slice:
   - packet size histogram
   - inter-arrival histogram
   - sequence preview
+  - selected-flow sequence CSV export
 
 ## Current behavior
 
@@ -77,6 +78,7 @@ Implemented slice:
 - Analysis stays selected-flow-only and does not run during capture open.
 - Selecting a flow in Analysis reuses the shared selected-flow state and can be followed with `Open in Flows`.
 - Analysis histograms use existing selected-flow analysis data only and expose frontend-only direction toggles: `All / A->B / B->A`.
+- Sequence CSV export is available only from selected-flow Analysis and uses a native Save dialog.
 
 ## Structure
 
@@ -93,7 +95,8 @@ Implemented slice:
 
 ## Deferred items
 
-- Export workflows are still absent in Tauri.
+- Tauri now supports only one narrow export workflow: selected-flow Analysis sequence CSV export.
+- Other export workflows are still absent in Tauri.
 - Attach-source workflow is still missing.
 - Save/open index workflow details are still thinner than Qt and need a dedicated parity pass.
 - Settings/preferences are still missing.
@@ -115,7 +118,6 @@ Implemented slice:
 - The following Analysis areas remain deferred:
   - rate graph
   - richer charts
-  - sequence export
   - fuller Qt analysis workspace parity
 - Selected packet inspection is still basic compared with Qt even though it now has `Summary / Raw / Payload / Protocol` tabs.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
