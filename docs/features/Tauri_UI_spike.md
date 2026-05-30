@@ -106,6 +106,7 @@ The `Flows` tab now supports:
   - `File -> Exit`
   - `Flow -> Export Current Flow`
   - `Flow -> Export Selected Flows`
+  - `Flow -> Export Unselected Flows`
   - `View -> About`
 
 ## Current Stream capability
@@ -182,6 +183,15 @@ Analysis remains:
 - requires the original source capture to be readable
 - keeps checked-flow state intact after success, cancel, or failure
 
+`Flow -> Export Unselected Flows`:
+
+- uses the inverse of the checked-flow set over the full loaded flow list
+- is not limited to the currently visible filtered rows
+- reuses the existing session batch export path
+- writes `.pcap`
+- requires the original source capture to be readable
+- keeps checked-flow state intact after success, cancel, or failure
+
 The source-attach workflow:
 
 - reuses existing session validation
@@ -194,7 +204,7 @@ The source-attach workflow:
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - export workflows
-- batch checked-flow export workflows beyond `Flow -> Export Current Flow` and `Flow -> Export Selected Flows`
+- batch checked-flow export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, and `Flow -> Export Unselected Flows`
 - save/open index workflow polish
 - settings/preferences
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
@@ -208,8 +218,8 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Current deferred items
 
-- Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
-- `Export Unselected Flows` and `Smart Export` still remain deferred even though Tauri now tracks checked-flow selection in the Flows table
+- Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
+- `Smart Export` still remains deferred even though Tauri now tracks checked-flow selection in the Flows table
 - Save/open index workflow polish
 - Settings/preferences
 - Stream-to-packet navigation
@@ -221,7 +231,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Recommended next priorities
 
-1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Save Index`, and selected-flow Analysis sequence CSV
+1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Save Index`, and selected-flow Analysis sequence CSV
 2. Save/open index workflow polish
 3. Settings/preferences
 4. Performance pass for large captures, including virtualization/pagination where needed

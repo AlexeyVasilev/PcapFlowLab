@@ -12,6 +12,7 @@ Implemented slice:
 - `File -> Save Index` through the existing session/index path
 - `Flow -> Export Current Flow` through the existing session flow-export path
 - `Flow -> Export Selected Flows` through the existing session batch flow-export path
+- `Flow -> Export Unselected Flows` through the existing session batch flow-export path
 - locate/attach source capture for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior
@@ -65,8 +66,10 @@ Implemented slice:
 - `File -> Save Index` reuses the existing session/index save path and a native Save dialog with `.idx` default suffix.
 - `Flow -> Export Current Flow` reuses the existing session flow-export path and a native Save dialog with `.pcap` default suffix.
 - `Flow -> Export Selected Flows` reuses the existing session batch flow-export path, the checked-flow set, and the same native `.pcap` Save dialog behavior.
+- `Flow -> Export Unselected Flows` reuses the existing session batch flow-export path, the inverse of checked-flow selection over the full loaded flow list, and the same native `.pcap` Save dialog behavior.
 - `Flow -> Export Current Flow` is selected-flow-only and requires the original source capture to be readable.
 - `Flow -> Export Selected Flows` uses checked-flow selection rather than the active selected flow and also requires the original source capture to be readable.
+- `Flow -> Export Unselected Flows` uses the unchecked remainder of the loaded flow list and also requires the original source capture to be readable.
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
 - When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
 - Attach-source reuses existing session validation and keeps the current session open if the chosen capture does not match.
@@ -112,13 +115,15 @@ Implemented slice:
 
 ## Deferred items
 
-- Tauri now supports four narrow save/export workflows:
+- Tauri now supports five narrow save/export workflows:
   - `File -> Save Index`
   - `Flow -> Export Current Flow`
   - `Flow -> Export Selected Flows`
+  - `Flow -> Export Unselected Flows`
   - selected-flow Analysis sequence CSV export
 - Checked-flow selection exists in the Flows table and now powers `Flow -> Export Selected Flows`.
-- `Export Unselected Flows` and `Smart Export...` are still deferred.
+- `Flow -> Export Unselected Flows` now exports the inverse of checked-flow selection.
+- `Smart Export...` is still deferred.
 - Other export workflows are still absent in Tauri.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
 - Save/open index workflow details are still thinner than Qt and need a smaller parity polish pass.
@@ -153,7 +158,7 @@ Implemented slice:
 
 ## Recommended next priorities
 
-1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Save Index`, and selected-flow Analysis sequence CSV export
+1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Save Index`, and selected-flow Analysis sequence CSV export
 2. Save/open index workflow polish
 3. Settings/preferences
 4. Performance pass for large captures, including virtualization/pagination where needed
