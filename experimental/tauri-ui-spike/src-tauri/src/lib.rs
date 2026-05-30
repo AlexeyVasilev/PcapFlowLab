@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
@@ -53,6 +53,40 @@ fn pick_open_path(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+fn pick_open_capture_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("Capture files", &["pcap", "pcapng"])
+        .add_filter("PCAP files", &["pcap"])
+        .add_filter("PCAPNG files", &["pcapng"])
+        .blocking_pick_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| resolved.to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
+}
+
+#[tauri::command]
+fn pick_open_index_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("Index files", &["idx", "pflidx"])
+        .blocking_pick_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| resolved.to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
+}
+
+#[tauri::command]
 fn pick_source_capture_path(app: AppHandle) -> Result<Option<String>, String> {
     let selected_path = app
         .dialog()
@@ -71,6 +105,23 @@ fn pick_source_capture_path(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+fn pick_save_index_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("Index files", &["idx"])
+        .set_file_name("analysis.idx")
+        .blocking_save_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| ensure_extension(resolved, "idx").to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
+}
+
+#[tauri::command]
 fn pick_save_analysis_sequence_csv_path(app: AppHandle) -> Result<Option<String>, String> {
     let selected_path = app
         .dialog()
@@ -82,17 +133,17 @@ fn pick_save_analysis_sequence_csv_path(app: AppHandle) -> Result<Option<String>
     Ok(selected_path.map(|path| {
         let display_fallback = path.to_string();
         path.into_path()
-            .map(|resolved| ensure_csv_extension(resolved).to_string_lossy().into_owned())
+            .map(|resolved| ensure_extension(resolved, "csv").to_string_lossy().into_owned())
             .unwrap_or(display_fallback)
     }))
 }
 
-fn ensure_csv_extension(path: PathBuf) -> PathBuf {
+fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
     if path.extension().is_some() {
         return path;
     }
 
-    path.with_extension("csv")
+    path.with_extension(extension)
 }
 
 #[tauri::command]
@@ -179,6 +230,23 @@ fn attach_source_capture(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn save_index(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+) -> Result<SaveIndexResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.save_index(&path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn exit_app(app: AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn export_selected_flow_analysis_sequence_csv(
     state: State<'_, Mutex<AdapterState>>,
     path: String,
@@ -199,10 +267,15 @@ pub fn run() {
         .manage(Mutex::new(AdapterState { adapter }))
         .invoke_handler(tauri::generate_handler![
             pick_open_path,
+            pick_open_capture_path,
+            pick_open_index_path,
             pick_source_capture_path,
+            pick_save_index_path,
             pick_save_analysis_sequence_csv_path,
             open_capture,
             attach_source_capture,
+            save_index,
+            exit_app,
             get_overview,
             get_flows,
             select_flow,

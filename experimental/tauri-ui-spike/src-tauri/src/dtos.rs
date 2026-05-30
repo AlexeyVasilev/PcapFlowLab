@@ -33,6 +33,13 @@ pub struct AttachSourceCaptureResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveIndexResultDto {
+    pub saved: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,

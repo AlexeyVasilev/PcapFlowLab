@@ -133,6 +133,16 @@ std::string attach_source_capture_result_json(const pfl::FrontendAttachSourceCap
     return out.str();
 }
 
+std::string save_index_result_json(const pfl::FrontendSaveIndexResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"saved\":" << bool_json(result.saved) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     std::ostringstream out {};
     out << '{'
@@ -574,6 +584,20 @@ char* pfl_frontend_session_adapter_attach_source_capture_json(
         ? std::filesystem::path {}
         : std::filesystem::u8path(path_utf8);
     return make_c_string(attach_source_capture_result_json(handle->adapter.attach_source_capture(path)));
+}
+
+char* pfl_frontend_session_adapter_save_index_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"saved\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const auto path = path_utf8 == nullptr
+        ? std::filesystem::path {}
+        : std::filesystem::u8path(path_utf8);
+    return make_c_string(save_index_result_json(handle->adapter.save_index(path)));
 }
 
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle) {

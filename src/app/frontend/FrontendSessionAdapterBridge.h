@@ -19,6 +19,10 @@ char* pfl_frontend_session_adapter_attach_source_capture_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* path_utf8
 );
+char* pfl_frontend_session_adapter_save_index_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+);
 
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_flows_json(PflFrontendSessionAdapterHandle* handle);

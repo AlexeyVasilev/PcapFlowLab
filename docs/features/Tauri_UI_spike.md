@@ -42,6 +42,7 @@ The spike now relies on a small frontend-neutral adapter over `CaptureSession`.
 Current adapter-backed operations include:
 
 - `open_capture(path, open_mode)`
+- `save_index(path)`
 - `get_overview()`
 - `get_flows()`
 - `select_flow(flow_index)`
@@ -64,8 +65,10 @@ The existing Qt UI remains the reference implementation for richer presentation 
 
 The current Tauri spike now supports:
 
+- compact Qt-like `File / Flow / View` menu shell
 - native Open File dialog as the primary open workflow
 - typed-path manual fallback
+- `File -> Save Index` through the existing session/index path
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
@@ -90,6 +93,13 @@ The `Flows` tab now supports:
   - `Payload`
   - `Protocol`
 - byte-backed packet details can recover after a valid source-capture attach
+- the menu shell currently wires:
+  - `File -> Open Capture (Fast)`
+  - `File -> Open Capture (Deep)`
+  - `File -> Open Index`
+  - `File -> Save Index`
+  - `File -> Exit`
+  - `View -> About`
 
 ## Current Stream capability
 
@@ -161,7 +171,7 @@ The source-attach workflow:
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - export workflows
-- save/open index workflow details and parity polish
+- save/open index workflow polish
 - settings/preferences
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
 - stream-to-packet navigation is still missing
@@ -175,7 +185,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 ## Current deferred items
 
 - Export workflows
-- Save/open index parity details
+- Save/open index workflow polish
 - Settings/preferences
 - Stream-to-packet navigation
 - Qt-style percentage formatting in Statistics
@@ -186,11 +196,12 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Recommended next priorities
 
-1. Export workflows
-2. Save/open index parity details
-3. Performance pass for large captures, including virtualization/pagination where needed
-4. Analysis export and rate graph after core Tauri workflows stabilize
-5. CLI design after the frontend-neutral DTO surface settles
+1. Export workflows beyond `Save Index` and selected-flow Analysis sequence CSV
+2. Save/open index workflow polish
+3. Settings/preferences
+4. Performance pass for large captures, including virtualization/pagination where needed
+5. Analysis export and rate graph after core Tauri workflows stabilize
+6. CLI design after the frontend-neutral DTO surface settles
 
 ## Notes
 

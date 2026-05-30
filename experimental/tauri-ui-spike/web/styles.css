@@ -36,7 +36,7 @@ body {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   gap: 8px;
   height: 100vh;
   padding: 10px;
@@ -49,6 +49,127 @@ body {
   border-radius: 12px;
   background: var(--panel);
   box-shadow: var(--shadow);
+}
+
+.menu-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  position: relative;
+  overflow: visible;
+}
+
+.menu-root {
+  position: relative;
+}
+
+.menu-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+}
+
+.menu-button:hover,
+.menu-button.is-open {
+  background: #eef3f5;
+  color: var(--text);
+}
+
+.menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: none;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 10px 24px rgba(29, 43, 52, 0.12);
+}
+
+.menu-panel.is-open {
+  display: grid;
+  gap: 2px;
+}
+
+.menu-item {
+  justify-content: flex-start;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: #eef3f5;
+  color: var(--text);
+}
+
+.menu-item:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: #98a3a9;
+  opacity: 1;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 2px;
+  background: #e7dfd1;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(29, 43, 52, 0.22);
+}
+
+.dialog-backdrop.is-visible {
+  display: flex;
+}
+
+.dialog-card {
+  width: min(520px, 100%);
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 16px 36px rgba(29, 43, 52, 0.16);
+}
+
+.dialog-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.dialog-heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.dialog-copy {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .topbar {

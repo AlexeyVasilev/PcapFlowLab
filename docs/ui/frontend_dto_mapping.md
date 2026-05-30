@@ -67,7 +67,7 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ### What should be handled first in future DTO cleanup
 
-- Broader export / index workflow parity.
+- Broader export workflow parity beyond the now-wired `Save Index` path.
 - PacketInspector and stream-item details cleanup.
 - Statistics / Analysis stabilization after the recent DTO additions.
 - Performance pass for larger captures before committing to broader CLI expectations.
@@ -84,6 +84,7 @@ This document is an audit only. It does not introduce a new contract and does no
 | attach source capture | `MainController::attachSourceCapture()` and `browseAttachSourceCapture()` reuse `CaptureSession::attach_source_capture(path)` | `FrontendSessionAdapter::attach_source_capture(path)` now exposes the same validation path and returns updated grouped source availability | Tauri now offers a native `Locate Source...` workflow and updates grouped shell source availability without reopening the session | broader index parity and richer attach-state/status shaping are still deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
 | expected source path | `MainController.expectedSourceCapturePath`, `Main.qml` warning block | `FrontendSourceAvailabilityDto.expected_source_capture_path`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state in shell/unavailable fallbacks | legacy scalars still coexist during migration | app/session + frontend-neutral SourceAvailabilityState | Improved |
 | partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendSourceAvailabilityDto.partial_open`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state for compact shell warning note | warning wording remains frontend-specific | app/session for fact, frontend rendering for wording | Improved |
+| save index workflow | `MainController::saveAnalysisIndex()` reuses `CaptureSession::save_index(path)` with source/partial-open guards | `FrontendSessionAdapter::save_index(path)` now exposes the same narrow session path through a small `FrontendSaveIndexResult` DTO | Tauri now wires `File -> Save Index` through a native Save dialog and the shared adapter path | broader index workflow polish and richer action-availability shaping are still deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
 | selected flow | `MainController.selectedFlowIndex` | `FrontendSessionAdapter::selected_flow_index()` only internally; `select_flow(flow_index)` mutation API | `state.selectedFlowIndex` in `main.js`; set by flow row click | no read DTO for selected-flow shell state; mutation-only | frontend controller/model with stable `flow_index` | High |
 | selected packet | `MainController.selectedPacketIndex` | no adapter-level explicit selected-packet query; packet details API takes `packet_index` | `state.selectedPacketIndex` and `state.selectedPacketRow` in `main.js` | selection state is frontend-local today | frontend controller/model with stable `packet_index` | Medium |
 | selected stream item | `MainController.selectedStreamItemIndex` | no frontend-neutral API for selecting/querying stream item details | Tauri now keeps local selected-stream-item state keyed by stable `stream_item_index` | Tauri UI gap is partially addressed, but no shared selection/details API exists yet | deferred frontend-neutral DTO / controller work | Improved |
@@ -217,6 +218,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 - Basic overview counters and recognition stats in `FrontendOverviewDto`
 - Grouped source-availability facts in `CaptureSession` -> frontend-neutral `SourceAvailability` -> Tauri open/details/stream DTOs
 - A first selected-flow analysis slice in `CaptureSession::get_flow_analysis()` -> `FrontendSelectedFlowAnalysisDto` -> Tauri `Analysis` tab
+- A narrow shared `save_index(path)` workflow over `CaptureSession::save_index(...)` -> Tauri `File -> Save Index`
 
 ### Naming mismatch only
 
@@ -272,12 +274,13 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 
 ## Recommended Follow-Up Order
 
-### 1. Export / Attach-Source / Index workflow parity
+### 1. Export workflow parity beyond Save Index / sequence CSV
 
 Why first now:
 
 - the Tauri spike already covers the main read-side analyzer surfaces reasonably well;
-- the biggest visible gaps are now workflow gaps rather than missing read-only panels.
+- the biggest visible gaps are now the remaining workflow gaps rather than missing read-only panels;
+- `Save Index` and attach-source are now wired, so the next value is in the broader export surface.
 
 Expected risk:
 
@@ -289,9 +292,26 @@ Affected layers:
 - frontend-neutral adapter surface
 - some session/open-path integration
 
-### 2. PacketInspector / stream-item details cleanup
+### 2. Save/open index workflow polish
 
 Why second:
+
+- the thin shared save/open path is now wired in Tauri;
+- the remaining work is parity polish, not a missing core workflow.
+
+Expected risk:
+
+- low to medium.
+
+Affected layers:
+
+- Tauri frontend workflow/UI
+- frontend-neutral adapter surface
+- some session/open-path integration
+
+### 3. PacketInspector / stream-item details cleanup
+
+Why third:
 
 - packet and stream inspection are already useful, but still uneven compared with Qt;
 - this is where shared DTO shape and UX clarity will pay off quickly.
@@ -307,9 +327,9 @@ Affected layers:
 - Tauri inspector views
 - future CLI inspect/report commands
 
-### 3. Statistics / Analysis stabilization
+### 4. Statistics / Analysis stabilization
 
-Why third:
+Why fourth:
 
 - both areas now have meaningful Tauri slices and shared DTO coverage;
 - the remaining work is mostly about deciding how far shared product semantics should go before CLI work starts.
@@ -325,9 +345,9 @@ Affected layers:
 - Tauri parity/polish
 - future CLI reporting surfaces
 
-### 4. Performance pass for large captures
+### 5. Performance pass for large captures
 
-Why fourth:
+Why fifth:
 
 - performance should be informed by actual UI behavior on larger captures, not guessed at too early;
 - the current spike now has enough surfaces to make profiling worthwhile.
@@ -342,9 +362,9 @@ Affected layers:
 - pagination / virtualization strategy
 - possibly adapter payload sizes
 
-### 5. CLI design after DTO stabilization
+### 6. CLI design after DTO stabilization
 
-Why fifth:
+Why sixth:
 
 - CLI should consume the stabilized shared DTO contract, not invent a third shape in parallel;
 - waiting a bit longer avoids locking in DTO choices too early.

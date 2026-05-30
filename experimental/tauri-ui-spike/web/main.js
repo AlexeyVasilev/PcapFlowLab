@@ -1,5 +1,12 @@
 (function () {
-  const invoke = window.__TAURI__?.core?.invoke;
+  const invoke = (...args) => {
+    const tauriInvoke = window.__TAURI__?.core?.invoke;
+    if (typeof tauriInvoke !== "function") {
+      throw new Error("Tauri API is unavailable in this frontend.");
+    }
+
+    return tauriInvoke(...args);
+  };
   const packetPageSize = 60;
   const initialStreamItems = 15;
   const streamItemBatchSize = 15;
@@ -7,10 +14,13 @@
   const streamPacketBatchSize = 30;
 
   const state = {
+    openMenu: null,
+    aboutDialogVisible: false,
     activeTab: "flows",
     flowViewTab: "packets",
     openState: "idle",
     attachSourceInProgress: false,
+    saveIndexInProgress: false,
     statusKind: "neutral",
     statusText: "",
     sourceAvailability: null,
@@ -62,6 +72,12 @@
   };
 
   const elements = {
+    menuButtons: Array.from(document.querySelectorAll("[data-menu-button]")),
+    menuPanels: Array.from(document.querySelectorAll("[data-menu-panel]")),
+    menuItems: Array.from(document.querySelectorAll("[data-menu-action]")),
+    menuSaveIndex: document.getElementById("menuSaveIndex"),
+    aboutDialog: document.getElementById("aboutDialog"),
+    aboutDialogCloseButton: document.getElementById("aboutDialogCloseButton"),
     capturePath: document.getElementById("capturePath"),
     openMode: document.getElementById("openMode"),
     openFileButton: document.getElementById("openFileButton"),
@@ -244,6 +260,14 @@
 
   function canAttachSourceCapture() {
     return state.openState === "opened" && !currentSourceAvailability().byte_backed_inspection_available;
+  }
+
+  function canSaveIndex() {
+    const availability = currentSourceAvailability();
+    return state.openState === "opened"
+      && !state.saveIndexInProgress
+      && !availability.partial_open
+      && availability.byte_backed_inspection_available;
   }
 
   function packetDetailsSourceAvailability(details) {
@@ -492,6 +516,9 @@
     clearStream();
     clearAnalysis();
     state.attachSourceInProgress = false;
+    state.saveIndexInProgress = false;
+    state.openMenu = null;
+    state.aboutDialogVisible = false;
     state.sourceAvailability = null;
     setStatus("", "neutral");
   }
@@ -512,6 +539,51 @@
       elements.statusText.classList.add("is-error");
     } else if (state.statusKind === "success") {
       elements.statusText.classList.add("is-success");
+    }
+  }
+
+  function closeMenus() {
+    state.openMenu = null;
+  }
+
+  function renderMenuState() {
+    try {
+      for (const button of elements.menuButtons || []) {
+        button.classList.toggle("is-open", button.dataset.menuButton === state.openMenu);
+      }
+
+      for (const panel of elements.menuPanels || []) {
+        panel.classList.toggle("is-open", panel.dataset.menuPanel === state.openMenu);
+      }
+
+      for (const item of elements.menuItems || []) {
+        const action = item.dataset.menuAction || "";
+        if (action === "save-index") {
+          item.disabled = !canSaveIndex();
+          item.textContent = state.saveIndexInProgress ? "Saving Index..." : "Save Index";
+        } else if (
+          action === "open-capture-fast"
+          || action === "open-capture-deep"
+          || action === "open-index"
+        ) {
+          item.disabled = state.openState === "opening" || state.attachSourceInProgress || state.saveIndexInProgress;
+        } else if (
+          action === "export-current-flow"
+          || action === "export-selected-flows"
+          || action === "export-unselected-flows"
+          || action === "smart-export"
+          || action === "settings"
+        ) {
+          item.disabled = true;
+        }
+      }
+
+      if (elements.aboutDialog) {
+        elements.aboutDialog.classList.toggle("is-visible", state.aboutDialogVisible);
+        elements.aboutDialog.setAttribute("aria-hidden", state.aboutDialogVisible ? "false" : "true");
+      }
+    } catch (error) {
+      console.error("Failed to render menu state.", error);
     }
   }
 
@@ -1834,22 +1906,33 @@
   }
 
   function render() {
-    renderTabs();
-    renderFlowViewTabs();
-    renderInspectorMode();
-    renderPacketDetailsTabs();
-    renderFlowSortHeaders();
-    renderOpenState();
-    renderSourceWarningBanner();
-    renderStatus();
-    renderOverview();
-    renderFlows();
-    renderWiresharkFilter();
-    renderPackets();
-    renderStream();
-    renderPacketDetails();
-    renderStreamDetails();
-    renderAnalysis();
+    const renderSteps = [
+      ["menu", renderMenuState],
+      ["tabs", renderTabs],
+      ["flow view tabs", renderFlowViewTabs],
+      ["inspector mode", renderInspectorMode],
+      ["packet detail tabs", renderPacketDetailsTabs],
+      ["flow sort headers", renderFlowSortHeaders],
+      ["open state", renderOpenState],
+      ["source warning banner", renderSourceWarningBanner],
+      ["status", renderStatus],
+      ["overview", renderOverview],
+      ["flows", renderFlows],
+      ["Wireshark filter", renderWiresharkFilter],
+      ["packets", renderPackets],
+      ["stream", renderStream],
+      ["packet details", renderPacketDetails],
+      ["stream details", renderStreamDetails],
+      ["analysis", renderAnalysis],
+    ];
+
+    for (const [name, renderStep] of renderSteps) {
+      try {
+        renderStep();
+      } catch (error) {
+        console.error(`Failed to render ${name}.`, error);
+      }
+    }
   }
 
   async function loadOverviewAndFlows() {
@@ -2138,7 +2221,7 @@
     render();
   }
 
-  async function openCapture(pathOverride = null) {
+  async function openCapture(pathOverride = null, modeOverride = null) {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
       render();
@@ -2146,7 +2229,7 @@
     }
 
     const path = String(pathOverride ?? elements.capturePath.value).trim();
-    const openMode = elements.openMode.value;
+    const openMode = String(modeOverride ?? elements.openMode.value ?? "fast");
 
     resetForNewOpen();
     state.openState = "opening";
@@ -2204,6 +2287,49 @@
     }
   }
 
+  async function openCaptureFromMenu(mode) {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_open_capture_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      elements.capturePath.value = selectedPath;
+      elements.openMode.value = mode;
+      await openCapture(selectedPath, mode);
+    } catch (error) {
+      setStatus(`Failed to open the native file dialog: ${String(error)}`, "error");
+      render();
+    }
+  }
+
+  async function openIndexFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_open_index_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      elements.capturePath.value = selectedPath;
+      await openCapture(selectedPath);
+    } catch (error) {
+      setStatus(`Failed to open the native index dialog: ${String(error)}`, "error");
+      render();
+    }
+  }
+
   async function attachSourceCaptureFromDialog() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -2243,6 +2369,96 @@
       state.attachSourceInProgress = false;
       setStatus(`Failed to attach source capture: ${String(error)}`, "error");
       render();
+    }
+  }
+
+  async function saveIndexFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canSaveIndex()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_index_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.saveIndexInProgress = true;
+      setStatus("Saving analysis index...", "neutral");
+      render();
+
+      const result = await invoke("save_index", { path: selectedPath });
+      if (result?.saved) {
+        setStatus("Analysis index saved successfully.", "success");
+      } else {
+        setStatus(result?.error_text || "Failed to save analysis index.", "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to save analysis index: ${String(error)}`, "error");
+    } finally {
+      state.saveIndexInProgress = false;
+      render();
+    }
+  }
+
+  async function exitAppFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    try {
+      await invoke("exit_app");
+    } catch (error) {
+      setStatus(`Failed to exit the application: ${String(error)}`, "error");
+      render();
+    }
+  }
+
+  async function handleMenuAction(action) {
+    closeMenus();
+    render();
+
+    switch (action) {
+      case "open-capture-fast":
+        await openCaptureFromMenu("fast");
+        return;
+      case "open-capture-deep":
+        await openCaptureFromMenu("deep");
+        return;
+      case "open-index":
+        await openIndexFromMenu();
+        return;
+      case "save-index":
+        await saveIndexFromMenu();
+        return;
+      case "exit-app":
+        await exitAppFromMenu();
+        return;
+      case "about":
+        state.aboutDialogVisible = true;
+        render();
+        return;
+      case "settings":
+        setStatus("Settings are not implemented yet in the Tauri spike.", "neutral");
+        render();
+        return;
+      case "export-current-flow":
+      case "export-selected-flows":
+      case "export-unselected-flows":
+      case "smart-export":
+        setStatus("Flow export actions are not implemented yet in the Tauri spike.", "neutral");
+        render();
+        return;
+      default:
+        return;
     }
   }
 
@@ -2294,8 +2510,59 @@
   }
 
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
-  elements.openButton.addEventListener("click", openCapture);
+  elements.openButton.addEventListener("click", () => {
+    void openCapture();
+  });
   elements.attachSourceButton.addEventListener("click", attachSourceCaptureFromDialog);
+  for (const button of elements.menuButtons) {
+    button.addEventListener("click", () => {
+      const menuName = button.dataset.menuButton || null;
+      state.openMenu = state.openMenu === menuName ? null : menuName;
+      render();
+    });
+  }
+  for (const item of elements.menuItems) {
+    item.addEventListener("click", async () => {
+      if (item.disabled) {
+        return;
+      }
+
+      await handleMenuAction(item.dataset.menuAction || "");
+    });
+  }
+  elements.aboutDialogCloseButton?.addEventListener("click", () => {
+    state.aboutDialogVisible = false;
+    render();
+  });
+  elements.aboutDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.aboutDialog) {
+      state.aboutDialogVisible = false;
+      render();
+    }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    if (!target.closest(".menu-bar")) {
+      if (state.openMenu != null) {
+        closeMenus();
+        render();
+      }
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      const hadVisibleUi = state.openMenu != null || state.aboutDialogVisible;
+      closeMenus();
+      state.aboutDialogVisible = false;
+      if (hadVisibleUi) {
+        render();
+      }
+    }
+  });
   elements.flowFilterInput.addEventListener("input", () => {
     applyFlowFilterState(elements.flowFilterInput.value);
     render();

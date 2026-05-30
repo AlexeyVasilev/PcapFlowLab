@@ -45,6 +45,12 @@ struct FrontendAttachSourceCaptureResult {
     FrontendSourceAvailabilityDto source_availability {};
 };
 
+struct FrontendSaveIndexResult {
+    bool saved {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 struct FrontendProtocolHintStatsDto {
     std::string group {};
     std::string protocol_label {};

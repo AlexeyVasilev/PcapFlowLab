@@ -8,6 +8,36 @@
   </head>
   <body>
     <main class="app-shell">
+      <nav class="menu-bar panel" aria-label="Application menu">
+        <div class="menu-root">
+          <button id="menuButtonFile" type="button" class="menu-button" data-menu-button="file">File</button>
+          <div id="menuPanelFile" class="menu-panel" data-menu-panel="file">
+            <button type="button" class="menu-item" data-menu-action="open-capture-fast">Open Capture (Fast)</button>
+            <button type="button" class="menu-item" data-menu-action="open-capture-deep">Open Capture (Deep)</button>
+            <button type="button" class="menu-item" data-menu-action="open-index">Open Index</button>
+            <button id="menuSaveIndex" type="button" class="menu-item" data-menu-action="save-index">Save Index</button>
+            <div class="menu-separator"></div>
+            <button type="button" class="menu-item" data-menu-action="exit-app">Exit</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button id="menuButtonFlow" type="button" class="menu-button" data-menu-button="flow">Flow</button>
+          <div id="menuPanelFlow" class="menu-panel" data-menu-panel="flow">
+            <button type="button" class="menu-item" data-menu-action="export-current-flow" disabled>Export Current Flow</button>
+            <button type="button" class="menu-item" data-menu-action="export-selected-flows" disabled>Export Selected Flows</button>
+            <button type="button" class="menu-item" data-menu-action="export-unselected-flows" disabled>Export Unselected Flows</button>
+            <button type="button" class="menu-item" data-menu-action="smart-export" disabled>Smart Export...</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button id="menuButtonView" type="button" class="menu-button" data-menu-button="view">View</button>
+          <div id="menuPanelView" class="menu-panel" data-menu-panel="view">
+            <button type="button" class="menu-item" data-menu-action="settings" disabled>Settings</button>
+            <button type="button" class="menu-item" data-menu-action="about">About</button>
+          </div>
+        </div>
+      </nav>
+
       <header class="topbar panel">
         <div class="topbar-brand">
           <h1>Pcap Flow Lab</h1>
@@ -514,6 +544,23 @@
         </section>
       </section>
     </main>
+
+    <div id="aboutDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="aboutDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="aboutDialogTitle">About Pcap Flow Lab Tauri UI Spike</h2>
+          <button id="aboutDialogCloseButton" type="button" class="secondary-button">Close</button>
+        </div>
+        <p class="dialog-copy">
+          Experimental Tauri desktop shell for Pcap Flow Lab. Qt remains the primary UI while the spike validates
+          shared session and DTO workflows.
+        </p>
+        <p class="dialog-copy">
+          Wired workflows currently focus on read-side analysis, selected-flow inspection, index save/open basics,
+          source reattachment, and selected-flow sequence CSV export.
+        </p>
+      </section>
+    </div>
 
     <script src="./main.js"></script>
   </body>

@@ -698,6 +698,39 @@ FrontendAttachSourceCaptureResult FrontendSessionAdapter::attach_source_capture(
     return result;
 }
 
+FrontendSaveIndexResult FrontendSessionAdapter::save_index(const std::filesystem::path& output_path) const {
+    FrontendSaveIndexResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    if (session_.is_partial_open()) {
+        result.error_text = "Saving an index from a partial capture is not supported yet.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to save an analysis index.";
+        return result;
+    }
+
+    if (!session_.save_index(output_path)) {
+        result.error_text = "Failed to save analysis index.";
+        return result;
+    }
+
+    result.saved = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};

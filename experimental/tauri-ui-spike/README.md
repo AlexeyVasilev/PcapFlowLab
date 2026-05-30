@@ -6,8 +6,10 @@ This directory contains the experimental Tauri frontend for Pcap Flow Lab.
 
 Implemented slice:
 
+- compact Qt-like `File / Flow / View` menu shell
 - native Open File dialog as the primary open workflow
 - typed path as a compact manual fallback
+- `File -> Save Index` through the existing session/index path
 - locate/attach source capture for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior
@@ -54,7 +56,10 @@ Implemented slice:
 ## Current behavior
 
 - The spike now uses a native Open File dialog as the primary open workflow.
+- The shell now includes a compact Qt-like menu bar with `File`, `Flow`, and `View`.
 - The typed capture/index path remains available as a compact manual fallback.
+- `File -> Open Capture (Fast/Deep)` and `File -> Open Index` reuse the existing open path with native dialogs.
+- `File -> Save Index` reuses the existing session/index save path and a native Save dialog with `.idx` default suffix.
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
 - When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
 - Attach-source reuses existing session validation and keeps the current session open if the chosen capture does not match.
@@ -98,10 +103,12 @@ Implemented slice:
 
 ## Deferred items
 
-- Tauri now supports only one narrow export workflow: selected-flow Analysis sequence CSV export.
+- Tauri now supports two narrow save/export workflows:
+  - `File -> Save Index`
+  - selected-flow Analysis sequence CSV export
 - Other export workflows are still absent in Tauri.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
-- Save/open index workflow details are still thinner than Qt and need a dedicated parity pass.
+- Save/open index workflow details are still thinner than Qt and need a smaller parity polish pass.
 - Settings/preferences are still missing.
 - The Stream tab is still experimental and exposes only a bounded selected-flow slice with basic stream-item details; stream-to-packet navigation is still missing.
 - Statistics remain partial compared to Qt:
@@ -133,11 +140,12 @@ Implemented slice:
 
 ## Recommended next priorities
 
-1. Export workflows
-2. Save/open index parity details
-3. Performance pass for large captures, including virtualization/pagination where needed
-4. Analysis export and rate graph after core Tauri workflows stabilize
-5. CLI design after the frontend-neutral DTO surface settles
+1. Export workflows beyond `Save Index` and selected-flow Analysis sequence CSV export
+2. Save/open index workflow polish
+3. Settings/preferences
+4. Performance pass for large captures, including virtualization/pagination where needed
+5. Analysis export and rate graph after core Tauri workflows stabilize
+6. CLI design after the frontend-neutral DTO surface settles
 
 ## Notes
 

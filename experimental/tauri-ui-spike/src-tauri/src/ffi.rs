@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 
@@ -21,6 +21,10 @@ extern "C" {
         open_mode: c_uchar,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_attach_source_capture_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_save_index_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
     ) -> *mut c_char;
@@ -95,6 +99,12 @@ impl CppFrontendSessionAdapter {
         let path = CString::new(path).map_err(|_| "Source capture path contains an embedded NUL byte.".to_string())?;
         let json = unsafe { pfl_frontend_session_adapter_attach_source_capture_json(self.handle, path.as_ptr()) };
         parse_json_owned::<AttachSourceCaptureResultDto>(json)
+    }
+
+    pub fn save_index(&self, path: &str) -> Result<SaveIndexResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Index path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe { pfl_frontend_session_adapter_save_index_json(self.handle, path.as_ptr()) };
+        parse_json_owned::<SaveIndexResultDto>(json)
     }
 
     pub fn get_overview(&self) -> Result<OverviewDto, String> {
