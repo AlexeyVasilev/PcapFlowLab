@@ -19,6 +19,10 @@ public:
     [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendSaveIndexResult save_index(const std::filesystem::path& output_path) const;
     [[nodiscard]] FrontendExportCurrentFlowResult export_current_flow(const std::filesystem::path& output_path) const;
+    [[nodiscard]] FrontendExportSelectedFlowsResult export_selected_flows(
+        const std::filesystem::path& output_path,
+        const std::vector<std::size_t>& flow_indices
+    ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] bool select_flow(std::size_t flow_index);

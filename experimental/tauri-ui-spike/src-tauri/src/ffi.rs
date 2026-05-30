@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 
@@ -31,6 +31,12 @@ extern "C" {
     fn pfl_frontend_session_adapter_export_current_flow_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_selected_flows_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
+        flow_indices: *const usize,
+        flow_index_count: usize,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_overview_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -115,6 +121,23 @@ impl CppFrontendSessionAdapter {
         let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
         let json = unsafe { pfl_frontend_session_adapter_export_current_flow_json(self.handle, path.as_ptr()) };
         parse_json_owned::<ExportCurrentFlowResultDto>(json)
+    }
+
+    pub fn export_selected_flows(
+        &self,
+        path: &str,
+        flow_indices: &[usize],
+    ) -> Result<ExportSelectedFlowsResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_selected_flows_json(
+                self.handle,
+                path.as_ptr(),
+                flow_indices.as_ptr(),
+                flow_indices.len(),
+            )
+        };
+        parse_json_owned::<ExportSelectedFlowsResultDto>(json)
     }
 
     pub fn get_overview(&self) -> Result<OverviewDto, String> {

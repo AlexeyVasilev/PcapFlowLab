@@ -764,6 +764,42 @@ FrontendExportCurrentFlowResult FrontendSessionAdapter::export_current_flow(cons
     return result;
 }
 
+FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_selected_flows(
+    const std::filesystem::path& output_path,
+    const std::vector<std::size_t>& flow_indices
+) const {
+    FrontendExportSelectedFlowsResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (flow_indices.empty()) {
+        result.error_text = "No selected flows for export.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to export flows.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    if (!session_.export_flows_to_pcap(flow_indices, output_path)) {
+        result.error_text = "Failed to export selected flows.";
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};

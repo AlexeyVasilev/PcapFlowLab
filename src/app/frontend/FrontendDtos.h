@@ -57,6 +57,12 @@ struct FrontendExportCurrentFlowResult {
     std::string error_text {};
 };
 
+struct FrontendExportSelectedFlowsResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 struct FrontendProtocolHintStatsDto {
     std::string group {};
     std::string protocol_label {};

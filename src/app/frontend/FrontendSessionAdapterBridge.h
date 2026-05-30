@@ -27,6 +27,12 @@ char* pfl_frontend_session_adapter_export_current_flow_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* path_utf8
 );
+char* pfl_frontend_session_adapter_export_selected_flows_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8,
+    const std::size_t* flow_indices,
+    std::size_t flow_index_count
+);
 
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_flows_json(PflFrontendSessionAdapterHandle* handle);

@@ -22,6 +22,7 @@
     attachSourceInProgress: false,
     saveIndexInProgress: false,
     exportCurrentFlowInProgress: false,
+    exportSelectedFlowsInProgress: false,
     statusKind: "neutral",
     statusText: "",
     sourceAvailability: null,
@@ -271,6 +272,7 @@
     return state.openState === "opened"
       && !state.saveIndexInProgress
       && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress
       && !availability.partial_open
       && availability.byte_backed_inspection_available;
   }
@@ -282,7 +284,19 @@
       && availability.byte_backed_inspection_available
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
-      && !state.exportCurrentFlowInProgress;
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress;
+  }
+
+  function canExportSelectedFlows() {
+    const availability = currentSourceAvailability();
+    return state.openState === "opened"
+      && checkedFlowCount() > 0
+      && availability.byte_backed_inspection_available
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress;
   }
 
   function packetDetailsSourceAvailability(details) {
@@ -548,6 +562,7 @@
     state.attachSourceInProgress = false;
     state.saveIndexInProgress = false;
     state.exportCurrentFlowInProgress = false;
+    state.exportSelectedFlowsInProgress = false;
     state.openMenu = null;
     state.aboutDialogVisible = false;
     state.sourceAvailability = null;
@@ -595,6 +610,9 @@
         } else if (action === "export-current-flow") {
           item.disabled = !canExportCurrentFlow();
           item.textContent = state.exportCurrentFlowInProgress ? "Exporting Current Flow..." : "Export Current Flow";
+        } else if (action === "export-selected-flows") {
+          item.disabled = !canExportSelectedFlows();
+          item.textContent = state.exportSelectedFlowsInProgress ? "Exporting Selected Flows..." : "Export Selected Flows";
         } else if (
           action === "open-capture-fast"
           || action === "open-capture-deep"
@@ -603,15 +621,15 @@
           item.disabled = state.openState === "opening"
             || state.attachSourceInProgress
             || state.saveIndexInProgress
-            || state.exportCurrentFlowInProgress;
+            || state.exportCurrentFlowInProgress
+            || state.exportSelectedFlowsInProgress;
         } else if (
-          action === "export-selected-flows"
-          || action === "export-unselected-flows"
+          action === "export-unselected-flows"
           || action === "smart-export"
           || action === "settings"
         ) {
           item.disabled = true;
-          if (action === "export-selected-flows" || action === "export-unselected-flows") {
+          if (action === "export-unselected-flows") {
             item.title = "Checked-flow selection is available, but batch export is still deferred.";
           }
         }
@@ -2493,6 +2511,36 @@
     }
   }
 
+  async function exportSelectedFlowsFromMenu() {
+    if (!canExportSelectedFlows()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_flow_export_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.exportSelectedFlowsInProgress = true;
+      setStatus("Exporting selected flows...", "neutral");
+      render();
+
+      const flowIndices = Array.from(state.checkedFlowIndices).sort((left, right) => left - right);
+      const result = await invoke("export_selected_flows", { path: selectedPath, flow_indices: flowIndices });
+      if (result?.exported) {
+        setStatus("Selected flows exported successfully.", "success");
+      } else {
+        setStatus(result?.error_text || "Failed to export selected flows.", "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to export selected flows: ${String(error)}`, "error");
+    } finally {
+      state.exportSelectedFlowsInProgress = false;
+      render();
+    }
+  }
+
   async function exitAppFromMenu() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -2535,11 +2583,13 @@
       case "export-current-flow":
         await exportCurrentFlowFromMenu();
         return;
+      case "export-selected-flows":
+        await exportSelectedFlowsFromMenu();
+        return;
       case "settings":
         setStatus("Settings are not implemented yet in the Tauri spike.", "neutral");
         render();
         return;
-      case "export-selected-flows":
       case "export-unselected-flows":
       case "smart-export":
         setStatus("Flow export actions are not implemented yet in the Tauri spike.", "neutral");

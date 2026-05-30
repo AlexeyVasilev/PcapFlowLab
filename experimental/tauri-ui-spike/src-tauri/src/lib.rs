@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
@@ -269,6 +269,18 @@ fn export_current_flow(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn export_selected_flows(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+    flow_indices: Vec<usize>,
+) -> Result<ExportSelectedFlowsResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_selected_flows(&path, &flow_indices)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn exit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
@@ -305,6 +317,7 @@ pub fn run() {
             attach_source_capture,
             save_index,
             export_current_flow,
+            export_selected_flows,
             exit_app,
             get_overview,
             get_flows,

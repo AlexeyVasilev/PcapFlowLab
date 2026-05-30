@@ -47,6 +47,13 @@ pub struct ExportCurrentFlowResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportSelectedFlowsResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,
