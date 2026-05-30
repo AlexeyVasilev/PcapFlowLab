@@ -117,6 +117,42 @@ label {
   text-overflow: ellipsis;
 }
 
+.source-warning-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-color: #f0b44c;
+  background: #fff3c9;
+}
+
+.source-warning-banner.is-visible {
+  display: flex;
+}
+
+.source-warning-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.source-warning-text,
+.source-warning-path {
+  margin: 0;
+  font-size: 12px;
+}
+
+.source-warning-text {
+  color: #8a4d00;
+}
+
+.source-warning-path {
+  color: var(--text);
+  word-break: break-all;
+}
+
 .workspace-shell {
   display: grid;
   grid-template-rows: auto 1fr;

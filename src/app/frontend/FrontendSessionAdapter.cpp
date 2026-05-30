@@ -671,6 +671,33 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
     };
 }
 
+FrontendAttachSourceCaptureResult FrontendSessionAdapter::attach_source_capture(const std::filesystem::path& path) {
+    FrontendAttachSourceCaptureResult result {
+        .attached = false,
+        .source_availability = current_source_availability(),
+    };
+
+    if (!session_.has_capture()) {
+        result.error_text = "Source capture attachment is not available for the current session.";
+        return result;
+    }
+
+    if (path.empty()) {
+        result.error_text = "No source capture selected.";
+        return result;
+    }
+
+    if (!session_.attach_source_capture(path)) {
+        result.error_text = "Selected file does not match the expected source capture.";
+        result.source_availability = current_source_availability();
+        return result;
+    }
+
+    result.attached = true;
+    result.source_availability = current_source_availability();
+    return result;
+}
+
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};

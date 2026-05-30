@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 
@@ -19,6 +19,10 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
         open_mode: c_uchar,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_attach_source_capture_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_overview_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -85,6 +89,12 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_open_capture_json(self.handle, path.as_ptr(), open_mode as c_uchar)
         };
         parse_json_owned::<OpenCaptureResultDto>(json)
+    }
+
+    pub fn attach_source_capture(&mut self, path: &str) -> Result<AttachSourceCaptureResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Source capture path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe { pfl_frontend_session_adapter_attach_source_capture_json(self.handle, path.as_ptr()) };
+        parse_json_owned::<AttachSourceCaptureResultDto>(json)
     }
 
     pub fn get_overview(&self) -> Result<OverviewDto, String> {

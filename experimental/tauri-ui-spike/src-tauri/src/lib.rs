@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use dtos::{
-    AnalysisSequenceExportResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
@@ -42,6 +42,24 @@ fn pick_open_path(app: AppHandle) -> Result<Option<String>, String> {
         .add_filter("PCAP files", &["pcap"])
         .add_filter("PCAPNG files", &["pcapng"])
         .add_filter("Index files", &["idx", "pflidx"])
+        .blocking_pick_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| resolved.to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
+}
+
+#[tauri::command]
+fn pick_source_capture_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("Supported capture files", &["pcap", "pcapng"])
+        .add_filter("PCAP files", &["pcap"])
+        .add_filter("PCAPNG files", &["pcapng"])
         .blocking_pick_file();
 
     Ok(selected_path.map(|path| {
@@ -150,6 +168,17 @@ fn get_selected_flow_analysis(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn attach_source_capture(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+) -> Result<AttachSourceCaptureResultDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.attach_source_capture(&path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn export_selected_flow_analysis_sequence_csv(
     state: State<'_, Mutex<AdapterState>>,
     path: String,
@@ -170,8 +199,10 @@ pub fn run() {
         .manage(Mutex::new(AdapterState { adapter }))
         .invoke_handler(tauri::generate_handler![
             pick_open_path,
+            pick_source_capture_path,
             pick_save_analysis_sequence_csv_path,
             open_capture,
+            attach_source_capture,
             get_overview,
             get_flows,
             select_flow,

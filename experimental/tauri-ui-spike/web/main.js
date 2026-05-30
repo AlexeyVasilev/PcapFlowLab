@@ -10,6 +10,7 @@
     activeTab: "flows",
     flowViewTab: "packets",
     openState: "idle",
+    attachSourceInProgress: false,
     statusKind: "neutral",
     statusText: "",
     sourceAvailability: null,
@@ -65,8 +66,12 @@
     openMode: document.getElementById("openMode"),
     openFileButton: document.getElementById("openFileButton"),
     openButton: document.getElementById("openButton"),
+    attachSourceButton: document.getElementById("attachSourceButton"),
     openStateBadge: document.getElementById("openStateBadge"),
     openWorkflowNote: document.getElementById("openWorkflowNote"),
+    sourceWarningBanner: document.getElementById("sourceWarningBanner"),
+    sourceWarningText: document.getElementById("sourceWarningText"),
+    sourceWarningExpectedPath: document.getElementById("sourceWarningExpectedPath"),
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
@@ -237,6 +242,10 @@
     return sourceAvailabilityOrDefault(state.sourceAvailability);
   }
 
+  function canAttachSourceCapture() {
+    return state.openState === "opened" && !currentSourceAvailability().byte_backed_inspection_available;
+  }
+
   function packetDetailsSourceAvailability(details) {
     return sourceAvailabilityOrDefault(details?.source_availability || state.sourceAvailability);
   }
@@ -271,7 +280,15 @@
       }
     }
 
+    if (availability.opened_from_index) {
+      return `${baseNote} Source capture attached; byte-backed inspection is available.`;
+    }
+
     return baseNote;
+  }
+
+  function sourceWarningBannerText() {
+    return "Original source capture unavailable. Metadata views remain available, but raw packet bytes, stream reconstruction, and flow export require the original capture file.";
   }
 
   function flowDisplayNumber(flow) {
@@ -474,6 +491,7 @@
     clearPackets();
     clearStream();
     clearAnalysis();
+    state.attachSourceInProgress = false;
     state.sourceAvailability = null;
     setStatus("", "neutral");
   }
@@ -483,6 +501,7 @@
     elements.openMode.disabled = disabled;
     elements.openFileButton.disabled = disabled;
     elements.openButton.disabled = disabled;
+    elements.attachSourceButton.disabled = disabled || state.attachSourceInProgress || !canAttachSourceCapture();
   }
 
   function renderStatus() {
@@ -630,7 +649,26 @@
 
     elements.openStateBadge.textContent = labels[state.openState] || "Idle";
     elements.openStateBadge.className = `state-badge state-${state.openState}`;
+    elements.openButton.style.display = state.openState === "opened" ? "none" : "";
+    elements.attachSourceButton.textContent = state.attachSourceInProgress ? "Attaching..." : "Locate Source...";
     setOpenControlsDisabled(state.openState === "opening");
+  }
+
+  function renderSourceWarningBanner() {
+    const availability = currentSourceAvailability();
+    const showBanner = state.openState === "opened" && !availability.byte_backed_inspection_available;
+
+    elements.sourceWarningBanner.classList.toggle("is-visible", showBanner);
+    if (!showBanner) {
+      elements.sourceWarningText.textContent = "";
+      elements.sourceWarningExpectedPath.textContent = "";
+      return;
+    }
+
+    elements.sourceWarningText.textContent = sourceWarningBannerText();
+    elements.sourceWarningExpectedPath.textContent = availability.expected_source_capture_path
+      ? `Expected source path: ${availability.expected_source_capture_path}`
+      : "";
   }
 
   function renderOverview() {
@@ -1802,6 +1840,7 @@
     renderPacketDetailsTabs();
     renderFlowSortHeaders();
     renderOpenState();
+    renderSourceWarningBanner();
     renderStatus();
     renderOverview();
     renderFlows();
@@ -1878,6 +1917,7 @@
         limit: state.streamRequestedItemLimit,
       });
       const sourceAvailability = streamSourceAvailability(streamResult);
+      state.sourceAvailability = sourceAvailability;
 
       state.streamItems = streamResult?.items || [];
       state.streamLoadedItemCount = streamResult?.loaded_item_count || state.streamItems.length;
@@ -1992,6 +2032,7 @@
         packet_index: state.selectedPacketIndex,
       });
       const sourceAvailability = packetDetailsSourceAvailability(details);
+      state.sourceAvailability = sourceAvailability;
 
       state.packetDetails = details;
       if (details?.error_text) {
@@ -2163,6 +2204,48 @@
     }
   }
 
+  async function attachSourceCaptureFromDialog() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canAttachSourceCapture()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_source_capture_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.attachSourceInProgress = true;
+      setStatus("Attaching source capture...", "neutral");
+      render();
+
+      const result = await invoke("attach_source_capture", { path: selectedPath });
+      if (!result?.attached) {
+        state.attachSourceInProgress = false;
+        setStatus(result?.error_text || "Failed to attach source capture.", "error");
+        render();
+        return;
+      }
+
+      state.sourceAvailability = sourceAvailabilityOrDefault(result?.source_availability);
+      clearPacketDetails();
+      clearStream();
+      state.attachSourceInProgress = false;
+      setStatus(`Attached source capture: ${selectedPath}`, "success");
+      render();
+    } catch (error) {
+      state.attachSourceInProgress = false;
+      setStatus(`Failed to attach source capture: ${String(error)}`, "error");
+      render();
+    }
+  }
+
   async function exportAnalysisSequenceCsv() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -2212,6 +2295,7 @@
 
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
   elements.openButton.addEventListener("click", openCapture);
+  elements.attachSourceButton.addEventListener("click", attachSourceCaptureFromDialog);
   elements.flowFilterInput.addEventListener("input", () => {
     applyFlowFilterState(elements.flowFilterInput.value);
     render();

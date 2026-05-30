@@ -66,6 +66,7 @@ The current Tauri spike now supports:
 
 - native Open File dialog as the primary open workflow
 - typed-path manual fallback
+- source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
 - compact desktop-style layout with internal panel scrolling
@@ -88,6 +89,7 @@ The `Flows` tab now supports:
   - `Raw`
   - `Payload`
   - `Protocol`
+- byte-backed packet details can recover after a valid source-capture attach
 
 ## Current Stream capability
 
@@ -100,6 +102,7 @@ The `Stream` tab now supports:
 - selectable stream rows
 - basic selected stream-item details
 - shared structured source-packet references and constricted notes in the DTO path
+- stream reconstruction can recover after a valid source-capture attach
 
 ## Current Statistics capability
 
@@ -146,12 +149,18 @@ Analysis remains:
 - not computed globally for all flows
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
 
+The source-attach workflow:
+
+- reuses existing session validation
+- keeps the current session open on attach failure
+- updates grouped source-availability state in place
+- makes byte-backed packet details and stream available on the next explicit reload when the chosen source capture is valid
+
 ## Current limitations and remaining Qt gaps
 
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - export workflows
-- attach-source workflow
 - save/open index workflow details and parity polish
 - settings/preferences
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
@@ -166,7 +175,6 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 ## Current deferred items
 
 - Export workflows
-- Attach-source workflow
 - Save/open index parity details
 - Settings/preferences
 - Stream-to-packet navigation
@@ -179,11 +187,10 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 ## Recommended next priorities
 
 1. Export workflows
-2. Attach-source workflow
-3. Save/open index parity details
-4. Performance pass for large captures, including virtualization/pagination where needed
-5. Analysis export and rate graph after core Tauri workflows stabilize
-6. CLI design after the frontend-neutral DTO surface settles
+2. Save/open index parity details
+3. Performance pass for large captures, including virtualization/pagination where needed
+4. Analysis export and rate graph after core Tauri workflows stabilize
+5. CLI design after the frontend-neutral DTO surface settles
 
 ## Notes
 

@@ -67,7 +67,7 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ### What should be handled first in future DTO cleanup
 
-- Export / attach-source / index workflow parity.
+- Broader export / index workflow parity.
 - PacketInspector and stream-item details cleanup.
 - Statistics / Analysis stabilization after the recent DTO additions.
 - Performance pass for larger captures before committing to broader CLI expectations.
@@ -81,6 +81,7 @@ This document is an audit only. It does not introduce a new contract and does no
 | open mode | `MainController.captureOpenMode`, `Main.qml` combo box | `FrontendOpenMode`; adapter `open_capture(path, mode)` | `open_mode` string in Tauri command, local select value in `main.js` | currently request-only in adapter; no persistent shell DTO field | app/session + frontend controller | Medium |
 | open state | Qt splits this across `isOpening`, `openErrorText`, `statusText`, success state by loaded session | no explicit frontend-neutral open-state enum | Tauri `main.js` explicit `idle/opening/opened/error` | mismatch in shape; Tauri has cleaner explicit state | frontend-neutral shell DTO candidate | High |
 | source availability | `MainController.hasSourceCapture`, source warnings, unavailable placeholders | `FrontendSourceAvailabilityDto` nested in open/details/stream results; `CaptureSession::has_source_capture()`, `source_capture_accessible()` | Tauri now consumes grouped `source_availability` in shell warning text and unavailable fallbacks | grouped facts exist, but Qt still does not consume one shared DTO shape | app/session + frontend-neutral SourceAvailabilityState | Improved |
+| attach source capture | `MainController::attachSourceCapture()` and `browseAttachSourceCapture()` reuse `CaptureSession::attach_source_capture(path)` | `FrontendSessionAdapter::attach_source_capture(path)` now exposes the same validation path and returns updated grouped source availability | Tauri now offers a native `Locate Source...` workflow and updates grouped shell source availability without reopening the session | broader index parity and richer attach-state/status shaping are still deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
 | expected source path | `MainController.expectedSourceCapturePath`, `Main.qml` warning block | `FrontendSourceAvailabilityDto.expected_source_capture_path`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state in shell/unavailable fallbacks | legacy scalars still coexist during migration | app/session + frontend-neutral SourceAvailabilityState | Improved |
 | partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendSourceAvailabilityDto.partial_open`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state for compact shell warning note | warning wording remains frontend-specific | app/session for fact, frontend rendering for wording | Improved |
 | selected flow | `MainController.selectedFlowIndex` | `FrontendSessionAdapter::selected_flow_index()` only internally; `select_flow(flow_index)` mutation API | `state.selectedFlowIndex` in `main.js`; set by flow row click | no read DTO for selected-flow shell state; mutation-only | frontend controller/model with stable `flow_index` | High |

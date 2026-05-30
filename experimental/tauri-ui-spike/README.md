@@ -8,6 +8,7 @@ Implemented slice:
 
 - native Open File dialog as the primary open workflow
 - typed path as a compact manual fallback
+- locate/attach source capture for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior
 - frontend-only top-level tabs for `Flows`, `Statistics`, and `Analysis`
@@ -55,6 +56,8 @@ Implemented slice:
 - The spike now uses a native Open File dialog as the primary open workflow.
 - The typed capture/index path remains available as a compact manual fallback.
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
+- When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
+- Attach-source reuses existing session validation and keeps the current session open if the chosen capture does not match.
 - The shell uses a compact top session bar instead of a long vertically stacked page.
 - Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
 - The Flows tab supports case-insensitive frontend filtering over already loaded flow rows.
@@ -97,7 +100,7 @@ Implemented slice:
 
 - Tauri now supports only one narrow export workflow: selected-flow Analysis sequence CSV export.
 - Other export workflows are still absent in Tauri.
-- Attach-source workflow is still missing.
+- Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
 - Save/open index workflow details are still thinner than Qt and need a dedicated parity pass.
 - Settings/preferences are still missing.
 - The Stream tab is still experimental and exposes only a bounded selected-flow slice with basic stream-item details; stream-to-packet navigation is still missing.
@@ -121,6 +124,7 @@ Implemented slice:
   - fuller Qt analysis workspace parity
 - Selected packet inspection is still basic compared with Qt even though it now has `Summary / Raw / Payload / Protocol` tabs.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
+- After a valid source attach, byte-backed packet details and stream become available on the next explicit reload; the shell does not trigger global stream or analysis recomputation.
 - Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.
 - Raw and Payload tabs intentionally show bounded previews only; they do not implement full raw-byte or payload viewers.
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
@@ -130,11 +134,10 @@ Implemented slice:
 ## Recommended next priorities
 
 1. Export workflows
-2. Attach-source workflow
-3. Save/open index parity details
-4. Performance pass for large captures, including virtualization/pagination where needed
-5. Analysis export and rate graph after core Tauri workflows stabilize
-6. CLI design after the frontend-neutral DTO surface settles
+2. Save/open index parity details
+3. Performance pass for large captures, including virtualization/pagination where needed
+4. Analysis export and rate graph after core Tauri workflows stabilize
+5. CLI design after the frontend-neutral DTO surface settles
 
 ## Notes
 

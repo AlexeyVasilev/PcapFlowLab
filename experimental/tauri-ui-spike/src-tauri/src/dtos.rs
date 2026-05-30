@@ -26,6 +26,13 @@ pub struct OpenCaptureResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachSourceCaptureResultDto {
+    pub attached: bool,
+    pub error_text: String,
+    pub source_availability: SourceAvailabilityDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolStatsDto {
     pub flow_count: u64,
     pub packet_count: u64,

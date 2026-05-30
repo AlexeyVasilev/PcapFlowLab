@@ -123,6 +123,16 @@ std::string open_result_json(const pfl::FrontendOpenResult& result) {
     return out.str();
 }
 
+std::string attach_source_capture_result_json(const pfl::FrontendAttachSourceCaptureResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"attached\":" << bool_json(result.attached) << ','
+        << "\"error_text\":" << json_string(result.error_text) << ','
+        << "\"source_availability\":" << source_availability_json(result.source_availability)
+        << '}';
+    return out.str();
+}
+
 std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     std::ostringstream out {};
     out << '{'
@@ -550,6 +560,20 @@ char* pfl_frontend_session_adapter_open_capture_json(
         ? std::filesystem::path {}
         : std::filesystem::u8path(path_utf8);
     return make_c_string(open_result_json(handle->adapter.open_capture(path, mode)));
+}
+
+char* pfl_frontend_session_adapter_attach_source_capture_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"attached\":false,\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+    }
+
+    const auto path = path_utf8 == nullptr
+        ? std::filesystem::path {}
+        : std::filesystem::u8path(path_utf8);
+    return make_c_string(attach_source_capture_result_json(handle->adapter.attach_source_capture(path)));
 }
 
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle) {

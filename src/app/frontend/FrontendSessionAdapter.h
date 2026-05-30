@@ -16,6 +16,7 @@ public:
     FrontendSessionAdapter() = default;
 
     [[nodiscard]] FrontendOpenResult open_capture(const std::filesystem::path& path, FrontendOpenMode open_mode);
+    [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] bool select_flow(std::size_t flow_index);
