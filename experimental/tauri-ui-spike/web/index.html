@@ -158,29 +158,49 @@
                     <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
                   </div>
                 </div>
-                <div class="inspector-tabbar" aria-label="Packet details tabs">
-                  <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
-                  <button type="button" class="inspector-tab" data-packet-details-tab="raw">Raw</button>
-                  <button id="packetDetailsPayloadTabButton" type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
-                  <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
+                <div id="packetInspectorView" class="inspector-view active">
+                  <div class="inspector-tabbar" aria-label="Packet details tabs">
+                    <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
+                    <button type="button" class="inspector-tab" data-packet-details-tab="raw">Raw</button>
+                    <button id="packetDetailsPayloadTabButton" type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
+                    <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
+                  </div>
+                  <div class="details-scroll">
+                    <p id="packetDetailsStateText" class="status-text"></p>
+                    <section class="packet-details-tab-panel active" data-packet-details-panel="summary">
+                      <div id="packetDetailsSummary" class="summary-grid"></div>
+                    </section>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="raw">
+                      <p id="packetDetailsRawStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsRawText" class="details-pre byte-preview-pre raw-preview-pre">No packet selected.</pre>
+                    </section>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="payload">
+                      <p id="packetDetailsPayloadStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsPayloadText" class="details-pre byte-preview-pre">No packet selected.</pre>
+                    </section>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="protocol">
+                      <p id="packetDetailsProtocolStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsProtocolText" class="details-pre protocol-preview-pre">No packet selected.</pre>
+                    </section>
+                  </div>
                 </div>
-                <div class="details-scroll">
-                  <p id="packetDetailsStateText" class="status-text"></p>
-                  <section class="packet-details-tab-panel active" data-packet-details-panel="summary">
-                    <div id="packetDetailsSummary" class="summary-grid"></div>
-                  </section>
-                  <section class="packet-details-tab-panel" data-packet-details-panel="raw">
-                    <p id="packetDetailsRawStateText" class="status-text compact-status-text"></p>
-                    <pre id="packetDetailsRawText" class="details-pre byte-preview-pre raw-preview-pre">No packet selected.</pre>
-                  </section>
-                  <section class="packet-details-tab-panel" data-packet-details-panel="payload">
-                    <p id="packetDetailsPayloadStateText" class="status-text compact-status-text"></p>
-                    <pre id="packetDetailsPayloadText" class="details-pre byte-preview-pre">No packet selected.</pre>
-                  </section>
-                  <section class="packet-details-tab-panel" data-packet-details-panel="protocol">
-                    <p id="packetDetailsProtocolStateText" class="status-text compact-status-text"></p>
-                    <pre id="packetDetailsProtocolText" class="details-pre protocol-preview-pre">No packet selected.</pre>
-                  </section>
+                <div id="streamInspectorView" class="inspector-view">
+                  <div class="details-scroll">
+                    <p id="streamDetailsStateText" class="status-text"></p>
+                    <div id="streamDetailsSummary" class="summary-grid"></div>
+                    <div class="details-section">
+                      <h3>Source Packets</h3>
+                      <pre id="streamDetailsSourcePacketsText" class="details-pre">Select a stream item to inspect details.</pre>
+                    </div>
+                    <div class="details-section">
+                      <h3>Source Packet Indices</h3>
+                      <pre id="streamDetailsSourcePacketIndicesText" class="details-pre">Select a stream item to inspect details.</pre>
+                    </div>
+                    <div class="details-section">
+                      <h3>Constricted Notes</h3>
+                      <pre id="streamDetailsConstrictedNotesText" class="details-pre">Select a stream item to inspect details.</pre>
+                    </div>
+                  </div>
                 </div>
               </section>
             </section>

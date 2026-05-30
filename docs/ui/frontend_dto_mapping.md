@@ -63,7 +63,7 @@ This document is an audit only. It does not introduce a new contract and does no
   - Qt still consumes equivalent facts mostly through controller/view-model properties and placeholder builders.
 - Stream:
   - Qt supports selected stream item and stream-item details;
-  - Tauri currently shows stream rows only and does not yet model selected stream item.
+  - Tauri now models selected stream item state and basic stream-item details, but still does not navigate to source packets or expose a shared stream-item details API.
 
 ### What should be handled first in future DTO cleanup
 
@@ -92,7 +92,7 @@ This document is an audit only. It does not introduce a new contract and does no
 | partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendSourceAvailabilityDto.partial_open`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state for compact shell warning note | warning wording remains frontend-specific | app/session for fact, frontend rendering for wording | Improved |
 | selected flow | `MainController.selectedFlowIndex` | `FrontendSessionAdapter::selected_flow_index()` only internally; `select_flow(flow_index)` mutation API | `state.selectedFlowIndex` in `main.js`; set by flow row click | no read DTO for selected-flow shell state; mutation-only | frontend controller/model with stable `flow_index` | High |
 | selected packet | `MainController.selectedPacketIndex` | no adapter-level explicit selected-packet query; packet details API takes `packet_index` | `state.selectedPacketIndex` and `state.selectedPacketRow` in `main.js` | selection state is frontend-local today | frontend controller/model with stable `packet_index` | Medium |
-| selected stream item | `MainController.selectedStreamItemIndex` | no frontend-neutral API for selecting/querying stream item details | none in current Tauri shell | Tauri gap; no shared frontend-neutral stream-item selection path yet | deferred frontend-neutral DTO / controller work | Medium |
+| selected stream item | `MainController.selectedStreamItemIndex` | no frontend-neutral API for selecting/querying stream item details | Tauri now keeps local selected-stream-item state keyed by stable `stream_item_index` | Tauri UI gap is partially addressed, but no shared selection/details API exists yet | deferred frontend-neutral DTO / controller work | Improved |
 | status/error text | `MainController.statusText`, `statusIsError`, `openErrorText` | `FrontendOpenResult.error_text`; packet/stream/detail result error/unavailable text fields | `state.statusText`, `statusKind`, plus per-panel error text in `main.js` | no common shell/status DTO; mixed global and local message ownership | app/session facts + frontend rendering wording | Medium |
 
 ## Mapping Table: Flows View
@@ -172,7 +172,7 @@ This document is an audit only. It does not introduce a new contract and does no
 | stream loading state | Qt `MainController.streamLoading` and tab-activation logic | no explicit loading field in result DTO | Tauri `streamState = idle/loading/loaded/error/unavailable` | frontend/controller-owned | frontend controller/model | Low |
 | stream error state | Qt state via controller reset/unavailable text | `FrontendSelectedFlowStreamResult.error_text` | Tauri uses explicit error state | aligned enough | frontend-neutral DTO + frontend controller | Medium |
 | stream unavailable state | Qt `sourceCaptureAvailable` + stream empty-state text + placeholders | `FrontendSelectedFlowStreamResult.source_capture_accessible`, `stream_available`, `unavailable_text` | Tauri uses explicit unavailable state | aligned enough | frontend-neutral DTO | High |
-| stream item selection | Qt `selectedStreamItemIndex` and stream-item details path exist | no frontend-neutral API for stream item selection/details | Tauri does not select stream items today | major gap | deferred stream-item DTO/controller work | Medium |
+| stream item selection | Qt `selectedStreamItemIndex` and stream-item details path exist | no frontend-neutral API for stream item selection/details | Tauri now supports local row selection plus basic details rendering from existing stream DTO fields | shared stream-item details API is still absent; Qt remains the richer reference path | deferred stream-item DTO/controller work | Improved |
 
 ## Mapping Table: Statistics / Overview
 

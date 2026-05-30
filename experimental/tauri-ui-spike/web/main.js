@@ -39,6 +39,8 @@
     streamRequestedItemLimit: initialStreamItems,
     streamRequestedPacketBudget: initialStreamPacketBudget,
     streamLoadedForFlowIndex: null,
+    selectedStreamItemIndex: null,
+    selectedStreamItem: null,
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
     packetDetailsTab: "summary",
@@ -76,6 +78,8 @@
     streamTableBody: document.getElementById("streamTableBody"),
     packetDetailsTitle: document.getElementById("packetDetailsTitle"),
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
+    packetInspectorView: document.getElementById("packetInspectorView"),
+    streamInspectorView: document.getElementById("streamInspectorView"),
     packetDetailsTabButtons: Array.from(document.querySelectorAll(".inspector-tab")),
     packetDetailsTabPanels: Array.from(document.querySelectorAll(".packet-details-tab-panel")),
     packetDetailsPayloadTabButton: document.getElementById("packetDetailsPayloadTabButton"),
@@ -87,6 +91,11 @@
     packetDetailsProtocolText: document.getElementById("packetDetailsProtocolText"),
     packetDetailsProtocolStateText: document.getElementById("packetDetailsProtocolStateText"),
     packetDetailsPayloadText: document.getElementById("packetDetailsPayloadText"),
+    streamDetailsStateText: document.getElementById("streamDetailsStateText"),
+    streamDetailsSummary: document.getElementById("streamDetailsSummary"),
+    streamDetailsSourcePacketsText: document.getElementById("streamDetailsSourcePacketsText"),
+    streamDetailsSourcePacketIndicesText: document.getElementById("streamDetailsSourcePacketIndicesText"),
+    streamDetailsConstrictedNotesText: document.getElementById("streamDetailsConstrictedNotesText"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
     metricBytes: document.getElementById("metricBytes"),
@@ -250,6 +259,8 @@
     state.streamRequestedItemLimit = initialStreamItems;
     state.streamRequestedPacketBudget = initialStreamPacketBudget;
     state.streamLoadedForFlowIndex = null;
+    state.selectedStreamItemIndex = null;
+    state.selectedStreamItem = null;
   }
 
   function clearFlows() {
@@ -354,6 +365,12 @@
     elements.packetPrevButton.style.display = showingPackets ? "" : "none";
     elements.packetNextButton.style.display = showingPackets ? "" : "none";
     elements.streamLoadMoreButton.style.display = showingPackets ? "none" : "";
+  }
+
+  function renderInspectorMode() {
+    const showingPacketInspector = state.flowViewTab !== "stream";
+    elements.packetInspectorView.classList.toggle("active", showingPacketInspector);
+    elements.streamInspectorView.classList.toggle("active", !showingPacketInspector);
   }
 
   function renderPacketDetailsTabs() {
@@ -648,9 +665,10 @@
         const constrictedTitle = constrictedNotes.length > 0
           ? constrictedNotes.join("\n")
           : (item.has_constricted_contribution ? "Constricted contribution." : "");
+        const selected = state.selectedStreamItemIndex === item.stream_item_index ? " selected" : "";
 
         return `
-        <tr class="stream-row">
+        <tr class="stream-row${selected}" data-stream-item-index="${item.stream_item_index}">
           <td>${item.stream_item_index}</td>
           <td>${escapeHtml(item.direction_text)}</td>
           <td>${escapeHtml(item.label)}</td>
@@ -663,7 +681,119 @@
       })
       .join("");
 
+    for (const row of elements.streamTableBody.querySelectorAll(".stream-row")) {
+      row.addEventListener("click", () => {
+        const streamItemIndex = Number(row.dataset.streamItemIndex);
+        selectStreamItem(streamItemIndex);
+      });
+    }
+
     elements.streamLoadMoreButton.disabled = !state.streamCanLoadMore || state.streamState === "loading";
+  }
+
+  function renderStreamDetails() {
+    elements.streamDetailsStateText.className = "status-text";
+    elements.streamDetailsSummary.innerHTML = "";
+    elements.streamDetailsSourcePacketsText.classList.remove("is-muted");
+    elements.streamDetailsSourcePacketIndicesText.classList.remove("is-muted");
+    elements.streamDetailsConstrictedNotesText.classList.remove("is-muted");
+
+    if (state.flowViewTab !== "stream") {
+      return;
+    }
+
+    if (state.streamState === "loading") {
+      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
+      elements.packetDetailsMeta.textContent = state.selectedFlowIndex == null
+        ? "Loading stream items..."
+        : `Loading stream items for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
+      elements.streamDetailsStateText.textContent = "Loading stream items...";
+      elements.streamDetailsSourcePacketsText.textContent = "Loading stream items...";
+      elements.streamDetailsSourcePacketIndicesText.textContent = "Loading stream items...";
+      elements.streamDetailsConstrictedNotesText.textContent = "Loading stream items...";
+      return;
+    }
+
+    if (state.streamState === "error") {
+      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
+      elements.packetDetailsMeta.textContent = "Stream item details are unavailable.";
+      elements.streamDetailsStateText.textContent = state.streamErrorText || "Failed to load stream items.";
+      elements.streamDetailsStateText.classList.add("is-error");
+      elements.streamDetailsSourcePacketsText.textContent = "Stream item details are unavailable because the stream request failed.";
+      elements.streamDetailsSourcePacketIndicesText.textContent = "Stream item details are unavailable because the stream request failed.";
+      elements.streamDetailsConstrictedNotesText.textContent = "Stream item details are unavailable because the stream request failed.";
+      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
+      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
+      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+      return;
+    }
+
+    if (state.streamState === "unavailable") {
+      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
+      elements.packetDetailsMeta.textContent = "Stream item details are unavailable for this flow.";
+      elements.streamDetailsStateText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
+      elements.streamDetailsStateText.classList.add("is-error");
+      elements.streamDetailsSourcePacketsText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
+      elements.streamDetailsSourcePacketIndicesText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
+      elements.streamDetailsConstrictedNotesText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
+      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
+      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
+      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+      return;
+    }
+
+    if (state.selectedStreamItem == null) {
+      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
+      elements.packetDetailsMeta.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsStateText.textContent = "";
+      elements.streamDetailsSourcePacketsText.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsSourcePacketIndicesText.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsConstrictedNotesText.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
+      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
+      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+      return;
+    }
+
+    const item = state.selectedStreamItem;
+    const sourcePacketRefs = formatStreamSourcePacketRefs(item);
+    const constrictedNotes = formatStreamConstrictedNotes(item);
+    const summaryItems = [
+      ["Stream Item", item.stream_item_index],
+      ["Flow Index", state.selectedFlowIndex == null ? "-" : formatNumber(state.selectedFlowIndex + 1)],
+      ["Direction", item.direction_text || "-"],
+      ["Label", item.label || "-"],
+      ["Bytes", formatNumber(item.byte_count)],
+      ["Packets", formatNumber(item.packet_count)],
+      ["Constricted", item.has_constricted_contribution ? "Yes" : "No"],
+    ];
+
+    elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
+    elements.packetDetailsMeta.textContent = `Stream item ${item.stream_item_index} loaded for flow ${formatNumber((state.selectedFlowIndex ?? 0) + 1)}.`;
+    elements.streamDetailsStateText.textContent = "";
+    elements.streamDetailsSummary.innerHTML = summaryItems
+      .map(([label, value]) => `
+        <div class="summary-row">
+          <span class="summary-label">${escapeHtml(label)}</span>
+          <span class="summary-value">${escapeHtml(value)}</span>
+        </div>
+      `)
+      .join("");
+    elements.streamDetailsSourcePacketsText.textContent = item.source_packets_text || "No source packet text is available for this stream item.";
+    elements.streamDetailsSourcePacketIndicesText.textContent = sourcePacketRefs || "No structured source packet indices are available for this stream item.";
+    elements.streamDetailsConstrictedNotesText.textContent = constrictedNotes.length > 0
+      ? constrictedNotes.join("\n")
+      : (item.has_constricted_contribution ? "Constricted contribution is marked for this stream item, but no notes were emitted." : "No constricted notes are available for this stream item.");
+
+    if (!item.source_packets_text) {
+      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
+    }
+    if (!sourcePacketRefs) {
+      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
+    }
+    if (constrictedNotes.length === 0 && !item.has_constricted_contribution) {
+      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+    }
   }
 
   function renderPacketDetails() {
@@ -845,6 +975,7 @@
   function render() {
     renderTabs();
     renderFlowViewTabs();
+    renderInspectorMode();
     renderPacketDetailsTabs();
     renderOpenState();
     renderStatus();
@@ -854,6 +985,7 @@
     renderPackets();
     renderStream();
     renderPacketDetails();
+    renderStreamDetails();
   }
 
   async function loadOverviewAndFlows() {
@@ -930,6 +1062,7 @@
       state.streamPartiallyLoaded = Boolean(streamResult?.stream_partially_loaded);
       state.streamPacketWindowPartial = Boolean(streamResult?.packet_window_partial);
       state.streamLoadedForFlowIndex = state.selectedFlowIndex;
+      const previousSelectedStreamItemIndex = state.selectedStreamItemIndex;
 
       if (streamResult?.error_text) {
         state.streamState = "error";
@@ -947,11 +1080,22 @@
         state.streamState = "loaded";
         state.streamUnavailableText = streamResult?.unavailable_text || "";
       }
+
+      if (previousSelectedStreamItemIndex != null) {
+        const selectedItem = state.streamItems.find((item) => item.stream_item_index === previousSelectedStreamItemIndex) || null;
+        state.selectedStreamItemIndex = selectedItem?.stream_item_index ?? null;
+        state.selectedStreamItem = selectedItem;
+      } else {
+        state.selectedStreamItemIndex = null;
+        state.selectedStreamItem = null;
+      }
     } catch (error) {
       state.streamItems = [];
       state.streamState = "error";
       state.streamErrorText = `Failed to load stream items: ${String(error)}`;
       state.streamLoadedForFlowIndex = null;
+      state.selectedStreamItemIndex = null;
+      state.selectedStreamItem = null;
       setStatus(state.streamErrorText, "error");
     }
 
@@ -1059,6 +1203,22 @@
     await loadSelectedPacketDetails();
   }
 
+  function selectStreamItem(streamItemIndex) {
+    const item = state.streamItems.find((candidate) => candidate.stream_item_index === streamItemIndex) || null;
+    if (item == null) {
+      state.selectedStreamItemIndex = null;
+      state.selectedStreamItem = null;
+      setStatus("The selected stream item is not available in the current stream window.", "error");
+      render();
+      return;
+    }
+
+    state.selectedStreamItemIndex = streamItemIndex;
+    state.selectedStreamItem = item;
+    setStatus(`Selected stream item ${streamItemIndex}.`, "success");
+    render();
+  }
+
   async function openCapture(pathOverride = null) {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -1132,11 +1292,11 @@
     setWiresharkFilterStatus("", "neutral");
 
     const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
-    if (!selectedFlowVisible) {
-      state.selectedFlowIndex = null;
-      clearPackets();
-      clearStream();
-      setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
+      if (!selectedFlowVisible) {
+        state.selectedFlowIndex = null;
+        clearPackets();
+        clearStream();
+        setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
     }
 
     render();
