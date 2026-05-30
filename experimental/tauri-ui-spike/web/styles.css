@@ -175,11 +175,20 @@ label {
   min-height: 0;
 }
 
+.analysis-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.85fr) minmax(520px, 1.15fr);
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+}
+
 .flows-panel,
 .packets-panel,
 .packet-details-panel,
 .statistics-panel,
 .analysis-panel,
+.analysis-flows-panel,
 .placeholder-panel {
   display: flex;
   flex-direction: column;
@@ -193,6 +202,7 @@ label {
 
 .flows-panel > .fill-scroll,
 .packets-panel > .fill-scroll,
+.analysis-flows-panel > .fill-scroll,
 .packet-details-panel > .details-scroll {
   flex: 1 1 auto;
 }
@@ -561,6 +571,30 @@ select:disabled {
   padding-right: 2px;
 }
 
+.analysis-flows-table {
+  min-width: 560px;
+}
+
+.analysis-flows-table td:nth-child(2),
+.analysis-flows-table td:nth-child(3) {
+  max-width: 0;
+}
+
+.analysis-flow-primary {
+  display: block;
+  font-weight: 600;
+}
+
+.analysis-flow-secondary {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .analysis-sections {
   display: flex;
   flex: 1 1 auto;
@@ -803,6 +837,11 @@ select:disabled {
 
   .flows-bottom {
     grid-template-columns: 1fr;
+  }
+
+  .analysis-layout {
+    grid-template-columns: 1fr;
+    height: auto;
   }
 
   .flow-wireshark-row {

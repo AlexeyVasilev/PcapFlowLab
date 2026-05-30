@@ -372,39 +372,67 @@
         </section>
 
         <section id="tabPanelAnalysis" class="tab-panel" data-tab-panel="analysis">
-          <section class="panel analysis-panel">
-            <div class="panel-heading">
-              <div>
-                <h2>Analysis</h2>
-                <p id="analysisMeta" class="panel-subtitle">Select a flow to load selected-flow analysis.</p>
+          <div class="analysis-layout">
+            <section class="panel analysis-flows-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Analysis Flows</h2>
+                  <p id="analysisFlowMeta" class="panel-subtitle">Select a flow to inspect analysis.</p>
+                </div>
               </div>
-            </div>
-            <div class="analysis-scroll">
-              <p id="analysisStateText" class="status-text"></p>
-              <div id="analysisContent" class="analysis-sections">
-                <section class="analysis-section">
-                  <h3>Flow Summary</h3>
-                  <div id="analysisFlowSummary" class="summary-grid"></div>
-                </section>
-                <section class="analysis-section">
-                  <h3>Traffic Totals</h3>
-                  <div id="analysisTrafficTotals" class="summary-grid"></div>
-                </section>
-                <section class="analysis-section">
-                  <h3>Direction Split</h3>
-                  <div id="analysisDirectionSplit" class="summary-grid"></div>
-                </section>
-                <section class="analysis-section">
-                  <h3>Timing and Size</h3>
-                  <div id="analysisTimingSize" class="summary-grid"></div>
-                </section>
-                <section id="analysisTcpControlsSection" class="analysis-section">
-                  <h3>TCP Controls</h3>
-                  <div id="analysisTcpControls" class="summary-grid"></div>
-                </section>
+              <div class="table-wrap fill-scroll">
+                <table class="data-table analysis-flows-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Hint</th>
+                      <th>Service</th>
+                      <th>Packets</th>
+                      <th>Bytes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analysisFlowTableBody"></tbody>
+                </table>
               </div>
-            </div>
-          </section>
+            </section>
+
+            <section class="panel analysis-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Analysis</h2>
+                  <p id="analysisMeta" class="panel-subtitle">Select a flow to load selected-flow analysis.</p>
+                </div>
+                <div class="pager-controls">
+                  <button id="analysisOpenInFlowsButton" type="button" class="secondary-button">Open in Flows</button>
+                </div>
+              </div>
+              <div class="analysis-scroll">
+                <p id="analysisStateText" class="status-text"></p>
+                <div id="analysisContent" class="analysis-sections">
+                  <section class="analysis-section">
+                    <h3>Flow Summary</h3>
+                    <div id="analysisFlowSummary" class="summary-grid"></div>
+                  </section>
+                  <section class="analysis-section">
+                    <h3>Traffic Totals</h3>
+                    <div id="analysisTrafficTotals" class="summary-grid"></div>
+                  </section>
+                  <section class="analysis-section">
+                    <h3>Direction Split</h3>
+                    <div id="analysisDirectionSplit" class="summary-grid"></div>
+                  </section>
+                  <section class="analysis-section">
+                    <h3>Timing and Size</h3>
+                    <div id="analysisTimingSize" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisTcpControlsSection" class="analysis-section">
+                    <h3>TCP Controls</h3>
+                    <div id="analysisTcpControls" class="summary-grid"></div>
+                  </section>
+                </div>
+              </div>
+            </section>
+          </div>
         </section>
       </section>
     </main>

@@ -104,6 +104,8 @@
     streamDetailsSourcePacketsText: document.getElementById("streamDetailsSourcePacketsText"),
     streamDetailsSourcePacketIndicesText: document.getElementById("streamDetailsSourcePacketIndicesText"),
     streamDetailsConstrictedNotesText: document.getElementById("streamDetailsConstrictedNotesText"),
+    analysisFlowMeta: document.getElementById("analysisFlowMeta"),
+    analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
     analysisMeta: document.getElementById("analysisMeta"),
     analysisStateText: document.getElementById("analysisStateText"),
     analysisContent: document.getElementById("analysisContent"),
@@ -113,6 +115,7 @@
     analysisTimingSize: document.getElementById("analysisTimingSize"),
     analysisTcpControlsSection: document.getElementById("analysisTcpControlsSection"),
     analysisTcpControls: document.getElementById("analysisTcpControls"),
+    analysisOpenInFlowsButton: document.getElementById("analysisOpenInFlowsButton"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
     metricCapturedBytes: document.getElementById("metricCapturedBytes"),
@@ -485,6 +488,22 @@
 
   function getVisibleFlows() {
     return [...filteredFlows()].sort((left, right) => {
+      const result = compareFlowValues(
+        getFlowSortValue(left, state.flowSortKey),
+        getFlowSortValue(right, state.flowSortKey),
+        state.flowSortDirection
+      );
+
+      if (result !== 0) {
+        return result;
+      }
+
+      return Number(left?.flow_index ?? 0) - Number(right?.flow_index ?? 0);
+    });
+  }
+
+  function getSortedFlows(flowList) {
+    return [...(flowList || [])].sort((left, right) => {
       const result = compareFlowValues(
         getFlowSortValue(left, state.flowSortKey),
         getFlowSortValue(right, state.flowSortKey),
@@ -1328,7 +1347,69 @@
       .join("");
   }
 
+  function renderAnalysisFlowList() {
+    const flows = getSortedFlows(state.flows);
+
+    if (state.openState === "opening" || state.flowState === "loading") {
+      elements.analysisFlowMeta.textContent = "Loading flows for analysis...";
+      elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading analysis flows...</td></tr>`;
+      return;
+    }
+
+    if (state.openState === "error") {
+      elements.analysisFlowMeta.textContent = "No analysis flows available after open failure.";
+      elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. Analysis flows were cleared.</td></tr>`;
+      return;
+    }
+
+    if (state.openState !== "opened") {
+      elements.analysisFlowMeta.textContent = "No capture loaded.";
+      elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to inspect analysis flows.</td></tr>`;
+      return;
+    }
+
+    if (flows.length === 0) {
+      elements.analysisFlowMeta.textContent = "No flows are available for analysis.";
+      elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">No flows available.</td></tr>`;
+      return;
+    }
+
+    elements.analysisFlowMeta.textContent = state.selectedFlowIndex == null
+      ? `Showing ${formatNumber(flows.length)} flows. Select one to load analysis.`
+      : `Showing ${formatNumber(flows.length)} flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`;
+
+    elements.analysisFlowTableBody.innerHTML = flows
+      .map((flow) => {
+        const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
+        const hintOrProtocol = formatProtocolHint(flow) || flow.protocol_text || "-";
+        const endpointSummary = `${flow.address_a}:${flow.port_a} <-> ${flow.address_b}:${flow.port_b}`;
+        return `
+          <tr class="flow-row${selected} analysis-flow-row" data-analysis-flow-index="${flow.flow_index}" title="${escapeHtml(endpointSummary)}">
+            <td>${flowDisplayNumber(flow)}</td>
+            <td>${escapeHtml(hintOrProtocol)}</td>
+            <td title="${escapeHtml(flow.service_hint || endpointSummary)}">
+              <span class="analysis-flow-primary">${escapeHtml(flow.service_hint || "-")}</span>
+              <span class="analysis-flow-secondary">${escapeHtml(endpointSummary)}</span>
+            </td>
+            <td>${formatNumber(flow.packet_count)}</td>
+            <td>${formatNumber(flow.total_bytes)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    for (const row of elements.analysisFlowTableBody.querySelectorAll(".analysis-flow-row")) {
+      row.addEventListener("click", async () => {
+        const flowIndex = Number(row.dataset.analysisFlowIndex);
+        state.flowFilterText = "";
+        elements.flowFilterInput.value = "";
+        await selectFlow(flowIndex);
+      });
+    }
+  }
+
   function renderAnalysis() {
+    renderAnalysisFlowList();
     elements.analysisStateText.className = "status-text";
     elements.analysisFlowSummary.innerHTML = "";
     elements.analysisTrafficTotals.innerHTML = "";
@@ -1337,6 +1418,7 @@
     elements.analysisTcpControls.innerHTML = "";
     elements.analysisTcpControlsSection.style.display = "none";
     elements.analysisContent.classList.remove("is-hidden");
+    elements.analysisOpenInFlowsButton.disabled = state.selectedFlowIndex == null;
 
     if (state.openState === "opening") {
       elements.analysisMeta.textContent = "Opening capture before selected-flow analysis can run.";
@@ -1356,6 +1438,13 @@
     if (state.openState !== "opened") {
       elements.analysisMeta.textContent = "No capture loaded.";
       elements.analysisStateText.textContent = "Open a capture or index to inspect selected-flow analysis.";
+      elements.analysisContent.classList.add("is-hidden");
+      return;
+    }
+
+    if (state.flowState === "loaded" && state.flows.length === 0) {
+      elements.analysisMeta.textContent = "No flows available.";
+      elements.analysisStateText.textContent = "No flows are available for selected-flow analysis.";
       elements.analysisContent.classList.add("is-hidden");
       return;
     }
@@ -1928,6 +2017,14 @@
     state.streamRequestedPacketBudget += streamPacketBatchSize;
     state.streamRequestedItemLimit += streamItemBatchSize;
     await loadSelectedFlowStream();
+  });
+  elements.analysisOpenInFlowsButton.addEventListener("click", () => {
+    if (state.selectedFlowIndex == null) {
+      return;
+    }
+
+    state.activeTab = "flows";
+    render();
   });
 
   render();

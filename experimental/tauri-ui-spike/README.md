@@ -78,8 +78,9 @@ Not implemented yet:
 - The current Tauri shell now also consumes a grouped frontend-neutral source-availability shape for shell warnings plus packet-details / stream unavailable fallbacks.
 - The Statistics tab now shows basic overview cards plus compact transport, IP family, protocol-hint, QUIC, TLS, top-endpoint, and top-port summary sections from the frontend-neutral overview DTO.
 - Statistics rows for protocol hints, top endpoints, and top ports can now drill down into the existing Flows filter.
-- The Analysis tab now loads a first compact selected-flow analysis slice on demand for the active selected flow.
+- The Analysis tab now has its own compact flow list on the left and loads a first selected-flow analysis slice on demand on the right.
 - Analysis stays selected-flow-only and does not run during capture open.
+- Selecting a flow in Analysis reuses the shared selected-flow state and can be followed with `Open in Flows` without changing backend behavior.
 
 ## Structure
 
