@@ -148,6 +148,27 @@
     return `${formatPercent(part, total)} (${formatNumber(part)} flows)`;
   }
 
+  function protocolHintFilterValue(protocolLabel) {
+    const normalized = String(protocolLabel || "").trim().toLowerCase();
+    const mapping = {
+      "http": "http",
+      "tls": "tls",
+      "possible tls": "possible tls",
+      "dns": "dns",
+      "quic": "quic",
+      "possible quic": "possible quic",
+      "ssh": "ssh",
+      "stun": "stun",
+      "bittorrent": "bittorrent",
+      "mail protocols": "mail_protocols",
+      "dhcp": "dhcp",
+      "mdns": "mdns",
+      "unknown": "unknown",
+    };
+
+    return mapping[normalized] || "";
+  }
+
   function setStatus(text, kind = "neutral") {
     state.statusText = text || "";
     state.statusKind = kind;
@@ -262,6 +283,26 @@
   function setWiresharkFilterStatus(text, kind = "neutral") {
     state.wiresharkFilterStatusText = text || "";
     state.wiresharkFilterStatusKind = kind;
+  }
+
+  function applyFlowFilterState(filterText) {
+    state.flowFilterText = String(filterText || "");
+    setWiresharkFilterStatus("", "neutral");
+
+    const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
+    if (!selectedFlowVisible) {
+      state.selectedFlowIndex = null;
+      clearPackets();
+      clearStream();
+      setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
+    }
+  }
+
+  function applyFlowFilterFromStatistics(filterText, sourceLabel) {
+    state.activeTab = "flows";
+    applyFlowFilterState(filterText);
+    setStatus(`Filtered flows by ${sourceLabel}.`, "success");
+    render();
   }
 
   function clearOverview() {
@@ -486,7 +527,7 @@
       elements.protocolHintStatsBody.innerHTML = protocolHintRows.length > 0
         ? protocolHintRows
           .map((row) => `
-            <tr>
+            <tr class="${protocolHintFilterValue(row.protocol_label) ? "stats-drilldown-row" : ""}" data-protocol-filter="${escapeHtml(protocolHintFilterValue(row.protocol_label))}" title="${protocolHintFilterValue(row.protocol_label) ? "Filter flows by this protocol hint" : ""}">
               <td>${escapeHtml(row.group)}</td>
               <td>${escapeHtml(row.protocol_label)}</td>
               <td>${formatNumber(row.flow_count)}</td>
@@ -532,7 +573,7 @@
         && topTalkersVisible
         ? topEndpoints
           .map((row) => `
-            <tr>
+            <tr class="stats-drilldown-row" data-endpoint-filter="${escapeHtml(row.endpoint_label)}" title="Filter flows by this endpoint">
               <td>${escapeHtml(row.endpoint_label)}</td>
               <td>${formatNumber(row.packet_count)}</td>
               <td>${formatNumber(row.total_bytes)}</td>
@@ -549,7 +590,7 @@
         && topTalkersVisible
         ? topPorts
           .map((row) => `
-            <tr>
+            <tr class="stats-drilldown-row" data-port-filter="${row.port}" title="Filter flows by this port">
               <td>${formatNumber(row.port)}</td>
               <td>${formatNumber(row.packet_count)}</td>
               <td>${formatNumber(row.total_bytes)}</td>
@@ -562,6 +603,39 @@
             ? "No top-port summary is available for this capture."
             : "Top-port summary appears once more than 30 flows are present."
         );
+
+      for (const row of elements.protocolHintStatsBody.querySelectorAll(".stats-drilldown-row")) {
+        row.addEventListener("click", () => {
+          const filterText = String(row.dataset.protocolFilter || "").trim();
+          if (!filterText) {
+            return;
+          }
+
+          applyFlowFilterFromStatistics(filterText, `protocol hint "${filterText}"`);
+        });
+      }
+
+      for (const row of elements.topEndpointsBody.querySelectorAll(".stats-drilldown-row")) {
+        row.addEventListener("click", () => {
+          const filterText = String(row.dataset.endpointFilter || "").trim();
+          if (!filterText) {
+            return;
+          }
+
+          applyFlowFilterFromStatistics(filterText, `endpoint "${filterText}"`);
+        });
+      }
+
+      for (const row of elements.topPortsBody.querySelectorAll(".stats-drilldown-row")) {
+        row.addEventListener("click", () => {
+          const filterText = String(row.dataset.portFilter || "").trim();
+          if (!filterText) {
+            return;
+          }
+
+          applyFlowFilterFromStatistics(filterText, `port ${filterText}`);
+        });
+      }
     } else if (state.openState === "error") {
       elements.overviewMeta.textContent = "No overview available after open failure.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
@@ -1454,22 +1528,11 @@
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
   elements.openButton.addEventListener("click", openCapture);
   elements.flowFilterInput.addEventListener("input", () => {
-    state.flowFilterText = elements.flowFilterInput.value;
-    setWiresharkFilterStatus("", "neutral");
-
-    const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
-      if (!selectedFlowVisible) {
-        state.selectedFlowIndex = null;
-        clearPackets();
-        clearStream();
-        setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
-    }
-
+    applyFlowFilterState(elements.flowFilterInput.value);
     render();
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {
-    state.flowFilterText = "";
-    setWiresharkFilterStatus("", "neutral");
+    applyFlowFilterState("");
     render();
   });
   elements.copyWiresharkFilterButton.addEventListener("click", async () => {

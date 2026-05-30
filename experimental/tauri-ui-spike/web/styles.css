@@ -497,6 +497,14 @@ select:disabled {
   background: #f7f4ec;
 }
 
+.data-table tbody tr.stats-drilldown-row {
+  cursor: pointer;
+}
+
+.data-table tbody tr.stats-drilldown-row:hover {
+  background: #f7f4ec;
+}
+
 .data-table tbody tr.flow-row.selected,
 .data-table tbody tr.packet-row.selected,
 .data-table tbody tr.stream-row.selected {

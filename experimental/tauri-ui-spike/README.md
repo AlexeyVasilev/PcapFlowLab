@@ -75,6 +75,7 @@ Not implemented yet:
 - Protocol hints now use the shared display-oriented hint text from the frontend-neutral flow DTO when available.
 - The current Tauri shell now also consumes a grouped frontend-neutral source-availability shape for shell warnings plus packet-details / stream unavailable fallbacks.
 - The Statistics tab now shows basic overview cards plus compact transport, IP family, protocol-hint, QUIC, TLS, top-endpoint, and top-port summary sections from the frontend-neutral overview DTO.
+- Statistics rows for protocol hints, top endpoints, and top ports can now drill down into the existing Flows filter.
 - The Analysis tab is a placeholder only and does not implement analysis behavior yet.
 
 ## Structure
@@ -97,6 +98,7 @@ Not implemented yet:
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
 - The Stream tab is still experimental and exposes only a small subset of the current Qt stream presentation fields.
 - Statistics remain partial compared to Qt: drill-down actions and richer percentage/grouping presentation are still deferred.
+- Statistics drill-down currently works by switching to the Flows tab and reusing the existing frontend filter; it does not yet navigate directly to flows, packets, or packet details.
 - The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
