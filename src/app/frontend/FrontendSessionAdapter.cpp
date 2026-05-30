@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <iomanip>
 #include <span>
 #include <sstream>
 #include <set>
@@ -295,6 +297,139 @@ std::pair<std::string, bool> build_raw_preview(const std::vector<std::uint8_t>& 
     };
 }
 
+std::string trim_trailing_zeros(std::string text) {
+    const auto decimal_index = text.find('.');
+    if (decimal_index == std::string::npos) {
+        return text;
+    }
+
+    while (!text.empty() && text.back() == '0') {
+        text.pop_back();
+    }
+    if (!text.empty() && text.back() == '.') {
+        text.pop_back();
+    }
+
+    return text;
+}
+
+std::string group_integer_part(std::string text) {
+    const auto decimal_index = text.find('.');
+    const auto fraction = decimal_index == std::string::npos ? std::string {} : text.substr(decimal_index);
+    std::string integer_part = decimal_index == std::string::npos ? std::move(text) : text.substr(0U, decimal_index);
+
+    const bool negative = !integer_part.empty() && integer_part.front() == '-';
+    if (negative) {
+        integer_part.erase(integer_part.begin());
+    }
+
+    for (std::ptrdiff_t index = static_cast<std::ptrdiff_t>(integer_part.size()) - 3; index > 0; index -= 3) {
+        integer_part.insert(static_cast<std::size_t>(index), " ");
+    }
+
+    if (negative) {
+        integer_part.insert(integer_part.begin(), '-');
+    }
+
+    return integer_part + fraction;
+}
+
+std::string format_grouped_integer(const std::uint64_t value) {
+    return group_integer_part(std::to_string(value));
+}
+
+std::string format_grouped_decimal(const double value, const int decimals) {
+    std::ostringstream out {};
+    out << std::fixed << std::setprecision(decimals) << value;
+    return group_integer_part(trim_trailing_zeros(out.str()));
+}
+
+std::string format_duration_us(const std::uint64_t duration_us) {
+    if (duration_us == 0U) {
+        return "0 us";
+    }
+
+    std::ostringstream out {};
+    if (duration_us < 1000U) {
+        out << duration_us << " us";
+        return out.str();
+    }
+
+    if (duration_us < 1000000U) {
+        out << std::fixed << std::setprecision(3) << (static_cast<double>(duration_us) / 1000.0) << " ms";
+        return out.str();
+    }
+
+    out << std::fixed << std::setprecision(3) << (static_cast<double>(duration_us) / 1000000.0) << " s";
+    return out.str();
+}
+
+std::string format_rate_value(const double value, const char* suffix) {
+    std::ostringstream out {};
+    out << std::fixed << std::setprecision(3) << value << ' ' << suffix;
+    return out.str();
+}
+
+std::string format_human_readable_bytes(const double value, const char* suffix = "") {
+    constexpr const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+    constexpr std::size_t unit_count = sizeof(units) / sizeof(units[0]);
+
+    double scaled_value = std::max(0.0, value);
+    std::size_t unit_index = 0U;
+    while (scaled_value >= 1024.0 && unit_index + 1U < unit_count) {
+        scaled_value /= 1024.0;
+        ++unit_index;
+    }
+
+    std::string numeric_text {};
+    if (unit_index == 0U) {
+        const auto rounded_value = std::round(scaled_value);
+        numeric_text = std::fabs(scaled_value - rounded_value) < 0.05
+            ? format_grouped_integer(static_cast<std::uint64_t>(std::llround(rounded_value)))
+            : format_grouped_decimal(scaled_value, 1);
+    } else {
+        numeric_text = format_grouped_decimal(scaled_value, 1);
+    }
+
+    return numeric_text + ' ' + units[unit_index] + suffix;
+}
+
+std::string format_byte_rate_value(const double value) {
+    return format_human_readable_bytes(value, "/s");
+}
+
+std::string format_size_value(const double value) {
+    return format_human_readable_bytes(value);
+}
+
+std::string format_size_value(const std::uint32_t value) {
+    return format_human_readable_bytes(static_cast<double>(value));
+}
+
+std::string format_size_value(const std::uint64_t value) {
+    return format_human_readable_bytes(static_cast<double>(value));
+}
+
+std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const std::size_t flow_index) {
+    const auto rows = session.list_flows();
+    const auto it = std::find_if(rows.begin(), rows.end(), [flow_index](const FlowRow& row) {
+        return row.index == flow_index;
+    });
+    if (it == rows.end()) {
+        return std::nullopt;
+    }
+
+    return *it;
+}
+
+std::string build_analysis_endpoint_summary(const FlowRow& row) {
+    std::ostringstream out {};
+    out << row.address_a << ':' << row.port_a
+        << " <-> "
+        << row.address_b << ':' << row.port_b;
+    return out.str();
+}
+
 }  // namespace
 
 FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availability() const {
@@ -508,6 +643,99 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     for (const auto& row : rows) {
         result.items.push_back(to_frontend_stream_item(row, flow_packet_numbers));
     }
+
+    return result;
+}
+
+FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analysis() const {
+    FrontendSelectedFlowAnalysisDto result {
+        .has_capture = session_.has_capture(),
+        .has_selected_flow = selected_flow_index_.has_value(),
+        .analysis_available = false,
+        .has_tcp_control_counts = false,
+        .flow_index = selected_flow_index_.value_or(0U),
+    };
+
+    if (!result.has_capture) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (!result.has_selected_flow) {
+        result.error_text = "No flow is selected.";
+        return result;
+    }
+
+    const auto flow_index = *selected_flow_index_;
+    const auto row = selected_flow_row(session_, flow_index);
+    if (!row.has_value()) {
+        result.error_text = "The selected flow is unavailable.";
+        return result;
+    }
+
+    const auto analysis = session_.get_flow_analysis(flow_index);
+    if (!analysis.has_value()) {
+        result.unavailable_text = "Analysis is unavailable for the selected flow.";
+        return result;
+    }
+
+    const auto flow_packets = session_.flow_packets(flow_index);
+    if (!flow_packets.has_value()) {
+        result.unavailable_text = "Analysis is unavailable because the selected flow packets cannot be read.";
+        return result;
+    }
+
+    std::uint64_t captured_bytes = 0U;
+    for (const auto& packet : *flow_packets) {
+        captured_bytes += packet.captured_length;
+    }
+
+    result.analysis_available = true;
+    result.has_tcp_control_counts = analysis->has_tcp_control_counts;
+    result.total_packets = analysis->total_packets;
+    result.total_bytes = analysis->total_bytes;
+    result.captured_bytes = captured_bytes;
+    result.packets_a_to_b = analysis->packets_a_to_b;
+    result.packets_b_to_a = analysis->packets_b_to_a;
+    result.bytes_a_to_b = analysis->bytes_a_to_b;
+    result.bytes_b_to_a = analysis->bytes_b_to_a;
+    result.tcp_syn_packets = analysis->tcp_syn_packets;
+    result.tcp_fin_packets = analysis->tcp_fin_packets;
+    result.tcp_rst_packets = analysis->tcp_rst_packets;
+    result.endpoint_summary_text = build_analysis_endpoint_summary(*row);
+    result.protocol_text = row->protocol_text;
+    result.protocol_hint_display = !analysis->protocol_hint.empty()
+        ? format_protocol_hint_display(analysis->protocol_hint)
+        : format_protocol_hint_display(row->protocol_hint);
+    result.service_hint_text = !analysis->service_hint.empty()
+        ? analysis->service_hint
+        : (!row->service_hint.empty() ? row->service_hint : analysis->protocol_panel_service_text);
+    result.first_packet_time_text = analysis->first_packet_timestamp_text;
+    result.last_packet_time_text = analysis->last_packet_timestamp_text;
+    result.duration_text = format_duration_us(analysis->duration_us);
+    result.largest_gap_text = format_duration_us(analysis->largest_gap_us);
+    result.packets_considered_text = format_grouped_integer(analysis->timeline_packet_count_considered);
+    result.total_packets_text = format_grouped_integer(analysis->total_packets);
+    result.total_bytes_text = format_size_value(analysis->total_bytes);
+    result.captured_bytes_text = format_size_value(captured_bytes);
+    result.packets_a_to_b_text = format_grouped_integer(analysis->packets_a_to_b);
+    result.packets_b_to_a_text = format_grouped_integer(analysis->packets_b_to_a);
+    result.bytes_a_to_b_text = format_size_value(analysis->bytes_a_to_b);
+    result.bytes_b_to_a_text = format_size_value(analysis->bytes_b_to_a);
+    result.packet_ratio_text = analysis->packet_ratio_text;
+    result.byte_ratio_text = analysis->byte_ratio_text;
+    result.packet_direction_text = analysis->packet_direction_text;
+    result.data_direction_text = analysis->data_direction_text;
+    result.packets_per_second_text = format_rate_value(analysis->packets_per_second, "pkt/s");
+    result.bytes_per_second_text = format_byte_rate_value(analysis->bytes_per_second);
+    result.average_packet_size_text = format_size_value(analysis->average_packet_size_bytes);
+    result.average_inter_arrival_text =
+        format_duration_us(static_cast<std::uint64_t>(std::llround(analysis->average_inter_arrival_us)));
+    result.min_packet_size_text = format_size_value(analysis->min_packet_size_bytes);
+    result.max_packet_size_text = format_size_value(analysis->max_packet_size_bytes);
+    result.tcp_syn_packets_text = format_grouped_integer(analysis->tcp_syn_packets);
+    result.tcp_fin_packets_text = format_grouped_integer(analysis->tcp_fin_packets);
+    result.tcp_rst_packets_text = format_grouped_integer(analysis->tcp_rst_packets);
 
     return result;
 }

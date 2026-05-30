@@ -179,6 +179,7 @@ label {
 .packets-panel,
 .packet-details-panel,
 .statistics-panel,
+.analysis-panel,
 .placeholder-panel {
   display: flex;
   flex-direction: column;
@@ -548,6 +549,43 @@ select:disabled {
   gap: 8px;
   overflow: auto;
   padding-right: 2px;
+}
+
+.analysis-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.analysis-sections {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-sections.is-hidden {
+  display: none;
+}
+
+.analysis-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px solid #ebe4d8;
+  border-radius: 10px;
+  background: #fcfaf5;
+}
+
+.analysis-section h3 {
+  margin: 0;
+  font-size: 13px;
 }
 
 .statistics-section {

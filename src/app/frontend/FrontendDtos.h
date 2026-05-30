@@ -183,4 +183,53 @@ struct FrontendPacketDetailsDto {
     FrontendSourceAvailabilityDto source_availability {};
 };
 
+struct FrontendSelectedFlowAnalysisDto {
+    bool has_capture {false};
+    bool has_selected_flow {false};
+    bool analysis_available {false};
+    bool has_tcp_control_counts {false};
+    std::size_t flow_index {0};
+    std::uint64_t total_packets {0};
+    std::uint64_t total_bytes {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t packets_a_to_b {0};
+    std::uint64_t packets_b_to_a {0};
+    std::uint64_t bytes_a_to_b {0};
+    std::uint64_t bytes_b_to_a {0};
+    std::uint64_t tcp_syn_packets {0};
+    std::uint64_t tcp_fin_packets {0};
+    std::uint64_t tcp_rst_packets {0};
+    std::string endpoint_summary_text {};
+    std::string protocol_text {};
+    std::string protocol_hint_display {};
+    std::string service_hint_text {};
+    std::string first_packet_time_text {};
+    std::string last_packet_time_text {};
+    std::string duration_text {};
+    std::string largest_gap_text {};
+    std::string packets_considered_text {};
+    std::string total_packets_text {};
+    std::string total_bytes_text {};
+    std::string captured_bytes_text {};
+    std::string packets_a_to_b_text {};
+    std::string packets_b_to_a_text {};
+    std::string bytes_a_to_b_text {};
+    std::string bytes_b_to_a_text {};
+    std::string packet_ratio_text {};
+    std::string byte_ratio_text {};
+    std::string packet_direction_text {};
+    std::string data_direction_text {};
+    std::string packets_per_second_text {};
+    std::string bytes_per_second_text {};
+    std::string average_packet_size_text {};
+    std::string average_inter_arrival_text {};
+    std::string min_packet_size_text {};
+    std::string max_packet_size_text {};
+    std::string tcp_syn_packets_text {};
+    std::string tcp_fin_packets_text {};
+    std::string tcp_rst_packets_text {};
+    std::string unavailable_text {};
+    std::string error_text {};
+};
+
 }  // namespace pfl

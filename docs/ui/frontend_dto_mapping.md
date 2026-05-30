@@ -193,20 +193,20 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ## Mapping Table: Analysis
 
-Analysis remains reference/deferred. The mapping below records what is statically visible today.
+Analysis is now partially addressed in Tauri through a first selected-flow, on-demand slice. The mapping below records what is visible today and what remains deferred compared with Qt.
 
 | Contract item | Current Qt source | Current frontend-neutral DTO/API | Current Tauri source | Gap / mismatch | Proposed owner | Priority |
 |---|---|---|---|---|---|---|
-| selected-flow analysis trigger | `sendSelectedFlowToAnalysis()`, `currentTabIndex`, `analysis_tab_active_` | direct session API exists: `CaptureSession::get_flow_analysis(flow_index)` | Tauri `Analysis` tab is placeholder only | Tauri gap; no frontend-neutral app adapter API | deferred | Medium |
+| selected-flow analysis trigger | `sendSelectedFlowToAnalysis()`, `currentTabIndex`, `analysis_tab_active_` | `FrontendSessionAdapter::get_selected_flow_analysis()` now wraps `CaptureSession::get_flow_analysis(flow_index)` behind selected-flow state | Tauri `Analysis` tab now loads analysis lazily for the current selected flow when the tab opens | no dedicated shared action contract; Tauri follows selected-flow context only | app/session + frontend-neutral DTO + frontend controller | Improved |
 | analysis flow list | `AnalysisWorkspacePane` left list from `flowModel` | none separate; Qt reuses flow model | none | frontend-only today | deferred | Low |
-| duration/timeline metrics | `MainController.analysisDurationText`, timeline properties | session returns `FlowAnalysisResult`; not wrapped by frontend adapter | none | no frontend-neutral adapter surface | deferred | Medium |
-| endpoint summary | `analysisEndpointSummaryText` | session analysis result exists | none | no frontend-neutral adapter surface | deferred | Medium |
-| packet/byte/rate metrics | multiple `analysis*Text` properties in `MainController` | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
-| direction split metrics | `analysisPacketsAToBText`, `analysisBytesAToBText`, etc. | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
-| packet size metrics | `analysisAveragePacketSizeText`, min/max size texts | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
-| inter-arrival metrics | `analysisAverageInterArrivalText`, histograms | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
-| protocol hint/service/version text | `analysisProtocolHint`, `analysisServiceHint`, `analysisProtocolVersionText` | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
-| TCP control counts | `analysisHasTcpControlCounts`, SYN/FIN/RST props | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
+| duration/timeline metrics | `MainController.analysisDurationText`, timeline properties | `FrontendSelectedFlowAnalysisDto` now carries duration / first-packet / last-packet / largest-gap / packets-considered text for a minimal slice | Tauri now renders a compact timing section | Qt still exposes richer timeline/rate context | frontend-neutral DTO + frontend rendering | Improved |
+| endpoint summary | `analysisEndpointSummaryText` | `FrontendSelectedFlowAnalysisDto.endpoint_summary_text` | Tauri now renders a compact flow summary section | Tauri does not yet mirror the separate Qt analysis-flows left pane | frontend-neutral DTO + frontend rendering | Improved |
+| packet/byte/rate metrics | multiple `analysis*Text` properties in `MainController` | `FrontendSelectedFlowAnalysisDto` now carries total packets / original bytes / captured bytes / packets-per-second / data-rate text | Tauri now renders a compact traffic totals section | no charts or deeper rate context | frontend-neutral DTO + frontend rendering | Improved |
+| direction split metrics | `analysisPacketsAToBText`, `analysisBytesAToBText`, etc. | `FrontendSelectedFlowAnalysisDto` now carries directional packet/byte counts plus ratio/dominance text | Tauri now renders a compact direction split section | no Qt-style directional charts | frontend-neutral DTO + frontend rendering | Improved |
+| packet size metrics | `analysisAveragePacketSizeText`, min/max size texts | `FrontendSelectedFlowAnalysisDto` now carries average / min / max packet-size text | Tauri now renders these in a compact timing/size section | directional min/max size variants remain deferred | frontend-neutral DTO + frontend rendering | Improved |
+| inter-arrival metrics | `analysisAverageInterArrivalText`, histograms | `FrontendSelectedFlowAnalysisDto.average_inter_arrival_text` only for the first slice | Tauri now renders average inter-arrival text only | histograms remain deferred | frontend-neutral DTO + later richer DTO | Improved |
+| protocol hint/service/version text | `analysisProtocolHint`, `analysisServiceHint`, `analysisProtocolVersionText` | `FrontendSelectedFlowAnalysisDto` now carries protocol text plus protocol-hint/service text for the compact slice | Tauri now renders protocol / hint / service in flow summary | protocol version / protocol panel specifics remain deferred | frontend-neutral DTO + frontend rendering | Improved |
+| TCP control counts | `analysisHasTcpControlCounts`, SYN/FIN/RST props | `FrontendSelectedFlowAnalysisDto` now carries `has_tcp_control_counts` plus SYN/FIN/RST counts and text | Tauri now renders a small TCP controls section when available | no deeper TCP-specific analysis surface | frontend-neutral DTO + frontend rendering | Improved |
 | burst/idle-gap metrics | `analysisBurstCountText`, `analysisLargestIdleGapText` | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Medium |
 | rate graph status/window | `analysisRateGraphAvailable`, status/window text, series props | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Low |
 | histograms | packet size and inter-arrival histogram properties | session analysis result exists | none | Qt-only app/controller formatting today | deferred | Low |
@@ -222,6 +222,7 @@ Analysis remains reference/deferred. The mapping below records what is staticall
 - Basic selected-flow stream row fields in `StreamItemRow` -> `FrontendStreamItemDto` -> Tauri `StreamItemDto`
 - Basic overview counters and recognition stats in `FrontendOverviewDto`
 - Grouped source-availability facts in `CaptureSession` -> frontend-neutral `SourceAvailability` -> Tauri open/details/stream DTOs
+- A first selected-flow analysis slice in `CaptureSession::get_flow_analysis()` -> `FrontendSelectedFlowAnalysisDto` -> Tauri `Analysis` tab
 
 ### Naming mismatch only
 

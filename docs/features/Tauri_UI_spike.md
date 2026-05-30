@@ -163,8 +163,8 @@ Current frontend-shell status:
 - the lower-left Flows workspace now has Packets and Stream tabs; Stream remains lazy, bounded, and selected-flow-only
 - the Statistics tab now shows basic overview cards plus compact transport, IP family, protocol-hint, QUIC, TLS, top-endpoint, and top-port summary sections from the frontend-neutral overview DTO
 - statistics rows for protocol hints, top endpoints, and top ports can now drill down into the existing Flows tab filter
-- the Analysis tab is currently a frontend placeholder with no backend behavior
-- the current shell remains typed-path only; Browse is intentionally deferred for a later pass
+- the Analysis tab now loads a first compact selected-flow analysis slice on demand for the active selected flow
+- the current shell keeps a typed path as a manual fallback while Browse / attach-source workflows remain deferred for a later pass
 - the current shell now supports a native Open File dialog as the primary desktop open workflow
 - the typed path remains available as a compact manual fallback
 
@@ -182,6 +182,12 @@ Current stream limitations:
 - selecting a stream item does not yet navigate to packet details or source packets
 - stream items are loaded on demand for the selected flow only
 - stream reconstruction stays bounded by packet-window and item budgets instead of attempting unbounded reconstruction
+
+Current analysis limitations:
+
+- the current Tauri Analysis tab is selected-flow-only and loads on demand; it does not compute analysis during capture open
+- the first Tauri Analysis slice only covers compact flow summary, totals, direction split, timing/size metrics, and basic TCP control counts
+- charts, histograms, sequence preview, export, and the richer Qt analysis workspace remain deferred
 
 Current statistics limitations:
 

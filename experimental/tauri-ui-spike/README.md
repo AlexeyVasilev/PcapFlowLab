@@ -13,6 +13,7 @@ Implemented slice:
 - select a flow
 - load the selected-flow packet list
 - load a basic selected-flow stream view on demand
+- load a first compact selected-flow analysis view on demand
 - select a packet from the current packet page
 - inspect basic selected-packet details
 - inspect selected packets through compact Summary / Raw / Payload / Protocol tabs
@@ -31,11 +32,11 @@ Implemented slice:
 Not implemented yet:
 
 - full packet details parity
-- analysis
+- full analysis parity
 - Smart Export
 - settings
 - production packaging
-- browse/file-picker workflow
+- attach-source and broader file-management workflows
 
 ## Current behavior
 
@@ -77,7 +78,8 @@ Not implemented yet:
 - The current Tauri shell now also consumes a grouped frontend-neutral source-availability shape for shell warnings plus packet-details / stream unavailable fallbacks.
 - The Statistics tab now shows basic overview cards plus compact transport, IP family, protocol-hint, QUIC, TLS, top-endpoint, and top-port summary sections from the frontend-neutral overview DTO.
 - Statistics rows for protocol hints, top endpoints, and top ports can now drill down into the existing Flows filter.
-- The Analysis tab is a placeholder only and does not implement analysis behavior yet.
+- The Analysis tab now loads a first compact selected-flow analysis slice on demand for the active selected flow.
+- Analysis stays selected-flow-only and does not run during capture open.
 
 ## Structure
 
@@ -100,7 +102,8 @@ Not implemented yet:
 - The Stream tab is still experimental and exposes only a small subset of the current Qt stream presentation fields.
 - Statistics remain partial compared to Qt: drill-down actions and richer percentage/grouping presentation are still deferred.
 - Statistics drill-down currently works by switching to the Flows tab and reusing the existing frontend filter; it does not yet navigate directly to flows, packets, or packet details.
-- The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
+- The current Tauri Analysis tab intentionally covers only a first compact slice of the existing selected-flow session analysis.
+- Charts, histograms, sequence preview, export, and richer Qt analysis workspace parity remain deferred.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
 - Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.

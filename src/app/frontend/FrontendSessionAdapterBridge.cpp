@@ -391,6 +391,59 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
     return out.str();
 }
 
+std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(analysis.has_capture) << ','
+        << "\"has_selected_flow\":" << bool_json(analysis.has_selected_flow) << ','
+        << "\"analysis_available\":" << bool_json(analysis.analysis_available) << ','
+        << "\"has_tcp_control_counts\":" << bool_json(analysis.has_tcp_control_counts) << ','
+        << "\"flow_index\":" << analysis.flow_index << ','
+        << "\"total_packets\":" << analysis.total_packets << ','
+        << "\"total_bytes\":" << analysis.total_bytes << ','
+        << "\"captured_bytes\":" << analysis.captured_bytes << ','
+        << "\"packets_a_to_b\":" << analysis.packets_a_to_b << ','
+        << "\"packets_b_to_a\":" << analysis.packets_b_to_a << ','
+        << "\"bytes_a_to_b\":" << analysis.bytes_a_to_b << ','
+        << "\"bytes_b_to_a\":" << analysis.bytes_b_to_a << ','
+        << "\"tcp_syn_packets\":" << analysis.tcp_syn_packets << ','
+        << "\"tcp_fin_packets\":" << analysis.tcp_fin_packets << ','
+        << "\"tcp_rst_packets\":" << analysis.tcp_rst_packets << ','
+        << "\"endpoint_summary_text\":" << json_string(analysis.endpoint_summary_text) << ','
+        << "\"protocol_text\":" << json_string(analysis.protocol_text) << ','
+        << "\"protocol_hint_display\":" << json_string(analysis.protocol_hint_display) << ','
+        << "\"service_hint_text\":" << json_string(analysis.service_hint_text) << ','
+        << "\"first_packet_time_text\":" << json_string(analysis.first_packet_time_text) << ','
+        << "\"last_packet_time_text\":" << json_string(analysis.last_packet_time_text) << ','
+        << "\"duration_text\":" << json_string(analysis.duration_text) << ','
+        << "\"largest_gap_text\":" << json_string(analysis.largest_gap_text) << ','
+        << "\"packets_considered_text\":" << json_string(analysis.packets_considered_text) << ','
+        << "\"total_packets_text\":" << json_string(analysis.total_packets_text) << ','
+        << "\"total_bytes_text\":" << json_string(analysis.total_bytes_text) << ','
+        << "\"captured_bytes_text\":" << json_string(analysis.captured_bytes_text) << ','
+        << "\"packets_a_to_b_text\":" << json_string(analysis.packets_a_to_b_text) << ','
+        << "\"packets_b_to_a_text\":" << json_string(analysis.packets_b_to_a_text) << ','
+        << "\"bytes_a_to_b_text\":" << json_string(analysis.bytes_a_to_b_text) << ','
+        << "\"bytes_b_to_a_text\":" << json_string(analysis.bytes_b_to_a_text) << ','
+        << "\"packet_ratio_text\":" << json_string(analysis.packet_ratio_text) << ','
+        << "\"byte_ratio_text\":" << json_string(analysis.byte_ratio_text) << ','
+        << "\"packet_direction_text\":" << json_string(analysis.packet_direction_text) << ','
+        << "\"data_direction_text\":" << json_string(analysis.data_direction_text) << ','
+        << "\"packets_per_second_text\":" << json_string(analysis.packets_per_second_text) << ','
+        << "\"bytes_per_second_text\":" << json_string(analysis.bytes_per_second_text) << ','
+        << "\"average_packet_size_text\":" << json_string(analysis.average_packet_size_text) << ','
+        << "\"average_inter_arrival_text\":" << json_string(analysis.average_inter_arrival_text) << ','
+        << "\"min_packet_size_text\":" << json_string(analysis.min_packet_size_text) << ','
+        << "\"max_packet_size_text\":" << json_string(analysis.max_packet_size_text) << ','
+        << "\"tcp_syn_packets_text\":" << json_string(analysis.tcp_syn_packets_text) << ','
+        << "\"tcp_fin_packets_text\":" << json_string(analysis.tcp_fin_packets_text) << ','
+        << "\"tcp_rst_packets_text\":" << json_string(analysis.tcp_rst_packets_text) << ','
+        << "\"unavailable_text\":" << json_string(analysis.unavailable_text) << ','
+        << "\"error_text\":" << json_string(analysis.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string selection_json(const bool selected) {
     return std::string {"{\"selected\":"} + bool_json(selected) + '}';
 }
@@ -484,6 +537,14 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     }
 
     return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(packet_index)));
+}
+
+char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"analysis_available\":false,\"has_tcp_control_counts\":false,\"flow_index\":0,\"total_packets\":0,\"total_bytes\":0,\"captured_bytes\":0,\"packets_a_to_b\":0,\"packets_b_to_a\":0,\"bytes_a_to_b\":0,\"bytes_b_to_a\":0,\"tcp_syn_packets\":0,\"tcp_fin_packets\":0,\"tcp_rst_packets\":0,\"endpoint_summary_text\":\"\",\"protocol_text\":\"\",\"protocol_hint_display\":\"\",\"service_hint_text\":\"\",\"first_packet_time_text\":\"\",\"last_packet_time_text\":\"\",\"duration_text\":\"\",\"largest_gap_text\":\"\",\"packets_considered_text\":\"\",\"total_packets_text\":\"\",\"total_bytes_text\":\"\",\"captured_bytes_text\":\"\",\"packets_a_to_b_text\":\"\",\"packets_b_to_a_text\":\"\",\"bytes_a_to_b_text\":\"\",\"bytes_b_to_a_text\":\"\",\"packet_ratio_text\":\"\",\"byte_ratio_text\":\"\",\"packet_direction_text\":\"\",\"data_direction_text\":\"\",\"packets_per_second_text\":\"\",\"bytes_per_second_text\":\"\",\"average_packet_size_text\":\"\",\"average_inter_arrival_text\":\"\",\"min_packet_size_text\":\"\",\"max_packet_size_text\":\"\",\"tcp_syn_packets_text\":\"\",\"tcp_fin_packets_text\":\"\",\"tcp_rst_packets_text\":\"\",\"unavailable_text\":\"Adapter handle is unavailable.\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    return make_c_string(analysis_json(handle->adapter.get_selected_flow_analysis()));
 }
 
 void pfl_frontend_string_free(char* value) {

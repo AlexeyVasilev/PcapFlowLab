@@ -372,16 +372,37 @@
         </section>
 
         <section id="tabPanelAnalysis" class="tab-panel" data-tab-panel="analysis">
-          <section class="panel placeholder-panel">
+          <section class="panel analysis-panel">
             <div class="panel-heading">
               <div>
                 <h2>Analysis</h2>
-                <p class="panel-subtitle">Placeholder only in the Tauri spike.</p>
+                <p id="analysisMeta" class="panel-subtitle">Select a flow to load selected-flow analysis.</p>
               </div>
             </div>
-            <div class="placeholder-copy">
-              <p>Analysis is not implemented in the experimental Tauri UI yet.</p>
-              <p>The Qt desktop UI remains the primary analyzer path for deep analysis workflows.</p>
+            <div class="analysis-scroll">
+              <p id="analysisStateText" class="status-text"></p>
+              <div id="analysisContent" class="analysis-sections">
+                <section class="analysis-section">
+                  <h3>Flow Summary</h3>
+                  <div id="analysisFlowSummary" class="summary-grid"></div>
+                </section>
+                <section class="analysis-section">
+                  <h3>Traffic Totals</h3>
+                  <div id="analysisTrafficTotals" class="summary-grid"></div>
+                </section>
+                <section class="analysis-section">
+                  <h3>Direction Split</h3>
+                  <div id="analysisDirectionSplit" class="summary-grid"></div>
+                </section>
+                <section class="analysis-section">
+                  <h3>Timing and Size</h3>
+                  <div id="analysisTimingSize" class="summary-grid"></div>
+                </section>
+                <section id="analysisTcpControlsSection" class="analysis-section">
+                  <h3>TCP Controls</h3>
+                  <div id="analysisTcpControls" class="summary-grid"></div>
+                </section>
+              </div>
             </div>
           </section>
         </section>
