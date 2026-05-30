@@ -313,6 +313,35 @@ std::string trim_trailing_zeros(std::string text) {
     return text;
 }
 
+std::string format_rate_value(double value, const char* suffix);
+std::string format_byte_rate_value(double value);
+std::string format_size_value(double value);
+
+std::string format_packet_rate_for_duration(const std::uint64_t packet_count, const std::uint64_t duration_us) {
+    if (duration_us == 0U) {
+        return format_rate_value(0.0, "pkt/s");
+    }
+
+    const auto packets_per_second = (static_cast<double>(packet_count) * 1'000'000.0) / static_cast<double>(duration_us);
+    return format_rate_value(packets_per_second, "pkt/s");
+}
+
+std::string format_data_rate_for_duration(const std::uint64_t byte_count, const std::uint64_t duration_us) {
+    if (duration_us == 0U) {
+        return format_byte_rate_value(0.0);
+    }
+
+    const auto bytes_per_second = (static_cast<double>(byte_count) * 1'000'000.0) / static_cast<double>(duration_us);
+    return format_byte_rate_value(bytes_per_second);
+}
+
+std::string format_average_packet_size_for_direction(const std::uint64_t byte_count, const std::uint64_t packet_count) {
+    const auto average_packet_size = packet_count > 0U
+        ? static_cast<double>(byte_count) / static_cast<double>(packet_count)
+        : 0.0;
+    return format_size_value(average_packet_size);
+}
+
 std::string group_integer_part(std::string text) {
     const auto decimal_index = text.find('.');
     const auto fraction = decimal_index == std::string::npos ? std::string {} : text.substr(decimal_index);
@@ -710,6 +739,17 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.service_hint_text = !analysis->service_hint.empty()
         ? analysis->service_hint
         : (!row->service_hint.empty() ? row->service_hint : analysis->protocol_panel_service_text);
+    if (!analysis->protocol_panel_version_text.empty()) {
+        result.protocol_version_text = analysis->protocol_panel_version_text;
+    } else if (analysis->protocol_hint == "tls" || analysis->protocol_hint == "quic") {
+        result.protocol_version_text = "unknown";
+    }
+    if (!analysis->protocol_panel_service_text.empty()) {
+        result.protocol_service_text = analysis->protocol_panel_service_text;
+    } else if (analysis->protocol_hint == "tls" || analysis->protocol_hint == "quic") {
+        result.protocol_service_text = !row->service_hint.empty() ? row->service_hint : "unknown";
+    }
+    result.protocol_fallback_text = analysis->protocol_panel_fallback_text;
     result.first_packet_time_text = analysis->first_packet_timestamp_text;
     result.last_packet_time_text = analysis->last_packet_timestamp_text;
     result.duration_text = format_duration_us(analysis->duration_us);
@@ -727,15 +767,40 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.packet_direction_text = analysis->packet_direction_text;
     result.data_direction_text = analysis->data_direction_text;
     result.packets_per_second_text = format_rate_value(analysis->packets_per_second, "pkt/s");
+    result.packets_per_second_a_to_b_text = format_packet_rate_for_duration(analysis->packets_a_to_b, analysis->duration_us);
+    result.packets_per_second_b_to_a_text = format_packet_rate_for_duration(analysis->packets_b_to_a, analysis->duration_us);
     result.bytes_per_second_text = format_byte_rate_value(analysis->bytes_per_second);
+    result.bytes_per_second_a_to_b_text = format_data_rate_for_duration(analysis->bytes_a_to_b, analysis->duration_us);
+    result.bytes_per_second_b_to_a_text = format_data_rate_for_duration(analysis->bytes_b_to_a, analysis->duration_us);
     result.average_packet_size_text = format_size_value(analysis->average_packet_size_bytes);
+    result.average_packet_size_a_to_b_text =
+        format_average_packet_size_for_direction(analysis->bytes_a_to_b, analysis->packets_a_to_b);
+    result.average_packet_size_b_to_a_text =
+        format_average_packet_size_for_direction(analysis->bytes_b_to_a, analysis->packets_b_to_a);
     result.average_inter_arrival_text =
         format_duration_us(static_cast<std::uint64_t>(std::llround(analysis->average_inter_arrival_us)));
     result.min_packet_size_text = format_size_value(analysis->min_packet_size_bytes);
+    if (analysis->packets_a_to_b > 0U) {
+        result.min_packet_size_a_to_b_text = format_size_value(analysis->min_packet_size_a_to_b_bytes);
+    }
+    if (analysis->packets_b_to_a > 0U) {
+        result.min_packet_size_b_to_a_text = format_size_value(analysis->min_packet_size_b_to_a_bytes);
+    }
     result.max_packet_size_text = format_size_value(analysis->max_packet_size_bytes);
+    if (analysis->packets_a_to_b > 0U) {
+        result.max_packet_size_a_to_b_text = format_size_value(analysis->max_packet_size_a_to_b_bytes);
+    }
+    if (analysis->packets_b_to_a > 0U) {
+        result.max_packet_size_b_to_a_text = format_size_value(analysis->max_packet_size_b_to_a_bytes);
+    }
     result.tcp_syn_packets_text = format_grouped_integer(analysis->tcp_syn_packets);
     result.tcp_fin_packets_text = format_grouped_integer(analysis->tcp_fin_packets);
     result.tcp_rst_packets_text = format_grouped_integer(analysis->tcp_rst_packets);
+    result.burst_count_text = format_grouped_integer(analysis->burst_count);
+    result.longest_burst_packet_count_text = format_grouped_integer(analysis->longest_burst_packet_count);
+    result.largest_burst_bytes_text = format_size_value(analysis->largest_burst_bytes);
+    result.idle_gap_count_text = format_grouped_integer(analysis->idle_gap_count);
+    result.largest_idle_gap_text = format_duration_us(analysis->largest_idle_gap_us);
 
     return result;
 }

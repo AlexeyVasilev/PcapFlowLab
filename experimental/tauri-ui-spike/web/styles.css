@@ -572,17 +572,51 @@ select:disabled {
 }
 
 .analysis-flows-table {
-  min-width: 560px;
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.analysis-flows-table .analysis-col-index {
+  width: 52px;
+}
+
+.analysis-flows-table .analysis-col-hint {
+  width: 92px;
+}
+
+.analysis-flows-table .analysis-col-packets {
+  width: 86px;
+}
+
+.analysis-flows-table .analysis-col-bytes {
+  width: 96px;
 }
 
 .analysis-flows-table td:nth-child(2),
-.analysis-flows-table td:nth-child(3) {
+.analysis-flows-table td:nth-child(3),
+.analysis-flows-table th:nth-child(2),
+.analysis-flows-table th:nth-child(3) {
   max-width: 0;
+}
+
+.analysis-flows-table td:nth-child(4),
+.analysis-flows-table td:nth-child(5),
+.analysis-flows-table th:nth-child(4),
+.analysis-flows-table th:nth-child(5) {
+  white-space: nowrap;
+}
+
+.analysis-flow-service-cell {
+  overflow: hidden;
 }
 
 .analysis-flow-primary {
   display: block;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .analysis-flow-secondary {
@@ -620,6 +654,20 @@ select:disabled {
 .analysis-section h3 {
   margin: 0;
   font-size: 13px;
+}
+
+.analysis-matrix-table-wrap {
+  min-height: 0;
+  overflow-x: auto;
+}
+
+.analysis-matrix-table {
+  min-width: 420px;
+}
+
+.analysis-matrix-table td:not(:first-child),
+.analysis-matrix-table th:not(:first-child) {
+  white-space: nowrap;
 }
 
 .statistics-section {

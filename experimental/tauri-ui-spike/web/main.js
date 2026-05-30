@@ -110,9 +110,15 @@
     analysisStateText: document.getElementById("analysisStateText"),
     analysisContent: document.getElementById("analysisContent"),
     analysisFlowSummary: document.getElementById("analysisFlowSummary"),
+    analysisProtocolPanelSection: document.getElementById("analysisProtocolPanelSection"),
+    analysisProtocolPanel: document.getElementById("analysisProtocolPanel"),
     analysisTrafficTotals: document.getElementById("analysisTrafficTotals"),
     analysisDirectionSplit: document.getElementById("analysisDirectionSplit"),
+    analysisDerivedMetricsSection: document.getElementById("analysisDerivedMetricsSection"),
+    analysisDerivedMetrics: document.getElementById("analysisDerivedMetrics"),
     analysisTimingSize: document.getElementById("analysisTimingSize"),
+    analysisBurstIdleSection: document.getElementById("analysisBurstIdleSection"),
+    analysisBurstIdleSummary: document.getElementById("analysisBurstIdleSummary"),
     analysisTcpControlsSection: document.getElementById("analysisTcpControlsSection"),
     analysisTcpControls: document.getElementById("analysisTcpControls"),
     analysisOpenInFlowsButton: document.getElementById("analysisOpenInFlowsButton"),
@@ -1347,6 +1353,31 @@
       .join("");
   }
 
+  function renderAnalysisMetricMatrix(container, rows) {
+    container.innerHTML = `
+      <table class="data-table compact-stats-table analysis-matrix-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>All</th>
+            <th>A-&gt;B</th>
+            <th>B-&gt;A</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(([label, allValue, aToBValue, bToAValue]) => `
+            <tr>
+              <td>${escapeHtml(label)}</td>
+              <td>${escapeHtml(allValue || "-")}</td>
+              <td>${escapeHtml(aToBValue || "-")}</td>
+              <td>${escapeHtml(bToAValue || "-")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
   function renderAnalysisFlowList() {
     const flows = getSortedFlows(state.flows);
 
@@ -1383,11 +1414,14 @@
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const hintOrProtocol = formatProtocolHint(flow) || flow.protocol_text || "-";
         const endpointSummary = `${flow.address_a}:${flow.port_a} <-> ${flow.address_b}:${flow.port_b}`;
+        const titleText = flow.service_hint
+          ? `${flow.service_hint}\n${endpointSummary}`
+          : endpointSummary;
         return `
-          <tr class="flow-row${selected} analysis-flow-row" data-analysis-flow-index="${flow.flow_index}" title="${escapeHtml(endpointSummary)}">
+          <tr class="flow-row${selected} analysis-flow-row" data-analysis-flow-index="${flow.flow_index}" title="${escapeHtml(titleText)}">
             <td>${flowDisplayNumber(flow)}</td>
             <td>${escapeHtml(hintOrProtocol)}</td>
-            <td title="${escapeHtml(flow.service_hint || endpointSummary)}">
+            <td class="analysis-flow-service-cell" title="${escapeHtml(titleText)}">
               <span class="analysis-flow-primary">${escapeHtml(flow.service_hint || "-")}</span>
               <span class="analysis-flow-secondary">${escapeHtml(endpointSummary)}</span>
             </td>
@@ -1412,10 +1446,16 @@
     renderAnalysisFlowList();
     elements.analysisStateText.className = "status-text";
     elements.analysisFlowSummary.innerHTML = "";
+    elements.analysisProtocolPanel.innerHTML = "";
     elements.analysisTrafficTotals.innerHTML = "";
     elements.analysisDirectionSplit.innerHTML = "";
+    elements.analysisDerivedMetrics.innerHTML = "";
     elements.analysisTimingSize.innerHTML = "";
+    elements.analysisBurstIdleSummary.innerHTML = "";
     elements.analysisTcpControls.innerHTML = "";
+    elements.analysisProtocolPanelSection.style.display = "none";
+    elements.analysisDerivedMetricsSection.style.display = "none";
+    elements.analysisBurstIdleSection.style.display = "none";
     elements.analysisTcpControlsSection.style.display = "none";
     elements.analysisContent.classList.remove("is-hidden");
     elements.analysisOpenInFlowsButton.disabled = state.selectedFlowIndex == null;
@@ -1498,6 +1538,27 @@
       ["Service", analysis.service_hint_text || "-"],
     ]);
 
+    const protocolPanelRows = [];
+    if (analysis.protocol_text) {
+      protocolPanelRows.push(["Protocol", analysis.protocol_text]);
+    }
+    if (analysis.protocol_hint_display) {
+      protocolPanelRows.push(["Protocol Hint", analysis.protocol_hint_display]);
+    }
+    if (analysis.protocol_version_text) {
+      protocolPanelRows.push(["Version", analysis.protocol_version_text]);
+    }
+    if (analysis.protocol_service_text) {
+      protocolPanelRows.push(["SNI / Service", analysis.protocol_service_text]);
+    }
+    if (analysis.protocol_fallback_text) {
+      protocolPanelRows.push(["Notes", analysis.protocol_fallback_text]);
+    }
+    if (protocolPanelRows.length > 0) {
+      elements.analysisProtocolPanelSection.style.display = "";
+      renderSummaryRows(elements.analysisProtocolPanel, protocolPanelRows);
+    }
+
     renderSummaryRows(elements.analysisTrafficTotals, [
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
@@ -1517,6 +1578,47 @@
       ["Data Direction", analysis.data_direction_text || "-"],
     ]);
 
+    const derivedMetricRows = [
+      [
+        "Packets / sec",
+        analysis.packets_per_second_text || "-",
+        analysis.packets_per_second_a_to_b_text || "-",
+        analysis.packets_per_second_b_to_a_text || "-",
+      ],
+      [
+        "Data Rate",
+        analysis.bytes_per_second_text || "-",
+        analysis.bytes_per_second_a_to_b_text || "-",
+        analysis.bytes_per_second_b_to_a_text || "-",
+      ],
+      [
+        "Avg Packet Size",
+        analysis.average_packet_size_text || "-",
+        analysis.average_packet_size_a_to_b_text || "-",
+        analysis.average_packet_size_b_to_a_text || "-",
+      ],
+      [
+        "Avg Inter-arrival",
+        analysis.average_inter_arrival_text || "-",
+        "",
+        "",
+      ],
+      [
+        "Min Packet Size",
+        analysis.min_packet_size_text || "-",
+        analysis.min_packet_size_a_to_b_text || "-",
+        analysis.min_packet_size_b_to_a_text || "-",
+      ],
+      [
+        "Max Packet Size",
+        analysis.max_packet_size_text || "-",
+        analysis.max_packet_size_a_to_b_text || "-",
+        analysis.max_packet_size_b_to_a_text || "-",
+      ],
+    ];
+    elements.analysisDerivedMetricsSection.style.display = "";
+    renderAnalysisMetricMatrix(elements.analysisDerivedMetrics, derivedMetricRows);
+
     renderSummaryRows(elements.analysisTimingSize, [
       ["First Packet", analysis.first_packet_time_text || "-"],
       ["Last Packet", analysis.last_packet_time_text || "-"],
@@ -1528,6 +1630,16 @@
       ["Min Packet Size", analysis.min_packet_size_text || "-"],
       ["Max Packet Size", analysis.max_packet_size_text || "-"],
     ]);
+
+    const burstIdleRows = [
+      ["Burst Count", analysis.burst_count_text || "-"],
+      ["Longest Burst", analysis.longest_burst_packet_count_text || "-"],
+      ["Largest Burst Bytes", analysis.largest_burst_bytes_text || "-"],
+      ["Idle Gap Count", analysis.idle_gap_count_text || "-"],
+      ["Largest Idle Gap", analysis.largest_idle_gap_text || "-"],
+    ];
+    elements.analysisBurstIdleSection.style.display = "";
+    renderSummaryRows(elements.analysisBurstIdleSummary, burstIdleRows);
 
     if (analysis.has_tcp_control_counts) {
       elements.analysisTcpControlsSection.style.display = "";
