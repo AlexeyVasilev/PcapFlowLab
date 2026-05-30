@@ -684,6 +684,82 @@ select:disabled {
   white-space: nowrap;
 }
 
+.analysis-histogram-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analysis-histogram-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analysis-histogram-max {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.analysis-direction-tabs {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.analysis-direction-tabs .secondary-button.is-active {
+  background: #dfeef7;
+  border-color: #91b7cf;
+}
+
+.analysis-histogram-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.analysis-histogram-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analysis-histogram-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 64px;
+  gap: 10px;
+  align-items: center;
+}
+
+.analysis-histogram-label,
+.analysis-histogram-count {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.analysis-histogram-track {
+  position: relative;
+  height: 18px;
+  border: 1px solid #cfddeb;
+  border-radius: 4px;
+  background: #f5f9fd;
+  overflow: hidden;
+}
+
+.analysis-histogram-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 1px;
+  border-radius: 3px;
+  background: #4eb1de;
+}
+
+.analysis-histogram-fill.is-packet-size {
+  background: #6ea9f4;
+}
+
 .statistics-section {
   display: flex;
   flex-direction: column;

@@ -241,6 +241,14 @@ pub struct AnalysisSequencePreviewRowDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisHistogramRowDto {
+    pub bucket_label: String,
+    pub count_all: u64,
+    pub count_a_to_b: u64,
+    pub count_b_to_a: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectedFlowAnalysisDto {
     pub has_capture: bool,
     pub has_selected_flow: bool,
@@ -306,5 +314,7 @@ pub struct SelectedFlowAnalysisDto {
     pub largest_idle_gap_text: String,
     pub unavailable_text: String,
     pub error_text: String,
+    pub inter_arrival_histogram_rows: Vec<AnalysisHistogramRowDto>,
+    pub packet_size_histogram_rows: Vec<AnalysisHistogramRowDto>,
     pub sequence_preview_rows: Vec<AnalysisSequencePreviewRowDto>,
 }

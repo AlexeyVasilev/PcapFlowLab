@@ -81,6 +81,7 @@ Not implemented yet:
 - The Analysis tab now has its own compact flow list on the left and loads a first selected-flow analysis slice on demand on the right.
 - The current Analysis slice includes compact Protocol Panel, Derived Metrics, and Burst / Idle Summary sections when those existing analysis fields are available.
 - The current Analysis slice also includes a compact Sequence Preview table from the existing selected-flow analysis result.
+- The current Analysis slice also includes compact Packet Size and Inter-arrival histogram sections with `All / A→B / B→A` toggles using existing selected-flow analysis data.
 - Analysis stays selected-flow-only and does not run during capture open.
 - Selecting a flow in Analysis reuses the shared selected-flow state and can be followed with `Open in Flows` without changing backend behavior.
 
@@ -107,6 +108,7 @@ Not implemented yet:
 - Statistics drill-down currently works by switching to the Flows tab and reusing the existing frontend filter; it does not yet navigate directly to flows, packets, or packet details.
 - The current Tauri Analysis tab intentionally covers only a first compact slice of the existing selected-flow session analysis, including flow summary, protocol panel, totals, direction split, derived metrics, timing/size metrics, burst/idle summary, and basic TCP control counts.
 - The current Tauri Analysis tab intentionally covers only a first compact slice of the existing selected-flow session analysis, including flow summary, protocol panel, totals, direction split, derived metrics, timing/size metrics, burst/idle summary, basic TCP control counts, and a compact Sequence Preview.
+- The current Tauri Analysis tab intentionally covers only a first compact slice of the existing selected-flow session analysis, including flow summary, protocol panel, totals, direction split, derived metrics, timing/size metrics, burst/idle summary, basic TCP control counts, compact histogram sections, and a compact Sequence Preview.
 - Charts, histograms, sequence preview, export, and richer Qt analysis workspace parity remain deferred.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.

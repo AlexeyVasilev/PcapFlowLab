@@ -48,6 +48,8 @@
     analysisErrorText: "",
     analysisUnavailableText: "",
     analysisLoadedForFlowIndex: null,
+    analysisPacketSizeHistogramMode: "all",
+    analysisInterArrivalHistogramMode: "all",
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
     packetDetailsTab: "summary",
@@ -121,6 +123,18 @@
     analysisBurstIdleSummary: document.getElementById("analysisBurstIdleSummary"),
     analysisTcpControlsSection: document.getElementById("analysisTcpControlsSection"),
     analysisTcpControls: document.getElementById("analysisTcpControls"),
+    analysisPacketSizeHistogramSection: document.getElementById("analysisPacketSizeHistogramSection"),
+    analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
+    analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
+    analysisPacketSizeHistogramModeAll: document.getElementById("analysisPacketSizeHistogramModeAll"),
+    analysisPacketSizeHistogramModeAToB: document.getElementById("analysisPacketSizeHistogramModeAToB"),
+    analysisPacketSizeHistogramModeBToA: document.getElementById("analysisPacketSizeHistogramModeBToA"),
+    analysisInterArrivalHistogramSection: document.getElementById("analysisInterArrivalHistogramSection"),
+    analysisInterArrivalHistogramRows: document.getElementById("analysisInterArrivalHistogramRows"),
+    analysisInterArrivalHistogramMax: document.getElementById("analysisInterArrivalHistogramMax"),
+    analysisInterArrivalHistogramModeAll: document.getElementById("analysisInterArrivalHistogramModeAll"),
+    analysisInterArrivalHistogramModeAToB: document.getElementById("analysisInterArrivalHistogramModeAToB"),
+    analysisInterArrivalHistogramModeBToA: document.getElementById("analysisInterArrivalHistogramModeBToA"),
     analysisSequencePreviewSection: document.getElementById("analysisSequencePreviewSection"),
     analysisSequencePreviewBody: document.getElementById("analysisSequencePreviewBody"),
     analysisOpenInFlowsButton: document.getElementById("analysisOpenInFlowsButton"),
@@ -415,6 +429,8 @@
     state.analysisErrorText = "";
     state.analysisUnavailableText = "";
     state.analysisLoadedForFlowIndex = null;
+    state.analysisPacketSizeHistogramMode = "all";
+    state.analysisInterArrivalHistogramMode = "all";
   }
 
   function clearFlows() {
@@ -1380,6 +1396,57 @@
     `;
   }
 
+  function histogramCountForMode(row, mode) {
+    if (mode === "a_to_b") {
+      return Number(row?.count_a_to_b ?? 0);
+    }
+    if (mode === "b_to_a") {
+      return Number(row?.count_b_to_a ?? 0);
+    }
+    return Number(row?.count_all ?? 0);
+  }
+
+  function renderAnalysisHistogram(section, rowsContainer, maxLabel, rows, mode, fillClassName = "") {
+    if (!rows || rows.length === 0) {
+      section.style.display = "";
+      maxLabel.textContent = "";
+      rowsContainer.innerHTML = `<div class="analysis-histogram-empty">No histogram rows are available.</div>`;
+      return;
+    }
+
+    const counts = rows.map((row) => histogramCountForMode(row, mode));
+    const maxCount = counts.reduce((currentMax, value) => Math.max(currentMax, value), 0);
+    section.style.display = "";
+    maxLabel.textContent = `max: ${formatNumber(maxCount)}`;
+    rowsContainer.innerHTML = rows
+      .map((row) => {
+        const count = histogramCountForMode(row, mode);
+        const percent = maxCount > 0 ? Math.max((count / maxCount) * 100, count > 0 ? 0.5 : 0) : 0;
+        return `
+          <div class="analysis-histogram-row">
+            <span class="analysis-histogram-label">${escapeHtml(row.bucket_label || "-")}</span>
+            <div class="analysis-histogram-track">
+              <div class="analysis-histogram-fill${fillClassName ? ` ${fillClassName}` : ""}" style="width: ${percent}%;"></div>
+            </div>
+            <span class="analysis-histogram-count">${formatNumber(count)}</span>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function renderAnalysisHistogramModeButtons(prefix, activeMode) {
+    const buttonMap = {
+      all: elements[`${prefix}ModeAll`],
+      a_to_b: elements[`${prefix}ModeAToB`],
+      b_to_a: elements[`${prefix}ModeBToA`],
+    };
+
+    for (const [mode, button] of Object.entries(buttonMap)) {
+      button.classList.toggle("is-active", mode === activeMode);
+    }
+  }
+
   function renderAnalysisFlowList() {
     const flows = getSortedFlows(state.flows);
 
@@ -1455,11 +1522,17 @@
     elements.analysisTimingSize.innerHTML = "";
     elements.analysisBurstIdleSummary.innerHTML = "";
     elements.analysisTcpControls.innerHTML = "";
+    elements.analysisPacketSizeHistogramRows.innerHTML = "";
+    elements.analysisPacketSizeHistogramMax.textContent = "";
+    elements.analysisInterArrivalHistogramRows.innerHTML = "";
+    elements.analysisInterArrivalHistogramMax.textContent = "";
     elements.analysisSequencePreviewBody.innerHTML = "";
     elements.analysisProtocolPanelSection.style.display = "none";
     elements.analysisDerivedMetricsSection.style.display = "none";
     elements.analysisBurstIdleSection.style.display = "none";
     elements.analysisTcpControlsSection.style.display = "none";
+    elements.analysisPacketSizeHistogramSection.style.display = "none";
+    elements.analysisInterArrivalHistogramSection.style.display = "none";
     elements.analysisSequencePreviewSection.style.display = "none";
     elements.analysisContent.classList.remove("is-hidden");
     elements.analysisOpenInFlowsButton.disabled = state.selectedFlowIndex == null;
@@ -1653,6 +1726,25 @@
         ["RST Packets", analysis.tcp_rst_packets_text || formatNumber(analysis.tcp_rst_packets)],
       ]);
     }
+
+    renderAnalysisHistogramModeButtons("analysisPacketSizeHistogram", state.analysisPacketSizeHistogramMode);
+    renderAnalysisHistogram(
+      elements.analysisPacketSizeHistogramSection,
+      elements.analysisPacketSizeHistogramRows,
+      elements.analysisPacketSizeHistogramMax,
+      analysis.packet_size_histogram_rows || [],
+      state.analysisPacketSizeHistogramMode,
+      "is-packet-size"
+    );
+
+    renderAnalysisHistogramModeButtons("analysisInterArrivalHistogram", state.analysisInterArrivalHistogramMode);
+    renderAnalysisHistogram(
+      elements.analysisInterArrivalHistogramSection,
+      elements.analysisInterArrivalHistogramRows,
+      elements.analysisInterArrivalHistogramMax,
+      analysis.inter_arrival_histogram_rows || [],
+      state.analysisInterArrivalHistogramMode
+    );
 
     elements.analysisSequencePreviewSection.style.display = "";
     const sequencePreviewRows = analysis.sequence_preview_rows || [];
@@ -2160,6 +2252,31 @@
     }
 
     state.activeTab = "flows";
+    render();
+  });
+
+  elements.analysisPacketSizeHistogramModeAll.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMode = "all";
+    render();
+  });
+  elements.analysisPacketSizeHistogramModeAToB.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMode = "a_to_b";
+    render();
+  });
+  elements.analysisPacketSizeHistogramModeBToA.addEventListener("click", () => {
+    state.analysisPacketSizeHistogramMode = "b_to_a";
+    render();
+  });
+  elements.analysisInterArrivalHistogramModeAll.addEventListener("click", () => {
+    state.analysisInterArrivalHistogramMode = "all";
+    render();
+  });
+  elements.analysisInterArrivalHistogramModeAToB.addEventListener("click", () => {
+    state.analysisInterArrivalHistogramMode = "a_to_b";
+    render();
+  });
+  elements.analysisInterArrivalHistogramModeBToA.addEventListener("click", () => {
+    state.analysisInterArrivalHistogramMode = "b_to_a";
     render();
   });
 

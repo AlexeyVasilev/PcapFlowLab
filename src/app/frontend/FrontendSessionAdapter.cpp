@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <map>
 #include <span>
 #include <sstream>
 #include <set>
@@ -340,6 +341,39 @@ std::string format_average_packet_size_for_direction(const std::uint64_t byte_co
         ? static_cast<double>(byte_count) / static_cast<double>(packet_count)
         : 0.0;
     return format_size_value(average_packet_size);
+}
+
+template <typename HistogramRow>
+std::vector<FrontendAnalysisHistogramRowDto> build_analysis_histogram_rows(
+    const std::vector<HistogramRow>& all_rows,
+    const std::vector<HistogramRow>& a_to_b_rows,
+    const std::vector<HistogramRow>& b_to_a_rows
+) {
+    std::vector<FrontendAnalysisHistogramRowDto> rows {};
+    std::map<std::string, std::size_t, std::less<>> row_index_by_bucket {};
+
+    auto ensure_row = [&](const std::string& bucket_label) -> FrontendAnalysisHistogramRowDto& {
+        const auto existing = row_index_by_bucket.find(bucket_label);
+        if (existing != row_index_by_bucket.end()) {
+            return rows[existing->second];
+        }
+
+        row_index_by_bucket.emplace(bucket_label, rows.size());
+        rows.push_back(FrontendAnalysisHistogramRowDto {.bucket_label = bucket_label});
+        return rows.back();
+    };
+
+    for (const auto& row : all_rows) {
+        ensure_row(row.bucket_label).count_all = row.packet_count;
+    }
+    for (const auto& row : a_to_b_rows) {
+        ensure_row(row.bucket_label).count_a_to_b = row.packet_count;
+    }
+    for (const auto& row : b_to_a_rows) {
+        ensure_row(row.bucket_label).count_b_to_a = row.packet_count;
+    }
+
+    return rows;
 }
 
 std::string group_integer_part(std::string text) {
@@ -801,6 +835,16 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.largest_burst_bytes_text = format_size_value(analysis->largest_burst_bytes);
     result.idle_gap_count_text = format_grouped_integer(analysis->idle_gap_count);
     result.largest_idle_gap_text = format_duration_us(analysis->largest_idle_gap_us);
+    result.inter_arrival_histogram_rows = build_analysis_histogram_rows(
+        analysis->inter_arrival_histograms.histogram_all,
+        analysis->inter_arrival_histograms.histogram_a_to_b,
+        analysis->inter_arrival_histograms.histogram_b_to_a
+    );
+    result.packet_size_histogram_rows = build_analysis_histogram_rows(
+        analysis->packet_size_histograms.histogram_all,
+        analysis->packet_size_histograms.histogram_a_to_b,
+        analysis->packet_size_histograms.histogram_b_to_a
+    );
     result.sequence_preview_rows.reserve(analysis->sequence_preview_rows.size());
     for (const auto& row_preview : analysis->sequence_preview_rows) {
         result.sequence_preview_rows.push_back(FrontendAnalysisSequencePreviewRowDto {

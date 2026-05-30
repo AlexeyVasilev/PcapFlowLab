@@ -193,6 +193,13 @@ struct FrontendAnalysisSequencePreviewRowDto {
     std::uint32_t payload_length {0};
 };
 
+struct FrontendAnalysisHistogramRowDto {
+    std::string bucket_label {};
+    std::uint64_t count_all {0};
+    std::uint64_t count_a_to_b {0};
+    std::uint64_t count_b_to_a {0};
+};
+
 struct FrontendSelectedFlowAnalysisDto {
     bool has_capture {false};
     bool has_selected_flow {false};
@@ -258,6 +265,8 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string largest_idle_gap_text {};
     std::string unavailable_text {};
     std::string error_text {};
+    std::vector<FrontendAnalysisHistogramRowDto> inter_arrival_histogram_rows {};
+    std::vector<FrontendAnalysisHistogramRowDto> packet_size_histogram_rows {};
     std::vector<FrontendAnalysisSequencePreviewRowDto> sequence_preview_rows {};
 };
 

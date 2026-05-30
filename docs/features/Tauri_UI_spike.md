@@ -166,6 +166,7 @@ Current frontend-shell status:
 - the Analysis tab now includes its own compact Analysis Flows list on the left plus a first compact selected-flow analysis slice on the right
 - the current Analysis slice now includes compact Protocol Panel, Derived Metrics, and Burst / Idle Summary sections when those existing analysis fields are available
 - the current Analysis slice now also includes a compact Sequence Preview table from the existing selected-flow analysis result
+- the current Analysis slice now also includes compact Packet Size and Inter-arrival histogram sections with `All / A→B / B→A` toggles using existing selected-flow analysis data
 - the current shell keeps a typed path as a manual fallback while Browse / attach-source workflows remain deferred for a later pass
 - the current shell now supports a native Open File dialog as the primary desktop open workflow
 - the typed path remains available as a compact manual fallback
@@ -190,6 +191,7 @@ Current analysis limitations:
 - the current Tauri Analysis tab is selected-flow-only and loads on demand; it does not compute analysis during capture open
 - the first Tauri Analysis slice covers compact flow summary, protocol panel, totals, direction split, derived metrics, timing/size metrics, burst/idle summary, and basic TCP control counts
 - the first Tauri Analysis slice also includes a compact Sequence Preview section; charts, histograms, and export remain deferred
+- the first Tauri Analysis slice now includes simple histogram sections too, while rate graph, sequence export, and fuller Qt analysis parity remain deferred
 - charts, histograms, sequence preview, export, and the richer Qt analysis workspace remain deferred
 
 Current statistics limitations:
