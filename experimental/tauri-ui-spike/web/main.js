@@ -21,6 +21,7 @@
     openState: "idle",
     attachSourceInProgress: false,
     saveIndexInProgress: false,
+    exportCurrentFlowInProgress: false,
     statusKind: "neutral",
     statusText: "",
     sourceAvailability: null,
@@ -266,8 +267,19 @@
     const availability = currentSourceAvailability();
     return state.openState === "opened"
       && !state.saveIndexInProgress
+      && !state.exportCurrentFlowInProgress
       && !availability.partial_open
       && availability.byte_backed_inspection_available;
+  }
+
+  function canExportCurrentFlow() {
+    const availability = currentSourceAvailability();
+    return state.openState === "opened"
+      && state.selectedFlowIndex != null
+      && availability.byte_backed_inspection_available
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportCurrentFlowInProgress;
   }
 
   function packetDetailsSourceAvailability(details) {
@@ -517,6 +529,7 @@
     clearAnalysis();
     state.attachSourceInProgress = false;
     state.saveIndexInProgress = false;
+    state.exportCurrentFlowInProgress = false;
     state.openMenu = null;
     state.aboutDialogVisible = false;
     state.sourceAvailability = null;
@@ -561,12 +574,18 @@
         if (action === "save-index") {
           item.disabled = !canSaveIndex();
           item.textContent = state.saveIndexInProgress ? "Saving Index..." : "Save Index";
+        } else if (action === "export-current-flow") {
+          item.disabled = !canExportCurrentFlow();
+          item.textContent = state.exportCurrentFlowInProgress ? "Exporting Current Flow..." : "Export Current Flow";
         } else if (
           action === "open-capture-fast"
           || action === "open-capture-deep"
           || action === "open-index"
         ) {
-          item.disabled = state.openState === "opening" || state.attachSourceInProgress || state.saveIndexInProgress;
+          item.disabled = state.openState === "opening"
+            || state.attachSourceInProgress
+            || state.saveIndexInProgress
+            || state.exportCurrentFlowInProgress;
         } else if (
           action === "export-current-flow"
           || action === "export-selected-flows"
@@ -2407,6 +2426,35 @@
     }
   }
 
+  async function exportCurrentFlowFromMenu() {
+    if (!canExportCurrentFlow()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_flow_export_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.exportCurrentFlowInProgress = true;
+      setStatus("Exporting selected flow...", "neutral");
+      render();
+
+      const result = await invoke("export_current_flow", { path: selectedPath });
+      if (result?.exported) {
+        setStatus("Flow exported successfully.", "success");
+      } else {
+        setStatus(result?.error_text || "Failed to export selected flow.", "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to export selected flow: ${String(error)}`, "error");
+    } finally {
+      state.exportCurrentFlowInProgress = false;
+      render();
+    }
+  }
+
   async function exitAppFromMenu() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -2446,11 +2494,13 @@
         state.aboutDialogVisible = true;
         render();
         return;
+      case "export-current-flow":
+        await exportCurrentFlowFromMenu();
+        return;
       case "settings":
         setStatus("Settings are not implemented yet in the Tauri spike.", "neutral");
         render();
         return;
-      case "export-current-flow":
       case "export-selected-flows":
       case "export-unselected-flows":
       case "smart-export":
@@ -2482,6 +2532,7 @@
       state.analysisSequenceExportInProgress = true;
       state.analysisSequenceExportStatusText = "";
       state.analysisSequenceExportStatusKind = "neutral";
+      state.exportCurrentFlowInProgress = false;
       render();
 
       const result = await invoke("export_selected_flow_analysis_sequence_csv", {

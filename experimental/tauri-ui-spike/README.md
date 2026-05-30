@@ -10,6 +10,7 @@ Implemented slice:
 - native Open File dialog as the primary open workflow
 - typed path as a compact manual fallback
 - `File -> Save Index` through the existing session/index path
+- `Flow -> Export Current Flow` through the existing session flow-export path
 - locate/attach source capture for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior
@@ -60,6 +61,8 @@ Implemented slice:
 - The typed capture/index path remains available as a compact manual fallback.
 - `File -> Open Capture (Fast/Deep)` and `File -> Open Index` reuse the existing open path with native dialogs.
 - `File -> Save Index` reuses the existing session/index save path and a native Save dialog with `.idx` default suffix.
+- `Flow -> Export Current Flow` reuses the existing session flow-export path and a native Save dialog with `.pcap` default suffix.
+- `Flow -> Export Current Flow` is selected-flow-only and requires the original source capture to be readable.
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
 - When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
 - Attach-source reuses existing session validation and keeps the current session open if the chosen capture does not match.
@@ -103,8 +106,9 @@ Implemented slice:
 
 ## Deferred items
 
-- Tauri now supports two narrow save/export workflows:
+- Tauri now supports three narrow save/export workflows:
   - `File -> Save Index`
+  - `Flow -> Export Current Flow`
   - selected-flow Analysis sequence CSV export
 - Other export workflows are still absent in Tauri.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
@@ -140,7 +144,7 @@ Implemented slice:
 
 ## Recommended next priorities
 
-1. Export workflows beyond `Save Index` and selected-flow Analysis sequence CSV export
+1. Export workflows beyond `Flow -> Export Current Flow`, `Save Index`, and selected-flow Analysis sequence CSV export
 2. Save/open index workflow polish
 3. Settings/preferences
 4. Performance pass for large captures, including virtualization/pagination where needed

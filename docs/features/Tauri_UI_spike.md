@@ -43,6 +43,7 @@ Current adapter-backed operations include:
 
 - `open_capture(path, open_mode)`
 - `save_index(path)`
+- `export_current_flow(path)`
 - `get_overview()`
 - `get_flows()`
 - `select_flow(flow_index)`
@@ -69,6 +70,7 @@ The current Tauri spike now supports:
 - native Open File dialog as the primary open workflow
 - typed-path manual fallback
 - `File -> Save Index` through the existing session/index path
+- `Flow -> Export Current Flow` through the existing flow-export/session path
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
@@ -99,6 +101,7 @@ The `Flows` tab now supports:
   - `File -> Open Index`
   - `File -> Save Index`
   - `File -> Exit`
+  - `Flow -> Export Current Flow`
   - `View -> About`
 
 ## Current Stream capability
@@ -159,6 +162,13 @@ Analysis remains:
 - not computed globally for all flows
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
 
+`Flow -> Export Current Flow`:
+
+- is selected-flow-only
+- reuses the existing session export path
+- writes `.pcap`
+- requires the original source capture to be readable
+
 The source-attach workflow:
 
 - reuses existing session validation
@@ -184,7 +194,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Current deferred items
 
-- Export workflows
+- Export workflows beyond `Flow -> Export Current Flow`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
 - Save/open index workflow polish
 - Settings/preferences
 - Stream-to-packet navigation
@@ -196,7 +206,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Recommended next priorities
 
-1. Export workflows beyond `Save Index` and selected-flow Analysis sequence CSV
+1. Export workflows beyond `Flow -> Export Current Flow`, `Save Index`, and selected-flow Analysis sequence CSV
 2. Save/open index workflow polish
 3. Settings/preferences
 4. Performance pass for large captures, including virtualization/pagination where needed

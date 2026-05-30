@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
@@ -117,6 +117,23 @@ fn pick_save_index_path(app: AppHandle) -> Result<Option<String>, String> {
         let display_fallback = path.to_string();
         path.into_path()
             .map(|resolved| ensure_extension(resolved, "idx").to_string_lossy().into_owned())
+            .unwrap_or(display_fallback)
+    }))
+}
+
+#[tauri::command]
+fn pick_save_flow_export_path(app: AppHandle) -> Result<Option<String>, String> {
+    let selected_path = app
+        .dialog()
+        .file()
+        .add_filter("PCAP files", &["pcap"])
+        .set_file_name("flow-export.pcap")
+        .blocking_save_file();
+
+    Ok(selected_path.map(|path| {
+        let display_fallback = path.to_string();
+        path.into_path()
+            .map(|resolved| ensure_extension(resolved, "pcap").to_string_lossy().into_owned())
             .unwrap_or(display_fallback)
     }))
 }
@@ -241,6 +258,17 @@ fn save_index(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn export_current_flow(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+) -> Result<ExportCurrentFlowResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_current_flow(&path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn exit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
@@ -271,10 +299,12 @@ pub fn run() {
             pick_open_index_path,
             pick_source_capture_path,
             pick_save_index_path,
+            pick_save_flow_export_path,
             pick_save_analysis_sequence_csv_path,
             open_capture,
             attach_source_capture,
             save_index,
+            export_current_flow,
             exit_app,
             get_overview,
             get_flows,

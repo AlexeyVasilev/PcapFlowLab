@@ -731,6 +731,39 @@ FrontendSaveIndexResult FrontendSessionAdapter::save_index(const std::filesystem
     return result;
 }
 
+FrontendExportCurrentFlowResult FrontendSessionAdapter::export_current_flow(const std::filesystem::path& output_path) const {
+    FrontendExportCurrentFlowResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (!selected_flow_index_.has_value()) {
+        result.error_text = "No flow selected for export.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to export flows.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    if (!session_.export_flow_to_pcap(*selected_flow_index_, output_path)) {
+        result.error_text = "Failed to export selected flow.";
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
