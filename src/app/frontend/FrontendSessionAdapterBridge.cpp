@@ -130,6 +130,8 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"summary\":{"
         << "\"packet_count\":" << overview.summary.packet_count << ','
         << "\"flow_count\":" << overview.summary.flow_count << ','
+        << "\"captured_bytes\":" << overview.captured_bytes << ','
+        << "\"original_bytes\":" << overview.original_bytes << ','
         << "\"total_bytes\":" << overview.summary.total_bytes
         << "},"
         << "\"protocol_summary\":{"

@@ -74,7 +74,7 @@ Not implemented yet:
 - The current Tauri shell now consumes the shared Wireshark display filter field from the frontend-neutral flow DTO instead of rebuilding the filter only in JavaScript.
 - Protocol hints now use the shared display-oriented hint text from the frontend-neutral flow DTO when available.
 - The current Tauri shell now also consumes a grouped frontend-neutral source-availability shape for shell warnings plus packet-details / stream unavailable fallbacks.
-- The Statistics tab currently contains only the basic overview cards/data.
+- The Statistics tab now shows basic overview cards plus compact transport, IP family, QUIC, and TLS summary sections from the frontend-neutral overview DTO.
 - The Analysis tab is a placeholder only and does not implement analysis behavior yet.
 
 ## Structure
@@ -96,6 +96,7 @@ Not implemented yet:
 - The spike now uses Tauri's native dialog path for file picking, but attach-source and broader file-management workflows are still deferred.
 - Stream, Analysis, Packet Details, Export, and settings workflows are still outside the spike's current scope.
 - The Stream tab is still experimental and exposes only a small subset of the current Qt stream presentation fields.
+- Statistics remain partial compared to Qt: top talkers, protocol-hint grouped statistics, and drill-down actions are still deferred.
 - The Analysis tab is shell-only for now; it intentionally does not call backend analysis APIs in this iteration.
 - Selected packet inspection is still basic. It does not aim for full Qt packet-details parity yet.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.

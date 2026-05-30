@@ -215,31 +215,79 @@
                 <p id="overviewMeta" class="panel-subtitle">No capture loaded.</p>
               </div>
             </div>
+            <div class="statistics-scroll">
+              <div id="overviewContent" class="overview-grid">
+                <div class="metric">
+                  <span class="metric-label">Packets</span>
+                  <span id="metricPackets" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Flows</span>
+                  <span id="metricFlows" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Captured Bytes</span>
+                  <span id="metricCapturedBytes" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Original Bytes</span>
+                  <span id="metricOriginalBytes" class="metric-value">-</span>
+                </div>
+              </div>
 
-            <div id="overviewContent" class="overview-grid">
-              <div class="metric">
-                <span class="metric-label">Packets</span>
-                <span id="metricPackets" class="metric-value">-</span>
+              <div class="statistics-section">
+                <div class="statistics-section-heading">
+                  <h3>Transport Summary</h3>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact-stats-table">
+                    <thead>
+                      <tr>
+                        <th>Group</th>
+                        <th>Flows</th>
+                        <th>Packets</th>
+                        <th>Captured Bytes</th>
+                        <th>Original Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="transportStatsBody"></tbody>
+                  </table>
+                </div>
               </div>
-              <div class="metric">
-                <span class="metric-label">Flows</span>
-                <span id="metricFlows" class="metric-value">-</span>
+
+              <div class="statistics-section">
+                <div class="statistics-section-heading">
+                  <h3>IP Family Summary</h3>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact-stats-table">
+                    <thead>
+                      <tr>
+                        <th>Group</th>
+                        <th>Flows</th>
+                        <th>Packets</th>
+                        <th>Captured Bytes</th>
+                        <th>Original Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="familyStatsBody"></tbody>
+                  </table>
+                </div>
               </div>
-              <div class="metric">
-                <span class="metric-label">Total Bytes</span>
-                <span id="metricBytes" class="metric-value">-</span>
-              </div>
-              <div class="metric">
-                <span class="metric-label">TCP Flows</span>
-                <span id="metricTcpFlows" class="metric-value">-</span>
-              </div>
-              <div class="metric">
-                <span class="metric-label">UDP Flows</span>
-                <span id="metricUdpFlows" class="metric-value">-</span>
-              </div>
-              <div class="metric">
-                <span class="metric-label">QUIC Flows</span>
-                <span id="metricQuicFlows" class="metric-value">-</span>
+
+              <div class="statistics-split">
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>QUIC Recognition</h3>
+                  </div>
+                  <div id="quicStatsGrid" class="overview-grid compact-overview-grid"></div>
+                </div>
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>TLS Recognition</h3>
+                  </div>
+                  <div id="tlsStatsGrid" class="overview-grid compact-overview-grid"></div>
+                </div>
               </div>
             </div>
           </section>

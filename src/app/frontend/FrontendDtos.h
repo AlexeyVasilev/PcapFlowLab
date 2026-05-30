@@ -42,6 +42,8 @@ struct FrontendOpenResult {
 struct FrontendOverviewDto {
     bool has_capture {false};
     CaptureSummary summary {};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t original_bytes {0};
     CaptureProtocolSummary protocol_summary {};
     QuicRecognitionStats quic_recognition {};
     TlsRecognitionStats tls_recognition {};

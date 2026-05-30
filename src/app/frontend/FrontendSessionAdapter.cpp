@@ -280,10 +280,13 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
 }
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
+    const auto protocol_summary = session_.protocol_summary();
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = session_.summary(),
-        .protocol_summary = session_.protocol_summary(),
+        .captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes + protocol_summary.other.captured_bytes,
+        .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes + protocol_summary.other.original_bytes,
+        .protocol_summary = protocol_summary,
         .quic_recognition = session_.quic_recognition_stats(),
         .tls_recognition = session_.tls_recognition_stats(),
     };

@@ -37,6 +37,8 @@ pub struct ProtocolStatsDto {
 pub struct OverviewSummaryDto {
     pub packet_count: u64,
     pub flow_count: u64,
+    pub captured_bytes: u64,
+    pub original_bytes: u64,
     pub total_bytes: u64,
 }
 

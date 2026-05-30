@@ -98,10 +98,12 @@
     streamDetailsConstrictedNotesText: document.getElementById("streamDetailsConstrictedNotesText"),
     metricPackets: document.getElementById("metricPackets"),
     metricFlows: document.getElementById("metricFlows"),
-    metricBytes: document.getElementById("metricBytes"),
-    metricTcpFlows: document.getElementById("metricTcpFlows"),
-    metricUdpFlows: document.getElementById("metricUdpFlows"),
-    metricQuicFlows: document.getElementById("metricQuicFlows"),
+    metricCapturedBytes: document.getElementById("metricCapturedBytes"),
+    metricOriginalBytes: document.getElementById("metricOriginalBytes"),
+    transportStatsBody: document.getElementById("transportStatsBody"),
+    familyStatsBody: document.getElementById("familyStatsBody"),
+    quicStatsGrid: document.getElementById("quicStatsGrid"),
+    tlsStatsGrid: document.getElementById("tlsStatsGrid"),
   };
 
   function formatNumber(value) {
@@ -398,22 +400,96 @@
 
   function renderOverview() {
     const overview = state.overview;
+    const transportRows = overview ? [
+      ["TCP", overview.protocol_summary?.tcp],
+      ["UDP", overview.protocol_summary?.udp],
+      ["Other", overview.protocol_summary?.other],
+    ] : [];
+    const familyRows = overview ? [
+      ["IPv4", overview.protocol_summary?.ipv4],
+      ["IPv6", overview.protocol_summary?.ipv6],
+    ] : [];
+    const quicMetrics = overview ? [
+      ["Flows", overview.quic_recognition?.total_flows],
+      ["With SNI", overview.quic_recognition?.with_sni],
+      ["Without SNI", overview.quic_recognition?.without_sni],
+      ["v1", overview.quic_recognition?.version_v1],
+      ["draft-29", overview.quic_recognition?.version_draft29],
+      ["v2", overview.quic_recognition?.version_v2],
+      ["Unknown", overview.quic_recognition?.version_unknown],
+    ] : [];
+    const tlsMetrics = overview ? [
+      ["Flows", overview.tls_recognition?.total_flows],
+      ["With SNI", overview.tls_recognition?.with_sni],
+      ["Without SNI", overview.tls_recognition?.without_sni],
+      ["TLS 1.2", overview.tls_recognition?.version_tls12],
+      ["TLS 1.3", overview.tls_recognition?.version_tls13],
+      ["Unknown", overview.tls_recognition?.version_unknown],
+    ] : [];
 
     elements.metricPackets.textContent = overview ? formatNumber(overview.summary?.packet_count) : "-";
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
-    elements.metricBytes.textContent = overview ? formatNumber(overview.summary?.total_bytes) : "-";
-    elements.metricTcpFlows.textContent = overview ? formatNumber(overview.protocol_summary?.tcp?.flow_count) : "-";
-    elements.metricUdpFlows.textContent = overview ? formatNumber(overview.protocol_summary?.udp?.flow_count) : "-";
-    elements.metricQuicFlows.textContent = overview ? formatNumber(overview.quic_recognition?.total_flows) : "-";
+    elements.metricCapturedBytes.textContent = overview ? formatNumber(overview.summary?.captured_bytes) : "-";
+    elements.metricOriginalBytes.textContent = overview ? formatNumber(overview.summary?.original_bytes) : "-";
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";
+      elements.transportStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading transport statistics...</td></tr>`;
+      elements.familyStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading IP family statistics...</td></tr>`;
+      elements.quicStatsGrid.innerHTML = "";
+      elements.tlsStatsGrid.innerHTML = "";
     } else if (state.openState === "opened" && overview) {
-      elements.overviewMeta.textContent = "Overview loaded from the active capture or index.";
+      elements.overviewMeta.textContent = "Overview, transport, family, QUIC, and TLS summaries loaded from the active capture or index.";
+      elements.transportStatsBody.innerHTML = transportRows
+        .map(([label, stats]) => `
+          <tr>
+            <td>${escapeHtml(label)}</td>
+            <td>${formatNumber(stats?.flow_count)}</td>
+            <td>${formatNumber(stats?.packet_count)}</td>
+            <td>${formatNumber(stats?.captured_bytes)}</td>
+            <td>${formatNumber(stats?.original_bytes)}</td>
+          </tr>
+        `)
+        .join("");
+      elements.familyStatsBody.innerHTML = familyRows
+        .map(([label, stats]) => `
+          <tr>
+            <td>${escapeHtml(label)}</td>
+            <td>${formatNumber(stats?.flow_count)}</td>
+            <td>${formatNumber(stats?.packet_count)}</td>
+            <td>${formatNumber(stats?.captured_bytes)}</td>
+            <td>${formatNumber(stats?.original_bytes)}</td>
+          </tr>
+        `)
+        .join("");
+      elements.quicStatsGrid.innerHTML = quicMetrics
+        .map(([label, value]) => `
+          <div class="metric">
+            <span class="metric-label">${escapeHtml(label)}</span>
+            <span class="metric-value">${formatNumber(value)}</span>
+          </div>
+        `)
+        .join("");
+      elements.tlsStatsGrid.innerHTML = tlsMetrics
+        .map(([label, value]) => `
+          <div class="metric">
+            <span class="metric-label">${escapeHtml(label)}</span>
+            <span class="metric-value">${formatNumber(value)}</span>
+          </div>
+        `)
+        .join("");
     } else if (state.openState === "error") {
       elements.overviewMeta.textContent = "No overview available after open failure.";
+      elements.transportStatsBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. No transport statistics were loaded.</td></tr>`;
+      elements.familyStatsBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. No IP family statistics were loaded.</td></tr>`;
+      elements.quicStatsGrid.innerHTML = "";
+      elements.tlsStatsGrid.innerHTML = "";
     } else {
       elements.overviewMeta.textContent = "No capture loaded.";
+      elements.transportStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to load transport statistics.</td></tr>`;
+      elements.familyStatsBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to load IP family statistics.</td></tr>`;
+      elements.quicStatsGrid.innerHTML = "";
+      elements.tlsStatsGrid.innerHTML = "";
     }
   }
 
