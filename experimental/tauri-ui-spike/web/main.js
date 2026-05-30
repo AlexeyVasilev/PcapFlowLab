@@ -16,6 +16,8 @@
     overview: null,
     flows: [],
     flowFilterText: "",
+    flowSortKey: "index",
+    flowSortDirection: "asc",
     selectedFlowIndex: null,
     packets: [],
     packetsTotalCount: 0,
@@ -64,6 +66,7 @@
     flowMeta: document.getElementById("flowMeta"),
     flowFilterInput: document.getElementById("flowFilterInput"),
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
+    flowSortHeaders: Array.from(document.querySelectorAll("[data-flow-sort-key]")),
     flowTableBody: document.getElementById("flowTableBody"),
     wiresharkFilterMeta: document.getElementById("wiresharkFilterMeta"),
     wiresharkFilterText: document.getElementById("wiresharkFilterText"),
@@ -239,6 +242,51 @@
     return flow?.family === "ipv6" ? "IPv6" : "IPv4";
   }
 
+  function isDescendingDefaultSortKey(sortKey) {
+    return sortKey === "packets" || sortKey === "bytes" || sortKey === "frag";
+  }
+
+  function normalizeSortText(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function compareFlowValues(leftValue, rightValue, direction) {
+    const multiplier = direction === "desc" ? -1 : 1;
+
+    if (typeof leftValue === "number" && typeof rightValue === "number") {
+      return (leftValue - rightValue) * multiplier;
+    }
+
+    return normalizeSortText(leftValue).localeCompare(normalizeSortText(rightValue)) * multiplier;
+  }
+
+  function getFlowSortValue(flow, sortKey) {
+    switch (sortKey) {
+      case "index":
+        return Number(flow?.flow_index ?? 0);
+      case "family":
+        return formatFlowFamily(flow);
+      case "protocol":
+        return String(flow?.protocol_text || "");
+      case "hint":
+        return formatProtocolHint(flow);
+      case "service":
+        return String(flow?.service_hint || "");
+      case "frag":
+        return Number(flow?.fragmented_packet_count ?? 0);
+      case "endpoint_a":
+        return String(flow?.endpoint_a || `${flow?.address_a || ""}:${flow?.port_a ?? ""}`);
+      case "endpoint_b":
+        return String(flow?.endpoint_b || `${flow?.address_b || ""}:${flow?.port_b ?? ""}`);
+      case "packets":
+        return Number(flow?.packet_count ?? 0);
+      case "bytes":
+        return Number(flow?.total_bytes ?? 0);
+      default:
+        return Number(flow?.flow_index ?? 0);
+    }
+  }
+
   function formatFlowFragmentMarker(flow) {
     if (!flow?.has_fragmented_packets) {
       return "";
@@ -410,6 +458,22 @@
     });
   }
 
+  function getVisibleFlows() {
+    return [...filteredFlows()].sort((left, right) => {
+      const result = compareFlowValues(
+        getFlowSortValue(left, state.flowSortKey),
+        getFlowSortValue(right, state.flowSortKey),
+        state.flowSortDirection
+      );
+
+      if (result !== 0) {
+        return result;
+      }
+
+      return Number(left?.flow_index ?? 0) - Number(right?.flow_index ?? 0);
+    });
+  }
+
   function renderTabs() {
     for (const button of elements.tabButtons) {
       button.classList.toggle("active", button.dataset.tab === state.activeTab);
@@ -417,6 +481,22 @@
 
     for (const panel of elements.tabPanels) {
       panel.classList.toggle("active", panel.dataset.tabPanel === state.activeTab);
+    }
+  }
+
+  function renderFlowSortHeaders() {
+    for (const header of elements.flowSortHeaders) {
+      const sortKey = header.dataset.flowSortKey || "";
+      const label = header.dataset.flowSortLabel || header.textContent.replace(/\s[↑↓]$/, "");
+      header.dataset.flowSortLabel = label;
+
+      const isActive = sortKey === state.flowSortKey;
+      const arrow = !isActive ? "" : (state.flowSortDirection === "desc" ? " ↓" : " ↑");
+      header.textContent = `${label}${arrow}`;
+      header.classList.toggle("is-active", isActive);
+      header.title = isActive
+        ? `Sorted ${state.flowSortDirection === "desc" ? "descending" : "ascending"}`
+        : "Click to sort";
     }
   }
 
@@ -659,7 +739,7 @@
 
   function renderFlows() {
     const flows = state.flows;
-    const visibleFlows = filteredFlows();
+    const visibleFlows = getVisibleFlows();
     const selectedFlowVisible = visibleFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
 
     elements.flowFilterInput.value = state.flowFilterText;
@@ -1217,6 +1297,7 @@
     renderFlowViewTabs();
     renderInspectorMode();
     renderPacketDetailsTabs();
+    renderFlowSortHeaders();
     renderOpenState();
     renderStatus();
     renderOverview();
@@ -1557,6 +1638,19 @@
 
     render();
   });
+  for (const header of elements.flowSortHeaders) {
+    header.addEventListener("click", () => {
+      const sortKey = header.dataset.flowSortKey || "index";
+      if (state.flowSortKey === sortKey) {
+        state.flowSortDirection = state.flowSortDirection === "asc" ? "desc" : "asc";
+      } else {
+        state.flowSortKey = sortKey;
+        state.flowSortDirection = isDescendingDefaultSortKey(sortKey) ? "desc" : "asc";
+      }
+
+      render();
+    });
+  }
   for (const button of elements.tabButtons) {
     button.addEventListener("click", () => {
       state.activeTab = button.dataset.tab || "flows";

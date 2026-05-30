@@ -144,6 +144,7 @@ Current frontend-shell status:
 - the current shell has had a compact density pass to move it closer to a desktop analyzer and away from a card-heavy web layout
 - the open workflow clears stale overview/flow/packet state before each new open attempt
 - the flow table now supports a frontend-only case-insensitive filter over the loaded flow DTOs
+- the flow table now also supports frontend-only sorting over the already loaded flow DTOs
 - the flow table now shows a user-facing 1-based flow number while keeping stable backend `flow_index` internally
 - the current flow table now also surfaces address family and fragmentation state from the shared flow DTO
 - flow selection is stable and visually highlighted in the flow table

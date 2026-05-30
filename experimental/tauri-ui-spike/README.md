@@ -73,6 +73,7 @@ Not implemented yet:
 - The selected flow also shows a conservative Wireshark display filter string with a Copy button that uses the browser clipboard API when available.
 - The current Tauri shell now consumes the shared Wireshark display filter field from the frontend-neutral flow DTO instead of rebuilding the filter only in JavaScript.
 - Protocol hints now use the shared display-oriented hint text from the frontend-neutral flow DTO when available.
+- The Flows table now supports frontend-local sorting over the already loaded flow DTOs.
 - The current Tauri shell now also consumes a grouped frontend-neutral source-availability shape for shell warnings plus packet-details / stream unavailable fallbacks.
 - The Statistics tab now shows basic overview cards plus compact transport, IP family, protocol-hint, QUIC, TLS, top-endpoint, and top-port summary sections from the frontend-neutral overview DTO.
 - Statistics rows for protocol hints, top endpoints, and top ports can now drill down into the existing Flows filter.

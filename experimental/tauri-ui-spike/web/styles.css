@@ -485,6 +485,19 @@ select:disabled {
   font-weight: 600;
 }
 
+.data-table th.sortable-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.data-table th.sortable-header:hover {
+  background: #f4efe5;
+}
+
+.data-table th.sortable-header.is-active {
+  color: var(--accent);
+}
+
 .data-table tbody tr.flow-row,
 .data-table tbody tr.packet-row,
 .data-table tbody tr.stream-row {
