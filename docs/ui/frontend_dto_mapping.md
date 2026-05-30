@@ -67,17 +67,10 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ### What should be handled first in future DTO cleanup
 
-- Flow DTO alignment.
-- Packet Row DTO alignment.
-- SourceAvailabilityState alignment.
-- PacketInspector DTO refinement has started:
-  - shared `details_title`;
-  - shared `payload_tab_title`;
-  - explicit `payload_preview_no_payload` metadata.
-- Stream DTO refinement has started:
-  - shared `source_packet_indices`;
-  - shared `constricted_contribution_notes`;
-  - shared `constricted_packet_notes`.
+- Export / attach-source / index workflow parity.
+- PacketInspector and stream-item details cleanup.
+- Statistics / Analysis stabilization after the recent DTO additions.
+- Performance pass for larger captures before committing to broader CLI expectations.
 
 ## Mapping Table: Global Shell / Session State
 
@@ -204,7 +197,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 | packet/byte/rate metrics | multiple `analysis*Text` properties in `MainController` | `FrontendSelectedFlowAnalysisDto` now carries total packets / original bytes / captured bytes / packets-per-second / data-rate text, including small directional derived metric text | Tauri now renders compact traffic totals plus a small derived-metrics table | no charts or deeper rate context | frontend-neutral DTO + frontend rendering | Improved |
 | direction split metrics | `analysisPacketsAToBText`, `analysisBytesAToBText`, etc. | `FrontendSelectedFlowAnalysisDto` now carries directional packet/byte counts plus ratio/dominance text | Tauri now renders a compact direction split section | no Qt-style directional charts | frontend-neutral DTO + frontend rendering | Improved |
 | packet size metrics | `analysisAveragePacketSizeText`, min/max size texts | `FrontendSelectedFlowAnalysisDto` now carries average / min / max packet-size text, including small directional variants already available in the analysis result | Tauri now renders these in a compact timing/size section plus derived-metrics table | still no histogram or chart context | frontend-neutral DTO + frontend rendering | Improved |
-| inter-arrival metrics | `analysisAverageInterArrivalText`, histograms | `FrontendSelectedFlowAnalysisDto.average_inter_arrival_text` only for the first slice | Tauri now renders average inter-arrival text only | histograms remain deferred | frontend-neutral DTO + later richer DTO | Improved |
+| inter-arrival metrics | `analysisAverageInterArrivalText`, histograms | `FrontendSelectedFlowAnalysisDto.average_inter_arrival_text` plus compact histogram rows from the existing analysis result | Tauri now renders average inter-arrival text and a compact histogram section | richer charting/rate-graph context remains deferred | frontend-neutral DTO + frontend rendering | Improved |
 | protocol hint/service/version text | `analysisProtocolHint`, `analysisServiceHint`, `analysisProtocolVersionText` | `FrontendSelectedFlowAnalysisDto` now carries protocol text plus protocol-hint/service/version/panel fallback text for the compact slice | Tauri now renders a compact Protocol Panel in addition to flow summary | still no richer protocol-specific workspace | frontend-neutral DTO + frontend rendering | Improved |
 | TCP control counts | `analysisHasTcpControlCounts`, SYN/FIN/RST props | `FrontendSelectedFlowAnalysisDto` now carries `has_tcp_control_counts` plus SYN/FIN/RST counts and text | Tauri now renders a small TCP controls section when available | no deeper TCP-specific analysis surface | frontend-neutral DTO + frontend rendering | Improved |
 | burst/idle-gap metrics | `analysisBurstCountText`, `analysisLargestIdleGapText` | `FrontendSelectedFlowAnalysisDto` now carries burst / longest-burst / largest-burst-bytes / idle-gap text | Tauri now renders a compact Burst / Idle Summary section | no charts or sequence preview context | frontend-neutral DTO + frontend rendering | Improved |
@@ -234,10 +227,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 ### Available in Qt but not frontend-neutral
 
 - checked/selected-for-batch-export flow state
-- protocol-hint distribution table
-- top endpoints / top ports data
 - stream-item details path in the right-hand inspector
-- analysis workspace shape
 - Qt source-unavailable placeholders still live in controller/view-model logic rather than consuming one grouped source-availability DTO directly
 
 ### Available in Tauri but not contract-aligned
@@ -253,7 +243,6 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 - explicit shell/session-state DTO
 - explicit selected-stream-item frontend-neutral path
 - structured packet inspector summary fields
-- top-talker statistics DTO
 
 ### Text-only today, candidate for structured DTO
 
@@ -278,53 +267,51 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 - whether packet inspector should be mostly structured or text-first
 - whether stream item details join the same shared inspector contract as packet details
 - how far statistics beyond basic counters should be standardized for CLI
-- when Analysis should get any frontend-neutral adapter surface
+- how far Analysis should keep expanding as a shared frontend-neutral DTO before a dedicated analysis-specific contract cleanup
 
 ## Recommended Follow-Up Order
 
-### 1. Flow DTO alignment
+### 1. Export / Attach-Source / Index workflow parity
 
-Why first:
+Why first now:
 
-- already mostly aligned across session, adapter, Qt, and Tauri;
-- lowest-risk cleanup;
-- helps both Tauri and future CLI quickly.
+- the Tauri spike already covers the main read-side analyzer surfaces reasonably well;
+- the biggest visible gaps are now workflow gaps rather than missing read-only panels.
 
 Expected risk:
 
-- low.
+- medium.
 
 Affected layers:
 
-- backend/session naming surface;
-- frontend-neutral DTO layer;
-- Qt/Tauri small field-alignment work;
-- future CLI.
+- Tauri frontend workflow/UI
+- frontend-neutral adapter surface
+- some session/open-path integration
 
-### 2. Packet Row DTO alignment
+### 2. PacketInspector / stream-item details cleanup
 
 Why second:
 
-- selected-flow packets are already close to shared shape;
-- packet rows feed both packet table and packet inspector entry point.
+- packet and stream inspection are already useful, but still uneven compared with Qt;
+- this is where shared DTO shape and UX clarity will pay off quickly.
 
 Expected risk:
 
-- low to medium.
+- medium.
 
 Affected layers:
 
-- app/session row semantics;
-- frontend-neutral DTO layer;
-- Qt/Tauri packet-table alignment;
-- future CLI.
+- frontend-neutral DTO layer
+- Qt packet/stream presentation paths
+- Tauri inspector views
+- future CLI inspect/report commands
 
-### 3. SourceAvailabilityState alignment
+### 3. Statistics / Analysis stabilization
 
 Why third:
 
-- source-unavailable semantics affect shell, packets, stream, details, and exports;
-- this is a cross-cutting source of duplicated wording and local branching.
+- both areas now have meaningful Tauri slices and shared DTO coverage;
+- the remaining work is mostly about deciding how far shared product semantics should go before CLI work starts.
 
 Expected risk:
 
@@ -332,86 +319,17 @@ Expected risk:
 
 Affected layers:
 
-- app/session;
-- frontend-neutral DTO layer;
-- Qt/Tauri shell and unavailable-state rendering;
-- future CLI messaging.
+- app/session DTO shaping
+- Qt-rich presentation paths
+- Tauri parity/polish
+- future CLI reporting surfaces
 
-### 4. PacketInspector DTO refinement
+### 4. Performance pass for large captures
 
 Why fourth:
 
-- packet inspector is where Qt and Tauri currently diverge the most in shape;
-- stabilizing it reduces future repeated adapter logic.
-
-Expected risk:
-
-- medium.
-
-Affected layers:
-
-- frontend-neutral DTO layer;
-- Qt packet-details composition;
-- Tauri packet inspector;
-- future CLI inspect commands.
-
-### 5. Stream DTO refinement
-
-Why fifth:
-
-- stream already has good bounded/on-demand session behavior;
-- main remaining gaps are DTO shape and stream-item references/details.
-
-Expected risk:
-
-- medium.
-
-Affected layers:
-
-- app/session adapter layer;
-- Qt stream/details path;
-- Tauri stream tab;
-- future CLI stream queries.
-
-### 6. Tauri UI alignment with stabilized DTOs
-
-Why sixth:
-
-- Tauri already consumes the adapter and will benefit immediately once DTOs settle;
-- better to align after DTO shape is less fluid.
-
-Expected risk:
-
-- low to medium.
-
-Affected layers:
-
-- Tauri Rust DTOs/FFI;
-- Tauri web UI;
-- no required core behavior change.
-
-### 7. CLI design based on stabilized DTOs
-
-Why seventh:
-
-- CLI should consume a shared contract, not invent a third shape in parallel;
-- easier once flows/packets/details/stream semantics are settled.
-
-Expected risk:
-
-- medium.
-
-Affected layers:
-
-- CLI only at first;
-- shared DTO naming/serialization choices.
-
-### 8. Statistics / Analysis revisit later
-
-Why later:
-
-- statistics and especially analysis are still the richest and least-stable surfaces;
-- they should follow after lower-risk DTO alignment work.
+- performance should be informed by actual UI behavior on larger captures, not guessed at too early;
+- the current spike now has enough surfaces to make profiling worthwhile.
 
 Expected risk:
 
@@ -419,10 +337,25 @@ Expected risk:
 
 Affected layers:
 
-- app/session;
-- Qt-rich presentation paths;
-- Tauri future parity work;
-- future CLI reporting surfaces.
+- Tauri rendering and interaction performance
+- pagination / virtualization strategy
+- possibly adapter payload sizes
+
+### 5. CLI design after DTO stabilization
+
+Why fifth:
+
+- CLI should consume the stabilized shared DTO contract, not invent a third shape in parallel;
+- waiting a bit longer avoids locking in DTO choices too early.
+
+Expected risk:
+
+- medium.
+
+Affected layers:
+
+- CLI surface
+- shared DTO naming / serialization choices
 
 ## Open Questions
 
