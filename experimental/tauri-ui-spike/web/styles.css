@@ -794,6 +794,11 @@ select:disabled {
   overflow: auto;
 }
 
+.flow-table-wrap,
+.analysis-flow-table-wrap {
+  overflow: auto;
+}
+
 .flow-view-panel {
   display: none;
 }
@@ -870,6 +875,23 @@ select:disabled {
   background: #eef5f6;
 }
 
+.virtual-spacer-row td {
+  padding: 0;
+  border-bottom: none;
+  height: 0;
+}
+
+.flow-table-wrap .data-table tbody tr.flow-row td {
+  height: 36px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.analysis-flows-table tbody tr.analysis-flow-row td {
+  height: 44px;
+  vertical-align: middle;
+}
+
 .flow-check-column,
 .flow-check-cell {
   width: 42px;
@@ -905,7 +927,6 @@ select:disabled {
 .table-cap-bar {
   display: none;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 8px;
   padding: 6px 10px;
@@ -998,6 +1019,7 @@ select:disabled {
 
 .analysis-flow-service-cell {
   overflow: hidden;
+  vertical-align: middle;
 }
 
 .analysis-flow-primary {

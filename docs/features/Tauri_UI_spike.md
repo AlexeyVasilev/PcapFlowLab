@@ -79,7 +79,9 @@ The current Tauri spike now supports:
 - grouped source-availability warning behavior in the shell
 - dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
-- capped DOM rendering for the main Flows table and Analysis flow list
+- frontend-only virtualization/windowing for the main Flows table and Analysis flow list
+- full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
+- the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - compact desktop-style layout with internal panel scrolling
 - frontend-only top-level tabs: `Flows`, `Statistics`, `Analysis`
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
@@ -229,7 +231,7 @@ The dev-only memory diagnostics workflow:
 - is opt-in through `PFL_TAURI_MEMORY_LOG=1`
 - appends `tauri_memory_log.csv`
 - logs repeated-open / load / render phases together with frontend row counts
-- logs render-cap values and whether Flows / Analysis list output was capped
+- logs virtual window start/end values and whether Flows / Analysis list virtualization is active
 - is intended for manual leak/retention investigation only
 - does not change product behavior when disabled
 
@@ -254,7 +256,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
   - fuller Qt analysis workspace parity
 - large-capture performance work, virtualization, and more advanced pagination strategies are still unaddressed
 - memory diagnostics exist, but they are investigative only; they are not a substitute for a future large-capture performance / virtualization pass
-- the new DOM caps are a first mitigation only, not final virtualization or backend paging
+- frontend virtualization is now the first mitigation layer, but backend paging/filtering/sorting is still deferred for very large captures
 
 ## Current deferred items
 

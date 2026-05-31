@@ -17,7 +17,9 @@ Implemented slice:
 - locate/attach source capture for index-backed or source-missing sessions
 - dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
-- capped DOM rendering for the main Flows table and Analysis flow list
+- frontend-only virtualization/windowing for the main Flows table and Analysis flow list
+- full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
+- the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - open mode handling
 - grouped source-availability warning behavior
 - frontend-only top-level tabs for `Flows`, `Statistics`, and `Analysis`
@@ -110,7 +112,7 @@ Implemented slice:
 - Analysis histograms use existing selected-flow analysis data only and expose frontend-only direction toggles: `All / A->B / B->A`.
 - Sequence CSV export is available only from selected-flow Analysis and uses a native Save dialog.
 - When `PFL_TAURI_MEMORY_LOG=1` is present, the shell appends `tauri_memory_log.csv` with repeated-open / load / render phase snapshots for manual retention investigation.
-- The memory log now also records the active top-level tab, active lower-left tab, render-cap values, and whether the Flows or Analysis list output was capped.
+- The memory log now also records the active top-level tab, active lower-left tab, virtual window start/end values, and whether Flows or the Analysis list are currently virtualized.
 
 ## Structure
 
@@ -177,7 +179,7 @@ Implemented slice:
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 - Large-capture performance work, virtualization, and more advanced pagination strategies have not been addressed yet.
 - The dev-only memory log is investigative only; it does not replace a future large-capture performance / virtualization pass.
-- The current DOM caps are a first mitigation only; they are not a final substitute for virtualization/windowing or backend paging/filtering on very large captures.
+- Frontend virtualization is now the first mitigation layer; backend paging/filtering/sorting for very large captures is still deferred.
 
 ## Recommended next priorities
 

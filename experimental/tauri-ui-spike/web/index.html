@@ -115,7 +115,7 @@
                 </div>
                 <p id="wiresharkFilterStatusText" class="status-text compact-status-text"></p>
               </div>
-              <div class="table-wrap fill-scroll">
+              <div id="flowTableViewport" class="table-wrap fill-scroll flow-table-wrap">
                 <table class="data-table">
                   <thead>
                     <tr>
@@ -137,7 +137,6 @@
               </div>
               <div id="flowRenderCapBar" class="table-cap-bar">
                 <span id="flowRenderCapText" class="table-cap-text"></span>
-                <button id="flowShowMoreButton" type="button" class="secondary-button">Show more</button>
               </div>
               <div id="checkedFlowsStatusBar" class="checked-flows-statusbar" aria-live="polite">
                 <span id="checkedFlowsStatusText"></span>
@@ -426,7 +425,7 @@
                   <p id="analysisFlowMeta" class="panel-subtitle">Select a flow to inspect analysis.</p>
                 </div>
               </div>
-              <div class="table-wrap fill-scroll">
+              <div id="analysisFlowTableViewport" class="table-wrap fill-scroll analysis-flow-table-wrap">
                 <table class="data-table analysis-flows-table">
                   <colgroup>
                     <col class="analysis-col-index" />
@@ -449,7 +448,6 @@
               </div>
               <div id="analysisFlowRenderCapBar" class="table-cap-bar">
                 <span id="analysisFlowRenderCapText" class="table-cap-text"></span>
-                <button id="analysisFlowShowMoreButton" type="button" class="secondary-button">Show more</button>
               </div>
             </section>
 

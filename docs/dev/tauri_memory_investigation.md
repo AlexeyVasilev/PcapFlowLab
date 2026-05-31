@@ -10,6 +10,7 @@ The goal is narrow:
 - add opt-in logging for repeated open / reload phases;
 - harden frontend cleanup before the next open;
 - reduce unnecessary heavy DOM rendering for very large captures;
+- replace the temporary fixed-row cap with lightweight frontend virtualization for the two largest flow lists;
 - document the remaining high-risk retention areas without over-claiming a confirmed leak.
 
 ## Opt-in diagnostics
@@ -45,10 +46,12 @@ Current columns:
 - `packet_size_histogram_row_count`
 - `inter_arrival_histogram_row_count`
 - rendered DOM row counts for flows / packets / stream / analysis list / sequence preview / key statistics tables
-- `flow_render_cap`
-- `analysis_flow_render_cap`
-- `flow_output_capped`
-- `analysis_flow_output_capped`
+- `flow_virtual_window_start`
+- `flow_virtual_window_end`
+- `analysis_flow_virtual_window_start`
+- `analysis_flow_virtual_window_end`
+- `flow_virtualization_active`
+- `analysis_flow_virtualization_active`
 - `overview_loaded`
 - `packet_details_loaded`
 - `analysis_loaded`
@@ -133,7 +136,8 @@ It also adds a first large-capture mitigation in the web shell:
 
 - only the active heavy top-level tab is rebuilt;
 - only the active lower-left `Packets` or `Stream` pane is rebuilt inside `Flows`;
-- the Flows table and Analysis flow list are capped in the DOM instead of rendering every row at once.
+- the Flows table and Analysis flow list now use lightweight scroll-window virtualization instead of rendering every row at once.
+- the earlier visible `Show more` cap path is no longer the primary large-list UX.
 
 ### 5. Render-path / event-handler retention
 
@@ -174,7 +178,7 @@ This pass makes that workflow more observable and more deterministic by:
 These are the most likely sources of elevated memory usage even if no strict ownership leak exists:
 
 1. Full frontend-retained `state.flows` for large captures.
-2. Large rendered flow tables without virtualization.
+2. Large rendered flow windows can still pressure WebView memory even though they are now bounded.
 3. Analysis payload retention:
    - sequence preview rows
    - packet-size histogram rows
@@ -189,7 +193,7 @@ Concrete fixes made:
 - explicit DOM/container cleanup before new open in the Tauri web shell
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
 - active lower-pane-only rendering for `Packets` vs `Stream`
-- capped DOM rendering for the main Flows table and the Analysis flow list
+- lightweight frontend virtualization for the main Flows table and the Analysis flow list
 
 Concrete leak fixes not made:
 
@@ -212,8 +216,10 @@ Recommended repeated-open measurement protocol:
 5. Repeat that cycle at least 3 times.
 6. Inspect `tauri_memory_log.csv` for:
    - whether `flow_count` returns to expected new-capture counts
-   - whether `rendered_flow_dom_row_count` stays bounded by the current cap
-   - whether `rendered_analysis_flow_dom_row_count` stays bounded by the current cap
+   - whether `rendered_flow_dom_row_count` stays bounded by the current virtual window
+   - whether `rendered_analysis_flow_dom_row_count` stays bounded by the current virtual window
+   - whether `flow_virtual_window_start/end` advance as you scroll
+   - whether `analysis_flow_virtual_window_start/end` advance as you scroll
    - whether rendered DOM row counts drop to near-zero at `after_open_cleanup`
    - whether large analysis/statistics row counts persist unexpectedly across `before_next_open` -> `after_open_cleanup`
    - whether `process_working_set_bytes` climbs monotonically or stabilizes
@@ -229,9 +235,8 @@ The external check matters because working set may stay elevated briefly even wh
 
 If repeated-open memory still looks unhealthy after this diagnostics pass, the next candidates should be:
 
-1. Flow table virtualization or windowing beyond the temporary DOM cap.
-2. Analysis flow-list virtualization or windowing beyond the temporary DOM cap.
-3. More aggressive statistics/analysis lazy rendering.
-4. Smaller overview / analysis DTO slices for very large captures.
-5. Optional analysis/sequence truncation in the Tauri spike.
-6. A deeper session-level audit only if the CSV and OS measurements indicate retained memory after successful cleanup.
+1. Backend paging/filtering/sorting for very large captures.
+2. More aggressive statistics/analysis lazy rendering.
+3. Smaller overview / analysis DTO slices for very large captures.
+4. Optional analysis/sequence truncation in the Tauri spike.
+5. A deeper session-level audit only if the CSV and OS measurements indicate retained memory after successful cleanup.

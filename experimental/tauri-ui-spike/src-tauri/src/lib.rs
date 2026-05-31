@@ -139,10 +139,12 @@ fn memory_diagnostics_log(
     rendered_protocol_hint_dom_row_count: usize,
     rendered_top_endpoints_dom_row_count: usize,
     rendered_top_ports_dom_row_count: usize,
-    flow_render_cap: usize,
-    analysis_flow_render_cap: usize,
-    flow_output_capped: bool,
-    analysis_flow_output_capped: bool,
+    flow_virtual_window_start: usize,
+    flow_virtual_window_end: usize,
+    analysis_flow_virtual_window_start: usize,
+    analysis_flow_virtual_window_end: usize,
+    flow_virtualization_active: bool,
+    analysis_flow_virtualization_active: bool,
     overview_loaded: bool,
     packet_details_loaded: bool,
     analysis_loaded: bool,
@@ -168,7 +170,7 @@ fn memory_diagnostics_log(
     if file_was_empty {
         writeln!(
             file,
-            "timestamp_unix_ms,phase,open_path,open_path_short,open_state,active_tab,flow_view_tab,flow_count,visible_flow_count,total_analysis_flow_count,checked_flow_count,packet_count,stream_item_count,analysis_sequence_row_count,packet_size_histogram_row_count,inter_arrival_histogram_row_count,rendered_flow_dom_row_count,rendered_packet_dom_row_count,rendered_stream_dom_row_count,rendered_analysis_flow_dom_row_count,rendered_analysis_sequence_dom_row_count,rendered_transport_dom_row_count,rendered_protocol_hint_dom_row_count,rendered_top_endpoints_dom_row_count,rendered_top_ports_dom_row_count,flow_render_cap,analysis_flow_render_cap,flow_output_capped,analysis_flow_output_capped,overview_loaded,packet_details_loaded,analysis_loaded,selected_flow_index,selected_packet_index,process_working_set_bytes"
+            "timestamp_unix_ms,phase,open_path,open_path_short,open_state,active_tab,flow_view_tab,flow_count,visible_flow_count,total_analysis_flow_count,checked_flow_count,packet_count,stream_item_count,analysis_sequence_row_count,packet_size_histogram_row_count,inter_arrival_histogram_row_count,rendered_flow_dom_row_count,rendered_packet_dom_row_count,rendered_stream_dom_row_count,rendered_analysis_flow_dom_row_count,rendered_analysis_sequence_dom_row_count,rendered_transport_dom_row_count,rendered_protocol_hint_dom_row_count,rendered_top_endpoints_dom_row_count,rendered_top_ports_dom_row_count,flow_virtual_window_start,flow_virtual_window_end,analysis_flow_virtual_window_start,analysis_flow_virtual_window_end,flow_virtualization_active,analysis_flow_virtualization_active,overview_loaded,packet_details_loaded,analysis_loaded,selected_flow_index,selected_packet_index,process_working_set_bytes"
         )
         .map_err(|error| format!("Failed to write memory log header: {error}"))?;
     }
@@ -181,7 +183,7 @@ fn memory_diagnostics_log(
 
     writeln!(
         file,
-        "{timestamp_unix_ms},{phase},{open_path},{open_path_short},{open_state},{active_tab},{flow_view_tab},{flow_count},{visible_flow_count},{total_analysis_flow_count},{checked_flow_count},{packet_count},{stream_item_count},{analysis_sequence_row_count},{packet_size_histogram_row_count},{inter_arrival_histogram_row_count},{rendered_flow_dom_row_count},{rendered_packet_dom_row_count},{rendered_stream_dom_row_count},{rendered_analysis_flow_dom_row_count},{rendered_analysis_sequence_dom_row_count},{rendered_transport_dom_row_count},{rendered_protocol_hint_dom_row_count},{rendered_top_endpoints_dom_row_count},{rendered_top_ports_dom_row_count},{flow_render_cap},{analysis_flow_render_cap},{flow_output_capped},{analysis_flow_output_capped},{overview_loaded},{packet_details_loaded},{analysis_loaded},{selected_flow_index},{selected_packet_index},{process_working_set_bytes}",
+        "{timestamp_unix_ms},{phase},{open_path},{open_path_short},{open_state},{active_tab},{flow_view_tab},{flow_count},{visible_flow_count},{total_analysis_flow_count},{checked_flow_count},{packet_count},{stream_item_count},{analysis_sequence_row_count},{packet_size_histogram_row_count},{inter_arrival_histogram_row_count},{rendered_flow_dom_row_count},{rendered_packet_dom_row_count},{rendered_stream_dom_row_count},{rendered_analysis_flow_dom_row_count},{rendered_analysis_sequence_dom_row_count},{rendered_transport_dom_row_count},{rendered_protocol_hint_dom_row_count},{rendered_top_endpoints_dom_row_count},{rendered_top_ports_dom_row_count},{flow_virtual_window_start},{flow_virtual_window_end},{analysis_flow_virtual_window_start},{analysis_flow_virtual_window_end},{flow_virtualization_active},{analysis_flow_virtualization_active},{overview_loaded},{packet_details_loaded},{analysis_loaded},{selected_flow_index},{selected_packet_index},{process_working_set_bytes}",
         phase = csv_escape(&phase),
         open_path = csv_escape(&open_path),
         open_path_short = csv_escape(&open_path_short),

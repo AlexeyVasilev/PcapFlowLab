@@ -12,8 +12,10 @@
   const streamItemBatchSize = 15;
   const initialStreamPacketBudget = 30;
   const streamPacketBatchSize = 30;
-  const flowDomRenderBatchSize = 500;
-  const analysisFlowDomRenderBatchSize = 500;
+  const flowVirtualRowHeight = 36;
+  const analysisFlowVirtualRowHeight = 44;
+  const flowVirtualOverscanRows = 12;
+  const analysisFlowVirtualOverscanRows = 10;
 
   const state = {
     memoryDiagnosticsEnabled: false,
@@ -50,7 +52,9 @@
     flowFilterText: "",
     flowSortKey: "index",
     flowSortDirection: "asc",
-    flowRenderLimit: flowDomRenderBatchSize,
+    flowVirtualWindowStart: 0,
+    flowVirtualWindowEnd: 0,
+    flowVirtualizationActive: false,
     checkedFlowIndices: new Set(),
     selectedFlowIndex: null,
     packets: [],
@@ -82,7 +86,9 @@
     analysisErrorText: "",
     analysisUnavailableText: "",
     analysisLoadedForFlowIndex: null,
-    analysisFlowRenderLimit: analysisFlowDomRenderBatchSize,
+    analysisFlowVirtualWindowStart: 0,
+    analysisFlowVirtualWindowEnd: 0,
+    analysisFlowVirtualizationActive: false,
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
@@ -158,9 +164,9 @@
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     flowSortHeaders: Array.from(document.querySelectorAll("[data-flow-sort-key]")),
     flowTableBody: document.getElementById("flowTableBody"),
+    flowTableViewport: document.getElementById("flowTableViewport"),
     flowRenderCapBar: document.getElementById("flowRenderCapBar"),
     flowRenderCapText: document.getElementById("flowRenderCapText"),
-    flowShowMoreButton: document.getElementById("flowShowMoreButton"),
     checkedFlowsStatusBar: document.getElementById("checkedFlowsStatusBar"),
     checkedFlowsStatusText: document.getElementById("checkedFlowsStatusText"),
     wiresharkFilterRow: document.getElementById("wiresharkFilterRow"),
@@ -197,9 +203,9 @@
     streamDetailsConstrictedNotesText: document.getElementById("streamDetailsConstrictedNotesText"),
     analysisFlowMeta: document.getElementById("analysisFlowMeta"),
     analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
+    analysisFlowTableViewport: document.getElementById("analysisFlowTableViewport"),
     analysisFlowRenderCapBar: document.getElementById("analysisFlowRenderCapBar"),
     analysisFlowRenderCapText: document.getElementById("analysisFlowRenderCapText"),
-    analysisFlowShowMoreButton: document.getElementById("analysisFlowShowMoreButton"),
     analysisMeta: document.getElementById("analysisMeta"),
     analysisStateText: document.getElementById("analysisStateText"),
     analysisContent: document.getElementById("analysisContent"),
@@ -324,12 +330,22 @@
     return String(pathOverride ?? elements.capturePath?.value ?? "").trim();
   }
 
-  function resetFlowRenderLimit() {
-    state.flowRenderLimit = flowDomRenderBatchSize;
+  function resetFlowVirtualizationState(resetScroll = true) {
+    state.flowVirtualWindowStart = 0;
+    state.flowVirtualWindowEnd = 0;
+    state.flowVirtualizationActive = false;
+    if (resetScroll && elements.flowTableViewport) {
+      elements.flowTableViewport.scrollTop = 0;
+    }
   }
 
-  function resetAnalysisFlowRenderLimit() {
-    state.analysisFlowRenderLimit = analysisFlowDomRenderBatchSize;
+  function resetAnalysisFlowVirtualizationState(resetScroll = true) {
+    state.analysisFlowVirtualWindowStart = 0;
+    state.analysisFlowVirtualWindowEnd = 0;
+    state.analysisFlowVirtualizationActive = false;
+    if (resetScroll && elements.analysisFlowTableViewport) {
+      elements.analysisFlowTableViewport.scrollTop = 0;
+    }
   }
 
   function clearRenderedTablesAndPanels() {
@@ -417,19 +433,21 @@
       analysis_sequence_row_count: analysisSequenceRows,
       packet_size_histogram_row_count: packetSizeHistogramRows,
       inter_arrival_histogram_row_count: interArrivalHistogramRows,
-      rendered_flow_dom_row_count: elements.flowTableBody?.children.length ?? 0,
+      rendered_flow_dom_row_count: elements.flowTableBody?.querySelectorAll("tr.flow-row").length ?? 0,
       rendered_packet_dom_row_count: elements.packetTableBody?.children.length ?? 0,
       rendered_stream_dom_row_count: elements.streamTableBody?.children.length ?? 0,
-      rendered_analysis_flow_dom_row_count: elements.analysisFlowTableBody?.children.length ?? 0,
+      rendered_analysis_flow_dom_row_count: elements.analysisFlowTableBody?.querySelectorAll("tr.analysis-flow-row").length ?? 0,
       rendered_analysis_sequence_dom_row_count: elements.analysisSequencePreviewBody?.children.length ?? 0,
       rendered_transport_dom_row_count: elements.transportStatsBody?.children.length ?? 0,
       rendered_protocol_hint_dom_row_count: elements.protocolHintStatsBody?.children.length ?? 0,
       rendered_top_endpoints_dom_row_count: elements.topEndpointsBody?.children.length ?? 0,
       rendered_top_ports_dom_row_count: elements.topPortsBody?.children.length ?? 0,
-      flow_render_cap: state.flowRenderLimit,
-      analysis_flow_render_cap: state.analysisFlowRenderLimit,
-      flow_output_capped: filteredFlowCount > state.flowRenderLimit,
-      analysis_flow_output_capped: totalAnalysisFlowCount > state.analysisFlowRenderLimit,
+      flow_virtual_window_start: state.flowVirtualWindowStart,
+      flow_virtual_window_end: state.flowVirtualWindowEnd,
+      analysis_flow_virtual_window_start: state.analysisFlowVirtualWindowStart,
+      analysis_flow_virtual_window_end: state.analysisFlowVirtualWindowEnd,
+      flow_virtualization_active: state.flowVirtualizationActive,
+      analysis_flow_virtualization_active: state.analysisFlowVirtualizationActive,
       overview_loaded: state.overview != null,
       packet_details_loaded: state.packetDetails != null,
       analysis_loaded: state.analysis != null,
@@ -814,7 +832,8 @@
 
   function applyFlowFilterState(filterText) {
     state.flowFilterText = String(filterText || "");
-    resetFlowRenderLimit();
+    resetFlowVirtualizationState();
+    resetAnalysisFlowVirtualizationState();
     setWiresharkFilterStatus("", "neutral");
 
     const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
@@ -870,7 +889,7 @@
     state.analysisErrorText = "";
     state.analysisUnavailableText = "";
     state.analysisLoadedForFlowIndex = null;
-    resetAnalysisFlowRenderLimit();
+    resetAnalysisFlowVirtualizationState();
     state.analysisSequenceExportInProgress = false;
     state.analysisSequenceExportStatusText = "";
     state.analysisSequenceExportStatusKind = "neutral";
@@ -890,8 +909,8 @@
   function clearFlows() {
     state.flows = [];
     state.flowFilterText = "";
-    resetFlowRenderLimit();
-    resetAnalysisFlowRenderLimit();
+    resetFlowVirtualizationState();
+    resetAnalysisFlowVirtualizationState();
     state.checkedFlowIndices.clear();
     state.selectedFlowIndex = null;
     state.flowState = "idle";
@@ -1156,12 +1175,70 @@
     });
   }
 
-  function getRenderedFlowSlice(flowList, renderLimit) {
-    const safeList = Array.isArray(flowList) ? flowList : [];
-    const safeLimit = Math.max(1, Number(renderLimit || 0));
+  function getVirtualizedWindow(totalCount, viewportElement, rowHeight, overscanRows) {
+    const safeTotalCount = Math.max(0, Number(totalCount || 0));
+    if (safeTotalCount === 0) {
+      return {
+        startIndex: 0,
+        endIndex: 0,
+        viewportHeight: 0,
+        virtualizationActive: false,
+      };
+    }
+
+    const scrollTop = Math.max(0, Number(viewportElement?.scrollTop || 0));
+    const viewportHeight = Math.max(
+      Number(viewportElement?.clientHeight || 0),
+      rowHeight * 8
+    );
+    const visibleRowCount = Math.max(1, Math.ceil(viewportHeight / rowHeight));
+    const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscanRows);
+    const endIndex = Math.min(
+      safeTotalCount,
+      startIndex + visibleRowCount + (overscanRows * 2)
+    );
+
     return {
-      rows: safeList.slice(0, safeLimit),
-      isCapped: safeList.length > safeLimit,
+      startIndex,
+      endIndex,
+      viewportHeight,
+      virtualizationActive: safeTotalCount > visibleRowCount,
+    };
+  }
+
+  function renderVirtualizedTableBody({
+    tableBody,
+    rows,
+    rowHeight,
+    viewportElement,
+    overscanRows,
+    colspan,
+    renderRow,
+  }) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const { startIndex, endIndex, virtualizationActive } = getVirtualizedWindow(
+      safeRows.length,
+      viewportElement,
+      rowHeight,
+      overscanRows
+    );
+    const windowRows = safeRows.slice(startIndex, endIndex);
+    const topSpacerHeight = startIndex * rowHeight;
+    const bottomSpacerHeight = Math.max(0, safeRows.length - endIndex) * rowHeight;
+    const topSpacerRow = topSpacerHeight > 0
+      ? `<tr class="virtual-spacer-row" aria-hidden="true"><td colspan="${colspan}" style="height: ${topSpacerHeight}px;"></td></tr>`
+      : "";
+    const bottomSpacerRow = bottomSpacerHeight > 0
+      ? `<tr class="virtual-spacer-row" aria-hidden="true"><td colspan="${colspan}" style="height: ${bottomSpacerHeight}px;"></td></tr>`
+      : "";
+
+    tableBody.innerHTML = `${topSpacerRow}${windowRows.map(renderRow).join("")}${bottomSpacerRow}`;
+
+    return {
+      startIndex,
+      endIndex,
+      virtualizationActive,
+      windowRows,
     };
   }
 
@@ -1173,6 +1250,9 @@
       elements.flowRenderCapText.textContent = "";
     }
     elements.flowRenderCapBar?.classList.remove("is-visible");
+    state.flowVirtualWindowStart = 0;
+    state.flowVirtualWindowEnd = 0;
+    state.flowVirtualizationActive = false;
   }
 
   function clearPacketTableDom() {
@@ -1220,6 +1300,9 @@
     elements.analysisFlowTableBody && (elements.analysisFlowTableBody.innerHTML = "");
     elements.analysisFlowRenderCapText && (elements.analysisFlowRenderCapText.textContent = "");
     elements.analysisFlowRenderCapBar?.classList.remove("is-visible");
+    state.analysisFlowVirtualWindowStart = 0;
+    state.analysisFlowVirtualWindowEnd = 0;
+    state.analysisFlowVirtualizationActive = false;
     elements.analysisFlowSummary && (elements.analysisFlowSummary.innerHTML = "");
     elements.analysisProtocolPanel && (elements.analysisProtocolPanel.innerHTML = "");
     elements.analysisTrafficTotals && (elements.analysisTrafficTotals.innerHTML = "");
@@ -1528,25 +1611,19 @@
   function renderFlows() {
     const flows = state.flows;
     const visibleFlows = getVisibleFlows();
-    const { rows: renderedFlows, isCapped } = getRenderedFlowSlice(visibleFlows, state.flowRenderLimit);
-    const selectedFlowVisible = visibleFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
-    const selectedFlowRendered = renderedFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
-    const selectedFlowOutsideRenderedSlice = selectedFlowVisible && !selectedFlowRendered;
     const checkedCount = checkedFlowCount();
 
     elements.flowFilterInput.value = state.flowFilterText;
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
     elements.checkedFlowsStatusBar.classList.toggle("is-visible", checkedCount > 0);
     elements.checkedFlowsStatusText.textContent = checkedCount === 1 ? "1 flow selected" : `${formatNumber(checkedCount)} flows selected`;
-    elements.flowRenderCapBar.classList.toggle("is-visible", isCapped);
-    elements.flowShowMoreButton.disabled = !isCapped;
-    if (!isCapped) {
-      elements.flowRenderCapText.textContent = "";
-    }
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.flowMeta.textContent = "Loading flows...";
       elements.flowRenderCapBar.classList.remove("is-visible");
+      state.flowVirtualWindowStart = 0;
+      state.flowVirtualWindowEnd = 0;
+      state.flowVirtualizationActive = false;
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Loading flows...</td></tr>`;
       return;
     }
@@ -1554,6 +1631,9 @@
     if (state.openState === "error") {
       elements.flowMeta.textContent = "No flows available after open failure.";
       elements.flowRenderCapBar.classList.remove("is-visible");
+      state.flowVirtualWindowStart = 0;
+      state.flowVirtualWindowEnd = 0;
+      state.flowVirtualizationActive = false;
       elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="11">Open failed. No flows were loaded.</td></tr>`;
       return;
     }
@@ -1561,6 +1641,9 @@
     if (state.openState !== "opened") {
       elements.flowMeta.textContent = "No capture loaded.";
       elements.flowRenderCapBar.classList.remove("is-visible");
+      state.flowVirtualWindowStart = 0;
+      state.flowVirtualWindowEnd = 0;
+      state.flowVirtualizationActive = false;
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Open a capture or index to load flows.</td></tr>`;
       return;
     }
@@ -1568,6 +1651,9 @@
     if (flows.length === 0) {
       elements.flowMeta.textContent = "No flows were found in the opened capture.";
       elements.flowRenderCapBar.classList.remove("is-visible");
+      state.flowVirtualWindowStart = 0;
+      state.flowVirtualWindowEnd = 0;
+      state.flowVirtualizationActive = false;
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows available.</td></tr>`;
       return;
     }
@@ -1575,22 +1661,22 @@
     if (visibleFlows.length === 0) {
       elements.flowMeta.textContent = `Showing 0 of ${formatNumber(flows.length)} flows.`;
       elements.flowRenderCapBar.classList.remove("is-visible");
+      state.flowVirtualWindowStart = 0;
+      state.flowVirtualWindowEnd = 0;
+      state.flowVirtualizationActive = false;
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows match the current filter.</td></tr>`;
       return;
     }
 
-    elements.flowMeta.textContent = isCapped
-      ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(visibleFlows.length)} visible flows (${formatNumber(flows.length)} total). Click a row to load packets.`
-      : `Showing ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows. Click a row to load packets.`;
-    if (isCapped) {
-      elements.flowRenderCapText.textContent = selectedFlowOutsideRenderedSlice
-        ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(visibleFlows.length)} flows. The active flow is outside the current rendered slice. Use filter, sort, or Show more.`
-        : `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(visibleFlows.length)} flows. Use filter or sort to narrow results.`;
-    }
-
-    elements.flowTableBody.innerHTML = renderedFlows
-      .map((flow) => {
-        const selected = selectedFlowRendered && state.selectedFlowIndex === flow.flow_index ? " selected" : "";
+    const virtualWindow = renderVirtualizedTableBody({
+      tableBody: elements.flowTableBody,
+      rows: visibleFlows,
+      rowHeight: flowVirtualRowHeight,
+      viewportElement: elements.flowTableViewport,
+      overscanRows: flowVirtualOverscanRows,
+      colspan: 11,
+      renderRow: (flow) => {
+        const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const checked = state.checkedFlowIndices.has(flow.flow_index) ? " checked" : "";
         return `
           <tr class="flow-row${selected}${checked}" data-flow-index="${flow.flow_index}">
@@ -1607,8 +1693,27 @@
             <td>${formatNumber(flow.total_bytes)}</td>
           </tr>
         `;
-      })
-      .join("");
+      },
+    });
+    const renderedFlows = virtualWindow.windowRows;
+    const selectedFlowVisible = visibleFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowRendered = renderedFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowOutsideRenderedSlice = selectedFlowVisible && !selectedFlowRendered;
+    state.flowVirtualWindowStart = virtualWindow.startIndex;
+    state.flowVirtualWindowEnd = virtualWindow.endIndex;
+    state.flowVirtualizationActive = virtualWindow.virtualizationActive;
+
+    elements.flowMeta.textContent = state.flowFilterText.trim().length > 0
+      ? `Filtered to ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows. Click a row to load packets.`
+      : `Showing ${formatNumber(visibleFlows.length)} flows. Click a row to load packets.`;
+    elements.flowRenderCapBar.classList.toggle("is-visible", state.flowVirtualizationActive);
+    elements.flowRenderCapText.textContent = state.flowVirtualizationActive
+      ? (
+        selectedFlowOutsideRenderedSlice
+          ? `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(visibleFlows.length)}. The active flow is outside the current rendered window.`
+          : `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(visibleFlows.length)}.`
+      )
+      : "";
 
     for (const row of elements.flowTableBody.querySelectorAll(".flow-row")) {
       row.addEventListener("click", async () => {
@@ -2243,19 +2348,13 @@
 
   function renderAnalysisFlowList() {
     const flows = getSortedFlows(state.flows);
-    const { rows: renderedFlows, isCapped } = getRenderedFlowSlice(flows, state.analysisFlowRenderLimit);
-    const selectedFlowVisible = flows.some((flow) => flow.flow_index === state.selectedFlowIndex);
-    const selectedFlowRendered = renderedFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
-    const selectedFlowOutsideRenderedSlice = selectedFlowVisible && !selectedFlowRendered;
-    elements.analysisFlowRenderCapBar.classList.toggle("is-visible", isCapped);
-    elements.analysisFlowShowMoreButton.disabled = !isCapped;
-    if (!isCapped) {
-      elements.analysisFlowRenderCapText.textContent = "";
-    }
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.analysisFlowMeta.textContent = "Loading flows for analysis...";
       elements.analysisFlowRenderCapBar.classList.remove("is-visible");
+      state.analysisFlowVirtualWindowStart = 0;
+      state.analysisFlowVirtualWindowEnd = 0;
+      state.analysisFlowVirtualizationActive = false;
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading analysis flows...</td></tr>`;
       return;
     }
@@ -2263,6 +2362,9 @@
     if (state.openState === "error") {
       elements.analysisFlowMeta.textContent = "No analysis flows available after open failure.";
       elements.analysisFlowRenderCapBar.classList.remove("is-visible");
+      state.analysisFlowVirtualWindowStart = 0;
+      state.analysisFlowVirtualWindowEnd = 0;
+      state.analysisFlowVirtualizationActive = false;
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. Analysis flows were cleared.</td></tr>`;
       return;
     }
@@ -2270,6 +2372,9 @@
     if (state.openState !== "opened") {
       elements.analysisFlowMeta.textContent = "No capture loaded.";
       elements.analysisFlowRenderCapBar.classList.remove("is-visible");
+      state.analysisFlowVirtualWindowStart = 0;
+      state.analysisFlowVirtualWindowEnd = 0;
+      state.analysisFlowVirtualizationActive = false;
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to inspect analysis flows.</td></tr>`;
       return;
     }
@@ -2277,25 +2382,21 @@
     if (flows.length === 0) {
       elements.analysisFlowMeta.textContent = "No flows are available for analysis.";
       elements.analysisFlowRenderCapBar.classList.remove("is-visible");
+      state.analysisFlowVirtualWindowStart = 0;
+      state.analysisFlowVirtualWindowEnd = 0;
+      state.analysisFlowVirtualizationActive = false;
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">No flows available.</td></tr>`;
       return;
     }
 
-    elements.analysisFlowMeta.textContent = state.selectedFlowIndex == null
-      ? (isCapped
-        ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(flows.length)} analysis flows. Select one to load analysis.`
-        : `Showing ${formatNumber(flows.length)} flows. Select one to load analysis.`)
-      : (isCapped
-        ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(flows.length)} analysis flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`
-        : `Showing ${formatNumber(flows.length)} flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`);
-    if (isCapped) {
-      elements.analysisFlowRenderCapText.textContent = selectedFlowOutsideRenderedSlice
-        ? "The active flow is outside the current rendered slice. Use Show more to reach it from the Analysis list."
-        : `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(flows.length)} analysis flows. Use Show more if you need a larger list.`;
-    }
-
-    elements.analysisFlowTableBody.innerHTML = renderedFlows
-      .map((flow) => {
+    const virtualWindow = renderVirtualizedTableBody({
+      tableBody: elements.analysisFlowTableBody,
+      rows: flows,
+      rowHeight: analysisFlowVirtualRowHeight,
+      viewportElement: elements.analysisFlowTableViewport,
+      overscanRows: analysisFlowVirtualOverscanRows,
+      colspan: 5,
+      renderRow: (flow) => {
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const hintOrProtocol = formatProtocolHint(flow) || flow.protocol_text || "-";
         const endpointSummary = `${flow.address_a}:${flow.port_a} <-> ${flow.address_b}:${flow.port_b}`;
@@ -2314,14 +2415,32 @@
             <td>${formatNumber(flow.total_bytes)}</td>
           </tr>
         `;
-      })
-      .join("");
+      },
+    });
+    const renderedFlows = virtualWindow.windowRows;
+    const selectedFlowVisible = flows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowRendered = renderedFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowOutsideRenderedSlice = selectedFlowVisible && !selectedFlowRendered;
+    state.analysisFlowVirtualWindowStart = virtualWindow.startIndex;
+    state.analysisFlowVirtualWindowEnd = virtualWindow.endIndex;
+    state.analysisFlowVirtualizationActive = virtualWindow.virtualizationActive;
+
+    elements.analysisFlowMeta.textContent = state.selectedFlowIndex == null
+      ? `Showing ${formatNumber(flows.length)} analysis flows. Select one to load analysis.`
+      : `Showing ${formatNumber(flows.length)} analysis flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`;
+    elements.analysisFlowRenderCapBar.classList.toggle("is-visible", state.analysisFlowVirtualizationActive);
+    elements.analysisFlowRenderCapText.textContent = state.analysisFlowVirtualizationActive
+      ? (
+        selectedFlowOutsideRenderedSlice
+          ? `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(flows.length)}. The active flow is outside the current rendered window.`
+          : `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(flows.length)}.`
+      )
+      : "";
 
     for (const row of elements.analysisFlowTableBody.querySelectorAll(".analysis-flow-row")) {
       row.addEventListener("click", async () => {
         const flowIndex = Number(row.dataset.analysisFlowIndex);
-        state.flowFilterText = "";
-        elements.flowFilterInput.value = "";
+        applyFlowFilterState("");
         await selectFlow(flowIndex);
       });
     }
@@ -2650,6 +2769,37 @@
         console.error(`Failed to render ${name}.`, error);
       }
     }
+  }
+
+  let flowViewportRenderScheduled = false;
+  let analysisViewportRenderScheduled = false;
+
+  function scheduleFlowViewportRender() {
+    if (flowViewportRenderScheduled) {
+      return;
+    }
+
+    flowViewportRenderScheduled = true;
+    window.requestAnimationFrame(() => {
+      flowViewportRenderScheduled = false;
+      if (state.activeTab === "flows") {
+        renderFlows();
+      }
+    });
+  }
+
+  function scheduleAnalysisFlowViewportRender() {
+    if (analysisViewportRenderScheduled) {
+      return;
+    }
+
+    analysisViewportRenderScheduled = true;
+    window.requestAnimationFrame(() => {
+      analysisViewportRenderScheduled = false;
+      if (state.activeTab === "analysis") {
+        renderAnalysisFlowList();
+      }
+    });
   }
 
   async function loadOverviewAndFlows() {
@@ -3752,8 +3902,8 @@
   for (const header of elements.flowSortHeaders) {
     header.addEventListener("click", () => {
       const sortKey = header.dataset.flowSortKey || "index";
-      resetFlowRenderLimit();
-      resetAnalysisFlowRenderLimit();
+      resetFlowVirtualizationState();
+      resetAnalysisFlowVirtualizationState();
       if (state.flowSortKey === sortKey) {
         state.flowSortDirection = state.flowSortDirection === "asc" ? "desc" : "asc";
       } else {
@@ -3764,13 +3914,11 @@
       render();
     });
   }
-  elements.flowShowMoreButton?.addEventListener("click", () => {
-    state.flowRenderLimit += flowDomRenderBatchSize;
-    render();
+  elements.flowTableViewport?.addEventListener("scroll", () => {
+    scheduleFlowViewportRender();
   });
-  elements.analysisFlowShowMoreButton?.addEventListener("click", () => {
-    state.analysisFlowRenderLimit += analysisFlowDomRenderBatchSize;
-    render();
+  elements.analysisFlowTableViewport?.addEventListener("scroll", () => {
+    scheduleAnalysisFlowViewportRender();
   });
   for (const button of elements.tabButtons) {
     button.addEventListener("click", async () => {
