@@ -2,7 +2,10 @@ mod dtos;
 mod ffi;
 
 use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
@@ -14,8 +17,181 @@ use ffi::{CppFrontendSessionAdapter, OpenMode};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+const MEMORY_LOG_ENV: &str = "PFL_TAURI_MEMORY_LOG";
+const MEMORY_LOG_FILE_NAME: &str = "tauri_memory_log.csv";
+
 struct AdapterState {
     adapter: CppFrontendSessionAdapter,
+}
+
+fn memory_diagnostics_enabled_flag() -> bool {
+    matches!(std::env::var(MEMORY_LOG_ENV).ok().as_deref(), Some("1"))
+}
+
+fn memory_log_path() -> Result<PathBuf, String> {
+    let current_dir = std::env::current_dir()
+        .map_err(|error| format!("Failed to resolve current directory for memory log: {error}"))?;
+    Ok(current_dir.join(MEMORY_LOG_FILE_NAME))
+}
+
+fn csv_escape(value: &str) -> String {
+    let needs_quotes = value.contains(',')
+        || value.contains('"')
+        || value.contains('\n')
+        || value.contains('\r');
+    if !needs_quotes {
+        return value.to_string();
+    }
+
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+#[cfg(target_os = "windows")]
+fn current_process_working_set_bytes() -> u64 {
+    use std::ffi::c_void;
+    use std::mem::size_of;
+
+    #[repr(C)]
+    struct ProcessMemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn K32GetProcessMemoryInfo(
+            process: *mut c_void,
+            counters: *mut ProcessMemoryCounters,
+            cb: u32,
+        ) -> i32;
+    }
+
+    let mut counters = ProcessMemoryCounters {
+        cb: size_of::<ProcessMemoryCounters>() as u32,
+        page_fault_count: 0,
+        peak_working_set_size: 0,
+        working_set_size: 0,
+        quota_peak_paged_pool_usage: 0,
+        quota_paged_pool_usage: 0,
+        quota_peak_non_paged_pool_usage: 0,
+        quota_non_paged_pool_usage: 0,
+        pagefile_usage: 0,
+        peak_pagefile_usage: 0,
+    };
+
+    let success = unsafe {
+        K32GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            &mut counters,
+            size_of::<ProcessMemoryCounters>() as u32,
+        )
+    };
+
+    if success == 0 {
+        0
+    } else {
+        counters.working_set_size as u64
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn current_process_working_set_bytes() -> u64 {
+    0
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn memory_diagnostics_enabled() -> bool {
+    memory_diagnostics_enabled_flag()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+#[allow(clippy::too_many_arguments)]
+fn memory_diagnostics_log(
+    phase: String,
+    open_path: String,
+    open_path_short: String,
+    open_state: String,
+    active_tab: String,
+    flow_view_tab: String,
+    flow_count: usize,
+    visible_flow_count: usize,
+    total_analysis_flow_count: usize,
+    checked_flow_count: usize,
+    packet_count: usize,
+    stream_item_count: usize,
+    analysis_sequence_row_count: usize,
+    packet_size_histogram_row_count: usize,
+    inter_arrival_histogram_row_count: usize,
+    rendered_flow_dom_row_count: usize,
+    rendered_packet_dom_row_count: usize,
+    rendered_stream_dom_row_count: usize,
+    rendered_analysis_flow_dom_row_count: usize,
+    rendered_analysis_sequence_dom_row_count: usize,
+    rendered_transport_dom_row_count: usize,
+    rendered_protocol_hint_dom_row_count: usize,
+    rendered_top_endpoints_dom_row_count: usize,
+    rendered_top_ports_dom_row_count: usize,
+    flow_render_cap: usize,
+    analysis_flow_render_cap: usize,
+    flow_output_capped: bool,
+    analysis_flow_output_capped: bool,
+    overview_loaded: bool,
+    packet_details_loaded: bool,
+    analysis_loaded: bool,
+    selected_flow_index: isize,
+    selected_packet_index: i64,
+) -> Result<(), String> {
+    if !memory_diagnostics_enabled_flag() {
+        return Ok(());
+    }
+
+    let log_path = memory_log_path()?;
+    let file_exists = log_path.exists();
+    let file_was_empty = !file_exists || std::fs::metadata(&log_path)
+        .map(|metadata| metadata.len() == 0)
+        .unwrap_or(true);
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map_err(|error| format!("Failed to open memory log '{}': {error}", log_path.display()))?;
+
+    if file_was_empty {
+        writeln!(
+            file,
+            "timestamp_unix_ms,phase,open_path,open_path_short,open_state,active_tab,flow_view_tab,flow_count,visible_flow_count,total_analysis_flow_count,checked_flow_count,packet_count,stream_item_count,analysis_sequence_row_count,packet_size_histogram_row_count,inter_arrival_histogram_row_count,rendered_flow_dom_row_count,rendered_packet_dom_row_count,rendered_stream_dom_row_count,rendered_analysis_flow_dom_row_count,rendered_analysis_sequence_dom_row_count,rendered_transport_dom_row_count,rendered_protocol_hint_dom_row_count,rendered_top_endpoints_dom_row_count,rendered_top_ports_dom_row_count,flow_render_cap,analysis_flow_render_cap,flow_output_capped,analysis_flow_output_capped,overview_loaded,packet_details_loaded,analysis_loaded,selected_flow_index,selected_packet_index,process_working_set_bytes"
+        )
+        .map_err(|error| format!("Failed to write memory log header: {error}"))?;
+    }
+
+    let timestamp_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let process_working_set_bytes = current_process_working_set_bytes();
+
+    writeln!(
+        file,
+        "{timestamp_unix_ms},{phase},{open_path},{open_path_short},{open_state},{active_tab},{flow_view_tab},{flow_count},{visible_flow_count},{total_analysis_flow_count},{checked_flow_count},{packet_count},{stream_item_count},{analysis_sequence_row_count},{packet_size_histogram_row_count},{inter_arrival_histogram_row_count},{rendered_flow_dom_row_count},{rendered_packet_dom_row_count},{rendered_stream_dom_row_count},{rendered_analysis_flow_dom_row_count},{rendered_analysis_sequence_dom_row_count},{rendered_transport_dom_row_count},{rendered_protocol_hint_dom_row_count},{rendered_top_endpoints_dom_row_count},{rendered_top_ports_dom_row_count},{flow_render_cap},{analysis_flow_render_cap},{flow_output_capped},{analysis_flow_output_capped},{overview_loaded},{packet_details_loaded},{analysis_loaded},{selected_flow_index},{selected_packet_index},{process_working_set_bytes}",
+        phase = csv_escape(&phase),
+        open_path = csv_escape(&open_path),
+        open_path_short = csv_escape(&open_path_short),
+        open_state = csv_escape(&open_state),
+        active_tab = csv_escape(&active_tab),
+        flow_view_tab = csv_escape(&flow_view_tab),
+    )
+    .map_err(|error| format!("Failed to append memory log row: {error}"))?;
+
+    Ok(())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -379,6 +555,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(AdapterState { adapter }))
         .invoke_handler(tauri::generate_handler![
+            memory_diagnostics_enabled,
+            memory_diagnostics_log,
             pick_open_path,
             pick_open_capture_path,
             pick_open_index_path,

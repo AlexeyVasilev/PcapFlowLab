@@ -12,8 +12,11 @@
   const streamItemBatchSize = 15;
   const initialStreamPacketBudget = 30;
   const streamPacketBatchSize = 30;
+  const flowDomRenderBatchSize = 500;
+  const analysisFlowDomRenderBatchSize = 500;
 
   const state = {
+    memoryDiagnosticsEnabled: false,
     openMenu: null,
     aboutDialogVisible: false,
     settingsDialogVisible: false,
@@ -47,6 +50,7 @@
     flowFilterText: "",
     flowSortKey: "index",
     flowSortDirection: "asc",
+    flowRenderLimit: flowDomRenderBatchSize,
     checkedFlowIndices: new Set(),
     selectedFlowIndex: null,
     packets: [],
@@ -78,6 +82,7 @@
     analysisErrorText: "",
     analysisUnavailableText: "",
     analysisLoadedForFlowIndex: null,
+    analysisFlowRenderLimit: analysisFlowDomRenderBatchSize,
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
@@ -153,6 +158,9 @@
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     flowSortHeaders: Array.from(document.querySelectorAll("[data-flow-sort-key]")),
     flowTableBody: document.getElementById("flowTableBody"),
+    flowRenderCapBar: document.getElementById("flowRenderCapBar"),
+    flowRenderCapText: document.getElementById("flowRenderCapText"),
+    flowShowMoreButton: document.getElementById("flowShowMoreButton"),
     checkedFlowsStatusBar: document.getElementById("checkedFlowsStatusBar"),
     checkedFlowsStatusText: document.getElementById("checkedFlowsStatusText"),
     wiresharkFilterRow: document.getElementById("wiresharkFilterRow"),
@@ -189,6 +197,9 @@
     streamDetailsConstrictedNotesText: document.getElementById("streamDetailsConstrictedNotesText"),
     analysisFlowMeta: document.getElementById("analysisFlowMeta"),
     analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
+    analysisFlowRenderCapBar: document.getElementById("analysisFlowRenderCapBar"),
+    analysisFlowRenderCapText: document.getElementById("analysisFlowRenderCapText"),
+    analysisFlowShowMoreButton: document.getElementById("analysisFlowShowMoreButton"),
     analysisMeta: document.getElementById("analysisMeta"),
     analysisStateText: document.getElementById("analysisStateText"),
     analysisContent: document.getElementById("analysisContent"),
@@ -297,6 +308,162 @@
   function setStatus(text, kind = "neutral") {
     state.statusText = text || "";
     state.statusKind = kind;
+  }
+
+  function shortenPathForMemoryLog(path) {
+    const normalizedPath = String(path || "").trim();
+    if (normalizedPath.length === 0) {
+      return "";
+    }
+
+    const pathParts = normalizedPath.split(/[\\/]+/).filter((part) => part.length > 0);
+    return pathParts.length > 0 ? pathParts[pathParts.length - 1] : normalizedPath;
+  }
+
+  function currentOpenPathForDiagnostics(pathOverride = null) {
+    return String(pathOverride ?? elements.capturePath?.value ?? "").trim();
+  }
+
+  function resetFlowRenderLimit() {
+    state.flowRenderLimit = flowDomRenderBatchSize;
+  }
+
+  function resetAnalysisFlowRenderLimit() {
+    state.analysisFlowRenderLimit = analysisFlowDomRenderBatchSize;
+  }
+
+  function clearRenderedTablesAndPanels() {
+    const clearHtml = (element) => {
+      if (element) {
+        element.innerHTML = "";
+      }
+    };
+    const clearText = (element) => {
+      if (element) {
+        element.textContent = "";
+      }
+    };
+
+    clearHtml(elements.flowTableBody);
+    clearHtml(elements.packetTableBody);
+    clearHtml(elements.streamTableBody);
+    clearHtml(elements.analysisFlowTableBody);
+    clearHtml(elements.analysisSequencePreviewBody);
+    clearHtml(elements.transportStatsBody);
+    clearHtml(elements.familyStatsBody);
+    clearHtml(elements.protocolHintStatsBody);
+    clearHtml(elements.quicStatsBody);
+    clearHtml(elements.tlsStatsBody);
+    clearHtml(elements.topEndpointsBody);
+    clearHtml(elements.topPortsBody);
+    clearHtml(elements.packetDetailsSummary);
+    clearHtml(elements.streamDetailsSummary);
+    clearHtml(elements.analysisFlowSummary);
+    clearHtml(elements.analysisProtocolPanel);
+    clearHtml(elements.analysisTrafficTotals);
+    clearHtml(elements.analysisDirectionSplit);
+    clearHtml(elements.analysisDerivedMetrics);
+    clearHtml(elements.analysisTimingSize);
+    clearHtml(elements.analysisBurstIdleSummary);
+    clearHtml(elements.analysisTcpControls);
+    clearHtml(elements.analysisPacketSizeHistogramRows);
+    clearHtml(elements.analysisInterArrivalHistogramRows);
+    clearText(elements.packetDetailsRawText);
+    clearText(elements.packetDetailsPayloadText);
+    clearText(elements.packetDetailsProtocolText);
+    clearText(elements.packetDetailsRawStateText);
+    clearText(elements.packetDetailsPayloadStateText);
+    clearText(elements.packetDetailsProtocolStateText);
+    clearText(elements.packetDetailsStateText);
+    clearText(elements.streamDetailsStateText);
+    clearText(elements.streamDetailsSourcePacketsText);
+    clearText(elements.streamDetailsSourcePacketIndicesText);
+    clearText(elements.streamDetailsConstrictedNotesText);
+    clearText(elements.analysisPacketSizeHistogramMax);
+    clearText(elements.analysisInterArrivalHistogramMax);
+    clearText(elements.flowRenderCapText);
+    clearText(elements.analysisFlowRenderCapText);
+    elements.flowRenderCapBar?.classList.remove("is-visible");
+    elements.analysisFlowRenderCapBar?.classList.remove("is-visible");
+  }
+
+  function collectMemorySnapshot(phase, pathOverride = null) {
+    const openPath = currentOpenPathForDiagnostics(pathOverride);
+    const filteredFlowCount = filteredFlows().length;
+    const totalAnalysisFlowCount = state.flows.length;
+    const analysisSequenceRows = Array.isArray(state.analysis?.sequence_preview_rows)
+      ? state.analysis.sequence_preview_rows.length
+      : 0;
+    const packetSizeHistogramRows = Array.isArray(state.analysis?.packet_size_histogram_rows)
+      ? state.analysis.packet_size_histogram_rows.length
+      : 0;
+    const interArrivalHistogramRows = Array.isArray(state.analysis?.inter_arrival_histogram_rows)
+      ? state.analysis.inter_arrival_histogram_rows.length
+      : 0;
+
+    return {
+      phase,
+      open_path: openPath,
+      open_path_short: shortenPathForMemoryLog(openPath),
+      open_state: state.openState,
+      active_tab: state.activeTab,
+      flow_view_tab: state.flowViewTab,
+      flow_count: state.flows.length,
+      visible_flow_count: filteredFlowCount,
+      total_analysis_flow_count: totalAnalysisFlowCount,
+      checked_flow_count: checkedFlowCount(),
+      packet_count: state.packets.length,
+      stream_item_count: state.streamItems.length,
+      analysis_sequence_row_count: analysisSequenceRows,
+      packet_size_histogram_row_count: packetSizeHistogramRows,
+      inter_arrival_histogram_row_count: interArrivalHistogramRows,
+      rendered_flow_dom_row_count: elements.flowTableBody?.children.length ?? 0,
+      rendered_packet_dom_row_count: elements.packetTableBody?.children.length ?? 0,
+      rendered_stream_dom_row_count: elements.streamTableBody?.children.length ?? 0,
+      rendered_analysis_flow_dom_row_count: elements.analysisFlowTableBody?.children.length ?? 0,
+      rendered_analysis_sequence_dom_row_count: elements.analysisSequencePreviewBody?.children.length ?? 0,
+      rendered_transport_dom_row_count: elements.transportStatsBody?.children.length ?? 0,
+      rendered_protocol_hint_dom_row_count: elements.protocolHintStatsBody?.children.length ?? 0,
+      rendered_top_endpoints_dom_row_count: elements.topEndpointsBody?.children.length ?? 0,
+      rendered_top_ports_dom_row_count: elements.topPortsBody?.children.length ?? 0,
+      flow_render_cap: state.flowRenderLimit,
+      analysis_flow_render_cap: state.analysisFlowRenderLimit,
+      flow_output_capped: filteredFlowCount > state.flowRenderLimit,
+      analysis_flow_output_capped: totalAnalysisFlowCount > state.analysisFlowRenderLimit,
+      overview_loaded: state.overview != null,
+      packet_details_loaded: state.packetDetails != null,
+      analysis_loaded: state.analysis != null,
+      selected_flow_index: state.selectedFlowIndex ?? -1,
+      selected_packet_index: state.selectedPacketIndex ?? -1,
+    };
+  }
+
+  async function logMemoryPhase(phase, pathOverride = null) {
+    if (!state.memoryDiagnosticsEnabled || typeof invoke !== "function") {
+      return;
+    }
+
+    try {
+      await invoke("memory_diagnostics_log", collectMemorySnapshot(phase, pathOverride));
+    } catch (error) {
+      console.warn(`Failed to write memory diagnostics for phase '${phase}'.`, error);
+    }
+  }
+
+  async function initializeMemoryDiagnostics() {
+    if (typeof invoke !== "function") {
+      return;
+    }
+
+    try {
+      state.memoryDiagnosticsEnabled = Boolean(await invoke("memory_diagnostics_enabled"));
+      if (state.memoryDiagnosticsEnabled) {
+        await logMemoryPhase("app_started");
+      }
+    } catch (error) {
+      state.memoryDiagnosticsEnabled = false;
+      console.warn("Failed to initialize Tauri memory diagnostics.", error);
+    }
   }
 
   function clearSettingsStatus() {
@@ -647,6 +814,7 @@
 
   function applyFlowFilterState(filterText) {
     state.flowFilterText = String(filterText || "");
+    resetFlowRenderLimit();
     setWiresharkFilterStatus("", "neutral");
 
     const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
@@ -702,6 +870,7 @@
     state.analysisErrorText = "";
     state.analysisUnavailableText = "";
     state.analysisLoadedForFlowIndex = null;
+    resetAnalysisFlowRenderLimit();
     state.analysisSequenceExportInProgress = false;
     state.analysisSequenceExportStatusText = "";
     state.analysisSequenceExportStatusKind = "neutral";
@@ -721,6 +890,8 @@
   function clearFlows() {
     state.flows = [];
     state.flowFilterText = "";
+    resetFlowRenderLimit();
+    resetAnalysisFlowRenderLimit();
     state.checkedFlowIndices.clear();
     state.selectedFlowIndex = null;
     state.flowState = "idle";
@@ -738,6 +909,7 @@
   }
 
   function resetForNewOpen() {
+    clearRenderedTablesAndPanels();
     clearOverview();
     clearFlows();
     clearPackets();
@@ -748,18 +920,18 @@
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
-      state.smartExportInProgress = false;
-      clearSmartExportStatus();
-      state.openMenu = null;
-      state.aboutDialogVisible = false;
-      state.settingsDialogVisible = false;
-      state.settingsDialogLoading = false;
-      state.settingsSaveInProgress = false;
-      clearSettingsStatus();
-      state.smartExportDialogVisible = false;
-      state.sourceAvailability = null;
-      setStatus("", "neutral");
-    }
+    state.smartExportInProgress = false;
+    clearSmartExportStatus();
+    state.openMenu = null;
+    state.aboutDialogVisible = false;
+    state.settingsDialogVisible = false;
+    state.settingsDialogLoading = false;
+    state.settingsSaveInProgress = false;
+    clearSettingsStatus();
+    state.smartExportDialogVisible = false;
+    state.sourceAvailability = null;
+    setStatus("", "neutral");
+  }
 
   function setOpenControlsDisabled(disabled) {
     elements.capturePath.disabled = disabled;
@@ -982,6 +1154,85 @@
 
       return Number(left?.flow_index ?? 0) - Number(right?.flow_index ?? 0);
     });
+  }
+
+  function getRenderedFlowSlice(flowList, renderLimit) {
+    const safeList = Array.isArray(flowList) ? flowList : [];
+    const safeLimit = Math.max(1, Number(renderLimit || 0));
+    return {
+      rows: safeList.slice(0, safeLimit),
+      isCapped: safeList.length > safeLimit,
+    };
+  }
+
+  function clearFlowTableDom() {
+    if (elements.flowTableBody) {
+      elements.flowTableBody.innerHTML = "";
+    }
+    if (elements.flowRenderCapText) {
+      elements.flowRenderCapText.textContent = "";
+    }
+    elements.flowRenderCapBar?.classList.remove("is-visible");
+  }
+
+  function clearPacketTableDom() {
+    if (elements.packetTableBody) {
+      elements.packetTableBody.innerHTML = "";
+    }
+  }
+
+  function clearStreamTableDom() {
+    if (elements.streamTableBody) {
+      elements.streamTableBody.innerHTML = "";
+    }
+  }
+
+  function clearPacketDetailsDom() {
+    elements.packetDetailsSummary && (elements.packetDetailsSummary.innerHTML = "");
+    elements.packetDetailsRawText && (elements.packetDetailsRawText.textContent = "");
+    elements.packetDetailsPayloadText && (elements.packetDetailsPayloadText.textContent = "");
+    elements.packetDetailsProtocolText && (elements.packetDetailsProtocolText.textContent = "");
+    elements.packetDetailsRawStateText && (elements.packetDetailsRawStateText.textContent = "");
+    elements.packetDetailsPayloadStateText && (elements.packetDetailsPayloadStateText.textContent = "");
+    elements.packetDetailsProtocolStateText && (elements.packetDetailsProtocolStateText.textContent = "");
+    elements.packetDetailsStateText && (elements.packetDetailsStateText.textContent = "");
+  }
+
+  function clearStreamDetailsDom() {
+    elements.streamDetailsSummary && (elements.streamDetailsSummary.innerHTML = "");
+    elements.streamDetailsStateText && (elements.streamDetailsStateText.textContent = "");
+    elements.streamDetailsSourcePacketsText && (elements.streamDetailsSourcePacketsText.textContent = "");
+    elements.streamDetailsSourcePacketIndicesText && (elements.streamDetailsSourcePacketIndicesText.textContent = "");
+    elements.streamDetailsConstrictedNotesText && (elements.streamDetailsConstrictedNotesText.textContent = "");
+  }
+
+  function clearStatisticsDom() {
+    elements.transportStatsBody && (elements.transportStatsBody.innerHTML = "");
+    elements.familyStatsBody && (elements.familyStatsBody.innerHTML = "");
+    elements.protocolHintStatsBody && (elements.protocolHintStatsBody.innerHTML = "");
+    elements.quicStatsBody && (elements.quicStatsBody.innerHTML = "");
+    elements.tlsStatsBody && (elements.tlsStatsBody.innerHTML = "");
+    elements.topEndpointsBody && (elements.topEndpointsBody.innerHTML = "");
+    elements.topPortsBody && (elements.topPortsBody.innerHTML = "");
+  }
+
+  function clearAnalysisDom() {
+    elements.analysisFlowTableBody && (elements.analysisFlowTableBody.innerHTML = "");
+    elements.analysisFlowRenderCapText && (elements.analysisFlowRenderCapText.textContent = "");
+    elements.analysisFlowRenderCapBar?.classList.remove("is-visible");
+    elements.analysisFlowSummary && (elements.analysisFlowSummary.innerHTML = "");
+    elements.analysisProtocolPanel && (elements.analysisProtocolPanel.innerHTML = "");
+    elements.analysisTrafficTotals && (elements.analysisTrafficTotals.innerHTML = "");
+    elements.analysisDirectionSplit && (elements.analysisDirectionSplit.innerHTML = "");
+    elements.analysisDerivedMetrics && (elements.analysisDerivedMetrics.innerHTML = "");
+    elements.analysisTimingSize && (elements.analysisTimingSize.innerHTML = "");
+    elements.analysisBurstIdleSummary && (elements.analysisBurstIdleSummary.innerHTML = "");
+    elements.analysisTcpControls && (elements.analysisTcpControls.innerHTML = "");
+    elements.analysisPacketSizeHistogramRows && (elements.analysisPacketSizeHistogramRows.innerHTML = "");
+    elements.analysisPacketSizeHistogramMax && (elements.analysisPacketSizeHistogramMax.textContent = "");
+    elements.analysisInterArrivalHistogramRows && (elements.analysisInterArrivalHistogramRows.innerHTML = "");
+    elements.analysisInterArrivalHistogramMax && (elements.analysisInterArrivalHistogramMax.textContent = "");
+    elements.analysisSequencePreviewBody && (elements.analysisSequencePreviewBody.innerHTML = "");
   }
 
   function renderTabs() {
@@ -1277,48 +1528,69 @@
   function renderFlows() {
     const flows = state.flows;
     const visibleFlows = getVisibleFlows();
+    const { rows: renderedFlows, isCapped } = getRenderedFlowSlice(visibleFlows, state.flowRenderLimit);
     const selectedFlowVisible = visibleFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowRendered = renderedFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowOutsideRenderedSlice = selectedFlowVisible && !selectedFlowRendered;
     const checkedCount = checkedFlowCount();
 
     elements.flowFilterInput.value = state.flowFilterText;
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
     elements.checkedFlowsStatusBar.classList.toggle("is-visible", checkedCount > 0);
     elements.checkedFlowsStatusText.textContent = checkedCount === 1 ? "1 flow selected" : `${formatNumber(checkedCount)} flows selected`;
+    elements.flowRenderCapBar.classList.toggle("is-visible", isCapped);
+    elements.flowShowMoreButton.disabled = !isCapped;
+    if (!isCapped) {
+      elements.flowRenderCapText.textContent = "";
+    }
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.flowMeta.textContent = "Loading flows...";
+      elements.flowRenderCapBar.classList.remove("is-visible");
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Loading flows...</td></tr>`;
       return;
     }
 
     if (state.openState === "error") {
       elements.flowMeta.textContent = "No flows available after open failure.";
+      elements.flowRenderCapBar.classList.remove("is-visible");
       elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="11">Open failed. No flows were loaded.</td></tr>`;
       return;
     }
 
     if (state.openState !== "opened") {
       elements.flowMeta.textContent = "No capture loaded.";
+      elements.flowRenderCapBar.classList.remove("is-visible");
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Open a capture or index to load flows.</td></tr>`;
       return;
     }
 
     if (flows.length === 0) {
       elements.flowMeta.textContent = "No flows were found in the opened capture.";
+      elements.flowRenderCapBar.classList.remove("is-visible");
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows available.</td></tr>`;
       return;
     }
 
     if (visibleFlows.length === 0) {
       elements.flowMeta.textContent = `Showing 0 of ${formatNumber(flows.length)} flows.`;
+      elements.flowRenderCapBar.classList.remove("is-visible");
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows match the current filter.</td></tr>`;
       return;
     }
 
-    elements.flowMeta.textContent = `Showing ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows. Click a row to load packets.`;
-    elements.flowTableBody.innerHTML = visibleFlows
+    elements.flowMeta.textContent = isCapped
+      ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(visibleFlows.length)} visible flows (${formatNumber(flows.length)} total). Click a row to load packets.`
+      : `Showing ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows. Click a row to load packets.`;
+    if (isCapped) {
+      elements.flowRenderCapText.textContent = selectedFlowOutsideRenderedSlice
+        ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(visibleFlows.length)} flows. The active flow is outside the current rendered slice. Use filter, sort, or Show more.`
+        : `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(visibleFlows.length)} flows. Use filter or sort to narrow results.`;
+    }
+
+    elements.flowTableBody.innerHTML = renderedFlows
       .map((flow) => {
-        const selected = selectedFlowVisible && state.selectedFlowIndex === flow.flow_index ? " selected" : "";
+        const selected = selectedFlowRendered && state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const checked = state.checkedFlowIndices.has(flow.flow_index) ? " checked" : "";
         return `
           <tr class="flow-row${selected}${checked}" data-flow-index="${flow.flow_index}">
@@ -1971,36 +2243,58 @@
 
   function renderAnalysisFlowList() {
     const flows = getSortedFlows(state.flows);
+    const { rows: renderedFlows, isCapped } = getRenderedFlowSlice(flows, state.analysisFlowRenderLimit);
+    const selectedFlowVisible = flows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowRendered = renderedFlows.some((flow) => flow.flow_index === state.selectedFlowIndex);
+    const selectedFlowOutsideRenderedSlice = selectedFlowVisible && !selectedFlowRendered;
+    elements.analysisFlowRenderCapBar.classList.toggle("is-visible", isCapped);
+    elements.analysisFlowShowMoreButton.disabled = !isCapped;
+    if (!isCapped) {
+      elements.analysisFlowRenderCapText.textContent = "";
+    }
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.analysisFlowMeta.textContent = "Loading flows for analysis...";
+      elements.analysisFlowRenderCapBar.classList.remove("is-visible");
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Loading analysis flows...</td></tr>`;
       return;
     }
 
     if (state.openState === "error") {
       elements.analysisFlowMeta.textContent = "No analysis flows available after open failure.";
+      elements.analysisFlowRenderCapBar.classList.remove("is-visible");
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="5">Open failed. Analysis flows were cleared.</td></tr>`;
       return;
     }
 
     if (state.openState !== "opened") {
       elements.analysisFlowMeta.textContent = "No capture loaded.";
+      elements.analysisFlowRenderCapBar.classList.remove("is-visible");
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">Open a capture or index to inspect analysis flows.</td></tr>`;
       return;
     }
 
     if (flows.length === 0) {
       elements.analysisFlowMeta.textContent = "No flows are available for analysis.";
+      elements.analysisFlowRenderCapBar.classList.remove("is-visible");
       elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">No flows available.</td></tr>`;
       return;
     }
 
     elements.analysisFlowMeta.textContent = state.selectedFlowIndex == null
-      ? `Showing ${formatNumber(flows.length)} flows. Select one to load analysis.`
-      : `Showing ${formatNumber(flows.length)} flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`;
+      ? (isCapped
+        ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(flows.length)} analysis flows. Select one to load analysis.`
+        : `Showing ${formatNumber(flows.length)} flows. Select one to load analysis.`)
+      : (isCapped
+        ? `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(flows.length)} analysis flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`
+        : `Showing ${formatNumber(flows.length)} flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`);
+    if (isCapped) {
+      elements.analysisFlowRenderCapText.textContent = selectedFlowOutsideRenderedSlice
+        ? "The active flow is outside the current rendered slice. Use Show more to reach it from the Analysis list."
+        : `Showing first ${formatNumber(renderedFlows.length)} of ${formatNumber(flows.length)} analysis flows. Use Show more if you need a larger list.`;
+    }
 
-    elements.analysisFlowTableBody.innerHTML = flows
+    elements.analysisFlowTableBody.innerHTML = renderedFlows
       .map((flow) => {
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const hintOrProtocol = formatProtocolHint(flow) || flow.protocol_text || "-";
@@ -2313,15 +2607,41 @@
       ["open state", renderOpenState],
       ["source warning banner", renderSourceWarningBanner],
       ["status", renderStatus],
-      ["overview", renderOverview],
-      ["flows", renderFlows],
-      ["Wireshark filter", renderWiresharkFilter],
-      ["packets", renderPackets],
-      ["stream", renderStream],
-      ["packet details", renderPacketDetails],
-      ["stream details", renderStreamDetails],
-      ["analysis", renderAnalysis],
     ];
+
+    if (state.activeTab === "flows") {
+      clearStatisticsDom();
+      clearAnalysisDom();
+      renderSteps.push(["flows", renderFlows]);
+      renderSteps.push(["Wireshark filter", renderWiresharkFilter]);
+      if (state.flowViewTab === "packets") {
+        clearStreamTableDom();
+        clearStreamDetailsDom();
+        renderSteps.push(["packets", renderPackets]);
+        renderSteps.push(["packet details", renderPacketDetails]);
+      } else {
+        clearPacketTableDom();
+        clearPacketDetailsDom();
+        renderSteps.push(["stream", renderStream]);
+        renderSteps.push(["stream details", renderStreamDetails]);
+      }
+    } else if (state.activeTab === "statistics") {
+      clearFlowTableDom();
+      clearPacketTableDom();
+      clearStreamTableDom();
+      clearPacketDetailsDom();
+      clearStreamDetailsDom();
+      clearAnalysisDom();
+      renderSteps.push(["overview", renderOverview]);
+    } else if (state.activeTab === "analysis") {
+      clearFlowTableDom();
+      clearPacketTableDom();
+      clearStreamTableDom();
+      clearPacketDetailsDom();
+      clearStreamDetailsDom();
+      clearStatisticsDom();
+      renderSteps.push(["analysis", renderAnalysis]);
+    }
 
     for (const [name, renderStep] of renderSteps) {
       try {
@@ -2342,8 +2662,10 @@
     ]);
 
     state.overview = overview;
+    await logMemoryPhase("after_get_overview");
     state.flows = flows || [];
     state.flowState = "loaded";
+    await logMemoryPhase("after_get_flows");
   }
 
   async function loadSelectedFlowPackets() {
@@ -2445,6 +2767,7 @@
     }
 
     render();
+    await logMemoryPhase("after_stream_loaded");
   }
 
   async function loadSelectedFlowAnalysis() {
@@ -2493,6 +2816,7 @@
     }
 
     render();
+    await logMemoryPhase("after_analysis_loaded");
   }
 
   async function loadSelectedPacketDetails() {
@@ -2626,27 +2950,38 @@
 
     const path = String(pathOverride ?? elements.capturePath.value).trim();
     const openMode = String(modeOverride ?? elements.openMode.value ?? "fast");
+    const hadLoadedSession = state.openState === "opened" || state.overview != null || state.flows.length > 0;
 
+    if (hadLoadedSession) {
+      await logMemoryPhase("before_next_open", path);
+    }
+
+    await logMemoryPhase("before_open_cleanup", path);
     resetForNewOpen();
+    await logMemoryPhase("after_open_cleanup", path);
     state.openState = "opening";
     state.flowState = "loading";
     setStatus("Opening capture...", "neutral");
     render();
 
     try {
+      await logMemoryPhase("before_open_capture", path);
       const result = await invoke("open_capture", {
         path,
         open_mode: openMode,
       });
+      await logMemoryPhase("after_open_capture", path);
 
       if (!result?.opened) {
         resetForNewOpen();
         state.openState = "error";
         setStatus(result?.error_text || "Open failed.", "error");
         render();
+        if (hadLoadedSession) {
+          await logMemoryPhase("after_next_open", path);
+        }
         return;
       }
-
       state.sourceAvailability = sourceAvailabilityOrDefault(result?.source_availability);
       await loadOverviewAndFlows();
       state.openState = "opened";
@@ -2654,11 +2989,19 @@
       const sourceSuffix = result?.opened_from_index ? " (opened from index)" : "";
       setStatus(`Opened ${path}${sourceSuffix}.`, "success");
       render();
+      await logMemoryPhase("after_render_flows", path);
+      await logMemoryPhase("after_statistics_loaded", path);
+      if (hadLoadedSession) {
+        await logMemoryPhase("after_next_open", path);
+      }
     } catch (error) {
       resetForNewOpen();
       state.openState = "error";
       setStatus(`Open failed: ${String(error)}`, "error");
       render();
+      if (hadLoadedSession) {
+        await logMemoryPhase("after_next_open", path);
+      }
     }
   }
 
@@ -3409,6 +3752,8 @@
   for (const header of elements.flowSortHeaders) {
     header.addEventListener("click", () => {
       const sortKey = header.dataset.flowSortKey || "index";
+      resetFlowRenderLimit();
+      resetAnalysisFlowRenderLimit();
       if (state.flowSortKey === sortKey) {
         state.flowSortDirection = state.flowSortDirection === "asc" ? "desc" : "asc";
       } else {
@@ -3419,6 +3764,14 @@
       render();
     });
   }
+  elements.flowShowMoreButton?.addEventListener("click", () => {
+    state.flowRenderLimit += flowDomRenderBatchSize;
+    render();
+  });
+  elements.analysisFlowShowMoreButton?.addEventListener("click", () => {
+    state.analysisFlowRenderLimit += analysisFlowDomRenderBatchSize;
+    render();
+  });
   for (const button of elements.tabButtons) {
     button.addEventListener("click", async () => {
       state.activeTab = button.dataset.tab || "flows";
@@ -3521,4 +3874,5 @@
   });
 
   render();
+  void initializeMemoryDiagnostics();
 })();

@@ -902,6 +902,28 @@ select:disabled {
   display: flex;
 }
 
+.table-cap-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8f5ee;
+}
+
+.table-cap-bar.is-visible {
+  display: flex;
+}
+
+.table-cap-text {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .table-state-row td {
   padding: 10px 8px;
   color: var(--muted);

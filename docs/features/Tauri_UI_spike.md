@@ -77,6 +77,9 @@ The current Tauri spike now supports:
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
+- dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
+- active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
+- capped DOM rendering for the main Flows table and Analysis flow list
 - compact desktop-style layout with internal panel scrolling
 - frontend-only top-level tabs: `Flows`, `Statistics`, `Analysis`
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
@@ -221,6 +224,15 @@ The source-attach workflow:
 - updates grouped source-availability state in place
 - makes byte-backed packet details and stream available on the next explicit reload when the chosen source capture is valid
 
+The dev-only memory diagnostics workflow:
+
+- is opt-in through `PFL_TAURI_MEMORY_LOG=1`
+- appends `tauri_memory_log.csv`
+- logs repeated-open / load / render phases together with frontend row counts
+- logs render-cap values and whether Flows / Analysis list output was capped
+- is intended for manual leak/retention investigation only
+- does not change product behavior when disabled
+
 ## Current limitations and remaining Qt gaps
 
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
@@ -241,6 +253,8 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
   - richer charts
   - fuller Qt analysis workspace parity
 - large-capture performance work, virtualization, and more advanced pagination strategies are still unaddressed
+- memory diagnostics exist, but they are investigative only; they are not a substitute for a future large-capture performance / virtualization pass
+- the new DOM caps are a first mitigation only, not final virtualization or backend paging
 
 ## Current deferred items
 

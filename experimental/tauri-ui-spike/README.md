@@ -15,6 +15,9 @@ Implemented slice:
 - `Flow -> Export Unselected Flows` through the existing session batch flow-export path
 - `Flow -> Smart Export...` through the existing session smart-export path
 - locate/attach source capture for index-backed or source-missing sessions
+- dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
+- active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
+- capped DOM rendering for the main Flows table and Analysis flow list
 - open mode handling
 - grouped source-availability warning behavior
 - frontend-only top-level tabs for `Flows`, `Statistics`, and `Analysis`
@@ -106,6 +109,8 @@ Implemented slice:
 - Selecting a flow in Analysis reuses the shared selected-flow state and can be followed with `Open in Flows`.
 - Analysis histograms use existing selected-flow analysis data only and expose frontend-only direction toggles: `All / A->B / B->A`.
 - Sequence CSV export is available only from selected-flow Analysis and uses a native Save dialog.
+- When `PFL_TAURI_MEMORY_LOG=1` is present, the shell appends `tauri_memory_log.csv` with repeated-open / load / render phase snapshots for manual retention investigation.
+- The memory log now also records the active top-level tab, active lower-left tab, render-cap values, and whether the Flows or Analysis list output was capped.
 
 ## Structure
 
@@ -171,6 +176,8 @@ Implemented slice:
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 - Large-capture performance work, virtualization, and more advanced pagination strategies have not been addressed yet.
+- The dev-only memory log is investigative only; it does not replace a future large-capture performance / virtualization pass.
+- The current DOM caps are a first mitigation only; they are not a final substitute for virtualization/windowing or backend paging/filtering on very large captures.
 
 ## Recommended next priorities
 
