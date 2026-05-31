@@ -7,7 +7,7 @@
 
     return tauriInvoke(...args);
   };
-  const packetPageSize = 60;
+  const packetPageSize = 30;
   const initialStreamItems = 15;
   const streamItemBatchSize = 15;
   const initialStreamPacketBudget = 30;
@@ -99,6 +99,14 @@
     packetDetailsTab: "summary",
     wiresharkFilterStatusText: "",
     wiresharkFilterStatusKind: "neutral",
+    flowSelectionRequestToken: 0,
+    packetRequestToken: 0,
+    streamRequestToken: 0,
+    analysisRequestToken: 0,
+    diagnosticsPacketRequestOffset: 0,
+    diagnosticsPacketRequestLimit: packetPageSize,
+    diagnosticsPacketReturnedRowCount: 0,
+    diagnosticsPacketReturnedTotalCount: 0,
   };
 
   const elements = {
@@ -330,6 +338,12 @@
     return String(pathOverride ?? elements.capturePath?.value ?? "").trim();
   }
 
+  function waitForNextPaint() {
+    return new Promise((resolve) => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  }
+
   function resetFlowVirtualizationState(resetScroll = true) {
     state.flowVirtualWindowStart = 0;
     state.flowVirtualWindowEnd = 0;
@@ -448,6 +462,10 @@
       analysis_flow_virtual_window_end: state.analysisFlowVirtualWindowEnd,
       flow_virtualization_active: state.flowVirtualizationActive,
       analysis_flow_virtualization_active: state.analysisFlowVirtualizationActive,
+      packet_request_offset: state.diagnosticsPacketRequestOffset,
+      packet_request_limit: state.diagnosticsPacketRequestLimit,
+      packet_request_row_count: state.diagnosticsPacketReturnedRowCount,
+      packet_request_total_count: state.diagnosticsPacketReturnedTotalCount,
       overview_loaded: state.overview != null,
       packet_details_loaded: state.packetDetails != null,
       analysis_loaded: state.analysis != null,
@@ -924,10 +942,18 @@
     state.packetOffset = 0;
     state.packetState = "idle";
     state.packetErrorText = "";
+    state.diagnosticsPacketRequestOffset = 0;
+    state.diagnosticsPacketRequestLimit = packetPageSize;
+    state.diagnosticsPacketReturnedRowCount = 0;
+    state.diagnosticsPacketReturnedTotalCount = 0;
     clearPacketDetails();
   }
 
   function resetForNewOpen() {
+    state.flowSelectionRequestToken += 1;
+    state.packetRequestToken += 1;
+    state.streamRequestToken += 1;
+    state.analysisRequestToken += 1;
     clearRenderedTablesAndPanels();
     clearOverview();
     clearFlows();
@@ -2818,56 +2844,100 @@
     await logMemoryPhase("after_get_flows");
   }
 
-  async function loadSelectedFlowPackets() {
+  async function loadSelectedFlowPackets(selectionToken = state.flowSelectionRequestToken) {
     if (state.selectedFlowIndex == null) {
       clearPackets();
       render();
       return;
     }
 
+    const requestedFlowIndex = state.selectedFlowIndex;
+    const requestedOffset = state.packetOffset;
+    const requestedLimit = packetPageSize;
+    const requestToken = ++state.packetRequestToken;
     clearPacketDetails();
     state.packetState = "loading";
     state.packetErrorText = "";
+    state.diagnosticsPacketRequestOffset = requestedOffset;
+    state.diagnosticsPacketRequestLimit = requestedLimit;
+    state.diagnosticsPacketReturnedRowCount = 0;
+    state.diagnosticsPacketReturnedTotalCount = 0;
     render();
+    await logMemoryPhase("packets_request_started");
 
     try {
       const packetResult = await invoke("get_selected_flow_packets", {
-        offset: state.packetOffset,
-        limit: packetPageSize,
+        offset: requestedOffset,
+        limit: requestedLimit,
       });
+
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.packetRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+        || state.packetOffset !== requestedOffset
+      ) {
+        return;
+      }
 
       state.packets = packetResult?.packets || [];
       state.packetsTotalCount = packetResult?.total_count || 0;
-      state.packetOffset = packetResult?.offset || state.packetOffset;
+      state.packetOffset = packetResult?.offset ?? requestedOffset;
       state.packetState = "loaded";
+      state.diagnosticsPacketReturnedRowCount = state.packets.length;
+      state.diagnosticsPacketReturnedTotalCount = state.packetsTotalCount;
+      await logMemoryPhase("packets_request_finished");
     } catch (error) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.packetRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+      ) {
+        return;
+      }
+
       state.packets = [];
       state.packetsTotalCount = 0;
       state.packetState = "error";
       state.packetErrorText = `Failed to load packets: ${String(error)}`;
       setStatus(state.packetErrorText, "error");
+      state.diagnosticsPacketReturnedRowCount = 0;
+      state.diagnosticsPacketReturnedTotalCount = 0;
+      await logMemoryPhase("packets_request_finished");
     }
 
     render();
+    await waitForNextPaint();
+    await logMemoryPhase("packets_render_finished");
   }
 
-  async function loadSelectedFlowStream() {
+  async function loadSelectedFlowStream(selectionToken = state.flowSelectionRequestToken) {
     if (state.selectedFlowIndex == null) {
       clearStream();
       render();
       return;
     }
 
+    const requestedFlowIndex = state.selectedFlowIndex;
+    const requestToken = ++state.streamRequestToken;
     state.streamState = "loading";
     state.streamErrorText = "";
     state.streamUnavailableText = "";
     render();
+    await logMemoryPhase("stream_request_started");
 
     try {
       const streamResult = await invoke("get_selected_flow_stream", {
         max_packets_to_scan: state.streamRequestedPacketBudget,
         limit: state.streamRequestedItemLimit,
       });
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.streamRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+      ) {
+        return;
+      }
       const sourceAvailability = streamSourceAvailability(streamResult);
       state.sourceAvailability = sourceAvailability;
 
@@ -2907,6 +2977,14 @@
         state.selectedStreamItem = null;
       }
     } catch (error) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.streamRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+      ) {
+        return;
+      }
+
       state.streamItems = [];
       state.streamState = "error";
       state.streamErrorText = `Failed to load stream items: ${String(error)}`;
@@ -2917,10 +2995,11 @@
     }
 
     render();
+    await logMemoryPhase("stream_request_finished");
     await logMemoryPhase("after_stream_loaded");
   }
 
-  async function loadSelectedFlowAnalysis() {
+  async function loadSelectedFlowAnalysis(selectionToken = state.flowSelectionRequestToken) {
     if (state.selectedFlowIndex == null) {
       clearAnalysis();
       render();
@@ -2928,15 +3007,21 @@
     }
 
     const requestedFlowIndex = state.selectedFlowIndex;
+    const requestToken = ++state.analysisRequestToken;
     state.analysisState = "loading";
     state.analysisErrorText = "";
     state.analysisUnavailableText = "";
     state.analysis = null;
     render();
+    await logMemoryPhase("analysis_request_started");
 
     try {
       const analysis = await invoke("get_selected_flow_analysis");
-      if (state.selectedFlowIndex !== requestedFlowIndex) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.analysisRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+      ) {
         return;
       }
 
@@ -2954,7 +3039,11 @@
         state.analysisState = "loaded";
       }
     } catch (error) {
-      if (state.selectedFlowIndex !== requestedFlowIndex) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.analysisRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+      ) {
         return;
       }
 
@@ -2966,6 +3055,7 @@
     }
 
     render();
+    await logMemoryPhase("analysis_request_finished");
     await logMemoryPhase("after_analysis_loaded");
   }
 
@@ -3019,40 +3109,65 @@
       return;
     }
 
+    const selectionToken = ++state.flowSelectionRequestToken;
+    state.selectedFlowIndex = flowIndex;
+    clearCurrentFlowExportStatusIfPresent();
+    clearSmartExportMainStatusIfPresent();
+    state.packetOffset = 0;
+    clearPackets();
+    clearStream();
+    clearAnalysis();
+    setWiresharkFilterStatus("", "neutral");
+    state.packetState = state.activeTab === "flows" && state.flowViewTab === "packets" ? "loading" : "idle";
+    if (state.activeTab === "flows" && state.flowViewTab === "stream") {
+      state.streamState = "loading";
+      state.streamErrorText = "";
+      state.streamUnavailableText = "";
+    }
+    if (state.activeTab === "analysis") {
+      state.analysisState = "loading";
+      state.analysisErrorText = "";
+      state.analysisUnavailableText = "";
+    }
+    render();
+    await logMemoryPhase("flow_select_started");
+    await waitForNextPaint();
+
     try {
       const selection = await invoke("select_flow", { flow_index: flowIndex });
+      if (selectionToken !== state.flowSelectionRequestToken || state.selectedFlowIndex !== flowIndex) {
+        return;
+      }
+
       if (!selection?.selected) {
+        state.selectedFlowIndex = null;
+        clearPackets();
+        clearStream();
+        clearAnalysis();
         setStatus(`Failed to select flow ${flowIndex}.`, "error");
         render();
         return;
       }
 
-      state.selectedFlowIndex = flowIndex;
-      clearCurrentFlowExportStatusIfPresent();
-      clearSmartExportMainStatusIfPresent();
-      state.packetOffset = 0;
-      state.packets = [];
-      state.packetsTotalCount = 0;
-      state.packetErrorText = "";
-      state.packetState = "loading";
-      clearStream();
-      clearAnalysis();
-      clearPacketDetails();
-      setWiresharkFilterStatus("", "neutral");
-      render();
-      await loadSelectedFlowPackets();
-      if (state.flowViewTab === "stream") {
-        await loadSelectedFlowStream();
+      if (state.activeTab === "flows" && state.flowViewTab === "packets") {
+        await loadSelectedFlowPackets(selectionToken);
+      } else if (state.activeTab === "flows" && state.flowViewTab === "stream") {
+        await loadSelectedFlowStream(selectionToken);
       }
       if (state.activeTab === "analysis") {
-        await loadSelectedFlowAnalysis();
+        await loadSelectedFlowAnalysis(selectionToken);
       }
     } catch (error) {
-      state.packetState = "error";
-      state.packetErrorText = `Failed to select flow ${flowIndex}: ${String(error)}`;
+      if (selectionToken !== state.flowSelectionRequestToken || state.selectedFlowIndex !== flowIndex) {
+        return;
+      }
+
+      state.selectedFlowIndex = null;
+      clearPackets();
       clearStream();
       clearAnalysis();
-      clearPacketDetails();
+      state.packetState = "error";
+      state.packetErrorText = `Failed to select flow ${flowIndex}: ${String(error)}`;
       setStatus(state.packetErrorText, "error");
       render();
     }
@@ -3938,6 +4053,16 @@
     button.addEventListener("click", async () => {
       state.flowViewTab = button.dataset.flowViewTab || "packets";
       render();
+
+      if (
+        state.flowViewTab === "packets"
+        && state.selectedFlowIndex != null
+        && state.packetState !== "loading"
+        && state.packetsTotalCount === 0
+        && state.packets.length === 0
+      ) {
+        await loadSelectedFlowPackets();
+      }
 
       if (
         state.flowViewTab === "stream"

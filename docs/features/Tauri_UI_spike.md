@@ -82,6 +82,7 @@ The current Tauri spike now supports:
 - frontend-only virtualization/windowing for the main Flows table and Analysis flow list
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
+- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
 - compact desktop-style layout with internal panel scrolling
 - frontend-only top-level tabs: `Flows`, `Statistics`, `Analysis`
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
@@ -97,6 +98,7 @@ The `Flows` tab now supports:
 - address family and fragmentation state from shared flow DTOs
 - conservative shared Wireshark display filter text plus copy
 - selected-flow packet pagination over the existing backend `offset / limit` API
+- the initial selected-flow packet page is intentionally small and bounded for responsiveness
 - compact packet markers for IP fragmentation and suspected TCP retransmission
 - packet details tabs:
   - `Summary`
@@ -173,6 +175,7 @@ Analysis remains:
 - on-demand
 - not computed during capture open
 - not computed globally for all flows
+- not reloaded on ordinary flow clicks unless the `Analysis` tab is active
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
 
 `Flow -> Export Current Flow`:
@@ -232,6 +235,7 @@ The dev-only memory diagnostics workflow:
 - appends `tauri_memory_log.csv`
 - logs repeated-open / load / render phases together with frontend row counts
 - logs virtual window start/end values and whether Flows / Analysis list virtualization is active
+- logs selected-flow packet/stream/analysis request timing phases when diagnostics are enabled
 - is intended for manual leak/retention investigation only
 - does not change product behavior when disabled
 
@@ -255,6 +259,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
   - richer charts
   - fuller Qt analysis workspace parity
 - large-capture performance work, virtualization, and more advanced pagination strategies are still unaddressed
+- packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred
 - memory diagnostics exist, but they are investigative only; they are not a substitute for a future large-capture performance / virtualization pass
 - frontend virtualization is now the first mitigation layer, but backend paging/filtering/sorting is still deferred for very large captures
 

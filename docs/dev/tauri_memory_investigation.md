@@ -52,6 +52,10 @@ Current columns:
 - `analysis_flow_virtual_window_end`
 - `flow_virtualization_active`
 - `analysis_flow_virtualization_active`
+- `packet_request_offset`
+- `packet_request_limit`
+- `packet_request_row_count`
+- `packet_request_total_count`
 - `overview_loaded`
 - `packet_details_loaded`
 - `analysis_loaded`
@@ -69,6 +73,14 @@ Logged phases currently include:
 - `after_get_overview`
 - `after_get_flows`
 - `after_render_flows`
+- `flow_select_started`
+- `packets_request_started`
+- `packets_request_finished`
+- `packets_render_finished`
+- `stream_request_started`
+- `stream_request_finished`
+- `analysis_request_started`
+- `analysis_request_finished`
 - `after_statistics_loaded`
 - `after_analysis_loaded`
 - `after_stream_loaded`
@@ -138,6 +150,7 @@ It also adds a first large-capture mitigation in the web shell:
 - only the active lower-left `Packets` or `Stream` pane is rebuilt inside `Flows`;
 - the Flows table and Analysis flow list now use lightweight scroll-window virtualization instead of rendering every row at once.
 - the earlier visible `Show more` cap path is no longer the primary large-list UX.
+- selected-flow packet loading now updates the loading state immediately, stays bounded to the current page, and ignores stale async responses after a newer flow selection.
 
 ### 5. Render-path / event-handler retention
 
@@ -220,6 +233,8 @@ Recommended repeated-open measurement protocol:
    - whether `rendered_analysis_flow_dom_row_count` stays bounded by the current virtual window
    - whether `flow_virtual_window_start/end` advance as you scroll
    - whether `analysis_flow_virtual_window_start/end` advance as you scroll
+   - whether `flow_select_started -> packets_request_started -> packets_request_finished -> packets_render_finished` stays tight for large-flow selection
+   - whether `packet_request_offset/limit/row_count/total_count` match the expected bounded first page
    - whether rendered DOM row counts drop to near-zero at `after_open_cleanup`
    - whether large analysis/statistics row counts persist unexpectedly across `before_next_open` -> `after_open_cleanup`
    - whether `process_working_set_bytes` climbs monotonically or stabilizes

@@ -20,6 +20,7 @@ Implemented slice:
 - frontend-only virtualization/windowing for the main Flows table and Analysis flow list
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
+- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
 - open mode handling
 - grouped source-availability warning behavior
 - frontend-only top-level tabs for `Flows`, `Statistics`, and `Analysis`
@@ -97,7 +98,9 @@ Implemented slice:
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
 - Clicking a flow row loads that flow's packets and resets packet paging to the first page.
+- Flow selection now updates loading state immediately and ignores stale packet/stream/analysis responses from older selections.
 - The lower-left Flows workspace has `Packets` and `Stream` tabs.
+- The initial selected-flow packet page is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
 - Clicking a packet row loads packet details and bounded Raw/Payload previews when byte-backed inspection is available.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
@@ -113,6 +116,7 @@ Implemented slice:
 - Sequence CSV export is available only from selected-flow Analysis and uses a native Save dialog.
 - When `PFL_TAURI_MEMORY_LOG=1` is present, the shell appends `tauri_memory_log.csv` with repeated-open / load / render phase snapshots for manual retention investigation.
 - The memory log now also records the active top-level tab, active lower-left tab, virtual window start/end values, and whether Flows or the Analysis list are currently virtualized.
+- The memory log now also records selected-flow request timing phases plus bounded packet request metadata.
 
 ## Structure
 
@@ -178,6 +182,7 @@ Implemented slice:
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 - Large-capture performance work, virtualization, and more advanced pagination strategies have not been addressed yet.
+- Packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred.
 - The dev-only memory log is investigative only; it does not replace a future large-capture performance / virtualization pass.
 - Frontend virtualization is now the first mitigation layer; backend paging/filtering/sorting for very large captures is still deferred.
 
