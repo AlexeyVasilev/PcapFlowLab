@@ -33,6 +33,20 @@ char* pfl_frontend_session_adapter_export_selected_flows_json(
     const std::size_t* flow_indices,
     std::size_t flow_index_count
 );
+char* pfl_frontend_session_adapter_export_smart_flows_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8,
+    const std::size_t* flow_indices,
+    std::size_t flow_index_count,
+    std::uint8_t output_mode,
+    std::uint8_t base_mode,
+    std::uint64_t first_n_packets,
+    std::uint64_t first_m_original_bytes,
+    std::uint8_t include_last_packet,
+    std::uint8_t include_every_kth_packet_after_base,
+    std::uint64_t every_kth_packet,
+    std::size_t per_flow_buffer_budget_bytes
+);
 
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_flows_json(PflFrontendSessionAdapterHandle* handle);

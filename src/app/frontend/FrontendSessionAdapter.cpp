@@ -800,6 +800,99 @@ FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_selected_flows(
     return result;
 }
 
+FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
+    const std::filesystem::path& output_path,
+    const std::vector<std::size_t>& flow_indices,
+    const FrontendSmartExportOptions& options
+) const {
+    FrontendSmartExportResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (flow_indices.empty()) {
+        result.error_text = "No flows selected for smart export.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to export flows.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = options.output_mode == FrontendSmartExportOutputMode::separate_file_per_flow
+            ? "No destination folder selected for smart export."
+            : "No output file selected.";
+        return result;
+    }
+
+    SmartFlowExportRequest request {};
+    request.flow_indices = flow_indices;
+
+    switch (options.base_mode) {
+    case FrontendSmartExportBaseMode::all_packets:
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+        break;
+    case FrontendSmartExportBaseMode::first_n_packets:
+        if (options.first_n_packets == 0U) {
+            result.error_text = "Enter a positive packet count for smart export.";
+            return result;
+        }
+        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.first_n_packets = options.first_n_packets;
+        break;
+    case FrontendSmartExportBaseMode::first_m_original_bytes:
+        if (options.first_m_original_bytes == 0U) {
+            result.error_text = "Enter a positive original-byte limit for smart export.";
+            return result;
+        }
+        request.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
+        request.first_m_original_bytes = options.first_m_original_bytes;
+        break;
+    }
+
+    if (request.base_mode != SmartFlowExportBaseMode::all_packets) {
+        request.include_last_packet = options.include_last_packet;
+        request.include_every_kth_packet_after_base = options.include_every_kth_packet_after_base;
+        if (request.include_every_kth_packet_after_base) {
+            if (options.every_kth_packet == 0U) {
+                result.error_text = "Enter a positive K value for sparse smart export retention.";
+                return result;
+            }
+            request.every_kth_packet = options.every_kth_packet;
+        }
+    }
+
+    if (options.output_mode == FrontendSmartExportOutputMode::separate_file_per_flow) {
+        if (options.per_flow_buffer_budget_bytes == 0U) {
+            result.error_text = "Select a valid buffer memory budget preset for per-flow smart export.";
+            return result;
+        }
+
+        std::string error_text {};
+        const SmartPerFlowExportOptions per_flow_options {
+            .buffer_budget_bytes = options.per_flow_buffer_budget_bytes,
+        };
+
+        if (!session_.export_smart_flows_to_folder(request, output_path, per_flow_options, &error_text)) {
+            result.error_text = error_text.empty() ? "Failed to smart-export flows." : error_text;
+            return result;
+        }
+    } else {
+        if (!session_.export_smart_flows_to_pcap(request, output_path)) {
+            result.error_text = "Failed to smart-export flows.";
+            return result;
+        }
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};

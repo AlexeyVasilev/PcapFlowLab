@@ -566,6 +566,85 @@
       </section>
     </div>
 
+      <div id="smartExportDialog" class="dialog-backdrop" aria-hidden="true">
+        <section class="dialog-card smart-export-dialog-card" role="dialog" aria-modal="true" aria-labelledby="smartExportDialogTitle">
+          <div class="dialog-heading">
+            <h2 id="smartExportDialogTitle">Smart Export</h2>
+          </div>
+
+          <div class="smart-export-sections">
+          <section class="smart-export-section">
+            <h3>Flows to export</h3>
+            <div class="smart-export-option-stack">
+              <label class="smart-export-radio-row"><input id="smartExportScopeCurrent" type="radio" name="smartExportScope" value="current" checked /> Current flow</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeSelected" type="radio" name="smartExportScope" value="selected" /> Selected flows</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeUnselected" type="radio" name="smartExportScope" value="unselected" /> Unselected flows</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeAll" type="radio" name="smartExportScope" value="all" /> All flows</label>
+            </div>
+          </section>
+
+          <section class="smart-export-section">
+            <h3>Base packet selection</h3>
+            <div class="smart-export-grid">
+              <label class="smart-export-radio-row"><input id="smartExportBaseAllPackets" type="radio" name="smartExportBase" value="all_packets" checked /> All packets</label>
+              <div></div>
+              <label class="smart-export-radio-row"><input id="smartExportBaseFirstNPackets" type="radio" name="smartExportBase" value="first_n_packets" /> First N packets</label>
+              <input id="smartExportFirstNPackets" type="text" inputmode="numeric" value="30" placeholder="Packet count" />
+              <label class="smart-export-radio-row"><input id="smartExportBaseFirstMOriginalBytes" type="radio" name="smartExportBase" value="first_m_original_bytes" /> First M original bytes</label>
+              <input id="smartExportFirstMOriginalBytes" type="text" inputmode="numeric" value="50000" placeholder="Original bytes" />
+            </div>
+            <p class="smart-export-help">Include the packet that crosses the threshold.</p>
+          </section>
+
+            <section class="smart-export-section">
+              <h3>Additional packet retention</h3>
+              <div class="smart-export-option-stack">
+                <label class="smart-export-checkbox-row"><input id="smartExportIncludeLastPacket" type="checkbox" /> Include last packet</label>
+                <div class="smart-export-inline-row">
+                  <label class="smart-export-checkbox-row smart-export-inline-checkbox"><input id="smartExportIncludeEveryKthPacket" type="checkbox" /> Include every K-th packet after the base prefix</label>
+                  <input id="smartExportEveryKthPacket" type="text" inputmode="numeric" value="10" placeholder="K" />
+                </div>
+              </div>
+              <p class="smart-export-help" id="smartExportExtrasHint">
+                Packets are exported when they match the base rule or one of the enabled extras.
+              </p>
+            </section>
+
+          <section class="smart-export-section">
+            <h3>Output mode</h3>
+            <div class="smart-export-option-stack">
+              <label class="smart-export-radio-row"><input id="smartExportOutputSingleFile" type="radio" name="smartExportOutputMode" value="single_file" checked /> Single output file</label>
+              <label class="smart-export-radio-row"><input id="smartExportOutputSeparateFiles" type="radio" name="smartExportOutputMode" value="separate_files" /> Separate file per flow</label>
+              <div id="smartExportDestinationFolderRow" class="smart-export-folder-row">
+                <input id="smartExportDestinationFolder" type="text" placeholder="Destination folder" />
+                <button id="smartExportBrowseFolderButton" type="button" class="secondary-button">Browse...</button>
+              </div>
+              <p id="smartExportFolderHelp" class="smart-export-help">
+                One PCAP will be written per bidirectional flow, and flows_manifest.csv will be written into the same folder.
+              </p>
+              <div id="smartExportBufferBudgetRow" class="smart-export-buffer-row">
+                <label class="smart-export-inline-label" for="smartExportBufferBudget">Buffer memory budget</label>
+                <select id="smartExportBufferBudget">
+                  <option value="128">128 MB</option>
+                  <option value="512">512 MB</option>
+                  <option value="1024">1024 MB</option>
+                </select>
+              </div>
+              <p id="smartExportBufferHelp" class="smart-export-help">
+                Higher values may improve large per-flow export speed at the cost of more memory.
+              </p>
+            </div>
+          </section>
+        </div>
+
+        <p id="smartExportStatusText" class="status-text"></p>
+        <div class="smart-export-actions">
+          <button id="smartExportCancelButton" type="button" class="secondary-button">Cancel</button>
+          <button id="smartExportRunButton" type="button">OK</button>
+        </div>
+      </section>
+    </div>
+
     <script src="./main.js"></script>
   </body>
 </html>

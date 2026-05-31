@@ -63,6 +63,34 @@ struct FrontendExportSelectedFlowsResult {
     std::string error_text {};
 };
 
+enum class FrontendSmartExportOutputMode : std::uint8_t {
+    single_file = 0,
+    separate_file_per_flow = 1,
+};
+
+enum class FrontendSmartExportBaseMode : std::uint8_t {
+    all_packets = 0,
+    first_n_packets = 1,
+    first_m_original_bytes = 2,
+};
+
+struct FrontendSmartExportOptions {
+    FrontendSmartExportOutputMode output_mode {FrontendSmartExportOutputMode::single_file};
+    FrontendSmartExportBaseMode base_mode {FrontendSmartExportBaseMode::all_packets};
+    std::uint64_t first_n_packets {0};
+    std::uint64_t first_m_original_bytes {0};
+    bool include_last_packet {false};
+    bool include_every_kth_packet_after_base {false};
+    std::uint64_t every_kth_packet {0};
+    std::size_t per_flow_buffer_budget_bytes {0};
+};
+
+struct FrontendSmartExportResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 struct FrontendProtocolHintStatsDto {
     std::string group {};
     std::string protocol_label {};

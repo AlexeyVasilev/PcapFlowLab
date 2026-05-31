@@ -172,6 +172,108 @@ body {
   line-height: 1.4;
 }
 
+.smart-export-dialog-card {
+  width: min(680px, 100%);
+}
+
+.smart-export-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.smart-export-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #ebe4d8;
+  border-radius: 10px;
+  background: #fcfaf5;
+}
+
+.smart-export-section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.smart-export-option-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.smart-export-radio-row,
+.smart-export-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.smart-export-radio-row input,
+.smart-export-checkbox-row input {
+  margin: 0;
+}
+
+.smart-export-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 180px);
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.smart-export-inline-row,
+.smart-export-folder-row,
+.smart-export-buffer-row,
+.smart-export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.smart-export-inline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 10px;
+}
+
+.smart-export-inline-checkbox {
+  min-width: 0;
+}
+
+.smart-export-inline-row input[type="text"],
+.smart-export-folder-row input {
+  flex: 0 0 120px;
+}
+
+.smart-export-folder-row input {
+  flex: 1 1 auto;
+}
+
+.smart-export-buffer-row {
+  flex-wrap: wrap;
+}
+
+.smart-export-inline-label {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.smart-export-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.smart-export-actions {
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(180px, 260px) 1fr;
@@ -474,6 +576,15 @@ select {
   background: #ffffff;
   color: var(--text);
   font-size: 13px;
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  min-height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 button {

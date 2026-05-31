@@ -16,6 +16,7 @@
   const state = {
     openMenu: null,
     aboutDialogVisible: false,
+    smartExportDialogVisible: false,
     activeTab: "flows",
     flowViewTab: "packets",
     openState: "idle",
@@ -24,6 +25,9 @@
     exportCurrentFlowInProgress: false,
     exportSelectedFlowsInProgress: false,
     exportUnselectedFlowsInProgress: false,
+    smartExportInProgress: false,
+    smartExportStatusText: "",
+    smartExportStatusKind: "neutral",
     statusKind: "neutral",
     statusText: "",
     sourceAvailability: null,
@@ -82,6 +86,33 @@
     menuSaveIndex: document.getElementById("menuSaveIndex"),
     aboutDialog: document.getElementById("aboutDialog"),
     aboutDialogCloseButton: document.getElementById("aboutDialogCloseButton"),
+    smartExportDialog: document.getElementById("smartExportDialog"),
+    smartExportCloseButton: document.getElementById("smartExportCloseButton"),
+    smartExportCancelButton: document.getElementById("smartExportCancelButton"),
+    smartExportRunButton: document.getElementById("smartExportRunButton"),
+    smartExportStatusText: document.getElementById("smartExportStatusText"),
+    smartExportScopeCurrent: document.getElementById("smartExportScopeCurrent"),
+    smartExportScopeSelected: document.getElementById("smartExportScopeSelected"),
+    smartExportScopeUnselected: document.getElementById("smartExportScopeUnselected"),
+    smartExportScopeAll: document.getElementById("smartExportScopeAll"),
+    smartExportBaseAllPackets: document.getElementById("smartExportBaseAllPackets"),
+    smartExportBaseFirstNPackets: document.getElementById("smartExportBaseFirstNPackets"),
+    smartExportBaseFirstMOriginalBytes: document.getElementById("smartExportBaseFirstMOriginalBytes"),
+    smartExportFirstNPackets: document.getElementById("smartExportFirstNPackets"),
+    smartExportFirstMOriginalBytes: document.getElementById("smartExportFirstMOriginalBytes"),
+    smartExportIncludeLastPacket: document.getElementById("smartExportIncludeLastPacket"),
+    smartExportIncludeEveryKthPacket: document.getElementById("smartExportIncludeEveryKthPacket"),
+    smartExportEveryKthPacket: document.getElementById("smartExportEveryKthPacket"),
+    smartExportExtrasHint: document.getElementById("smartExportExtrasHint"),
+    smartExportOutputSingleFile: document.getElementById("smartExportOutputSingleFile"),
+    smartExportOutputSeparateFiles: document.getElementById("smartExportOutputSeparateFiles"),
+    smartExportDestinationFolderRow: document.getElementById("smartExportDestinationFolderRow"),
+    smartExportDestinationFolder: document.getElementById("smartExportDestinationFolder"),
+    smartExportBrowseFolderButton: document.getElementById("smartExportBrowseFolderButton"),
+    smartExportFolderHelp: document.getElementById("smartExportFolderHelp"),
+    smartExportBufferBudgetRow: document.getElementById("smartExportBufferBudgetRow"),
+    smartExportBufferBudget: document.getElementById("smartExportBufferBudget"),
+    smartExportBufferHelp: document.getElementById("smartExportBufferHelp"),
     capturePath: document.getElementById("capturePath"),
     openMode: document.getElementById("openMode"),
     openFileButton: document.getElementById("openFileButton"),
@@ -275,6 +306,7 @@
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress
       && !availability.partial_open
       && availability.byte_backed_inspection_available;
   }
@@ -288,7 +320,8 @@
       && !state.saveIndexInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
-      && !state.exportUnselectedFlowsInProgress;
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
   }
 
   function canExportSelectedFlows() {
@@ -300,7 +333,8 @@
       && !state.saveIndexInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
-      && !state.exportUnselectedFlowsInProgress;
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
   }
 
   function canExportUnselectedFlows() {
@@ -312,7 +346,20 @@
       && !state.saveIndexInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
-      && !state.exportUnselectedFlowsInProgress;
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
+  }
+
+  function canSmartExport() {
+    const availability = currentSourceAvailability();
+    return state.openState === "opened"
+      && availability.byte_backed_inspection_available
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
   }
 
   function packetDetailsSourceAvailability(details) {
@@ -478,11 +525,96 @@
       .sort((left, right) => left - right);
   }
 
+  function getAllFlowIndices() {
+    return state.flows
+      .map((flow) => flow.flow_index)
+      .sort((left, right) => left - right);
+  }
+
+  function setSmartExportStatus(text, kind = "neutral") {
+    state.smartExportStatusText = text || "";
+    state.smartExportStatusKind = kind;
+  }
+
+  function clearSmartExportStatus() {
+    setSmartExportStatus("", "neutral");
+  }
+
+  function selectedSmartExportFlowScope() {
+    if (elements.smartExportScopeSelected?.checked) {
+      return "selected";
+    }
+    if (elements.smartExportScopeUnselected?.checked) {
+      return "unselected";
+    }
+    if (elements.smartExportScopeAll?.checked) {
+      return "all";
+    }
+    return "current";
+  }
+
+  function selectedSmartExportBaseMode() {
+    if (elements.smartExportBaseFirstNPackets?.checked) {
+      return "first_n_packets";
+    }
+    if (elements.smartExportBaseFirstMOriginalBytes?.checked) {
+      return "first_m_original_bytes";
+    }
+    return "all_packets";
+  }
+
+  function selectedSmartExportOutputMode() {
+    return elements.smartExportOutputSeparateFiles?.checked ? "separate_files" : "single_file";
+  }
+
+  function smartExportExtrasEnabled() {
+    return selectedSmartExportBaseMode() !== "all_packets";
+  }
+
+  function parsePositiveIntegerText(text) {
+    const trimmed = String(text || "").trim();
+    if (!/^\d+$/.test(trimmed)) {
+      return null;
+    }
+
+    const value = Number(trimmed);
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      return null;
+    }
+
+    return value;
+  }
+
+  function getSmartExportFlowIndices(scope) {
+    switch (scope) {
+      case "current":
+        return state.selectedFlowIndex != null ? [state.selectedFlowIndex] : [];
+      case "selected":
+        return Array.from(state.checkedFlowIndices).sort((left, right) => left - right);
+      case "unselected":
+        return getUncheckedFlowIndices();
+      case "all":
+        return getAllFlowIndices();
+      default:
+        return [];
+    }
+  }
+
   function clearCurrentFlowExportStatusIfPresent() {
     if (
       state.statusText === "Flow exported successfully."
       || state.statusText === "Failed to export selected flow."
       || state.statusText.startsWith("Failed to export selected flow:")
+    ) {
+      setStatus("", "neutral");
+    }
+  }
+
+  function clearSmartExportMainStatusIfPresent() {
+    if (
+      state.statusText === "Smart export completed successfully."
+      || state.statusText === "Failed to smart-export flows."
+      || state.statusText.startsWith("Failed to smart-export flows:")
     ) {
       setStatus("", "neutral");
     }
@@ -591,8 +723,11 @@
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
+    state.smartExportInProgress = false;
+    clearSmartExportStatus();
     state.openMenu = null;
     state.aboutDialogVisible = false;
+    state.smartExportDialogVisible = false;
     state.sourceAvailability = null;
     setStatus("", "neutral");
   }
@@ -644,6 +779,9 @@
         } else if (action === "export-unselected-flows") {
           item.disabled = !canExportUnselectedFlows();
           item.textContent = state.exportUnselectedFlowsInProgress ? "Exporting Unselected Flows..." : "Export Unselected Flows";
+        } else if (action === "smart-export") {
+          item.disabled = !canSmartExport();
+          item.textContent = state.smartExportInProgress ? "Smart Exporting..." : "Smart Export...";
         } else if (
           action === "open-capture-fast"
           || action === "open-capture-deep"
@@ -654,11 +792,9 @@
             || state.saveIndexInProgress
             || state.exportCurrentFlowInProgress
             || state.exportSelectedFlowsInProgress
-            || state.exportUnselectedFlowsInProgress;
-        } else if (
-          action === "smart-export"
-          || action === "settings"
-        ) {
+            || state.exportUnselectedFlowsInProgress
+            || state.smartExportInProgress;
+        } else if (action === "settings") {
           item.disabled = true;
         }
       }
@@ -667,8 +803,51 @@
         elements.aboutDialog.classList.toggle("is-visible", state.aboutDialogVisible);
         elements.aboutDialog.setAttribute("aria-hidden", state.aboutDialogVisible ? "false" : "true");
       }
+      if (elements.smartExportDialog) {
+        elements.smartExportDialog.classList.toggle("is-visible", state.smartExportDialogVisible);
+        elements.smartExportDialog.setAttribute("aria-hidden", state.smartExportDialogVisible ? "false" : "true");
+      }
     } catch (error) {
       console.error("Failed to render menu state.", error);
+    }
+  }
+
+  function renderSmartExportDialog() {
+    const extrasEnabled = smartExportExtrasEnabled();
+    const perFlowMode = selectedSmartExportOutputMode() === "separate_files";
+    const dialogDisabled = state.smartExportInProgress;
+
+    if (!extrasEnabled) {
+      elements.smartExportIncludeLastPacket.checked = false;
+      elements.smartExportIncludeEveryKthPacket.checked = false;
+    }
+
+    elements.smartExportFirstNPackets.disabled = dialogDisabled || !elements.smartExportBaseFirstNPackets.checked;
+    elements.smartExportFirstMOriginalBytes.disabled = dialogDisabled || !elements.smartExportBaseFirstMOriginalBytes.checked;
+    elements.smartExportIncludeLastPacket.disabled = dialogDisabled || !extrasEnabled;
+    elements.smartExportIncludeEveryKthPacket.disabled = dialogDisabled || !extrasEnabled;
+    elements.smartExportEveryKthPacket.disabled = dialogDisabled || !extrasEnabled || !elements.smartExportIncludeEveryKthPacket.checked;
+    elements.smartExportDestinationFolderRow.style.display = perFlowMode ? "flex" : "none";
+    elements.smartExportFolderHelp.style.display = perFlowMode ? "block" : "none";
+    elements.smartExportBufferBudgetRow.style.display = perFlowMode ? "flex" : "none";
+    elements.smartExportBufferHelp.style.display = perFlowMode ? "block" : "none";
+    elements.smartExportDestinationFolder.disabled = dialogDisabled || !perFlowMode;
+    elements.smartExportBrowseFolderButton.disabled = dialogDisabled || !perFlowMode;
+    elements.smartExportBufferBudget.disabled = dialogDisabled || !perFlowMode;
+    if (elements.smartExportCloseButton) {
+      elements.smartExportCloseButton.disabled = dialogDisabled;
+    }
+    elements.smartExportCancelButton.disabled = dialogDisabled;
+    elements.smartExportRunButton.disabled = dialogDisabled;
+    elements.smartExportRunButton.textContent = state.smartExportInProgress ? "Exporting..." : "OK";
+    elements.smartExportExtrasHint.textContent = "Packets are exported when they match the base rule or one of the enabled extras.";
+
+    elements.smartExportStatusText.textContent = state.smartExportStatusText;
+    elements.smartExportStatusText.className = "status-text";
+    if (state.smartExportStatusKind === "error") {
+      elements.smartExportStatusText.classList.add("is-error");
+    } else if (state.smartExportStatusKind === "success") {
+      elements.smartExportStatusText.classList.add("is-success");
     }
   }
 
@@ -808,7 +987,15 @@
     elements.openStateBadge.className = `state-badge state-${state.openState}`;
     elements.openButton.style.display = state.openState === "opened" ? "none" : "";
     elements.attachSourceButton.textContent = state.attachSourceInProgress ? "Attaching..." : "Locate Source...";
-    setOpenControlsDisabled(state.openState === "opening");
+    setOpenControlsDisabled(
+      state.openState === "opening"
+      || state.attachSourceInProgress
+      || state.saveIndexInProgress
+      || state.exportCurrentFlowInProgress
+      || state.exportSelectedFlowsInProgress
+      || state.exportUnselectedFlowsInProgress
+      || state.smartExportInProgress
+    );
   }
 
   function renderSourceWarningBanner() {
@@ -2013,6 +2200,7 @@
   function render() {
     const renderSteps = [
       ["menu", renderMenuState],
+      ["smart export dialog", renderSmartExportDialog],
       ["tabs", renderTabs],
       ["flow view tabs", renderFlowViewTabs],
       ["inspector mode", renderInspectorMode],
@@ -2263,6 +2451,7 @@
 
       state.selectedFlowIndex = flowIndex;
       clearCurrentFlowExportStatusIfPresent();
+      clearSmartExportMainStatusIfPresent();
       state.packetOffset = 0;
       state.packets = [];
       state.packetsTotalCount = 0;
@@ -2605,6 +2794,170 @@
     }
   }
 
+  function openSmartExportDialogFromMenu() {
+    if (!canSmartExport()) {
+      return;
+    }
+
+    clearSmartExportStatus();
+    state.smartExportDialogVisible = true;
+    render();
+  }
+
+  function closeSmartExportDialog() {
+    if (state.smartExportInProgress) {
+      return;
+    }
+
+    state.smartExportDialogVisible = false;
+    clearSmartExportStatus();
+    render();
+  }
+
+  async function browseSmartExportDestinationFolder() {
+    if (typeof invoke !== "function") {
+      setSmartExportStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (selectedSmartExportOutputMode() !== "separate_files" || state.smartExportInProgress) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_smart_export_destination_folder");
+      if (!selectedPath) {
+        return;
+      }
+
+      elements.smartExportDestinationFolder.value = selectedPath;
+      clearSmartExportStatus();
+      render();
+    } catch (error) {
+      setSmartExportStatus(`Failed to open the destination folder dialog: ${String(error)}`, "error");
+      render();
+    }
+  }
+
+  async function runSmartExportFromDialog() {
+    if (typeof invoke !== "function") {
+      setSmartExportStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canSmartExport()) {
+      return;
+    }
+
+    const flowScope = selectedSmartExportFlowScope();
+    const flowIndices = getSmartExportFlowIndices(flowScope);
+    if (flowIndices.length === 0) {
+      const emptySelectionMessage = flowScope === "current"
+        ? "No current flow selected for smart export."
+        : (flowScope === "selected"
+          ? "No selected flows for smart export."
+          : (flowScope === "unselected"
+            ? "No unselected flows for smart export."
+            : "No flows available for smart export."));
+      setSmartExportStatus(emptySelectionMessage, "error");
+      render();
+      return;
+    }
+
+    const baseMode = selectedSmartExportBaseMode();
+    const outputMode = selectedSmartExportOutputMode();
+    const extrasEnabled = smartExportExtrasEnabled();
+    const firstNPackets = baseMode === "first_n_packets"
+      ? parsePositiveIntegerText(elements.smartExportFirstNPackets.value)
+      : 0;
+    const firstMOriginalBytes = baseMode === "first_m_original_bytes"
+      ? parsePositiveIntegerText(elements.smartExportFirstMOriginalBytes.value)
+      : 0;
+    const everyKthPacket = extrasEnabled && elements.smartExportIncludeEveryKthPacket.checked
+      ? parsePositiveIntegerText(elements.smartExportEveryKthPacket.value)
+      : 0;
+
+    if (baseMode === "first_n_packets" && !firstNPackets) {
+      setSmartExportStatus("Enter a positive packet count for smart export.", "error");
+      render();
+      return;
+    }
+    if (baseMode === "first_m_original_bytes" && !firstMOriginalBytes) {
+      setSmartExportStatus("Enter a positive original-byte limit for smart export.", "error");
+      render();
+      return;
+    }
+    if (extrasEnabled && elements.smartExportIncludeEveryKthPacket.checked && !everyKthPacket) {
+      setSmartExportStatus("Enter a positive K value for sparse smart export retention.", "error");
+      render();
+      return;
+    }
+
+    const perFlowBufferBudgetMb = outputMode === "separate_files"
+      ? parsePositiveIntegerText(elements.smartExportBufferBudget.value)
+      : 0;
+    if (outputMode === "separate_files" && !perFlowBufferBudgetMb) {
+      setSmartExportStatus("Select a valid buffer memory budget preset for per-flow smart export.", "error");
+      render();
+      return;
+    }
+
+    let outputPath = "";
+    if (outputMode === "separate_files") {
+      outputPath = String(elements.smartExportDestinationFolder.value || "").trim();
+      if (!outputPath) {
+        setSmartExportStatus("No destination folder selected for smart export.", "error");
+        render();
+        return;
+      }
+    }
+
+    clearSmartExportStatus();
+    state.smartExportDialogVisible = false;
+    render();
+
+    try {
+      if (outputMode === "single_file") {
+        const selectedPath = await invoke("pick_save_flow_export_path");
+        if (!selectedPath) {
+          return;
+        }
+        outputPath = selectedPath;
+      }
+
+      state.smartExportInProgress = true;
+      setStatus("Smart export in progress...", "neutral");
+      render();
+
+      const result = await invoke("export_smart_flows", {
+        path: outputPath,
+        flow_indices: flowIndices,
+        output_mode: outputMode === "separate_files" ? 1 : 0,
+        base_mode: baseMode === "first_n_packets" ? 1 : (baseMode === "first_m_original_bytes" ? 2 : 0),
+        first_n_packets: firstNPackets || 0,
+        first_m_original_bytes: firstMOriginalBytes || 0,
+        include_last_packet: extrasEnabled && elements.smartExportIncludeLastPacket.checked,
+        include_every_kth_packet_after_base: extrasEnabled && elements.smartExportIncludeEveryKthPacket.checked,
+        every_kth_packet: everyKthPacket || 0,
+        per_flow_buffer_budget_bytes: (perFlowBufferBudgetMb || 0) * 1024 * 1024,
+      });
+
+      if (result?.exported) {
+        setStatus("Smart export completed successfully.", "success");
+      } else {
+        const errorText = result?.error_text || "Failed to smart-export flows.";
+        setStatus(errorText, "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to smart-export flows: ${String(error)}`, "error");
+    } finally {
+      state.smartExportInProgress = false;
+      render();
+    }
+  }
+
   async function exitAppFromMenu() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -2658,8 +3011,7 @@
         render();
         return;
       case "smart-export":
-        setStatus("Flow export actions are not implemented yet in the Tauri spike.", "neutral");
-        render();
+        openSmartExportDialogFromMenu();
         return;
       default:
         return;
@@ -2745,6 +3097,49 @@
       render();
     }
   });
+  elements.smartExportCloseButton?.addEventListener("click", closeSmartExportDialog);
+  elements.smartExportCancelButton?.addEventListener("click", closeSmartExportDialog);
+  elements.smartExportRunButton?.addEventListener("click", () => {
+    void runSmartExportFromDialog();
+  });
+  elements.smartExportBrowseFolderButton?.addEventListener("click", () => {
+    void browseSmartExportDestinationFolder();
+  });
+  elements.smartExportDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.smartExportDialog) {
+      closeSmartExportDialog();
+    }
+  });
+  for (const control of [
+    elements.smartExportScopeCurrent,
+    elements.smartExportScopeSelected,
+    elements.smartExportScopeUnselected,
+    elements.smartExportScopeAll,
+    elements.smartExportBaseAllPackets,
+    elements.smartExportBaseFirstNPackets,
+    elements.smartExportBaseFirstMOriginalBytes,
+    elements.smartExportOutputSingleFile,
+    elements.smartExportOutputSeparateFiles,
+    elements.smartExportIncludeLastPacket,
+    elements.smartExportIncludeEveryKthPacket,
+    elements.smartExportBufferBudget,
+  ]) {
+    control?.addEventListener("change", () => {
+      clearSmartExportStatus();
+      render();
+    });
+  }
+  for (const control of [
+    elements.smartExportFirstNPackets,
+    elements.smartExportFirstMOriginalBytes,
+    elements.smartExportEveryKthPacket,
+    elements.smartExportDestinationFolder,
+  ]) {
+    control?.addEventListener("input", () => {
+      clearSmartExportStatus();
+      render();
+    });
+  }
   document.addEventListener("pointerdown", (event) => {
     const target = event.target;
     if (!(target instanceof Element)) {
@@ -2760,9 +3155,13 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      const hadVisibleUi = state.openMenu != null || state.aboutDialogVisible;
+      const hadVisibleUi = state.openMenu != null || state.aboutDialogVisible || state.smartExportDialogVisible;
       closeMenus();
       state.aboutDialogVisible = false;
+      if (!state.smartExportInProgress) {
+        state.smartExportDialogVisible = false;
+        clearSmartExportStatus();
+      }
       if (hadVisibleUi) {
         render();
       }

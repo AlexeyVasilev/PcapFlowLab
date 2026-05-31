@@ -4,6 +4,7 @@ use std::os::raw::{c_char, c_uchar};
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
+    SmartExportResultDto,
 };
 
 #[repr(C)]
@@ -37,6 +38,20 @@ extern "C" {
         path_utf8: *const c_char,
         flow_indices: *const usize,
         flow_index_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_smart_flows_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
+        flow_indices: *const usize,
+        flow_index_count: usize,
+        output_mode: c_uchar,
+        base_mode: c_uchar,
+        first_n_packets: u64,
+        first_m_original_bytes: u64,
+        include_last_packet: c_uchar,
+        include_every_kth_packet_after_base: c_uchar,
+        every_kth_packet: u64,
+        per_flow_buffer_budget_bytes: usize,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_overview_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -138,6 +153,40 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<ExportSelectedFlowsResultDto>(json)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn export_smart_flows(
+        &self,
+        path: &str,
+        flow_indices: &[usize],
+        output_mode: u8,
+        base_mode: u8,
+        first_n_packets: u64,
+        first_m_original_bytes: u64,
+        include_last_packet: bool,
+        include_every_kth_packet_after_base: bool,
+        every_kth_packet: u64,
+        per_flow_buffer_budget_bytes: usize,
+    ) -> Result<SmartExportResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_smart_flows_json(
+                self.handle,
+                path.as_ptr(),
+                flow_indices.as_ptr(),
+                flow_indices.len(),
+                output_mode,
+                base_mode,
+                first_n_packets,
+                first_m_original_bytes,
+                if include_last_packet { 1 } else { 0 },
+                if include_every_kth_packet_after_base { 1 } else { 0 },
+                every_kth_packet,
+                per_flow_buffer_budget_bytes,
+            )
+        };
+        parse_json_owned::<SmartExportResultDto>(json)
     }
 
     pub fn get_overview(&self) -> Result<OverviewDto, String> {

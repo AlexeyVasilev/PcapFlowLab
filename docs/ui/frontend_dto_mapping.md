@@ -67,7 +67,7 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ### What should be handled first in future DTO cleanup
 
-- Broader export workflow parity beyond the now-wired `Save Index` and `Export Current Flow` paths.
+- Broader export workflow parity beyond the now-wired `Save Index`, `Export Current Flow`, batch flow exports, and Smart Export paths.
 - PacketInspector and stream-item details cleanup.
 - Statistics / Analysis stabilization after the recent DTO additions.
 - Performance pass for larger captures before committing to broader CLI expectations.
@@ -86,8 +86,9 @@ This document is an audit only. It does not introduce a new contract and does no
 | partial-open warning/state | `MainController.partialOpen`, `partialOpenWarningText`, `Main.qml` warning panel | `FrontendSourceAvailabilityDto.partial_open`; legacy scalar field still present on `FrontendOpenResult` | Tauri now uses grouped state for compact shell warning note | warning wording remains frontend-specific | app/session for fact, frontend rendering for wording | Improved |
 | save index workflow | `MainController::saveAnalysisIndex()` reuses `CaptureSession::save_index(path)` with source/partial-open guards | `FrontendSessionAdapter::save_index(path)` now exposes the same narrow session path through a small `FrontendSaveIndexResult` DTO | Tauri now wires `File -> Save Index` through a native Save dialog and the shared adapter path | broader index workflow polish and richer action-availability shaping are still deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
 | export current flow workflow | `MainController::exportSelectedFlow()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)` and `chooseSaveFile(false)` | `FrontendSessionAdapter::export_current_flow(path)` now exposes the same narrow selected-flow export path through a small `FrontendExportCurrentFlowResult` DTO | Tauri now wires `Flow -> Export Current Flow` through a native Save dialog with `.pcap` default suffix | aligned for the current selected-flow export path | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| export selected flows workflow | `MainController::exportSelectedFlows()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)`, `FlowListModel::checkedFlowIndices()`, and `chooseSaveFile(false)` | `FrontendSessionAdapter::export_selected_flows(path, flow_indices)` now exposes the same narrow batch export path through a small `FrontendExportSelectedFlowsResult` DTO | Tauri now wires `Flow -> Export Selected Flows` through a native Save dialog and frontend-local checked-flow state keyed by stable `flow_index` | `Export Unselected Flows` and `Smart Export` remain deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
-| export unselected flows workflow | `MainController::exportUnselectedFlows()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)`, `FlowListModel::uncheckedFlowIndices()`, and `chooseSaveFile(false)` | Tauri reuses the same `FrontendSessionAdapter::export_selected_flows(path, flow_indices)` batch export method with a frontend-derived unchecked `flow_index` list over the full loaded flow set | Tauri now wires `Flow -> Export Unselected Flows` through a native Save dialog using the inverse of checked-flow selection rather than only visible filtered rows | `Smart Export` still remains deferred | app/session + frontend-neutral adapter + frontend workflow | Improved |
+| export selected flows workflow | `MainController::exportSelectedFlows()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)`, `FlowListModel::checkedFlowIndices()`, and `chooseSaveFile(false)` | `FrontendSessionAdapter::export_selected_flows(path, flow_indices)` now exposes the same narrow batch export path through a small `FrontendExportSelectedFlowsResult` DTO | Tauri now wires `Flow -> Export Selected Flows` through a native Save dialog and frontend-local checked-flow state keyed by stable `flow_index` | aligned for current checked batch export scope | app/session + frontend-neutral adapter + frontend workflow | Improved |
+| export unselected flows workflow | `MainController::exportUnselectedFlows()` reuses `exportFlows(...)` over `CaptureSession::export_flows_to_pcap(...)`, `FlowListModel::uncheckedFlowIndices()`, and `chooseSaveFile(false)` | Tauri reuses the same `FrontendSessionAdapter::export_selected_flows(path, flow_indices)` batch export method with a frontend-derived unchecked `flow_index` list over the full loaded flow set | Tauri now wires `Flow -> Export Unselected Flows` through a native Save dialog using the inverse of checked-flow selection rather than only visible filtered rows | aligned for current unchecked batch export scope | app/session + frontend-neutral adapter + frontend workflow | Improved |
+| smart export workflow | `MainController::browseSmartExportFlows()` and `exportSmartFlows(...)` reuse `CaptureSession::export_smart_flows_to_pcap(...)` / `export_smart_flows_to_folder(...)` with current / selected / unselected / all flow scopes and base-retention options | `FrontendSessionAdapter::export_smart_flows(path, flow_indices, options)` now exposes the same narrow session smart-export path through `FrontendSmartExportOptions` and `FrontendSmartExportResult` | Tauri now wires `Flow -> Smart Export...` through a compact dialog, a native save-file or folder picker, and frontend-derived stable `flow_index` sets for current / checked / unchecked / all scopes | Qt's richer per-flow progress/cancel surface is still not mirrored in Tauri | app/session + frontend-neutral adapter + frontend workflow | Improved |
 | selected flow | `MainController.selectedFlowIndex` | `FrontendSessionAdapter::selected_flow_index()` only internally; `select_flow(flow_index)` mutation API | `state.selectedFlowIndex` in `main.js`; set by flow row click | no read DTO for selected-flow shell state; mutation-only | frontend controller/model with stable `flow_index` | High |
 | selected packet | `MainController.selectedPacketIndex` | no adapter-level explicit selected-packet query; packet details API takes `packet_index` | `state.selectedPacketIndex` and `state.selectedPacketRow` in `main.js` | selection state is frontend-local today | frontend controller/model with stable `packet_index` | Medium |
 | selected stream item | `MainController.selectedStreamItemIndex` | no frontend-neutral API for selecting/querying stream item details | Tauri now keeps local selected-stream-item state keyed by stable `stream_item_index` | Tauri UI gap is partially addressed, but no shared selection/details API exists yet | deferred frontend-neutral DTO / controller work | Improved |
@@ -224,6 +225,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 - A narrow shared `save_index(path)` workflow over `CaptureSession::save_index(...)` -> Tauri `File -> Save Index`
 - A narrow shared `export_current_flow(path)` workflow over `CaptureSession::export_flow_to_pcap(...)` -> Tauri `Flow -> Export Current Flow`
 - A narrow shared `export_selected_flows(path, flow_indices)` workflow over `CaptureSession::export_flows_to_pcap(...)` -> Tauri `Flow -> Export Selected Flows` and `Flow -> Export Unselected Flows`
+- A narrow shared `export_smart_flows(path, flow_indices, options)` workflow over `CaptureSession::export_smart_flows_to_pcap(...)` / `export_smart_flows_to_folder(...)` -> Tauri `Flow -> Smart Export...`
 
 ### Naming mismatch only
 
@@ -279,13 +281,13 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 
 ## Recommended Follow-Up Order
 
-### 1. Export workflow parity beyond Current Flow / Save Index / sequence CSV
+### 1. Export workflow parity beyond the now-wired current / selected / unselected / smart flow exports, Save Index, and sequence CSV
 
 Why first now:
 
 - the Tauri spike already covers the main read-side analyzer surfaces reasonably well;
 - the biggest visible gaps are now the remaining workflow gaps rather than missing read-only panels;
-- `Save Index`, `Export Current Flow`, `Export Selected Flows`, `Export Unselected Flows`, and attach-source are now wired, so the next value is in the broader export surface.
+- `Save Index`, `Export Current Flow`, `Export Selected Flows`, `Export Unselected Flows`, `Smart Export`, and attach-source are now wired, so the next value is in the broader export surface.
 - checked-flow selection now exists in Tauri, which makes the remaining batch-export gap more concrete and easier to stage incrementally.
 
 Expected risk:

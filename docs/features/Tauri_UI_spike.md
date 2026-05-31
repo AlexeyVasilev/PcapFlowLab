@@ -45,6 +45,7 @@ Current adapter-backed operations include:
 - `save_index(path)`
 - `export_current_flow(path)`
 - `export_selected_flows(path, flow_indices)`
+- `export_smart_flows(path, flow_indices, options)`
 - `get_overview()`
 - `get_flows()`
 - `select_flow(flow_index)`
@@ -72,6 +73,7 @@ The current Tauri spike now supports:
 - typed-path manual fallback
 - `File -> Save Index` through the existing session/index path
 - `Flow -> Export Current Flow` through the existing flow-export/session path
+- `Flow -> Smart Export...` through the existing smart-export/session path
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
@@ -107,6 +109,7 @@ The `Flows` tab now supports:
   - `Flow -> Export Current Flow`
   - `Flow -> Export Selected Flows`
   - `Flow -> Export Unselected Flows`
+  - `Flow -> Smart Export...`
   - `View -> About`
 
 ## Current Stream capability
@@ -173,7 +176,7 @@ Analysis remains:
 - reuses the existing session export path
 - writes `.pcap`
 - requires the original source capture to be readable
-- coexists with frontend-local checked-flow selection; `Export Unselected Flows` and `Smart Export` remain deferred
+- coexists with frontend-local checked-flow selection and the now-wired selected / unselected / smart batch export workflows
 
 `Flow -> Export Selected Flows`:
 
@@ -192,6 +195,25 @@ Analysis remains:
 - requires the original source capture to be readable
 - keeps checked-flow state intact after success, cancel, or failure
 
+`Flow -> Smart Export...`:
+
+- reuses the existing smart-export session path and product semantics
+- supports current / selected / unselected / all flow scopes
+- supports:
+  - all packets
+  - first N packets
+  - first M original bytes
+  - include last packet
+  - include every K-th packet after the base prefix
+- supports:
+  - single output file
+  - separate file per flow
+- writes `.pcap` for single-file mode
+- writes one PCAP per flow plus `flows_manifest.csv` for separate-file-per-flow mode
+- requires the original source capture to be readable
+- currently keeps the existing session, selected flow, checked-flow state, packets, stream, statistics, and analysis intact after success, cancel, or failure
+- currently does not mirror Qt's per-flow smart-export progress/cancel UI; it reuses the same session path without the richer Qt progress surface
+
 The source-attach workflow:
 
 - reuses existing session validation
@@ -203,8 +225,7 @@ The source-attach workflow:
 
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
-- export workflows
-- batch checked-flow export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, and `Flow -> Export Unselected Flows`
+- export workflows beyond the now-wired current / selected / unselected / smart flow workflows
 - save/open index workflow polish
 - settings/preferences
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
@@ -218,8 +239,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Current deferred items
 
-- Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
-- `Smart Export` still remains deferred even though Tauri now tracks checked-flow selection in the Flows table
+- Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Flow -> Smart Export...`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
 - Save/open index workflow polish
 - Settings/preferences
 - Stream-to-packet navigation
@@ -231,7 +251,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 ## Recommended next priorities
 
-1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Save Index`, and selected-flow Analysis sequence CSV
+1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Flow -> Smart Export...`, `Save Index`, and selected-flow Analysis sequence CSV
 2. Save/open index workflow polish
 3. Settings/preferences
 4. Performance pass for large captures, including virtualization/pagination where needed
