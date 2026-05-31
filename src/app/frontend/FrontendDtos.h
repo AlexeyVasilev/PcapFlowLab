@@ -54,6 +54,7 @@ struct FrontendSaveIndexResult {
 struct FrontendSettingsDto {
     bool http_use_path_as_service_hint {false};
     bool use_possible_tls_quic {false};
+    bool show_wireshark_filter_for_selected_flow {true};
 };
 
 struct FrontendExportCurrentFlowResult {

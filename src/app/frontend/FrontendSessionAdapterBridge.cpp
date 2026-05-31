@@ -147,7 +147,8 @@ std::string settings_json(const pfl::FrontendSettingsDto& settings) {
     std::ostringstream out {};
     out << '{'
         << "\"http_use_path_as_service_hint\":" << bool_json(settings.http_use_path_as_service_hint) << ','
-        << "\"use_possible_tls_quic\":" << bool_json(settings.use_possible_tls_quic)
+        << "\"use_possible_tls_quic\":" << bool_json(settings.use_possible_tls_quic) << ','
+        << "\"show_wireshark_filter_for_selected_flow\":" << bool_json(settings.show_wireshark_filter_for_selected_flow)
         << '}';
     return out.str();
 }
@@ -641,7 +642,7 @@ char* pfl_frontend_session_adapter_save_index_json(
 
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true}");
     }
 
     return make_c_string(settings_json(handle->adapter.get_settings()));
@@ -650,15 +651,17 @@ char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHa
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     const bool http_use_path_as_service_hint,
-    const bool use_possible_tls_quic
+    const bool use_possible_tls_quic,
+    const bool show_wireshark_filter_for_selected_flow
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true}");
     }
 
     return make_c_string(settings_json(handle->adapter.update_settings(pfl::FrontendSettingsDto {
         .http_use_path_as_service_hint = http_use_path_as_service_hint,
         .use_possible_tls_quic = use_possible_tls_quic,
+        .show_wireshark_filter_for_selected_flow = show_wireshark_filter_for_selected_flow,
     })));
 }
 

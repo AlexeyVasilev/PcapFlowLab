@@ -24,6 +24,7 @@
     settings: {
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
+      show_wireshark_filter_for_selected_flow: true,
     },
     smartExportDialogVisible: false,
     activeTab: "flows",
@@ -98,6 +99,7 @@
     settingsDialog: document.getElementById("settingsDialog"),
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
+    settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
     settingsStatusText: document.getElementById("settingsStatusText"),
     settingsCancelButton: document.getElementById("settingsCancelButton"),
     settingsSaveButton: document.getElementById("settingsSaveButton"),
@@ -151,6 +153,7 @@
     flowTableBody: document.getElementById("flowTableBody"),
     checkedFlowsStatusBar: document.getElementById("checkedFlowsStatusBar"),
     checkedFlowsStatusText: document.getElementById("checkedFlowsStatusText"),
+    wiresharkFilterRow: document.getElementById("wiresharkFilterRow"),
     wiresharkFilterMeta: document.getElementById("wiresharkFilterMeta"),
     wiresharkFilterText: document.getElementById("wiresharkFilterText"),
     wiresharkFilterStatusText: document.getElementById("wiresharkFilterStatusText"),
@@ -851,6 +854,10 @@
       elements.settingsUsePossibleTlsQuic.checked = Boolean(state.settings.use_possible_tls_quic);
       elements.settingsUsePossibleTlsQuic.disabled = dialogDisabled;
     }
+    if (elements.settingsShowWiresharkFilterForSelectedFlow) {
+      elements.settingsShowWiresharkFilterForSelectedFlow.checked = Boolean(state.settings.show_wireshark_filter_for_selected_flow);
+      elements.settingsShowWiresharkFilterForSelectedFlow.disabled = dialogDisabled;
+    }
     if (elements.settingsCancelButton) {
       elements.settingsCancelButton.disabled = dialogDisabled;
     }
@@ -1349,6 +1356,18 @@
   }
 
   function renderWiresharkFilter() {
+    const showWiresharkFilter = state.settings.show_wireshark_filter_for_selected_flow !== false;
+    if (elements.wiresharkFilterRow) {
+      elements.wiresharkFilterRow.style.display = showWiresharkFilter ? "grid" : "none";
+    }
+    if (elements.wiresharkFilterStatusText) {
+      elements.wiresharkFilterStatusText.style.display = showWiresharkFilter ? "block" : "none";
+    }
+
+    if (!showWiresharkFilter) {
+      return;
+    }
+
     const selectedFlow = state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
     const filterText = String(selectedFlow?.wireshark_display_filter || "");
 
@@ -2869,6 +2888,7 @@
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
+        show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
       };
     } catch (error) {
       state.settingsStatusText = `Failed to load settings: ${String(error)}`;
@@ -2899,6 +2919,7 @@
 
     const httpUsePathAsServiceHint = Boolean(elements.settingsHttpUsePathAsServiceHint?.checked);
     const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
+    const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
 
     state.settingsSaveInProgress = true;
     clearSettingsStatus();
@@ -2908,11 +2929,13 @@
       const settings = await invoke("update_settings", {
         http_use_path_as_service_hint: httpUsePathAsServiceHint,
         use_possible_tls_quic: usePossibleTlsQuic,
+        show_wireshark_filter_for_selected_flow: showWiresharkFilterForSelectedFlow,
       });
 
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
+        show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
       };
 
       if (state.openState === "opened") {

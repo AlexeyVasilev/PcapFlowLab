@@ -135,9 +135,11 @@ Implemented slice:
 - Qt's richer per-flow smart-export progress/cancel UI is still not mirrored in Tauri.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
 - Save/open index workflow details are still thinner than Qt and need a smaller parity polish pass.
-- `View -> Settings` now exposes the two shared analysis settings already present in Qt/app code:
+- `View -> Settings` now exposes the existing shared/runtime settings already present in Qt/app code:
   - `HTTP: use request path as service hint when Host is missing`
   - `Use possible TLS/QUIC`
+- `View -> Settings` also now exposes the existing display setting:
+  - `Show Wireshark filter for selected flow`
 - Settings persistence and the remaining Qt-only settings are still deferred.
 - The Stream tab is still experimental and exposes only a bounded selected-flow slice with basic stream-item details; stream-to-packet navigation is still missing.
 - Statistics remain partial compared to Qt:

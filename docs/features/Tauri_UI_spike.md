@@ -227,7 +227,10 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - export workflows beyond the now-wired current / selected / unselected / smart flow workflows
 - save/open index workflow polish
-- a minimal runtime-only `View -> Settings` dialog for the shared analysis settings `HTTP path as service hint` and `Use possible TLS/QUIC`
+- a minimal runtime-only `View -> Settings` dialog for the shared settings:
+  - `HTTP path as service hint`
+  - `Use possible TLS/QUIC`
+  - `Show Wireshark filter for selected flow`
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
 - stream-to-packet navigation is still missing
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior

@@ -27,7 +27,8 @@ char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHa
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     bool http_use_path_as_service_hint,
-    bool use_possible_tls_quic
+    bool use_possible_tls_quic,
+    bool show_wireshark_filter_for_selected_flow
 );
 char* pfl_frontend_session_adapter_export_current_flow_json(
     PflFrontendSessionAdapterHandle* handle,

@@ -105,7 +105,7 @@
                   </label>
                   <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
                 </div>
-                <div class="flow-wireshark-row">
+                <div id="wiresharkFilterRow" class="flow-wireshark-row">
                   <div class="flow-inline-meta">
                     <span class="inline-label">Wireshark filter</span>
                     <span id="wiresharkFilterMeta" class="inline-note">Select a flow to generate a filter.</span>
@@ -589,11 +589,17 @@
             </label>
             <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
           </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsShowWiresharkFilterForSelectedFlow" type="checkbox" />
+              <span>Show Wireshark filter for selected flow</span>
+            </label>
+            <p class="settings-help">Applied immediately to the selected-flow view.</p>
+          </section>
           <section class="settings-section settings-section-deferred">
             <h3>Deferred in Tauri</h3>
             <p class="settings-help">Qt also exposes these settings, but they are not wired in the Tauri spike yet.</p>
             <div class="settings-disabled-row">Validate IPv4/TCP/UDP checksums for selected packet</div>
-            <div class="settings-disabled-row">Show Wireshark filter for selected flow</div>
           </section>
         </div>
         <p id="settingsStatusText" class="status-text"></p>

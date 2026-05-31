@@ -43,6 +43,7 @@ pub struct SaveIndexResultDto {
 pub struct SettingsDto {
     pub http_use_path_as_service_hint: bool,
     pub use_possible_tls_quic: bool,
+    pub show_wireshark_filter_for_selected_flow: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

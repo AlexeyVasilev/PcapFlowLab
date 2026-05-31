@@ -40,6 +40,7 @@ This document is an audit only. It does not introduce a new contract and does no
 
 - Flow filtering and sorting semantics.
 - Most settings/preferences, beyond the now-shared minimal analysis settings slice.
+  - Tauri now also mirrors the existing runtime `Show Wireshark filter for selected flow` display setting.
 - Packet inspector structure and most packet-details presentation composition.
 - Stream-item details presentation in the right-hand inspector.
 - Large parts of Statistics grouping/presentation.

@@ -198,11 +198,16 @@ fn update_settings(
     state: State<'_, Mutex<AdapterState>>,
     http_use_path_as_service_hint: bool,
     use_possible_tls_quic: bool,
+    show_wireshark_filter_for_selected_flow: bool,
 ) -> Result<SettingsDto, String> {
     let mut state = state
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
-    state.adapter.update_settings(http_use_path_as_service_hint, use_possible_tls_quic)
+    state.adapter.update_settings(
+        http_use_path_as_service_hint,
+        use_possible_tls_quic,
+        show_wireshark_filter_for_selected_flow,
+    )
 }
 
 #[tauri::command]

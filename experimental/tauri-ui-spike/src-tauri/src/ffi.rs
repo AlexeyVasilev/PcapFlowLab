@@ -37,6 +37,7 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         http_use_path_as_service_hint: c_uchar,
         use_possible_tls_quic: c_uchar,
+        show_wireshark_filter_for_selected_flow: c_uchar,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_export_current_flow_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -150,12 +151,14 @@ impl CppFrontendSessionAdapter {
         &mut self,
         http_use_path_as_service_hint: bool,
         use_possible_tls_quic: bool,
+        show_wireshark_filter_for_selected_flow: bool,
     ) -> Result<SettingsDto, String> {
         let json = unsafe {
             pfl_frontend_session_adapter_update_settings_json(
                 self.handle,
                 if http_use_path_as_service_hint { 1 } else { 0 },
                 if use_possible_tls_quic { 1 } else { 0 },
+                if show_wireshark_filter_for_selected_flow { 1 } else { 0 },
             )
         };
         parse_json_owned::<SettingsDto>(json)
