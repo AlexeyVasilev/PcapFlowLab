@@ -231,6 +231,8 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
   - `HTTP path as service hint`
   - `Use possible TLS/QUIC`
   - `Show Wireshark filter for selected flow`
+  - `Validate IPv4/TCP/UDP checksums for selected packet`
+- settings remain runtime-only; packet checksum validation is applied only to selected packet details when readable source bytes are available
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
 - stream-to-packet navigation is still missing
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior

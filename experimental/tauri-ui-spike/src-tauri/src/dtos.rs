@@ -44,6 +44,7 @@ pub struct SettingsDto {
     pub http_use_path_as_service_hint: bool,
     pub use_possible_tls_quic: bool,
     pub show_wireshark_filter_for_selected_flow: bool,
+    pub validate_selected_packet_checksums: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,6 +249,7 @@ pub struct PacketDetailsDto {
     pub payload_preview_available: bool,
     pub payload_preview_truncated: bool,
     pub payload_preview_no_payload: bool,
+    pub checksum_validation_enabled: bool,
     pub flow_index: usize,
     pub packet_index: u64,
     pub details_title: String,
@@ -266,6 +268,8 @@ pub struct PacketDetailsDto {
     pub raw_preview_unavailable_text: String,
     pub payload_preview_text: String,
     pub payload_preview_unavailable_text: String,
+    pub checksum_summary_lines: Vec<String>,
+    pub checksum_warning_lines: Vec<String>,
     pub unavailable_text: String,
     pub error_text: String,
     pub source_availability: SourceAvailabilityDto,

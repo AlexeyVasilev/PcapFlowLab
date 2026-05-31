@@ -596,10 +596,12 @@
             </label>
             <p class="settings-help">Applied immediately to the selected-flow view.</p>
           </section>
-          <section class="settings-section settings-section-deferred">
-            <h3>Deferred in Tauri</h3>
-            <p class="settings-help">Qt also exposes these settings, but they are not wired in the Tauri spike yet.</p>
-            <div class="settings-disabled-row">Validate IPv4/TCP/UDP checksums for selected packet</div>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
+              <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
+            </label>
+            <p class="settings-help">Applied immediately to the currently selected packet details when source bytes are available.</p>
           </section>
         </div>
         <p id="settingsStatusText" class="status-text"></p>

@@ -148,7 +148,8 @@ std::string settings_json(const pfl::FrontendSettingsDto& settings) {
     out << '{'
         << "\"http_use_path_as_service_hint\":" << bool_json(settings.http_use_path_as_service_hint) << ','
         << "\"use_possible_tls_quic\":" << bool_json(settings.use_possible_tls_quic) << ','
-        << "\"show_wireshark_filter_for_selected_flow\":" << bool_json(settings.show_wireshark_filter_for_selected_flow)
+        << "\"show_wireshark_filter_for_selected_flow\":" << bool_json(settings.show_wireshark_filter_for_selected_flow) << ','
+        << "\"validate_selected_packet_checksums\":" << bool_json(settings.validate_selected_packet_checksums)
         << '}';
     return out.str();
 }
@@ -426,6 +427,7 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
         << "\"payload_preview_available\":" << bool_json(details.payload_preview_available) << ','
         << "\"payload_preview_truncated\":" << bool_json(details.payload_preview_truncated) << ','
         << "\"payload_preview_no_payload\":" << bool_json(details.payload_preview_no_payload) << ','
+        << "\"checksum_validation_enabled\":" << bool_json(details.checksum_validation_enabled) << ','
         << "\"flow_index\":" << details.flow_index << ','
         << "\"packet_index\":" << details.packet_index << ','
         << "\"details_title\":" << json_string(details.details_title) << ','
@@ -444,6 +446,26 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
         << "\"raw_preview_unavailable_text\":" << json_string(details.raw_preview_unavailable_text) << ','
         << "\"payload_preview_text\":" << json_string(details.payload_preview_text) << ','
         << "\"payload_preview_unavailable_text\":" << json_string(details.payload_preview_unavailable_text) << ','
+        << "\"checksum_summary_lines\":[";
+
+    for (std::size_t index = 0; index < details.checksum_summary_lines.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << json_string(details.checksum_summary_lines[index]);
+    }
+
+    out << "],"
+        << "\"checksum_warning_lines\":[";
+
+    for (std::size_t index = 0; index < details.checksum_warning_lines.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << json_string(details.checksum_warning_lines[index]);
+    }
+
+    out << "],"
         << "\"unavailable_text\":" << json_string(details.unavailable_text) << ','
         << "\"error_text\":" << json_string(details.error_text) << ','
         << "\"source_availability\":" << source_availability_json(details.source_availability)
@@ -642,7 +664,7 @@ char* pfl_frontend_session_adapter_save_index_json(
 
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.get_settings()));
@@ -652,16 +674,18 @@ char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     const bool http_use_path_as_service_hint,
     const bool use_possible_tls_quic,
-    const bool show_wireshark_filter_for_selected_flow
+    const bool show_wireshark_filter_for_selected_flow,
+    const bool validate_selected_packet_checksums
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true}");
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.update_settings(pfl::FrontendSettingsDto {
         .http_use_path_as_service_hint = http_use_path_as_service_hint,
         .use_possible_tls_quic = use_possible_tls_quic,
         .show_wireshark_filter_for_selected_flow = show_wireshark_filter_for_selected_flow,
+        .validate_selected_packet_checksums = validate_selected_packet_checksums,
     })));
 }
 

@@ -140,7 +140,10 @@ Implemented slice:
   - `Use possible TLS/QUIC`
 - `View -> Settings` also now exposes the existing display setting:
   - `Show Wireshark filter for selected flow`
-- Settings persistence and the remaining Qt-only settings are still deferred.
+- `View -> Settings` now also exposes:
+  - `Validate IPv4/TCP/UDP checksums for selected packet`
+- Checksum validation is runtime-only and applies only when selected packet details are loaded with readable source bytes.
+- Settings persistence and any remaining Qt-only settings are still deferred.
 - The Stream tab is still experimental and exposes only a bounded selected-flow slice with basic stream-item details; stream-to-packet navigation is still missing.
 - Statistics remain partial compared to Qt:
   - Qt-style percentage formatting is still deferred.

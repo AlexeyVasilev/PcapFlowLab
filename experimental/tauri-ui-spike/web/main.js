@@ -25,6 +25,7 @@
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
       show_wireshark_filter_for_selected_flow: true,
+      validate_selected_packet_checksums: false,
     },
     smartExportDialogVisible: false,
     activeTab: "flows",
@@ -100,6 +101,7 @@
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
+    settingsValidateSelectedPacketChecksums: document.getElementById("settingsValidateSelectedPacketChecksums"),
     settingsStatusText: document.getElementById("settingsStatusText"),
     settingsCancelButton: document.getElementById("settingsCancelButton"),
     settingsSaveButton: document.getElementById("settingsSaveButton"),
@@ -857,6 +859,10 @@
     if (elements.settingsShowWiresharkFilterForSelectedFlow) {
       elements.settingsShowWiresharkFilterForSelectedFlow.checked = Boolean(state.settings.show_wireshark_filter_for_selected_flow);
       elements.settingsShowWiresharkFilterForSelectedFlow.disabled = dialogDisabled;
+    }
+    if (elements.settingsValidateSelectedPacketChecksums) {
+      elements.settingsValidateSelectedPacketChecksums.checked = Boolean(state.settings.validate_selected_packet_checksums);
+      elements.settingsValidateSelectedPacketChecksums.disabled = dialogDisabled;
     }
     if (elements.settingsCancelButton) {
       elements.settingsCancelButton.disabled = dialogDisabled;
@@ -1736,8 +1742,10 @@
       ["Payload Length", formatNumber(details?.payload_length ?? selectedPacket.payload_length)],
       ["TCP Flags", details?.tcp_flags_text || selectedPacket.tcp_flags_text || "-"],
     ];
-
-    elements.packetDetailsSummary.innerHTML = summaryItems
+    const checksumSummaryLines = Array.isArray(details?.checksum_summary_lines) ? details.checksum_summary_lines : [];
+    const checksumWarningLines = Array.isArray(details?.checksum_warning_lines) ? details.checksum_warning_lines : [];
+    const checksumEnabled = Boolean(details?.checksum_validation_enabled);
+    const summaryRowsHtml = summaryItems
       .map(([label, value]) => `
         <div class="summary-row">
           <span class="summary-label">${escapeHtml(label)}</span>
@@ -1745,6 +1753,25 @@
         </div>
       `)
       .join("");
+    const checksumSectionHtml = checksumEnabled
+      ? `
+        <div class="details-section summary-full-width-section">
+          <h3>Checksums</h3>
+          <pre class="details-pre">${
+            escapeHtml(
+              checksumSummaryLines.length > 0
+                ? checksumSummaryLines.join("\n")
+                : "Checksum validation is enabled, but no checksum results are available for this packet."
+            )
+          }</pre>
+          ${checksumWarningLines.length > 0
+            ? `<p class="status-text is-error">${escapeHtml(checksumWarningLines.join(" "))}</p>`
+            : ""}
+        </div>
+      `
+      : "";
+
+    elements.packetDetailsSummary.innerHTML = summaryRowsHtml + checksumSectionHtml;
 
     if (state.packetDetailsState === "error") {
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;
@@ -2889,6 +2916,7 @@
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
+        validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
     } catch (error) {
       state.settingsStatusText = `Failed to load settings: ${String(error)}`;
@@ -2920,6 +2948,7 @@
     const httpUsePathAsServiceHint = Boolean(elements.settingsHttpUsePathAsServiceHint?.checked);
     const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
+    const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
 
     state.settingsSaveInProgress = true;
     clearSettingsStatus();
@@ -2930,12 +2959,14 @@
         http_use_path_as_service_hint: httpUsePathAsServiceHint,
         use_possible_tls_quic: usePossibleTlsQuic,
         show_wireshark_filter_for_selected_flow: showWiresharkFilterForSelectedFlow,
+        validate_selected_packet_checksums: validateSelectedPacketChecksums,
       });
 
       state.settings = {
         http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
         use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
+        validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
 
       if (state.openState === "opened") {
@@ -2943,6 +2974,9 @@
         if (state.analysisState !== "idle" && state.selectedFlowIndex != null) {
           await loadSelectedFlowAnalysis();
         }
+      }
+      if (state.selectedPacketIndex != null && state.selectedFlowIndex != null && state.packetDetailsState !== "idle") {
+        await loadSelectedPacketDetails();
       }
 
       setStatus("Settings updated.", "success");

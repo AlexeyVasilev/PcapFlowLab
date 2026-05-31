@@ -55,6 +55,7 @@ struct FrontendSettingsDto {
     bool http_use_path_as_service_hint {false};
     bool use_possible_tls_quic {false};
     bool show_wireshark_filter_for_selected_flow {true};
+    bool validate_selected_packet_checksums {false};
 };
 
 struct FrontendExportCurrentFlowResult {
@@ -218,6 +219,7 @@ struct FrontendPacketDetailsDto {
     bool payload_preview_available {false};
     bool payload_preview_truncated {false};
     bool payload_preview_no_payload {false};
+    bool checksum_validation_enabled {false};
     std::size_t flow_index {0};
     std::uint64_t packet_index {0};
     std::string details_title {};
@@ -236,6 +238,8 @@ struct FrontendPacketDetailsDto {
     std::string raw_preview_unavailable_text {};
     std::string payload_preview_text {};
     std::string payload_preview_unavailable_text {};
+    std::vector<std::string> checksum_summary_lines {};
+    std::vector<std::string> checksum_warning_lines {};
     std::string unavailable_text {};
     std::string error_text {};
     FrontendSourceAvailabilityDto source_availability {};

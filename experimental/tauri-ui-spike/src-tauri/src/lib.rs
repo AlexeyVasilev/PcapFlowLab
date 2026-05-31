@@ -199,6 +199,7 @@ fn update_settings(
     http_use_path_as_service_hint: bool,
     use_possible_tls_quic: bool,
     show_wireshark_filter_for_selected_flow: bool,
+    validate_selected_packet_checksums: bool,
 ) -> Result<SettingsDto, String> {
     let mut state = state
         .lock()
@@ -207,6 +208,7 @@ fn update_settings(
         http_use_path_as_service_hint,
         use_possible_tls_quic,
         show_wireshark_filter_for_selected_flow,
+        validate_selected_packet_checksums,
     )
 }
 

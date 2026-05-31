@@ -1220,6 +1220,10 @@ select:disabled {
   gap: 4px;
 }
 
+.summary-full-width-section {
+  grid-column: 1 / -1;
+}
+
 .details-section h3 {
   margin: 0;
   color: var(--muted);
