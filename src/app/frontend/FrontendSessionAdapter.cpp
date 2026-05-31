@@ -36,9 +36,10 @@ struct AnalysisSequenceExportRow {
     std::string protocol_hint_text {};
 };
 
-CaptureImportOptions import_options_for_frontend_mode(const FrontendOpenMode mode) {
+CaptureImportOptions import_options_for_frontend_mode(const FrontendOpenMode mode, const AnalysisSettings& settings) {
     return CaptureImportOptions {
         .mode = (mode == FrontendOpenMode::deep) ? ImportMode::deep : ImportMode::fast,
+        .settings = settings,
     };
 }
 
@@ -643,6 +644,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
 ) {
     clear_selection();
     session_ = CaptureSession {};
+    const auto analysis_settings = to_analysis_settings(settings_);
 
     if (path.empty()) {
         return FrontendOpenResult {
@@ -653,7 +655,11 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
 
     const bool opened = looks_like_index_file(path)
         ? session_.load_index(path)
-        : session_.open_capture(path, import_options_for_frontend_mode(open_mode));
+        : session_.open_capture(path, import_options_for_frontend_mode(open_mode, analysis_settings));
+
+    if (opened) {
+        session_.set_analysis_settings(analysis_settings);
+    }
 
     const auto source_availability = current_source_availability();
 
@@ -729,6 +735,21 @@ FrontendSaveIndexResult FrontendSessionAdapter::save_index(const std::filesystem
     result.saved = true;
     result.output_path = path_to_string(output_path);
     return result;
+}
+
+FrontendSettingsDto FrontendSessionAdapter::get_settings() const noexcept {
+    return settings_;
+}
+
+FrontendSettingsDto FrontendSessionAdapter::update_settings(const FrontendSettingsDto& settings) {
+    const bool use_possible_tls_quic_changed = settings_.use_possible_tls_quic != settings.use_possible_tls_quic;
+    settings_ = settings;
+
+    if (use_possible_tls_quic_changed && session_.has_capture()) {
+        session_.set_analysis_settings(to_analysis_settings(settings_));
+    }
+
+    return settings_;
 }
 
 FrontendExportCurrentFlowResult FrontendSessionAdapter::export_current_flow(const std::filesystem::path& output_path) const {
@@ -1371,6 +1392,13 @@ void FrontendSessionAdapter::clear_selection() noexcept {
     selected_flow_index_.reset();
     session_.clear_selected_flow_packet_cache();
     session_.clear_selected_flow_tcp_payload_suppression();
+}
+
+AnalysisSettings FrontendSessionAdapter::to_analysis_settings(const FrontendSettingsDto& settings) noexcept {
+    return AnalysisSettings {
+        .http_use_path_as_service_hint = settings.http_use_path_as_service_hint,
+        .use_possible_tls_quic = settings.use_possible_tls_quic,
+    };
 }
 
 FrontendFlowDto FrontendSessionAdapter::to_frontend_flow(const FlowRow& row) {

@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
+    SettingsDto,
     SmartExportResultDto,
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
@@ -182,6 +183,26 @@ fn get_overview(state: State<'_, Mutex<AdapterState>>) -> Result<OverviewDto, St
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
     state.adapter.get_overview()
+}
+
+#[tauri::command]
+fn get_settings(state: State<'_, Mutex<AdapterState>>) -> Result<SettingsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_settings()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn update_settings(
+    state: State<'_, Mutex<AdapterState>>,
+    http_use_path_as_service_hint: bool,
+    use_possible_tls_quic: bool,
+) -> Result<SettingsDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.update_settings(http_use_path_as_service_hint, use_possible_tls_quic)
 }
 
 #[tauri::command]
@@ -367,6 +388,8 @@ pub fn run() {
             export_smart_flows,
             exit_app,
             get_overview,
+            get_settings,
+            update_settings,
             get_flows,
             select_flow,
             get_selected_flow_packets,

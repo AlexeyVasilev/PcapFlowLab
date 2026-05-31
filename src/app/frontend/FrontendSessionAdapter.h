@@ -18,6 +18,8 @@ public:
     [[nodiscard]] FrontendOpenResult open_capture(const std::filesystem::path& path, FrontendOpenMode open_mode);
     [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendSaveIndexResult save_index(const std::filesystem::path& output_path) const;
+    [[nodiscard]] FrontendSettingsDto get_settings() const noexcept;
+    [[nodiscard]] FrontendSettingsDto update_settings(const FrontendSettingsDto& settings);
     [[nodiscard]] FrontendExportCurrentFlowResult export_current_flow(const std::filesystem::path& output_path) const;
     [[nodiscard]] FrontendExportSelectedFlowsResult export_selected_flows(
         const std::filesystem::path& output_path,
@@ -47,6 +49,7 @@ private:
     [[nodiscard]] FrontendSourceAvailabilityDto current_source_availability() const;
     [[nodiscard]] static FrontendFlowDto to_frontend_flow(const FlowRow& row);
     [[nodiscard]] static FrontendPacketDto to_frontend_packet(const PacketRow& row);
+    [[nodiscard]] static AnalysisSettings to_analysis_settings(const FrontendSettingsDto& settings) noexcept;
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(
         const StreamItemRow& row,
         const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
@@ -54,6 +57,7 @@ private:
 
     CaptureSession session_ {};
     std::optional<std::size_t> selected_flow_index_ {};
+    FrontendSettingsDto settings_ {};
 };
 
 }  // namespace pfl

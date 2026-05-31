@@ -4,6 +4,7 @@ use std::os::raw::{c_char, c_uchar};
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
+    SettingsDto,
     SmartExportResultDto,
 };
 
@@ -28,6 +29,14 @@ extern "C" {
     fn pfl_frontend_session_adapter_save_index_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_settings_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_update_settings_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        http_use_path_as_service_hint: c_uchar,
+        use_possible_tls_quic: c_uchar,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_export_current_flow_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -130,6 +139,26 @@ impl CppFrontendSessionAdapter {
         let path = CString::new(path).map_err(|_| "Index path contains an embedded NUL byte.".to_string())?;
         let json = unsafe { pfl_frontend_session_adapter_save_index_json(self.handle, path.as_ptr()) };
         parse_json_owned::<SaveIndexResultDto>(json)
+    }
+
+    pub fn get_settings(&self) -> Result<SettingsDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_settings_json(self.handle) };
+        parse_json_owned::<SettingsDto>(json)
+    }
+
+    pub fn update_settings(
+        &mut self,
+        http_use_path_as_service_hint: bool,
+        use_possible_tls_quic: bool,
+    ) -> Result<SettingsDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_update_settings_json(
+                self.handle,
+                if http_use_path_as_service_hint { 1 } else { 0 },
+                if use_possible_tls_quic { 1 } else { 0 },
+            )
+        };
+        parse_json_owned::<SettingsDto>(json)
     }
 
     pub fn export_current_flow(&self, path: &str) -> Result<ExportCurrentFlowResultDto, String> {

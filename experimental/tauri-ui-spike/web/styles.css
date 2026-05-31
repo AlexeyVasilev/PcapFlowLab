@@ -172,6 +172,69 @@ body {
   line-height: 1.4;
 }
 
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-dialog-card {
+  width: min(560px, 100%);
+}
+
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.settings-section h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.settings-checkbox-row input {
+  margin: 0;
+}
+
+.settings-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.settings-section-deferred {
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.settings-disabled-row {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: #7b8794;
+  background: rgba(241, 245, 249, 0.8);
+  font-size: 13px;
+}
+
 .smart-export-dialog-card {
   width: min(680px, 100%);
 }

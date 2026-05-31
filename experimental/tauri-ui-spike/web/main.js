@@ -16,6 +16,15 @@
   const state = {
     openMenu: null,
     aboutDialogVisible: false,
+    settingsDialogVisible: false,
+    settingsDialogLoading: false,
+    settingsSaveInProgress: false,
+    settingsStatusText: "",
+    settingsStatusKind: "neutral",
+    settings: {
+      http_use_path_as_service_hint: false,
+      use_possible_tls_quic: false,
+    },
     smartExportDialogVisible: false,
     activeTab: "flows",
     flowViewTab: "packets",
@@ -86,6 +95,12 @@
     menuSaveIndex: document.getElementById("menuSaveIndex"),
     aboutDialog: document.getElementById("aboutDialog"),
     aboutDialogCloseButton: document.getElementById("aboutDialogCloseButton"),
+    settingsDialog: document.getElementById("settingsDialog"),
+    settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
+    settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
+    settingsStatusText: document.getElementById("settingsStatusText"),
+    settingsCancelButton: document.getElementById("settingsCancelButton"),
+    settingsSaveButton: document.getElementById("settingsSaveButton"),
     smartExportDialog: document.getElementById("smartExportDialog"),
     smartExportCloseButton: document.getElementById("smartExportCloseButton"),
     smartExportCancelButton: document.getElementById("smartExportCancelButton"),
@@ -277,6 +292,11 @@
   function setStatus(text, kind = "neutral") {
     state.statusText = text || "";
     state.statusKind = kind;
+  }
+
+  function clearSettingsStatus() {
+    state.settingsStatusText = "";
+    state.settingsStatusKind = "neutral";
   }
 
   function sourceAvailabilityOrDefault(sourceAvailability) {
@@ -723,14 +743,18 @@
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
-    state.smartExportInProgress = false;
-    clearSmartExportStatus();
-    state.openMenu = null;
-    state.aboutDialogVisible = false;
-    state.smartExportDialogVisible = false;
-    state.sourceAvailability = null;
-    setStatus("", "neutral");
-  }
+      state.smartExportInProgress = false;
+      clearSmartExportStatus();
+      state.openMenu = null;
+      state.aboutDialogVisible = false;
+      state.settingsDialogVisible = false;
+      state.settingsDialogLoading = false;
+      state.settingsSaveInProgress = false;
+      clearSettingsStatus();
+      state.smartExportDialogVisible = false;
+      state.sourceAvailability = null;
+      setStatus("", "neutral");
+    }
 
   function setOpenControlsDisabled(disabled) {
     elements.capturePath.disabled = disabled;
@@ -795,7 +819,7 @@
             || state.exportUnselectedFlowsInProgress
             || state.smartExportInProgress;
         } else if (action === "settings") {
-          item.disabled = true;
+          item.disabled = state.settingsDialogLoading || state.settingsSaveInProgress;
         }
       }
 
@@ -803,12 +827,45 @@
         elements.aboutDialog.classList.toggle("is-visible", state.aboutDialogVisible);
         elements.aboutDialog.setAttribute("aria-hidden", state.aboutDialogVisible ? "false" : "true");
       }
+      if (elements.settingsDialog) {
+        elements.settingsDialog.classList.toggle("is-visible", state.settingsDialogVisible);
+        elements.settingsDialog.setAttribute("aria-hidden", state.settingsDialogVisible ? "false" : "true");
+      }
       if (elements.smartExportDialog) {
         elements.smartExportDialog.classList.toggle("is-visible", state.smartExportDialogVisible);
         elements.smartExportDialog.setAttribute("aria-hidden", state.smartExportDialogVisible ? "false" : "true");
       }
     } catch (error) {
       console.error("Failed to render menu state.", error);
+    }
+  }
+
+  function renderSettingsDialog() {
+    const dialogDisabled = state.settingsDialogLoading || state.settingsSaveInProgress;
+
+    if (elements.settingsHttpUsePathAsServiceHint) {
+      elements.settingsHttpUsePathAsServiceHint.checked = Boolean(state.settings.http_use_path_as_service_hint);
+      elements.settingsHttpUsePathAsServiceHint.disabled = dialogDisabled;
+    }
+    if (elements.settingsUsePossibleTlsQuic) {
+      elements.settingsUsePossibleTlsQuic.checked = Boolean(state.settings.use_possible_tls_quic);
+      elements.settingsUsePossibleTlsQuic.disabled = dialogDisabled;
+    }
+    if (elements.settingsCancelButton) {
+      elements.settingsCancelButton.disabled = dialogDisabled;
+    }
+    if (elements.settingsSaveButton) {
+      elements.settingsSaveButton.disabled = dialogDisabled;
+      elements.settingsSaveButton.textContent = state.settingsSaveInProgress ? "Saving..." : "OK";
+    }
+    if (elements.settingsStatusText) {
+      elements.settingsStatusText.textContent = state.settingsStatusText;
+      elements.settingsStatusText.className = "status-text";
+      if (state.settingsStatusKind === "error") {
+        elements.settingsStatusText.classList.add("is-error");
+      } else if (state.settingsStatusKind === "success") {
+        elements.settingsStatusText.classList.add("is-success");
+      }
     }
   }
 
@@ -2200,6 +2257,7 @@
   function render() {
     const renderSteps = [
       ["menu", renderMenuState],
+      ["settings dialog", renderSettingsDialog],
       ["smart export dialog", renderSmartExportDialog],
       ["tabs", renderTabs],
       ["flow view tabs", renderFlowViewTabs],
@@ -2794,6 +2852,88 @@
     }
   }
 
+  async function openSettingsDialogFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    clearSettingsStatus();
+    state.settingsDialogVisible = true;
+    state.settingsDialogLoading = true;
+    render();
+
+    try {
+      const settings = await invoke("get_settings");
+      state.settings = {
+        http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
+        use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
+      };
+    } catch (error) {
+      state.settingsStatusText = `Failed to load settings: ${String(error)}`;
+      state.settingsStatusKind = "error";
+    } finally {
+      state.settingsDialogLoading = false;
+      render();
+    }
+  }
+
+  function closeSettingsDialog() {
+    if (state.settingsDialogLoading || state.settingsSaveInProgress) {
+      return;
+    }
+
+    state.settingsDialogVisible = false;
+    clearSettingsStatus();
+    render();
+  }
+
+  async function saveSettingsFromDialog() {
+    if (typeof invoke !== "function") {
+      state.settingsStatusText = "Tauri API is unavailable in this frontend.";
+      state.settingsStatusKind = "error";
+      render();
+      return;
+    }
+
+    const httpUsePathAsServiceHint = Boolean(elements.settingsHttpUsePathAsServiceHint?.checked);
+    const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
+
+    state.settingsSaveInProgress = true;
+    clearSettingsStatus();
+    render();
+
+    try {
+      const settings = await invoke("update_settings", {
+        http_use_path_as_service_hint: httpUsePathAsServiceHint,
+        use_possible_tls_quic: usePossibleTlsQuic,
+      });
+
+      state.settings = {
+        http_use_path_as_service_hint: Boolean(settings?.http_use_path_as_service_hint),
+        use_possible_tls_quic: Boolean(settings?.use_possible_tls_quic),
+      };
+
+      if (state.openState === "opened") {
+        await loadOverviewAndFlows();
+        if (state.analysisState !== "idle" && state.selectedFlowIndex != null) {
+          await loadSelectedFlowAnalysis();
+        }
+      }
+
+      setStatus("Settings updated.", "success");
+      state.settingsDialogVisible = false;
+      clearSettingsStatus();
+    } catch (error) {
+      state.settingsStatusText = `Failed to save settings: ${String(error)}`;
+      state.settingsStatusKind = "error";
+    } finally {
+      state.settingsSaveInProgress = false;
+      render();
+    }
+  }
+
   function openSmartExportDialogFromMenu() {
     if (!canSmartExport()) {
       return;
@@ -3007,8 +3147,7 @@
         await exportUnselectedFlowsFromMenu();
         return;
       case "settings":
-        setStatus("Settings are not implemented yet in the Tauri spike.", "neutral");
-        render();
+        await openSettingsDialogFromMenu();
         return;
       case "smart-export":
         openSmartExportDialogFromMenu();
@@ -3097,6 +3236,15 @@
       render();
     }
   });
+  elements.settingsCancelButton?.addEventListener("click", closeSettingsDialog);
+  elements.settingsSaveButton?.addEventListener("click", () => {
+    void saveSettingsFromDialog();
+  });
+  elements.settingsDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.settingsDialog) {
+      closeSettingsDialog();
+    }
+  });
   elements.smartExportCloseButton?.addEventListener("click", closeSmartExportDialog);
   elements.smartExportCancelButton?.addEventListener("click", closeSmartExportDialog);
   elements.smartExportRunButton?.addEventListener("click", () => {
@@ -3155,9 +3303,13 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      const hadVisibleUi = state.openMenu != null || state.aboutDialogVisible || state.smartExportDialogVisible;
+      const hadVisibleUi = state.openMenu != null || state.aboutDialogVisible || state.settingsDialogVisible || state.smartExportDialogVisible;
       closeMenus();
       state.aboutDialogVisible = false;
+      if (!state.settingsDialogLoading && !state.settingsSaveInProgress) {
+        state.settingsDialogVisible = false;
+        clearSettingsStatus();
+      }
       if (!state.smartExportInProgress) {
         state.smartExportDialogVisible = false;
         clearSmartExportStatus();

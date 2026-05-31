@@ -143,6 +143,15 @@ std::string save_index_result_json(const pfl::FrontendSaveIndexResult& result) {
     return out.str();
 }
 
+std::string settings_json(const pfl::FrontendSettingsDto& settings) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"http_use_path_as_service_hint\":" << bool_json(settings.http_use_path_as_service_hint) << ','
+        << "\"use_possible_tls_quic\":" << bool_json(settings.use_possible_tls_quic)
+        << '}';
+    return out.str();
+}
+
 std::string export_current_flow_result_json(const pfl::FrontendExportCurrentFlowResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -628,6 +637,29 @@ char* pfl_frontend_session_adapter_save_index_json(
         ? std::filesystem::path {}
         : std::filesystem::u8path(path_utf8);
     return make_c_string(save_index_result_json(handle->adapter.save_index(path)));
+}
+
+char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false}");
+    }
+
+    return make_c_string(settings_json(handle->adapter.get_settings()));
+}
+
+char* pfl_frontend_session_adapter_update_settings_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const bool http_use_path_as_service_hint,
+    const bool use_possible_tls_quic
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false}");
+    }
+
+    return make_c_string(settings_json(handle->adapter.update_settings(pfl::FrontendSettingsDto {
+        .http_use_path_as_service_hint = http_use_path_as_service_hint,
+        .use_possible_tls_quic = use_possible_tls_quic,
+    })));
 }
 
 char* pfl_frontend_session_adapter_export_current_flow_json(

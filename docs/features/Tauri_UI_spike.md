@@ -227,7 +227,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - export workflows beyond the now-wired current / selected / unselected / smart flow workflows
 - save/open index workflow polish
-- settings/preferences
+- a minimal runtime-only `View -> Settings` dialog for the shared analysis settings `HTTP path as service hint` and `Use possible TLS/QUIC`
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
 - stream-to-packet navigation is still missing
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
@@ -241,7 +241,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Flow -> Smart Export...`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
 - Save/open index workflow polish
-- Settings/preferences
+- broader Settings/preferences parity
 - Stream-to-packet navigation
 - Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
@@ -253,7 +253,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Flow -> Smart Export...`, `Save Index`, and selected-flow Analysis sequence CSV
 2. Save/open index workflow polish
-3. Settings/preferences
+3. Broader Settings/preferences parity and persistence
 4. Performance pass for large captures, including virtualization/pagination where needed
 5. Analysis export and rate graph after core Tauri workflows stabilize
 6. CLI design after the frontend-neutral DTO surface settles

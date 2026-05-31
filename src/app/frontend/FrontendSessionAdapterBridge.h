@@ -23,6 +23,12 @@ char* pfl_frontend_session_adapter_save_index_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* path_utf8
 );
+char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_update_settings_json(
+    PflFrontendSessionAdapterHandle* handle,
+    bool http_use_path_as_service_hint,
+    bool use_possible_tls_quic
+);
 char* pfl_frontend_session_adapter_export_current_flow_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* path_utf8

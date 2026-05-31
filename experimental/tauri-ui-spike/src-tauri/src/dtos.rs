@@ -40,6 +40,12 @@ pub struct SaveIndexResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsDto {
+    pub http_use_path_as_service_hint: bool,
+    pub use_possible_tls_quic: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportCurrentFlowResultDto {
     pub exported: bool,
     pub output_path: String,

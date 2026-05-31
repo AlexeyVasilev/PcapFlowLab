@@ -39,6 +39,7 @@ This document is an audit only. It does not introduce a new contract and does no
 ### What is mostly Qt-specific today
 
 - Flow filtering and sorting semantics.
+- Most settings/preferences, beyond the now-shared minimal analysis settings slice.
 - Packet inspector structure and most packet-details presentation composition.
 - Stream-item details presentation in the right-hand inspector.
 - Large parts of Statistics grouping/presentation.
@@ -68,6 +69,7 @@ This document is an audit only. It does not introduce a new contract and does no
 ### What should be handled first in future DTO cleanup
 
 - Broader export workflow parity beyond the now-wired `Save Index`, `Export Current Flow`, batch flow exports, and Smart Export paths.
+- Broader settings/preferences parity and any eventual persistence contract beyond the small shared analysis settings slice.
 - PacketInspector and stream-item details cleanup.
 - Statistics / Analysis stabilization after the recent DTO additions.
 - Performance pass for larger captures before committing to broader CLI expectations.

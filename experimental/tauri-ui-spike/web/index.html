@@ -32,7 +32,7 @@
         <div class="menu-root">
           <button id="menuButtonView" type="button" class="menu-button" data-menu-button="view">View</button>
           <div id="menuPanelView" class="menu-panel" data-menu-panel="view">
-            <button type="button" class="menu-item" data-menu-action="settings" disabled>Settings</button>
+            <button type="button" class="menu-item" data-menu-action="settings">Settings</button>
             <button type="button" class="menu-item" data-menu-action="about">About</button>
           </div>
         </div>
@@ -563,6 +563,44 @@
           Wired workflows currently focus on read-side analysis, selected-flow inspection, index save/open basics,
           source reattachment, and selected-flow sequence CSV export.
         </p>
+      </section>
+    </div>
+
+    <div id="settingsDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card settings-dialog-card" role="dialog" aria-modal="true" aria-labelledby="settingsDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="settingsDialogTitle">Settings</h2>
+        </div>
+        <p class="dialog-copy">
+          Settings control how new captures are interpreted and how current results are presented.
+        </p>
+        <div class="settings-sections">
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsHttpUsePathAsServiceHint" type="checkbox" />
+              <span>HTTP: use request path as service hint when Host is missing</span>
+            </label>
+            <p class="settings-help">Applied on the next capture or index open.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsUsePossibleTlsQuic" type="checkbox" />
+              <span>Use possible TLS/QUIC</span>
+            </label>
+            <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
+          </section>
+          <section class="settings-section settings-section-deferred">
+            <h3>Deferred in Tauri</h3>
+            <p class="settings-help">Qt also exposes these settings, but they are not wired in the Tauri spike yet.</p>
+            <div class="settings-disabled-row">Validate IPv4/TCP/UDP checksums for selected packet</div>
+            <div class="settings-disabled-row">Show Wireshark filter for selected flow</div>
+          </section>
+        </div>
+        <p id="settingsStatusText" class="status-text"></p>
+        <div class="dialog-actions">
+          <button id="settingsCancelButton" type="button" class="secondary-button">Cancel</button>
+          <button id="settingsSaveButton" type="button">OK</button>
+        </div>
       </section>
     </div>
 

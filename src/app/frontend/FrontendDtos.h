@@ -51,6 +51,11 @@ struct FrontendSaveIndexResult {
     std::string error_text {};
 };
 
+struct FrontendSettingsDto {
+    bool http_use_path_as_service_hint {false};
+    bool use_possible_tls_quic {false};
+};
+
 struct FrontendExportCurrentFlowResult {
     bool exported {false};
     std::string output_path {};
