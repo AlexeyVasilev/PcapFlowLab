@@ -1,7 +1,7 @@
 # QUIC Fixture 01 Reference
 
 Fixture under test:
-- [quic_example_1.pcap](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/tests/data/parsing/quic/quic_example_1.pcap)
+- [quic_example_1.pcap](../tests/data/parsing/quic/quic_example_1.pcap)
 
 Reference sources:
 - User packet/item mapping tables from `QUIC naming tables 1.odt` / `QUIC naming tables 1.pdf`
@@ -129,4 +129,4 @@ This fixture is intentionally stricter than the earlier narrow QUIC smoke tests:
 The exact stream sequence remains intentionally valuable for this fixture, but the more important long-term guarantees are semantic mapping correctness and source-packet ownership.
 
 This document is the human-readable reference for the paired expectation spec:
-- [quic_fixture_01_expectations.json](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/tests/fixtures/quic_fixture_01_expectations.json)
+- [quic_fixture_01_expectations.json](../tests/fixtures/quic_fixture_01_expectations.json)

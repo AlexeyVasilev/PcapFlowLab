@@ -21,6 +21,7 @@ Pcap Flow Lab already has a layered architecture with a C++ core, application/se
 - No core parser redesign.
 - No packaging/release hardening as part of the spike itself.
 - No promise of full Qt parity in one pass.
+- No claim that the current Tauri shell is already CSP-hardened or detached from the global Tauri bridge.
 
 ## Current architectural fit
 
@@ -256,6 +257,11 @@ The dev-only memory diagnostics workflow:
 - logs selected-flow packet/stream/analysis request timing phases when diagnostics are enabled
 - is intended for manual leak/retention investigation only
 - does not change product behavior when disabled
+
+Current Tauri shell hardening constraints:
+
+- `src-tauri/tauri.conf.json` still keeps `withGlobalTauri: true` because the current plain HTML/JS spike depends on the injected global bridge.
+- `src-tauri/tauri.conf.json` still keeps `security.csp: null` for the current experimental shell; tightening CSP safely is still a separate hardening pass after merge-readiness cleanup.
 
 ## Current limitations and remaining Qt gaps
 

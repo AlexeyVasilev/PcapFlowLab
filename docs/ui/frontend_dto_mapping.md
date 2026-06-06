@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document maps the shared presentation contract in [presentation_contract.md](C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/docs/ui/presentation_contract.md) to the current implementation.
+This document maps the shared presentation contract in [presentation_contract.md](presentation_contract.md) to the current implementation.
 
 The goal is to show:
 

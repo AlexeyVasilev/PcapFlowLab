@@ -26,10 +26,10 @@ char* pfl_frontend_session_adapter_save_index_json(
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
-    bool http_use_path_as_service_hint,
-    bool use_possible_tls_quic,
-    bool show_wireshark_filter_for_selected_flow,
-    bool validate_selected_packet_checksums
+    std::uint8_t http_use_path_as_service_hint,
+    std::uint8_t use_possible_tls_quic,
+    std::uint8_t show_wireshark_filter_for_selected_flow,
+    std::uint8_t validate_selected_packet_checksums
 );
 char* pfl_frontend_session_adapter_export_current_flow_json(
     PflFrontendSessionAdapterHandle* handle,

@@ -20,6 +20,9 @@ Implemented slice:
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
 - frontend-only virtualization/windowing for the main Flows table and Analysis flow list
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
+- current `tauri.conf.json` hardening remains intentionally experimental:
+  - `withGlobalTauri: true` is still required by the plain HTML/JS shell
+  - `security.csp: null` is still left in place pending a separate CSP-tightening pass
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area

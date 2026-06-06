@@ -672,20 +672,22 @@ char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHa
 
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
-    const bool http_use_path_as_service_hint,
-    const bool use_possible_tls_quic,
-    const bool show_wireshark_filter_for_selected_flow,
-    const bool validate_selected_packet_checksums
+    const std::uint8_t http_use_path_as_service_hint,
+    const std::uint8_t use_possible_tls_quic,
+    const std::uint8_t show_wireshark_filter_for_selected_flow,
+    const std::uint8_t validate_selected_packet_checksums
 ) {
     if (handle == nullptr) {
+        // Keep the existing default-settings fallback here because the C ABI currently
+        // returns only the settings payload, not a richer success/error result object.
         return make_c_string("{\"http_use_path_as_service_hint\":false,\"use_possible_tls_quic\":false,\"show_wireshark_filter_for_selected_flow\":true,\"validate_selected_packet_checksums\":false}");
     }
 
     return make_c_string(settings_json(handle->adapter.update_settings(pfl::FrontendSettingsDto {
-        .http_use_path_as_service_hint = http_use_path_as_service_hint,
-        .use_possible_tls_quic = use_possible_tls_quic,
-        .show_wireshark_filter_for_selected_flow = show_wireshark_filter_for_selected_flow,
-        .validate_selected_packet_checksums = validate_selected_packet_checksums,
+        .http_use_path_as_service_hint = http_use_path_as_service_hint != 0U,
+        .use_possible_tls_quic = use_possible_tls_quic != 0U,
+        .show_wireshark_filter_for_selected_flow = show_wireshark_filter_for_selected_flow != 0U,
+        .validate_selected_packet_checksums = validate_selected_packet_checksums != 0U,
     })));
 }
 

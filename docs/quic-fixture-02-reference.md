@@ -1,7 +1,7 @@
 # QUIC Fixture 02 Reference
 
 Fixture under test:
-- [quic_example_2.pcap](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/tests/data/parsing/quic/quic_example_2.pcap)
+- [quic_example_2.pcap](../tests/data/parsing/quic/quic_example_2.pcap)
 
 Reference sources:
 - Corrected user spreadsheet `QUIC naming 2.ods`
@@ -137,4 +137,4 @@ This fixture extends fixture 01 in several important ways:
 The exact stream sequence is intentionally useful for this fixture, but the more important long-term guarantees are semantic mapping correctness, source-packet ownership, and correct TLS attachment ownership.
 
 This document is the human-readable reference for the paired expectation spec:
-- [quic_fixture_02_expectations.json](/C:/My2/Projects/C++/PcapFlowLab/PcapFlowLab_1/PcapFlowLab/tests/fixtures/quic_fixture_02_expectations.json)
+- [quic_fixture_02_expectations.json](../tests/fixtures/quic_fixture_02_expectations.json)
