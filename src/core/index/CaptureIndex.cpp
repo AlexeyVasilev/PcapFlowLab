@@ -177,9 +177,12 @@ bool validate_capture_source(const CaptureSourceInfo& expected, const std::files
         return false;
     }
 
+    // Treat source validation as a best-effort sanity check for "same capture content"
+    // across runtimes. File time epoch/count representation is not stable across all
+    // Windows toolchains (for example MinGW vs MSVC), so keep serializing it for
+    // diagnostics but do not use the raw count as a hard compatibility gate.
     return current.format == expected.format &&
            current.file_size == expected.file_size &&
-           current.last_write_time == expected.last_write_time &&
            current.content_fingerprint == expected.content_fingerprint;
 }
 

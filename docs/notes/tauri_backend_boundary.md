@@ -6,6 +6,18 @@ This note maps the current Qt-facing UI boundary to the existing application/ses
 
 It does not propose core packet-processing changes.
 
+Current status:
+
+- the first adapter layer now exists as `FrontendSessionAdapter`
+- the first implemented slice is:
+  - open capture
+  - get overview
+  - get flows
+  - select flow
+  - get selected-flow packets
+- a minimal Tauri scaffold now exists under `experimental/tauri-ui-spike/`
+- backend state in the spike is held as one active adapter/session instance in the Tauri backend layer
+
 ## Files inspected most heavily
 
 - `src/ui/app/MainController.h`

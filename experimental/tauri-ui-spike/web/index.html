@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pcap Flow Lab Tauri UI Spike</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <nav class="menu-bar panel" aria-label="Application menu">
+        <div class="menu-root">
+          <button id="menuButtonFile" type="button" class="menu-button" data-menu-button="file">File</button>
+          <div id="menuPanelFile" class="menu-panel" data-menu-panel="file">
+            <button type="button" class="menu-item" data-menu-action="open-capture-fast">Open Capture (Fast)</button>
+            <button type="button" class="menu-item" data-menu-action="open-capture-deep">Open Capture (Deep)</button>
+            <button type="button" class="menu-item" data-menu-action="open-index">Open Index</button>
+            <button id="menuSaveIndex" type="button" class="menu-item" data-menu-action="save-index">Save Index</button>
+            <div class="menu-separator"></div>
+            <button type="button" class="menu-item" data-menu-action="exit-app">Exit</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button id="menuButtonFlow" type="button" class="menu-button" data-menu-button="flow">Flow</button>
+          <div id="menuPanelFlow" class="menu-panel" data-menu-panel="flow">
+            <button type="button" class="menu-item" data-menu-action="export-current-flow" disabled>Export Current Flow</button>
+            <button type="button" class="menu-item" data-menu-action="export-selected-flows" disabled>Export Selected Flows</button>
+            <button type="button" class="menu-item" data-menu-action="export-unselected-flows" disabled>Export Unselected Flows</button>
+            <button type="button" class="menu-item" data-menu-action="smart-export" disabled>Smart Export...</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button id="menuButtonView" type="button" class="menu-button" data-menu-button="view">View</button>
+          <div id="menuPanelView" class="menu-panel" data-menu-panel="view">
+            <button type="button" class="menu-item" data-menu-action="settings">Settings</button>
+            <button type="button" class="menu-item" data-menu-action="about">About</button>
+          </div>
+        </div>
+      </nav>
+
+      <header class="topbar panel">
+        <div class="topbar-brand">
+          <h1>Pcap Flow Lab</h1>
+          <p>Experimental Tauri spike. Qt remains the primary UI.</p>
+        </div>
+
+        <div class="topbar-session">
+          <label class="path-field" for="capturePath">
+            <span>Capture or index path</span>
+            <input id="capturePath" type="text" placeholder="C:\captures\sample.pcap" />
+          </label>
+
+          <div class="toolbar-controls">
+            <button id="openFileButton" type="button">Open File...</button>
+
+            <label class="toolbar-group" for="openMode">
+              <span>Open mode</span>
+              <select id="openMode">
+                <option value="fast">Fast</option>
+                <option value="deep">Deep</option>
+              </select>
+            </label>
+
+            <button id="openButton" type="button" class="secondary-button">Open Typed Path</button>
+            <span id="openStateBadge" class="state-badge state-idle">Idle</span>
+          </div>
+        </div>
+        <div class="topbar-meta">
+          <p id="openWorkflowNote" class="workflow-note">
+            Use Open File for the native picker, or keep a typed path as a manual fallback.
+          </p>
+          <p id="statusText" class="status-text"></p>
+        </div>
+      </header>
+
+      <section class="workspace-shell">
+        <section id="sourceWarningBanner" class="panel source-warning-banner">
+          <div class="source-warning-copy">
+            <p id="sourceWarningText" class="source-warning-text"></p>
+            <p id="sourceWarningExpectedPath" class="source-warning-path"></p>
+          </div>
+          <button id="attachSourceButton" type="button" class="secondary-button">Locate Source...</button>
+        </section>
+
+        <nav class="tabbar" aria-label="Main tabs">
+          <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
+          <button id="tabStatistics" type="button" class="tab-button" data-tab="statistics">Statistics</button>
+          <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
+        </nav>
+
+        <section id="tabPanelFlows" class="tab-panel active" data-tab-panel="flows">
+          <div id="flowsLayout" class="flows-layout">
+            <section class="panel flows-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Flows</h2>
+                  <p id="flowMeta" class="panel-subtitle">No capture loaded.</p>
+                </div>
+              </div>
+              <div class="flows-tools">
+                <div class="flows-toolbar">
+                  <label class="flow-filter-field" for="flowFilterInput">
+                    <span>Filter flows</span>
+                    <input id="flowFilterInput" type="text" placeholder="protocol, hint, service, endpoint, port..." />
+                  </label>
+                  <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
+                </div>
+                <div id="wiresharkFilterRow" class="flow-wireshark-row">
+                  <div class="flow-inline-meta">
+                    <span class="inline-label">Wireshark filter</span>
+                    <span id="wiresharkFilterMeta" class="inline-note">Select a flow to generate a filter.</span>
+                  </div>
+                  <pre id="wiresharkFilterText" class="details-pre compact-filter-pre">No flow selected.</pre>
+                  <button id="copyWiresharkFilterButton" type="button" class="secondary-button">Copy</button>
+                </div>
+                <p id="wiresharkFilterStatusText" class="status-text compact-status-text"></p>
+              </div>
+              <div id="flowTableViewport" class="table-wrap fill-scroll flow-table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="flow-check-column">Sel</th>
+                      <th id="flowSortIndex" class="sortable-header" data-flow-sort-key="index">#</th>
+                      <th id="flowSortFamily" class="sortable-header" data-flow-sort-key="family">Family</th>
+                      <th id="flowSortProtocol" class="sortable-header" data-flow-sort-key="protocol">Protocol</th>
+                      <th id="flowSortHint" class="sortable-header" data-flow-sort-key="hint">Hint</th>
+                      <th id="flowSortService" class="sortable-header" data-flow-sort-key="service">Service</th>
+                      <th id="flowSortFrag" class="sortable-header" data-flow-sort-key="frag">Frag</th>
+                      <th id="flowSortEndpointA" class="sortable-header" data-flow-sort-key="endpoint_a">Endpoint A</th>
+                      <th id="flowSortEndpointB" class="sortable-header" data-flow-sort-key="endpoint_b">Endpoint B</th>
+                      <th id="flowSortPackets" class="sortable-header" data-flow-sort-key="packets">Packets</th>
+                      <th id="flowSortBytes" class="sortable-header" data-flow-sort-key="bytes">Bytes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="flowTableBody"></tbody>
+                </table>
+              </div>
+              <div id="flowRenderCapBar" class="table-cap-bar">
+                <span id="flowRenderCapText" class="table-cap-text"></span>
+              </div>
+              <div id="checkedFlowsStatusBar" class="checked-flows-statusbar" aria-live="polite">
+                <span id="checkedFlowsStatusText"></span>
+              </div>
+            </section>
+
+            <section class="flows-bottom">
+              <section class="panel packets-panel">
+                <div class="subtabbar" aria-label="Selected flow views">
+                  <button type="button" class="subtab-button active" data-flow-view-tab="packets">Packets</button>
+                  <button type="button" class="subtab-button" data-flow-view-tab="stream">Stream</button>
+                </div>
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="flowViewTitle">Selected-Flow Packets</h2>
+                    <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
+                  </div>
+                  <div class="pager-controls">
+                    <button id="packetPrevButton" type="button" class="secondary-button">Previous</button>
+                    <button id="packetNextButton" type="button" class="secondary-button">Next</button>
+                    <button id="streamLoadMoreButton" type="button" class="secondary-button">Load More</button>
+                  </div>
+                </div>
+                <div class="table-wrap fill-scroll flow-view-panel active" data-flow-view-panel="packets">
+                  <table class="data-table packets-table">
+                    <thead>
+                      <tr>
+                        <th>Row #</th>
+                        <th>Packet Index</th>
+                        <th>Direction</th>
+                        <th>Timestamp</th>
+                        <th>Captured</th>
+                        <th>Original</th>
+                        <th>Payload</th>
+                        <th>TCP Flags</th>
+                        <th>Marker</th>
+                      </tr>
+                    </thead>
+                    <tbody id="packetTableBody"></tbody>
+                  </table>
+                </div>
+                <div class="table-wrap fill-scroll flow-view-panel" data-flow-view-panel="stream">
+                  <table class="data-table stream-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Direction</th>
+                        <th>Label</th>
+                        <th>Bytes</th>
+                        <th>Packets</th>
+                        <th>Source Packets</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="streamTableBody"></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="panel packet-details-panel">
+                <div class="panel-heading">
+                  <div>
+                    <h2 id="packetDetailsTitle">Selected Packet Details</h2>
+                    <p id="packetDetailsMeta" class="panel-subtitle">Select a packet to inspect details.</p>
+                  </div>
+                </div>
+                <div id="packetInspectorView" class="inspector-view active">
+                  <div class="inspector-tabbar" aria-label="Packet details tabs">
+                    <button type="button" class="inspector-tab active" data-packet-details-tab="summary">Summary</button>
+                    <button type="button" class="inspector-tab" data-packet-details-tab="raw">Raw</button>
+                    <button id="packetDetailsPayloadTabButton" type="button" class="inspector-tab" data-packet-details-tab="payload">Payload</button>
+                    <button type="button" class="inspector-tab" data-packet-details-tab="protocol">Protocol</button>
+                  </div>
+                  <div class="details-scroll">
+                    <p id="packetDetailsStateText" class="status-text"></p>
+                    <section class="packet-details-tab-panel active" data-packet-details-panel="summary">
+                      <div id="packetDetailsSummary" class="summary-grid"></div>
+                    </section>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="raw">
+                      <p id="packetDetailsRawStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsRawText" class="details-pre byte-preview-pre raw-preview-pre">No packet selected.</pre>
+                    </section>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="payload">
+                      <p id="packetDetailsPayloadStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsPayloadText" class="details-pre byte-preview-pre">No packet selected.</pre>
+                    </section>
+                    <section class="packet-details-tab-panel" data-packet-details-panel="protocol">
+                      <p id="packetDetailsProtocolStateText" class="status-text compact-status-text"></p>
+                      <pre id="packetDetailsProtocolText" class="details-pre protocol-preview-pre">No packet selected.</pre>
+                    </section>
+                  </div>
+                </div>
+                <div id="streamInspectorView" class="inspector-view">
+                  <div class="details-scroll">
+                    <p id="streamDetailsStateText" class="status-text"></p>
+                    <div id="streamDetailsSummary" class="summary-grid"></div>
+                    <div class="details-section">
+                      <h3>Source Packets</h3>
+                      <pre id="streamDetailsSourcePacketsText" class="details-pre">Select a stream item to inspect details.</pre>
+                    </div>
+                    <div class="details-section">
+                      <h3>Source Packet Indices</h3>
+                      <pre id="streamDetailsSourcePacketIndicesText" class="details-pre">Select a stream item to inspect details.</pre>
+                    </div>
+                    <div class="details-section">
+                      <h3>Constricted Notes</h3>
+                      <pre id="streamDetailsConstrictedNotesText" class="details-pre">Select a stream item to inspect details.</pre>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </section>
+          </div>
+        </section>
+
+        <section id="tabPanelStatistics" class="tab-panel" data-tab-panel="statistics">
+          <section class="panel statistics-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Statistics</h2>
+                <p id="overviewMeta" class="panel-subtitle">No capture loaded.</p>
+              </div>
+            </div>
+            <div class="statistics-scroll">
+              <div id="overviewContent" class="overview-grid">
+                <div class="metric">
+                  <span class="metric-label">Packets</span>
+                  <span id="metricPackets" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Flows</span>
+                  <span id="metricFlows" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Captured Bytes</span>
+                  <span id="metricCapturedBytes" class="metric-value">-</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Original Bytes</span>
+                  <span id="metricOriginalBytes" class="metric-value">-</span>
+                </div>
+              </div>
+
+              <div class="statistics-section">
+                <div class="statistics-section-heading">
+                  <h3>Transport Summary</h3>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact-stats-table">
+                    <thead>
+                      <tr>
+                        <th>Group</th>
+                        <th>Flows</th>
+                        <th>Packets</th>
+                        <th>Captured Bytes</th>
+                        <th>Original Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="transportStatsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="statistics-section">
+                <div class="statistics-section-heading">
+                  <h3>IP Family Summary</h3>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact-stats-table">
+                    <thead>
+                      <tr>
+                        <th>Group</th>
+                        <th>Flows</th>
+                        <th>Packets</th>
+                        <th>Captured Bytes</th>
+                        <th>Original Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="familyStatsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="statistics-section">
+                <div class="statistics-section-heading">
+                  <h3>Detected Protocol Hints</h3>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact-stats-table protocol-hints-table">
+                    <thead>
+                      <tr>
+                        <th>Group</th>
+                        <th>Protocol</th>
+                        <th>Flows</th>
+                        <th>Packets</th>
+                        <th>Captured Bytes</th>
+                        <th>Original Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="protocolHintStatsBody"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="statistics-split">
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>QUIC Recognition</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table recognition-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody id="quicStatsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>TLS Recognition</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table recognition-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody id="tlsStatsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="statistics-split">
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>Top Endpoints</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table top-talkers-table">
+                      <thead>
+                        <tr>
+                          <th>Endpoint</th>
+                          <th>Packets</th>
+                          <th>Bytes</th>
+                        </tr>
+                      </thead>
+                      <tbody id="topEndpointsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+                <div class="statistics-section">
+                  <div class="statistics-section-heading">
+                    <h3>Top Ports</h3>
+                  </div>
+                  <div class="table-wrap">
+                    <table class="data-table compact-stats-table top-talkers-table">
+                      <thead>
+                        <tr>
+                          <th>Port</th>
+                          <th>Packets</th>
+                          <th>Bytes</th>
+                        </tr>
+                      </thead>
+                      <tbody id="topPortsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="tabPanelAnalysis" class="tab-panel" data-tab-panel="analysis">
+          <div class="analysis-layout">
+            <section class="panel analysis-flows-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Analysis Flows</h2>
+                  <p id="analysisFlowMeta" class="panel-subtitle">Select a flow to inspect analysis.</p>
+                </div>
+              </div>
+              <div id="analysisFlowTableViewport" class="table-wrap fill-scroll analysis-flow-table-wrap">
+                <table class="data-table analysis-flows-table">
+                  <colgroup>
+                    <col class="analysis-col-index" />
+                    <col class="analysis-col-hint" />
+                    <col class="analysis-col-service" />
+                    <col class="analysis-col-packets" />
+                    <col class="analysis-col-bytes" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Hint</th>
+                      <th>Service</th>
+                      <th>Packets</th>
+                      <th>Bytes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="analysisFlowTableBody"></tbody>
+                </table>
+              </div>
+              <div id="analysisFlowRenderCapBar" class="table-cap-bar">
+                <span id="analysisFlowRenderCapText" class="table-cap-text"></span>
+              </div>
+            </section>
+
+            <section class="panel analysis-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>Analysis</h2>
+                  <p id="analysisMeta" class="panel-subtitle">Select a flow to load selected-flow analysis.</p>
+                </div>
+                <div class="pager-controls">
+                  <button id="analysisOpenInFlowsButton" type="button" class="secondary-button">Open in Flows</button>
+                </div>
+              </div>
+              <div class="analysis-scroll">
+                <p id="analysisStateText" class="status-text"></p>
+                <div id="analysisContent" class="analysis-sections">
+                  <section class="analysis-section">
+                    <h3>Flow Summary</h3>
+                    <div id="analysisFlowSummary" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisProtocolPanelSection" class="analysis-section">
+                    <h3>Protocol Panel</h3>
+                    <div id="analysisProtocolPanel" class="summary-grid"></div>
+                  </section>
+                  <section class="analysis-section">
+                    <h3>Traffic Totals</h3>
+                    <div id="analysisTrafficTotals" class="summary-grid"></div>
+                  </section>
+                  <section class="analysis-section">
+                    <h3>Direction Split</h3>
+                    <div id="analysisDirectionSplit" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisDerivedMetricsSection" class="analysis-section">
+                    <h3>Derived Metrics</h3>
+                    <div id="analysisDerivedMetrics" class="analysis-matrix-table-wrap"></div>
+                  </section>
+                  <section class="analysis-section">
+                    <h3>Timing and Size</h3>
+                    <div id="analysisTimingSize" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisBurstIdleSection" class="analysis-section">
+                    <h3>Burst / Idle Summary</h3>
+                    <div id="analysisBurstIdleSummary" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisTcpControlsSection" class="analysis-section">
+                    <h3>TCP Controls</h3>
+                    <div id="analysisTcpControls" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisPacketSizeHistogramSection" class="analysis-section">
+                    <div class="analysis-histogram-header">
+                      <h3>Packet Size Histogram</h3>
+                      <div class="analysis-histogram-toolbar">
+                        <span id="analysisPacketSizeHistogramMax" class="analysis-histogram-max"></span>
+                        <div class="analysis-direction-tabs">
+                          <button id="analysisPacketSizeHistogramModeAll" type="button" class="secondary-button">All</button>
+                          <button id="analysisPacketSizeHistogramModeAToB" type="button" class="secondary-button">A-&gt;B</button>
+                          <button id="analysisPacketSizeHistogramModeBToA" type="button" class="secondary-button">B-&gt;A</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div id="analysisPacketSizeHistogramRows" class="analysis-histogram-rows"></div>
+                  </section>
+                  <section id="analysisInterArrivalHistogramSection" class="analysis-section">
+                    <div class="analysis-histogram-header">
+                      <h3>Inter-arrival Histogram</h3>
+                      <div class="analysis-histogram-toolbar">
+                        <span id="analysisInterArrivalHistogramMax" class="analysis-histogram-max"></span>
+                        <div class="analysis-direction-tabs">
+                          <button id="analysisInterArrivalHistogramModeAll" type="button" class="secondary-button">All</button>
+                          <button id="analysisInterArrivalHistogramModeAToB" type="button" class="secondary-button">A-&gt;B</button>
+                          <button id="analysisInterArrivalHistogramModeBToA" type="button" class="secondary-button">B-&gt;A</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div id="analysisInterArrivalHistogramRows" class="analysis-histogram-rows"></div>
+                  </section>
+                  <section id="analysisSequencePreviewSection" class="analysis-section">
+                    <div class="analysis-section-header">
+                      <h3>Sequence Preview</h3>
+                      <button id="analysisExportSequenceCsvButton" type="button" class="secondary-button">Export sequence CSV</button>
+                    </div>
+                    <p id="analysisExportSequenceCsvStatusText" class="compact-status-text"></p>
+                    <div class="table-wrap analysis-sequence-table-wrap">
+                      <table class="data-table compact-stats-table analysis-sequence-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Dir</th>
+                            <th>Delta</th>
+                            <th>Captured</th>
+                            <th>Original</th>
+                            <th>Payload</th>
+                            <th>Time</th>
+                          </tr>
+                        </thead>
+                        <tbody id="analysisSequencePreviewBody"></tbody>
+                      </table>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div id="aboutDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="aboutDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="aboutDialogTitle">About Pcap Flow Lab Tauri UI Spike</h2>
+          <button id="aboutDialogCloseButton" type="button" class="secondary-button">Close</button>
+        </div>
+        <p class="dialog-copy">
+          Experimental Tauri desktop shell for Pcap Flow Lab. Qt remains the primary UI while the spike validates
+          shared session and DTO workflows.
+        </p>
+        <p class="dialog-copy">
+          Wired workflows currently focus on read-side analysis, selected-flow inspection, index save/open basics,
+          source reattachment, and selected-flow sequence CSV export.
+        </p>
+      </section>
+    </div>
+
+    <div id="settingsDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card settings-dialog-card" role="dialog" aria-modal="true" aria-labelledby="settingsDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="settingsDialogTitle">Settings</h2>
+        </div>
+        <p class="dialog-copy">
+          Settings control how new captures are interpreted and how current results are presented.
+        </p>
+        <div class="settings-sections">
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsHttpUsePathAsServiceHint" type="checkbox" />
+              <span>HTTP: use request path as service hint when Host is missing</span>
+            </label>
+            <p class="settings-help">Applied on the next capture or index open.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsUsePossibleTlsQuic" type="checkbox" />
+              <span>Use possible TLS/QUIC</span>
+            </label>
+            <p class="settings-help">Applied immediately to the current flows, statistics, and analysis views.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsShowWiresharkFilterForSelectedFlow" type="checkbox" />
+              <span>Show Wireshark filter for selected flow</span>
+            </label>
+            <p class="settings-help">Applied immediately to the selected-flow view.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
+              <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
+              <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
+            </label>
+            <p class="settings-help">Applied immediately to the currently selected packet details when source bytes are available.</p>
+          </section>
+        </div>
+        <p id="settingsStatusText" class="status-text"></p>
+        <div class="dialog-actions">
+          <button id="settingsCancelButton" type="button" class="secondary-button">Cancel</button>
+          <button id="settingsSaveButton" type="button">OK</button>
+        </div>
+      </section>
+    </div>
+
+      <div id="smartExportDialog" class="dialog-backdrop" aria-hidden="true">
+        <section class="dialog-card smart-export-dialog-card" role="dialog" aria-modal="true" aria-labelledby="smartExportDialogTitle">
+          <div class="dialog-heading">
+            <h2 id="smartExportDialogTitle">Smart Export</h2>
+          </div>
+
+          <div class="smart-export-sections">
+          <section class="smart-export-section">
+            <h3>Flows to export</h3>
+            <div class="smart-export-option-stack">
+              <label class="smart-export-radio-row"><input id="smartExportScopeCurrent" type="radio" name="smartExportScope" value="current" checked /> Current flow</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeSelected" type="radio" name="smartExportScope" value="selected" /> Selected flows</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeUnselected" type="radio" name="smartExportScope" value="unselected" /> Unselected flows</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeAll" type="radio" name="smartExportScope" value="all" /> All flows</label>
+            </div>
+          </section>
+
+          <section class="smart-export-section">
+            <h3>Base packet selection</h3>
+            <div class="smart-export-grid">
+              <label class="smart-export-radio-row"><input id="smartExportBaseAllPackets" type="radio" name="smartExportBase" value="all_packets" checked /> All packets</label>
+              <div></div>
+              <label class="smart-export-radio-row"><input id="smartExportBaseFirstNPackets" type="radio" name="smartExportBase" value="first_n_packets" /> First N packets</label>
+              <input id="smartExportFirstNPackets" type="text" inputmode="numeric" value="30" placeholder="Packet count" />
+              <label class="smart-export-radio-row"><input id="smartExportBaseFirstMOriginalBytes" type="radio" name="smartExportBase" value="first_m_original_bytes" /> First M original bytes</label>
+              <input id="smartExportFirstMOriginalBytes" type="text" inputmode="numeric" value="50000" placeholder="Original bytes" />
+            </div>
+            <p class="smart-export-help">Include the packet that crosses the threshold.</p>
+          </section>
+
+            <section class="smart-export-section">
+              <h3>Additional packet retention</h3>
+              <div class="smart-export-option-stack">
+                <label class="smart-export-checkbox-row"><input id="smartExportIncludeLastPacket" type="checkbox" /> Include last packet</label>
+                <div class="smart-export-inline-row">
+                  <label class="smart-export-checkbox-row smart-export-inline-checkbox"><input id="smartExportIncludeEveryKthPacket" type="checkbox" /> Include every K-th packet after the base prefix</label>
+                  <input id="smartExportEveryKthPacket" type="text" inputmode="numeric" value="10" placeholder="K" />
+                </div>
+              </div>
+              <p class="smart-export-help" id="smartExportExtrasHint">
+                Packets are exported when they match the base rule or one of the enabled extras.
+              </p>
+            </section>
+
+          <section class="smart-export-section">
+            <h3>Output mode</h3>
+            <div class="smart-export-option-stack">
+              <label class="smart-export-radio-row"><input id="smartExportOutputSingleFile" type="radio" name="smartExportOutputMode" value="single_file" checked /> Single output file</label>
+              <label class="smart-export-radio-row"><input id="smartExportOutputSeparateFiles" type="radio" name="smartExportOutputMode" value="separate_files" /> Separate file per flow</label>
+              <div id="smartExportDestinationFolderRow" class="smart-export-folder-row">
+                <input id="smartExportDestinationFolder" type="text" placeholder="Destination folder" />
+                <button id="smartExportBrowseFolderButton" type="button" class="secondary-button">Browse...</button>
+              </div>
+              <p id="smartExportFolderHelp" class="smart-export-help">
+                One PCAP will be written per bidirectional flow, and flows_manifest.csv will be written into the same folder.
+              </p>
+              <div id="smartExportBufferBudgetRow" class="smart-export-buffer-row">
+                <label class="smart-export-inline-label" for="smartExportBufferBudget">Buffer memory budget</label>
+                <select id="smartExportBufferBudget">
+                  <option value="128">128 MB</option>
+                  <option value="512">512 MB</option>
+                  <option value="1024">1024 MB</option>
+                </select>
+              </div>
+              <p id="smartExportBufferHelp" class="smart-export-help">
+                Higher values may improve large per-flow export speed at the cost of more memory.
+              </p>
+            </div>
+          </section>
+        </div>
+
+        <p id="smartExportStatusText" class="status-text"></p>
+        <div class="smart-export-actions">
+          <button id="smartExportCancelButton" type="button" class="secondary-button">Cancel</button>
+          <button id="smartExportRunButton" type="button">OK</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="./main.js"></script>
+  </body>
+</html>

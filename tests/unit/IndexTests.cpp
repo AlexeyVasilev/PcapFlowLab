@@ -223,7 +223,7 @@ void run_index_tests() {
         PFL_EXPECT(validate_capture_source(source_info, source_path));
 
         auto mismatched_info = source_info;
-        mismatched_info.last_write_time += 1;
+        mismatched_info.content_fingerprint += 1;
         PFL_EXPECT(!validate_capture_source(mismatched_info, source_path));
     }
 
