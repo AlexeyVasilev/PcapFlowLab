@@ -5,7 +5,14 @@
 #include <span>
 #include <vector>
 
-#include "app/session/CaptureSession.h"
+#include "app/session/FlowRows.h"
+#include "core/domain/PacketRef.h"
+
+namespace pfl {
+
+class CaptureSession;
+
+}  // namespace pfl
 
 namespace pfl::session_detail {
 

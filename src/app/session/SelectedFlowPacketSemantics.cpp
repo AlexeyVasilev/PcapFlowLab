@@ -1,5 +1,7 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 
+#include "app/session/CaptureSession.h"
+
 #include "core/decode/PacketDecodeSupport.h"
 
 namespace pfl::session_detail {
