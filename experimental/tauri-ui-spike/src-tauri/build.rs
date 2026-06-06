@@ -33,6 +33,14 @@ fn copy_windows_gnu_runtime_dlls() {
     };
 
     let runtime_dir = PathBuf::from(r"C:\msys64\mingw64\bin");
+    if !runtime_dir.is_dir() {
+        println!(
+            "cargo:warning=Expected Windows GNU runtime directory is missing: {}",
+            runtime_dir.display()
+        );
+        return;
+    }
+
     let dlls = [
         "libstdc++-6.dll",
         "libgcc_s_seh-1.dll",
@@ -42,7 +50,15 @@ fn copy_windows_gnu_runtime_dlls() {
     for dll in dlls {
         let source = runtime_dir.join(dll);
         let target = exe_dir.join(dll);
-        let _ = fs::copy(source, target);
+        if let Err(error) = fs::copy(&source, &target) {
+            println!(
+                "cargo:warning=Failed to copy GNU runtime DLL '{}' from '{}' to '{}': {}",
+                dll,
+                source.display(),
+                target.display(),
+                error
+            );
+        }
     }
 }
 

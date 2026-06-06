@@ -98,6 +98,8 @@ extern "C" {
     fn pfl_frontend_string_free(value: *mut c_char);
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone)]
 pub enum OpenMode {
     Fast = 0,
     Deep = 1,
