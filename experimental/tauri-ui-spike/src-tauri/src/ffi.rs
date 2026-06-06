@@ -109,6 +109,35 @@ pub struct CppFrontendSessionAdapter {
 
 unsafe impl Send for CppFrontendSessionAdapter {}
 
+struct OwnedBridgeJson {
+    ptr: *mut c_char,
+}
+
+impl OwnedBridgeJson {
+    fn new(ptr: *mut c_char) -> Result<Self, String> {
+        if ptr.is_null() {
+            return Err("Bridge returned no data.".to_string());
+        }
+
+        Ok(Self { ptr })
+    }
+
+    fn as_c_str(&self) -> &CStr {
+        unsafe { CStr::from_ptr(self.ptr) }
+    }
+}
+
+impl Drop for OwnedBridgeJson {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                pfl_frontend_string_free(self.ptr);
+            }
+            self.ptr = std::ptr::null_mut();
+        }
+    }
+}
+
 impl CppFrontendSessionAdapter {
     pub fn new() -> Result<Self, String> {
         let handle = unsafe { pfl_frontend_session_adapter_new() };
@@ -303,18 +332,12 @@ fn parse_json_owned<T>(json_ptr: *mut c_char) -> Result<T, String>
 where
     T: serde::de::DeserializeOwned,
 {
-    if json_ptr.is_null() {
-        return Err("Bridge returned no data.".to_string());
-    }
-
-    let json = unsafe { CStr::from_ptr(json_ptr) }
+    let owned_json = OwnedBridgeJson::new(json_ptr)?;
+    let json = owned_json
+        .as_c_str()
         .to_str()
         .map_err(|err| err.to_string())?
         .to_owned();
-
-    unsafe {
-        pfl_frontend_string_free(json_ptr);
-    }
 
     serde_json::from_str::<T>(&json).map_err(|err| err.to_string())
 }

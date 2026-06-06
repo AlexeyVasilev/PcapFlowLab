@@ -141,7 +141,7 @@ fn main() {
 
     add_cpp_sources(&mut build, &sources);
 
-    if cfg!(target_os = "windows") {
+    if target.contains("windows") {
         println!("cargo:rustc-link-lib=bcrypt");
     } else {
         println!("cargo:rustc-link-lib=crypto");
