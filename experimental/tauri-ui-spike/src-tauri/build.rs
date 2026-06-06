@@ -21,6 +21,29 @@ fn add_cpp_sources(build: &mut cc::Build, sources: &[&str]) {
     }
 }
 
+fn add_rerun_watches_for_directory_files(relative_dir: &str) {
+    let directory = PathBuf::from(relative_dir);
+    let entries = match fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            println!(
+                "cargo:warning=Unable to enumerate build watch files under '{}': {}",
+                directory.display(),
+                error
+            );
+            println!("cargo:rerun-if-changed={}", directory.display());
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
+}
+
 fn copy_windows_gnu_runtime_dlls() {
     let out_dir = match env::var("OUT_DIR") {
         Ok(value) => PathBuf::from(value),
@@ -72,7 +95,7 @@ fn main() {
         println!("cargo:rustc-check-cfg=cfg(dev)");
         println!("cargo:rustc-cfg=dev");
         println!("cargo:rerun-if-changed=tauri.conf.json");
-        println!("cargo:rerun-if-changed=capabilities");
+        add_rerun_watches_for_directory_files("capabilities");
         println!("cargo:rustc-env=TAURI_ENV_TARGET_TRIPLE={target}");
     } else {
         tauri_build::build();
