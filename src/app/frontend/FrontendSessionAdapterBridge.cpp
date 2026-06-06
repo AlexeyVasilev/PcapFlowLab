@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <new>
 #include <sstream>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -77,6 +78,26 @@ char* make_c_string(const std::string& value) {
 
 std::string bool_json(const bool value) {
     return value ? "true" : "false";
+}
+
+std::filesystem::path path_from_utf8(const char* path_utf8) {
+    if (path_utf8 == nullptr) {
+        return {};
+    }
+
+    // Rust passes UTF-8 bytes through the C ABI. Keep the C++17/C++20 path-construction
+    // differences localized here instead of spreading them across bridge call sites.
+#if defined(__cpp_char8_t)
+    const auto utf8_path = std::string_view {path_utf8};
+    std::u8string utf8_bytes {};
+    utf8_bytes.reserve(utf8_path.size());
+    for (const auto byte : utf8_path) {
+        utf8_bytes.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
+    }
+    return std::filesystem::path {utf8_bytes};
+#else
+    return std::filesystem::u8path(path_utf8);
+#endif
 }
 
 std::string family_to_json(const FlowAddressFamily family) {
@@ -663,9 +684,7 @@ char* pfl_frontend_session_adapter_open_capture_json(
     }
 
     const auto mode = open_mode == 1U ? FrontendOpenMode::deep : FrontendOpenMode::fast;
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
     return make_c_string(open_result_json(handle->adapter.open_capture(path, mode)));
 }
 
@@ -677,9 +696,7 @@ char* pfl_frontend_session_adapter_attach_source_capture_json(
         return make_c_string("{\"attached\":false,\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
     return make_c_string(attach_source_capture_result_json(handle->adapter.attach_source_capture(path)));
 }
 
@@ -691,9 +708,7 @@ char* pfl_frontend_session_adapter_save_index_json(
         return make_c_string("{\"saved\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
     }
 
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
     return make_c_string(save_index_result_json(handle->adapter.save_index(path)));
 }
 
@@ -734,9 +749,7 @@ char* pfl_frontend_session_adapter_export_current_flow_json(
         return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
     }
 
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
     return make_c_string(export_current_flow_result_json(handle->adapter.export_current_flow(path)));
 }
 
@@ -750,9 +763,7 @@ char* pfl_frontend_session_adapter_export_selected_flows_json(
         return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
     }
 
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
 
     std::vector<std::size_t> indices {};
     if (flow_indices != nullptr && flow_index_count > 0U) {
@@ -780,9 +791,7 @@ char* pfl_frontend_session_adapter_export_smart_flows_json(
         return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
     }
 
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
 
     std::vector<std::size_t> indices {};
     if (flow_indices != nullptr && flow_index_count > 0U) {
@@ -884,9 +893,7 @@ char* pfl_frontend_session_adapter_export_selected_flow_analysis_sequence_csv_js
         return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
     }
 
-    const auto path = path_utf8 == nullptr
-        ? std::filesystem::path {}
-        : std::filesystem::u8path(path_utf8);
+    const auto path = path_from_utf8(path_utf8);
     return make_c_string(analysis_sequence_export_result_json(
         handle->adapter.export_selected_flow_analysis_sequence_csv(path)
     ));
