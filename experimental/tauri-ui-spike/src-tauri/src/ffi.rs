@@ -338,8 +338,7 @@ where
     let json = owned_json
         .as_c_str()
         .to_str()
-        .map_err(|err| err.to_string())?
-        .to_owned();
+        .map_err(|err| err.to_string())?;
 
-    serde_json::from_str::<T>(&json).map_err(|err| err.to_string())
+    serde_json::from_str::<T>(json).map_err(|err| err.to_string())
 }
