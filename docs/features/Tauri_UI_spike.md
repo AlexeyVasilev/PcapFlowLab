@@ -73,7 +73,10 @@ The current Tauri spike now supports:
 - typed-path manual fallback
 - `File -> Save Index` through the existing session/index path
 - `Flow -> Export Current Flow` through the existing flow-export/session path
+- `Flow -> Export Selected Flows` through the existing batch flow-export/session path
+- `Flow -> Export Unselected Flows` through the existing batch flow-export/session path
 - `Flow -> Smart Export...` through the existing smart-export/session path
+- `View -> Settings` for the currently shared safe runtime settings slice
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
@@ -83,6 +86,7 @@ The current Tauri spike now supports:
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
+- selected-flow packet and stream loading for very large flows remains a known optimization area
 - compact desktop-style layout with internal panel scrolling
 - frontend-only top-level tabs: `Flows`, `Statistics`, `Analysis`
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
@@ -118,6 +122,7 @@ The `Flows` tab now supports:
   - `Flow -> Export Unselected Flows`
   - `Flow -> Smart Export...`
   - `View -> About`
+  - `View -> Settings`
 
 ## Current Stream capability
 
@@ -131,6 +136,7 @@ The `Stream` tab now supports:
 - basic selected stream-item details
 - shared structured source-packet references and constricted notes in the DTO path
 - stream reconstruction can recover after a valid source-capture attach
+- selected-flow stream latency on very large flows remains a known optimization area
 
 ## Current Statistics capability
 
@@ -177,6 +183,18 @@ Analysis remains:
 - not computed globally for all flows
 - not reloaded on ordinary flow clicks unless the `Analysis` tab is active
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
+
+`View -> Settings`:
+
+- is now enabled in Tauri
+- is intentionally runtime-only
+- currently exposes the safe existing settings already present in the shared app/session path:
+  - `HTTP path as service hint when Host is missing`
+  - `Use possible TLS/QUIC`
+  - `Show Wireshark filter for selected flow`
+  - `Validate IPv4/TCP/UDP checksums for selected packet`
+- applies the Wireshark-filter visibility toggle immediately after `OK`
+- applies packet checksum validation only to selected packet details when readable source bytes are available
 
 `Flow -> Export Current Flow`:
 
@@ -243,49 +261,46 @@ The dev-only memory diagnostics workflow:
 
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
-- export workflows beyond the now-wired current / selected / unselected / smart flow workflows
 - save/open index workflow polish
-- a minimal runtime-only `View -> Settings` dialog for the shared settings:
-  - `HTTP path as service hint`
-  - `Use possible TLS/QUIC`
-  - `Show Wireshark filter for selected flow`
-  - `Validate IPv4/TCP/UDP checksums for selected packet`
-- settings remain runtime-only; packet checksum validation is applied only to selected packet details when readable source bytes are available
+- settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
+- packet details display polish remains incomplete compared with Qt
 - stream-to-packet navigation is still missing
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
 - Analysis still misses:
   - rate graph
   - richer charts
   - fuller Qt analysis workspace parity
-- large-capture performance work, virtualization, and more advanced pagination strategies are still unaddressed
+- selected-flow packet and stream latency on very large flows remains a known issue
+- shared backend packet-byte read behavior for very large flows remains a known optimization area
 - packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred
 - memory diagnostics exist, but they are investigative only; they are not a substitute for a future large-capture performance / virtualization pass
 - frontend virtualization is now the first mitigation layer, but backend paging/filtering/sorting is still deferred for very large captures
 
 ## Current deferred items
 
-- Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Flow -> Smart Export...`, `File -> Save Index`, and selected-flow Analysis sequence CSV export
 - Save/open index workflow polish
-- broader Settings/preferences parity
+- settings persistence and any broader Settings/preferences parity
 - Stream-to-packet navigation
 - Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
 - Analysis rate graph
 - fuller Analysis parity
-- large-capture performance and virtualization pass
+- selected-flow packet/stream latency work for very large flows
+- shared packet-byte read optimization in the backend/session path
+- deeper large-capture memory and DTO-size optimization if needed
 
-## Recommended next priorities
+## Next priorities after merge
 
-1. Export workflows beyond `Flow -> Export Current Flow`, `Flow -> Export Selected Flows`, `Flow -> Export Unselected Flows`, `Flow -> Smart Export...`, `Save Index`, and selected-flow Analysis sequence CSV
-2. Save/open index workflow polish
-3. Broader Settings/preferences parity and persistence
-4. Performance pass for large captures, including virtualization/pagination where needed
-5. Analysis export and rate graph after core Tauri workflows stabilize
-6. CLI design after the frontend-neutral DTO surface settles
+1. Tauri/UI parity polish versus Qt, especially compact layout and presentation details
+2. Selected-flow packet and stream latency investigation for very large flows
+3. Packet details display polish
+4. Shared backend packet-byte read optimization in the session/core path
+5. Deeper memory optimization only if needed after virtualization, such as narrower DTO slices or backend paging/filter/sort
+6. Save/open index workflow polish and runtime settings persistence after the core large-flow path is healthier
 
 ## Notes
 
 - The existing Qt UI remains the primary product UI.
 - The Tauri path is still an experimental parallel frontend spike.
-- The current spike has moved well beyond the original bring-up, but should still be treated as an incremental evaluation path rather than a committed UI migration.
+- The current spike now covers most primary desktop workflows, but should still be treated as an incremental evaluation path rather than a committed UI migration.

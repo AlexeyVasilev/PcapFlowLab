@@ -168,6 +168,7 @@ The remaining risk:
 
 - large table DOMs and large HTML strings can still temporarily retain memory until the WebView and JS engine reclaim them;
 - repeated open cycles may therefore show high-water behavior even without a true logic leak.
+- selected-flow packet and stream latency on very large flows can still be dominated by the shared backend/session packet-byte read path rather than by DOM retention alone.
 
 ### 6. Repeated-open cleanup risk
 
@@ -198,6 +199,7 @@ These are the most likely sources of elevated memory usage even if no strict own
    - inter-arrival histogram rows
 4. Statistics tables and top-talker rows held at the same time as full flow DTOs.
 5. WebView allocator / JS GC lag after repeated table teardown and rebuild.
+6. Shared packet-byte reads for very large selected flows, especially when stream reconstruction or payload analysis touches many packet offsets.
 
 ## Fixes made in this pass
 
@@ -252,6 +254,7 @@ If repeated-open memory still looks unhealthy after this diagnostics pass, the n
 
 1. Backend paging/filtering/sorting for very large captures.
 2. More aggressive statistics/analysis lazy rendering.
-3. Smaller overview / analysis DTO slices for very large captures.
-4. Optional analysis/sequence truncation in the Tauri spike.
-5. A deeper session-level audit only if the CSV and OS measurements indicate retained memory after successful cleanup.
+3. Shared packet-byte read optimization for selected-flow packet/stream paths on very large captures.
+4. Smaller overview / analysis DTO slices for very large captures.
+5. Optional analysis/sequence truncation in the Tauri spike.
+6. A deeper session-level audit only if the CSV and OS measurements indicate retained memory after successful cleanup.

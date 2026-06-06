@@ -39,9 +39,7 @@ This document is an audit only. It does not introduce a new contract and does no
 ### What is mostly Qt-specific today
 
 - Flow filtering and sorting semantics.
-- Most settings/preferences, beyond the now-shared minimal analysis settings slice.
-  - Tauri now also mirrors the existing runtime `Show Wireshark filter for selected flow` display setting.
-  - Tauri now also mirrors the existing runtime `Validate IPv4/TCP/UDP checksums for selected packet` packet-details setting.
+- Settings persistence and any broader non-runtime preferences.
 - Packet inspector structure and most packet-details presentation composition.
 - Stream-item details presentation in the right-hand inspector.
 - Large parts of Statistics grouping/presentation.
@@ -70,9 +68,10 @@ This document is an audit only. It does not introduce a new contract and does no
 
 ### What should be handled first in future DTO cleanup
 
-- Broader export workflow parity beyond the now-wired `Save Index`, `Export Current Flow`, batch flow exports, and Smart Export paths.
-- Broader settings/preferences parity and any eventual persistence contract beyond the small shared analysis settings slice.
 - PacketInspector and stream-item details cleanup.
+- Selected-flow packet/stream latency investigation for very large flows.
+- Shared packet-byte read optimization in the backend/session path.
+- Broader settings/preferences parity and any eventual persistence contract beyond the current runtime-only settings slice.
 - Statistics / Analysis stabilization after the recent DTO additions.
 - Performance pass for larger captures before committing to broader CLI expectations.
 
@@ -285,45 +284,9 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 
 ## Recommended Follow-Up Order
 
-### 1. Export workflow parity beyond the now-wired current / selected / unselected / smart flow exports, Save Index, and sequence CSV
+### 1. PacketInspector / stream-item details cleanup
 
 Why first now:
-
-- the Tauri spike already covers the main read-side analyzer surfaces reasonably well;
-- the biggest visible gaps are now the remaining workflow gaps rather than missing read-only panels;
-- `Save Index`, `Export Current Flow`, `Export Selected Flows`, `Export Unselected Flows`, `Smart Export`, and attach-source are now wired, so the next value is in the broader export surface.
-- checked-flow selection now exists in Tauri, which makes the remaining batch-export gap more concrete and easier to stage incrementally.
-
-Expected risk:
-
-- medium.
-
-Affected layers:
-
-- Tauri frontend workflow/UI
-- frontend-neutral adapter surface
-- some session/open-path integration
-
-### 2. Save/open index workflow polish
-
-Why second:
-
-- the thin shared save/open path is now wired in Tauri;
-- the remaining work is parity polish, not a missing core workflow.
-
-Expected risk:
-
-- low to medium.
-
-Affected layers:
-
-- Tauri frontend workflow/UI
-- frontend-neutral adapter surface
-- some session/open-path integration
-
-### 3. PacketInspector / stream-item details cleanup
-
-Why third:
 
 - packet and stream inspection are already useful, but still uneven compared with Qt;
 - this is where shared DTO shape and UX clarity will pay off quickly.
@@ -338,6 +301,40 @@ Affected layers:
 - Qt packet/stream presentation paths
 - Tauri inspector views
 - future CLI inspect/report commands
+
+### 2. Selected-flow packet/stream latency investigation on very large flows
+
+Why second:
+
+- the Tauri spike now covers most primary workflows, so the biggest remaining pain is responsiveness on very large selected flows;
+- Qt shows the same broad symptom, which points to shared app/session behavior worth understanding before more UI work piles on top.
+
+Expected risk:
+
+- medium.
+
+Affected layers:
+
+- app/session selected-flow load path
+- Tauri request/latency surface
+- Qt selected-flow workflow
+
+### 3. Shared packet-byte read optimization in the backend/session path
+
+Why third:
+
+- latency work on very large flows is likely to converge on the shared packet-byte read path;
+- this is the most plausible common bottleneck behind slow packet/stream materialization across both frontends.
+
+Expected risk:
+
+- medium to high.
+
+Affected layers:
+
+- `CaptureSession`
+- packet-byte read helpers
+- stream/payload/reassembly consumers
 
 ### 4. Statistics / Analysis stabilization
 
@@ -357,12 +354,29 @@ Affected layers:
 - Tauri parity/polish
 - future CLI reporting surfaces
 
-### 5. Performance pass for large captures
+### 5. Save/open index workflow polish
 
 Why fifth:
 
-- performance should be informed by actual UI behavior on larger captures, not guessed at too early;
-- the current spike now has enough surfaces to make profiling worthwhile.
+- the thin shared save/open path is now wired in Tauri;
+- the remaining work is parity polish, not a missing core workflow.
+
+Expected risk:
+
+- low to medium.
+
+Affected layers:
+
+- Tauri frontend workflow/UI
+- frontend-neutral adapter surface
+- some session/open-path integration
+
+### 6. Deeper large-capture memory optimization only if still needed
+
+Why sixth:
+
+- the first mitigation layer is now frontend virtualization/windowing;
+- more aggressive work such as narrower DTO slices or backend paging should follow only if profiling still shows pressure after the shared byte-read path is improved.
 
 Expected risk:
 
@@ -371,12 +385,12 @@ Expected risk:
 Affected layers:
 
 - Tauri rendering and interaction performance
-- pagination / virtualization strategy
-- possibly adapter payload sizes
+- adapter payload sizes
+- possible backend paging/filter/sort design
 
-### 6. CLI design after DTO stabilization
+### 7. CLI design after DTO stabilization
 
-Why sixth:
+Why seventh:
 
 - CLI should consume the stabilized shared DTO contract, not invent a third shape in parallel;
 - waiting a bit longer avoids locking in DTO choices too early.
