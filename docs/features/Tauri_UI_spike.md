@@ -261,7 +261,7 @@ The dev-only memory diagnostics workflow:
 Current Tauri shell hardening constraints:
 
 - `src-tauri/tauri.conf.json` still keeps `withGlobalTauri: true` because the current plain HTML/JS spike depends on the injected global bridge.
-- `src-tauri/tauri.conf.json` still keeps `security.csp: null` for the current experimental shell; tightening CSP safely is still a separate hardening pass after merge-readiness cleanup.
+- `src-tauri/tauri.conf.json` still keeps `security.csp: null` for the current experimental shell; tightening CSP safely is still a separate hardening pass because the current plain HTML/JS shell depends on the injected global bridge and runtime-verified DOM/style behavior.
 
 ## Current limitations and remaining Qt gaps
 

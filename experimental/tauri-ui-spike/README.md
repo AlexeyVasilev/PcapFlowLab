@@ -22,7 +22,7 @@ Implemented slice:
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
 - current `tauri.conf.json` hardening remains intentionally experimental:
   - `withGlobalTauri: true` is still required by the plain HTML/JS shell
-  - `security.csp: null` is still left in place pending a separate CSP-tightening pass
+  - `security.csp: null` is still left in place pending a runtime-verified CSP-tightening pass for the current global-bridge DOM shell
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area

@@ -14,6 +14,8 @@ using pfl::FlowAddressFamily;
 using pfl::FrontendOpenMode;
 using pfl::FrontendSessionAdapter;
 
+constexpr std::string_view kAdapterUnavailableText {"Adapter handle is unavailable."};
+
 std::string json_escape(const std::string_view input) {
     std::string escaped {};
     escaped.reserve(input.size() + 8U);
@@ -602,6 +604,39 @@ std::string selection_json(const bool selected) {
     return std::string {"{\"selected\":"} + bool_json(selected) + '}';
 }
 
+[[nodiscard]] pfl::FrontendOverviewDto unavailable_overview() {
+    return pfl::FrontendOverviewDto {};
+}
+
+[[nodiscard]] pfl::FrontendSelectedFlowPacketsResult unavailable_selected_flow_packets() {
+    return pfl::FrontendSelectedFlowPacketsResult {};
+}
+
+[[nodiscard]] pfl::FrontendSelectedFlowStreamResult unavailable_selected_flow_stream() {
+    pfl::FrontendSelectedFlowStreamResult result {};
+    result.unavailable_text = std::string {kAdapterUnavailableText};
+    result.error_text = std::string {kAdapterUnavailableText};
+    return result;
+}
+
+[[nodiscard]] pfl::FrontendPacketDetailsDto unavailable_packet_details() {
+    pfl::FrontendPacketDetailsDto details {};
+    details.details_title = "Packet Details";
+    details.payload_tab_title = "Payload";
+    details.raw_preview_unavailable_text = std::string {kAdapterUnavailableText};
+    details.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
+    details.unavailable_text = std::string {kAdapterUnavailableText};
+    details.error_text = std::string {kAdapterUnavailableText};
+    return details;
+}
+
+[[nodiscard]] pfl::FrontendSelectedFlowAnalysisDto unavailable_selected_flow_analysis() {
+    pfl::FrontendSelectedFlowAnalysisDto analysis {};
+    analysis.unavailable_text = std::string {kAdapterUnavailableText};
+    analysis.error_text = std::string {kAdapterUnavailableText};
+    return analysis;
+}
+
 }  // namespace
 
 struct PflFrontendSessionAdapterHandle {
@@ -776,7 +811,7 @@ char* pfl_frontend_session_adapter_export_smart_flows_json(
 
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"has_capture\":false}");
+        return make_c_string(overview_json(unavailable_overview()));
     }
 
     return make_c_string(overview_json(handle->adapter.get_overview()));
@@ -804,7 +839,7 @@ char* pfl_frontend_session_adapter_get_selected_flow_packets_json(
     const std::size_t limit
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"flow_index\":0,\"offset\":0,\"limit\":0,\"total_count\":0,\"packets\":[]}");
+        return make_c_string(packet_result_json(unavailable_selected_flow_packets()));
     }
 
     return make_c_string(packet_result_json(handle->adapter.get_selected_flow_packets(offset, limit)));
@@ -816,7 +851,7 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_json(
     const std::size_t limit
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"source_capture_accessible\":false,\"stream_available\":false,\"stream_partially_loaded\":false,\"packet_window_partial\":false,\"can_load_more\":false,\"flow_index\":0,\"packet_window_count\":0,\"total_flow_packet_count\":0,\"requested_item_limit\":0,\"loaded_item_count\":0,\"total_item_count\":0,\"unavailable_text\":\"Adapter handle is unavailable.\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"},\"items\":[]}");
+        return make_c_string(stream_result_json(unavailable_selected_flow_stream()));
     }
 
     return make_c_string(stream_result_json(handle->adapter.get_selected_flow_stream(max_packets_to_scan, limit)));
@@ -827,7 +862,7 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     const std::uint64_t packet_index
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"packet_found\":false,\"source_capture_accessible\":false,\"details_available\":false,\"raw_preview_available\":false,\"raw_preview_truncated\":false,\"payload_preview_available\":false,\"payload_preview_truncated\":false,\"payload_preview_no_payload\":false,\"flow_index\":0,\"packet_index\":0,\"details_title\":\"Packet Details\",\"payload_tab_title\":\"Payload\",\"timestamp_text\":\"\",\"captured_length\":0,\"original_length\":0,\"payload_length\":0,\"is_ip_fragmented\":false,\"tcp_flags_text\":\"\",\"link_summary_text\":\"\",\"network_summary_text\":\"\",\"transport_summary_text\":\"\",\"protocol_details_text\":\"\",\"raw_preview_text\":\"\",\"raw_preview_unavailable_text\":\"Adapter handle is unavailable.\",\"payload_preview_text\":\"\",\"payload_preview_unavailable_text\":\"Adapter handle is unavailable.\",\"unavailable_text\":\"Adapter handle is unavailable.\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+        return make_c_string(packet_details_json(unavailable_packet_details()));
     }
 
     return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(packet_index)));
@@ -835,7 +870,7 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
 
 char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
-        return make_c_string("{\"has_capture\":false,\"has_selected_flow\":false,\"analysis_available\":false,\"has_tcp_control_counts\":false,\"flow_index\":0,\"total_packets\":0,\"total_bytes\":0,\"captured_bytes\":0,\"packets_a_to_b\":0,\"packets_b_to_a\":0,\"bytes_a_to_b\":0,\"bytes_b_to_a\":0,\"tcp_syn_packets\":0,\"tcp_fin_packets\":0,\"tcp_rst_packets\":0,\"endpoint_summary_text\":\"\",\"protocol_text\":\"\",\"protocol_hint_display\":\"\",\"service_hint_text\":\"\",\"protocol_version_text\":\"\",\"protocol_service_text\":\"\",\"protocol_fallback_text\":\"\",\"first_packet_time_text\":\"\",\"last_packet_time_text\":\"\",\"duration_text\":\"\",\"largest_gap_text\":\"\",\"packets_considered_text\":\"\",\"total_packets_text\":\"\",\"total_bytes_text\":\"\",\"captured_bytes_text\":\"\",\"packets_a_to_b_text\":\"\",\"packets_b_to_a_text\":\"\",\"bytes_a_to_b_text\":\"\",\"bytes_b_to_a_text\":\"\",\"packet_ratio_text\":\"\",\"byte_ratio_text\":\"\",\"packet_direction_text\":\"\",\"data_direction_text\":\"\",\"packets_per_second_text\":\"\",\"packets_per_second_a_to_b_text\":\"\",\"packets_per_second_b_to_a_text\":\"\",\"bytes_per_second_text\":\"\",\"bytes_per_second_a_to_b_text\":\"\",\"bytes_per_second_b_to_a_text\":\"\",\"average_packet_size_text\":\"\",\"average_packet_size_a_to_b_text\":\"\",\"average_packet_size_b_to_a_text\":\"\",\"average_inter_arrival_text\":\"\",\"min_packet_size_text\":\"\",\"min_packet_size_a_to_b_text\":\"\",\"min_packet_size_b_to_a_text\":\"\",\"max_packet_size_text\":\"\",\"max_packet_size_a_to_b_text\":\"\",\"max_packet_size_b_to_a_text\":\"\",\"tcp_syn_packets_text\":\"\",\"tcp_fin_packets_text\":\"\",\"tcp_rst_packets_text\":\"\",\"burst_count_text\":\"\",\"longest_burst_packet_count_text\":\"\",\"largest_burst_bytes_text\":\"\",\"idle_gap_count_text\":\"\",\"largest_idle_gap_text\":\"\",\"unavailable_text\":\"Adapter handle is unavailable.\",\"error_text\":\"Adapter handle is unavailable.\",\"inter_arrival_histogram_rows\":[],\"packet_size_histogram_rows\":[],\"sequence_preview_rows\":[]}");
+        return make_c_string(analysis_json(unavailable_selected_flow_analysis()));
     }
 
     return make_c_string(analysis_json(handle->adapter.get_selected_flow_analysis()));
