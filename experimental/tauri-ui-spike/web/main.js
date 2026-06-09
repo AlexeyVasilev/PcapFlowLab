@@ -35,6 +35,7 @@
     smartExportDialogVisible: false,
     activeTab: "flows",
     flowViewTab: "packets",
+    splitterDrag: null,
     openState: "idle",
     attachSourceInProgress: false,
     saveIndexInProgress: false,
@@ -107,6 +108,9 @@
     diagnosticsPacketRequestLimit: packetPageSize,
     diagnosticsPacketReturnedRowCount: 0,
     diagnosticsPacketReturnedTotalCount: 0,
+    flowsTopSizePx: null,
+    flowsBottomLeftSizePx: null,
+    analysisLeftSizePx: null,
   };
 
   const elements = {
@@ -164,6 +168,12 @@
     statusText: document.getElementById("statusText"),
     tabButtons: Array.from(document.querySelectorAll(".tab-button")),
     tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
+    flowsLayout: document.getElementById("flowsLayout"),
+    flowsBottom: document.querySelector(".flows-bottom"),
+    analysisLayout: document.querySelector(".analysis-layout"),
+    flowsVerticalSplitter: document.getElementById("flowsVerticalSplitter"),
+    flowsHorizontalSplitter: document.getElementById("flowsHorizontalSplitter"),
+    analysisHorizontalSplitter: document.getElementById("analysisHorizontalSplitter"),
     flowViewTabButtons: Array.from(document.querySelectorAll(".subtab-button")),
     flowViewPanels: Array.from(document.querySelectorAll(".flow-view-panel")),
     overviewMeta: document.getElementById("overviewMeta"),
@@ -178,7 +188,6 @@
     checkedFlowsStatusBar: document.getElementById("checkedFlowsStatusBar"),
     checkedFlowsStatusText: document.getElementById("checkedFlowsStatusText"),
     wiresharkFilterRow: document.getElementById("wiresharkFilterRow"),
-    wiresharkFilterMeta: document.getElementById("wiresharkFilterMeta"),
     wiresharkFilterText: document.getElementById("wiresharkFilterText"),
     wiresharkFilterStatusText: document.getElementById("wiresharkFilterStatusText"),
     copyWiresharkFilterButton: document.getElementById("copyWiresharkFilterButton"),
@@ -360,6 +369,182 @@
     if (resetScroll && elements.analysisFlowTableViewport) {
       elements.analysisFlowTableViewport.scrollTop = 0;
     }
+  }
+
+  function setWorkspaceCssVariable(name, value) {
+    document.documentElement.style.setProperty(name, value);
+  }
+
+  function applyWorkspaceSplitSizes() {
+    setWorkspaceCssVariable("--flows-top-size", state.flowsTopSizePx != null ? `${state.flowsTopSizePx}px` : "52%");
+    setWorkspaceCssVariable(
+      "--flows-bottom-left-size",
+      state.flowsBottomLeftSizePx != null ? `${state.flowsBottomLeftSizePx}px` : "minmax(380px, 0.95fr)"
+    );
+    setWorkspaceCssVariable(
+      "--analysis-left-size",
+      state.analysisLeftSizePx != null ? `${state.analysisLeftSizePx}px` : "minmax(300px, 0.85fr)"
+    );
+  }
+
+  function isCompactWorkspaceMode() {
+    return window.matchMedia("(max-width: 1180px)").matches;
+  }
+
+  function beginSplitterDrag(config, event) {
+    if (isCompactWorkspaceMode()) {
+      return;
+    }
+
+    event.preventDefault();
+    state.splitterDrag = config;
+    config.splitter.classList.add("is-active");
+    document.body.classList.add("is-resizing");
+    if (config.axis === "x") {
+      document.body.classList.add("is-resizing-vertical");
+    }
+  }
+
+  function updateSplitterDrag(event) {
+    const drag = state.splitterDrag;
+    if (!drag || isCompactWorkspaceMode()) {
+      return;
+    }
+
+    const bounds = drag.container.getBoundingClientRect();
+    if (drag.axis === "y") {
+      const rawSize = event.clientY - bounds.top;
+      drag.onChange(Math.min(Math.max(rawSize, drag.min), bounds.height - drag.maxTrailing));
+      scheduleFlowViewportRender();
+    } else {
+      const rawSize = event.clientX - bounds.left;
+      drag.onChange(Math.min(Math.max(rawSize, drag.min), bounds.width - drag.maxTrailing));
+      if (drag.rerenderAnalysis) {
+        scheduleAnalysisFlowViewportRender();
+      }
+    }
+  }
+
+  function endSplitterDrag() {
+    if (!state.splitterDrag) {
+      return;
+    }
+
+    state.splitterDrag.splitter.classList.remove("is-active");
+    state.splitterDrag = null;
+    document.body.classList.remove("is-resizing", "is-resizing-vertical");
+  }
+
+  function initializeWorkspaceSplitters() {
+    applyWorkspaceSplitSizes();
+    const keyboardStep = 24;
+
+    const bindKeyboardResize = (splitter, axis, adjust) => {
+      splitter?.addEventListener("keydown", (event) => {
+        if (isCompactWorkspaceMode()) {
+          return;
+        }
+
+        const isDecrease = (axis === "y" && event.key === "ArrowUp") || (axis === "x" && event.key === "ArrowLeft");
+        const isIncrease = (axis === "y" && event.key === "ArrowDown") || (axis === "x" && event.key === "ArrowRight");
+        if (!isDecrease && !isIncrease) {
+          return;
+        }
+
+        event.preventDefault();
+        adjust(isIncrease ? keyboardStep : -keyboardStep);
+      });
+    };
+
+    elements.flowsVerticalSplitter?.addEventListener("pointerdown", (event) => {
+      if (!elements.flowsLayout) {
+        return;
+      }
+      beginSplitterDrag({
+        axis: "y",
+        splitter: elements.flowsVerticalSplitter,
+        container: elements.flowsLayout,
+        min: 260,
+        maxTrailing: 180 + 10,
+        onChange: (sizePx) => {
+          state.flowsTopSizePx = sizePx;
+          applyWorkspaceSplitSizes();
+        },
+      }, event);
+    });
+    bindKeyboardResize(elements.flowsVerticalSplitter, "y", (delta) => {
+      const bounds = elements.flowsLayout?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+      const next = Math.min(Math.max((state.flowsTopSizePx ?? (bounds.height * 0.52)) + delta, 260), bounds.height - 190);
+      state.flowsTopSizePx = next;
+      applyWorkspaceSplitSizes();
+      scheduleFlowViewportRender();
+    });
+
+    elements.flowsHorizontalSplitter?.addEventListener("pointerdown", (event) => {
+      if (!elements.flowsBottom) {
+        return;
+      }
+      beginSplitterDrag({
+        axis: "x",
+        splitter: elements.flowsHorizontalSplitter,
+        container: elements.flowsBottom,
+        min: 380,
+        maxTrailing: 440 + 10,
+        onChange: (sizePx) => {
+          state.flowsBottomLeftSizePx = sizePx;
+          applyWorkspaceSplitSizes();
+        },
+      }, event);
+    });
+    bindKeyboardResize(elements.flowsHorizontalSplitter, "x", (delta) => {
+      const bounds = elements.flowsBottom?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+      const next = Math.min(Math.max((state.flowsBottomLeftSizePx ?? (bounds.width * 0.48)) + delta, 380), bounds.width - 450);
+      state.flowsBottomLeftSizePx = next;
+      applyWorkspaceSplitSizes();
+    });
+
+    elements.analysisHorizontalSplitter?.addEventListener("pointerdown", (event) => {
+      if (!elements.analysisLayout) {
+        return;
+      }
+      beginSplitterDrag({
+        axis: "x",
+        splitter: elements.analysisHorizontalSplitter,
+        container: elements.analysisLayout,
+        min: 300,
+        maxTrailing: 520 + 10,
+        rerenderAnalysis: true,
+        onChange: (sizePx) => {
+          state.analysisLeftSizePx = sizePx;
+          applyWorkspaceSplitSizes();
+        },
+      }, event);
+    });
+    bindKeyboardResize(elements.analysisHorizontalSplitter, "x", (delta) => {
+      const bounds = elements.analysisLayout?.getBoundingClientRect();
+      if (!bounds) {
+        return;
+      }
+      const next = Math.min(Math.max((state.analysisLeftSizePx ?? (bounds.width * 0.36)) + delta, 300), bounds.width - 530);
+      state.analysisLeftSizePx = next;
+      applyWorkspaceSplitSizes();
+      scheduleAnalysisFlowViewportRender();
+    });
+
+    window.addEventListener("pointermove", updateSplitterDrag);
+    window.addEventListener("pointerup", endSplitterDrag);
+    window.addEventListener("pointercancel", endSplitterDrag);
+    window.addEventListener("resize", () => {
+      applyWorkspaceSplitSizes();
+      scheduleFlowViewportRender();
+      scheduleAnalysisFlowViewportRender();
+    });
   }
 
   function clearRenderedTablesAndPanels() {
@@ -1685,7 +1870,9 @@
     }
 
     if (visibleFlows.length === 0) {
-      elements.flowMeta.textContent = `Showing 0 of ${formatNumber(flows.length)} flows.`;
+      elements.flowMeta.textContent = state.flowFilterText.trim().length > 0
+        ? `Filtered to 0 of ${formatNumber(flows.length)} flows.`
+        : "";
       elements.flowRenderCapBar.classList.remove("is-visible");
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
@@ -1730,8 +1917,8 @@
     state.flowVirtualizationActive = virtualWindow.virtualizationActive;
 
     elements.flowMeta.textContent = state.flowFilterText.trim().length > 0
-      ? `Filtered to ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows. Click a row to load packets.`
-      : `Showing ${formatNumber(visibleFlows.length)} flows. Click a row to load packets.`;
+      ? `Filtered to ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows.`
+      : "";
     elements.flowRenderCapBar.classList.toggle("is-visible", state.flowVirtualizationActive);
     elements.flowRenderCapText.textContent = state.flowVirtualizationActive
       ? (
@@ -1789,13 +1976,11 @@
     }
 
     if (selectedFlow == null) {
-      elements.wiresharkFilterMeta.textContent = "Select a flow to generate a filter.";
       elements.wiresharkFilterText.textContent = "No flow selected.";
       elements.copyWiresharkFilterButton.disabled = true;
       return;
     }
 
-    elements.wiresharkFilterMeta.textContent = `Generated from flow ${flowDisplayNumber(selectedFlow)} using shared flow DTO fields.`;
     elements.wiresharkFilterText.textContent = filterText || "No conservative display filter is available for this flow.";
     elements.copyWiresharkFilterButton.disabled = filterText.length === 0;
   }
@@ -4146,6 +4331,7 @@
     render();
   });
 
+  initializeWorkspaceSplitters();
   render();
   void initializeMemoryDiagnostics();
 })();

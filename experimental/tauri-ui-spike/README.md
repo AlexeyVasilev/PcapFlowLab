@@ -28,7 +28,8 @@ Implemented slice:
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - open mode handling
 - grouped source-availability warning behavior
-- frontend-only top-level tabs for `Flows`, `Statistics`, and `Analysis`
+- frontend-only top-level tabs for `Flows`, `Analysis`, and `Statistics`
+- runtime-only adjustable splitters for the Flows workspace and Analysis workspace
 - compact desktop-style viewport layout with internal panel scrolling
 - frontend-neutral `Flows` workflow:
   - filtering
@@ -91,10 +92,12 @@ Implemented slice:
   - separate-file-per-flow export to a chosen folder
   - the existing Smart Export retention rules
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
+- The top-level tab order now matches Qt: `Flows / Analysis / Statistics`.
 - When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
 - Attach-source reuses existing session validation and keeps the current session open if the chosen capture does not match.
 - The shell uses a compact top session bar instead of a long vertically stacked page.
 - Normal desktop usage should stay inside the viewport; tables and details panels scroll internally.
+- The Flows workspace split boundaries and the Analysis left/right split are adjustable at runtime.
 - The Flows tab supports case-insensitive frontend filtering over already loaded flow rows.
 - The Flows table supports frontend-local sorting over already loaded flow DTOs.
 - The Flows table also keeps a separate checked-flow selection state for future batch workflows without changing the active selected flow.
@@ -191,6 +194,7 @@ Implemented slice:
 - Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.
 - Raw and Payload tabs intentionally show bounded previews only; they do not implement full raw-byte or payload viewers.
 - The Wireshark display filter is generated only from already loaded flow DTO fields, so it stays intentionally conservative and may not match full Qt parity.
+- Flows/Analysis splitter positions are runtime-only in the current shell and are not persisted yet.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 - Large-capture performance work is still ongoing even though the two largest flow lists now use frontend virtualization/windowing.
 - Packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred.

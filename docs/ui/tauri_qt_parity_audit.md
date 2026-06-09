@@ -2,6 +2,8 @@
 
 Date: 2026-06-06
 
+Note: the Tauri shell has since aligned top-level tab order with Qt and now supports runtime-only adjustable splitters for the Flows and Analysis workspaces. The remaining gaps below are therefore mostly presentation depth and workflow polish rather than basic workspace structure.
+
 ## Purpose
 
 This document is a documentation-only audit of current UI parity between the primary Qt desktop UI and the merged experimental Tauri UI.

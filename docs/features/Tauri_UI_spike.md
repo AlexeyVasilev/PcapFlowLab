@@ -89,7 +89,8 @@ The current Tauri spike now supports:
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - compact desktop-style layout with internal panel scrolling
-- frontend-only top-level tabs: `Flows`, `Statistics`, `Analysis`
+- frontend-only top-level tabs: `Flows`, `Analysis`, `Statistics`
+- Qt-aligned top-level tab order and runtime-only adjustable splitters for the Flows and Analysis workspaces
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
 
 ## Current Flows capability

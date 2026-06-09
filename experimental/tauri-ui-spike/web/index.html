@@ -84,8 +84,8 @@
 
         <nav class="tabbar" aria-label="Main tabs">
           <button id="tabFlows" type="button" class="tab-button active" data-tab="flows">Flows</button>
-          <button id="tabStatistics" type="button" class="tab-button" data-tab="statistics">Statistics</button>
           <button id="tabAnalysis" type="button" class="tab-button" data-tab="analysis">Analysis</button>
+          <button id="tabStatistics" type="button" class="tab-button" data-tab="statistics">Statistics</button>
         </nav>
 
         <section id="tabPanelFlows" class="tab-panel active" data-tab-panel="flows">
@@ -106,10 +106,7 @@
                   <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
                 </div>
                 <div id="wiresharkFilterRow" class="flow-wireshark-row">
-                  <div class="flow-inline-meta">
-                    <span class="inline-label">Wireshark filter</span>
-                    <span id="wiresharkFilterMeta" class="inline-note">Select a flow to generate a filter.</span>
-                  </div>
+                  <span class="inline-label">Wireshark filter</span>
                   <pre id="wiresharkFilterText" class="details-pre compact-filter-pre">No flow selected.</pre>
                   <button id="copyWiresharkFilterButton" type="button" class="secondary-button">Copy</button>
                 </div>
@@ -142,6 +139,15 @@
                 <span id="checkedFlowsStatusText"></span>
               </div>
             </section>
+
+            <div
+              id="flowsVerticalSplitter"
+              class="workspace-splitter workspace-splitter-horizontal"
+              role="separator"
+              aria-label="Resize flows workspace"
+              aria-orientation="horizontal"
+              tabindex="0"
+            ></div>
 
             <section class="flows-bottom">
               <section class="panel packets-panel">
@@ -195,6 +201,15 @@
                   </table>
                 </div>
               </section>
+
+              <div
+                id="flowsHorizontalSplitter"
+                class="workspace-splitter workspace-splitter-vertical"
+                role="separator"
+                aria-label="Resize packet and detail panes"
+                aria-orientation="vertical"
+                tabindex="0"
+              ></div>
 
               <section class="panel packet-details-panel">
                 <div class="panel-heading">
@@ -450,6 +465,15 @@
                 <span id="analysisFlowRenderCapText" class="table-cap-text"></span>
               </div>
             </section>
+
+            <div
+              id="analysisHorizontalSplitter"
+              class="workspace-splitter workspace-splitter-vertical"
+              role="separator"
+              aria-label="Resize analysis panes"
+              aria-orientation="vertical"
+              tabindex="0"
+            ></div>
 
             <section class="panel analysis-panel">
               <div class="panel-heading">
