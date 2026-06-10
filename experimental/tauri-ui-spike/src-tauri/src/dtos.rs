@@ -14,6 +14,7 @@ pub struct SourceAvailabilityDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenCaptureResultDto {
     pub opened: bool,
+    pub cancelled: bool,
     pub opened_from_index: bool,
     pub partial_open: bool,
     pub has_source_capture: bool,
@@ -23,6 +24,36 @@ pub struct OpenCaptureResultDto {
     pub expected_source_capture_path: String,
     pub error_text: String,
     pub source_availability: SourceAvailabilityDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCaptureStartResultDto {
+    pub started: bool,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCaptureProgressDto {
+    pub in_progress: bool,
+    pub cancel_requested: bool,
+    pub opening_as_index: bool,
+    pub packets_processed: u64,
+    pub bytes_processed: u64,
+    pub total_bytes: u64,
+    pub percent: f64,
+    pub input_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCapturePollResultDto {
+    pub ready: bool,
+    pub progress: OpenCaptureProgressDto,
+    pub result: OpenCaptureResultDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenCaptureCancelResultDto {
+    pub cancelled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

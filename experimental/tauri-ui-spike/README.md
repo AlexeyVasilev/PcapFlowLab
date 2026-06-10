@@ -7,8 +7,12 @@ This directory contains the experimental Tauri frontend for Pcap Flow Lab.
 Implemented slice:
 
 - compact Qt-like `File / Flow / View` menu shell
+- Qt-like top session shell with:
+  - `Open Capture...`
+  - Fast/Deep mode selector
+  - right-side active-session display
 - native Open File dialog as the primary open workflow
-- typed path as a compact manual fallback
+- real shared-backend open progress and cancel via `OpenContext`
 - `File -> Save Index` through the existing session/index path
 - `Flow -> Export Current Flow` through the existing session flow-export path
 - `Flow -> Export Selected Flows` through the existing session batch flow-export path
@@ -75,8 +79,13 @@ Implemented slice:
 
 - The spike now uses a native Open File dialog as the primary open workflow.
 - The shell now includes a compact Qt-like menu bar with `File`, `Flow`, and `View`.
-- The typed capture/index path remains available as a compact manual fallback.
+- The primary top-shell action is now `Open Capture...`, matching Qt more closely.
 - `File -> Open Capture (Fast/Deep)` and `File -> Open Index` reuse the existing open path with native dialogs.
+- The top shell now shows:
+  - `Active session: No active session`
+  - `Active session: PCAP: <path>`
+  - `Active session: Index: <path>`
+- Capture/index open now surfaces real shared-backend progress and cancel instead of a Tauri-only placeholder state.
 - `File -> Save Index` reuses the existing session/index save path and a native Save dialog with `.idx` default suffix.
 - `Flow -> Export Current Flow` reuses the existing session flow-export path and a native Save dialog with `.pcap` default suffix.
 - `Flow -> Export Selected Flows` reuses the existing session batch flow-export path, the checked-flow set, and the same native `.pcap` Save dialog behavior.
@@ -156,6 +165,7 @@ Implemented slice:
 - `Flow -> Export Unselected Flows` now exports the inverse of checked-flow selection.
 - Other export workflows are still absent in Tauri.
 - Qt's richer per-flow smart-export progress/cancel UI is still not mirrored in Tauri.
+- The previous visible typed-path action is no longer shown in the primary toolbar.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
 - Save/open index workflow details are still thinner than Qt and need a smaller parity polish pass.
 - `View -> Settings` now exposes the existing shared/runtime settings already present in Qt/app code:

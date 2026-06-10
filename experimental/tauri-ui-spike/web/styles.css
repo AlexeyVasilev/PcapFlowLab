@@ -352,68 +352,138 @@ body.is-resizing-vertical {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(180px, 260px) 1fr;
-  gap: 8px 12px;
+  grid-template-columns: 1fr;
+  gap: 10px;
   align-items: center;
 }
 
-.topbar-brand h1 {
-  margin: 0 0 2px;
-  font-size: 24px;
-  line-height: 1.1;
-}
-
-.topbar-brand p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.topbar-session {
+.topbar-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: end;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
 }
 
-.path-field,
 .toolbar-group {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.path-field span,
-.toolbar-group span,
-label {
+.toolbar-group span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.toolbar-controls {
-  display: flex;
-  align-items: end;
-  gap: 8px;
-  flex-wrap: wrap;
+.compact-toolbar-group {
+  gap: 0;
 }
 
-.topbar-meta {
-  grid-column: 1 / -1;
+.active-session-panel {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 16px;
-  padding-top: 2px;
+  gap: 8px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid #d8dee9;
+  border-radius: 6px;
+  background: #ffffff;
 }
 
-.workflow-note {
+.active-session-label {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.active-session-text {
+  color: var(--text);
+  font-size: 13px;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.open-progress-panel {
+  display: none;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.open-progress-panel.is-visible {
+  display: grid;
+}
+
+.open-progress-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.open-progress-title,
+.open-progress-processed {
+  margin: 0;
+  font-size: 12px;
+}
+
+.open-progress-title {
+  color: #475569;
+}
+
+.open-progress-processed {
+  color: #64748b;
+}
+
+.open-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.open-progress-track {
+  position: relative;
+  height: 22px;
+  overflow: hidden;
+  border: 1px solid #b8c5d6;
+  border-radius: 2px;
+  background: #f1f5f9;
+}
+
+.open-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #16a34a;
+  transition: width 120ms linear;
+}
+
+.open-progress-track.is-indeterminate .open-progress-fill {
+  width: 32%;
+  animation: open-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+.topbar-status-text {
+  display: none;
+  margin: 0;
+}
+
+.topbar-status-text.is-visible {
+  display: block;
+}
+
+@keyframes open-progress-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
 }
 
 .source-warning-banner {
@@ -1447,17 +1517,16 @@ select:disabled {
     grid-template-columns: 1fr;
   }
 
-  .topbar-session {
+  .topbar-toolbar {
     grid-template-columns: 1fr;
   }
 
-  .topbar-meta {
-    flex-direction: column;
-    align-items: flex-start;
+  .active-session-panel {
+    min-height: 0;
   }
 
-  .workflow-note {
-    white-space: normal;
+  .open-progress-row {
+    grid-template-columns: 1fr;
   }
 
   .flows-layout {

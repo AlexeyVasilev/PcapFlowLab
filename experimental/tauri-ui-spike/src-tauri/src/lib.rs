@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
     SettingsDto,
     SmartExportResultDto,
@@ -215,6 +215,43 @@ fn open_capture(
     };
 
     state.adapter.open_capture(&path, mode)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn start_open_capture(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+    open_mode: String,
+) -> Result<OpenCaptureStartResultDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    let mode = match open_mode.as_str() {
+        "deep" => OpenMode::Deep,
+        _ => OpenMode::Fast,
+    };
+
+    state.adapter.start_open_capture(&path, mode)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn poll_open_capture(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<OpenCapturePollResultDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.poll_open_capture()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn cancel_open_capture(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<OpenCaptureCancelResultDto, String> {
+    let mut state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.cancel_open_capture()
 }
 
 #[tauri::command]
@@ -572,6 +609,9 @@ pub fn run() {
             pick_smart_export_destination_folder,
             pick_save_analysis_sequence_csv_path,
             open_capture,
+            start_open_capture,
+            poll_open_capture,
+            cancel_open_capture,
             attach_source_capture,
             save_index,
             export_current_flow,

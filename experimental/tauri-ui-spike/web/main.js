@@ -37,6 +37,19 @@
     flowViewTab: "packets",
     splitterDrag: null,
     openState: "idle",
+    currentSessionPath: "",
+    currentSessionOpenedFromIndex: false,
+    openRequestToken: 0,
+    openProgress: {
+      in_progress: false,
+      cancel_requested: false,
+      opening_as_index: false,
+      packets_processed: 0,
+      bytes_processed: 0,
+      total_bytes: 0,
+      percent: 0,
+      input_path: "",
+    },
     attachSourceInProgress: false,
     saveIndexInProgress: false,
     exportCurrentFlowInProgress: false,
@@ -160,10 +173,15 @@
     capturePath: document.getElementById("capturePath"),
     openMode: document.getElementById("openMode"),
     openFileButton: document.getElementById("openFileButton"),
-    openButton: document.getElementById("openButton"),
+    activeSessionPanel: document.getElementById("activeSessionPanel"),
+    activeSessionText: document.getElementById("activeSessionText"),
+    openProgressPanel: document.getElementById("openProgressPanel"),
+    openProgressTitle: document.getElementById("openProgressTitle"),
+    openProgressProcessed: document.getElementById("openProgressProcessed"),
+    openProgressTrack: document.getElementById("openProgressTrack"),
+    openProgressFill: document.getElementById("openProgressFill"),
+    openCancelButton: document.getElementById("openCancelButton"),
     attachSourceButton: document.getElementById("attachSourceButton"),
-    openStateBadge: document.getElementById("openStateBadge"),
-    openWorkflowNote: document.getElementById("openWorkflowNote"),
     sourceWarningBanner: document.getElementById("sourceWarningBanner"),
     sourceWarningText: document.getElementById("sourceWarningText"),
     sourceWarningExpectedPath: document.getElementById("sourceWarningExpectedPath"),
@@ -271,6 +289,30 @@
 
   function formatNumber(value) {
     return Number(value ?? 0).toLocaleString("en-US");
+  }
+
+  function fileNameFromPath(path) {
+    const normalized = String(path || "").trim();
+    if (normalized.length === 0) {
+      return "";
+    }
+
+    const parts = normalized.replaceAll("\\", "/").split("/");
+    return parts.length > 0 ? parts[parts.length - 1] : normalized;
+  }
+
+  function formatByteSize(bytes) {
+    const value = Math.max(0, Number(bytes || 0));
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let unitIndex = 0;
+    let size = value;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex += 1;
+    }
+
+    const digits = size >= 100 || unitIndex === 0 ? 0 : 1;
+    return `${size.toFixed(digits)} ${units[unitIndex]}`;
   }
 
   function escapeHtml(value) {
@@ -784,39 +826,6 @@
     return sourceAvailabilityOrDefault(streamResult?.source_availability || state.sourceAvailability);
   }
 
-  function sourceAvailabilityNoteText() {
-    const availability = currentSourceAvailability();
-    const baseNote = "Use Open File for the native picker, or keep a typed path as a manual fallback.";
-
-    if (state.openState !== "opened") {
-      return baseNote;
-    }
-
-    if (availability.partial_open) {
-      return `${baseNote} Opened with partial results; some byte-backed actions can stay limited.`;
-    }
-
-    if (!availability.byte_backed_inspection_available) {
-      if (availability.expected_source_capture_path) {
-        return `${baseNote} Byte-backed inspection is unavailable until the source capture is attached/readable: ${availability.expected_source_capture_path}`;
-      }
-
-      if (availability.opened_from_index) {
-        return `${baseNote} Byte-backed inspection is unavailable in this index-backed session because the source capture is not attached or readable.`;
-      }
-
-      if (availability.has_source_capture && !availability.source_capture_accessible) {
-        return `${baseNote} Byte-backed inspection is unavailable because the source capture cannot be read.`;
-      }
-    }
-
-    if (availability.opened_from_index) {
-      return `${baseNote} Source capture attached; byte-backed inspection is available.`;
-    }
-
-    return baseNote;
-  }
-
   function sourceWarningBannerText() {
     return "Original source capture unavailable. Metadata views remain available, but raw packet bytes, stream reconstruction, and flow export require the original capture file.";
   }
@@ -1163,6 +1172,18 @@
     clearSettingsStatus();
     state.smartExportDialogVisible = false;
     state.sourceAvailability = null;
+    state.currentSessionPath = "";
+    state.currentSessionOpenedFromIndex = false;
+    state.openProgress = {
+      in_progress: false,
+      cancel_requested: false,
+      opening_as_index: false,
+      packets_processed: 0,
+      bytes_processed: 0,
+      total_bytes: 0,
+      percent: 0,
+      input_path: "",
+    };
     setStatus("", "neutral");
   }
 
@@ -1170,19 +1191,19 @@
     elements.capturePath.disabled = disabled;
     elements.openMode.disabled = disabled;
     elements.openFileButton.disabled = disabled;
-    elements.openButton.disabled = disabled;
+    elements.openCancelButton.disabled = !disabled || state.openState !== "opening";
     elements.attachSourceButton.disabled = disabled || state.attachSourceInProgress || !canAttachSourceCapture();
   }
 
   function renderStatus() {
     elements.statusText.textContent = state.statusText;
-    elements.statusText.className = "status-text";
-    elements.openWorkflowNote.textContent = sourceAvailabilityNoteText();
+    elements.statusText.className = "status-text topbar-status-text";
     if (state.statusKind === "error") {
       elements.statusText.classList.add("is-error");
     } else if (state.statusKind === "success") {
       elements.statusText.classList.add("is-success");
     }
+    elements.statusText.classList.toggle("is-visible", state.statusText.trim().length > 0);
   }
 
   function closeMenus() {
@@ -1593,16 +1614,12 @@
   }
 
   function renderOpenState() {
-    const labels = {
-      idle: "Idle",
-      opening: "Opening",
-      opened: "Opened",
-      error: "Error",
-    };
+    const activeSessionText = state.currentSessionPath
+      ? `${state.currentSessionOpenedFromIndex ? "Index" : "PCAP"}: ${state.currentSessionPath}`
+      : "No active session";
 
-    elements.openStateBadge.textContent = labels[state.openState] || "Idle";
-    elements.openStateBadge.className = `state-badge state-${state.openState}`;
-    elements.openButton.style.display = state.openState === "opened" ? "none" : "";
+    elements.activeSessionText.textContent = activeSessionText;
+    elements.activeSessionPanel.title = `Active session: ${activeSessionText}`;
     elements.attachSourceButton.textContent = state.attachSourceInProgress ? "Attaching..." : "Locate Source...";
     setOpenControlsDisabled(
       state.openState === "opening"
@@ -1613,6 +1630,33 @@
       || state.exportUnselectedFlowsInProgress
       || state.smartExportInProgress
     );
+
+    const progress = state.openProgress || {};
+    const progressVisible = state.openState === "opening";
+    elements.openProgressPanel.classList.toggle("is-visible", progressVisible);
+    if (!progressVisible) {
+      elements.openProgressTitle.textContent = "";
+      elements.openProgressProcessed.textContent = "";
+      elements.openProgressTrack.classList.remove("is-indeterminate");
+      elements.openProgressFill.style.width = "0%";
+      elements.openCancelButton.disabled = true;
+      return;
+    }
+
+    const openingFileName = fileNameFromPath(progress.input_path) || fileNameFromPath(elements.capturePath.value) || "selected file";
+    elements.openProgressTitle.textContent = `${progress.opening_as_index ? "Opening index" : "Opening capture"}: ${openingFileName}`;
+    if (Number(progress.total_bytes || 0) > 0) {
+      const percentText = `${Math.max(0, Math.min(100, Number(progress.percent || 0) * 100)).toFixed(1).replace(/\\.0$/, "")}%`;
+      elements.openProgressProcessed.textContent = `Processed: ${formatByteSize(progress.bytes_processed)} / ${formatByteSize(progress.total_bytes)} (${percentText})`;
+      elements.openProgressTrack.classList.remove("is-indeterminate");
+      elements.openProgressFill.style.width = `${Math.max(0, Math.min(100, Number(progress.percent || 0) * 100))}%`;
+    } else {
+      elements.openProgressProcessed.textContent = `Processed: ${formatByteSize(progress.bytes_processed)}`;
+      elements.openProgressTrack.classList.add("is-indeterminate");
+      elements.openProgressFill.style.width = "32%";
+    }
+    elements.openCancelButton.disabled = Boolean(progress.cancel_requested);
+    elements.openCancelButton.textContent = progress.cancel_requested ? "Cancelling..." : "Cancel";
   }
 
   function renderSourceWarningBanner() {
@@ -3411,6 +3455,75 @@
     render();
   }
 
+  function waitForDelay(delayMs) {
+    return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+  }
+
+  async function pollOpenCaptureUntilComplete(openRequestToken, path, hadLoadedSession) {
+    while (openRequestToken === state.openRequestToken) {
+      const poll = await invoke("poll_open_capture");
+      if (openRequestToken !== state.openRequestToken) {
+        return;
+      }
+
+      state.openProgress = poll?.progress || {
+        in_progress: true,
+        cancel_requested: false,
+        opening_as_index: false,
+        packets_processed: 0,
+        bytes_processed: 0,
+        total_bytes: 0,
+        percent: 0,
+        input_path: path,
+      };
+      render();
+
+      if (poll?.ready) {
+        const result = poll?.result || null;
+        if (result?.cancelled) {
+          resetForNewOpen();
+          state.openState = "idle";
+          setStatus("Open cancelled.", "neutral");
+          render();
+          if (hadLoadedSession) {
+            await logMemoryPhase("after_next_open", path);
+          }
+          return;
+        }
+
+        if (!result?.opened) {
+          resetForNewOpen();
+          state.openState = "error";
+          setStatus(result?.error_text || "Open failed.", "error");
+          render();
+          if (hadLoadedSession) {
+            await logMemoryPhase("after_next_open", path);
+          }
+          return;
+        }
+
+        state.sourceAvailability = sourceAvailabilityOrDefault(result?.source_availability);
+        state.currentSessionPath = String(result?.input_path || path);
+        state.currentSessionOpenedFromIndex = Boolean(result?.opened_from_index);
+        await loadOverviewAndFlows();
+        state.openState = "opened";
+        setStatus(
+          `Opened ${state.currentSessionOpenedFromIndex ? "index" : "capture"}: ${state.currentSessionPath}`,
+          "success"
+        );
+        render();
+        await logMemoryPhase("after_render_flows", path);
+        await logMemoryPhase("after_statistics_loaded", path);
+        if (hadLoadedSession) {
+          await logMemoryPhase("after_next_open", path);
+        }
+        return;
+      }
+
+      await waitForDelay(120);
+    }
+  }
+
   async function openCapture(pathOverride = null, modeOverride = null) {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -3429,41 +3542,43 @@
     await logMemoryPhase("before_open_cleanup", path);
     resetForNewOpen();
     await logMemoryPhase("after_open_cleanup", path);
+    const openRequestToken = state.openRequestToken + 1;
+    state.openRequestToken = openRequestToken;
     state.openState = "opening";
     state.flowState = "loading";
-    setStatus("Opening capture...", "neutral");
+    state.openProgress = {
+      in_progress: true,
+      cancel_requested: false,
+      opening_as_index: /\.idx$|\.pflidx$/i.test(path),
+      packets_processed: 0,
+      bytes_processed: 0,
+      total_bytes: 0,
+      percent: 0,
+      input_path: path,
+    };
+    setStatus("", "neutral");
     render();
 
     try {
       await logMemoryPhase("before_open_capture", path);
-      const result = await invoke("open_capture", {
+      const startResult = await invoke("start_open_capture", {
         path,
         open_mode: openMode,
       });
       await logMemoryPhase("after_open_capture", path);
 
-      if (!result?.opened) {
+      if (!startResult?.started) {
         resetForNewOpen();
         state.openState = "error";
-        setStatus(result?.error_text || "Open failed.", "error");
+        setStatus(startResult?.error_text || "Open failed.", "error");
         render();
         if (hadLoadedSession) {
           await logMemoryPhase("after_next_open", path);
         }
         return;
       }
-      state.sourceAvailability = sourceAvailabilityOrDefault(result?.source_availability);
-      await loadOverviewAndFlows();
-      state.openState = "opened";
 
-      const sourceSuffix = result?.opened_from_index ? " (opened from index)" : "";
-      setStatus(`Opened ${path}${sourceSuffix}.`, "success");
-      render();
-      await logMemoryPhase("after_render_flows", path);
-      await logMemoryPhase("after_statistics_loaded", path);
-      if (hadLoadedSession) {
-        await logMemoryPhase("after_next_open", path);
-      }
+      await pollOpenCaptureUntilComplete(openRequestToken, path, hadLoadedSession);
     } catch (error) {
       resetForNewOpen();
       state.openState = "error";
@@ -3483,7 +3598,7 @@
     }
 
     try {
-      const selectedPath = await invoke("pick_open_path");
+      const selectedPath = await invoke("pick_open_capture_path");
       if (!selectedPath) {
         return;
       }
@@ -4076,8 +4191,19 @@
   }
 
   elements.openFileButton.addEventListener("click", openCaptureFromDialog);
-  elements.openButton.addEventListener("click", () => {
-    void openCapture();
+  elements.openCancelButton?.addEventListener("click", async () => {
+    if (state.openState !== "opening") {
+      return;
+    }
+
+    try {
+      await invoke("cancel_open_capture");
+      state.openProgress.cancel_requested = true;
+      render();
+    } catch (error) {
+      setStatus(`Failed to cancel open: ${String(error)}`, "error");
+      render();
+    }
   });
   elements.attachSourceButton.addEventListener("click", attachSourceCaptureFromDialog);
   for (const button of elements.menuButtons) {

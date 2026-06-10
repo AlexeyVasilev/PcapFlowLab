@@ -70,8 +70,12 @@ The existing Qt UI remains the reference implementation for richer presentation 
 The current Tauri spike now supports:
 
 - compact Qt-like `File / Flow / View` menu shell
+- Qt-like top session shell with:
+  - `Open Capture...`
+  - Fast/Deep mode selector
+  - right-side active-session display
 - native Open File dialog as the primary open workflow
-- typed-path manual fallback
+- real shared-backend open progress and cancel via `OpenContext`
 - `File -> Save Index` through the existing session/index path
 - `Flow -> Export Current Flow` through the existing flow-export/session path
 - `Flow -> Export Selected Flows` through the existing batch flow-export/session path
@@ -186,6 +190,16 @@ Analysis remains:
 - not reloaded on ordinary flow clicks unless the `Analysis` tab is active
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
 
+Open workflow:
+
+- the primary shell action is `Open Capture...`
+- the active session area now mirrors Qt more closely:
+  - `Active session: No active session`
+  - `Active session: PCAP: <path>`
+  - `Active session: Index: <path>`
+- capture/index open now surfaces real shared-backend progress instead of a Tauri-only placeholder
+- cancel during open reuses the existing shared session/open cancellation path
+
 `View -> Settings`:
 
 - is now enabled in Tauri
@@ -269,6 +283,7 @@ Current Tauri shell hardening constraints:
 The Tauri spike is still not full Qt parity. The main remaining gaps are:
 
 - save/open index workflow polish
+- the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
 - packet details display polish remains incomplete compared with Qt

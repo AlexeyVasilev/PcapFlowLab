@@ -2,20 +2,28 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <map>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/CaptureSession.h"
+#include "core/open_context.h"
 
 namespace pfl {
 
 class FrontendSessionAdapter {
 public:
     FrontendSessionAdapter() = default;
+    ~FrontendSessionAdapter();
 
     [[nodiscard]] FrontendOpenResult open_capture(const std::filesystem::path& path, FrontendOpenMode open_mode);
+    [[nodiscard]] FrontendOpenStartResult start_open_capture(const std::filesystem::path& path, FrontendOpenMode open_mode);
+    [[nodiscard]] FrontendOpenPollResultDto poll_open_capture();
+    [[nodiscard]] bool cancel_open_capture();
     [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendSaveIndexResult save_index(const std::filesystem::path& output_path) const;
     [[nodiscard]] FrontendSettingsDto get_settings() const noexcept;
@@ -46,6 +54,18 @@ public:
     void clear_selection() noexcept;
 
 private:
+    struct AsyncOpenState {
+        std::mutex mutex {};
+        std::thread worker {};
+        std::shared_ptr<OpenContext> context {};
+        bool in_progress {false};
+        bool cancel_requested {false};
+        bool result_ready {false};
+        FrontendOpenProgressDto progress {};
+        FrontendOpenResult result {};
+        std::optional<CaptureSession> completed_session {};
+    };
+
     [[nodiscard]] FrontendSourceAvailabilityDto current_source_availability() const;
     [[nodiscard]] static FrontendFlowDto to_frontend_flow(const FlowRow& row);
     [[nodiscard]] static FrontendPacketDto to_frontend_packet(const PacketRow& row);
@@ -54,10 +74,13 @@ private:
         const StreamItemRow& row,
         const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
     ) const;
+    void join_finished_open_worker();
+    void cancel_and_join_open_worker();
 
     CaptureSession session_ {};
     std::optional<std::size_t> selected_flow_index_ {};
     FrontendSettingsDto settings_ {};
+    AsyncOpenState async_open_ {};
 };
 
 }  // namespace pfl

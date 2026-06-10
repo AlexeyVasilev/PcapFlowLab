@@ -15,6 +15,13 @@ char* pfl_frontend_session_adapter_open_capture_json(
     const char* path_utf8,
     std::uint8_t open_mode
 );
+char* pfl_frontend_session_adapter_start_open_capture_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8,
+    std::uint8_t open_mode
+);
+char* pfl_frontend_session_adapter_poll_open_capture_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_cancel_open_capture_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_attach_source_capture_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* path_utf8

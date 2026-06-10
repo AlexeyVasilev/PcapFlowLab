@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
     SettingsDto,
     SmartExportResultDto,
@@ -21,6 +21,17 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
         open_mode: c_uchar,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_start_open_capture_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
+        open_mode: c_uchar,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_poll_open_capture_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_cancel_open_capture_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_attach_source_capture_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -160,6 +171,28 @@ impl CppFrontendSessionAdapter {
             pfl_frontend_session_adapter_open_capture_json(self.handle, path.as_ptr(), open_mode as c_uchar)
         };
         parse_json_owned::<OpenCaptureResultDto>(json)
+    }
+
+    pub fn start_open_capture(
+        &mut self,
+        path: &str,
+        open_mode: OpenMode,
+    ) -> Result<OpenCaptureStartResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Capture path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_start_open_capture_json(self.handle, path.as_ptr(), open_mode as c_uchar)
+        };
+        parse_json_owned::<OpenCaptureStartResultDto>(json)
+    }
+
+    pub fn poll_open_capture(&mut self) -> Result<OpenCapturePollResultDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_poll_open_capture_json(self.handle) };
+        parse_json_owned::<OpenCapturePollResultDto>(json)
+    }
+
+    pub fn cancel_open_capture(&mut self) -> Result<OpenCaptureCancelResultDto, String> {
+        let json = unsafe { pfl_frontend_session_adapter_cancel_open_capture_json(self.handle) };
+        parse_json_owned::<OpenCaptureCancelResultDto>(json)
     }
 
     pub fn attach_source_capture(&mut self, path: &str) -> Result<AttachSourceCaptureResultDto, String> {

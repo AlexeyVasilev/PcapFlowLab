@@ -1098,6 +1098,10 @@ bool write_analysis_sequence_csv(
 
 }  // namespace
 
+FrontendSessionAdapter::~FrontendSessionAdapter() {
+    cancel_and_join_open_worker();
+}
+
 FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availability() const {
     return FrontendSourceAvailabilityDto {
         .has_source_capture = session_.has_source_capture(),
@@ -1114,6 +1118,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
     const std::filesystem::path& path,
     const FrontendOpenMode open_mode
 ) {
+    cancel_and_join_open_worker();
     clear_selection();
     session_ = CaptureSession {};
     const auto analysis_settings = to_analysis_settings(settings_);
@@ -1137,6 +1142,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
 
     return FrontendOpenResult {
         .opened = opened,
+        .cancelled = false,
         .opened_from_index = source_availability.opened_from_index,
         .partial_open = source_availability.partial_open,
         .has_source_capture = source_availability.has_source_capture,
@@ -1147,6 +1153,156 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
         .error_text = opened ? std::string {} : session_.last_open_error_text(),
         .source_availability = source_availability,
     };
+}
+
+FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(
+    const std::filesystem::path& path,
+    const FrontendOpenMode open_mode
+) {
+    join_finished_open_worker();
+
+    if (path.empty()) {
+        return FrontendOpenStartResult {
+            .started = false,
+            .error_text = "No file selected.",
+        };
+    }
+
+    {
+        std::lock_guard lock {async_open_.mutex};
+        if (async_open_.in_progress) {
+            return FrontendOpenStartResult {
+                .started = false,
+                .error_text = "Another open request is already in progress.",
+            };
+        }
+        async_open_.cancel_requested = false;
+        async_open_.result_ready = false;
+        async_open_.progress = FrontendOpenProgressDto {
+            .in_progress = true,
+            .cancel_requested = false,
+            .opening_as_index = looks_like_index_file(path),
+            .input_path = path_to_string(path),
+        };
+        async_open_.result = FrontendOpenResult {};
+        async_open_.completed_session.reset();
+        async_open_.context = std::make_shared<OpenContext>();
+        async_open_.in_progress = true;
+    }
+
+    clear_selection();
+    session_ = CaptureSession {};
+    const auto analysis_settings = to_analysis_settings(settings_);
+    const auto open_as_index = looks_like_index_file(path);
+    const auto context = async_open_.context;
+
+    context->on_progress = [this, path](const OpenProgress& progress) {
+        std::lock_guard lock {async_open_.mutex};
+        async_open_.progress.in_progress = async_open_.in_progress;
+        async_open_.progress.cancel_requested = async_open_.cancel_requested || (async_open_.context != nullptr && async_open_.context->is_cancel_requested());
+        async_open_.progress.opening_as_index = looks_like_index_file(path);
+        async_open_.progress.packets_processed = progress.packets_processed;
+        async_open_.progress.bytes_processed = progress.bytes_processed;
+        async_open_.progress.total_bytes = progress.total_bytes;
+        async_open_.progress.percent = std::clamp(progress.percent(), 0.0, 1.0);
+        async_open_.progress.input_path = path_to_string(path);
+    };
+
+    async_open_.worker = std::thread([this, path, open_mode, open_as_index, analysis_settings, context]() {
+        CaptureSession worker_session {};
+        const bool opened = open_as_index
+            ? worker_session.load_index(path, context.get())
+            : worker_session.open_capture(path, import_options_for_frontend_mode(open_mode, analysis_settings), context.get());
+        if (opened) {
+            worker_session.set_analysis_settings(analysis_settings);
+        }
+
+        const bool cancelled = context->is_cancel_requested();
+        FrontendSourceAvailabilityDto source_availability {};
+        if (opened && !cancelled) {
+            source_availability = FrontendSourceAvailabilityDto {
+                .has_source_capture = worker_session.has_source_capture(),
+                .source_capture_accessible = worker_session.source_capture_accessible(),
+                .opened_from_index = worker_session.opened_from_index(),
+                .partial_open = worker_session.is_partial_open(),
+                .byte_backed_inspection_available = worker_session.has_source_capture() && worker_session.source_capture_accessible(),
+                .active_source_capture_path = path_to_string(worker_session.attached_source_capture_path()),
+                .expected_source_capture_path = path_to_string(worker_session.expected_source_capture_path()),
+            };
+        }
+
+        std::lock_guard lock {async_open_.mutex};
+        async_open_.in_progress = false;
+        async_open_.cancel_requested = cancelled;
+        async_open_.result_ready = true;
+        async_open_.progress.in_progress = false;
+        async_open_.progress.cancel_requested = cancelled;
+        async_open_.progress.opening_as_index = open_as_index;
+        async_open_.progress.packets_processed = context->progress.packets_processed;
+        async_open_.progress.bytes_processed = context->progress.bytes_processed;
+        async_open_.progress.total_bytes = context->progress.total_bytes;
+        async_open_.progress.percent = std::clamp(context->progress.percent(), 0.0, 1.0);
+        async_open_.progress.input_path = path_to_string(path);
+        async_open_.result = FrontendOpenResult {
+            .opened = opened && !cancelled,
+            .cancelled = cancelled,
+            .opened_from_index = source_availability.opened_from_index,
+            .partial_open = source_availability.partial_open,
+            .has_source_capture = source_availability.has_source_capture,
+            .source_capture_accessible = source_availability.source_capture_accessible,
+            .input_path = path_to_string(path),
+            .active_source_capture_path = source_availability.active_source_capture_path,
+            .expected_source_capture_path = source_availability.expected_source_capture_path,
+            .error_text = (opened || cancelled) ? std::string {} : worker_session.last_open_error_text(),
+            .source_availability = source_availability,
+        };
+        if (opened && !cancelled) {
+            async_open_.completed_session = std::move(worker_session);
+        } else {
+            async_open_.completed_session.reset();
+        }
+        async_open_.context.reset();
+    });
+
+    return FrontendOpenStartResult {
+        .started = true,
+        .error_text = {},
+    };
+}
+
+FrontendOpenPollResultDto FrontendSessionAdapter::poll_open_capture() {
+    join_finished_open_worker();
+
+    FrontendOpenPollResultDto result {};
+    std::lock_guard lock {async_open_.mutex};
+    result.progress = async_open_.progress;
+    result.ready = async_open_.result_ready;
+    if (!async_open_.result_ready) {
+        return result;
+    }
+
+    result.result = async_open_.result;
+    if (async_open_.completed_session.has_value() && result.result.opened && !result.result.cancelled) {
+        session_ = std::move(*async_open_.completed_session);
+        async_open_.completed_session.reset();
+    }
+
+    async_open_.result_ready = false;
+    async_open_.result = FrontendOpenResult {};
+    async_open_.progress = FrontendOpenProgressDto {};
+    return result;
+}
+
+bool FrontendSessionAdapter::cancel_open_capture() {
+    std::lock_guard lock {async_open_.mutex};
+    if (!async_open_.in_progress || async_open_.context == nullptr) {
+        return false;
+    }
+
+    async_open_.cancel_requested = true;
+    async_open_.progress.cancel_requested = true;
+    async_open_.context->request_cancel();
+    return true;
 }
 
 FrontendAttachSourceCaptureResult FrontendSessionAdapter::attach_source_capture(const std::filesystem::path& path) {
@@ -1877,6 +2033,44 @@ void FrontendSessionAdapter::clear_selection() noexcept {
     selected_flow_index_.reset();
     session_.clear_selected_flow_packet_cache();
     session_.clear_selected_flow_tcp_payload_suppression();
+}
+
+void FrontendSessionAdapter::join_finished_open_worker() {
+    std::thread finished_worker {};
+    {
+        std::lock_guard lock {async_open_.mutex};
+        if (!async_open_.in_progress && async_open_.worker.joinable()) {
+            finished_worker = std::move(async_open_.worker);
+        }
+    }
+
+    if (finished_worker.joinable()) {
+        finished_worker.join();
+    }
+}
+
+void FrontendSessionAdapter::cancel_and_join_open_worker() {
+    {
+        std::lock_guard lock {async_open_.mutex};
+        if (async_open_.context != nullptr) {
+            async_open_.cancel_requested = true;
+            async_open_.progress.cancel_requested = true;
+            async_open_.context->request_cancel();
+        }
+    }
+
+    if (async_open_.worker.joinable()) {
+        async_open_.worker.join();
+    }
+
+    std::lock_guard lock {async_open_.mutex};
+    async_open_.context.reset();
+    async_open_.in_progress = false;
+    async_open_.cancel_requested = false;
+    async_open_.result_ready = false;
+    async_open_.progress = FrontendOpenProgressDto {};
+    async_open_.result = FrontendOpenResult {};
+    async_open_.completed_session.reset();
 }
 
 AnalysisSettings FrontendSessionAdapter::to_analysis_settings(const FrontendSettingsDto& settings) noexcept {

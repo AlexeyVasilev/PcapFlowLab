@@ -133,6 +133,7 @@ std::string open_result_json(const pfl::FrontendOpenResult& result) {
     std::ostringstream out {};
     out << '{'
         << "\"opened\":" << bool_json(result.opened) << ','
+        << "\"cancelled\":" << bool_json(result.cancelled) << ','
         << "\"opened_from_index\":" << bool_json(result.opened_from_index) << ','
         << "\"partial_open\":" << bool_json(result.partial_open) << ','
         << "\"has_source_capture\":" << bool_json(result.has_source_capture) << ','
@@ -142,6 +143,40 @@ std::string open_result_json(const pfl::FrontendOpenResult& result) {
         << "\"expected_source_capture_path\":" << json_string(result.expected_source_capture_path) << ','
         << "\"error_text\":" << json_string(result.error_text) << ','
         << "\"source_availability\":" << source_availability_json(result.source_availability)
+        << '}';
+    return out.str();
+}
+
+std::string open_start_result_json(const pfl::FrontendOpenStartResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"started\":" << bool_json(result.started) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
+std::string open_progress_json(const pfl::FrontendOpenProgressDto& progress) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"in_progress\":" << bool_json(progress.in_progress) << ','
+        << "\"cancel_requested\":" << bool_json(progress.cancel_requested) << ','
+        << "\"opening_as_index\":" << bool_json(progress.opening_as_index) << ','
+        << "\"packets_processed\":" << progress.packets_processed << ','
+        << "\"bytes_processed\":" << progress.bytes_processed << ','
+        << "\"total_bytes\":" << progress.total_bytes << ','
+        << "\"percent\":" << progress.percent << ','
+        << "\"input_path\":" << json_string(progress.input_path)
+        << '}';
+    return out.str();
+}
+
+std::string open_poll_result_json(const pfl::FrontendOpenPollResultDto& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"ready\":" << bool_json(result.ready) << ','
+        << "\"progress\":" << open_progress_json(result.progress) << ','
+        << "\"result\":" << open_result_json(result.result)
         << '}';
     return out.str();
 }
@@ -680,12 +715,42 @@ char* pfl_frontend_session_adapter_open_capture_json(
     const std::uint8_t open_mode
 ) {
     if (handle == nullptr) {
-        return make_c_string("{\"opened\":false,\"opened_from_index\":false,\"partial_open\":false,\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
+        return make_c_string("{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
     const auto mode = open_mode == 1U ? FrontendOpenMode::deep : FrontendOpenMode::fast;
     const auto path = path_from_utf8(path_utf8);
     return make_c_string(open_result_json(handle->adapter.open_capture(path, mode)));
+}
+
+char* pfl_frontend_session_adapter_start_open_capture_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8,
+    const std::uint8_t open_mode
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"started\":false,\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const auto mode = open_mode == 1U ? FrontendOpenMode::deep : FrontendOpenMode::fast;
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(open_start_result_json(handle->adapter.start_open_capture(path, mode)));
+}
+
+char* pfl_frontend_session_adapter_poll_open_capture_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("{\"ready\":false,\"progress\":{\"in_progress\":false,\"cancel_requested\":false,\"opening_as_index\":false,\"packets_processed\":0,\"bytes_processed\":0,\"total_bytes\":0,\"percent\":0.0,\"input_path\":\"\"},\"result\":{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}}");
+    }
+
+    return make_c_string(open_poll_result_json(handle->adapter.poll_open_capture()));
+}
+
+char* pfl_frontend_session_adapter_cancel_open_capture_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("{\"cancelled\":false}");
+    }
+
+    return make_c_string(std::string {"{\"cancelled\":"} + bool_json(handle->adapter.cancel_open_capture()) + '}');
 }
 
 char* pfl_frontend_session_adapter_attach_source_capture_json(

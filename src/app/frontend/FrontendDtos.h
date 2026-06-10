@@ -28,6 +28,7 @@ struct FrontendSourceAvailabilityDto {
 
 struct FrontendOpenResult {
     bool opened {false};
+    bool cancelled {false};
     bool opened_from_index {false};
     bool partial_open {false};
     bool has_source_capture {false};
@@ -37,6 +38,28 @@ struct FrontendOpenResult {
     std::string expected_source_capture_path {};
     std::string error_text {};
     FrontendSourceAvailabilityDto source_availability {};
+};
+
+struct FrontendOpenStartResult {
+    bool started {false};
+    std::string error_text {};
+};
+
+struct FrontendOpenProgressDto {
+    bool in_progress {false};
+    bool cancel_requested {false};
+    bool opening_as_index {false};
+    std::uint64_t packets_processed {0};
+    std::uint64_t bytes_processed {0};
+    std::uint64_t total_bytes {0};
+    double percent {0.0};
+    std::string input_path {};
+};
+
+struct FrontendOpenPollResultDto {
+    bool ready {false};
+    FrontendOpenProgressDto progress {};
+    FrontendOpenResult result {};
 };
 
 struct FrontendAttachSourceCaptureResult {
