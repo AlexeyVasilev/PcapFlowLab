@@ -50,6 +50,8 @@ Implemented slice:
   - lazy/on-demand
   - bounded
   - `Load More`
+  - Qt-like directional stream item cards
+  - left/right alignment by direction
   - selectable stream items
   - basic selected stream-item details
   - selected-flow stream latency on very large flows remains a known optimization area
@@ -127,7 +129,7 @@ Implemented slice:
 - Clicking a packet row loads packet details and bounded Raw/Payload previews when byte-backed inspection is available.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
 - The Stream tab keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
-- Stream rows are selectable and drive a basic Selected Stream Item Details view.
+- Stream items are rendered as directional cards rather than a table and still drive a basic Selected Stream Item Details view.
 - Selecting a stream item does not yet navigate to packet details or source packets.
 - Selected-flow packet and stream responsiveness on very large flows is still bounded, but not yet optimized deeply in the shared backend/session path.
 - The Statistics tab renders compact overview/statistics sections from the frontend-neutral overview DTO.

@@ -146,7 +146,9 @@ The `Stream` tab now supports:
 - lazy/on-demand loading
 - bounded packet-window and item budgets
 - `Load More`
-- selectable stream rows
+- Qt-like directional stream item cards
+- left/right alignment by direction
+- selectable stream items
 - basic selected stream-item details
 - shared structured source-packet references and constricted notes in the DTO path
 - stream reconstruction can recover after a valid source-capture attach

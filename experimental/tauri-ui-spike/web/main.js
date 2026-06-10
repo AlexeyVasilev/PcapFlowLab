@@ -958,6 +958,20 @@
     return packetIndices.map((packetIndex) => `#${packetIndex}`).join(", ");
   }
 
+  function compactStreamSourcePacketsText(sourcePacketsText) {
+    const text = String(sourcePacketsText || "").trim();
+    if (!text.startsWith("packets ")) {
+      return text;
+    }
+
+    const packetRefs = text.slice(8).split(",");
+    if (packetRefs.length <= 3 && text.length <= 26) {
+      return text;
+    }
+
+    return `packets ${packetRefs.slice(0, 3).join(",")}…`;
+  }
+
   function formatStreamConstrictedNotes(item) {
     const contributionNotes = Array.isArray(item?.constricted_contribution_notes)
       ? item.constricted_contribution_notes.filter((note) => String(note || "").trim().length > 0)
@@ -1631,7 +1645,7 @@
     }
 
     elements.flowViewTitle.textContent = state.flowViewTab === "stream"
-      ? "Selected-Flow Stream"
+      ? "Stream"
       : "Selected-Flow Packets";
 
     const showingPackets = state.flowViewTab === "packets";
@@ -2162,56 +2176,56 @@
 
     if (state.openState === "opening" || state.streamState === "loading") {
       elements.packetMeta.textContent = "Loading stream items...";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">Loading stream items...</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state">Loading stream items...</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.openState === "error") {
       elements.packetMeta.textContent = "No stream view is available after open failure.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="7">Open failed. Stream items were cleared.</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state is-error">Open failed. Stream items were cleared.</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.openState !== "opened") {
       elements.packetMeta.textContent = "Open a capture or index to inspect stream items.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">Open a capture or index to load stream items.</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state">Open a capture or index to load stream items.</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.selectedFlowIndex == null) {
       elements.packetMeta.textContent = "Select a flow to inspect stream items.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">No selected flow.</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state">No selected flow.</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.streamState === "error") {
       elements.packetMeta.textContent = state.streamErrorText || "Failed to load stream items.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="7">${escapeHtml(state.streamErrorText || "Failed to load stream items.")}</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state is-error">${escapeHtml(state.streamErrorText || "Failed to load stream items.")}</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.streamState === "unavailable") {
       elements.packetMeta.textContent = state.streamUnavailableText || "Stream view is unavailable for this flow.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="7">${escapeHtml(state.streamUnavailableText || "Stream view is unavailable for this flow.")}</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state is-error">${escapeHtml(state.streamUnavailableText || "Stream view is unavailable for this flow.")}</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.streamState === "idle") {
       elements.packetMeta.textContent = "Stream items load on demand for the selected flow.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">Stream items have not been loaded for this flow yet.</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state">Stream items have not been loaded for this flow yet.</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
 
     if (state.streamItems.length === 0) {
       elements.packetMeta.textContent = "No stream items are available for the selected flow.";
-      elements.streamTableBody.innerHTML = `<tr class="table-state-row"><td colspan="7">No stream items available for this flow.</td></tr>`;
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state">No stream items available for this flow.</div>`;
       elements.streamLoadMoreButton.disabled = !state.streamCanLoadMore;
       return;
     }
@@ -2232,24 +2246,37 @@
       .map((item) => {
         const sourcePacketRefs = formatStreamSourcePacketRefs(item);
         const constrictedNotes = formatStreamConstrictedNotes(item);
+        const sourcePacketSummary = item.source_packets_text || (item.packet_count > 1 ? `${formatNumber(item.packet_count)} packets` : "1 packet");
+        const compactSourcePacketSummary = compactStreamSourcePacketsText(sourcePacketSummary);
         const sourcePacketsTitle = sourcePacketRefs.length > 0
           ? `Source packet indices: ${sourcePacketRefs}`
-          : item.source_packets_text || "";
+          : sourcePacketSummary;
         const constrictedTitle = constrictedNotes.length > 0
           ? constrictedNotes.join("\n")
           : (item.has_constricted_contribution ? "Constricted contribution." : "");
         const selected = state.selectedStreamItemIndex === item.stream_item_index ? " selected" : "";
+        const directionClass = item.direction_text === "B→A" ? " is-b-to-a" : " is-a-to-b";
+        const summaryText = `${formatNumber(item.byte_count)} bytes | ${compactSourcePacketSummary}`;
+        const fullSummaryText = `${formatNumber(item.byte_count)} bytes | ${sourcePacketSummary}`;
+        const headerMetaText = `#${item.stream_item_index} · ${item.direction_text}`;
 
         return `
-        <tr class="stream-row${selected}" data-stream-item-index="${item.stream_item_index}">
-          <td>${item.stream_item_index}</td>
-          <td>${escapeHtml(item.direction_text)}</td>
-          <td>${escapeHtml(item.label)}</td>
-          <td>${formatNumber(item.byte_count)}</td>
-          <td>${formatNumber(item.packet_count)}</td>
-          <td title="${escapeHtml(sourcePacketsTitle)}">${escapeHtml(item.source_packets_text)}</td>
-          <td title="${escapeHtml(constrictedTitle)}">${item.has_constricted_contribution ? "Constricted" : ""}</td>
-        </tr>
+        <div class="stream-card-row${directionClass}">
+          <article
+            class="stream-card stream-row${selected ? " is-selected" : ""}"
+            data-stream-item-index="${item.stream_item_index}"
+            title="${escapeHtml([item.label, fullSummaryText, sourcePacketsTitle, constrictedTitle].filter((part) => String(part || "").trim().length > 0).join("\n"))}"
+          >
+            <div class="stream-card-header">
+              <p class="stream-card-title">${escapeHtml(item.label)}</p>
+              <span class="stream-card-header-meta">${escapeHtml(headerMetaText)}</span>
+            </div>
+            <div class="stream-card-summary-row">
+              <p class="stream-card-summary">${escapeHtml(summaryText)}</p>
+              ${item.has_constricted_contribution ? '<span class="stream-card-badge">Constricted</span>' : ""}
+            </div>
+          </article>
+        </div>
       `;
       })
       .join("");

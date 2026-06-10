@@ -50,7 +50,7 @@ This audit is based on static inspection of:
 | Checked-flow selection and selection status | Qt shows checked-flow state in-table and a bottom selection status bar when any flows are checked. | Tauri keeps checked-flow state across sorting/filtering and shows a compact checked-flow status bar. | Small presentation gap only. | Low | Keep behavior; only match wording/styling if needed. |
 | Packet list | Qt packet list is bounded, supports `Load more`, and emphasizes direction/flags with compact visual treatment. | Tauri packet list is bounded with append-only `Load More`, Qt-like visible columns, direction chips, and basic SYN/RST/FIN flag highlighting. | Main remaining gap is row-density and lower-workspace polish rather than column semantics. | Medium | Keep the bounded `Load More` model and continue with compact row styling and lower-workspace visual polish. |
 | Packet details | Qt packet/stream details pane is richer: warnings block extraction, dynamic header for stream items, better text panes, and tighter tab behavior. | Tauri supports `Summary / Raw / Payload / Protocol`, bounded previews, checksum setting, and metadata summary. | Tauri is functionally useful but still visually and structurally simpler than Qt. | High | Packet details display polish pass to align warning sections, section grouping, and stream-item detail treatment. |
-| Stream view | Qt stream view is selected-flow-only, bounded, lazy, and has better bubble/chat-like presentation plus constricted badges and `Load more`. | Tauri stream view is selected-flow-only, bounded, lazy, selectable, and shows basic details. | Tauri lacks the richer bubble presentation and some stream-item context that Qt already exposes. | High | Stream UI parity pass after packet-details polish; keep backend loading semantics unchanged. |
+| Stream view | Qt stream view is selected-flow-only, bounded, lazy, and uses directional bubble/card presentation plus constricted badges and `Load more`. | Tauri stream view is now selected-flow-only, bounded, lazy, selectable, and uses directional cards with left/right alignment by direction. | Main remaining gap is detail richness and contextual polish, not the basic presentation model. | Medium | Keep backend loading semantics unchanged and continue with stream-item-detail polish only. |
 | Stream item details | Qt has a dedicated stream-item detail presentation through the packet-details pane, with contextual headers and source-packet summaries. | Tauri shows basic selected stream-item details and source packet lists. | Tauri details are thinner and less contextual. | High | Fold stream-item detail polish into the packet-details parity pass. |
 | Statistics overview | Qt uses summary cards plus denser percentage-heavy protocol/family tables and conditional top-talker sections. | Tauri provides overview cards, transport/family/protocol-hint summaries, QUIC/TLS blocks, and top endpoints/ports. | Capability is mostly present, but percentage formatting and some conditional presentation are still simpler. | Medium | Statistics polish pass focused on percentages, compactness, and drill-down affordances. |
 | Statistics drill-down | Qt drill-down reuses flows filtering and top talker activation through controller helpers. | Tauri drill-down switches back to `Flows` and applies the shared filter text. | Useful but still coarse; no direct row/packet/detail navigation. | Medium | Consider direct row focus or preserved highlight after the filter pass, but keep backend unchanged. |
@@ -70,7 +70,7 @@ The biggest visible parity gap is no longer feature coverage. It is the lower wo
 
 - packet list row styling and navigation feel lighter than Qt
 - packet details are functionally complete enough but still less structured
-- stream and stream-item details remain simpler than the Qt workspace
+- stream-item details remain simpler than the Qt workspace
 
 ### 2. Smart Export UX is functional but not fully Qt-grade
 
@@ -100,7 +100,7 @@ This is not just a Tauri parity problem. Static inspection still points to a sha
 ## Recommended Next UI Parity Passes
 
 1. Packet list and packet-details polish
-2. Stream and stream-item-details presentation polish
+2. Stream-item-details presentation polish
 3. Top-shell plus source/index warning/message polish
 4. Statistics compactness and percentage-format polish
 5. Smart Export progress/cancel UX polish
