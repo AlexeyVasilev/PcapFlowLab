@@ -31,6 +31,7 @@ struct FrontendOpenResult {
     bool cancelled {false};
     bool opened_from_index {false};
     bool partial_open {false};
+    std::string partial_open_warning_text {};
     bool has_source_capture {false};
     bool source_capture_accessible {false};
     std::string input_path {};

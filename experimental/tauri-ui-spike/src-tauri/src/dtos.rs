@@ -17,6 +17,7 @@ pub struct OpenCaptureResultDto {
     pub cancelled: bool,
     pub opened_from_index: bool,
     pub partial_open: bool,
+    pub partial_open_warning_text: String,
     pub has_source_capture: bool,
     pub source_capture_accessible: bool,
     pub input_path: String,

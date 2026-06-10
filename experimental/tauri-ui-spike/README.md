@@ -32,6 +32,7 @@ Implemented slice:
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - open mode handling
 - grouped source-availability warning behavior
+- partial/truncated capture warning banner when a capture opens partially
 - frontend-only top-level tabs for `Flows`, `Analysis`, and `Statistics`
 - runtime-only adjustable splitters for the Flows workspace and Analysis workspace
 - compact desktop-style viewport layout with internal panel scrolling
@@ -41,7 +42,8 @@ Implemented slice:
   - separate checked-flow selection state for batch-oriented workflows
   - Wireshark filter display and copy
   - selected-flow packets
-  - packet markers for fragmentation and suspected retransmission
+  - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags`
+  - compact direction chips plus TCP flag highlighting in the packet list
   - packet details tabs: `Summary / Raw / Payload / Protocol`
 - selected-flow `Stream` workflow:
   - selected-flow-only
@@ -116,6 +118,7 @@ Implemented slice:
 - Opening a new path clears stale overview, flows, packets, stream, analysis, and prior errors before the next backend call.
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
+- Partial/truncated opens now surface a dedicated warning banner instead of only relying on generic shell status text.
 - Clicking a flow row loads that flow's packets and resets the bounded packet list to its initial batch.
 - Flow selection now updates loading state immediately and ignores stale packet/stream/analysis responses from older selections.
 - The lower-left Flows workspace has `Packets` and `Stream` tabs.

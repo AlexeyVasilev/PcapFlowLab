@@ -65,6 +65,29 @@ std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
 }
 
+std::string format_partial_open_warning_message(const OpenFailureInfo& failure) {
+    std::string message = "Capture opened partially.";
+
+    if (failure.has_file_offset || failure.has_packet_index || !failure.reason.empty()) {
+        message += " Import stopped";
+        if (failure.has_file_offset) {
+            message += " at offset " + std::to_string(failure.file_offset);
+        }
+        if (failure.has_packet_index) {
+            message += failure.has_file_offset
+                ? " (packet " + std::to_string(failure.packet_index) + ')'
+                : " at packet " + std::to_string(failure.packet_index);
+        }
+        if (!failure.reason.empty()) {
+            message += ": " + failure.reason;
+        }
+        message += '.';
+    }
+
+    message += " Results are incomplete.";
+    return message;
+}
+
 std::string format_protocol_hint_display(const std::string& value) {
     if (value == "possible_tls") {
         return "Possible TLS";
@@ -1145,6 +1168,9 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
         .cancelled = false,
         .opened_from_index = source_availability.opened_from_index,
         .partial_open = source_availability.partial_open,
+        .partial_open_warning_text = source_availability.partial_open
+            ? format_partial_open_warning_message(session_.partial_open_failure())
+            : std::string {},
         .has_source_capture = source_availability.has_source_capture,
         .source_capture_accessible = source_availability.source_capture_accessible,
         .input_path = path_to_string(path),
@@ -1248,6 +1274,9 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(
             .cancelled = cancelled,
             .opened_from_index = source_availability.opened_from_index,
             .partial_open = source_availability.partial_open,
+            .partial_open_warning_text = source_availability.partial_open
+                ? format_partial_open_warning_message(worker_session.partial_open_failure())
+                : std::string {},
             .has_source_capture = source_availability.has_source_capture,
             .source_capture_accessible = source_availability.source_capture_accessible,
             .input_path = path_to_string(path),

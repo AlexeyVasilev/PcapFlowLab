@@ -85,6 +85,7 @@ The current Tauri spike now supports:
 - source capture locate/attach workflow for index-backed or source-missing sessions
 - open mode handling
 - grouped source-availability warning behavior in the shell
+- partial/truncated capture warning banner when a capture opens partially
 - dev-only memory diagnostics gated by `PFL_TAURI_MEMORY_LOG=1`
 - active-tab-only heavy rendering for `Flows`, `Statistics`, and `Analysis`
 - frontend-only virtualization/windowing for the main Flows table and Analysis flow list
@@ -109,7 +110,14 @@ The `Flows` tab now supports:
 - conservative shared Wireshark display filter text plus copy
 - selected-flow packet loading over the existing backend `offset / limit` API with bounded append-only `Load More`
 - the initial selected-flow packet batch is intentionally small and bounded for responsiveness
-- compact packet markers for IP fragmentation and suspected TCP retransmission
+- packet list columns now align more closely with Qt:
+  - `#`
+  - `Direction`
+  - `Time`
+  - `Captured`
+  - `Payload`
+  - `Flags`
+- direction chips and TCP flag highlighting in the packet list
 - packet details tabs:
   - `Summary`
   - `Raw`

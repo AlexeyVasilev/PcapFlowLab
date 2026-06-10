@@ -60,6 +60,7 @@
     smartExportStatusKind: "neutral",
     statusKind: "neutral",
     statusText: "",
+    partialOpenWarningText: "",
     sourceAvailability: null,
     overview: null,
     flows: [],
@@ -182,6 +183,8 @@
     openProgressFill: document.getElementById("openProgressFill"),
     openCancelButton: document.getElementById("openCancelButton"),
     attachSourceButton: document.getElementById("attachSourceButton"),
+    partialOpenWarningBanner: document.getElementById("partialOpenWarningBanner"),
+    partialOpenWarningText: document.getElementById("partialOpenWarningText"),
     sourceWarningBanner: document.getElementById("sourceWarningBanner"),
     sourceWarningText: document.getElementById("sourceWarningText"),
     sourceWarningExpectedPath: document.getElementById("sourceWarningExpectedPath"),
@@ -897,15 +900,53 @@
       : "Frag";
   }
 
-  function formatPacketMarker(packet) {
-    const markers = [];
-    if (packet?.is_ip_fragmented) {
-      markers.push("Frag");
+  function packetDirectionClassSuffix(directionText) {
+    if (directionText === "A→B") {
+      return "is-a-to-b";
     }
-    if (packet?.suspected_tcp_retransmission) {
-      markers.push("Retrans");
+    if (directionText === "B→A") {
+      return "is-b-to-a";
     }
-    return markers.join(", ");
+    return "";
+  }
+
+  function renderPacketDirectionChip(directionText) {
+    const text = String(directionText || "").trim();
+    if (text.length === 0) {
+      return "";
+    }
+
+    const suffix = packetDirectionClassSuffix(text);
+    const className = suffix.length > 0 ? `packet-direction-chip ${suffix}` : "packet-direction-chip";
+    return `<span class="${className}">${escapeHtml(text)}</span>`;
+  }
+
+  function packetFlagsTone(flagsText) {
+    const text = String(flagsText || "").trim().toUpperCase();
+    if (text.length === 0) {
+      return "";
+    }
+    if (text.includes("RST") || text === "R") {
+      return "is-rst";
+    }
+    if (text.includes("SYN") || text === "S" || text === "SA") {
+      return "is-syn";
+    }
+    if (text.includes("FIN") || text === "F") {
+      return "is-fin";
+    }
+    return "";
+  }
+
+  function renderPacketFlagsChip(flagsText) {
+    const text = String(flagsText || "").trim();
+    if (text.length === 0) {
+      return "";
+    }
+
+    const tone = packetFlagsTone(text);
+    const className = tone.length > 0 ? `packet-flags-chip ${tone}` : "packet-flags-chip";
+    return `<span class="${className}">${escapeHtml(text)}</span>`;
   }
 
   function formatStreamSourcePacketRefs(item) {
@@ -1172,6 +1213,7 @@
     clearSettingsStatus();
     state.smartExportDialogVisible = false;
     state.sourceAvailability = null;
+    state.partialOpenWarningText = "";
     state.currentSessionPath = "";
     state.currentSessionOpenedFromIndex = false;
     state.openProgress = {
@@ -1676,6 +1718,14 @@
       : "";
   }
 
+  function renderPartialOpenWarningBanner() {
+    const warningText = String(state.partialOpenWarningText || "").trim();
+    const showBanner = state.openState === "opened" && warningText.length > 0;
+
+    elements.partialOpenWarningBanner.classList.toggle("is-visible", showBanner);
+    elements.partialOpenWarningText.textContent = showBanner ? warningText : "";
+  }
+
   function renderOverview() {
     const overview = state.overview;
     const transportRows = overview ? [
@@ -2040,7 +2090,7 @@
       elements.packetMeta.textContent = state.selectedFlowIndex == null
         ? "Loading packets..."
         : `Loading packets for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">Loading packets...</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="6">Loading packets...</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = false;
       return;
@@ -2048,7 +2098,7 @@
 
     if (state.packetState === "error") {
       elements.packetMeta.textContent = state.packetErrorText || "Failed to load packets.";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="9">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="6">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2056,7 +2106,7 @@
 
     if (state.selectedFlowIndex == null) {
       elements.packetMeta.textContent = "Select a flow to load packets.";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">No selected flow.</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="6">No selected flow.</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2064,7 +2114,7 @@
 
     if (state.packetsTotalCount === 0) {
       elements.packetMeta.textContent = `Flow ${formatNumber(state.selectedFlowIndex + 1)} has no packets.`;
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">No packets available for the selected flow.</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="6">No packets available for the selected flow.</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2082,14 +2132,11 @@
         return `
           <tr class="packet-row${selected}" data-packet-index="${packet.packet_index}">
             <td>${packet.row_number}</td>
-            <td>${packet.packet_index}</td>
-            <td>${escapeHtml(packet.direction_text)}</td>
+            <td class="packet-direction-cell">${renderPacketDirectionChip(packet.direction_text)}</td>
             <td>${escapeHtml(packet.timestamp_text)}</td>
             <td>${packet.captured_length}</td>
-            <td>${packet.original_length}</td>
             <td>${packet.payload_length}</td>
-            <td>${escapeHtml(packet.tcp_flags_text)}</td>
-            <td title="${escapeHtml(formatPacketMarker(packet))}">${escapeHtml(formatPacketMarker(packet))}</td>
+            <td class="packet-flags-cell">${renderPacketFlagsChip(packet.tcp_flags_text)}</td>
           </tr>
         `;
       })
@@ -2984,6 +3031,7 @@
       ["packet detail tabs", renderPacketDetailsTabs],
       ["flow sort headers", renderFlowSortHeaders],
       ["open state", renderOpenState],
+      ["partial-open warning banner", renderPartialOpenWarningBanner],
       ["source warning banner", renderSourceWarningBanner],
       ["status", renderStatus],
     ];
@@ -3503,6 +3551,7 @@
         }
 
         state.sourceAvailability = sourceAvailabilityOrDefault(result?.source_availability);
+        state.partialOpenWarningText = String(result?.partial_open_warning_text || "");
         state.currentSessionPath = String(result?.input_path || path);
         state.currentSessionOpenedFromIndex = Boolean(result?.opened_from_index);
         await loadOverviewAndFlows();

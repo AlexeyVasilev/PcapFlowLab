@@ -73,6 +73,12 @@
       </header>
 
       <section class="workspace-shell">
+        <section id="partialOpenWarningBanner" class="panel partial-open-warning-banner">
+          <div class="partial-open-warning-copy">
+            <p id="partialOpenWarningText" class="partial-open-warning-text"></p>
+          </div>
+        </section>
+
         <section id="sourceWarningBanner" class="panel source-warning-banner">
           <div class="source-warning-copy">
             <p id="sourceWarningText" class="source-warning-text"></p>
@@ -165,15 +171,12 @@
                   <table class="data-table packets-table">
                     <thead>
                       <tr>
-                        <th>Row #</th>
-                        <th>Packet Index</th>
+                        <th>#</th>
                         <th>Direction</th>
-                        <th>Timestamp</th>
+                        <th>Time</th>
                         <th>Captured</th>
-                        <th>Original</th>
                         <th>Payload</th>
-                        <th>TCP Flags</th>
-                        <th>Marker</th>
+                        <th>Flags</th>
                       </tr>
                     </thead>
                     <tbody id="packetTableBody"></tbody>
