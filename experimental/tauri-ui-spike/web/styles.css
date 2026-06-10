@@ -1495,6 +1495,10 @@ select:disabled {
   gap: 6px 10px;
 }
 
+.packet-summary-panel {
+  min-height: 0;
+}
+
 .details-section {
   display: flex;
   flex: 1 1 auto;
@@ -1548,6 +1552,12 @@ select:disabled {
   font: 12px/1.3 "Cascadia Mono", Consolas, monospace;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.packet-summary-pre {
+  min-height: 0;
+  white-space: pre-wrap;
+  line-height: 1.45;
 }
 
 .details-pre.is-muted {

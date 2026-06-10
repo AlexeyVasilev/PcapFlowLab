@@ -45,6 +45,7 @@ Implemented slice:
   - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags / Marker`
   - compact direction chips, TCP flag highlighting, and shared packet marker display such as `Suspected retransmission`
   - packet details tabs: `Summary / Raw / Payload / Protocol`
+  - Qt-like text-style packet summary in the `Summary` tab
 - selected-flow `Stream` workflow:
   - selected-flow-only
   - lazy/on-demand
@@ -204,6 +205,7 @@ Implemented slice:
   - fuller Qt analysis workspace parity
 - Selected packet inspection is still basic compared with Qt even though it now has `Summary / Raw / Payload / Protocol` tabs.
 - Packet details display polish still differs from Qt and remains a smaller parity task.
+- Packet details should eventually move toward a shared structured decoded-layer DTO so Qt, Tauri, and future CLI surfaces can render the same packet layer list consistently.
 - In index-only mode or when the original source capture is unavailable, byte-backed packet details plus Raw/Payload previews can be unavailable even though packet metadata is still shown.
 - After a valid source attach, byte-backed packet details and stream become available on the next explicit reload; the shell does not trigger global stream or analysis recomputation.
 - Source availability is now grouped in the frontend-neutral adapter for open/session shell state plus packet-details / stream unavailable fallbacks, but Qt still uses its existing controller-owned placeholder logic.

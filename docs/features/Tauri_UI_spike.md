@@ -125,6 +125,7 @@ The `Flows` tab now supports:
   - `Raw`
   - `Payload`
   - `Protocol`
+- the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
 - byte-backed packet details can recover after a valid source-capture attach
 - a compact checked-flow status bar shown only when one or more flows are checked
 - the menu shell currently wires:
@@ -299,6 +300,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - settings remain runtime-only; there is still no shared non-Qt persistence path for Tauri
 - packet inspector still intentionally simpler than Qt even though it now has `Summary / Raw / Payload / Protocol`
 - packet details display polish remains incomplete compared with Qt
+- packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
 - Analysis still misses:

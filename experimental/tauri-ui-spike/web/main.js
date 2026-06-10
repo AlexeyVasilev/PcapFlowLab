@@ -2427,6 +2427,39 @@
     }
   }
 
+  function fallbackPacketSummaryText(selectedPacket, details, sourceAvailability) {
+    const lines = [
+      "Packet",
+      `  Packet index in file: ${selectedPacket.packet_index}`,
+      `  Time: ${details?.timestamp_text || selectedPacket.timestamp_text || "-"}`,
+      `  Captured Length: ${details?.captured_length ?? selectedPacket.captured_length}`,
+      `  Original Length: ${details?.original_length ?? selectedPacket.original_length}`,
+    ];
+
+    const warnings = [];
+    if (selectedPacket?.is_ip_fragmented) {
+      warnings.push("Packet is IP-fragmented");
+    }
+    if ((details?.captured_length ?? selectedPacket.captured_length) !== (details?.original_length ?? selectedPacket.original_length)) {
+      warnings.push("Packet is truncated in capture");
+    }
+    if (details?.checksum_validation_enabled && Array.isArray(details?.checksum_warning_lines)) {
+      warnings.push(...details.checksum_warning_lines);
+    }
+    if (!details?.source_capture_accessible && sourceAvailability?.expected_source_capture_path) {
+      warnings.push(`Byte-backed packet details are unavailable until the source capture is attached/readable: ${sourceAvailability.expected_source_capture_path}`);
+    }
+
+    if (warnings.length > 0) {
+      lines.push("", "Warnings");
+      for (const warning of warnings) {
+        lines.push(`  ${warning}`);
+      }
+    }
+
+    return lines.join("\n");
+  }
+
   function renderPacketDetails() {
     const details = state.packetDetails;
     const packetDetailsTitle = String(details?.details_title || "Selected Packet Details");
@@ -2474,46 +2507,8 @@
 
     const selectedPacket = state.selectedPacketRow;
     const sourceAvailability = packetDetailsSourceAvailability(details);
-    const summaryItems = [
-      ["Packet Index", selectedPacket.packet_index],
-      ["Flow Index", state.selectedFlowIndex ?? "-"],
-      ["Direction", selectedPacket.direction_text || "-"],
-      ["Timestamp", details?.timestamp_text || selectedPacket.timestamp_text || "-"],
-      ["Captured Length", formatNumber(details?.captured_length ?? selectedPacket.captured_length)],
-      ["Original Length", formatNumber(details?.original_length ?? selectedPacket.original_length)],
-      ["Payload Length", formatNumber(details?.payload_length ?? selectedPacket.payload_length)],
-      ["TCP Flags", details?.tcp_flags_text || selectedPacket.tcp_flags_text || "-"],
-    ];
-    const checksumSummaryLines = Array.isArray(details?.checksum_summary_lines) ? details.checksum_summary_lines : [];
-    const checksumWarningLines = Array.isArray(details?.checksum_warning_lines) ? details.checksum_warning_lines : [];
-    const checksumEnabled = Boolean(details?.checksum_validation_enabled);
-    const summaryRowsHtml = summaryItems
-      .map(([label, value]) => `
-        <div class="summary-row">
-          <span class="summary-label">${escapeHtml(label)}</span>
-          <span class="summary-value">${escapeHtml(value)}</span>
-        </div>
-      `)
-      .join("");
-    const checksumSectionHtml = checksumEnabled
-      ? `
-        <div class="details-section summary-full-width-section">
-          <h3>Checksums</h3>
-          <pre class="details-pre">${
-            escapeHtml(
-              checksumSummaryLines.length > 0
-                ? checksumSummaryLines.join("\n")
-                : "Checksum validation is enabled, but no checksum results are available for this packet."
-            )
-          }</pre>
-          ${checksumWarningLines.length > 0
-            ? `<p class="status-text is-error">${escapeHtml(checksumWarningLines.join(" "))}</p>`
-            : ""}
-        </div>
-      `
-      : "";
-
-    elements.packetDetailsSummary.innerHTML = summaryRowsHtml + checksumSectionHtml;
+    const summaryText = String(details?.summary_text || "").trim() || fallbackPacketSummaryText(selectedPacket, details, sourceAvailability);
+    elements.packetDetailsSummary.innerHTML = `<pre class="details-pre packet-summary-pre">${escapeHtml(summaryText)}</pre>`;
 
     if (state.packetDetailsState === "error") {
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;

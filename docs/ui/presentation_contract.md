@@ -471,6 +471,12 @@ Summary should show compact packet metadata and packet-level interpretation, inc
 
 Qt currently uses formatted summary text rather than a purely structured field grid. Shared contract should preserve the information content even if different frontends choose a different compact layout.
 
+Future direction note:
+
+- packet details should eventually be backed by a shared structured decoded-layer list;
+- each layer may carry fields such as Ethernet, VLAN, MPLS, ARP, IPv4, IPv6, TCP, UDP, TLS, QUIC, and related metadata;
+- Qt, Tauri, and future CLI surfaces should eventually render this shared layer list consistently instead of relying mainly on frontend-local text reconstruction.
+
 ### Raw
 
 Raw should show a bounded raw packet byte preview.

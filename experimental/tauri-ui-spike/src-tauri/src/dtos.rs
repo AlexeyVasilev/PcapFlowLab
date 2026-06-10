@@ -285,6 +285,7 @@ pub struct PacketDetailsDto {
     pub flow_index: usize,
     pub packet_index: u64,
     pub details_title: String,
+    pub summary_text: String,
     pub payload_tab_title: String,
     pub timestamp_text: String,
     pub captured_length: u32,

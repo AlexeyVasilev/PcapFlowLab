@@ -490,6 +490,7 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
         << "\"flow_index\":" << details.flow_index << ','
         << "\"packet_index\":" << details.packet_index << ','
         << "\"details_title\":" << json_string(details.details_title) << ','
+        << "\"summary_text\":" << json_string(details.summary_text) << ','
         << "\"payload_tab_title\":" << json_string(details.payload_tab_title) << ','
         << "\"timestamp_text\":" << json_string(details.timestamp_text) << ','
         << "\"captured_length\":" << details.captured_length << ','

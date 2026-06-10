@@ -247,6 +247,7 @@ struct FrontendPacketDetailsDto {
     std::size_t flow_index {0};
     std::uint64_t packet_index {0};
     std::string details_title {};
+    std::string summary_text {};
     std::string payload_tab_title {};
     std::string timestamp_text {};
     std::uint32_t captured_length {0};

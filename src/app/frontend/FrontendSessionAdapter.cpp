@@ -266,6 +266,153 @@ std::string packet_details_title() {
     return "Packet Details";
 }
 
+std::string format_hex16_value(const std::uint16_t value) {
+    std::ostringstream out {};
+    out << "0x" << std::hex << std::nouppercase << std::setw(4) << std::setfill('0') << value;
+    return out.str();
+}
+
+std::string format_protocol_value(const std::uint8_t protocol) {
+    switch (protocol) {
+    case detail::kIpProtocolIcmp:
+        return "ICMP";
+    case detail::kIpProtocolTcp:
+        return "TCP";
+    case detail::kIpProtocolUdp:
+        return "UDP";
+    case detail::kIpProtocolIcmpV6:
+        return "ICMPv6";
+    default:
+        return std::to_string(protocol);
+    }
+}
+
+void append_summary_section(
+    std::vector<std::string>& lines,
+    const std::string& title,
+    const std::vector<std::string>& section_lines
+) {
+    if (section_lines.empty()) {
+        return;
+    }
+
+    if (!lines.empty()) {
+        lines.push_back({});
+    }
+
+    lines.push_back(title);
+    for (const auto& line : section_lines) {
+        lines.push_back("  " + line);
+    }
+}
+
+std::string build_frontend_packet_summary_text(
+    const PacketRef& packet,
+    const std::optional<PacketDetails>& details,
+    const PacketChecksumSections& checksum_sections,
+    const bool source_capture_accessible
+) {
+    std::vector<std::string> lines {};
+
+    append_summary_section(lines, "Packet", {
+        "Packet index in file: " + std::to_string(packet.packet_index),
+        "Time: " + session_detail::format_packet_timestamp_full(packet),
+        "Captured Length: " + std::to_string(packet.captured_length),
+        "Original Length: " + std::to_string(packet.original_length),
+    });
+
+    std::vector<std::string> warnings {};
+    if (packet.is_ip_fragmented) {
+        warnings.push_back("Packet is IP-fragmented");
+    }
+    if (packet.captured_length != packet.original_length) {
+        warnings.push_back("Packet is truncated in capture");
+        warnings.push_back("Captured Length: " + std::to_string(packet.captured_length));
+        warnings.push_back("Original Length: " + std::to_string(packet.original_length));
+    }
+    if (!source_capture_accessible) {
+        warnings.push_back("Byte-backed packet details are unavailable because the original source capture cannot be read.");
+    }
+    warnings.insert(warnings.end(), checksum_sections.warnings.begin(), checksum_sections.warnings.end());
+    append_summary_section(lines, "Warnings", warnings);
+    append_summary_section(lines, "Checksums", checksum_sections.summary_lines);
+
+    if (!details.has_value()) {
+        std::ostringstream out {};
+        for (std::size_t index = 0; index < lines.size(); ++index) {
+            if (index != 0U) {
+                out << '\n';
+            }
+            out << lines[index];
+        }
+        return out.str();
+    }
+
+    if (details->has_ethernet) {
+        append_summary_section(lines, "Ethernet", {
+            "EtherType: " + format_hex16_value(details->ethernet.ether_type),
+        });
+    }
+
+    if (details->has_ipv4) {
+        append_summary_section(lines, "IPv4", {
+            "Source: " + session_detail::format_ipv4_address(details->ipv4.src_addr),
+            "Destination: " + session_detail::format_ipv4_address(details->ipv4.dst_addr),
+            "Protocol: " + format_protocol_value(details->ipv4.protocol),
+        });
+    }
+
+    if (details->has_ipv6) {
+        append_summary_section(lines, "IPv6", {
+            "Source: " + session_detail::format_ipv6_address(details->ipv6.src_addr),
+            "Destination: " + session_detail::format_ipv6_address(details->ipv6.dst_addr),
+            "Next Header: " + format_protocol_value(details->ipv6.next_header),
+        });
+    }
+
+    if (details->has_tcp) {
+        auto tcp_lines = std::vector<std::string> {
+            "Source Port: " + std::to_string(details->tcp.src_port),
+            "Destination Port: " + std::to_string(details->tcp.dst_port),
+            "Flags: " + session_detail::format_tcp_flags_text(details->tcp.flags),
+            "Payload Length: " + std::to_string(packet.payload_length),
+        };
+        append_summary_section(lines, "TCP", tcp_lines);
+    }
+
+    if (details->has_udp) {
+        auto udp_lines = std::vector<std::string> {
+            "Source Port: " + std::to_string(details->udp.src_port),
+            "Destination Port: " + std::to_string(details->udp.dst_port),
+            "Payload Length: " + std::to_string(packet.payload_length),
+        };
+        append_summary_section(lines, "UDP", udp_lines);
+    }
+
+    if (details->has_icmp) {
+        append_summary_section(lines, "ICMP", {
+            "Type: " + std::to_string(details->icmp.type),
+            "Code: " + std::to_string(details->icmp.code),
+        });
+    }
+
+    if (details->has_icmpv6) {
+        append_summary_section(lines, "ICMPv6", {
+            "Type: " + std::to_string(details->icmpv6.type),
+            "Code: " + std::to_string(details->icmpv6.code),
+        });
+    }
+
+    std::ostringstream out {};
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (index != 0U) {
+            out << '\n';
+        }
+        out << lines[index];
+    }
+    return out.str();
+}
+
 std::string packet_payload_tab_title(const PacketDetails& details) {
     if (details.has_tcp) {
         return "TCP Payload";
@@ -1952,6 +2099,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         .flow_index = selected_flow_index_.value_or(0U),
         .packet_index = packet_index,
         .details_title = packet_details_title(),
+        .summary_text = {},
         .payload_tab_title = "Payload",
         .source_availability = current_source_availability(),
     };
@@ -1990,6 +2138,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     result.tcp_flags_text = session_detail::format_tcp_flags_text(packet.tcp_flags);
 
     if (!result.source_capture_accessible) {
+        result.summary_text = build_frontend_packet_summary_text(packet, std::nullopt, {}, false);
         result.unavailable_text =
             "Byte-backed packet details are unavailable because the original source capture cannot be read.";
         result.raw_preview_unavailable_text = result.unavailable_text;
@@ -2015,13 +2164,15 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     result.transport_summary_text = format_transport_summary(*details);
     result.protocol_details_text = session_.read_packet_protocol_details_text(packet);
 
+    PacketChecksumSections checksum_sections {};
     const auto packet_bytes = session_.read_packet_data(packet);
     if (result.checksum_validation_enabled) {
-        const auto checksum_sections =
+        checksum_sections =
             build_packet_checksum_sections(*details, packet, std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
         result.checksum_summary_lines = checksum_sections.summary_lines;
         result.checksum_warning_lines = checksum_sections.warnings;
     }
+    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
 
     const auto [raw_preview_text, raw_preview_truncated] = build_raw_preview(packet_bytes);
     result.raw_preview_text = raw_preview_text;
