@@ -54,7 +54,11 @@ Implemented slice:
   - Qt-like directional stream item cards
   - left/right alignment by direction
   - selectable stream items
-  - basic selected stream-item details
+  - Qt-like selected stream-item details with:
+    - compact header/title block
+    - `Summary / Payload / Protocol` tabs
+    - bounded payload preview
+    - protocol text when available
   - selected-flow stream latency on very large flows remains a known optimization area
 - richer `Statistics` workflow:
   - overview cards
@@ -130,7 +134,7 @@ Implemented slice:
 - Clicking a packet row loads packet details and bounded Raw/Payload previews when byte-backed inspection is available.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
 - The Stream tab keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
-- Stream items are rendered as directional cards rather than a table and still drive a basic Selected Stream Item Details view.
+- Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Payload / Protocol` tabs.
 - Selecting a stream item does not yet navigate to packet details or source packets.
 - Selected-flow packet and stream responsiveness on very large flows is still bounded, but not yet optimized deeply in the shared backend/session path.
 - The Statistics tab renders compact overview/statistics sections from the frontend-neutral overview DTO.
@@ -183,7 +187,7 @@ Implemented slice:
   - `Validate IPv4/TCP/UDP checksums for selected packet`
 - Checksum validation is runtime-only and applies only when selected packet details are loaded with readable source bytes.
 - Settings persistence and any remaining Qt-only settings are still deferred.
-- The Stream tab is still experimental and exposes only a bounded selected-flow slice with basic stream-item details; stream-to-packet navigation is still missing.
+- The Stream tab is still experimental and exposes only a bounded selected-flow slice with Qt-like stream-item details; stream-to-packet navigation is still missing.
 - Selected-flow packet/stream latency on very large flows is still a known issue shared with the common backend/session path.
 - Statistics remain partial compared to Qt:
   - Qt-style percentage formatting is still deferred.

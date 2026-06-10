@@ -446,6 +446,13 @@ std::string stream_result_json(const pfl::FrontendSelectedFlowStreamResult& resu
         out << "],"
             << "\"source_packets_text\":" << json_string(item.source_packets_text) << ','
             << "\"has_constricted_contribution\":" << bool_json(item.has_constricted_contribution) << ','
+            << "\"header_secondary_text\":" << json_string(item.header_secondary_text) << ','
+            << "\"badge_text\":" << json_string(item.badge_text) << ','
+            << "\"summary_text\":" << json_string(item.summary_text) << ','
+            << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
+            << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
+            << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
+            << "\"protocol_details_text\":" << json_string(item.protocol_details_text) << ','
             << "\"constricted_contribution_notes\":[";
 
         for (std::size_t note_index = 0; note_index < item.constricted_contribution_notes.size(); ++note_index) {

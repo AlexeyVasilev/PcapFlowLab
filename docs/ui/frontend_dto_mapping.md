@@ -41,7 +41,7 @@ This document is an audit only. It does not introduce a new contract and does no
 - Flow filtering and sorting semantics.
 - Settings persistence and any broader non-runtime preferences.
 - Packet inspector structure and most packet-details presentation composition.
-- Stream-item details presentation in the right-hand inspector.
+- Some stream-item-details presentation semantics in the right-hand inspector, especially Qt-only formatting/helper paths and the lack of a dedicated shared details query API.
 - Large parts of Statistics grouping/presentation.
 - Most of Analysis presentation.
 
@@ -64,11 +64,11 @@ This document is an audit only. It does not introduce a new contract and does no
   - Qt still consumes equivalent facts mostly through controller/view-model properties and placeholder builders.
 - Stream:
   - Qt supports selected stream item and stream-item details;
-  - Tauri now models selected stream item state and basic stream-item details, but still does not navigate to source packets or expose a shared stream-item details API.
+  - Tauri now models selected stream item state and richer stream-item details with shared summary/payload/protocol text fields, but still does not navigate to source packets or expose a shared stream-item details API.
 
 ### What should be handled first in future DTO cleanup
 
-- PacketInspector and stream-item details cleanup.
+- PacketInspector cleanup and any remaining stream-item-details polish.
 - Selected-flow packet/stream latency investigation for very large flows.
 - Shared packet-byte read optimization in the backend/session path.
 - Broader settings/preferences parity and any eventual persistence contract beyond the current runtime-only settings slice.
@@ -174,7 +174,8 @@ This document is an audit only. It does not introduce a new contract and does no
 | stream loading state | Qt `MainController.streamLoading` and tab-activation logic | no explicit loading field in result DTO | Tauri `streamState = idle/loading/loaded/error/unavailable` | frontend/controller-owned | frontend controller/model | Low |
 | stream error state | Qt state via controller reset/unavailable text | `FrontendSelectedFlowStreamResult.error_text` | Tauri uses explicit error state | aligned enough | frontend-neutral DTO + frontend controller | Medium |
 | stream unavailable state | Qt `sourceCaptureAvailable` + stream empty-state text + placeholders | `FrontendSelectedFlowStreamResult.source_capture_accessible`, `stream_available`, `unavailable_text` | Tauri uses explicit unavailable state | aligned enough | frontend-neutral DTO | High |
-| stream item selection | Qt `selectedStreamItemIndex` and stream-item details path exist | no frontend-neutral API for stream item selection/details | Tauri now supports local row selection plus basic details rendering from existing stream DTO fields | shared stream-item details API is still absent; Qt remains the richer reference path | deferred stream-item DTO/controller work | Improved |
+| stream item selection | Qt `selectedStreamItemIndex` and stream-item details path exist | no frontend-neutral API for stream item selection/details | Tauri now supports local row selection plus richer details rendering from shared stream DTO fields | shared stream-item details API is still absent; Qt remains the richer reference path for selection/query semantics | deferred stream-item DTO/controller work | Improved |
+| stream item details header / summary / payload / protocol text | Qt `PacketDetailsViewModel` stream-item header fields plus `summaryText`, `payloadText`, `payloadTabTitle`, `protocolText` | `FrontendStreamItemDto` now carries display-oriented stream-item detail fields such as `header_secondary_text`, `badge_text`, `summary_text`, `payload_tab_title`, `payload_preview_text`, `payload_preview_unavailable_text`, and `protocol_details_text` | Tauri now renders a compact header block plus `Summary / Payload / Protocol` tabs from the shared stream item DTO | still no dedicated shared stream-item-details query contract; some Qt-only protocol formatting helpers remain outside the adapter | frontend-neutral DTO for current rendering, later dedicated stream-item details contract if needed | Improved |
 
 ## Mapping Table: Statistics / Overview
 
@@ -221,7 +222,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 
 - Stable flow fields in `FlowRow` -> `FrontendFlowDto` -> Tauri `FlowDto`
 - Stable packet-row fields in `PacketRow` -> `FrontendPacketDto` -> Tauri `PacketDto`
-- Basic selected-flow stream row fields in `StreamItemRow` -> `FrontendStreamItemDto` -> Tauri `StreamItemDto`
+- Selected-flow stream row fields and current stream-item detail texts in `StreamItemRow` / adapter -> `FrontendStreamItemDto` -> Tauri `StreamItemDto`
 - Basic overview counters and recognition stats in `FrontendOverviewDto`
 - Grouped source-availability facts in `CaptureSession` -> frontend-neutral `SourceAvailability` -> Tauri open/details/stream DTOs
 - A first selected-flow analysis slice in `CaptureSession::get_flow_analysis()` -> `FrontendSelectedFlowAnalysisDto` -> Tauri `Analysis` tab
@@ -240,7 +241,7 @@ Analysis is now partially addressed in Tauri through a first selected-flow, on-d
 ### Available in Qt but not frontend-neutral
 
 - checked/selected-for-batch-export flow state in a shared/frontend-neutral contract
-- stream-item details path in the right-hand inspector
+- a dedicated shared stream-item selection/details query contract; Tauri currently consumes richer detail text through the stream row DTO itself
 - Qt source-unavailable placeholders still live in controller/view-model logic rather than consuming one grouped source-availability DTO directly
 
 ### Available in Tauri but not contract-aligned

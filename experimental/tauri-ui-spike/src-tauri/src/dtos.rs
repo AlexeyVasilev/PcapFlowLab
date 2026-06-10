@@ -239,6 +239,13 @@ pub struct StreamItemDto {
     pub source_packet_indices: Vec<u64>,
     pub source_packets_text: String,
     pub has_constricted_contribution: bool,
+    pub header_secondary_text: String,
+    pub badge_text: String,
+    pub summary_text: String,
+    pub payload_tab_title: String,
+    pub payload_preview_text: String,
+    pub payload_preview_unavailable_text: String,
+    pub protocol_details_text: String,
     pub constricted_contribution_notes: Vec<String>,
     pub constricted_packet_notes: Vec<String>,
 }

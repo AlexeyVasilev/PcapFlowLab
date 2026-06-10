@@ -152,7 +152,11 @@ The `Stream` tab now supports:
 - Qt-like directional stream item cards
 - left/right alignment by direction
 - selectable stream items
-- basic selected stream-item details
+- Qt-like selected stream-item details with:
+  - compact header/title block
+  - `Summary / Payload / Protocol` tabs
+  - bounded payload preview
+  - protocol text when available
 - shared structured source-packet references and constricted notes in the DTO path
 - stream reconstruction can recover after a valid source-capture attach
 - selected-flow stream latency on very large flows remains a known optimization area
@@ -302,6 +306,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - packet details display polish remains incomplete compared with Qt
 - packet details should eventually converge on a shared structured decoded-layer DTO rather than frontend-local text/layout reconstruction
 - stream-to-packet navigation is still missing
+- stream item details are now much closer to Qt, but some protocol-specific formatting/helper paths still remain Qt-only
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
 - Analysis still misses:
   - rate graph

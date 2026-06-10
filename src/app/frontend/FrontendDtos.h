@@ -210,6 +210,13 @@ struct FrontendStreamItemDto {
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
+    std::string header_secondary_text {};
+    std::string badge_text {};
+    std::string summary_text {};
+    std::string payload_tab_title {};
+    std::string payload_preview_text {};
+    std::string payload_preview_unavailable_text {};
+    std::string protocol_details_text {};
 };
 
 struct FrontendSelectedFlowStreamResult {

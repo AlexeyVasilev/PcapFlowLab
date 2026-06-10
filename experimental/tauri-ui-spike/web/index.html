@@ -232,20 +232,32 @@
                 </div>
                 <div id="streamInspectorView" class="inspector-view">
                   <div class="details-scroll">
+                    <div id="streamDetailsHeaderCard" class="stream-details-header-card">
+                      <div class="stream-details-header-row">
+                        <div class="stream-details-header-copy">
+                          <h3 id="streamDetailsHeaderPrimary" class="stream-details-header-primary">Select a stream item to inspect details.</h3>
+                          <p id="streamDetailsHeaderSecondary" class="stream-details-header-secondary"></p>
+                        </div>
+                        <span id="streamDetailsHeaderBadge" class="stream-details-header-badge is-hidden"></span>
+                      </div>
+                    </div>
+                    <div class="inspector-tabbar" aria-label="Stream item details tabs">
+                      <button type="button" class="inspector-tab active" data-stream-details-tab="summary">Summary</button>
+                      <button id="streamDetailsPayloadTabButton" type="button" class="inspector-tab" data-stream-details-tab="payload">Payload</button>
+                      <button type="button" class="inspector-tab" data-stream-details-tab="protocol">Protocol</button>
+                    </div>
                     <p id="streamDetailsStateText" class="status-text"></p>
-                    <div id="streamDetailsSummary" class="summary-grid"></div>
-                    <div class="details-section">
-                      <h3>Source Packets</h3>
-                      <pre id="streamDetailsSourcePacketsText" class="details-pre">Select a stream item to inspect details.</pre>
-                    </div>
-                    <div class="details-section">
-                      <h3>Source Packet Indices</h3>
-                      <pre id="streamDetailsSourcePacketIndicesText" class="details-pre">Select a stream item to inspect details.</pre>
-                    </div>
-                    <div class="details-section">
-                      <h3>Constricted Notes</h3>
-                      <pre id="streamDetailsConstrictedNotesText" class="details-pre">Select a stream item to inspect details.</pre>
-                    </div>
+                    <section class="stream-details-tab-panel active" data-stream-details-panel="summary">
+                      <pre id="streamDetailsSummaryText" class="details-pre stream-details-summary-pre">Select a stream item to inspect details.</pre>
+                    </section>
+                    <section class="stream-details-tab-panel" data-stream-details-panel="payload">
+                      <p id="streamDetailsPayloadStateText" class="status-text compact-status-text"></p>
+                      <pre id="streamDetailsPayloadText" class="details-pre byte-preview-pre">Select a stream item to inspect details.</pre>
+                    </section>
+                    <section class="stream-details-tab-panel" data-stream-details-panel="protocol">
+                      <p id="streamDetailsProtocolStateText" class="status-text compact-status-text"></p>
+                      <pre id="streamDetailsProtocolText" class="details-pre protocol-preview-pre">Select a stream item to inspect details.</pre>
+                    </section>
                   </div>
                 </div>
               </section>

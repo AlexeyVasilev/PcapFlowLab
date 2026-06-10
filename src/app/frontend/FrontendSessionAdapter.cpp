@@ -466,6 +466,245 @@ std::string format_stream_source_packets_text(
     return out.str();
 }
 
+bool stream_item_uses_packet_fallback(const StreamItemRow& row) {
+    return row.payload_hex_text.empty() && row.protocol_text.empty() && row.packet_indices.size() == 1U;
+}
+
+std::string stream_item_details_source_text(const StreamItemRow& row) {
+    return stream_item_uses_packet_fallback(row)
+        ? "Packet fallback"
+        : "Stream item";
+}
+
+std::string stream_item_frames_hint_text(const StreamItemRow& row) {
+    if (row.protocol_text.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> hints {};
+    auto extract_line_value = [&](const std::string& marker) -> std::string {
+        const auto marker_index = row.protocol_text.find(marker);
+        if (marker_index == std::string::npos) {
+            return {};
+        }
+
+        const auto line_start = marker_index + marker.size();
+        const auto line_end = row.protocol_text.find('\n', line_start);
+        auto value = row.protocol_text.substr(
+            line_start,
+            line_end == std::string::npos ? std::string::npos : (line_end - line_start)
+        );
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
+            value.erase(value.begin());
+        }
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
+            value.pop_back();
+        }
+        return value;
+    };
+
+    auto append_normalized_values = [&](const std::string& value) {
+        std::stringstream stream {value};
+        std::string part {};
+        while (std::getline(stream, part, ',')) {
+            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front())) != 0) {
+                part.erase(part.begin());
+            }
+            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back())) != 0) {
+                part.pop_back();
+            }
+            if (part == "Protected Payload") {
+                part = "Protected payload";
+            }
+            if (part.empty() || part == "Packet Type: Initial" || part == "Initial") {
+                continue;
+            }
+            if (std::find(hints.begin(), hints.end(), part) == hints.end()) {
+                hints.push_back(part);
+            }
+        }
+    };
+
+    append_normalized_values(extract_line_value("Frame Presence:"));
+    append_normalized_values(extract_line_value("Packet Type:"));
+    append_normalized_values(extract_line_value("Additional Packet Types:"));
+
+    if (hints.empty()) {
+        return {};
+    }
+
+    std::ostringstream out {};
+    out << "Frames: ";
+    for (std::size_t index = 0; index < hints.size(); ++index) {
+        if (index != 0U) {
+            out << ", ";
+        }
+        out << hints[index];
+    }
+    return out.str();
+}
+
+std::string stream_item_header_secondary_text(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) {
+    std::ostringstream out {};
+    out << row.byte_count << " bytes"
+        << " \xE2\x80\xA2 "
+        << format_stream_source_packets_text(row, flow_packet_numbers);
+    return out.str();
+}
+
+std::string stream_item_header_badge_text(const StreamItemRow& row) {
+    if (row.has_constricted_contribution) {
+        return "Constricted";
+    }
+
+    std::string lower_label = row.label;
+    std::transform(lower_label.begin(), lower_label.end(), lower_label.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    if (lower_label.find("partial") != std::string::npos) {
+        return "Partial";
+    }
+    if (stream_item_uses_packet_fallback(row)) {
+        return "Packet fallback";
+    }
+    if (row.packet_count > 1U) {
+        return "Reassembled";
+    }
+    return {};
+}
+
+std::string stream_item_payload_tab_title(const StreamItemRow& row) {
+    if (row.label.rfind("QUIC ", 0) == 0 ||
+        row.label == "QUIC Initial: ACK" ||
+        row.label == "QUIC Initial: CRYPTO" ||
+        row.label == "ACK" ||
+        row.label == "CRYPTO" ||
+        row.label == "0-RTT" ||
+        row.label == "Handshake" ||
+        row.label == "Protected payload" ||
+        row.protocol_text.rfind("QUIC", 0) == 0) {
+        return "UDP Payload";
+    }
+
+    if (row.label.rfind("TLS ", 0) == 0 ||
+        row.label.rfind("HTTP ", 0) == 0 ||
+        row.label == "HTTP Request" ||
+        row.label == "HTTP Response" ||
+        row.protocol_text.rfind("TLS", 0) == 0 ||
+        row.protocol_text.rfind("HTTP", 0) == 0) {
+        return "Item Payload";
+    }
+
+    return "Payload";
+}
+
+std::string stream_payload_unavailable_text() {
+    return "Payload is not available for this stream item.";
+}
+
+std::string stream_protocol_unavailable_text() {
+    return "Protocol details are not available for this stream item.";
+}
+
+std::string build_stream_item_summary_text(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) {
+    const auto source_packets = format_stream_source_packets_text(row, flow_packet_numbers);
+    const auto source_packets_line = source_packets.rfind("packet ", 0) == 0
+        ? "Source packet: " + source_packets.substr(7)
+        : (source_packets.rfind("packets ", 0) == 0
+            ? "Source packets: " + source_packets.substr(8)
+            : "Source packets: " + source_packets);
+
+    std::vector<std::string> lines {
+        "Label: " + row.label,
+        "Size: " + std::to_string(row.byte_count) + " bytes",
+        source_packets_line,
+        "Details source: " + stream_item_details_source_text(row),
+    };
+
+    if (const auto frames_hint = stream_item_frames_hint_text(row); !frames_hint.empty()) {
+        lines.insert(lines.begin() + 2, frames_hint);
+    }
+
+    if (!row.constricted_contribution_notes.empty()) {
+        lines.push_back({});
+        if (row.constricted_contribution_notes.size() == 1U) {
+            lines.push_back("Constricted contribution: " + row.constricted_contribution_notes.front());
+        } else {
+            lines.push_back("Constricted contributions:");
+            for (const auto& note : row.constricted_contribution_notes) {
+                lines.push_back(note);
+            }
+        }
+    }
+
+    if (!row.constricted_packet_notes.empty()) {
+        lines.push_back({});
+        for (const auto& note : row.constricted_packet_notes) {
+            lines.push_back(note);
+        }
+    }
+
+    std::ostringstream out {};
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (index != 0U) {
+            out << '\n';
+        }
+        out << lines[index];
+    }
+    return out.str();
+}
+
+std::string frontend_stream_payload_text(const CaptureSession& session, const StreamItemRow& row) {
+    if (!row.payload_hex_text.empty()) {
+        return row.payload_hex_text;
+    }
+
+    if (row.packet_indices.size() == 1U) {
+        if (const auto packet = session.find_packet(row.packet_indices.front()); packet.has_value()) {
+            return session.read_packet_payload_hex_dump(*packet);
+        }
+    }
+
+    return {};
+}
+
+std::string frontend_stream_protocol_text(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const StreamItemRow& row
+) {
+    if (!row.protocol_text.empty()) {
+        if (row.protocol_text.find("QUIC") != std::string::npos) {
+            if (const auto context_text = session.derive_quic_protocol_text_for_packet_context(flow_index, row.packet_indices);
+                context_text.has_value() && !context_text->empty()) {
+                return *context_text;
+            }
+        }
+        return row.protocol_text;
+    }
+
+    if (row.packet_indices.size() == 1U) {
+        if (const auto packet = session.find_packet(row.packet_indices.front()); packet.has_value()) {
+            auto protocol_text = session.read_packet_protocol_details_text(*packet);
+            if (protocol_text.find("QUIC") != std::string::npos) {
+                if (const auto context_text = session.derive_quic_protocol_text_for_packet(flow_index, packet->packet_index);
+                    context_text.has_value() && !context_text->empty()) {
+                    protocol_text = *context_text;
+                }
+            }
+            return protocol_text.empty() ? stream_protocol_unavailable_text() : protocol_text;
+        }
+    }
+
+    return stream_protocol_unavailable_text();
+}
+
 std::pair<std::string, bool> build_payload_preview(
     const std::vector<std::uint8_t>& packet_bytes,
     const PacketRef& packet
@@ -2301,6 +2540,7 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
     const StreamItemRow& row,
     const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
 ) const {
+    const auto payload_preview_text = frontend_stream_payload_text(session_, row);
     return FrontendStreamItemDto {
         .stream_item_index = row.stream_item_index,
         .direction_text = row.direction_text,
@@ -2312,6 +2552,13 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .has_constricted_contribution = row.has_constricted_contribution,
         .constricted_contribution_notes = row.constricted_contribution_notes,
         .constricted_packet_notes = row.constricted_packet_notes,
+        .header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers),
+        .badge_text = stream_item_header_badge_text(row),
+        .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
+        .payload_tab_title = stream_item_payload_tab_title(row),
+        .payload_preview_text = payload_preview_text,
+        .payload_preview_unavailable_text = payload_preview_text.empty() ? stream_payload_unavailable_text() : std::string {},
+        .protocol_details_text = frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row),
     };
 }
 

@@ -98,6 +98,7 @@
     streamLoadedForFlowIndex: null,
     selectedStreamItemIndex: null,
     selectedStreamItem: null,
+    streamDetailsTab: "summary",
     analysis: null,
     analysisState: "idle",
     analysisErrorText: "",
@@ -225,7 +226,7 @@
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
     packetInspectorView: document.getElementById("packetInspectorView"),
     streamInspectorView: document.getElementById("streamInspectorView"),
-    packetDetailsTabButtons: Array.from(document.querySelectorAll(".inspector-tab")),
+    packetDetailsTabButtons: Array.from(document.querySelectorAll("[data-packet-details-tab]")),
     packetDetailsTabPanels: Array.from(document.querySelectorAll(".packet-details-tab-panel")),
     packetDetailsPayloadTabButton: document.getElementById("packetDetailsPayloadTabButton"),
     packetDetailsStateText: document.getElementById("packetDetailsStateText"),
@@ -237,10 +238,18 @@
     packetDetailsProtocolStateText: document.getElementById("packetDetailsProtocolStateText"),
     packetDetailsPayloadText: document.getElementById("packetDetailsPayloadText"),
     streamDetailsStateText: document.getElementById("streamDetailsStateText"),
-    streamDetailsSummary: document.getElementById("streamDetailsSummary"),
-    streamDetailsSourcePacketsText: document.getElementById("streamDetailsSourcePacketsText"),
-    streamDetailsSourcePacketIndicesText: document.getElementById("streamDetailsSourcePacketIndicesText"),
-    streamDetailsConstrictedNotesText: document.getElementById("streamDetailsConstrictedNotesText"),
+    streamDetailsHeaderCard: document.getElementById("streamDetailsHeaderCard"),
+    streamDetailsHeaderPrimary: document.getElementById("streamDetailsHeaderPrimary"),
+    streamDetailsHeaderSecondary: document.getElementById("streamDetailsHeaderSecondary"),
+    streamDetailsHeaderBadge: document.getElementById("streamDetailsHeaderBadge"),
+    streamDetailsTabButtons: Array.from(document.querySelectorAll("[data-stream-details-tab]")),
+    streamDetailsTabPanels: Array.from(document.querySelectorAll("[data-stream-details-panel]")),
+    streamDetailsPayloadTabButton: document.getElementById("streamDetailsPayloadTabButton"),
+    streamDetailsSummaryText: document.getElementById("streamDetailsSummaryText"),
+    streamDetailsPayloadStateText: document.getElementById("streamDetailsPayloadStateText"),
+    streamDetailsPayloadText: document.getElementById("streamDetailsPayloadText"),
+    streamDetailsProtocolStateText: document.getElementById("streamDetailsProtocolStateText"),
+    streamDetailsProtocolText: document.getElementById("streamDetailsProtocolText"),
     analysisFlowMeta: document.getElementById("analysisFlowMeta"),
     analysisFlowTableBody: document.getElementById("analysisFlowTableBody"),
     analysisFlowTableViewport: document.getElementById("analysisFlowTableViewport"),
@@ -2324,106 +2333,118 @@
 
   function renderStreamDetails() {
     elements.streamDetailsStateText.className = "status-text";
-    elements.streamDetailsSummary.innerHTML = "";
-    elements.streamDetailsSourcePacketsText.classList.remove("is-muted");
-    elements.streamDetailsSourcePacketIndicesText.classList.remove("is-muted");
-    elements.streamDetailsConstrictedNotesText.classList.remove("is-muted");
+    elements.streamDetailsStateText.classList.add("is-hidden");
+    elements.streamDetailsPayloadStateText.className = "status-text compact-status-text";
+    elements.streamDetailsProtocolStateText.className = "status-text compact-status-text";
+    elements.streamDetailsHeaderPrimary.textContent = "Select a stream item to inspect details.";
+    elements.streamDetailsHeaderSecondary.textContent = "";
+    elements.streamDetailsHeaderBadge.textContent = "";
+    elements.streamDetailsHeaderBadge.classList.add("is-hidden");
+    elements.streamDetailsSummaryText.textContent = "Select a stream item to inspect details.";
+    elements.streamDetailsPayloadStateText.textContent = "";
+    elements.streamDetailsProtocolStateText.textContent = "";
+    elements.streamDetailsPayloadText.textContent = "Select a stream item to inspect details.";
+    elements.streamDetailsProtocolText.textContent = "Select a stream item to inspect details.";
+    elements.streamDetailsPayloadText.classList.remove("is-muted");
+    elements.streamDetailsProtocolText.classList.remove("is-muted");
+
+    for (const button of elements.streamDetailsTabButtons) {
+      const active = button.dataset.streamDetailsTab === state.streamDetailsTab;
+      button.classList.toggle("active", active);
+    }
+    for (const panel of elements.streamDetailsTabPanels) {
+      panel.classList.toggle("active", panel.dataset.streamDetailsPanel === state.streamDetailsTab);
+    }
 
     if (state.flowViewTab !== "stream") {
       return;
     }
 
     if (state.streamState === "loading") {
-      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
-      elements.packetDetailsMeta.textContent = state.selectedFlowIndex == null
-        ? "Loading stream items..."
-        : `Loading stream items for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
+      elements.packetDetailsTitle.textContent = "Stream Item Details";
+      elements.packetDetailsMeta.textContent = "";
+      elements.streamDetailsStateText.classList.remove("is-hidden");
       elements.streamDetailsStateText.textContent = "Loading stream items...";
-      elements.streamDetailsSourcePacketsText.textContent = "Loading stream items...";
-      elements.streamDetailsSourcePacketIndicesText.textContent = "Loading stream items...";
-      elements.streamDetailsConstrictedNotesText.textContent = "Loading stream items...";
+      elements.streamDetailsSummaryText.textContent = "Loading stream items...";
+      elements.streamDetailsPayloadText.textContent = "Loading stream items...";
+      elements.streamDetailsProtocolText.textContent = "Loading stream items...";
       return;
     }
 
     if (state.streamState === "error") {
-      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
-      elements.packetDetailsMeta.textContent = "Stream item details are unavailable.";
+      elements.packetDetailsTitle.textContent = "Stream Item Details";
+      elements.packetDetailsMeta.textContent = "";
+      elements.streamDetailsStateText.classList.remove("is-hidden");
       elements.streamDetailsStateText.textContent = state.streamErrorText || "Failed to load stream items.";
       elements.streamDetailsStateText.classList.add("is-error");
-      elements.streamDetailsSourcePacketsText.textContent = "Stream item details are unavailable because the stream request failed.";
-      elements.streamDetailsSourcePacketIndicesText.textContent = "Stream item details are unavailable because the stream request failed.";
-      elements.streamDetailsConstrictedNotesText.textContent = "Stream item details are unavailable because the stream request failed.";
-      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
-      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
-      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+      elements.streamDetailsSummaryText.textContent = "Stream item details are unavailable because the stream request failed.";
+      elements.streamDetailsPayloadStateText.textContent = "Payload preview unavailable.";
+      elements.streamDetailsProtocolStateText.textContent = "Protocol details unavailable.";
+      elements.streamDetailsPayloadStateText.classList.add("is-error");
+      elements.streamDetailsProtocolStateText.classList.add("is-error");
+      elements.streamDetailsPayloadText.textContent = "Stream payload is unavailable because the stream request failed.";
+      elements.streamDetailsProtocolText.textContent = "Stream protocol details are unavailable because the stream request failed.";
+      elements.streamDetailsPayloadText.classList.add("is-muted");
+      elements.streamDetailsProtocolText.classList.add("is-muted");
       return;
     }
 
     if (state.streamState === "unavailable") {
-      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
-      elements.packetDetailsMeta.textContent = "Stream item details are unavailable for this flow.";
+      elements.packetDetailsTitle.textContent = "Stream Item Details";
+      elements.packetDetailsMeta.textContent = "";
+      elements.streamDetailsStateText.classList.remove("is-hidden");
       elements.streamDetailsStateText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
       elements.streamDetailsStateText.classList.add("is-error");
-      elements.streamDetailsSourcePacketsText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
-      elements.streamDetailsSourcePacketIndicesText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
-      elements.streamDetailsConstrictedNotesText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
-      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
-      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
-      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+      elements.streamDetailsSummaryText.textContent = state.streamUnavailableText || "Stream item details are unavailable.";
+      elements.streamDetailsPayloadStateText.textContent = state.streamUnavailableText || "Stream payload is unavailable.";
+      elements.streamDetailsProtocolStateText.textContent = state.streamUnavailableText || "Stream protocol details are unavailable.";
+      elements.streamDetailsPayloadStateText.classList.add("is-error");
+      elements.streamDetailsProtocolStateText.classList.add("is-error");
+      elements.streamDetailsPayloadText.textContent = state.streamUnavailableText || "Stream payload is unavailable.";
+      elements.streamDetailsProtocolText.textContent = state.streamUnavailableText || "Stream protocol details are unavailable.";
+      elements.streamDetailsPayloadText.classList.add("is-muted");
+      elements.streamDetailsProtocolText.classList.add("is-muted");
       return;
     }
 
     if (state.selectedStreamItem == null) {
-      elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
-      elements.packetDetailsMeta.textContent = "Select a stream item to inspect details.";
+      elements.packetDetailsTitle.textContent = "Stream Item Details";
+      elements.packetDetailsMeta.textContent = "";
       elements.streamDetailsStateText.textContent = "";
-      elements.streamDetailsSourcePacketsText.textContent = "Select a stream item to inspect details.";
-      elements.streamDetailsSourcePacketIndicesText.textContent = "Select a stream item to inspect details.";
-      elements.streamDetailsConstrictedNotesText.textContent = "Select a stream item to inspect details.";
-      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
-      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
-      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+      elements.streamDetailsPayloadText.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsProtocolText.textContent = "Select a stream item to inspect details.";
+      elements.streamDetailsPayloadText.classList.add("is-muted");
+      elements.streamDetailsProtocolText.classList.add("is-muted");
       return;
     }
 
     const item = state.selectedStreamItem;
-    const sourcePacketRefs = formatStreamSourcePacketRefs(item);
-    const constrictedNotes = formatStreamConstrictedNotes(item);
-    const summaryItems = [
-      ["Stream Item", item.stream_item_index],
-      ["Flow Index", state.selectedFlowIndex == null ? "-" : formatNumber(state.selectedFlowIndex + 1)],
-      ["Direction", item.direction_text || "-"],
-      ["Label", item.label || "-"],
-      ["Bytes", formatNumber(item.byte_count)],
-      ["Packets", formatNumber(item.packet_count)],
-      ["Constricted", item.has_constricted_contribution ? "Yes" : "No"],
-    ];
-
-    elements.packetDetailsTitle.textContent = "Selected Stream Item Details";
-    elements.packetDetailsMeta.textContent = `Stream item ${item.stream_item_index} loaded for flow ${formatNumber((state.selectedFlowIndex ?? 0) + 1)}.`;
+    elements.packetDetailsTitle.textContent = "Stream Item Details";
+    elements.packetDetailsMeta.textContent = "";
     elements.streamDetailsStateText.textContent = "";
-    elements.streamDetailsSummary.innerHTML = summaryItems
-      .map(([label, value]) => `
-        <div class="summary-row">
-          <span class="summary-label">${escapeHtml(label)}</span>
-          <span class="summary-value">${escapeHtml(value)}</span>
-        </div>
-      `)
-      .join("");
-    elements.streamDetailsSourcePacketsText.textContent = item.source_packets_text || "No source packet text is available for this stream item.";
-    elements.streamDetailsSourcePacketIndicesText.textContent = sourcePacketRefs || "No structured source packet indices are available for this stream item.";
-    elements.streamDetailsConstrictedNotesText.textContent = constrictedNotes.length > 0
-      ? constrictedNotes.join("\n")
-      : (item.has_constricted_contribution ? "Constricted contribution is marked for this stream item, but no notes were emitted." : "No constricted notes are available for this stream item.");
+    elements.streamDetailsHeaderPrimary.textContent = item.label || "Stream item";
+    elements.streamDetailsHeaderSecondary.textContent = item.header_secondary_text || `${formatNumber(item.byte_count)} bytes`;
+    elements.streamDetailsHeaderBadge.textContent = item.badge_text || "";
+    elements.streamDetailsHeaderBadge.classList.toggle("is-hidden", String(item.badge_text || "").trim().length === 0);
+    elements.streamDetailsPayloadTabButton.textContent = item.payload_tab_title || "Payload";
+    elements.streamDetailsSummaryText.textContent = item.summary_text || "No summary details are available for this stream item.";
 
-    if (!item.source_packets_text) {
-      elements.streamDetailsSourcePacketsText.classList.add("is-muted");
+    if (item.payload_preview_text) {
+      elements.streamDetailsPayloadText.textContent = item.payload_preview_text;
+    } else {
+      elements.streamDetailsPayloadStateText.textContent = item.payload_preview_unavailable_text || "Payload is not available for this stream item.";
+      elements.streamDetailsPayloadStateText.classList.add("is-error");
+      elements.streamDetailsPayloadText.textContent = item.payload_preview_unavailable_text || "Payload is not available for this stream item.";
+      elements.streamDetailsPayloadText.classList.add("is-muted");
     }
-    if (!sourcePacketRefs) {
-      elements.streamDetailsSourcePacketIndicesText.classList.add("is-muted");
-    }
-    if (constrictedNotes.length === 0 && !item.has_constricted_contribution) {
-      elements.streamDetailsConstrictedNotesText.classList.add("is-muted");
+
+    if (item.protocol_details_text) {
+      elements.streamDetailsProtocolText.textContent = item.protocol_details_text;
+    } else {
+      elements.streamDetailsProtocolStateText.textContent = "Protocol details are not available for this stream item.";
+      elements.streamDetailsProtocolStateText.classList.add("is-error");
+      elements.streamDetailsProtocolText.textContent = "Protocol details are not available for this stream item.";
+      elements.streamDetailsProtocolText.classList.add("is-muted");
     }
   }
 
@@ -4509,6 +4530,12 @@
   for (const button of elements.packetDetailsTabButtons) {
     button.addEventListener("click", () => {
       state.packetDetailsTab = button.dataset.packetDetailsTab || "summary";
+      render();
+    });
+  }
+  for (const button of elements.streamDetailsTabButtons) {
+    button.addEventListener("click", () => {
+      state.streamDetailsTab = button.dataset.streamDetailsTab || "summary";
       render();
     });
   }
