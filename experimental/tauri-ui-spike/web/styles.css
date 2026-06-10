@@ -646,11 +646,8 @@ label {
   flex-wrap: wrap;
 }
 
-.flow-filter-field {
-  display: flex;
+.flow-filter-input {
   flex: 1 1 320px;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .flow-wireshark-row {
@@ -794,26 +791,41 @@ select:disabled {
 
 .subtabbar {
   display: flex;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 4px;
   margin-bottom: 6px;
   flex: 0 0 auto;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--border);
 }
 
 .subtab-button {
-  min-height: 26px;
-  padding: 4px 10px;
+  min-width: 96px;
+  min-height: 30px;
+  padding: 6px 12px 7px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #f5f2ea;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: #f3efe6;
   color: var(--text);
   font-size: 12px;
+  position: relative;
 }
 
 .subtab-button.active {
-  background: var(--accent);
-  border-color: transparent;
-  color: #ffffff;
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
   font-weight: 600;
+  top: 1px;
+}
+
+.subtab-button:not(.active) {
+  color: var(--muted);
+}
+
+.subtab-button:hover:not(.active) {
+  background: #f8f5ee;
 }
 
 .inspector-tabbar {

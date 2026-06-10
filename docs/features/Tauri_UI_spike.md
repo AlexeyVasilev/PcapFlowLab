@@ -86,7 +86,7 @@ The current Tauri spike now supports:
 - frontend-only virtualization/windowing for the main Flows table and Analysis flow list
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
-- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
+- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - compact desktop-style layout with internal panel scrolling
 - frontend-only top-level tabs: `Flows`, `Analysis`, `Statistics`
@@ -103,8 +103,8 @@ The `Flows` tab now supports:
 - user-facing 1-based flow numbering while keeping stable backend `flow_index`
 - address family and fragmentation state from shared flow DTOs
 - conservative shared Wireshark display filter text plus copy
-- selected-flow packet pagination over the existing backend `offset / limit` API
-- the initial selected-flow packet page is intentionally small and bounded for responsiveness
+- selected-flow packet loading over the existing backend `offset / limit` API with bounded append-only `Load More`
+- the initial selected-flow packet batch is intentionally small and bounded for responsiveness
 - compact packet markers for IP fragmentation and suspected TCP retransmission
 - packet details tabs:
   - `Summary`

@@ -24,7 +24,7 @@ Implemented slice:
   - `withGlobalTauri: true` is still required by the plain HTML/JS shell
   - `security.csp: null` is still left in place pending a runtime-verified CSP-tightening pass for the current global-bridge DOM shell
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
-- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current page, and keeps Stream / Analysis lazy
+- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - open mode handling
 - grouped source-availability warning behavior
@@ -107,10 +107,10 @@ Implemented slice:
 - Opening a new path clears stale overview, flows, packets, stream, analysis, and prior errors before the next backend call.
 - Open controls are disabled while an open is in flight.
 - Backend open failures are surfaced in the shell instead of leaving partial stale data on screen.
-- Clicking a flow row loads that flow's packets and resets packet paging to the first page.
+- Clicking a flow row loads that flow's packets and resets the bounded packet list to its initial batch.
 - Flow selection now updates loading state immediately and ignores stale packet/stream/analysis responses from older selections.
 - The lower-left Flows workspace has `Packets` and `Stream` tabs.
-- The initial selected-flow packet page is intentionally small and bounded for responsiveness.
+- The initial selected-flow packet batch is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
 - Clicking a packet row loads packet details and bounded Raw/Payload previews when byte-backed inspection is available.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.

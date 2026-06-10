@@ -99,10 +99,7 @@
               </div>
               <div class="flows-tools">
                 <div class="flows-toolbar">
-                  <label class="flow-filter-field" for="flowFilterInput">
-                    <span>Filter flows</span>
-                    <input id="flowFilterInput" type="text" placeholder="protocol, hint, service, endpoint, port..." />
-                  </label>
+                  <input id="flowFilterInput" class="flow-filter-input" type="text" placeholder="Filter by protocol, hint, service, address, or port" />
                   <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
                 </div>
                 <div id="wiresharkFilterRow" class="flow-wireshark-row">
@@ -161,8 +158,7 @@
                     <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
                   </div>
                   <div class="pager-controls">
-                    <button id="packetPrevButton" type="button" class="secondary-button">Previous</button>
-                    <button id="packetNextButton" type="button" class="secondary-button">Next</button>
+                    <button id="packetLoadMoreButton" type="button" class="secondary-button">Load More</button>
                     <button id="streamLoadMoreButton" type="button" class="secondary-button">Load More</button>
                   </div>
                 </div>

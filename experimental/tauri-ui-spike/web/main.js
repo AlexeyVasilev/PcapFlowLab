@@ -61,6 +61,8 @@
     packets: [],
     packetsTotalCount: 0,
     packetOffset: 0,
+    packetCanLoadMore: false,
+    packetLoadingMore: false,
     selectedPacketIndex: null,
     selectedPacketRow: null,
     packetDetails: null,
@@ -193,8 +195,7 @@
     copyWiresharkFilterButton: document.getElementById("copyWiresharkFilterButton"),
     packetMeta: document.getElementById("packetMeta"),
     packetTableBody: document.getElementById("packetTableBody"),
-    packetPrevButton: document.getElementById("packetPrevButton"),
-    packetNextButton: document.getElementById("packetNextButton"),
+    packetLoadMoreButton: document.getElementById("packetLoadMoreButton"),
     streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
     flowViewTitle: document.getElementById("flowViewTitle"),
     streamTableBody: document.getElementById("streamTableBody"),
@@ -1125,6 +1126,8 @@
     state.packets = [];
     state.packetsTotalCount = 0;
     state.packetOffset = 0;
+    state.packetCanLoadMore = false;
+    state.packetLoadingMore = false;
     state.packetState = "idle";
     state.packetErrorText = "";
     state.diagnosticsPacketRequestOffset = 0;
@@ -1569,8 +1572,7 @@
       : "Selected-Flow Packets";
 
     const showingPackets = state.flowViewTab === "packets";
-    elements.packetPrevButton.style.display = showingPackets ? "" : "none";
-    elements.packetNextButton.style.display = showingPackets ? "" : "none";
+    elements.packetLoadMoreButton.style.display = showingPackets ? "" : "none";
     elements.streamLoadMoreButton.style.display = showingPackets ? "none" : "";
   }
 
@@ -1990,43 +1992,45 @@
       return;
     }
 
-    if (state.packetState === "loading") {
+    if (state.packetState === "loading" && !state.packetLoadingMore) {
       elements.packetMeta.textContent = state.selectedFlowIndex == null
         ? "Loading packets..."
         : `Loading packets for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">Loading packets...</td></tr>`;
-      elements.packetPrevButton.disabled = true;
-      elements.packetNextButton.disabled = true;
+      elements.packetLoadMoreButton.disabled = true;
+      elements.packetLoadMoreButton.hidden = false;
       return;
     }
 
     if (state.packetState === "error") {
       elements.packetMeta.textContent = state.packetErrorText || "Failed to load packets.";
       elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="9">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
-      elements.packetPrevButton.disabled = true;
-      elements.packetNextButton.disabled = true;
+      elements.packetLoadMoreButton.disabled = true;
+      elements.packetLoadMoreButton.hidden = true;
       return;
     }
 
     if (state.selectedFlowIndex == null) {
       elements.packetMeta.textContent = "Select a flow to load packets.";
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">No selected flow.</td></tr>`;
-      elements.packetPrevButton.disabled = true;
-      elements.packetNextButton.disabled = true;
+      elements.packetLoadMoreButton.disabled = true;
+      elements.packetLoadMoreButton.hidden = true;
       return;
     }
 
     if (state.packetsTotalCount === 0) {
       elements.packetMeta.textContent = `Flow ${formatNumber(state.selectedFlowIndex + 1)} has no packets.`;
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="9">No packets available for the selected flow.</td></tr>`;
-      elements.packetPrevButton.disabled = true;
-      elements.packetNextButton.disabled = true;
+      elements.packetLoadMoreButton.disabled = true;
+      elements.packetLoadMoreButton.hidden = true;
       return;
     }
 
-    const start = state.packetOffset + 1;
-    const end = state.packetOffset + state.packets.length;
-    elements.packetMeta.textContent = `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${formatNumber(state.selectedFlowIndex + 1)}.`;
+    const start = state.packets.length > 0 ? 1 : 0;
+    const end = state.packets.length;
+    elements.packetMeta.textContent = state.packetLoadingMore
+      ? `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${formatNumber(state.selectedFlowIndex + 1)}. Loading more...`
+      : `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${formatNumber(state.selectedFlowIndex + 1)}.`;
 
     elements.packetTableBody.innerHTML = state.packets
       .map((packet) => {
@@ -2054,8 +2058,9 @@
       });
     }
 
-    elements.packetPrevButton.disabled = state.packetOffset === 0;
-    elements.packetNextButton.disabled = state.packetOffset + state.packets.length >= state.packetsTotalCount;
+    elements.packetLoadMoreButton.disabled = state.packetState === "loading" || !state.packetCanLoadMore;
+    elements.packetLoadMoreButton.textContent = state.packetLoadingMore ? "Loading..." : "Load More";
+    elements.packetLoadMoreButton.hidden = !state.packetCanLoadMore;
   }
 
   function renderStream() {
@@ -3029,20 +3034,25 @@
     await logMemoryPhase("after_get_flows");
   }
 
-  async function loadSelectedFlowPackets(selectionToken = state.flowSelectionRequestToken) {
+  async function loadSelectedFlowPackets(selectionToken = state.flowSelectionRequestToken, options = {}) {
     if (state.selectedFlowIndex == null) {
       clearPackets();
       render();
       return;
     }
 
+    const append = options.append === true;
     const requestedFlowIndex = state.selectedFlowIndex;
-    const requestedOffset = state.packetOffset;
+    const requestedOffset = append ? state.packets.length : 0;
     const requestedLimit = packetPageSize;
     const requestToken = ++state.packetRequestToken;
-    clearPacketDetails();
+    if (!append) {
+      clearPacketDetails();
+    }
     state.packetState = "loading";
+    state.packetLoadingMore = append && state.packets.length > 0;
     state.packetErrorText = "";
+    state.packetOffset = requestedOffset;
     state.diagnosticsPacketRequestOffset = requestedOffset;
     state.diagnosticsPacketRequestLimit = requestedLimit;
     state.diagnosticsPacketReturnedRowCount = 0;
@@ -3065,11 +3075,19 @@
         return;
       }
 
-      state.packets = packetResult?.packets || [];
+      const receivedPackets = packetResult?.packets || [];
+      if (append) {
+        const existingPacketIndices = new Set(state.packets.map((packet) => packet.packet_index));
+        state.packets = state.packets.concat(receivedPackets.filter((packet) => !existingPacketIndices.has(packet.packet_index)));
+      } else {
+        state.packets = receivedPackets;
+      }
       state.packetsTotalCount = packetResult?.total_count || 0;
       state.packetOffset = packetResult?.offset ?? requestedOffset;
+      state.packetCanLoadMore = state.packets.length < state.packetsTotalCount;
+      state.packetLoadingMore = false;
       state.packetState = "loaded";
-      state.diagnosticsPacketReturnedRowCount = state.packets.length;
+      state.diagnosticsPacketReturnedRowCount = receivedPackets.length;
       state.diagnosticsPacketReturnedTotalCount = state.packetsTotalCount;
       await logMemoryPhase("packets_request_finished");
     } catch (error) {
@@ -3083,6 +3101,8 @@
 
       state.packets = [];
       state.packetsTotalCount = 0;
+      state.packetCanLoadMore = false;
+      state.packetLoadingMore = false;
       state.packetState = "error";
       state.packetErrorText = `Failed to load packets: ${String(error)}`;
       setStatus(state.packetErrorText, "error");
@@ -3335,7 +3355,7 @@
       }
 
       if (state.activeTab === "flows" && state.flowViewTab === "packets") {
-        await loadSelectedFlowPackets(selectionToken);
+        await loadSelectedFlowPackets(selectionToken, { append: false });
       } else if (state.activeTab === "flows" && state.flowViewTab === "stream") {
         await loadSelectedFlowStream(selectionToken);
       }
@@ -4246,7 +4266,7 @@
         && state.packetsTotalCount === 0
         && state.packets.length === 0
       ) {
-        await loadSelectedFlowPackets();
+        await loadSelectedFlowPackets(state.flowSelectionRequestToken, { append: false });
       }
 
       if (
@@ -4264,28 +4284,12 @@
       render();
     });
   }
-  elements.packetPrevButton.addEventListener("click", async () => {
-    if (state.packetOffset === 0 || state.packetState === "loading") {
+  elements.packetLoadMoreButton.addEventListener("click", async () => {
+    if (state.packetState === "loading" || !state.packetCanLoadMore) {
       return;
     }
 
-    state.packetOffset = Math.max(0, state.packetOffset - packetPageSize);
-    clearPacketDetails();
-    await loadSelectedFlowPackets();
-  });
-  elements.packetNextButton.addEventListener("click", async () => {
-    if (state.packetState === "loading") {
-      return;
-    }
-
-    const nextOffset = state.packetOffset + packetPageSize;
-    if (nextOffset >= state.packetsTotalCount) {
-      return;
-    }
-
-    state.packetOffset = nextOffset;
-    clearPacketDetails();
-    await loadSelectedFlowPackets();
+    await loadSelectedFlowPackets(state.flowSelectionRequestToken, { append: true });
   });
   elements.streamLoadMoreButton.addEventListener("click", async () => {
     if (!state.streamCanLoadMore || state.streamState === "loading") {
