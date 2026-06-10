@@ -42,8 +42,8 @@ Implemented slice:
   - separate checked-flow selection state for batch-oriented workflows
   - Wireshark filter display and copy
   - selected-flow packets
-  - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags`
-  - compact direction chips plus TCP flag highlighting in the packet list
+  - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags / Marker`
+  - compact direction chips, TCP flag highlighting, and shared packet marker display such as `Suspected retransmission`
   - packet details tabs: `Summary / Raw / Payload / Protocol`
 - selected-flow `Stream` workflow:
   - selected-flow-only

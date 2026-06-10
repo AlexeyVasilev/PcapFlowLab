@@ -1038,7 +1038,8 @@ select:disabled {
 }
 
 .packet-direction-cell,
-.packet-flags-cell {
+.packet-flags-cell,
+.packet-marker-cell {
   white-space: nowrap;
 }
 
@@ -1089,6 +1090,24 @@ select:disabled {
 .packet-flags-chip.is-fin {
   background: #eef2f7;
   color: #475569;
+}
+
+.packet-marker-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #64748b;
+  background: #eef2f7;
+}
+
+.packet-marker-badge.is-retransmission {
+  background: #fff4db;
+  color: #8a4d00;
+  font-weight: 600;
 }
 
 .data-table tbody tr.flow-row.checked:not(.selected) {
@@ -1541,7 +1560,7 @@ select:disabled {
 }
 
 .packets-table {
-  min-width: 560px;
+  min-width: 700px;
 }
 
 .stream-table {

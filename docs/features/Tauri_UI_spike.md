@@ -117,7 +117,9 @@ The `Flows` tab now supports:
   - `Captured`
   - `Payload`
   - `Flags`
+  - `Marker`
 - direction chips and TCP flag highlighting in the packet list
+- Qt-like packet marker display for existing shared packet semantics such as `Suspected retransmission`
 - packet details tabs:
   - `Summary`
   - `Raw`

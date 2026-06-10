@@ -216,6 +216,7 @@
     copyWiresharkFilterButton: document.getElementById("copyWiresharkFilterButton"),
     packetMeta: document.getElementById("packetMeta"),
     packetTableBody: document.getElementById("packetTableBody"),
+    packetMarkerHeader: document.getElementById("packetMarkerHeader"),
     packetLoadMoreButton: document.getElementById("packetLoadMoreButton"),
     streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
     flowViewTitle: document.getElementById("flowViewTitle"),
@@ -330,6 +331,22 @@
   function renderStatsStateRow(colspan, text, kind = "neutral") {
     const className = kind === "error" ? "table-state-row is-error" : "table-state-row";
     return `<tr class="${className}"><td colspan="${colspan}">${escapeHtml(text)}</td></tr>`;
+  }
+
+  function packetMarkerText(packet) {
+    if (packet?.suspected_tcp_retransmission) {
+      return "Suspected retransmission";
+    }
+
+    if (packet?.is_ip_fragmented) {
+      return "Fragmented";
+    }
+
+    return "";
+  }
+
+  function loadedPacketsHaveMarkers() {
+    return state.packets.some((packet) => packetMarkerText(packet).length > 0);
   }
 
   function formatPercent(part, total) {
@@ -2100,11 +2117,17 @@
       return;
     }
 
+    const showMarkerColumn = loadedPacketsHaveMarkers();
+    const packetTableColspan = showMarkerColumn ? 7 : 6;
+    if (elements.packetMarkerHeader) {
+      elements.packetMarkerHeader.style.display = showMarkerColumn ? "" : "none";
+    }
+
     if (state.packetState === "loading" && !state.packetLoadingMore) {
       elements.packetMeta.textContent = state.selectedFlowIndex == null
         ? "Loading packets..."
         : `Loading packets for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="6">Loading packets...</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">Loading packets...</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = false;
       return;
@@ -2112,7 +2135,7 @@
 
     if (state.packetState === "error") {
       elements.packetMeta.textContent = state.packetErrorText || "Failed to load packets.";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="6">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="${packetTableColspan}">${escapeHtml(state.packetErrorText || "Failed to load packets.")}</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2120,7 +2143,7 @@
 
     if (state.selectedFlowIndex == null) {
       elements.packetMeta.textContent = "Select a flow to load packets.";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="6">No selected flow.</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No selected flow.</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2128,7 +2151,7 @@
 
     if (state.packetsTotalCount === 0) {
       elements.packetMeta.textContent = `Flow ${formatNumber(state.selectedFlowIndex + 1)} has no packets.`;
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="6">No packets available for the selected flow.</td></tr>`;
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No packets available for the selected flow.</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2143,6 +2166,13 @@
     elements.packetTableBody.innerHTML = state.packets
       .map((packet) => {
         const selected = state.selectedPacketIndex === packet.packet_index ? " selected" : "";
+        const markerText = packetMarkerText(packet);
+        const markerBadgeClass = packet.suspected_tcp_retransmission
+          ? "packet-marker-badge is-retransmission"
+          : "packet-marker-badge";
+        const markerContent = markerText
+          ? `<span class="${markerBadgeClass}" title="${escapeHtml(markerText)}">${escapeHtml(markerText)}</span>`
+          : "";
         return `
           <tr class="packet-row${selected}" data-packet-index="${packet.packet_index}">
             <td>${packet.row_number}</td>
@@ -2151,6 +2181,7 @@
             <td>${packet.captured_length}</td>
             <td>${packet.payload_length}</td>
             <td class="packet-flags-cell">${renderPacketFlagsChip(packet.tcp_flags_text)}</td>
+            ${showMarkerColumn ? `<td class="packet-marker-cell">${markerContent}</td>` : ""}
           </tr>
         `;
       })
