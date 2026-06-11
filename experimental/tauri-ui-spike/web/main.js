@@ -306,6 +306,14 @@
     return Number(value ?? 0).toLocaleString("en-US");
   }
 
+  function formatPlainInteger(value) {
+    const number = Number(value ?? 0);
+    if (!Number.isFinite(number)) {
+      return "0";
+    }
+    return String(Math.trunc(number));
+  }
+
   function fileNameFromPath(path) {
     const normalized = String(path || "").trim();
     if (normalized.length === 0) {
@@ -2040,8 +2048,8 @@
             <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
             <td>${escapeHtml(flow.address_a)}:${flow.port_a}</td>
             <td>${escapeHtml(flow.address_b)}:${flow.port_b}</td>
-            <td>${formatNumber(flow.packet_count)}</td>
-            <td>${formatNumber(flow.total_bytes)}</td>
+            <td>${formatPlainInteger(flow.packet_count)}</td>
+            <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>
         `;
       },

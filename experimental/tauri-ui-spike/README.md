@@ -69,19 +69,21 @@ Implemented slice:
   - top endpoints / top ports
   - drill-down into the existing `Flows` filter
 - first selected-flow `Analysis` workflow:
-  - left-side Analysis Flows list built from already loaded flow DTOs
-  - selected-flow-only, on-demand analysis details on the right
-  - section order now follows Qt more closely on the right side
-  - overview
-  - protocol panel
+- left-side Analysis Flows list built from already loaded flow DTOs
+- Analysis Flows `Packets` and `Bytes` columns now use Qt-like plain integer formatting in that table
+- selected-flow-only, on-demand analysis details on the right
+- section order now follows Qt more closely on the right side
+- overview
+- protocol panel
   - derived metrics and burst / idle summary in a shared row on wide layouts
   - directional
   - TCP controls when available
   - packet size histogram
-  - inter-arrival histogram
-  - sequence preview
-  - selected-flow sequence CSV export
-  - rate graph still deferred
+- inter-arrival histogram
+- sequence preview
+- selected-flow sequence CSV export
+- right-side Analysis presentation is now closer to Qt in spacing, typography, and compact label/value layout
+- rate graph still deferred
 
 ## Current behavior
 

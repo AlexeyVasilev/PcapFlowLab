@@ -183,6 +183,7 @@ The `Statistics` tab now supports:
 The `Analysis` tab now supports a first selected-flow-only, on-demand analysis workspace:
 
 - left-side Analysis Flows list built from already loaded flow DTOs
+- Analysis Flows `Packets` and `Bytes` columns now match Qt-style plain integer formatting in that table
 - right-side selected-flow analysis details ordered closer to Qt
 - overview
 - protocol panel
@@ -194,6 +195,7 @@ The `Analysis` tab now supports a first selected-flow-only, on-demand analysis w
 - sequence preview
 - selected-flow sequence CSV export
 - `Open in Flows`
+- right-side Analysis presentation is now closer to Qt in typography, spacing, and compact label/value layout
 
 Analysis remains:
 

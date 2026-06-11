@@ -1298,16 +1298,18 @@ select:disabled {
 .analysis-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 9px;
-  border: 1px solid #ebe4d8;
-  border-radius: 10px;
-  background: #fcfaf5;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid #e2d8c8;
+  border-radius: 8px;
+  background: #fffdf9;
 }
 
 .analysis-section h3 {
   margin: 0;
-  font-size: 13px;
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .analysis-dual-row {
@@ -1328,27 +1330,27 @@ select:disabled {
 .analysis-overview {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .analysis-overview-primary {
   margin: 0;
   color: #0f172a;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.25;
 }
 
 .analysis-overview-secondary {
-  margin: -2px 0 0;
+  margin: 0;
   color: #334155;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .analysis-overview-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 10px;
+  gap: 3px 18px;
 }
 
 .analysis-directional {
@@ -1360,7 +1362,7 @@ select:disabled {
 .analysis-directional-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .analysis-directional-group + .analysis-directional-group {
@@ -1378,7 +1380,7 @@ select:disabled {
 .analysis-directional-rows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .analysis-directional-row {
@@ -1414,6 +1416,40 @@ select:disabled {
 
 .analysis-matrix-table {
   min-width: 420px;
+}
+
+.analysis-section .summary-grid {
+  gap: 3px 18px;
+}
+
+.analysis-section .summary-row {
+  grid-template-columns: minmax(112px, auto) 1fr;
+  gap: 4px 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.analysis-section .summary-label {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.analysis-section .summary-value {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.analysis-section .data-table {
+  font-size: 12px;
+}
+
+.analysis-section .data-table th,
+.analysis-section .data-table td {
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 .analysis-matrix-table td:not(:first-child),
