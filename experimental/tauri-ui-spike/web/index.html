@@ -487,36 +487,38 @@
                 <p id="analysisStateText" class="status-text"></p>
                 <div id="analysisContent" class="analysis-sections">
                   <section class="analysis-section">
-                    <h3>Flow Summary</h3>
-                    <div id="analysisFlowSummary" class="summary-grid"></div>
+                    <h3>Overview</h3>
+                    <div id="analysisFlowSummary" class="analysis-overview"></div>
                   </section>
                   <section id="analysisProtocolPanelSection" class="analysis-section">
                     <h3>Protocol Panel</h3>
                     <div id="analysisProtocolPanel" class="summary-grid"></div>
                   </section>
+                  <div class="analysis-dual-row">
+                    <section id="analysisDerivedMetricsSection" class="analysis-section analysis-section-flex">
+                      <h3>Derived Metrics</h3>
+                      <div id="analysisDerivedMetrics" class="analysis-matrix-table-wrap"></div>
+                    </section>
+                    <section id="analysisBurstIdleSection" class="analysis-section analysis-section-compact">
+                      <h3>Burst / Idle Summary</h3>
+                      <div id="analysisBurstIdleSummary" class="summary-grid"></div>
+                    </section>
+                  </div>
                   <section class="analysis-section">
-                    <h3>Traffic Totals</h3>
-                    <div id="analysisTrafficTotals" class="summary-grid"></div>
-                  </section>
-                  <section class="analysis-section">
-                    <h3>Direction Split</h3>
-                    <div id="analysisDirectionSplit" class="summary-grid"></div>
-                  </section>
-                  <section id="analysisDerivedMetricsSection" class="analysis-section">
-                    <h3>Derived Metrics</h3>
-                    <div id="analysisDerivedMetrics" class="analysis-matrix-table-wrap"></div>
-                  </section>
-                  <section class="analysis-section">
-                    <h3>Timing and Size</h3>
-                    <div id="analysisTimingSize" class="summary-grid"></div>
-                  </section>
-                  <section id="analysisBurstIdleSection" class="analysis-section">
-                    <h3>Burst / Idle Summary</h3>
-                    <div id="analysisBurstIdleSummary" class="summary-grid"></div>
+                    <h3>Directional</h3>
+                    <div id="analysisDirectionSplit" class="analysis-directional"></div>
                   </section>
                   <section id="analysisTcpControlsSection" class="analysis-section">
                     <h3>TCP Controls</h3>
                     <div id="analysisTcpControls" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisTrafficTotalsSection" class="analysis-section is-hidden">
+                    <h3>Traffic Totals</h3>
+                    <div id="analysisTrafficTotals" class="summary-grid"></div>
+                  </section>
+                  <section id="analysisTimingSizeSection" class="analysis-section is-hidden">
+                    <h3>Timing and Size</h3>
+                    <div id="analysisTimingSize" class="summary-grid"></div>
                   </section>
                   <section id="analysisPacketSizeHistogramSection" class="analysis-section">
                     <div class="analysis-histogram-header">

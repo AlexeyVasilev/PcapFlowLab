@@ -183,14 +183,11 @@ The `Statistics` tab now supports:
 The `Analysis` tab now supports a first selected-flow-only, on-demand analysis workspace:
 
 - left-side Analysis Flows list built from already loaded flow DTOs
-- right-side selected-flow analysis details
-- flow summary
+- right-side selected-flow analysis details ordered closer to Qt
+- overview
 - protocol panel
-- traffic totals
-- direction split
-- derived metrics
-- timing and size
-- burst / idle summary
+- derived metrics and burst / idle summary in a shared row on wide layouts
+- directional
 - TCP controls when available
 - packet size histogram
 - inter-arrival histogram
@@ -206,6 +203,7 @@ Analysis remains:
 - not computed globally for all flows
 - not reloaded on ordinary flow clicks unless the `Analysis` tab is active
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
+- rate graph is still deferred in Tauri
 
 Open workflow:
 

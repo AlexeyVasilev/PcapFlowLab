@@ -11,7 +11,7 @@
 
 #include "app/frontend/FrontendDtos.h"
 #include "app/session/CaptureSession.h"
-#include "core/open_context.h"
+#include "../../../core/open_context.h"
 
 namespace pfl {
 

@@ -71,18 +71,17 @@ Implemented slice:
 - first selected-flow `Analysis` workflow:
   - left-side Analysis Flows list built from already loaded flow DTOs
   - selected-flow-only, on-demand analysis details on the right
-  - flow summary
+  - section order now follows Qt more closely on the right side
+  - overview
   - protocol panel
-  - traffic totals
-  - direction split
-  - derived metrics
-  - timing and size
-  - burst / idle summary
+  - derived metrics and burst / idle summary in a shared row on wide layouts
+  - directional
   - TCP controls when available
   - packet size histogram
   - inter-arrival histogram
   - sequence preview
   - selected-flow sequence CSV export
+  - rate graph still deferred
 
 ## Current behavior
 

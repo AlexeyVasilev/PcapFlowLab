@@ -1310,6 +1310,95 @@ select:disabled {
   font-size: 13px;
 }
 
+.analysis-dual-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(260px, 1fr);
+  gap: 8px;
+}
+
+.analysis-section-flex,
+.analysis-section-compact {
+  min-height: 0;
+}
+
+.analysis-section-compact .summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analysis-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-overview-primary {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.analysis-overview-secondary {
+  margin: -2px 0 0;
+  color: #334155;
+  font-size: 13px;
+}
+
+.analysis-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.analysis-directional {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analysis-directional-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analysis-directional-group + .analysis-directional-group {
+  border-left: 1px solid #ebe4d8;
+  padding-left: 12px;
+}
+
+.analysis-directional-group-title {
+  margin: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.analysis-directional-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analysis-directional-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.analysis-directional-label {
+  color: #475569;
+}
+
+.analysis-directional-value {
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+}
+
 .analysis-section-header {
   display: flex;
   align-items: center;
@@ -1848,6 +1937,10 @@ select:disabled {
     height: auto;
   }
 
+  .analysis-dual-row {
+    grid-template-columns: 1fr;
+  }
+
   .workspace-splitter {
     display: none;
   }
@@ -1862,6 +1955,21 @@ select:disabled {
   }
 
   .statistics-split {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-directional {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-directional-group + .analysis-directional-group {
+    border-left: none;
+    border-top: 1px solid #ebe4d8;
+    padding-left: 0;
+    padding-top: 10px;
+  }
+
+  .analysis-overview-grid {
     grid-template-columns: 1fr;
   }
 
