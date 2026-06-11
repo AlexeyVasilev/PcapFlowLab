@@ -294,6 +294,12 @@ struct FrontendAnalysisHistogramRowDto {
     std::uint64_t count_b_to_a {0};
 };
 
+struct FrontendAnalysisRatePointDto {
+    std::uint64_t relative_time_us {0};
+    double data_per_second {0.0};
+    double packets_per_second {0.0};
+};
+
 struct FrontendAnalysisSequenceExportResultDto {
     bool exported {false};
     std::string output_path {};
@@ -363,6 +369,11 @@ struct FrontendSelectedFlowAnalysisDto {
     std::string largest_burst_bytes_text {};
     std::string idle_gap_count_text {};
     std::string largest_idle_gap_text {};
+    bool rate_graph_available {false};
+    std::string rate_graph_status_text {};
+    std::string rate_graph_window_text {};
+    std::vector<FrontendAnalysisRatePointDto> rate_graph_points_a_to_b {};
+    std::vector<FrontendAnalysisRatePointDto> rate_graph_points_b_to_a {};
     std::string unavailable_text {};
     std::string error_text {};
     std::vector<FrontendAnalysisHistogramRowDto> inter_arrival_histogram_rows {};

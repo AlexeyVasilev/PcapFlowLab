@@ -335,6 +335,13 @@ pub struct AnalysisHistogramRowDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisRatePointDto {
+    pub relative_time_us: u64,
+    pub data_per_second: f64,
+    pub packets_per_second: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSequenceExportResultDto {
     pub exported: bool,
     pub output_path: String,
@@ -405,6 +412,11 @@ pub struct SelectedFlowAnalysisDto {
     pub largest_burst_bytes_text: String,
     pub idle_gap_count_text: String,
     pub largest_idle_gap_text: String,
+    pub rate_graph_available: bool,
+    pub rate_graph_status_text: String,
+    pub rate_graph_window_text: String,
+    pub rate_graph_points_a_to_b: Vec<AnalysisRatePointDto>,
+    pub rate_graph_points_b_to_a: Vec<AnalysisRatePointDto>,
     pub unavailable_text: String,
     pub error_text: String,
     pub inter_arrival_histogram_rows: Vec<AnalysisHistogramRowDto>,

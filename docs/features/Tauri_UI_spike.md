@@ -188,6 +188,7 @@ The `Analysis` tab now supports a first selected-flow-only, on-demand analysis w
 - overview with Qt-like richer `Protocol: transport (hint)` display when a meaningful hint exists
 - protocol panel with QUIC/TLS-specific rows and TCP control counts folded into that panel when applicable
 - derived metrics and burst / idle summary in a shared row on wide layouts
+- Qt-like rate graph with `Data/s` / `Packets/s` and `A->B` / `B->A` / `Both` toggles, rendered from shared selected-flow analysis samples
 - directional
 - packet size histogram
 - inter-arrival histogram
@@ -196,6 +197,7 @@ The `Analysis` tab now supports a first selected-flow-only, on-demand analysis w
 - `Open in Flows`
 - right-side Analysis presentation is now closer to Qt in typography, spacing, and compact label/value layout
 - Burst / Idle Summary now uses a one-column Qt-like layout, and Directional is rendered more compactly
+- the rate graph data comes from shared selected-flow analysis data, not Tauri-side sample generation
 
 Analysis remains:
 
@@ -205,7 +207,6 @@ Analysis remains:
 - not computed globally for all flows
 - not reloaded on ordinary flow clicks unless the `Analysis` tab is active
 - sequence CSV export is also selected-flow-only and reuses the existing analysis/session path
-- rate graph is still deferred in Tauri
 
 Open workflow:
 

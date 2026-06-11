@@ -504,6 +504,37 @@
                       <div id="analysisBurstIdleSummary" class="summary-grid"></div>
                     </section>
                   </div>
+                  <section id="analysisRateGraphSection" class="analysis-section">
+                    <div class="analysis-rate-header">
+                      <p id="analysisRateGraphHeaderText" class="analysis-rate-header-text"></p>
+                      <div id="analysisRateGraphLegend" class="analysis-rate-legend">
+                        <span class="analysis-rate-legend-item">
+                          <span class="analysis-rate-legend-swatch is-a-to-b"></span>
+                          <span>A-&gt;B</span>
+                        </span>
+                        <span class="analysis-rate-legend-item">
+                          <span class="analysis-rate-legend-swatch is-b-to-a"></span>
+                          <span>B-&gt;A</span>
+                        </span>
+                      </div>
+                    </div>
+                    <p id="analysisRateGraphContextText" class="analysis-rate-context-text"></p>
+                    <div class="analysis-rate-toolbar">
+                      <div class="analysis-direction-tabs">
+                        <button id="analysisRateMetricModeData" type="button" class="secondary-button">Data/s</button>
+                        <button id="analysisRateMetricModePackets" type="button" class="secondary-button">Packets/s</button>
+                      </div>
+                      <div class="analysis-direction-tabs">
+                        <button id="analysisRateDirectionModeAToB" type="button" class="secondary-button">A-&gt;B</button>
+                        <button id="analysisRateDirectionModeBToA" type="button" class="secondary-button">B-&gt;A</button>
+                        <button id="analysisRateDirectionModeBoth" type="button" class="secondary-button">Both</button>
+                      </div>
+                    </div>
+                    <p id="analysisRateGraphStatusText" class="compact-status-text"></p>
+                    <div id="analysisRateGraphSurface" class="analysis-rate-surface">
+                      <svg id="analysisRateGraphSvg" class="analysis-rate-svg" viewBox="0 0 1000 180" preserveAspectRatio="none"></svg>
+                    </div>
+                  </section>
                   <section class="analysis-section">
                     <h3>Directional</h3>
                     <div id="analysisDirectionSplit" class="analysis-directional"></div>

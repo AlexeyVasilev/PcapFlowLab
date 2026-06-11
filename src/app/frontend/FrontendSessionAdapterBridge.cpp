@@ -560,6 +560,24 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         return rows_out.str();
     };
 
+    auto rate_points_json = [](const std::vector<pfl::FrontendAnalysisRatePointDto>& points) {
+        std::ostringstream out {};
+        out << '[';
+        for (std::size_t index = 0; index < points.size(); ++index) {
+            if (index != 0U) {
+                out << ',';
+            }
+            const auto& point = points[index];
+            out << '{'
+                << "\"relative_time_us\":" << point.relative_time_us << ','
+                << "\"data_per_second\":" << point.data_per_second << ','
+                << "\"packets_per_second\":" << point.packets_per_second
+                << '}';
+        }
+        out << ']';
+        return out.str();
+    };
+
     auto sequence_preview_rows_json = [&analysis]() {
         std::ostringstream rows_out {};
         rows_out << '[';
@@ -646,6 +664,11 @@ std::string analysis_json(const pfl::FrontendSelectedFlowAnalysisDto& analysis) 
         << "\"largest_burst_bytes_text\":" << json_string(analysis.largest_burst_bytes_text) << ','
         << "\"idle_gap_count_text\":" << json_string(analysis.idle_gap_count_text) << ','
         << "\"largest_idle_gap_text\":" << json_string(analysis.largest_idle_gap_text) << ','
+        << "\"rate_graph_available\":" << bool_json(analysis.rate_graph_available) << ','
+        << "\"rate_graph_status_text\":" << json_string(analysis.rate_graph_status_text) << ','
+        << "\"rate_graph_window_text\":" << json_string(analysis.rate_graph_window_text) << ','
+        << "\"rate_graph_points_a_to_b\":" << rate_points_json(analysis.rate_graph_points_a_to_b) << ','
+        << "\"rate_graph_points_b_to_a\":" << rate_points_json(analysis.rate_graph_points_b_to_a) << ','
         << "\"unavailable_text\":" << json_string(analysis.unavailable_text) << ','
         << "\"error_text\":" << json_string(analysis.error_text) << ','
         << "\"inter_arrival_histogram_rows\":" << histogram_rows_json(analysis.inter_arrival_histogram_rows) << ','

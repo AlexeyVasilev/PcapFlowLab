@@ -76,6 +76,7 @@ Implemented slice:
 - overview with richer Qt-like `Protocol: transport (hint)` display when a meaningful hint exists
 - protocol panel with QUIC/TLS-specific rows and merged TCP control counts when applicable
 - derived metrics and burst / idle summary in a shared row on wide layouts
+- Qt-like rate graph with `Data/s` / `Packets/s` and `A->B` / `B->A` / `Both` toggles, rendered from shared selected-flow analysis samples
 - directional
 - packet size histogram
 - inter-arrival histogram
@@ -83,7 +84,7 @@ Implemented slice:
 - selected-flow sequence CSV export
 - right-side Analysis presentation is now closer to Qt in spacing, typography, and compact label/value layout
 - Burst / Idle Summary now uses a one-column layout and Directional is rendered more compactly
-- rate graph still deferred
+- rate graph data is shared; Tauri only renders the prepared series
 
 ## Current behavior
 

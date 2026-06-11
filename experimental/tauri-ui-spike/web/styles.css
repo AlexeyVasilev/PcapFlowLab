@@ -1454,6 +1454,83 @@ select:disabled {
   min-width: 420px;
 }
 
+.analysis-rate-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analysis-rate-header-text,
+.analysis-rate-context-text {
+  margin: 0;
+  font-size: 12px;
+}
+
+.analysis-rate-header-text {
+  color: #475569;
+}
+
+.analysis-rate-context-text {
+  color: #64748b;
+}
+
+.analysis-rate-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.analysis-rate-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.analysis-rate-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.analysis-rate-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.analysis-rate-legend-swatch.is-a-to-b {
+  background: #22c55e;
+}
+
+.analysis-rate-legend-swatch.is-b-to-a {
+  background: #3b82f6;
+}
+
+.analysis-rate-surface {
+  display: none;
+  height: 150px;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.analysis-rate-surface.is-visible {
+  display: block;
+}
+
+.analysis-rate-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .analysis-section .summary-grid {
   gap: 3px 18px;
 }

@@ -110,6 +110,8 @@
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
+    analysisRateMetricMode: "data",
+    analysisRateDirectionMode: "both",
     analysisPacketSizeHistogramMode: "all",
     analysisInterArrivalHistogramMode: "all",
     packetDetailsState: "idle",
@@ -270,6 +272,18 @@
     analysisTimingSize: document.getElementById("analysisTimingSize"),
     analysisBurstIdleSection: document.getElementById("analysisBurstIdleSection"),
     analysisBurstIdleSummary: document.getElementById("analysisBurstIdleSummary"),
+    analysisRateGraphSection: document.getElementById("analysisRateGraphSection"),
+    analysisRateGraphHeaderText: document.getElementById("analysisRateGraphHeaderText"),
+    analysisRateGraphContextText: document.getElementById("analysisRateGraphContextText"),
+    analysisRateGraphLegend: document.getElementById("analysisRateGraphLegend"),
+    analysisRateGraphStatusText: document.getElementById("analysisRateGraphStatusText"),
+    analysisRateGraphSurface: document.getElementById("analysisRateGraphSurface"),
+    analysisRateGraphSvg: document.getElementById("analysisRateGraphSvg"),
+    analysisRateMetricModeData: document.getElementById("analysisRateMetricModeData"),
+    analysisRateMetricModePackets: document.getElementById("analysisRateMetricModePackets"),
+    analysisRateDirectionModeAToB: document.getElementById("analysisRateDirectionModeAToB"),
+    analysisRateDirectionModeBToA: document.getElementById("analysisRateDirectionModeBToA"),
+    analysisRateDirectionModeBoth: document.getElementById("analysisRateDirectionModeBoth"),
     analysisPacketSizeHistogramSection: document.getElementById("analysisPacketSizeHistogramSection"),
     analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
     analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
@@ -322,6 +336,170 @@
       return protocol || hint;
     }
     return `${protocol} (${hint})`;
+  }
+
+  function trimTrailingZeros(text) {
+    return String(text).replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
+  }
+
+  function ratePointValue(point, metricMode) {
+    return metricMode === "packets"
+      ? Number(point?.packets_per_second ?? 0)
+      : Number(point?.data_per_second ?? 0);
+  }
+
+  function trimRateGraphSeries(seriesA, seriesB) {
+    const safeA = Array.isArray(seriesA) ? seriesA : [];
+    const safeB = Array.isArray(seriesB) ? seriesB : [];
+    let lastIndex = Math.max(safeA.length, safeB.length) - 1;
+    while (lastIndex >= 0) {
+      const pointA = lastIndex < safeA.length ? safeA[lastIndex] : null;
+      const pointB = lastIndex < safeB.length ? safeB[lastIndex] : null;
+      const zeroA = !pointA || (Number(pointA.data_per_second ?? 0) === 0 && Number(pointA.packets_per_second ?? 0) === 0);
+      const zeroB = !pointB || (Number(pointB.data_per_second ?? 0) === 0 && Number(pointB.packets_per_second ?? 0) === 0);
+      if (!zeroA || !zeroB) {
+        break;
+      }
+      lastIndex -= 1;
+    }
+    const count = Math.max(0, lastIndex + 1);
+    return {
+      seriesA: safeA.slice(0, count),
+      seriesB: safeB.slice(0, count),
+      sampleCount: count,
+    };
+  }
+
+  function rateUnitForValue(metricMode, peakValue) {
+    if (metricMode === "packets") {
+      return "pkt/s";
+    }
+    if (peakValue >= 1024 * 1024) {
+      return "MB/s";
+    }
+    if (peakValue >= 1024) {
+      return "KB/s";
+    }
+    return "B/s";
+  }
+
+  function scaleRateValue(value, unit) {
+    if (unit === "MB/s") {
+      return value / (1024 * 1024);
+    }
+    if (unit === "KB/s") {
+      return value / 1024;
+    }
+    return value;
+  }
+
+  function formatRatePeakValue(value, unit) {
+    const scaled = scaleRateValue(value, unit);
+    const decimals = unit === "B/s" || unit === "pkt/s" ? 0 : 2;
+    return `${trimTrailingZeros(scaled.toFixed(decimals))} ${unit}`;
+  }
+
+  function formatRateGraphWindowContext(windowText) {
+    const normalized = String(windowText || "").trim();
+    if (normalized.length === 0 || normalized === "-") {
+      return "Window: -";
+    }
+
+    const match = /^([0-9]+(?:\.[0-9]+)?)\s*(ms|s)\s*\(auto\)$/i.exec(normalized);
+    if (!match) {
+      return `Window: ${normalized}`;
+    }
+
+    const value = Number(match[1]);
+    const unit = String(match[2] || "").toLowerCase();
+    if (!Number.isFinite(value) || value <= 0) {
+      return "Window: -";
+    }
+
+    const windowMs = unit === "s" ? value * 1000 : value;
+    if (windowMs < 1000) {
+      return `Window: ${Math.max(1, Math.round(windowMs))} ms (auto)`;
+    }
+
+    return `Window: ${(windowMs / 1000).toFixed(1)} s (auto)`;
+  }
+
+  function buildSvgPolylinePoints(series, maxX, maxY) {
+    const width = 1000;
+    const height = 180;
+    const padLeft = 14;
+    const padRight = 14;
+    const padTop = 10;
+    const padBottom = 10;
+    const graphWidth = width - padLeft - padRight;
+    const graphHeight = height - padTop - padBottom;
+    return series.map((point) => {
+      const x = padLeft + ((Number(point.relative_time_us ?? 0) / maxX) * graphWidth);
+      const y = padTop + (1 - (ratePointValue(point, state.analysisRateMetricMode) / maxY)) * graphHeight;
+      return `${x},${y}`;
+    }).join(" ");
+  }
+
+  function renderAnalysisRateGraph(analysis) {
+    const section = elements.analysisRateGraphSection;
+    const header = elements.analysisRateGraphHeaderText;
+    const context = elements.analysisRateGraphContextText;
+    const legend = elements.analysisRateGraphLegend;
+    const status = elements.analysisRateGraphStatusText;
+    const surface = elements.analysisRateGraphSurface;
+    const svg = elements.analysisRateGraphSvg;
+
+    section.style.display = "";
+    header.textContent = "";
+    context.textContent = "";
+    status.textContent = "";
+    status.className = "compact-status-text";
+    legend.style.display = "none";
+    surface.classList.remove("is-visible");
+    svg.innerHTML = "";
+
+    const rateAvailable = Boolean(analysis?.rate_graph_available);
+    const rawSeriesA = analysis?.rate_graph_points_a_to_b || [];
+    const rawSeriesB = analysis?.rate_graph_points_b_to_a || [];
+    const trimmed = trimRateGraphSeries(rawSeriesA, rawSeriesB);
+    const showA = state.analysisRateDirectionMode === "a_to_b" || state.analysisRateDirectionMode === "both";
+    const showB = state.analysisRateDirectionMode === "b_to_a" || state.analysisRateDirectionMode === "both";
+    const seriesA = showA ? trimmed.seriesA : [];
+    const seriesB = showB ? trimmed.seriesB : [];
+    const visibleSeries = [...seriesA, ...seriesB];
+
+    if (!rateAvailable || visibleSeries.length === 0) {
+      status.textContent = analysis?.rate_graph_status_text || "Rate graph is unavailable for this flow.";
+      return;
+    }
+
+    const peakValue = visibleSeries.reduce(
+      (maxValue, point) => Math.max(maxValue, ratePointValue(point, state.analysisRateMetricMode)),
+      0
+    );
+    const unit = rateUnitForValue(state.analysisRateMetricMode, peakValue);
+    const metricLabel = state.analysisRateMetricMode === "packets"
+      ? "Packets rate (pkt/s)"
+      : `Data rate (${unit})`;
+    header.textContent = `${metricLabel} • Peak: ${formatRatePeakValue(peakValue, unit)}`;
+    context.textContent = `Duration: ${analysis?.duration_text || "-"} • ${formatRateGraphWindowContext(analysis?.rate_graph_window_text)} • Samples: ${trimmed.sampleCount}`;
+    legend.style.display = state.analysisRateDirectionMode === "both" ? "" : "none";
+
+    const maxX = Math.max(
+      Number(seriesA.length > 0 ? seriesA[seriesA.length - 1].relative_time_us : 0),
+      Number(seriesB.length > 0 ? seriesB[seriesB.length - 1].relative_time_us : 0),
+      1
+    );
+    const maxY = Math.max(peakValue, 1);
+    const polylines = [];
+    if (seriesA.length > 0) {
+      polylines.push(`<polyline fill="none" stroke="#22c55e" stroke-width="2" points="${buildSvgPolylinePoints(seriesA, maxX, maxY)}"></polyline>`);
+    }
+    if (seriesB.length > 0) {
+      polylines.push(`<polyline fill="none" stroke="#3b82f6" stroke-width="2" points="${buildSvgPolylinePoints(seriesB, maxX, maxY)}"></polyline>`);
+    }
+    svg.innerHTML = polylines.join("");
+    surface.classList.add("is-visible");
   }
 
   function fileNameFromPath(path) {
@@ -1206,6 +1384,8 @@
     state.analysisSequenceExportInProgress = false;
     state.analysisSequenceExportStatusText = "";
     state.analysisSequenceExportStatusKind = "neutral";
+    state.analysisRateMetricMode = "data";
+    state.analysisRateDirectionMode = "both";
     state.analysisPacketSizeHistogramMode = "all";
     state.analysisInterArrivalHistogramMode = "all";
   }
@@ -2952,8 +3132,8 @@
               <span class="analysis-flow-primary">${escapeHtml(flow.service_hint || "-")}</span>
               <span class="analysis-flow-secondary">${escapeHtml(endpointSummary)}</span>
             </td>
-            <td>${formatNumber(flow.packet_count)}</td>
-            <td>${formatNumber(flow.total_bytes)}</td>
+            <td>${formatPlainInteger(flow.packet_count)}</td>
+            <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>
         `;
       },
@@ -2997,6 +3177,13 @@
     elements.analysisDerivedMetrics.innerHTML = "";
     elements.analysisTimingSize.innerHTML = "";
     elements.analysisBurstIdleSummary.innerHTML = "";
+    elements.analysisRateGraphHeaderText.textContent = "";
+    elements.analysisRateGraphContextText.textContent = "";
+    elements.analysisRateGraphStatusText.textContent = "";
+    elements.analysisRateGraphStatusText.className = "compact-status-text";
+    elements.analysisRateGraphSvg.innerHTML = "";
+    elements.analysisRateGraphSurface.classList.remove("is-visible");
+    elements.analysisRateGraphLegend.style.display = "none";
     elements.analysisPacketSizeHistogramRows.innerHTML = "";
     elements.analysisPacketSizeHistogramMax.textContent = "";
     elements.analysisInterArrivalHistogramRows.innerHTML = "";
@@ -3016,6 +3203,7 @@
     elements.analysisProtocolPanelSection.style.display = "none";
     elements.analysisDerivedMetricsSection.style.display = "none";
     elements.analysisBurstIdleSection.style.display = "none";
+    elements.analysisRateGraphSection.style.display = "none";
     elements.analysisTrafficTotalsSection.style.display = "none";
     elements.analysisTimingSizeSection.style.display = "none";
     elements.analysisPacketSizeHistogramSection.style.display = "none";
@@ -3023,6 +3211,7 @@
     elements.analysisSequencePreviewSection.style.display = "none";
     elements.analysisContent.classList.remove("is-hidden");
     elements.analysisOpenInFlowsButton.disabled = state.selectedFlowIndex == null;
+    renderAnalysisRateGraphModeButtons();
 
     if (state.openState === "opening") {
       elements.analysisMeta.textContent = "Opening capture before selected-flow analysis can run.";
@@ -3156,6 +3345,8 @@
     ];
     elements.analysisBurstIdleSection.style.display = "";
     renderSummaryRows(elements.analysisBurstIdleSummary, burstIdleRows);
+
+    renderAnalysisRateGraph(analysis);
 
     renderAnalysisDirectional(elements.analysisDirectionSplit, analysis);
 
@@ -3680,6 +3871,14 @@
     state.selectedStreamItemIndex = streamItemIndex;
     state.selectedStreamItem = item;
     render();
+  }
+
+  function renderAnalysisRateGraphModeButtons() {
+    elements.analysisRateMetricModeData.classList.toggle("is-active", state.analysisRateMetricMode === "data");
+    elements.analysisRateMetricModePackets.classList.toggle("is-active", state.analysisRateMetricMode === "packets");
+    elements.analysisRateDirectionModeAToB.classList.toggle("is-active", state.analysisRateDirectionMode === "a_to_b");
+    elements.analysisRateDirectionModeBToA.classList.toggle("is-active", state.analysisRateDirectionMode === "b_to_a");
+    elements.analysisRateDirectionModeBoth.classList.toggle("is-active", state.analysisRateDirectionMode === "both");
   }
 
   function waitForDelay(delayMs) {
@@ -4669,6 +4868,27 @@
     render();
   });
   elements.analysisExportSequenceCsvButton.addEventListener("click", exportAnalysisSequenceCsv);
+
+  elements.analysisRateMetricModeData.addEventListener("click", () => {
+    state.analysisRateMetricMode = "data";
+    render();
+  });
+  elements.analysisRateMetricModePackets.addEventListener("click", () => {
+    state.analysisRateMetricMode = "packets";
+    render();
+  });
+  elements.analysisRateDirectionModeAToB.addEventListener("click", () => {
+    state.analysisRateDirectionMode = "a_to_b";
+    render();
+  });
+  elements.analysisRateDirectionModeBToA.addEventListener("click", () => {
+    state.analysisRateDirectionMode = "b_to_a";
+    render();
+  });
+  elements.analysisRateDirectionModeBoth.addEventListener("click", () => {
+    state.analysisRateDirectionMode = "both";
+    render();
+  });
 
   elements.analysisPacketSizeHistogramModeAll.addEventListener("click", () => {
     state.analysisPacketSizeHistogramMode = "all";

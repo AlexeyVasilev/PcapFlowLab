@@ -1210,6 +1210,24 @@ std::string trim_trailing_zeros(std::string text) {
     return text;
 }
 
+std::string format_rate_graph_window_text(const std::uint64_t window_us) {
+    if (window_us == 0U) {
+        return {};
+    }
+
+    if (window_us < 1000000U) {
+        const auto window_ms = static_cast<double>(window_us) / 1000.0;
+        std::ostringstream out {};
+        out << trim_trailing_zeros(std::to_string(window_ms)) << " ms (auto)";
+        return out.str();
+    }
+
+    const auto window_seconds = static_cast<double>(window_us) / 1000000.0;
+    std::ostringstream out {};
+    out << trim_trailing_zeros(std::to_string(window_seconds)) << " s (auto)";
+    return out.str();
+}
+
 std::string format_rate_value(double value, const char* suffix);
 std::string format_byte_rate_value(double value);
 std::string format_size_value(double value);
@@ -2251,6 +2269,25 @@ FrontendSelectedFlowAnalysisDto FrontendSessionAdapter::get_selected_flow_analys
     result.largest_burst_bytes_text = format_size_value(analysis->largest_burst_bytes);
     result.idle_gap_count_text = format_grouped_integer(analysis->idle_gap_count);
     result.largest_idle_gap_text = format_duration_us(analysis->largest_idle_gap_us);
+    result.rate_graph_available = analysis->rate_graph.available;
+    result.rate_graph_status_text = analysis->rate_graph.status_text;
+    result.rate_graph_window_text = format_rate_graph_window_text(analysis->rate_graph.window_us);
+    result.rate_graph_points_a_to_b.reserve(analysis->rate_graph.points_a_to_b.size());
+    for (const auto& point : analysis->rate_graph.points_a_to_b) {
+        result.rate_graph_points_a_to_b.push_back(FrontendAnalysisRatePointDto {
+            .relative_time_us = point.relative_time_us,
+            .data_per_second = point.data_per_second,
+            .packets_per_second = point.packets_per_second,
+        });
+    }
+    result.rate_graph_points_b_to_a.reserve(analysis->rate_graph.points_b_to_a.size());
+    for (const auto& point : analysis->rate_graph.points_b_to_a) {
+        result.rate_graph_points_b_to_a.push_back(FrontendAnalysisRatePointDto {
+            .relative_time_us = point.relative_time_us,
+            .data_per_second = point.data_per_second,
+            .packets_per_second = point.packets_per_second,
+        });
+    }
     result.inter_arrival_histogram_rows = build_analysis_histogram_rows(
         analysis->inter_arrival_histograms.histogram_all,
         analysis->inter_arrival_histograms.histogram_a_to_b,
