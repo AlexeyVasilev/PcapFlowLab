@@ -185,17 +185,17 @@ The `Analysis` tab now supports a first selected-flow-only, on-demand analysis w
 - left-side Analysis Flows list built from already loaded flow DTOs
 - Analysis Flows `Packets` and `Bytes` columns now match Qt-style plain integer formatting in that table
 - right-side selected-flow analysis details ordered closer to Qt
-- overview
-- protocol panel
+- overview with Qt-like richer `Protocol: transport (hint)` display when a meaningful hint exists
+- protocol panel with QUIC/TLS-specific rows and TCP control counts folded into that panel when applicable
 - derived metrics and burst / idle summary in a shared row on wide layouts
 - directional
-- TCP controls when available
 - packet size histogram
 - inter-arrival histogram
 - sequence preview
 - selected-flow sequence CSV export
 - `Open in Flows`
 - right-side Analysis presentation is now closer to Qt in typography, spacing, and compact label/value layout
+- Burst / Idle Summary now uses a one-column Qt-like layout, and Directional is rendered more compactly
 
 Analysis remains:
 

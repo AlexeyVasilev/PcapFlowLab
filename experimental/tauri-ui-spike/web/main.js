@@ -270,8 +270,6 @@
     analysisTimingSize: document.getElementById("analysisTimingSize"),
     analysisBurstIdleSection: document.getElementById("analysisBurstIdleSection"),
     analysisBurstIdleSummary: document.getElementById("analysisBurstIdleSummary"),
-    analysisTcpControlsSection: document.getElementById("analysisTcpControlsSection"),
-    analysisTcpControls: document.getElementById("analysisTcpControls"),
     analysisPacketSizeHistogramSection: document.getElementById("analysisPacketSizeHistogramSection"),
     analysisPacketSizeHistogramRows: document.getElementById("analysisPacketSizeHistogramRows"),
     analysisPacketSizeHistogramMax: document.getElementById("analysisPacketSizeHistogramMax"),
@@ -312,6 +310,18 @@
       return "0";
     }
     return String(Math.trunc(number));
+  }
+
+  function formatAnalysisProtocolLine(analysis) {
+    const protocol = String(analysis?.protocol_text || "").trim();
+    const hint = String(analysis?.protocol_hint_display || "").trim();
+    if (!protocol && !hint) {
+      return "-";
+    }
+    if (!hint || hint === protocol) {
+      return protocol || hint;
+    }
+    return `${protocol} (${hint})`;
   }
 
   function fileNameFromPath(path) {
@@ -662,7 +672,6 @@
     clearHtml(elements.analysisDerivedMetrics);
     clearHtml(elements.analysisTimingSize);
     clearHtml(elements.analysisBurstIdleSummary);
-    clearHtml(elements.analysisTcpControls);
     clearHtml(elements.analysisPacketSizeHistogramRows);
     clearHtml(elements.analysisInterArrivalHistogramRows);
     clearText(elements.packetDetailsRawText);
@@ -1637,7 +1646,6 @@
     elements.analysisDerivedMetrics && (elements.analysisDerivedMetrics.innerHTML = "");
     elements.analysisTimingSize && (elements.analysisTimingSize.innerHTML = "");
     elements.analysisBurstIdleSummary && (elements.analysisBurstIdleSummary.innerHTML = "");
-    elements.analysisTcpControls && (elements.analysisTcpControls.innerHTML = "");
     elements.analysisPacketSizeHistogramRows && (elements.analysisPacketSizeHistogramRows.innerHTML = "");
     elements.analysisPacketSizeHistogramMax && (elements.analysisPacketSizeHistogramMax.textContent = "");
     elements.analysisInterArrivalHistogramRows && (elements.analysisInterArrivalHistogramRows.innerHTML = "");
@@ -2687,12 +2695,14 @@
   }
 
   function renderAnalysisOverview(container, analysis) {
-    const overviewRows = [
+    const leftRows = [
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
       ["Captured Bytes", analysis.captured_bytes_text || formatNumber(analysis.captured_bytes)],
       ["Protocol Hint", analysis.protocol_hint_display || "-"],
       ["Service Hint", analysis.service_hint_text || "-"],
+    ];
+    const rightRows = [
       ["First Packet", analysis.first_packet_time_text || "-"],
       ["Last Packet", analysis.last_packet_time_text || "-"],
       ["Duration", analysis.duration_text || "-"],
@@ -2702,58 +2712,128 @@
 
     container.innerHTML = `
       <p class="analysis-overview-primary">${escapeHtml(analysis.endpoint_summary_text || "-")}</p>
-      <p class="analysis-overview-secondary">Protocol: ${escapeHtml(analysis.protocol_text || "-")}</p>
+      <p class="analysis-overview-secondary">Protocol: ${escapeHtml(formatAnalysisProtocolLine(analysis))}</p>
       <div class="analysis-overview-grid">
-        ${overviewRows.map(([label, value]) => `
-          <div class="summary-row">
-            <span class="summary-label">${escapeHtml(label)}</span>
-            <span class="summary-value">${escapeHtml(value)}</span>
-          </div>
-        `).join("")}
+        <div class="analysis-overview-column">
+          ${leftRows.map(([label, value]) => `
+            <div class="summary-row">
+              <span class="summary-label">${escapeHtml(label)}</span>
+              <span class="summary-value">${escapeHtml(value)}</span>
+            </div>
+          `).join("")}
+        </div>
+        <div class="analysis-overview-column">
+          ${rightRows.map(([label, value]) => `
+            <div class="summary-row">
+              <span class="summary-label">${escapeHtml(label)}</span>
+              <span class="summary-value">${escapeHtml(value)}</span>
+            </div>
+          `).join("")}
+        </div>
       </div>
     `;
   }
 
   function renderAnalysisDirectional(container, analysis) {
-    const groups = [
-      {
-        title: "Counts",
-        rows: [
-          ["A->B Packets", analysis.packets_a_to_b_text || formatNumber(analysis.packets_a_to_b)],
-          ["B->A Packets", analysis.packets_b_to_a_text || formatNumber(analysis.packets_b_to_a)],
-          ["A->B Bytes", analysis.bytes_a_to_b_text || formatNumber(analysis.bytes_a_to_b)],
-          ["B->A Bytes", analysis.bytes_b_to_a_text || formatNumber(analysis.bytes_b_to_a)],
-        ],
-      },
-      {
-        title: "Ratios",
-        rows: [
-          ["Packet Ratio", analysis.packet_ratio_text || "-"],
-          ["Byte Ratio", analysis.byte_ratio_text || "-"],
-        ],
-      },
-      {
-        title: "Dominance",
-        rows: [
-          ["Packet Direction", analysis.packet_direction_text || "-"],
-          ["Data Direction", analysis.data_direction_text || "-"],
-        ],
-      },
-    ];
-
-    container.innerHTML = groups.map((group) => `
+    container.innerHTML = `
+      <div class="analysis-directional-group analysis-directional-counts-group">
+        <p class="analysis-directional-group-title">Counts</p>
+        <table class="analysis-directional-counts-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>A-&gt;B</th>
+              <th>B-&gt;A</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Packets</td>
+              <td>${escapeHtml(analysis.packets_a_to_b_text || formatNumber(analysis.packets_a_to_b))}</td>
+              <td>${escapeHtml(analysis.packets_b_to_a_text || formatNumber(analysis.packets_b_to_a))}</td>
+            </tr>
+            <tr>
+              <td>Bytes</td>
+              <td>${escapeHtml(analysis.bytes_a_to_b_text || formatNumber(analysis.bytes_a_to_b))}</td>
+              <td>${escapeHtml(analysis.bytes_b_to_a_text || formatNumber(analysis.bytes_b_to_a))}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div class="analysis-directional-group">
-        <p class="analysis-directional-group-title">${escapeHtml(group.title)}</p>
+        <p class="analysis-directional-group-title">Ratios</p>
         <div class="analysis-directional-rows">
-          ${group.rows.map(([label, value]) => `
-            <div class="analysis-directional-row">
-              <span class="analysis-directional-label">${escapeHtml(label)}</span>
-              <span class="analysis-directional-value">${escapeHtml(value)}</span>
-            </div>
-          `).join("")}
+          <div class="analysis-directional-row">
+            <span class="analysis-directional-label">Packet Ratio</span>
+            <span class="analysis-directional-value">${escapeHtml(analysis.packet_ratio_text || "-")}</span>
+          </div>
+          <div class="analysis-directional-row">
+            <span class="analysis-directional-label">Byte Ratio</span>
+            <span class="analysis-directional-value">${escapeHtml(analysis.byte_ratio_text || "-")}</span>
+          </div>
         </div>
       </div>
-    `).join("");
+      <div class="analysis-directional-group">
+        <p class="analysis-directional-group-title">Dominance</p>
+        <div class="analysis-directional-rows">
+          <div class="analysis-directional-row">
+            <span class="analysis-directional-label">Packet Direction</span>
+            <span class="analysis-directional-value">${escapeHtml(analysis.packet_direction_text || "-")}</span>
+          </div>
+          <div class="analysis-directional-row">
+            <span class="analysis-directional-label">Data Direction</span>
+            <span class="analysis-directional-value">${escapeHtml(analysis.data_direction_text || "-")}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAnalysisProtocolPanel(container, analysis) {
+    const hint = String(analysis?.protocol_hint_display || "").trim().toUpperCase();
+    const version = String(analysis?.protocol_version_text || "").trim();
+    const service = String(analysis?.protocol_service_text || "").trim();
+    const fallback = String(analysis?.protocol_fallback_text || "").trim();
+    const hasTcpCounts = Boolean(analysis?.has_tcp_control_counts);
+    const isQuic = hint === "QUIC";
+    const isTls = hint === "TLS" || version.toUpperCase().includes("TLS");
+
+    if (isQuic) {
+      renderSummaryRows(container, [
+        ["QUIC Version", version || "-"],
+        ["SNI / Service", service || "-"],
+      ]);
+      return;
+    }
+
+    if (isTls || hasTcpCounts) {
+      const rows = [];
+      if (version) {
+        rows.push(["TLS Version", version]);
+      }
+      if (service) {
+        rows.push(["SNI / Service", service]);
+      }
+      if (hasTcpCounts) {
+        rows.push(["SYN Packets", analysis.tcp_syn_packets_text || formatNumber(analysis.tcp_syn_packets)]);
+        rows.push(["FIN Packets", analysis.tcp_fin_packets_text || formatNumber(analysis.tcp_fin_packets)]);
+        rows.push(["RST Packets", analysis.tcp_rst_packets_text || formatNumber(analysis.tcp_rst_packets)]);
+      }
+      renderSummaryRows(container, rows);
+      return;
+    }
+
+    const rows = [];
+    if (version) {
+      rows.push(["Version", version]);
+    }
+    if (service) {
+      rows.push(["SNI / Service", service]);
+    }
+    if (fallback) {
+      rows.push(["Notes", fallback]);
+    }
+    renderSummaryRows(container, rows);
   }
 
   function histogramCountForMode(row, mode) {
@@ -2917,7 +2997,6 @@
     elements.analysisDerivedMetrics.innerHTML = "";
     elements.analysisTimingSize.innerHTML = "";
     elements.analysisBurstIdleSummary.innerHTML = "";
-    elements.analysisTcpControls.innerHTML = "";
     elements.analysisPacketSizeHistogramRows.innerHTML = "";
     elements.analysisPacketSizeHistogramMax.textContent = "";
     elements.analysisInterArrivalHistogramRows.innerHTML = "";
@@ -2937,7 +3016,6 @@
     elements.analysisProtocolPanelSection.style.display = "none";
     elements.analysisDerivedMetricsSection.style.display = "none";
     elements.analysisBurstIdleSection.style.display = "none";
-    elements.analysisTcpControlsSection.style.display = "none";
     elements.analysisTrafficTotalsSection.style.display = "none";
     elements.analysisTimingSizeSection.style.display = "none";
     elements.analysisPacketSizeHistogramSection.style.display = "none";
@@ -3018,25 +3096,14 @@
 
     renderAnalysisOverview(elements.analysisFlowSummary, analysis);
 
-    const protocolPanelRows = [];
-    if (analysis.protocol_text) {
-      protocolPanelRows.push(["Protocol", analysis.protocol_text]);
-    }
-    if (analysis.protocol_hint_display) {
-      protocolPanelRows.push(["Protocol Hint", analysis.protocol_hint_display]);
-    }
-    if (analysis.protocol_version_text) {
-      protocolPanelRows.push(["Version", analysis.protocol_version_text]);
-    }
-    if (analysis.protocol_service_text) {
-      protocolPanelRows.push(["SNI / Service", analysis.protocol_service_text]);
-    }
-    if (analysis.protocol_fallback_text) {
-      protocolPanelRows.push(["Notes", analysis.protocol_fallback_text]);
-    }
-    if (protocolPanelRows.length > 0) {
+    const hasProtocolPanel =
+      Boolean(analysis.protocol_version_text)
+      || Boolean(analysis.protocol_service_text)
+      || Boolean(analysis.protocol_fallback_text)
+      || Boolean(analysis.has_tcp_control_counts);
+    if (hasProtocolPanel) {
       elements.analysisProtocolPanelSection.style.display = "";
-      renderSummaryRows(elements.analysisProtocolPanel, protocolPanelRows);
+      renderAnalysisProtocolPanel(elements.analysisProtocolPanel, analysis);
     }
 
     const derivedMetricRows = [
@@ -3091,15 +3158,6 @@
     renderSummaryRows(elements.analysisBurstIdleSummary, burstIdleRows);
 
     renderAnalysisDirectional(elements.analysisDirectionSplit, analysis);
-
-    if (analysis.has_tcp_control_counts) {
-      elements.analysisTcpControlsSection.style.display = "";
-      renderSummaryRows(elements.analysisTcpControls, [
-        ["SYN Packets", analysis.tcp_syn_packets_text || formatNumber(analysis.tcp_syn_packets)],
-        ["FIN Packets", analysis.tcp_fin_packets_text || formatNumber(analysis.tcp_fin_packets)],
-        ["RST Packets", analysis.tcp_rst_packets_text || formatNumber(analysis.tcp_rst_packets)],
-      ]);
-    }
 
     renderAnalysisHistogramModeButtons("analysisPacketSizeHistogram", state.analysisPacketSizeHistogramMode);
     renderAnalysisHistogram(

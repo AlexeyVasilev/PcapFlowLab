@@ -73,16 +73,16 @@ Implemented slice:
 - Analysis Flows `Packets` and `Bytes` columns now use Qt-like plain integer formatting in that table
 - selected-flow-only, on-demand analysis details on the right
 - section order now follows Qt more closely on the right side
-- overview
-- protocol panel
-  - derived metrics and burst / idle summary in a shared row on wide layouts
-  - directional
-  - TCP controls when available
-  - packet size histogram
+- overview with richer Qt-like `Protocol: transport (hint)` display when a meaningful hint exists
+- protocol panel with QUIC/TLS-specific rows and merged TCP control counts when applicable
+- derived metrics and burst / idle summary in a shared row on wide layouts
+- directional
+- packet size histogram
 - inter-arrival histogram
 - sequence preview
 - selected-flow sequence CSV export
 - right-side Analysis presentation is now closer to Qt in spacing, typography, and compact label/value layout
+- Burst / Idle Summary now uses a one-column layout and Directional is rendered more compactly
 - rate graph still deferred
 
 ## Current behavior
