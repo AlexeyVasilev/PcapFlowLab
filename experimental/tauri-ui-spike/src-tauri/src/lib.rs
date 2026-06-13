@@ -4,6 +4,8 @@ mod ffi;
 use std::path::PathBuf;
 use std::fs::OpenOptions;
 use std::io::Write;
+#[cfg(target_os = "linux")]
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -15,6 +17,7 @@ use dtos::{
 };
 use ffi::{CppFrontendSessionAdapter, OpenMode};
 use tauri::{AppHandle, State};
+#[cfg(not(target_os = "linux"))]
 use tauri_plugin_dialog::DialogExt;
 
 const MEMORY_LOG_ENV: &str = "PFL_TAURI_MEMORY_LOG";
@@ -255,137 +258,249 @@ fn cancel_open_capture(
 }
 
 #[tauri::command]
-fn pick_open_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("All supported captures and indexes", &["pcap", "pcapng", "idx", "pflidx"])
-        .add_filter("PCAP files", &["pcap"])
-        .add_filter("PCAPNG files", &["pcapng"])
-        .add_filter("Index files", &["idx", "pflidx"])
-        .blocking_pick_file();
+fn pick_open_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--title=Open Capture or Index".to_string(),
+            "--file-filter=All supported captures and indexes | *.pcap *.pcapng *.idx *.pflidx".to_string(),
+            "--file-filter=PCAP files | *.pcap".to_string(),
+            "--file-filter=PCAPNG files | *.pcapng".to_string(),
+            "--file-filter=Index files | *.idx *.pflidx".to_string(),
+        ]);
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| resolved.to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("All supported captures and indexes", &["pcap", "pcapng", "idx", "pflidx"])
+            .add_filter("PCAP files", &["pcap"])
+            .add_filter("PCAPNG files", &["pcapng"])
+            .add_filter("Index files", &["idx", "pflidx"])
+            .blocking_pick_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_open_capture_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("Capture files", &["pcap", "pcapng"])
-        .add_filter("PCAP files", &["pcap"])
-        .add_filter("PCAPNG files", &["pcapng"])
-        .blocking_pick_file();
+fn pick_open_capture_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--title=Open Capture".to_string(),
+            "--file-filter=Capture files | *.pcap *.pcapng".to_string(),
+            "--file-filter=PCAP files | *.pcap".to_string(),
+            "--file-filter=PCAPNG files | *.pcapng".to_string(),
+        ]);
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| resolved.to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Capture files", &["pcap", "pcapng"])
+            .add_filter("PCAP files", &["pcap"])
+            .add_filter("PCAPNG files", &["pcapng"])
+            .blocking_pick_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_open_index_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("Index files", &["idx", "pflidx"])
-        .blocking_pick_file();
+fn pick_open_index_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--title=Open Index".to_string(),
+            "--file-filter=Index files | *.idx *.pflidx".to_string(),
+        ]);
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| resolved.to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Index files", &["idx", "pflidx"])
+            .blocking_pick_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_source_capture_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("Supported capture files", &["pcap", "pcapng"])
-        .add_filter("PCAP files", &["pcap"])
-        .add_filter("PCAPNG files", &["pcapng"])
-        .blocking_pick_file();
+fn pick_source_capture_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--title=Locate Source Capture".to_string(),
+            "--file-filter=Supported capture files | *.pcap *.pcapng".to_string(),
+            "--file-filter=PCAP files | *.pcap".to_string(),
+            "--file-filter=PCAPNG files | *.pcapng".to_string(),
+        ]);
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| resolved.to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Supported capture files", &["pcap", "pcapng"])
+            .add_filter("PCAP files", &["pcap"])
+            .add_filter("PCAPNG files", &["pcapng"])
+            .blocking_pick_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_save_index_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("Index files", &["idx"])
-        .set_file_name("analysis.idx")
-        .blocking_save_file();
+fn pick_save_index_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Save Index".to_string(),
+            format!("--filename={}", current_dir_prefill("analysis.idx")),
+            "--file-filter=Index files | *.idx".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "idx").to_string_lossy().into_owned()));
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| ensure_extension(resolved, "idx").to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("Index files", &["idx"])
+            .set_file_name("analysis.idx")
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "idx").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_save_flow_export_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("PCAP files", &["pcap"])
-        .set_file_name("flow-export.pcap")
-        .blocking_save_file();
+fn pick_save_flow_export_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Export Flow".to_string(),
+            format!("--filename={}", current_dir_prefill("flow-export.pcap")),
+            "--file-filter=PCAP files | *.pcap".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "pcap").to_string_lossy().into_owned()));
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| ensure_extension(resolved, "pcap").to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("PCAP files", &["pcap"])
+            .set_file_name("flow-export.pcap")
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "pcap").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_smart_export_destination_folder(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app.dialog().file().blocking_pick_folder();
+fn pick_smart_export_destination_folder(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--directory".to_string(),
+            "--title=Select Destination Folder".to_string(),
+        ]);
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| resolved.to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app.dialog().file().blocking_pick_folder();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| resolved.to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 #[tauri::command]
-fn pick_save_analysis_sequence_csv_path(app: AppHandle) -> Result<Option<String>, String> {
-    let selected_path = app
-        .dialog()
-        .file()
-        .add_filter("CSV files", &["csv"])
-        .set_file_name("flow-sequence.csv")
-        .blocking_save_file();
+fn pick_save_analysis_sequence_csv_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Export Sequence CSV".to_string(),
+            format!("--filename={}", current_dir_prefill("flow-sequence.csv")),
+            "--file-filter=CSV files | *.csv".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "csv").to_string_lossy().into_owned()));
+    }
 
-    Ok(selected_path.map(|path| {
-        let display_fallback = path.to_string();
-        path.into_path()
-            .map(|resolved| ensure_extension(resolved, "csv").to_string_lossy().into_owned())
-            .unwrap_or(display_fallback)
-    }))
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("CSV files", &["csv"])
+            .set_file_name("flow-sequence.csv")
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "csv").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
 }
 
 fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
@@ -394,6 +509,44 @@ fn ensure_extension(path: PathBuf, extension: &str) -> PathBuf {
     }
 
     path.with_extension(extension)
+}
+
+#[cfg(target_os = "linux")]
+fn trim_dialog_output(output: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(output).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_zenity_file_dialog(args: &[String]) -> Result<Option<String>, String> {
+    let output = Command::new("zenity")
+        .args(args)
+        .output()
+        .map_err(|error| format!("Failed to launch zenity: {error}"))?;
+
+    match output.status.code() {
+        Some(0) => Ok(trim_dialog_output(&output.stdout)),
+        Some(1) => Ok(None),
+        Some(code) => {
+            let stderr_text = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if stderr_text.is_empty() {
+                Err(format!("Zenity exited with status code {code}."))
+            } else {
+                Err(format!("Zenity exited with status code {code}: {stderr_text}"))
+            }
+        }
+        None => Err("Zenity was terminated before it returned a result.".to_string()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn current_dir_prefill(file_name: &str) -> String {
+    let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    base_dir.join(file_name).to_string_lossy().into_owned()
 }
 
 #[tauri::command]
