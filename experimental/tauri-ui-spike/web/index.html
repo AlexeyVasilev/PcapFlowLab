@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Pcap Flow Lab Tauri UI Spike</title>
+    <title>Pcap Flow Lab Tauri UI</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -33,6 +33,11 @@
           <button id="menuButtonView" type="button" class="menu-button" data-menu-button="view">View</button>
           <div id="menuPanelView" class="menu-panel" data-menu-panel="view">
             <button type="button" class="menu-item" data-menu-action="settings">Settings</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button id="menuButtonHelp" type="button" class="menu-button" data-menu-button="help">Help</button>
+          <div id="menuPanelHelp" class="menu-panel" data-menu-panel="help">
             <button type="button" class="menu-item" data-menu-action="about">About</button>
           </div>
         </div>
@@ -51,8 +56,16 @@
           </label>
 
           <div id="activeSessionPanel" class="active-session-panel" title="Active session">
-            <span class="active-session-label">Active session:</span>
-            <span id="activeSessionText" class="active-session-text">No active session</span>
+            <div class="active-session-copy">
+              <div class="active-session-row">
+                <span class="active-session-label">Active session:</span>
+                <span id="activeSessionText" class="active-session-text">No active session</span>
+              </div>
+              <div id="activeSourceSessionRow" class="active-session-row is-hidden">
+                <span class="active-session-label">Source PCAP:</span>
+                <span id="activeSourceSessionText" class="active-session-text"></span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -609,16 +622,18 @@
     <div id="aboutDialog" class="dialog-backdrop" aria-hidden="true">
       <section class="dialog-card" role="dialog" aria-modal="true" aria-labelledby="aboutDialogTitle">
         <div class="dialog-heading">
-          <h2 id="aboutDialogTitle">About Pcap Flow Lab Tauri UI Spike</h2>
+          <h2 id="aboutDialogTitle">About Pcap Flow Lab Tauri UI</h2>
           <button id="aboutDialogCloseButton" type="button" class="secondary-button">Close</button>
         </div>
+        <div class="about-summary">
+          <h3 class="about-product-title">Pcap Flow Lab</h3>
+          <p class="dialog-copy about-version-copy">Version 0.2.0</p>
+        </div>
+        <p class="dialog-copy">Flow-based PCAP analyzer for large captures</p>
+        <p class="dialog-copy">Built with C++ and Tauri</p>
         <p class="dialog-copy">
-          Experimental Tauri desktop shell for Pcap Flow Lab. Qt remains the primary UI while the spike validates
-          shared session and DTO workflows.
-        </p>
-        <p class="dialog-copy">
-          Wired workflows currently focus on read-side analysis, selected-flow inspection, index save/open basics,
-          source reattachment, and selected-flow sequence CSV export.
+          Repository:
+          <a href="https://github.com/AlexeyVasilev/PcapFlowLab" target="_blank" rel="noreferrer">https://github.com/AlexeyVasilev/PcapFlowLab</a>
         </p>
       </section>
     </div>

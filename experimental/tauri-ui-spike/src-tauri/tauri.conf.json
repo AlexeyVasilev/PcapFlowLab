@@ -1,5 +1,5 @@
 {
-  "productName": "Pcap Flow Lab Tauri UI Spike",
+  "productName": "Pcap Flow Lab Tauri UI",
   "version": "0.2.0",
   "identifier": "com.pcapflowlab.tauriuispike",
   "build": {
@@ -23,7 +23,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Pcap Flow Lab Tauri UI Spike",
+        "title": "Pcap Flow Lab Tauri UI",
         "width": 1440,
         "height": 960,
         "resizable": true

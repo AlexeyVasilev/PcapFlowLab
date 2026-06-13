@@ -69,11 +69,13 @@ The existing Qt UI remains the reference implementation for richer presentation 
 
 The current Tauri UI now supports:
 
-- compact Qt-like `File / Flow / View` menu shell
+- compact Qt-like `File / Flow / View / Help` menu shell
+- `Help -> About` dialog aligned more closely with the Qt About content, but labeled for `Tauri`
 - Qt-like top session shell with:
   - `Open Capture...`
   - Fast/Deep mode selector
   - right-side active-session display
+  - separate `Source PCAP` line for index-backed sessions
 - native Open File dialog as the primary open workflow
 - real shared-backend open progress and cancel via `OpenContext`
 - `File -> Save Index` through the existing session/index path
@@ -127,6 +129,7 @@ The `Flows` tab now supports:
   - `Payload`
   - `Protocol`
 - the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
+- Packet Details and Stream Item Details mode selectors now use compact tab styling instead of button styling
 - byte-backed packet details can recover after a valid source-capture attach
 - a compact checked-flow status bar shown only when one or more flows are checked
 - the menu shell currently wires:
@@ -139,7 +142,7 @@ The `Flows` tab now supports:
   - `Flow -> Export Selected Flows`
   - `Flow -> Export Unselected Flows`
   - `Flow -> Smart Export...`
-  - `View -> About`
+  - `Help -> About`
   - `View -> Settings`
 
 ## Current Stream capability
@@ -216,8 +219,11 @@ Open workflow:
   - `Active session: No active session`
   - `Active session: PCAP: <path>`
   - `Active session: Index: <path>`
+- index-backed sessions now also show `Source PCAP: <path>` separately, or a compact unavailable/not-attached state when the source capture is not currently readable
+- the visible Tauri app title no longer says `Spike`
 - capture/index open now surfaces real shared-backend progress instead of a Tauri-only placeholder
 - cancel during open reuses the existing shared session/open cancellation path
+- redundant `Opened capture:` / `Opened index:` success lines are intentionally omitted because the active-session area already carries that information
 
 `View -> Settings`:
 

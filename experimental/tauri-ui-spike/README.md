@@ -6,11 +6,13 @@ This directory contains the experimental Tauri UI for Pcap Flow Lab.
 
 Implemented slice:
 
-- compact Qt-like `File / Flow / View` menu shell
+- compact Qt-like `File / Flow / View / Help` menu shell
+- `Help -> About` dialog with Qt-like product/version/repository content, updated for `Tauri`
 - Qt-like top session shell with:
   - `Open Capture...`
   - Fast/Deep mode selector
   - right-side active-session display
+  - separate `Source PCAP` line for index-backed sessions
 - native Open File dialog as the primary open workflow
 - real shared-backend open progress and cancel via `OpenContext`
 - `File -> Save Index` through the existing session/index path
@@ -89,13 +91,16 @@ Implemented slice:
 ## Current behavior
 
 - The Tauri UI now uses a native Open File dialog as the primary open workflow.
-- The shell now includes a compact Qt-like menu bar with `File`, `Flow`, and `View`.
+- The shell now includes a compact Qt-like menu bar with `File`, `Flow`, `View`, and `Help`.
+- The visible Tauri app title no longer says `Spike`.
 - The primary top-shell action is now `Open Capture...`, matching Qt more closely.
 - `File -> Open Capture (Fast/Deep)` and `File -> Open Index` reuse the existing open path with native dialogs.
 - The top shell now shows:
   - `Active session: No active session`
   - `Active session: PCAP: <path>`
   - `Active session: Index: <path>`
+- For index-backed sessions, the top shell also shows `Source PCAP: <path>` separately, or a compact unavailable/not-attached state when source bytes are not currently usable.
+- Redundant `Opened capture:` / `Opened index:` success lines are intentionally omitted because the active-session area already carries that information.
 - Capture/index open now surfaces real shared-backend progress and cancel instead of a Tauri-only placeholder state.
 - `File -> Save Index` reuses the existing session/index save path and a native Save dialog with `.idx` default suffix.
 - `Flow -> Export Current Flow` reuses the existing session flow-export path and a native Save dialog with `.pcap` default suffix.
@@ -134,6 +139,7 @@ Implemented slice:
 - The initial selected-flow packet batch is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
 - Clicking a packet row loads packet details and bounded Raw/Payload previews when byte-backed inspection is available.
+- Packet Details and Stream Item Details mode selectors now use compact tab styling instead of looking like standalone buttons.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
 - The Stream tab keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
 - Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Payload / Protocol` tabs.

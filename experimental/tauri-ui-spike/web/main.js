@@ -179,6 +179,8 @@
     openFileButton: document.getElementById("openFileButton"),
     activeSessionPanel: document.getElementById("activeSessionPanel"),
     activeSessionText: document.getElementById("activeSessionText"),
+    activeSourceSessionRow: document.getElementById("activeSourceSessionRow"),
+    activeSourceSessionText: document.getElementById("activeSourceSessionText"),
     openProgressPanel: document.getElementById("openProgressPanel"),
     openProgressTitle: document.getElementById("openProgressTitle"),
     openProgressProcessed: document.getElementById("openProgressProcessed"),
@@ -1893,13 +1895,52 @@
     }
   }
 
+  function activeSourceSessionDisplayText() {
+    const availability = currentSourceAvailability();
+    const activeSourcePath = String(availability.active_source_capture_path || "").trim();
+    const expectedSourcePath = String(availability.expected_source_capture_path || "").trim();
+
+    if (!state.currentSessionOpenedFromIndex) {
+      return {
+        visible: false,
+        text: "",
+      };
+    }
+
+    if (activeSourcePath.length > 0) {
+      return {
+        visible: true,
+        text: activeSourcePath,
+      };
+    }
+
+    if (expectedSourcePath.length > 0) {
+      return {
+        visible: true,
+        text: availability.source_capture_accessible ? expectedSourcePath : `${expectedSourcePath} (unavailable)`,
+      };
+    }
+
+    return {
+      visible: true,
+      text: "not attached",
+    };
+  }
+
   function renderOpenState() {
     const activeSessionText = state.currentSessionPath
       ? `${state.currentSessionOpenedFromIndex ? "Index" : "PCAP"}: ${state.currentSessionPath}`
       : "No active session";
+    const activeSourceDisplay = activeSourceSessionDisplayText();
 
     elements.activeSessionText.textContent = activeSessionText;
-    elements.activeSessionPanel.title = `Active session: ${activeSessionText}`;
+    if (elements.activeSourceSessionRow && elements.activeSourceSessionText) {
+      elements.activeSourceSessionRow.classList.toggle("is-hidden", !activeSourceDisplay.visible);
+      elements.activeSourceSessionText.textContent = activeSourceDisplay.text;
+    }
+    elements.activeSessionPanel.title = activeSourceDisplay.visible
+      ? `Active session: ${activeSessionText}\nSource PCAP: ${activeSourceDisplay.text}`
+      : `Active session: ${activeSessionText}`;
     elements.attachSourceButton.textContent = state.attachSourceInProgress ? "Attaching..." : "Locate Source...";
     setOpenControlsDisabled(
       state.openState === "opening"
@@ -3934,10 +3975,7 @@
         state.currentSessionOpenedFromIndex = Boolean(result?.opened_from_index);
         await loadOverviewAndFlows();
         state.openState = "opened";
-        setStatus(
-          `Opened ${state.currentSessionOpenedFromIndex ? "index" : "capture"}: ${state.currentSessionPath}`,
-          "success"
-        );
+        setStatus("", "neutral");
         render();
         await logMemoryPhase("after_render_flows", path);
         await logMemoryPhase("after_statistics_loaded", path);

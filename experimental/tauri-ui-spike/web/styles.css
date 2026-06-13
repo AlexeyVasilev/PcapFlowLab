@@ -185,6 +185,24 @@ body.is-resizing-vertical {
   line-height: 1.4;
 }
 
+.about-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.about-product-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.about-version-copy {
+  color: #475569;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -381,14 +399,28 @@ body.is-resizing-vertical {
 
 .active-session-panel {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: stretch;
   min-height: 40px;
   min-width: 0;
   padding: 8px 12px;
   border: 1px solid #d8dee9;
   border-radius: 6px;
   background: #ffffff;
+}
+
+.active-session-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.active-session-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 
 .active-session-label {
@@ -931,27 +963,42 @@ select:disabled {
 
 .inspector-tabbar {
   display: flex;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 4px;
   margin-bottom: 6px;
   flex: 0 0 auto;
   flex-wrap: wrap;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--border);
 }
 
 .inspector-tab {
-  min-height: 26px;
-  padding: 4px 10px;
+  min-width: 96px;
+  min-height: 30px;
+  padding: 6px 12px 7px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: #f5f2ea;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: #f3efe6;
   color: var(--text);
   font-size: 12px;
+  position: relative;
 }
 
 .inspector-tab.active {
-  background: #edf3f6;
-  border-color: #c6d7db;
+  background: var(--panel);
+  border-color: var(--border);
   color: var(--text);
   font-weight: 600;
+  top: 1px;
+}
+
+.inspector-tab:not(.active) {
+  color: var(--muted);
+}
+
+.inspector-tab:hover:not(.active) {
+  background: #f8f5ee;
 }
 
 .table-wrap {
