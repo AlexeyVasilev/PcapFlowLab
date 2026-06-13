@@ -1,11 +1,11 @@
-# RFC: Tauri UI Spike
+# RFC: Tauri UI
 
 ## Status
 Draft, but now substantially beyond the original bring-up slice.
 
 ## Motivation
 
-Pcap Flow Lab already has a layered architecture with a C++ core, application/session layer, and a Qt desktop UI. The Tauri spike evaluates whether a modern webview-based desktop frontend can sit on top of the same backend/session layer without changing packet-processing behavior.
+Pcap Flow Lab already has a layered architecture with a C++ core, application/session layer, and a Qt desktop UI. The experimental Tauri UI validates that a modern webview-based desktop frontend can sit on top of the same backend/session layer without changing packet-processing behavior.
 
 ## Goals
 
@@ -19,7 +19,7 @@ Pcap Flow Lab already has a layered architecture with a C++ core, application/se
 - No full UI migration.
 - No replacement of the Qt UI.
 - No core parser redesign.
-- No packaging/release hardening as part of the spike itself.
+- No packaging/release hardening as part of this experimental UI path.
 - No promise of full Qt parity in one pass.
 - No claim that the current Tauri shell is already CSP-hardened or detached from the global Tauri bridge.
 
@@ -38,7 +38,7 @@ This makes the project suitable for a frontend experiment that requests richer d
 
 ## Backend / adapter direction
 
-The spike now relies on a small frontend-neutral adapter over `CaptureSession`.
+The Tauri UI now relies on a small frontend-neutral adapter over `CaptureSession`.
 
 Current adapter-backed operations include:
 
@@ -67,7 +67,7 @@ The existing Qt UI remains the reference implementation for richer presentation 
 
 ## Current Tauri shell status
 
-The current Tauri spike now supports:
+The current Tauri UI now supports:
 
 - compact Qt-like `File / Flow / View` menu shell
 - Qt-like top session shell with:
@@ -294,12 +294,12 @@ The dev-only memory diagnostics workflow:
 
 Current Tauri shell hardening constraints:
 
-- `src-tauri/tauri.conf.json` still keeps `withGlobalTauri: true` because the current plain HTML/JS spike depends on the injected global bridge.
+- `src-tauri/tauri.conf.json` still keeps `withGlobalTauri: true` because the current plain HTML/JS shell depends on the injected global bridge.
 - `src-tauri/tauri.conf.json` still keeps `security.csp: null` for the current experimental shell; tightening CSP safely is still a separate hardening pass because the current plain HTML/JS shell depends on the injected global bridge and runtime-verified DOM/style behavior.
 
 ## Current limitations and remaining Qt gaps
 
-The Tauri spike is still not full Qt parity. The main remaining gaps are:
+The Tauri UI is now functionally close to Qt for primary workflows, but it is still not full Qt parity. The main remaining gaps are:
 
 - save/open index workflow polish
 - the Tauri shell no longer exposes the previous visible typed-path action in the primary toolbar
@@ -327,6 +327,7 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
 - fuller Analysis parity
+- analysis rate-graph presentation polish versus Qt
 - selected-flow packet/stream latency work for very large flows
 - shared packet-byte read optimization in the backend/session path
 - deeper large-capture memory and DTO-size optimization if needed
@@ -343,6 +344,6 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 ## Notes
 
 - The existing Qt UI remains the primary product UI.
-- The Tauri path is still an experimental parallel frontend spike.
-- The current spike now covers most primary desktop workflows, but should still be treated as an incremental evaluation path rather than a committed UI migration.
+- The Tauri UI remains experimental, even though it now covers most primary desktop workflows.
+- The Tauri path should still be treated as an incremental evaluation frontend rather than a committed UI migration.
 - The canonical Tauri icon source is `experimental/tauri-ui-spike/app-icon.png`; regenerate `experimental/tauri-ui-spike/src-tauri/icons/` with `cargo tauri icon app-icon.png`.

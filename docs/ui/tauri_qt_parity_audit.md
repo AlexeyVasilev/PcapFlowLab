@@ -104,7 +104,7 @@ This is not just a Tauri parity problem. Static inspection still points to a sha
 3. Top-shell plus source/index warning/message polish
 4. Statistics compactness and percentage-format polish
 5. Smart Export progress/cancel UX polish
-6. Analysis rate-graph parity only after the lower-workspace and messaging surfaces feel stable
+6. Analysis rate-graph and graph-surface polish only after the lower-workspace and messaging surfaces feel stable
 
 ## Merge-Ready Position
 
@@ -131,6 +131,6 @@ The remaining gaps are mostly:
 
 1. Whether the current bounded Tauri packet list needs further row-density polish after switching to Qt-like `Load more` semantics.
 2. Whether direct stream-item-to-packet navigation should be considered a parity blocker or remain a later polish item.
-3. Whether the Qt rate graph still needs parity in the near term, or whether packet/stream/details polish is clearly the better next step.
+3. Whether the remaining rate-graph presentation differences matter in the near term, or whether packet/stream/details polish is clearly the better next step.
 4. Whether current source/index top-shell wording should be standardized verbatim across Qt and Tauri.
 5. Whether full settings persistence is intended to stay deferred for both product direction and merge scope.

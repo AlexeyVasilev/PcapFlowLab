@@ -307,7 +307,7 @@ Affected layers:
 
 Why second:
 
-- the Tauri spike now covers most primary workflows, so the biggest remaining pain is responsiveness on very large selected flows;
+- the Tauri UI now covers most primary workflows, so the biggest remaining pain is responsiveness on very large selected flows;
 - Qt shows the same broad symptom, which points to shared app/session behavior worth understanding before more UI work piles on top.
 
 Expected risk:

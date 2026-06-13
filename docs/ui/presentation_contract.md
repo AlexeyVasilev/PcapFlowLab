@@ -5,7 +5,7 @@
 This document defines the intended user-facing presentation contract for Pcap Flow Lab across:
 
 - the current Qt UI;
-- the experimental Tauri UI spike;
+- the experimental Tauri UI;
 - future CLI commands that expose session and inspection data;
 - possible future frontend-neutral DTO cleanup.
 
@@ -608,7 +608,7 @@ Stream view should distinguish:
 
 ## Statistics / Overview View
 
-Qt currently exposes a broader statistics surface than the current Tauri spike. The shared contract should at least preserve what Qt already shows and separate `basic overview` from `extended statistics`.
+Qt currently exposes a broader statistics surface than the current Tauri UI. The shared contract should at least preserve what Qt already shows and separate `basic overview` from `extended statistics`.
 
 ### Basic overview metrics
 

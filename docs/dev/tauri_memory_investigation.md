@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note captures a static ownership and retention audit for the experimental Tauri UI spike, plus the dev-only diagnostics hooks added to make repeated-open memory behavior measurable without changing product behavior.
+This note captures a static ownership and retention audit for the experimental Tauri UI, plus the dev-only diagnostics hooks added to make repeated-open memory behavior measurable without changing product behavior.
 
 The goal is narrow:
 
@@ -15,7 +15,7 @@ The goal is narrow:
 
 ## Opt-in diagnostics
 
-Enable diagnostics by starting the Tauri spike with:
+Enable diagnostics by starting the Tauri UI with:
 
 ```powershell
 $env:PFL_TAURI_MEMORY_LOG = '1'
@@ -256,5 +256,5 @@ If repeated-open memory still looks unhealthy after this diagnostics pass, the n
 2. More aggressive statistics/analysis lazy rendering.
 3. Shared packet-byte read optimization for selected-flow packet/stream paths on very large captures.
 4. Smaller overview / analysis DTO slices for very large captures.
-5. Optional analysis/sequence truncation in the Tauri spike.
+5. Optional analysis/sequence truncation in the Tauri UI.
 6. A deeper session-level audit only if the CSV and OS measurements indicate retained memory after successful cleanup.

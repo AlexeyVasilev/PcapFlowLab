@@ -1,6 +1,6 @@
-# Tauri UI Spike
+# Tauri UI
 
-This directory contains the experimental Tauri frontend for Pcap Flow Lab.
+This directory contains the experimental Tauri UI for Pcap Flow Lab.
 
 ## Current scope
 
@@ -88,7 +88,7 @@ Implemented slice:
 
 ## Current behavior
 
-- The spike now uses a native Open File dialog as the primary open workflow.
+- The Tauri UI now uses a native Open File dialog as the primary open workflow.
 - The shell now includes a compact Qt-like menu bar with `File`, `Flow`, and `View`.
 - The primary top-shell action is now `Open Capture...`, matching Qt more closely.
 - `File -> Open Capture (Fast/Deep)` and `File -> Open Index` reuse the existing open path with native dialogs.
@@ -156,7 +156,7 @@ Implemented slice:
 - `src-tauri/`:
   Rust Tauri backend plus a thin Rust-to-C++ bridge layer
 - `web/`:
-  plain HTML/CSS/JavaScript frontend for the spike
+  plain HTML/CSS/JavaScript frontend for the Tauri UI
 
 ## Bootstrap notes
 
@@ -166,7 +166,7 @@ Implemented slice:
   - `cargo tauri icon app-icon.png`
 - Linux uses the generated PNG icons from `src-tauri/icons/`, while Windows/macOS keep the generated `.ico` / `.icns` assets.
 - `src-tauri/capabilities/default.json` defines the minimal default desktop capability.
-- On Windows, use the default Rust MSVC toolchain for the spike.
+- On Windows, use the default Rust MSVC toolchain for the Tauri UI.
 
 ## Deferred items
 
@@ -241,5 +241,5 @@ Implemented slice:
 
 - This is an experimental parallel UI path.
 - The Qt desktop UI remains the main product UI for now.
-- The Tauri spike now covers most primary desktop workflows, but it is still not the reference product UI.
+- The Tauri UI now covers most primary desktop workflows, but Qt remains the reference product UI.
 - The Tauri backend talks to the existing C++ code through `FrontendSessionAdapter`.
