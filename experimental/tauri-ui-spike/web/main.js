@@ -651,7 +651,7 @@
     setWorkspaceCssVariable("--flows-top-size", state.flowsTopSizePx != null ? `${state.flowsTopSizePx}px` : "52%");
     setWorkspaceCssVariable(
       "--flows-bottom-left-size",
-      state.flowsBottomLeftSizePx != null ? `${state.flowsBottomLeftSizePx}px` : "minmax(380px, 0.95fr)"
+      state.flowsBottomLeftSizePx != null ? `${state.flowsBottomLeftSizePx}px` : "minmax(420px, 1.12fr)"
     );
     setWorkspaceCssVariable(
       "--analysis-left-size",
@@ -2294,14 +2294,8 @@
     elements.flowMeta.textContent = state.flowFilterText.trim().length > 0
       ? `Filtered to ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows.`
       : "";
-    elements.flowRenderCapBar.classList.toggle("is-visible", state.flowVirtualizationActive);
-    elements.flowRenderCapText.textContent = state.flowVirtualizationActive
-      ? (
-        selectedFlowOutsideRenderedSlice
-          ? `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(visibleFlows.length)}. The active flow is outside the current rendered window.`
-          : `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(visibleFlows.length)}.`
-      )
-      : "";
+    elements.flowRenderCapBar.classList.remove("is-visible");
+    elements.flowRenderCapText.textContent = "";
 
     for (const row of elements.flowTableBody.querySelectorAll(".flow-row")) {
       row.addEventListener("click", async () => {
@@ -2372,9 +2366,7 @@
     }
 
     if (state.packetState === "loading" && !state.packetLoadingMore) {
-      elements.packetMeta.textContent = state.selectedFlowIndex == null
-        ? "Loading packets..."
-        : `Loading packets for flow ${formatNumber(state.selectedFlowIndex + 1)}...`;
+      elements.packetMeta.textContent = "Loading packets...";
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">Loading packets...</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = false;
@@ -2398,18 +2390,18 @@
     }
 
     if (state.packetsTotalCount === 0) {
-      elements.packetMeta.textContent = `Flow ${formatNumber(state.selectedFlowIndex + 1)} has no packets.`;
+      elements.packetMeta.textContent = "Showing 0 of 0 packets";
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No packets available for the selected flow.</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
     }
 
-    const start = state.packets.length > 0 ? 1 : 0;
-    const end = state.packets.length;
+    const loadedCount = state.packets.length;
+    const totalCount = state.packetsTotalCount;
     elements.packetMeta.textContent = state.packetLoadingMore
-      ? `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${formatNumber(state.selectedFlowIndex + 1)}. Loading more...`
-      : `Showing ${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(state.packetsTotalCount)} packets for flow ${formatNumber(state.selectedFlowIndex + 1)}.`;
+      ? `Showing ${loadedCount} of ${totalCount} packets. Loading more...`
+      : `Showing ${loadedCount} of ${totalCount} packets`;
 
     elements.packetTableBody.innerHTML = state.packets
       .map((packet) => {
@@ -2744,8 +2736,8 @@
         ? "Loading packet details..."
         : `Loading details for packet ${state.selectedPacketIndex}...`;
       elements.packetDetailsStateText.textContent = "Loading packet details...";
-      elements.packetDetailsRawStateText.textContent = "Loading raw preview...";
-      elements.packetDetailsPayloadStateText.textContent = "Loading payload preview...";
+      elements.packetDetailsRawStateText.textContent = "Loading raw bytes...";
+      elements.packetDetailsPayloadStateText.textContent = "Loading payload bytes...";
       elements.packetDetailsProtocolStateText.textContent = "Loading protocol details...";
       elements.packetDetailsRawText.textContent = "Loading packet details...";
       elements.packetDetailsProtocolText.textContent = "Loading packet details...";
@@ -2774,15 +2766,15 @@
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;
       elements.packetDetailsStateText.textContent = state.packetDetailsErrorText || "Failed to load packet details.";
       elements.packetDetailsStateText.classList.add("is-error");
-      elements.packetDetailsRawStateText.textContent = "Raw preview unavailable.";
-      elements.packetDetailsPayloadStateText.textContent = "Payload preview unavailable.";
+      elements.packetDetailsRawStateText.textContent = "Raw bytes unavailable.";
+      elements.packetDetailsPayloadStateText.textContent = "Payload bytes unavailable.";
       elements.packetDetailsProtocolStateText.textContent = "Protocol details unavailable.";
       elements.packetDetailsRawStateText.classList.add("is-error");
       elements.packetDetailsPayloadStateText.classList.add("is-error");
       elements.packetDetailsProtocolStateText.classList.add("is-error");
-      elements.packetDetailsRawText.textContent = "Raw packet preview is unavailable because the backend request failed.";
+      elements.packetDetailsRawText.textContent = "Raw packet bytes are unavailable because the backend request failed.";
       elements.packetDetailsProtocolText.textContent = "Packet details are unavailable because the backend request failed.";
-      elements.packetDetailsPayloadText.textContent = "Packet payload preview is unavailable because the backend request failed.";
+      elements.packetDetailsPayloadText.textContent = "Packet payload bytes are unavailable because the backend request failed.";
       elements.packetDetailsRawText.classList.add("is-muted");
       elements.packetDetailsProtocolText.classList.add("is-muted");
       elements.packetDetailsPayloadText.classList.add("is-muted");
@@ -2815,7 +2807,7 @@
       elements.packetDetailsProtocolStateText.classList.add("is-error");
       elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || unavailableText;
       elements.packetDetailsProtocolText.textContent = details?.protocol_details_text || "Byte-backed protocol details are unavailable.";
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "Packet payload preview is unavailable.";
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "Packet payload bytes are unavailable.";
       elements.packetDetailsRawText.classList.add("is-muted");
       if (!details?.protocol_details_text) {
         elements.packetDetailsProtocolText.classList.add("is-muted");
@@ -2826,20 +2818,7 @@
 
     const rawLoaded = Boolean(details?.raw_preview_available);
     const payloadLoaded = Boolean(details?.payload_preview_available);
-    const rawTruncated = Boolean(details?.raw_preview_truncated);
-    const payloadTruncated = Boolean(details?.payload_preview_truncated);
-
-    const metaSuffix = [];
-    if (rawTruncated) {
-      metaSuffix.push("raw preview truncated");
-    }
-    if (payloadTruncated) {
-      metaSuffix.push("payload preview truncated");
-    }
-
-    elements.packetDetailsMeta.textContent = metaSuffix.length > 0
-      ? `Packet ${selectedPacket.packet_index} details loaded (${metaSuffix.join(", ")}).`
-      : `Packet ${selectedPacket.packet_index} details loaded.`;
+    elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details loaded.`;
     elements.packetDetailsStateText.textContent = "";
     elements.packetDetailsProtocolStateText.textContent = protocolSections.length > 0
       ? "Protocol details loaded."
@@ -2850,21 +2829,17 @@
     }
 
     if (rawLoaded) {
-      elements.packetDetailsRawStateText.textContent = rawTruncated
-        ? "Raw preview loaded (truncated)."
-        : "Raw preview loaded.";
+      elements.packetDetailsRawStateText.textContent = "Raw bytes loaded.";
       elements.packetDetailsRawText.textContent = details?.raw_preview_text || "";
     } else {
-      elements.packetDetailsRawStateText.textContent = details?.raw_preview_unavailable_text || "Raw preview is unavailable.";
+      elements.packetDetailsRawStateText.textContent = details?.raw_preview_unavailable_text || "Raw bytes are unavailable.";
       elements.packetDetailsRawStateText.classList.add("is-error");
-      elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || "Raw preview is unavailable.";
+      elements.packetDetailsRawText.textContent = details?.raw_preview_unavailable_text || "Raw bytes are unavailable.";
       elements.packetDetailsRawText.classList.add("is-muted");
     }
 
     if (payloadLoaded) {
-      elements.packetDetailsPayloadStateText.textContent = payloadTruncated
-        ? "Payload preview loaded (truncated)."
-        : "Payload preview loaded.";
+      elements.packetDetailsPayloadStateText.textContent = "Payload bytes loaded.";
       elements.packetDetailsPayloadText.textContent = details?.payload_preview_text || "";
     } else if (details?.payload_preview_no_payload) {
       elements.packetDetailsPayloadStateText.textContent = "No payload is available for this packet.";
@@ -2872,9 +2847,9 @@
       elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No transport payload is available for this packet.";
       elements.packetDetailsPayloadText.classList.add("is-muted");
     } else {
-      elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || "No payload preview is available.";
+      elements.packetDetailsPayloadStateText.textContent = details?.payload_preview_unavailable_text || "No payload bytes are available.";
       elements.packetDetailsPayloadStateText.classList.add("is-error");
-      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No payload preview is available.";
+      elements.packetDetailsPayloadText.textContent = details?.payload_preview_unavailable_text || "No payload bytes are available.";
       elements.packetDetailsPayloadText.classList.add("is-muted");
     }
   }
@@ -3190,14 +3165,8 @@
     elements.analysisFlowMeta.textContent = state.selectedFlowIndex == null
       ? `Showing ${formatNumber(flows.length)} analysis flows. Select one to load analysis.`
       : `Showing ${formatNumber(flows.length)} analysis flows. Flow ${formatNumber(state.selectedFlowIndex + 1)} is active.`;
-    elements.analysisFlowRenderCapBar.classList.toggle("is-visible", state.analysisFlowVirtualizationActive);
-    elements.analysisFlowRenderCapText.textContent = state.analysisFlowVirtualizationActive
-      ? (
-        selectedFlowOutsideRenderedSlice
-          ? `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(flows.length)}. The active flow is outside the current rendered window.`
-          : `Virtualized list active. Showing rows ${formatNumber(virtualWindow.startIndex + 1)}-${formatNumber(virtualWindow.endIndex)} of ${formatNumber(flows.length)}.`
-      )
-      : "";
+    elements.analysisFlowRenderCapBar.classList.remove("is-visible");
+    elements.analysisFlowRenderCapText.textContent = "";
 
     for (const row of elements.analysisFlowTableBody.querySelectorAll(".analysis-flow-row")) {
       row.addEventListener("click", async () => {

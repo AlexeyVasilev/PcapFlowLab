@@ -22,8 +22,6 @@ namespace pfl {
 
 namespace {
 
-constexpr std::size_t kPacketPreviewBytes = 128U;
-
 enum class ChecksumValidationStatus {
     valid,
     invalid,
@@ -705,7 +703,7 @@ std::string frontend_stream_protocol_text(
     return stream_protocol_unavailable_text();
 }
 
-std::pair<std::string, bool> build_payload_preview(
+std::string build_packet_payload_text(
     const std::vector<std::uint8_t>& packet_bytes,
     const PacketRef& packet
 ) {
@@ -719,25 +717,17 @@ std::pair<std::string, bool> build_payload_preview(
         return {};
     }
 
-    const auto preview_size = std::min<std::size_t>(kPacketPreviewBytes, payload_bytes.size());
     HexDumpService hex_dump_service {};
-    return {
-        hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), preview_size)),
-        payload_bytes.size() > preview_size,
-    };
+    return hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()));
 }
 
-std::pair<std::string, bool> build_raw_preview(const std::vector<std::uint8_t>& packet_bytes) {
+std::string build_packet_raw_text(const std::vector<std::uint8_t>& packet_bytes) {
     if (packet_bytes.empty()) {
         return {};
     }
 
-    const auto preview_size = std::min<std::size_t>(kPacketPreviewBytes, packet_bytes.size());
     HexDumpService hex_dump_service {};
-    return {
-        hex_dump_service.format(std::span<const std::uint8_t>(packet_bytes.data(), preview_size)),
-        packet_bytes.size() > preview_size,
-    };
+    return hex_dump_service.format(std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
 }
 
 std::string checksum_status_text(const ChecksumValidationStatus status) {
@@ -2450,17 +2440,17 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     }
     result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
 
-    const auto [raw_preview_text, raw_preview_truncated] = build_raw_preview(packet_bytes);
+    const auto raw_preview_text = build_packet_raw_text(packet_bytes);
     result.raw_preview_text = raw_preview_text;
-    result.raw_preview_truncated = raw_preview_truncated;
+    result.raw_preview_truncated = false;
     result.raw_preview_available = !raw_preview_text.empty();
     result.raw_preview_unavailable_text = result.raw_preview_available
         ? std::string {}
-        : "Raw packet preview is unavailable for this packet.";
+        : "Raw packet bytes are unavailable for this packet.";
 
-    const auto [payload_preview_text, payload_preview_truncated] = build_payload_preview(packet_bytes, packet);
+    const auto payload_preview_text = build_packet_payload_text(packet_bytes, packet);
     result.payload_preview_text = payload_preview_text;
-    result.payload_preview_truncated = payload_preview_truncated;
+    result.payload_preview_truncated = false;
     result.payload_preview_available = !payload_preview_text.empty();
     result.payload_preview_no_payload =
         !result.payload_preview_available && (details->has_tcp || details->has_udp) && packet.payload_length == 0U;
@@ -2468,7 +2458,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         ? std::string {}
         : (result.payload_preview_no_payload
             ? "No transport payload is available for this packet."
-            : "Transport payload preview is not available for this packet.");
+            : "Transport payload bytes are unavailable for this packet.");
 
     if (!result.payload_preview_available) {
         result.unavailable_text = result.payload_preview_unavailable_text;

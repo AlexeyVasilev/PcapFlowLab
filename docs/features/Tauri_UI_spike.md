@@ -93,7 +93,7 @@ The current Tauri UI now supports:
 - frontend-only virtualization/windowing for the main Flows table and Analysis flow list
 - full loaded flow DTO arrays are still held in JS; virtualization currently reduces DOM/render pressure only
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
-- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, and keeps Stream / Analysis lazy
+- selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, keeps Stream / Analysis lazy, and shows a simpler `Showing N of Total packets` count label
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - compact desktop-style layout with internal panel scrolling
 - generated cross-platform Tauri icon assets from a canonical local source icon, including Linux PNG bundle icons
@@ -129,6 +129,7 @@ The `Flows` tab now supports:
   - `Payload`
   - `Protocol`
 - the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
+- Raw/Payload tabs now show the full available selected-packet byte text on demand rather than a preview-only display
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of button styling
 - byte-backed packet details can recover after a valid source-capture attach
 - a compact checked-flow status bar shown only when one or more flows are checked

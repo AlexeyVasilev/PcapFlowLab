@@ -14,7 +14,7 @@
   --warning-soft: #efe6c8;
   --shadow: 0 6px 20px rgba(29, 43, 52, 0.04);
   --flows-top-size: 52%;
-  --flows-bottom-left-size: minmax(380px, 0.95fr);
+  --flows-bottom-left-size: minmax(420px, 1.12fr);
   --analysis-left-size: minmax(300px, 0.85fr);
   --workspace-splitter-size: 10px;
 }
@@ -67,9 +67,9 @@ body.is-resizing-vertical {
 .menu-bar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  gap: 0;
+  padding-top: 2px;
+  padding-bottom: 2px;
   position: relative;
   overflow: visible;
 }
@@ -79,17 +79,19 @@ body.is-resizing-vertical {
 }
 
 .menu-button {
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  min-height: 26px;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 2px;
   background: transparent;
   color: var(--text);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .menu-button:hover,
 .menu-button.is-open {
-  background: #eef3f5;
+  background: rgba(31, 111, 120, 0.08);
   color: var(--text);
 }
 
@@ -379,7 +381,7 @@ body.is-resizing-vertical {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   gap: 10px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .toolbar-group {
@@ -395,6 +397,20 @@ body.is-resizing-vertical {
 
 .compact-toolbar-group {
   gap: 0;
+  align-self: stretch;
+}
+
+#openFileButton,
+#openMode {
+  min-height: 40px;
+}
+
+#openFileButton {
+  padding-inline: 14px;
+}
+
+#openMode {
+  min-width: 72px;
 }
 
 .active-session-panel {
@@ -745,6 +761,10 @@ body.is-resizing-vertical {
   flex: 0 0 auto;
 }
 
+.flows-panel .panel-heading {
+  margin-bottom: 4px;
+}
+
 .panel-heading h2 {
   margin: 0;
   font-size: 16px;
@@ -763,8 +783,8 @@ body.is-resizing-vertical {
 .flows-tools {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 2px;
+  margin-bottom: 0;
   flex: 0 0 auto;
 }
 
@@ -782,8 +802,12 @@ body.is-resizing-vertical {
 .flow-wireshark-row {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+}
+
+.flows-panel .table-wrap {
+  margin-top: 0;
 }
 
 .flow-inline-meta {
@@ -934,15 +958,16 @@ select:disabled {
 
 .subtab-button {
   min-width: 96px;
-  min-height: 30px;
-  padding: 6px 12px 7px;
+  min-height: 34px;
+  padding: 7px 14px 8px;
   border: 1px solid var(--border);
   border-bottom: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 10px 10px 0 0;
   background: #f3efe6;
   color: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   position: relative;
+  cursor: pointer;
 }
 
 .subtab-button.active {
@@ -1216,17 +1241,10 @@ select:disabled {
 
 .table-cap-bar {
   display: none;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #f8f5ee;
 }
 
 .table-cap-bar.is-visible {
-  display: flex;
+  display: none;
 }
 
 .table-cap-text {
