@@ -160,7 +160,11 @@ Implemented slice:
 
 ## Bootstrap notes
 
-- `src-tauri/icons/icon.ico` is provided for Tauri's Windows resource step.
+- Canonical Tauri icon source: `app-icon.png`.
+- Generated Tauri icons live under `src-tauri/icons/`.
+- Regenerate the icon set from this directory with:
+  - `cargo tauri icon app-icon.png`
+- Linux uses the generated PNG icons from `src-tauri/icons/`, while Windows/macOS keep the generated `.ico` / `.icns` assets.
 - `src-tauri/capabilities/default.json` defines the minimal default desktop capability.
 - On Windows, use the default Rust MSVC toolchain for the spike.
 
@@ -206,7 +210,6 @@ Implemented slice:
   - compact histogram sections
   - compact sequence preview
 - The following Analysis areas remain deferred:
-  - rate graph
   - richer charts
   - fuller Qt analysis workspace parity
 - Selected packet inspection is still basic compared with Qt even though it now has `Summary / Raw / Payload / Protocol` tabs.

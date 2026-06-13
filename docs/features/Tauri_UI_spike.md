@@ -94,6 +94,7 @@ The current Tauri spike now supports:
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, and keeps Stream / Analysis lazy
 - selected-flow packet and stream loading for very large flows remains a known optimization area
 - compact desktop-style layout with internal panel scrolling
+- generated cross-platform Tauri icon assets from a canonical local source icon, including Linux PNG bundle icons
 - frontend-only top-level tabs: `Flows`, `Analysis`, `Statistics`
 - Qt-aligned top-level tab order and runtime-only adjustable splitters for the Flows and Analysis workspaces
 - explicit shell open states: `idle`, `opening`, `opened`, `error`
@@ -310,7 +311,6 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - stream item details are now much closer to Qt, but some protocol-specific formatting/helper paths still remain Qt-only
 - statistics still miss Qt-style percentage formatting and deeper drill-down/navigation behavior
 - Analysis still misses:
-  - rate graph
   - richer charts
   - fuller Qt analysis workspace parity
 - selected-flow packet and stream latency on very large flows remains a known issue
@@ -326,7 +326,6 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - Stream-to-packet navigation
 - Qt-style percentage formatting in Statistics
 - richer Statistics drill-down/navigation
-- Analysis rate graph
 - fuller Analysis parity
 - selected-flow packet/stream latency work for very large flows
 - shared packet-byte read optimization in the backend/session path
@@ -346,3 +345,4 @@ The Tauri spike is still not full Qt parity. The main remaining gaps are:
 - The existing Qt UI remains the primary product UI.
 - The Tauri path is still an experimental parallel frontend spike.
 - The current spike now covers most primary desktop workflows, but should still be treated as an incremental evaluation path rather than a committed UI migration.
+- The canonical Tauri icon source is `experimental/tauri-ui-spike/app-icon.png`; regenerate `experimental/tauri-ui-spike/src-tauri/icons/` with `cargo tauri icon app-icon.png`.
