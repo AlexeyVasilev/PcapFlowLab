@@ -2281,6 +2281,32 @@ int main(int argc, char* argv[]) {
     stream_controller.setSelectedFlowIndex(-1);
     UI_EXPECT(stream_model->rowCount() == 0);
 
+    const auto arp_stream_fixture_path = ui_test_root() / "data" / "parsing" / "arp" / "03_arp_request_reply_ipv4.pcap";
+    MainController arp_stream_controller {};
+    UI_EXPECT(open_capture_and_wait(app, arp_stream_controller, arp_stream_fixture_path));
+    arp_stream_controller.setFlowDetailsTabIndex(1);
+    arp_stream_controller.setSelectedFlowIndex(0);
+    auto* arp_stream_model = qobject_cast<StreamListModel*>(arp_stream_controller.streamModel());
+    auto* arp_stream_details_model = qobject_cast<PacketDetailsViewModel*>(arp_stream_controller.packetDetailsModel());
+    UI_EXPECT(arp_stream_model != nullptr);
+    UI_EXPECT(arp_stream_details_model != nullptr);
+    UI_EXPECT(arp_stream_model->rowCount() == 2);
+    UI_EXPECT(arp_stream_model->data(arp_stream_model->index(0, 0), StreamListModel::LabelRole).toString().contains(QStringLiteral("Who has 10.10.12.1? Tell 10.10.12.2")));
+    UI_EXPECT(arp_stream_model->data(arp_stream_model->index(1, 0), StreamListModel::LabelRole).toString().contains(QStringLiteral("10.10.12.1 is at 02:00:00:00:00:01")));
+    const auto arp_stream_item_index = arp_stream_model->data(
+        arp_stream_model->index(0, 0),
+        StreamListModel::StreamItemIndexRole
+    ).toULongLong();
+    arp_stream_controller.setSelectedStreamItemIndex(arp_stream_item_index);
+    UI_EXPECT(arp_stream_details_model->detailsTitle() == QStringLiteral("Stream Item Details"));
+    UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Message: ARP Request")));
+    UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Who has 10.10.12.1? Tell 10.10.12.2")));
+    UI_EXPECT(arp_stream_details_model->summaryText().contains(QStringLiteral("Source packet: #1")));
+    UI_EXPECT(arp_stream_details_model->payloadTabTitle() == QStringLiteral("ARP Payload"));
+    UI_EXPECT(arp_stream_details_model->payloadText().contains(QStringLiteral("00 01 08 00 06 04 00 01")));
+    UI_EXPECT(arp_stream_details_model->protocolText().contains(QStringLiteral("Protocol: ARP (Address Resolution Protocol)")));
+    UI_EXPECT(arp_stream_details_model->protocolText().contains(QStringLiteral("Opcode: request (1)")));
+
     const auto split_tls_record = make_tls_handshake_record(0x02U, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06});
     const auto split_tls_payload_a = std::vector<std::uint8_t>(split_tls_record.begin(), split_tls_record.begin() + 7);
     const auto split_tls_payload_b = std::vector<std::uint8_t>(split_tls_record.begin() + 7, split_tls_record.end());

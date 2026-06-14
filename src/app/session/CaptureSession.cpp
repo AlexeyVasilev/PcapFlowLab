@@ -125,6 +125,7 @@ StreamItemRow make_stream_item_row(
     const std::string& label,
     const std::size_t byte_count,
     const std::vector<std::uint64_t>& packet_indices,
+    const std::string& summary_text = {},
     const std::string& payload_hex_text = {},
     const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
@@ -141,6 +142,7 @@ StreamItemRow make_stream_item_row(
         .has_constricted_contribution = has_constricted_contribution,
         .constricted_contribution_notes = constricted_contribution_notes,
         .constricted_packet_notes = constricted_packet_notes,
+        .summary_text = summary_text,
         .payload_hex_text = payload_hex_text,
         .protocol_text = protocol_text,
     };
@@ -152,6 +154,7 @@ StreamItemRow make_stream_item_row(
     const std::string& label,
     const std::size_t byte_count,
     const PacketRef& packet,
+    const std::string& summary_text = {},
     const std::string& payload_hex_text = {},
     const std::string& protocol_text = {},
     const bool has_constricted_contribution = false,
@@ -164,6 +167,7 @@ StreamItemRow make_stream_item_row(
         label,
         byte_count,
         std::vector<std::uint64_t> {packet.packet_index},
+        summary_text,
         payload_hex_text,
         protocol_text,
         has_constricted_contribution,
@@ -189,6 +193,7 @@ bool append_tls_stream_items(
             item.label,
             item.byte_count,
             item.packet_indices,
+            {},
             item.payload_hex_text,
             item.protocol_text,
             item.has_constricted_contribution,
@@ -230,6 +235,7 @@ DirectionalStreamPolicy append_http_stream_items_from_reassembly(
             item.label,
             item.byte_count,
             item.packet_indices,
+            {},
             item.payload_hex_text,
             item.protocol_text
         ));
@@ -260,6 +266,7 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
             item.label,
             item.byte_count,
             item.packet_indices,
+            {},
             item.payload_hex_text,
             item.protocol_text,
             item.has_constricted_contribution,
@@ -383,6 +390,7 @@ bool append_quic_stream_items_for_packet(
             item.label,
             item.byte_count,
             packet,
+            {},
             packet_hex_dump,
             item.protocol_text,
             item.has_constricted_contribution,
@@ -393,6 +401,55 @@ bool append_quic_stream_items_for_packet(
     }
 
     return emitted_any || presentation.handled;
+}
+
+std::string join_summary_lines(const std::vector<std::string>& lines) {
+    std::ostringstream out {};
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (index != 0U) {
+            out << '\n';
+        }
+        out << lines[index];
+    }
+    return out.str();
+}
+
+bool append_arp_stream_item_for_packet(
+    std::vector<StreamItemRow>& rows,
+    const CaptureSession& session,
+    const PacketRef& packet,
+    const std::string_view direction_text
+) {
+    const auto packet_bytes = session.read_packet_data(packet);
+    if (packet_bytes.empty()) {
+        return false;
+    }
+
+    PacketDetailsService details_service {};
+    const auto details = details_service.decode(packet_bytes, packet);
+    if (!details.has_value() || !details->has_arp) {
+        return false;
+    }
+
+    const auto presentation = session_detail::describe_arp_packet(*details);
+    const auto summary_lines = session_detail::build_basic_summary_lines(*details);
+    const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
+
+    PacketPayloadService payload_service {};
+    const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
+    HexDumpService hex_dump_service {};
+
+    rows.push_back(make_stream_item_row(
+        static_cast<std::uint64_t>(rows.size() + 1U),
+        direction_text,
+        presentation.has_value() && !presentation->detail.empty() ? presentation->detail : std::string {"ARP"},
+        payload_bytes.size(),
+        packet,
+        join_summary_lines(summary_lines),
+        hex_dump_service.format(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size())),
+        protocol_text
+    ));
+    return true;
 }
 
 template <typename Connection>
@@ -434,6 +491,11 @@ void append_connection_stream_items_bounded(
         auto& gap_item_emitted = use_a ? gap_item_emitted_a : gap_item_emitted_b;
 
         if (direction_policy.covered_packet_indices.contains(packet.packet_index)) {
+            continue;
+        }
+
+        if (flow_protocol == ProtocolId::arp) {
+            append_arp_stream_item_for_packet(rows, session, packet, direction_text);
             continue;
         }
 
@@ -490,6 +552,7 @@ void append_connection_stream_items_bounded(
                 gap_label,
                 0U,
                 packet,
+                {},
                 {},
                 gap_protocol
             ));
@@ -566,6 +629,7 @@ void append_connection_stream_items_bounded(
             label,
             payload_span.size(),
             packet,
+            {},
             {},
             protocol_text
         ));
@@ -2095,7 +2159,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
     }
 
     const auto flow_protocol = protocol_id(connections[flow_index]);
-    if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp) {
+    if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp && flow_protocol != ProtocolId::arp) {
         return {};
     }
 
@@ -2142,7 +2206,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     }
 
     const auto flow_protocol = protocol_id(connections[flow_index]);
-    if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp) {
+    if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp && flow_protocol != ProtocolId::arp) {
         return {};
     }
 

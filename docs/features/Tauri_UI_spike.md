@@ -157,6 +157,7 @@ The `Stream` tab now supports:
 - Qt-like directional stream item cards
 - left/right alignment by direction
 - selectable stream items
+- shared ARP stream items for selected ARP flows, one packet per item
 - Qt-like selected stream-item details with:
   - compact header/title block
   - `Summary / Payload / Protocol` tabs

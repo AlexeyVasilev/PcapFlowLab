@@ -571,6 +571,10 @@ std::string stream_item_header_badge_text(const StreamItemRow& row) {
 }
 
 std::string stream_item_payload_tab_title(const StreamItemRow& row) {
+    if (row.protocol_text.rfind("Protocol: ARP", 0) == 0) {
+        return "ARP Payload";
+    }
+
     if (row.label.rfind("QUIC ", 0) == 0 ||
         row.label == "QUIC Initial: ACK" ||
         row.label == "QUIC Initial: CRYPTO" ||
@@ -613,6 +617,25 @@ std::string build_stream_item_summary_text(
         : (source_packets.rfind("packets ", 0) == 0
             ? "Source packets: " + source_packets.substr(8)
             : "Source packets: " + source_packets);
+
+    if (!row.summary_text.empty()) {
+        std::vector<std::string> lines {
+            row.summary_text,
+            {},
+            "Stream item: #" + std::to_string(row.stream_item_index),
+            "Direction: " + row.direction_text,
+            source_packets_line,
+        };
+
+        std::ostringstream out {};
+        for (std::size_t index = 0; index < lines.size(); ++index) {
+            if (index != 0U) {
+                out << '\n';
+            }
+            out << lines[index];
+        }
+        return out.str();
+    }
 
     std::vector<std::string> lines {
         "Label: " + row.label,

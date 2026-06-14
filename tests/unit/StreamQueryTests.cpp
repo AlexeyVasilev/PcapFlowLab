@@ -1903,6 +1903,99 @@ void run_stream_query_tests() {
             PFL_EXPECT(row.payload_hex_text.empty());
         }
     }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/01_arp_request_ipv4.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label.find("Who has 10.10.12.1? Tell 10.10.12.2") != std::string::npos);
+        PFL_EXPECT(!rows[0].direction_text.empty());
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(rows[0].summary_text.find("Message: ARP Request") != std::string::npos);
+        PFL_EXPECT(rows[0].payload_hex_text.find("00 01 08 00 06 04 00 01") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Protocol: ARP (Address Resolution Protocol)") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/02_arp_reply_ipv4.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label.find("10.10.12.1 is at 02:00:00:00:00:01") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/03_arp_request_reply_ipv4.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label.find("Who has 10.10.12.1? Tell 10.10.12.2") != std::string::npos);
+        PFL_EXPECT(rows[1].label.find("10.10.12.1 is at 02:00:00:00:00:01") != std::string::npos);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t>({0U}));
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t>({1U}));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/04_gratuitous_arp_request_ipv4.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label.find("Gratuitous ARP") != std::string::npos);
+        PFL_EXPECT(rows[0].label.find("10.10.12.1") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/06_arp_probe_ipv4.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label.find("ARP probe") != std::string::npos);
+        PFL_EXPECT(rows[0].label.find("10.10.12.3") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/08_arp_request_with_ethernet_padding.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].payload_hex_text.find("00 01 08 00 06 04 00 01") != std::string::npos);
+        PFL_EXPECT(rows[0].payload_hex_text.find("00000020") == std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/09_truncated_arp_fixed_header.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label.find("Truncated ARP header") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Warning: ARP fixed header is truncated.") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/11_snaplen_truncated_arp_request.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_text.find("Warning: ARP address section is truncated.") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/arp/14_unknown_opcode.pcap"), fast_options));
+
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label.find("ARP opcode 42") != std::string::npos);
+    }
 }
 
 }  // namespace pfl::tests

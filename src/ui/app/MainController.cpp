@@ -1127,6 +1127,10 @@ QString stream_item_payload_tab_title(const StreamItemRow& item) {
     const auto label = QString::fromStdString(item.label);
     const auto protocolText = QString::fromStdString(item.protocol_text);
 
+    if (protocolText.startsWith(QStringLiteral("Protocol: ARP"))) {
+        return QStringLiteral("ARP Payload");
+    }
+
     if (is_quic_stream_item_label(label) || protocolText.startsWith(QStringLiteral("QUIC"))) {
         return QStringLiteral("UDP Payload");
     }
@@ -1698,6 +1702,16 @@ QString buildStreamItemSummary(
         : sourcePackets.startsWith(QStringLiteral("packets "))
             ? QStringLiteral("Source packets: %1").arg(sourcePackets.sliced(8))
             : QStringLiteral("Source packets: %1").arg(sourcePackets);
+
+    if (!item.summary_text.empty()) {
+        return QStringList {
+            QString::fromStdString(item.summary_text),
+            QString {},
+            QStringLiteral("Stream item: #%1").arg(item.stream_item_index),
+            QStringLiteral("Direction: %1").arg(QString::fromStdString(item.direction_text)),
+            sourcePacketsLine,
+        }.join(QLatin1Char('\n'));
+    }
 
     QStringList lines {
         QStringLiteral("Label: %1").arg(QString::fromStdString(item.label)),

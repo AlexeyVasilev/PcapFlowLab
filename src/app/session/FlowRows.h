@@ -59,6 +59,7 @@ struct StreamItemRow {
     bool has_constricted_contribution {false};
     std::vector<std::string> constricted_contribution_notes {};
     std::vector<std::string> constricted_packet_notes {};
+    std::string summary_text {};
     std::string payload_hex_text {};
     std::string protocol_text {};
 };
@@ -133,4 +134,3 @@ struct CaptureTopSummary {
 };
 
 }  // namespace pfl
-
