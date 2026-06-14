@@ -26,6 +26,10 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
     return extract_transport_payload(packet_bytes, kLinkTypeEthernet);
 }
 
+std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(std::span<const std::uint8_t> packet_bytes) const {
+    return extract_packet_details_payload(packet_bytes, kLinkTypeEthernet);
+}
+
 std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes,
                                                                           const std::uint32_t data_link_type) const {
     const auto envelope = detail::parse_link_layer_payload(packet_bytes, data_link_type);
@@ -122,6 +126,32 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
     }
 
     return {};
+}
+
+std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(std::span<const std::uint8_t> packet_bytes,
+                                                                               const std::uint32_t data_link_type) const {
+    const auto envelope = detail::parse_link_layer_payload(packet_bytes, data_link_type);
+    if (!envelope.has_value()) {
+        return {};
+    }
+
+    if (envelope->protocol_type == detail::kEtherTypeArp) {
+        if (packet_bytes.size() <= envelope->payload_offset) {
+            return {};
+        }
+
+        const auto available_length = packet_bytes.size() - envelope->payload_offset;
+        if (available_length < 8U) {
+            return copy_payload(packet_bytes, envelope->payload_offset, available_length);
+        }
+
+        const auto hardware_size = static_cast<std::size_t>(packet_bytes[envelope->payload_offset + 4U]);
+        const auto protocol_size = static_cast<std::size_t>(packet_bytes[envelope->payload_offset + 5U]);
+        const auto declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
+        return copy_payload(packet_bytes, envelope->payload_offset, std::min(available_length, declared_length));
+    }
+
+    return extract_transport_payload(packet_bytes, data_link_type);
 }
 
 }  // namespace pfl

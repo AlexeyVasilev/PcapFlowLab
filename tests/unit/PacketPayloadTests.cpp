@@ -71,6 +71,26 @@ void run_packet_payload_tests() {
     }
 
     {
+        const auto arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U);
+        const auto arp_payload = payload_service.extract_packet_details_payload(arp_packet);
+        PFL_EXPECT(arp_payload.size() == 28U);
+        PFL_EXPECT(arp_payload[0] == 0x00U);
+        PFL_EXPECT(arp_payload[1] == 0x01U);
+        PFL_EXPECT(arp_payload[6] == 0x00U);
+        PFL_EXPECT(arp_payload[7] == 0x01U);
+
+        auto padded_arp_packet = arp_packet;
+        padded_arp_packet.insert(padded_arp_packet.end(), {0x00U, 0x00U, 0x00U, 0x00U});
+        const auto padded_arp_payload = payload_service.extract_packet_details_payload(padded_arp_packet);
+        PFL_EXPECT(padded_arp_payload.size() == 28U);
+
+        auto truncated_arp_packet = arp_packet;
+        truncated_arp_packet.resize(14U + 18U);
+        const auto truncated_arp_payload = payload_service.extract_packet_details_payload(truncated_arp_packet);
+        PFL_EXPECT(truncated_arp_payload.size() == 18U);
+    }
+
+    {
         auto malformed_tcp = make_ethernet_ipv4_tcp_packet_with_payload(
             ipv4(10, 4, 0, 1), ipv4(10, 4, 0, 2), 4444, 80, 2, 0x18);
         malformed_tcp[16] = 0x00;
@@ -106,6 +126,28 @@ void run_packet_payload_tests() {
 
         const auto full_dump = session.read_packet_hex_dump(*packet);
         PFL_EXPECT(full_dump.size() > payload_dump.size());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_packet_payload_arp_session.pcap",
+            make_classic_pcap({{
+                100,
+                make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U)
+            }})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+
+        const auto packet = session.find_packet(0);
+        PFL_EXPECT(packet.has_value());
+
+        const auto payload_dump = session.read_packet_payload_hex_dump(*packet);
+        PFL_EXPECT(payload_dump.find("00000000") != std::string::npos);
+        PFL_EXPECT(payload_dump.find("00 01 08 00 06 04 00 01") != std::string::npos);
+        PFL_EXPECT(payload_dump.find("00 11 22 33 44 55 0a 0a") != std::string::npos);
+        PFL_EXPECT(payload_dump.find("0c 02 66 77 88 99 aa bb") != std::string::npos);
     }
 
     PFL_EXPECT(hex_dump_service.format(std::span<const std::uint8_t> {}).empty());

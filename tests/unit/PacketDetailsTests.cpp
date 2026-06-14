@@ -84,6 +84,144 @@ void run_packet_details_tests() {
     }
 
     {
+        PacketDetailsService service {};
+        const auto arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U);
+        const PacketRef packet_ref {
+            .packet_index = 19,
+            .byte_offset = 96,
+            .captured_length = static_cast<std::uint32_t>(arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(arp_packet.size()),
+        };
+
+        const auto details = service.decode(arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(details->arp.hardware_type == 1U);
+        PFL_EXPECT(details->arp.protocol_type == 0x0800U);
+        PFL_EXPECT(details->arp.hardware_size == 6U);
+        PFL_EXPECT(details->arp.protocol_size == 4U);
+        PFL_EXPECT(details->arp.opcode == 1U);
+        PFL_EXPECT(details->arp.sender_hardware_address.size() == 6U);
+        PFL_EXPECT(details->arp.sender_protocol_address.size() == 4U);
+        PFL_EXPECT(details->arp.target_hardware_address.size() == 6U);
+        PFL_EXPECT(details->arp.target_protocol_address.size() == 4U);
+        const std::array<std::uint8_t, 4> expected_sender_ipv4 {10U, 10U, 12U, 2U};
+        const std::array<std::uint8_t, 4> expected_target_ipv4 {10U, 10U, 12U, 1U};
+        PFL_EXPECT(details->arp.sender_ipv4 == expected_sender_ipv4);
+        PFL_EXPECT(details->arp.target_ipv4 == expected_target_ipv4);
+        PFL_EXPECT(!details->arp.fixed_header_truncated);
+        PFL_EXPECT(!details->arp.address_section_truncated);
+    }
+
+    {
+        PacketDetailsService service {};
+        auto padded_arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 1), ipv4(10, 10, 12, 2), 2U);
+        padded_arp_packet.insert(padded_arp_packet.end(), {0x00U, 0x00U, 0x00U, 0x00U});
+        const PacketRef packet_ref {
+            .packet_index = 20,
+            .byte_offset = 120,
+            .captured_length = static_cast<std::uint32_t>(padded_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(padded_arp_packet.size()),
+        };
+
+        const auto details = service.decode(padded_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(details->arp.sender_hardware_address.size() == 6U);
+        PFL_EXPECT(details->arp.target_hardware_address.size() == 6U);
+        PFL_EXPECT(!details->arp.address_section_truncated);
+    }
+
+    {
+        PacketDetailsService service {};
+        const auto vlan_arp_packet = add_vlan_tags(
+            make_ethernet_arp_packet(ipv4(10, 10, 12, 3), ipv4(10, 10, 12, 4), 1U),
+            {{0x8100U, 200U}}
+        );
+        const PacketRef packet_ref {
+            .packet_index = 23,
+            .byte_offset = 192,
+            .captured_length = static_cast<std::uint32_t>(vlan_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(vlan_arp_packet.size()),
+        };
+
+        const auto details = service.decode(vlan_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(details->has_vlan);
+        const std::array<std::uint8_t, 4> expected_vlan_sender_ipv4 {10U, 10U, 12U, 3U};
+        PFL_EXPECT(details->arp.sender_ipv4 == expected_vlan_sender_ipv4);
+    }
+
+    {
+        PacketDetailsService service {};
+        auto truncated_arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U);
+        truncated_arp_packet.resize(truncated_arp_packet.size() - 5U);
+        const PacketRef packet_ref {
+            .packet_index = 21,
+            .byte_offset = 144,
+            .captured_length = static_cast<std::uint32_t>(truncated_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(truncated_arp_packet.size() + 5U),
+        };
+
+        const auto details = service.decode(truncated_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(!details->arp.fixed_header_truncated);
+        PFL_EXPECT(details->arp.address_section_truncated);
+        PFL_EXPECT(details->arp.target_protocol_address.size() < 4U);
+    }
+
+    {
+        PacketDetailsService service {};
+        auto short_arp_packet = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U);
+        short_arp_packet.resize(14U + 6U);
+        const PacketRef packet_ref {
+            .packet_index = 22,
+            .byte_offset = 168,
+            .captured_length = static_cast<std::uint32_t>(short_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(short_arp_packet.size() + 8U),
+        };
+
+        const auto details = service.decode(short_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(details->arp.fixed_header_truncated);
+    }
+
+    {
+        PacketDetailsService service {};
+        const auto custom_arp_packet = make_ethernet_arp_packet_with_fields(
+            {0x01, 0x02, 0x03},
+            {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff},
+            {0x04, 0x05, 0x06},
+            {0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
+            3U,
+            7U,
+            0x1234U
+        );
+        const PacketRef packet_ref {
+            .packet_index = 24,
+            .byte_offset = 216,
+            .captured_length = static_cast<std::uint32_t>(custom_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(custom_arp_packet.size()),
+        };
+
+        const auto details = service.decode(custom_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(details->arp.hardware_type == 7U);
+        PFL_EXPECT(details->arp.protocol_type == 0x1234U);
+        PFL_EXPECT(details->arp.hardware_size == 3U);
+        PFL_EXPECT(details->arp.protocol_size == 6U);
+        PFL_EXPECT(details->arp.opcode == 3U);
+        PFL_EXPECT(details->arp.sender_hardware_address.size() == 3U);
+        PFL_EXPECT(details->arp.sender_protocol_address.size() == 6U);
+        PFL_EXPECT(details->arp.target_hardware_address.size() == 3U);
+        PFL_EXPECT(details->arp.target_protocol_address.size() == 6U);
+    }
+
+    {
         const auto path = write_temp_pcap("pfl_packet_details_session.pcap", make_classic_pcap({{100, tcp_packet}}));
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(path));

@@ -352,6 +352,8 @@ std::string build_frontend_packet_summary_text(
         });
     }
 
+    append_summary_section(lines, "ARP", session_detail::build_basic_summary_lines(*details));
+
     if (details->has_ipv4) {
         append_summary_section(lines, "IPv4", {
             "Source: " + session_detail::format_ipv4_address(details->ipv4.src_addr),
@@ -412,13 +414,7 @@ std::string build_frontend_packet_summary_text(
 }
 
 std::string packet_payload_tab_title(const PacketDetails& details) {
-    if (details.has_tcp) {
-        return "TCP Payload";
-    }
-    if (details.has_udp) {
-        return "UDP Payload";
-    }
-    return "Payload";
+    return session_detail::packet_payload_tab_title(details);
 }
 
 std::string format_stream_source_packets_text(
@@ -712,7 +708,7 @@ std::string build_packet_payload_text(
     }
 
     PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    const auto payload_bytes = payload_service.extract_packet_details_payload(packet_bytes, packet.data_link_type);
     if (payload_bytes.empty()) {
         return {};
     }

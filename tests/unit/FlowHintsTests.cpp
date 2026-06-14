@@ -231,6 +231,75 @@ void run_flow_hints_tests() {
 
     {
         const auto path = write_temp_pcap(
+            "pfl_flow_hint_arp_request.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1), 1U)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint == "Who has 10.10.12.1? Tell 10.10.12.2");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_arp_reply.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_arp_packet(ipv4(10, 10, 12, 1), ipv4(10, 10, 12, 2), 2U)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].service_hint == "10.10.12.1 is at 00:11:22:33:44:55");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_arp_probe_and_gratuitous.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_arp_packet(ipv4(0, 0, 0, 0), ipv4(10, 10, 12, 9), 1U)},
+                {110, make_ethernet_arp_packet(ipv4(10, 10, 12, 9), ipv4(10, 10, 12, 9), 1U)},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 2U);
+        PFL_EXPECT(rows[0].service_hint == "ARP probe for 10.10.12.9");
+        PFL_EXPECT(rows[1].service_hint == "Gratuitous ARP for 10.10.12.9");
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_flow_hint_arp_unknown_opcode.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_arp_packet_with_fields(
+                    {0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+                    {0x0a, 0x0a, 0x0c, 0x02},
+                    {0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb},
+                    {0x0a, 0x0a, 0x0c, 0x01},
+                    9U
+                )},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].service_hint == "ARP opcode 9");
+    }
+
+    {
+        const auto path = write_temp_pcap(
             "pfl_flow_hint_dns.pcap",
             make_classic_pcap({
                 {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(

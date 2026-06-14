@@ -6,6 +6,8 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionFormatting.h"
+#include "core/services/PacketDetailsService.h"
 
 namespace pfl::tests {
 
@@ -507,10 +509,63 @@ void run_packet_protocol_details_tests() {
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
-        PFL_EXPECT(text.find("ARP") != std::string::npos);
-        PFL_EXPECT(text.find("Opcode: 1") != std::string::npos);
-        PFL_EXPECT(text.find("Sender IPv4: 192.168.1.10") != std::string::npos);
-        PFL_EXPECT(text.find("Target IPv4: 192.168.1.1") != std::string::npos);
+        PFL_EXPECT(text.find("Protocol: ARP (Address Resolution Protocol)") != std::string::npos);
+        PFL_EXPECT(text.find("Hardware Type: Ethernet (1)") != std::string::npos);
+        PFL_EXPECT(text.find("Protocol Type: IPv4 (0x0800)") != std::string::npos);
+        PFL_EXPECT(text.find("Opcode: request (1)") != std::string::npos);
+        PFL_EXPECT(text.find("Sender MAC Address: 00:11:22:33:44:55") != std::string::npos);
+        PFL_EXPECT(text.find("Sender Protocol Address: 192.168.1.10") != std::string::npos);
+        PFL_EXPECT(text.find("Target Protocol Address: 192.168.1.1") != std::string::npos);
+    }
+
+    {
+        auto truncated_arp_packet = make_ethernet_arp_packet(ipv4(192, 168, 1, 10), ipv4(192, 168, 1, 1), 1U);
+        truncated_arp_packet.resize(truncated_arp_packet.size() - 3U);
+        PacketDetailsService details_service {};
+        const PacketRef packet_ref {
+            .packet_index = 0,
+            .byte_offset = 0,
+            .captured_length = static_cast<std::uint32_t>(truncated_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(truncated_arp_packet.size() + 3U),
+        };
+
+        const auto details = details_service.decode(truncated_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        const auto text = session_detail::build_basic_protocol_details_text(*details);
+        PFL_EXPECT(text.has_value());
+        const auto& protocol_text = *text;
+        PFL_EXPECT(protocol_text.find("Protocol: ARP (Address Resolution Protocol)") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Target Protocol Address: c0 (truncated)") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("(truncated)") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Warning: ARP address section is truncated.") != std::string::npos);
+    }
+
+    {
+        const auto unknown_arp_packet = make_ethernet_arp_packet_with_fields(
+            {0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+            {0x0a, 0x0a, 0x0c, 0x02},
+            {0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb},
+            {0x0a, 0x0a, 0x0c, 0x01},
+            7U,
+            99U,
+            0x88B5U
+        );
+        PacketDetailsService details_service {};
+        const PacketRef packet_ref {
+            .packet_index = 0,
+            .byte_offset = 0,
+            .captured_length = static_cast<std::uint32_t>(unknown_arp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(unknown_arp_packet.size()),
+        };
+
+        const auto details = details_service.decode(unknown_arp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        const auto text = session_detail::build_basic_protocol_details_text(*details);
+        PFL_EXPECT(text.has_value());
+        const auto& protocol_text = *text;
+        PFL_EXPECT(protocol_text.find("Hardware Type: Unknown (99)") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Protocol Type: 0x88b5") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Opcode: opcode 7") != std::string::npos);
     }
 
     {

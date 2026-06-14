@@ -456,27 +456,57 @@ inline std::vector<std::uint8_t> make_double_tagged_ethernet_ipv4_udp_packet(
     );
 }
 
+inline std::vector<std::uint8_t> make_ethernet_arp_packet_with_fields(
+    const std::vector<std::uint8_t>& sender_hardware_address,
+    const std::vector<std::uint8_t>& sender_protocol_address,
+    const std::vector<std::uint8_t>& target_hardware_address,
+    const std::vector<std::uint8_t>& target_protocol_address,
+    const std::uint16_t opcode = 1U,
+    const std::uint16_t hardware_type = 1U,
+    const std::uint16_t protocol_type = 0x0800U,
+    std::vector<std::uint8_t> destination_mac = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+    std::vector<std::uint8_t> source_mac = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55}
+) {
+    std::vector<std::uint8_t> bytes {
+        destination_mac[0], destination_mac[1], destination_mac[2], destination_mac[3], destination_mac[4], destination_mac[5],
+        source_mac[0], source_mac[1], source_mac[2], source_mac[3], source_mac[4], source_mac[5],
+        0x08, 0x06
+    };
+
+    append_be16(bytes, hardware_type);
+    append_be16(bytes, protocol_type);
+    bytes.push_back(static_cast<std::uint8_t>(sender_hardware_address.size()));
+    bytes.push_back(static_cast<std::uint8_t>(sender_protocol_address.size()));
+    append_be16(bytes, opcode);
+    bytes.insert(bytes.end(), sender_hardware_address.begin(), sender_hardware_address.end());
+    bytes.insert(bytes.end(), sender_protocol_address.begin(), sender_protocol_address.end());
+    bytes.insert(bytes.end(), target_hardware_address.begin(), target_hardware_address.end());
+    bytes.insert(bytes.end(), target_protocol_address.begin(), target_protocol_address.end());
+    return bytes;
+}
+
 inline std::vector<std::uint8_t> make_ethernet_arp_packet(
     std::uint32_t sender_ipv4,
     std::uint32_t target_ipv4,
     std::uint16_t opcode = 1
 ) {
-    std::vector<std::uint8_t> bytes {
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
-        0x08, 0x06,
-    };
-
-    append_be16(bytes, 1);
-    append_be16(bytes, 0x0800);
-    bytes.push_back(6);
-    bytes.push_back(4);
-    append_be16(bytes, opcode);
-    bytes.insert(bytes.end(), {0x00, 0x11, 0x22, 0x33, 0x44, 0x55});
-    append_be32(bytes, sender_ipv4);
-    bytes.insert(bytes.end(), {0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb});
-    append_be32(bytes, target_ipv4);
-    return bytes;
+    return make_ethernet_arp_packet_with_fields(
+        {0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+        {
+            static_cast<std::uint8_t>((sender_ipv4 >> 24U) & 0xFFU),
+            static_cast<std::uint8_t>((sender_ipv4 >> 16U) & 0xFFU),
+            static_cast<std::uint8_t>((sender_ipv4 >> 8U) & 0xFFU),
+            static_cast<std::uint8_t>(sender_ipv4 & 0xFFU),
+        },
+        {0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb},
+        {
+            static_cast<std::uint8_t>((target_ipv4 >> 24U) & 0xFFU),
+            static_cast<std::uint8_t>((target_ipv4 >> 16U) & 0xFFU),
+            static_cast<std::uint8_t>((target_ipv4 >> 8U) & 0xFFU),
+            static_cast<std::uint8_t>(target_ipv4 & 0xFFU),
+        },
+        opcode
+    );
 }
 
 inline std::vector<std::uint8_t> make_ethernet_ipv4_icmp_packet(
@@ -799,9 +829,6 @@ inline std::filesystem::path write_temp_pcap(const std::string& name, const std:
 }
 
 }  // namespace pfl::tests
-
-
-
 
 
 

@@ -2,11 +2,14 @@
 
 #include <array>
 #include <cctype>
+#include <iomanip>
 #include <optional>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
 
+#include "core/decode/PacketDecodeSupport.h"
 #include "core/domain/ProtocolId.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketPayloadService.h"
@@ -17,6 +20,10 @@ namespace pfl {
 namespace {
 
 constexpr std::uint16_t kDnsPort = 53;
+constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
+constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
+constexpr std::uint16_t kArpOpcodeRequest = 1U;
+constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint16_t kDhcpServerPort = 67;
 constexpr std::uint16_t kDhcpClientPort = 68;
 constexpr std::uint16_t kMdnsPort = 5353;
@@ -62,6 +69,25 @@ std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t o
            static_cast<std::uint32_t>(bytes[offset + 3U]);
 }
 
+std::string format_ipv4_address(const std::uint32_t address) {
+    return std::to_string((address >> 24U) & 0xFFU) + '.' +
+           std::to_string((address >> 16U) & 0xFFU) + '.' +
+           std::to_string((address >> 8U) & 0xFFU) + '.' +
+           std::to_string(address & 0xFFU);
+}
+
+std::string format_mac_address(std::span<const std::uint8_t> address) {
+    std::ostringstream builder {};
+    builder << std::hex << std::nouppercase << std::setfill('0');
+    for (std::size_t index = 0; index < address.size(); ++index) {
+        if (index != 0U) {
+            builder << ':';
+        }
+        builder << std::setw(2) << static_cast<unsigned>(address[index]);
+    }
+    return builder.str();
+}
+
 bool has_port(const std::uint16_t left, const std::uint16_t right, const std::uint16_t port) noexcept {
     return left == port || right == port;
 }
@@ -76,6 +102,62 @@ bool is_mdns_multicast_destination(const std::uint32_t destination) noexcept {
 
 bool is_mdns_multicast_destination(const std::array<std::uint8_t, 16>& destination) noexcept {
     return destination == kMdnsIpv6Multicast;
+}
+
+std::optional<FlowHintUpdate> detect_arp_hint(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) {
+    const auto envelope = detail::parse_link_layer_payload(packet_bytes, data_link_type);
+    if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeArp) {
+        return std::nullopt;
+    }
+
+    const auto arp_offset = envelope->payload_offset;
+    if (packet_bytes.size() < arp_offset + 8U) {
+        return FlowHintUpdate {.service_hint = "ARP"};
+    }
+
+    const auto hardware_type = read_be16(packet_bytes, arp_offset);
+    const auto protocol_type = read_be16(packet_bytes, arp_offset + 2U);
+    const auto hardware_size = static_cast<std::size_t>(packet_bytes[arp_offset + 4U]);
+    const auto protocol_size = static_cast<std::size_t>(packet_bytes[arp_offset + 5U]);
+    const auto opcode = read_be16(packet_bytes, arp_offset + 6U);
+    const auto declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
+    if (packet_bytes.size() < arp_offset + declared_length) {
+        return FlowHintUpdate {.service_hint = "ARP"};
+    }
+
+    if (hardware_type != kArpHardwareTypeEthernet || protocol_type != kArpProtocolTypeIpv4 || hardware_size != 6U || protocol_size != 4U) {
+        return FlowHintUpdate {.service_hint = opcode == 0U ? "ARP" : ("ARP opcode " + std::to_string(opcode))};
+    }
+
+    const auto sender_hardware_offset = arp_offset + 8U;
+    const auto sender_protocol_offset = sender_hardware_offset + hardware_size;
+    const auto target_hardware_offset = sender_protocol_offset + protocol_size;
+    const auto target_protocol_offset = target_hardware_offset + hardware_size;
+
+    const auto sender_ip = read_be32(packet_bytes, sender_protocol_offset);
+    const auto target_ip = read_be32(packet_bytes, target_protocol_offset);
+    const auto sender_ip_text = format_ipv4_address(sender_ip);
+    const auto target_ip_text = format_ipv4_address(target_ip);
+    const auto sender_mac_text = format_mac_address(packet_bytes.subspan(sender_hardware_offset, hardware_size));
+
+    if (opcode == kArpOpcodeRequest) {
+        if (sender_ip == 0U) {
+            return FlowHintUpdate {.service_hint = "ARP probe for " + target_ip_text};
+        }
+        if (sender_ip == target_ip) {
+            return FlowHintUpdate {.service_hint = "Gratuitous ARP for " + sender_ip_text};
+        }
+        return FlowHintUpdate {.service_hint = "Who has " + target_ip_text + "? Tell " + sender_ip_text};
+    }
+
+    if (opcode == kArpOpcodeReply) {
+        if (sender_ip == target_ip) {
+            return FlowHintUpdate {.service_hint = "Gratuitous ARP for " + sender_ip_text};
+        }
+        return FlowHintUpdate {.service_hint = sender_ip_text + " is at " + sender_mac_text};
+    }
+
+    return FlowHintUpdate {.service_hint = "ARP opcode " + std::to_string(opcode)};
 }
 
 std::string_view payload_as_text(std::span<const std::uint8_t> payload) {
@@ -752,6 +834,11 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
                                       const FlowKey& flow_key,
                                       const FlowHintDetectionSettings& settings,
                                       QuicStateMap& quic_state) {
+    if (flow_key.protocol == ProtocolId::arp) {
+        const auto arp_hint = detect_arp_hint(packet_bytes, data_link_type);
+        return arp_hint.value_or(FlowHintUpdate {});
+    }
+
     PacketPayloadService payload_service {};
     const auto payload = payload_service.extract_transport_payload(packet_bytes, data_link_type);
     if (payload.empty()) {

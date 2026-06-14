@@ -31,9 +31,17 @@ struct LinuxCookedDetails {
 struct ArpDetails {
     std::uint16_t hardware_type {0};
     std::uint16_t protocol_type {0};
+    std::uint8_t hardware_size {0};
+    std::uint8_t protocol_size {0};
     std::uint16_t opcode {0};
+    std::vector<std::uint8_t> sender_hardware_address {};
+    std::vector<std::uint8_t> sender_protocol_address {};
+    std::vector<std::uint8_t> target_hardware_address {};
+    std::vector<std::uint8_t> target_protocol_address {};
     std::array<std::uint8_t, 4> sender_ipv4 {};
     std::array<std::uint8_t, 4> target_ipv4 {};
+    bool fixed_header_truncated {false};
+    bool address_section_truncated {false};
 };
 
 struct IPv4Details {

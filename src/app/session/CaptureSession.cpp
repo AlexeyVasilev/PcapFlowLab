@@ -1544,7 +1544,7 @@ std::string CaptureSession::read_packet_payload_hex_dump(const PacketRef& packet
     }
 
     PacketPayloadService payload_service {};
-    const auto payload_bytes = payload_service.extract_transport_payload(bytes, packet.data_link_type);
+    const auto payload_bytes = payload_service.extract_packet_details_payload(bytes, packet.data_link_type);
 
     HexDumpService hex_dump_service {};
     return hex_dump_service.format(payload_bytes);

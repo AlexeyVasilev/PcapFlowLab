@@ -2781,12 +2781,14 @@
       return;
     }
 
-    const protocolSections = [
-      details?.link_summary_text,
-      details?.network_summary_text,
-      details?.transport_summary_text,
-      details?.protocol_details_text,
-    ].filter((value) => value && value.trim().length > 0);
+    const explicitProtocolText = String(details?.protocol_details_text || "").trim();
+    const protocolSections = explicitProtocolText
+      ? [explicitProtocolText]
+      : [
+          details?.link_summary_text,
+          details?.network_summary_text,
+          details?.transport_summary_text,
+        ].filter((value) => value && value.trim().length > 0);
     const protocolText = protocolSections.length > 0
       ? protocolSections.join("\n\n")
       : "No additional protocol details are available for this packet.";

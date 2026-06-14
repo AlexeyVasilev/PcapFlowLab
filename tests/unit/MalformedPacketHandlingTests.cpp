@@ -76,7 +76,17 @@ void run_malformed_packet_handling_tests() {
     {
         auto short_arp = make_ethernet_arp_packet(ipv4(192, 168, 1, 10), ipv4(192, 168, 1, 1), 1);
         short_arp.resize(20);
-        expect_safe_failure(decoder, details_service, payload_service, short_arp);
+        const auto raw_packet = make_raw_packet(short_arp);
+        const auto packet_ref = make_packet_ref(short_arp);
+        PFL_EXPECT(!decoder.decode_ethernet(raw_packet).has_value());
+
+        const auto details = details_service.decode(short_arp, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(details->arp.fixed_header_truncated);
+        PFL_EXPECT(!details->arp.address_section_truncated);
+
+        PFL_EXPECT(payload_service.extract_transport_payload(short_arp).empty());
     }
 
     {

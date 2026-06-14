@@ -110,6 +110,22 @@ std::array<std::uint8_t, 4> ipv4_bytes(std::span<const std::uint8_t> packet_byte
     };
 }
 
+std::vector<std::uint8_t> copy_partial_field(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t offset,
+    const std::size_t expected_size
+) {
+    if (offset >= packet_bytes.size() || expected_size == 0U) {
+        return {};
+    }
+
+    const auto available = std::min(expected_size, packet_bytes.size() - offset);
+    return std::vector<std::uint8_t>(
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(offset + available)
+    );
+}
+
 }  // namespace
 
 std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::uint8_t> packet_bytes,
@@ -127,26 +143,63 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
 
     if (envelope->protocol_type == detail::kEtherTypeArp) {
         const auto arp_offset = envelope->payload_offset;
-        if (packet_bytes.size() < arp_offset + 8U) {
-            return std::nullopt;
-        }
-
-        const auto hardware_size = packet_bytes[arp_offset + 4U];
-        const auto protocol_size = packet_bytes[arp_offset + 5U];
-        if (packet_bytes.size() < arp_offset + static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size))) {
-            return std::nullopt;
-        }
-
         details.has_arp = true;
+        if (packet_bytes.size() <= arp_offset) {
+            details.arp.fixed_header_truncated = true;
+            return details;
+        }
+
+        const auto available_bytes = packet_bytes.size() - arp_offset;
+        if (available_bytes < 8U) {
+            details.arp.fixed_header_truncated = true;
+            if (available_bytes >= 2U) {
+                details.arp.hardware_type = detail::read_be16(packet_bytes, arp_offset);
+            }
+            if (available_bytes >= 4U) {
+                details.arp.protocol_type = detail::read_be16(packet_bytes, arp_offset + 2U);
+            }
+            if (available_bytes >= 5U) {
+                details.arp.hardware_size = packet_bytes[arp_offset + 4U];
+            }
+            if (available_bytes >= 6U) {
+                details.arp.protocol_size = packet_bytes[arp_offset + 5U];
+            }
+            return details;
+        }
+
         details.arp.hardware_type = detail::read_be16(packet_bytes, arp_offset);
         details.arp.protocol_type = detail::read_be16(packet_bytes, arp_offset + 2U);
+        details.arp.hardware_size = packet_bytes[arp_offset + 4U];
+        details.arp.protocol_size = packet_bytes[arp_offset + 5U];
         details.arp.opcode = detail::read_be16(packet_bytes, arp_offset + 6U);
 
-        if (details.arp.protocol_type == detail::kArpProtocolTypeIpv4 && protocol_size == 4U && hardware_size > 0U) {
-            const auto sender_protocol_offset = arp_offset + 8U + hardware_size;
-            const auto target_protocol_offset = arp_offset + 8U + (2U * hardware_size) + protocol_size;
-            details.arp.sender_ipv4 = ipv4_bytes(packet_bytes, sender_protocol_offset);
-            details.arp.target_ipv4 = ipv4_bytes(packet_bytes, target_protocol_offset);
+        const auto hardware_size = static_cast<std::size_t>(details.arp.hardware_size);
+        const auto protocol_size = static_cast<std::size_t>(details.arp.protocol_size);
+        const auto declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
+        details.arp.address_section_truncated = available_bytes < declared_length;
+
+        auto cursor = arp_offset + 8U;
+        details.arp.sender_hardware_address = copy_partial_field(packet_bytes, cursor, hardware_size);
+        cursor += hardware_size;
+        details.arp.sender_protocol_address = copy_partial_field(packet_bytes, cursor, protocol_size);
+        cursor += protocol_size;
+        details.arp.target_hardware_address = copy_partial_field(packet_bytes, cursor, hardware_size);
+        cursor += hardware_size;
+        details.arp.target_protocol_address = copy_partial_field(packet_bytes, cursor, protocol_size);
+
+        if (details.arp.protocol_type == detail::kArpProtocolTypeIpv4 && protocol_size == 4U) {
+            if (details.arp.sender_protocol_address.size() == 4U) {
+                details.arp.sender_ipv4 = ipv4_bytes(
+                    std::span<const std::uint8_t>(details.arp.sender_protocol_address.data(), details.arp.sender_protocol_address.size()),
+                    0U
+                );
+            }
+            if (details.arp.target_protocol_address.size() == 4U) {
+                details.arp.target_ipv4 = ipv4_bytes(
+                    std::span<const std::uint8_t>(details.arp.target_protocol_address.data(), details.arp.target_protocol_address.size()),
+                    0U
+                );
+            }
         }
 
         return details;

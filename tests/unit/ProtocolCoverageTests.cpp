@@ -11,6 +11,7 @@ namespace pfl::tests {
 
 void run_protocol_coverage_tests() {
     const auto arp_packet = make_ethernet_arp_packet(ipv4(192, 168, 1, 10), ipv4(192, 168, 1, 1), 1);
+    const auto arp_reply_packet = make_ethernet_arp_packet(ipv4(192, 168, 1, 1), ipv4(192, 168, 1, 10), 2);
     const auto icmp_packet = make_ethernet_ipv4_icmp_packet(ipv4(10, 0, 0, 10), ipv4(10, 0, 0, 20), 8, 0);
     const auto ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
     const auto ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02});
@@ -19,10 +20,10 @@ void run_protocol_coverage_tests() {
     const auto truncated_ipv6_packet = make_truncated_ethernet_ipv6_extension_packet(ipv6_src, ipv6_dst);
 
     {
-        const auto path = write_temp_pcap("pfl_arp_import.pcap", make_classic_pcap({{100, arp_packet}}));
+        const auto path = write_temp_pcap("pfl_arp_import.pcap", make_classic_pcap({{100, arp_packet}, {200, arp_reply_packet}}));
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(path));
-        PFL_EXPECT(session.summary().packet_count == 1);
+        PFL_EXPECT(session.summary().packet_count == 2);
         PFL_EXPECT(session.summary().flow_count == 1);
         PFL_EXPECT(session.state().ipv4_connections.size() == 1);
 
@@ -34,9 +35,9 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(arp_key.first.addr == ipv4(192, 168, 1, 1));
         PFL_EXPECT(arp_key.second.addr == ipv4(192, 168, 1, 10));
 
-        const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
+        const auto request_packet = session.find_packet(0);
+        PFL_EXPECT(request_packet.has_value());
+        const auto details = session.read_packet_details(*request_packet);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.opcode == 1);
@@ -44,6 +45,13 @@ void run_protocol_coverage_tests() {
         const std::array<std::uint8_t, 4> expected_target_ipv4 {192, 168, 1, 1};
         PFL_EXPECT(details->arp.sender_ipv4 == expected_sender_ipv4);
         PFL_EXPECT(details->arp.target_ipv4 == expected_target_ipv4);
+
+        const auto reply_packet = session.find_packet(1);
+        PFL_EXPECT(reply_packet.has_value());
+        const auto reply_details = session.read_packet_details(*reply_packet);
+        PFL_EXPECT(reply_details.has_value());
+        PFL_EXPECT(reply_details->has_arp);
+        PFL_EXPECT(reply_details->arp.opcode == 2);
     }
 
     {

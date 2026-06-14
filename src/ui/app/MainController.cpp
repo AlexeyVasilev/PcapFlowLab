@@ -425,14 +425,6 @@ QString formatIpv4Address(const std::uint32_t address) {
         .arg(address & 0xFFU);
 }
 
-QString formatIpv4Address(const std::array<std::uint8_t, 4>& address) {
-    return QStringLiteral("%1.%2.%3.%4")
-        .arg(address[0])
-        .arg(address[1])
-        .arg(address[2])
-        .arg(address[3]);
-}
-
 QString formatIpv6Address(const std::array<std::uint8_t, 16>& address) {
     QStringList parts {};
     parts.reserve(8);
@@ -968,13 +960,7 @@ QString buildPayloadText(const PacketDetails& details, const std::string& payloa
 }
 
 QString packet_payload_tab_title(const PacketDetails& details) {
-    if (details.has_tcp) {
-        return QStringLiteral("TCP Payload");
-    }
-    if (details.has_udp) {
-        return QStringLiteral("UDP Payload");
-    }
-    return QStringLiteral("Payload");
+    return QString::fromStdString(session_detail::packet_payload_tab_title(details));
 }
 
 QString format_stream_source_packets(
@@ -1804,11 +1790,13 @@ QString buildPacketSummary(
     }
 
     if (details.has_arp) {
-        appendSection(lines, QStringLiteral("ARP"), {
-            QStringLiteral("Opcode: %1").arg(details.arp.opcode),
-            QStringLiteral("Sender IPv4: %1").arg(formatIpv4Address(details.arp.sender_ipv4)),
-            QStringLiteral("Target IPv4: %1").arg(formatIpv4Address(details.arp.target_ipv4)),
-        });
+        QStringList arp_lines {};
+        const auto shared_lines = session_detail::build_basic_summary_lines(details);
+        arp_lines.reserve(static_cast<qsizetype>(shared_lines.size()));
+        for (const auto& line : shared_lines) {
+            arp_lines.push_back(QString::fromStdString(line));
+        }
+        appendSection(lines, QStringLiteral("ARP"), arp_lines);
     }
 
     if (details.has_ipv4) {
