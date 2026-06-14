@@ -176,6 +176,11 @@ struct FrontendFlowDto {
     std::string wireshark_display_filter {};
 };
 
+struct FrontendSelectionResultDto {
+    bool selected {false};
+    std::optional<FrontendFlowDto> updated_flow {};
+};
+
 struct FrontendPacketDto {
     std::uint64_t row_number {0};
     std::uint64_t packet_index {0};

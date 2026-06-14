@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 
 namespace pfl::tests {
@@ -118,6 +120,30 @@ void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
     PFL_EXPECT(fast_sni == deep_sni);
 }
 
+void expect_frontend_adapter_quic_service_hint_refresh(
+    const std::filesystem::path& relative_path,
+    const std::string& expected_sni
+) {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_EXPECT(!flows.empty());
+
+    const auto flow_it = std::find_if(flows.begin(), flows.end(), [](const FrontendFlowDto& flow) {
+        return flow.protocol_hint == "quic";
+    });
+    PFL_EXPECT(flow_it != flows.end());
+    PFL_EXPECT(flow_it->service_hint.empty());
+
+    const auto selection = adapter.select_flow(flow_it->flow_index);
+    PFL_EXPECT(selection.selected);
+    PFL_EXPECT(selection.updated_flow.has_value());
+    PFL_EXPECT(selection.updated_flow->flow_index == flow_it->flow_index);
+    PFL_EXPECT(selection.updated_flow->service_hint == expected_sni);
+}
+
 }  // namespace
 
 void run_flow_hints_real_fixtures_tests() {
@@ -160,6 +186,10 @@ void run_flow_hints_real_fixtures_tests() {
     for (const auto& fixture : quic_sni_fixtures) {
         expect_quic_sni_fixture(fixture);
     }
+
+    expect_frontend_adapter_quic_service_hint_refresh(
+        "parsing/quic/quic_test_1.pcap",
+        "rr1---sn-ug5on-unxs.googlevideo.com");
 }
 
 }  // namespace pfl::tests

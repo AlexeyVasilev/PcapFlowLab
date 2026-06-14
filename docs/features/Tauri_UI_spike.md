@@ -95,6 +95,7 @@ The current Tauri UI now supports:
 - the previous visible 500-row cap / `Show more` behavior has been removed for these two large flow lists
 - selected-flow packet loading now gives immediate loading feedback, stays bounded to the current batch with append-only `Load More`, keeps Stream / Analysis lazy, and shows a simpler `Showing N of Total packets` count label
 - selected-flow packet and stream loading for very large flows remains a known optimization area
+- Fast-mode lazy QUIC service hints now refresh back into the selected flow row after flow selection, matching Qt's on-demand selected-flow hint enrichment without global QUIC scanning
 - compact desktop-style layout with internal panel scrolling
 - generated cross-platform Tauri icon assets from a canonical local source icon, including Linux PNG bundle icons
 - frontend-only top-level tabs: `Flows`, `Analysis`, `Statistics`

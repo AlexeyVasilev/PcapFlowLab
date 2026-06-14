@@ -1324,9 +1324,13 @@
   }
 
   function applyFlowFilterState(filterText) {
-    state.flowFilterText = String(filterText || "");
-    resetFlowVirtualizationState();
-    resetAnalysisFlowVirtualizationState();
+    const nextFilterText = String(filterText || "");
+    const filterChanged = state.flowFilterText !== nextFilterText;
+    state.flowFilterText = nextFilterText;
+    if (filterChanged) {
+      resetFlowVirtualizationState();
+      resetAnalysisFlowVirtualizationState();
+    }
     setWiresharkFilterStatus("", "neutral");
 
     const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
@@ -1348,6 +1352,23 @@
 
   function clearOverview() {
     state.overview = null;
+  }
+
+  function applyUpdatedFlowRow(updatedFlow) {
+    if (updatedFlow == null || typeof updatedFlow.flow_index !== "number") {
+      return;
+    }
+
+    const flowIndex = Number(updatedFlow.flow_index);
+    const existingIndex = state.flows.findIndex((flow) => Number(flow?.flow_index) === flowIndex);
+    if (existingIndex < 0) {
+      return;
+    }
+
+    state.flows[existingIndex] = {
+      ...state.flows[existingIndex],
+      ...updatedFlow,
+    };
   }
 
   function clearPacketDetails() {
@@ -1376,13 +1397,15 @@
     state.selectedStreamItem = null;
   }
 
-  function clearAnalysis() {
+  function clearAnalysis(resetFlowListState = true) {
     state.analysis = null;
     state.analysisState = "idle";
     state.analysisErrorText = "";
     state.analysisUnavailableText = "";
     state.analysisLoadedForFlowIndex = null;
-    resetAnalysisFlowVirtualizationState();
+    if (resetFlowListState) {
+      resetAnalysisFlowVirtualizationState();
+    }
     state.analysisSequenceExportInProgress = false;
     state.analysisSequenceExportStatusText = "";
     state.analysisSequenceExportStatusKind = "neutral";
@@ -1409,7 +1432,7 @@
     state.checkedFlowIndices.clear();
     state.selectedFlowIndex = null;
     state.flowState = "idle";
-    clearAnalysis();
+    clearAnalysis(false);
     setWiresharkFilterStatus("", "neutral");
   }
 
@@ -1691,6 +1714,82 @@
 
       return Number(left?.flow_index ?? 0) - Number(right?.flow_index ?? 0);
     });
+  }
+
+  function getSelectedFlow() {
+    return state.flows.find((flow) => flow.flow_index === state.selectedFlowIndex) || null;
+  }
+
+  function isUnknownAnalysisValue(value) {
+    return String(value || "").trim().toLowerCase() === "unknown";
+  }
+
+  function analysisSelectedFlowServiceHint(analysis) {
+    const selectedFlowServiceHint = String(getSelectedFlow()?.service_hint || "").trim();
+    const analysisServiceHint = String(analysis?.service_hint_text || "").trim();
+    const protocolPanelService = String(analysis?.protocol_service_text || "").trim();
+    const protocolHint = String(analysis?.protocol_hint_display || analysis?.protocol_hint || "").trim().toUpperCase();
+    const prefersSelectedFlowHint = protocolHint === "QUIC" || protocolHint === "TLS";
+
+    if (analysisServiceHint && (!prefersSelectedFlowHint || !isUnknownAnalysisValue(analysisServiceHint))) {
+      return analysisServiceHint;
+    }
+
+    if (protocolPanelService && (!prefersSelectedFlowHint || !isUnknownAnalysisValue(protocolPanelService))) {
+      return protocolPanelService;
+    }
+
+    return selectedFlowServiceHint;
+  }
+
+  function analysisProtocolServiceValue(analysis) {
+    const protocolPanelService = String(analysis?.protocol_service_text || "").trim();
+    const protocolHint = String(analysis?.protocol_hint_display || analysis?.protocol_hint || "").trim().toUpperCase();
+    const prefersSelectedFlowHint = protocolHint === "QUIC" || protocolHint === "TLS";
+
+    if (protocolPanelService && (!prefersSelectedFlowHint || !isUnknownAnalysisValue(protocolPanelService))) {
+      return protocolPanelService;
+    }
+
+    const selectedFlowServiceHint = String(getSelectedFlow()?.service_hint || "").trim();
+    if (selectedFlowServiceHint) {
+      return selectedFlowServiceHint;
+    }
+
+    return "";
+  }
+
+  function ensureFlowVisibleInViewport(rows, viewportElement, rowHeight) {
+    if (state.selectedFlowIndex == null || !Array.isArray(rows) || !viewportElement) {
+      return;
+    }
+
+    const selectedRowIndex = rows.findIndex((flow) => Number(flow?.flow_index) === Number(state.selectedFlowIndex));
+    if (selectedRowIndex < 0) {
+      return;
+    }
+
+    const viewportHeight = Math.max(0, Number(viewportElement.clientHeight || 0));
+    if (viewportHeight <= 0) {
+      return;
+    }
+
+    const rowTop = selectedRowIndex * rowHeight;
+    const totalHeight = rows.length * rowHeight;
+    const centeredScrollTop = rowTop - ((viewportHeight - rowHeight) / 2);
+    const maxScrollTop = Math.max(0, totalHeight - viewportHeight);
+    viewportElement.scrollTop = Math.min(Math.max(0, centeredScrollTop), maxScrollTop);
+  }
+
+  function ensureSelectedFlowVisibleForTab(tabName) {
+    if (tabName === "flows") {
+      ensureFlowVisibleInViewport(getVisibleFlows(), elements.flowTableViewport, flowVirtualRowHeight);
+      return;
+    }
+
+    if (tabName === "analysis") {
+      ensureFlowVisibleInViewport(getSortedFlows(state.flows), elements.analysisFlowTableViewport, analysisFlowVirtualRowHeight);
+    }
   }
 
   function getVirtualizedWindow(totalCount, viewportElement, rowHeight, overscanRows) {
@@ -2893,12 +2992,13 @@
   }
 
   function renderAnalysisOverview(container, analysis) {
+    const serviceHint = analysisSelectedFlowServiceHint(analysis);
     const leftRows = [
       ["Total Packets", analysis.total_packets_text || formatNumber(analysis.total_packets)],
       ["Original Bytes", analysis.total_bytes_text || formatNumber(analysis.total_bytes)],
       ["Captured Bytes", analysis.captured_bytes_text || formatNumber(analysis.captured_bytes)],
       ["Protocol Hint", analysis.protocol_hint_display || "-"],
-      ["Service Hint", analysis.service_hint_text || "-"],
+      ["Service Hint", serviceHint || "-"],
     ];
     const rightRows = [
       ["First Packet", analysis.first_packet_time_text || "-"],
@@ -2990,7 +3090,7 @@
   function renderAnalysisProtocolPanel(container, analysis) {
     const hint = String(analysis?.protocol_hint_display || "").trim().toUpperCase();
     const version = String(analysis?.protocol_version_text || "").trim();
-    const service = String(analysis?.protocol_service_text || "").trim();
+    const service = analysisProtocolServiceValue(analysis);
     const fallback = String(analysis?.protocol_fallback_text || "").trim();
     const hasTcpCounts = Boolean(analysis?.has_tcp_control_counts);
     const isQuic = hint === "QUIC";
@@ -3795,7 +3895,7 @@
     state.packetOffset = 0;
     clearPackets();
     clearStream();
-    clearAnalysis();
+    clearAnalysis(false);
     setWiresharkFilterStatus("", "neutral");
     state.packetState = state.activeTab === "flows" && state.flowViewTab === "packets" ? "loading" : "idle";
     if (state.activeTab === "flows" && state.flowViewTab === "stream") {
@@ -3822,10 +3922,14 @@
         state.selectedFlowIndex = null;
         clearPackets();
         clearStream();
-        clearAnalysis();
+        clearAnalysis(false);
         setStatus(`Failed to select flow ${flowIndex}.`, "error");
         render();
         return;
+      }
+
+      if (selection?.updated_flow) {
+        applyUpdatedFlowRow(selection.updated_flow);
       }
 
       if (state.activeTab === "flows" && state.flowViewTab === "packets") {
@@ -3844,7 +3948,7 @@
       state.selectedFlowIndex = null;
       clearPackets();
       clearStream();
-      clearAnalysis();
+      clearAnalysis(false);
       state.packetState = "error";
       state.packetErrorText = `Failed to select flow ${flowIndex}: ${String(error)}`;
       setStatus(state.packetErrorText, "error");
@@ -4806,6 +4910,8 @@
     button.addEventListener("click", async () => {
       state.activeTab = button.dataset.tab || "flows";
       render();
+      await waitForNextPaint();
+      ensureSelectedFlowVisibleForTab(state.activeTab);
 
       if (
         state.activeTab === "analysis"
@@ -4868,13 +4974,15 @@
     state.streamRequestedItemLimit += streamItemBatchSize;
     await loadSelectedFlowStream();
   });
-  elements.analysisOpenInFlowsButton.addEventListener("click", () => {
+  elements.analysisOpenInFlowsButton.addEventListener("click", async () => {
     if (state.selectedFlowIndex == null) {
       return;
     }
 
     state.activeTab = "flows";
     render();
+    await waitForNextPaint();
+    ensureSelectedFlowVisibleForTab("flows");
   });
   elements.analysisExportSequenceCsvButton.addEventListener("click", exportAnalysisSequenceCsv);
 

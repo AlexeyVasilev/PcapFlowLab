@@ -43,6 +43,7 @@ Implemented slice:
   - sorting
   - separate checked-flow selection state for batch-oriented workflows
   - Wireshark filter display and copy
+  - lazy selected-flow service-hint refresh for Fast-mode QUIC flows after selection, matching Qt's on-demand enrichment path
   - selected-flow packets
   - Qt-like packet list columns: `# / Direction / Time / Captured / Payload / Flags / Marker`
   - compact direction chips, TCP flag highlighting, and shared packet marker display such as `Suspected retransmission`

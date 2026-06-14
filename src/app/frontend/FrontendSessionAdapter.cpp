@@ -2013,20 +2013,43 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
     return flows;
 }
 
-bool FrontendSessionAdapter::select_flow(const std::size_t flow_index) {
+FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t flow_index) {
+    FrontendSelectionResultDto result {};
+
     if (!session_.has_capture()) {
         clear_selection();
-        return false;
+        return result;
     }
 
     if (flow_index >= session_.summary().flow_count) {
-        return false;
+        return result;
     }
 
     selected_flow_index_ = flow_index;
     session_.clear_selected_flow_packet_cache();
     session_.clear_selected_flow_tcp_payload_suppression();
-    return true;
+    result.selected = true;
+
+    const auto rows = session_.list_flows();
+    if (flow_index >= rows.size()) {
+        return result;
+    }
+
+    const auto& row = rows[flow_index];
+    const auto protocol_hint_is_quic = row.protocol_hint == "quic" || row.protocol_hint == "QUIC";
+    if (!protocol_hint_is_quic || !row.service_hint.empty()) {
+        return result;
+    }
+
+    const auto derived_service_hint = session_.derive_quic_service_hint_for_flow(flow_index);
+    if (!derived_service_hint.has_value() || derived_service_hint->empty()) {
+        return result;
+    }
+
+    auto updated_row = row;
+    updated_row.service_hint = *derived_service_hint;
+    result.updated_flow = to_frontend_flow(updated_row);
+    return result;
 }
 
 FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_packets(

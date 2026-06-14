@@ -40,7 +40,7 @@ public:
     ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
-    [[nodiscard]] bool select_flow(std::size_t flow_index);
+    [[nodiscard]] FrontendSelectionResultDto select_flow(std::size_t flow_index);
     [[nodiscard]] FrontendSelectedFlowPacketsResult get_selected_flow_packets(std::size_t offset, std::size_t limit);
     [[nodiscard]] FrontendSelectedFlowStreamResult get_selected_flow_stream(std::size_t max_packets_to_scan, std::size_t limit) const;
     [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(std::uint64_t packet_index) const;

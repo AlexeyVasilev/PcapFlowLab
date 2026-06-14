@@ -93,6 +93,34 @@ Item {
     signal openInFlowsRequested()
     signal exportFlowSequenceRequested()
 
+    function syncSelectedFlowRow() {
+        if (!analysisFlowList.model || analysisFlowList.count === 0 || root.selectedFlowIndex < 0 || !root.flowModel) {
+            analysisFlowList.currentIndex = -1
+            return
+        }
+
+        const selectedRow = root.flowModel.rowForFlowIndex(root.selectedFlowIndex)
+        analysisFlowList.currentIndex = selectedRow
+
+        if (selectedRow < 0 || !root.visible) {
+            return
+        }
+
+        Qt.callLater(function() {
+            if (root.visible && analysisFlowList.currentIndex === selectedRow) {
+                analysisFlowList.positionViewAtIndex(selectedRow, ListView.Contain)
+            }
+        })
+    }
+
+    onFlowModelChanged: syncSelectedFlowRow()
+    onSelectedFlowIndexChanged: syncSelectedFlowRow()
+    onVisibleChanged: {
+        if (visible) {
+            syncSelectedFlowRow()
+        }
+    }
+
     SplitView {
         anchors.fill: parent
 
@@ -226,6 +254,14 @@ Item {
                                 anchors.fill: parent
                                 onClicked: root.flowSelected(flowIndex)
                             }
+                        }
+                    }
+
+                    Connections {
+                        target: root.flowModel
+
+                        function onModelReset() {
+                            root.syncSelectedFlowRow()
                         }
                     }
 

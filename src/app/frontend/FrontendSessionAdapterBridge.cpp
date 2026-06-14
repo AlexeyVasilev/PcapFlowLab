@@ -366,6 +366,30 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
     return out.str();
 }
 
+std::string flow_json(const pfl::FrontendFlowDto& flow) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"flow_index\":" << flow.flow_index << ','
+        << "\"family\":" << family_to_json(flow.family) << ','
+        << "\"protocol_text\":" << json_string(flow.protocol_text) << ','
+        << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
+        << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
+        << "\"service_hint\":" << json_string(flow.service_hint) << ','
+        << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
+        << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
+        << "\"address_a\":" << json_string(flow.address_a) << ','
+        << "\"port_a\":" << flow.port_a << ','
+        << "\"endpoint_a\":" << json_string(flow.endpoint_a) << ','
+        << "\"address_b\":" << json_string(flow.address_b) << ','
+        << "\"port_b\":" << flow.port_b << ','
+        << "\"endpoint_b\":" << json_string(flow.endpoint_b) << ','
+        << "\"packet_count\":" << flow.packet_count << ','
+        << "\"total_bytes\":" << flow.total_bytes << ','
+        << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
+        << '}';
+    return out.str();
+}
+
 std::string packet_result_json(const pfl::FrontendSelectedFlowPacketsResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -688,8 +712,18 @@ std::string analysis_sequence_export_result_json(const pfl::FrontendAnalysisSequ
     return out.str();
 }
 
-std::string selection_json(const bool selected) {
-    return std::string {"{\"selected\":"} + bool_json(selected) + '}';
+std::string selection_json(const pfl::FrontendSelectionResultDto& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"selected\":" << bool_json(result.selected) << ','
+        << "\"updated_flow\":";
+    if (result.updated_flow.has_value()) {
+        out << flow_json(*result.updated_flow);
+    } else {
+        out << "null";
+    }
+    out << '}';
+    return out.str();
 }
 
 [[nodiscard]] pfl::FrontendOverviewDto unavailable_overview() {
@@ -933,7 +967,7 @@ char* pfl_frontend_session_adapter_get_flows_json(PflFrontendSessionAdapterHandl
 
 char* pfl_frontend_session_adapter_select_flow_json(PflFrontendSessionAdapterHandle* handle, const std::size_t flow_index) {
     if (handle == nullptr) {
-        return make_c_string(selection_json(false));
+        return make_c_string(selection_json(pfl::FrontendSelectionResultDto {}));
     }
 
     return make_c_string(selection_json(handle->adapter.select_flow(flow_index)));

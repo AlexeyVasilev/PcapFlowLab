@@ -274,6 +274,7 @@ pub struct SelectedFlowStreamDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectionResultDto {
     pub selected: bool,
+    pub updated_flow: Option<FlowDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
