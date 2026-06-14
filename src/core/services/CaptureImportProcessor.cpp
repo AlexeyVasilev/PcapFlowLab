@@ -7,12 +7,68 @@
 #include "core/index/CaptureIndex.h"
 #include "core/io/LinkType.h"
 #include "core/services/PacketIngestor.h"
+#include "core/services/PacketDetailsService.h"
 
 namespace pfl {
 
 namespace {
 
 constexpr std::uint64_t kOpenProgressReportPacketInterval = 1000U;
+
+PacketRef packet_ref_from_raw_packet(const RawPcapPacket& packet) {
+    return PacketRef {
+        .packet_index = packet.packet_index,
+        .byte_offset = packet.data_offset,
+        .data_link_type = packet.data_link_type,
+        .captured_length = packet.captured_length,
+        .original_length = packet.original_length,
+        .ts_sec = packet.ts_sec,
+        .ts_usec = packet.ts_usec,
+    };
+}
+
+bool ingest_fallback_arp_packet(
+    const RawPcapPacket& packet,
+    const std::span<const std::uint8_t> packet_bytes,
+    CaptureState& state,
+    PacketIngestor& ingestor,
+    const FlowHintService& hint_service
+) {
+    PacketDetailsService details_service {};
+    const auto details = details_service.decode(packet_bytes, packet_ref_from_raw_packet(packet));
+    if (!details.has_value() || !details->has_arp) {
+        return false;
+    }
+
+    FlowKeyV4 flow_key {
+        .protocol = ProtocolId::arp,
+    };
+
+    if (details->arp.sender_protocol_address.size() == 4U) {
+        flow_key.src_addr =
+            (static_cast<std::uint32_t>(details->arp.sender_protocol_address[0]) << 24U) |
+            (static_cast<std::uint32_t>(details->arp.sender_protocol_address[1]) << 16U) |
+            (static_cast<std::uint32_t>(details->arp.sender_protocol_address[2]) << 8U) |
+            static_cast<std::uint32_t>(details->arp.sender_protocol_address[3]);
+    }
+
+    if (details->arp.target_protocol_address.size() == 4U) {
+        flow_key.dst_addr =
+            (static_cast<std::uint32_t>(details->arp.target_protocol_address[0]) << 24U) |
+            (static_cast<std::uint32_t>(details->arp.target_protocol_address[1]) << 16U) |
+            (static_cast<std::uint32_t>(details->arp.target_protocol_address[2]) << 8U) |
+            static_cast<std::uint32_t>(details->arp.target_protocol_address[3]);
+    }
+
+    ingestor.ingest(IngestedPacketV4 {
+        .flow_key = flow_key,
+        .packet_ref = packet_ref_from_raw_packet(packet),
+    });
+
+    auto& connection = state.ipv4_connections.get_or_create(make_connection_key(flow_key));
+    connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, flow_key));
+    return true;
+}
 
 void report_open_progress(OpenContext* ctx) {
     if (ctx != nullptr && ctx->on_progress) {
@@ -106,7 +162,10 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
         if (!decoded.ipv6->packet_ref.is_ip_fragmented) {
             connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv6->flow_key));
         }
+        return;
     }
+
+    static_cast<void>(ingest_fallback_arp_packet(packet, packet_bytes, state, ingestor, hint_service_));
 }
 
 CaptureImportResult import_capture_from_reader(PcapReader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
