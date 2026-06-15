@@ -10,6 +10,8 @@ This document is a documentation-only audit of current UI parity between the pri
 
 Qt remains the reference desktop UI. Tauri now covers most primary workflows, but several presentation, workflow, and large-flow responsiveness gaps still remain.
 
+The current shared protocol-detection and packet/stream support matrix is documented in [protocol_support.md](../protocols/protocol_support.md).
+
 ## Scope And Method
 
 This audit is based on static inspection of:

@@ -7,6 +7,8 @@ Draft, but now substantially beyond the original bring-up slice.
 
 Pcap Flow Lab already has a layered architecture with a C++ core, application/session layer, and a Qt desktop UI. The experimental Tauri UI validates that a modern webview-based desktop frontend can sit on top of the same backend/session layer without changing packet-processing behavior.
 
+Current shared protocol-detection, packet-details, payload, and stream support is documented in [protocol_support.md](../protocols/protocol_support.md).
+
 ## Goals
 
 - Evaluate Tauri as an experimental desktop frontend.

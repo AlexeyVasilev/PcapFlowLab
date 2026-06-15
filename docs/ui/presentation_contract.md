@@ -18,6 +18,8 @@ This document is intentionally presentation-oriented. It describes:
 - what kinds of backend/session data frontends should request;
 - what should later become shared frontend-neutral DTO shape.
 
+Current protocol-detection and protocol-presentation coverage is documented separately in [protocol_support.md](../protocols/protocol_support.md).
+
 ## Scope And Non-Goals
 
 ### In scope

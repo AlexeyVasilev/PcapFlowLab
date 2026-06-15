@@ -14,6 +14,8 @@ The goal is to show:
 
 This document is an audit only. It does not introduce a new contract and does not require immediate implementation changes.
 
+For the current repository-level protocol support matrix and known protocol limitations, see [protocol_support.md](../protocols/protocol_support.md).
+
 ## Summary
 
 ### What is already close to frontend-neutral
