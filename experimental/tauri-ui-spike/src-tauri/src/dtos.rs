@@ -278,6 +278,23 @@ pub struct SelectionResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketSummaryFieldDto {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PacketSummaryLayerDto {
+    pub id: String,
+    pub title: String,
+    pub fields: Vec<PacketSummaryFieldDto>,
+    pub children: Vec<PacketSummaryLayerDto>,
+    pub expanded_by_default: bool,
+    pub warning: bool,
+    pub marker_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PacketDetailsDto {
     pub has_capture: bool,
     pub has_selected_flow: bool,
@@ -304,6 +321,7 @@ pub struct PacketDetailsDto {
     pub link_summary_text: String,
     pub network_summary_text: String,
     pub transport_summary_text: String,
+    pub summary_layers: Vec<PacketSummaryLayerDto>,
     pub protocol_details_text: String,
     pub raw_preview_text: String,
     pub raw_preview_unavailable_text: String,

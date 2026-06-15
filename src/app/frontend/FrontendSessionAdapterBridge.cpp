@@ -129,6 +129,47 @@ std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& s
     return out.str();
 }
 
+std::string packet_summary_field_json(const pfl::session_detail::PacketSummaryField& field) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"label\":" << json_string(field.label) << ','
+        << "\"value\":" << json_string(field.value)
+        << '}';
+    return out.str();
+}
+
+std::string packet_summary_layer_json(const pfl::session_detail::PacketSummaryLayer& layer) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"id\":" << json_string(layer.id) << ','
+        << "\"title\":" << json_string(layer.title) << ','
+        << "\"fields\":[";
+
+    for (std::size_t index = 0; index < layer.fields.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_summary_field_json(layer.fields[index]);
+    }
+
+    out << "],"
+        << "\"children\":[";
+
+    for (std::size_t index = 0; index < layer.children.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_summary_layer_json(layer.children[index]);
+    }
+
+    out << "],"
+        << "\"expanded_by_default\":" << bool_json(layer.expanded_by_default) << ','
+        << "\"warning\":" << bool_json(layer.warning) << ','
+        << "\"marker_text\":" << json_string(layer.marker_text)
+        << '}';
+    return out.str();
+}
+
 std::string open_result_json(const pfl::FrontendOpenResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -532,6 +573,16 @@ std::string packet_details_json(const pfl::FrontendPacketDetailsDto& details) {
         << "\"link_summary_text\":" << json_string(details.link_summary_text) << ','
         << "\"network_summary_text\":" << json_string(details.network_summary_text) << ','
         << "\"transport_summary_text\":" << json_string(details.transport_summary_text) << ','
+        << "\"summary_layers\":[";
+
+    for (std::size_t index = 0; index < details.summary_layers.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_summary_layer_json(details.summary_layers[index]);
+    }
+
+    out << "],"
         << "\"protocol_details_text\":" << json_string(details.protocol_details_text) << ','
         << "\"raw_preview_text\":" << json_string(details.raw_preview_text) << ','
         << "\"raw_preview_unavailable_text\":" << json_string(details.raw_preview_unavailable_text) << ','

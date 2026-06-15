@@ -2811,6 +2811,64 @@
     return lines.join("\n");
   }
 
+  function renderPacketSummaryField(field) {
+    const label = String(field?.label || "").trim();
+    const value = String(field?.value || "");
+    if (!label) {
+      return `
+        <div class="packet-summary-field packet-summary-field-full">
+          <span class="packet-summary-field-value">${escapeHtml(value)}</span>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="packet-summary-field">
+        <span class="packet-summary-field-label">${escapeHtml(label)}</span>
+        <span class="packet-summary-field-value">${escapeHtml(value)}</span>
+      </div>
+    `;
+  }
+
+  function renderPacketSummaryLayer(layer) {
+    const fields = Array.isArray(layer?.fields) ? layer.fields : [];
+    const children = Array.isArray(layer?.children) ? layer.children : [];
+    const markerText = String(layer?.marker_text || "").trim();
+    const childHtml = children.length > 0
+      ? `
+        <div class="packet-summary-children">
+          ${children.map((child) => renderPacketSummaryLayer(child)).join("")}
+        </div>
+      `
+      : "";
+
+    return `
+      <details class="packet-summary-layer${layer?.warning ? " is-warning" : ""}"${layer?.expanded_by_default === false ? "" : " open"}>
+        <summary class="packet-summary-layer-header">
+          <span class="packet-summary-layer-title">${escapeHtml(String(layer?.title || ""))}</span>
+          ${markerText ? `<span class="packet-summary-layer-marker${layer?.warning ? " is-warning" : ""}">${escapeHtml(markerText)}</span>` : ""}
+        </summary>
+        <div class="packet-summary-layer-body">
+          <div class="packet-summary-fields">
+            ${fields.map((field) => renderPacketSummaryField(field)).join("")}
+          </div>
+          ${childHtml}
+        </div>
+      </details>
+    `;
+  }
+
+  function renderPacketSummary(container, details, selectedPacket, sourceAvailability) {
+    const layers = Array.isArray(details?.summary_layers) ? details.summary_layers : [];
+    if (layers.length > 0) {
+      container.innerHTML = `<div class="packet-summary-layers">${layers.map((layer) => renderPacketSummaryLayer(layer)).join("")}</div>`;
+      return;
+    }
+
+    const summaryText = String(details?.summary_text || "").trim() || fallbackPacketSummaryText(selectedPacket, details, sourceAvailability);
+    container.innerHTML = `<pre class="details-pre packet-summary-pre">${escapeHtml(summaryText)}</pre>`;
+  }
+
   function renderPacketDetails() {
     const details = state.packetDetails;
     const packetDetailsTitle = String(details?.details_title || "Selected Packet Details");
@@ -2858,8 +2916,7 @@
 
     const selectedPacket = state.selectedPacketRow;
     const sourceAvailability = packetDetailsSourceAvailability(details);
-    const summaryText = String(details?.summary_text || "").trim() || fallbackPacketSummaryText(selectedPacket, details, sourceAvailability);
-    elements.packetDetailsSummary.innerHTML = `<pre class="details-pre packet-summary-pre">${escapeHtml(summaryText)}</pre>`;
+    renderPacketSummary(elements.packetDetailsSummary, details, selectedPacket, sourceAvailability);
 
     if (state.packetDetailsState === "error") {
       elements.packetDetailsMeta.textContent = `Packet ${selectedPacket.packet_index} details failed to load.`;

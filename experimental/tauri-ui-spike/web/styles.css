@@ -1835,6 +1835,120 @@ select:disabled {
   min-height: 0;
 }
 
+.packet-summary-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.packet-summary-layer {
+  border: 1px solid #dbe4ee;
+  border-radius: 8px;
+  background: #fbfcfe;
+  overflow: hidden;
+}
+
+.packet-summary-layer.is-warning {
+  border-color: #f4c97d;
+}
+
+.packet-summary-layer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.packet-summary-layer-header::-webkit-details-marker {
+  display: none;
+}
+
+.packet-summary-layer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.packet-summary-layer-title::before {
+  content: "▾";
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.packet-summary-layer:not([open]) .packet-summary-layer-title::before {
+  content: "▸";
+}
+
+.packet-summary-layer-marker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e8eef8;
+  border: 1px solid #c8d7ea;
+  color: #355070;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.packet-summary-layer-marker.is-warning {
+  background: #fff4db;
+  border-color: #f0d08b;
+  color: #8a4d00;
+}
+
+.packet-summary-layer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.packet-summary-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.packet-summary-field {
+  display: grid;
+  grid-template-columns: minmax(128px, auto) 1fr;
+  gap: 6px 10px;
+  align-items: start;
+}
+
+.packet-summary-field-full {
+  grid-template-columns: 1fr;
+}
+
+.packet-summary-field-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.packet-summary-field-value {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.packet-summary-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .details-section {
   display: flex;
   flex: 1 1 auto;

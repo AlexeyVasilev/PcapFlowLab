@@ -1,9 +1,11 @@
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "TestSupport.h"
+#include "app/session/SessionFormatting.h"
 #include "app/session/CaptureSession.h"
 #include "core/domain/PacketDetails.h"
 #include "core/domain/PacketRef.h"
@@ -38,6 +40,28 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->tcp.src_port == 12345);
         PFL_EXPECT(details->tcp.dst_port == 443);
         PFL_EXPECT(details->tcp.flags == 0x10);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .transport_payload_length = 0U,
+            .original_transport_payload_length = 0U,
+        });
+        PFL_EXPECT(!summary_layers.empty());
+        PFL_EXPECT(summary_layers.front().id == "frame");
+        PFL_EXPECT(summary_layers.front().title == "Frame 7");
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(summary_layers[1].id == "ethernet");
+        PFL_EXPECT(summary_layers[2].id == "ipv4");
+        PFL_EXPECT(summary_layers[3].id == "tcp");
+        PFL_EXPECT(summary_layers[2].title.find("Internet Protocol Version 4") != std::string::npos);
+        PFL_EXPECT(summary_layers[3].title.find("Transmission Control Protocol") != std::string::npos);
+        const auto tcp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
+            return layer.id == "tcp";
+        });
+        PFL_EXPECT(tcp_layer_it != summary_layers.end());
+        const auto source_port_it = std::find_if(tcp_layer_it->fields.begin(), tcp_layer_it->fields.end(), [](const session_detail::PacketSummaryField& field) {
+            return field.label == "Source Port" && field.value == "12345";
+        });
+        PFL_EXPECT(source_port_it != tcp_layer_it->fields.end());
     }
 
     {
@@ -57,6 +81,17 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->udp.src_port == 5353);
         PFL_EXPECT(details->udp.dst_port == 53);
         PFL_EXPECT(details->udp.length == 8);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .transport_payload_length = 0U,
+            .original_transport_payload_length = 0U,
+        });
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(summary_layers[0].id == "frame");
+        PFL_EXPECT(summary_layers[1].id == "ethernet");
+        PFL_EXPECT(summary_layers[2].id == "ipv4");
+        PFL_EXPECT(summary_layers[3].id == "udp");
+        PFL_EXPECT(summary_layers[3].title.find("User Datagram Protocol") != std::string::npos);
     }
 
     {
@@ -111,6 +146,25 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->arp.target_ipv4 == expected_target_ipv4);
         PFL_EXPECT(!details->arp.fixed_header_truncated);
         PFL_EXPECT(!details->arp.address_section_truncated);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref);
+        const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
+            return layer.id == "arp";
+        });
+        PFL_EXPECT(arp_layer_it != summary_layers.end());
+        PFL_EXPECT(arp_layer_it->title.find("Address Resolution Protocol") != std::string::npos);
+        const auto opcode_it = std::find_if(arp_layer_it->fields.begin(), arp_layer_it->fields.end(), [](const session_detail::PacketSummaryField& field) {
+            return field.label == "Opcode" && field.value == "request (1)";
+        });
+        PFL_EXPECT(opcode_it != arp_layer_it->fields.end());
+        const auto message_it = std::find_if(arp_layer_it->fields.begin(), arp_layer_it->fields.end(), [](const session_detail::PacketSummaryField& field) {
+            return field.label == "Message" && field.value == "ARP Request";
+        });
+        PFL_EXPECT(message_it != arp_layer_it->fields.end());
+        const auto detail_it = std::find_if(arp_layer_it->fields.begin(), arp_layer_it->fields.end(), [](const session_detail::PacketSummaryField& field) {
+            return field.label.empty() && field.value == "Who has 10.10.12.1? Tell 10.10.12.2";
+        });
+        PFL_EXPECT(detail_it != arp_layer_it->fields.end());
     }
 
     {
@@ -151,6 +205,14 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->has_vlan);
         const std::array<std::uint8_t, 4> expected_vlan_sender_ipv4 {10U, 10U, 12U, 3U};
         PFL_EXPECT(details->arp.sender_ipv4 == expected_vlan_sender_ipv4);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref);
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(summary_layers[0].id == "frame");
+        PFL_EXPECT(summary_layers[1].id == "ethernet");
+        PFL_EXPECT(summary_layers[2].id == "vlan");
+        PFL_EXPECT(summary_layers[3].id == "arp");
+        PFL_EXPECT(summary_layers[2].title.find("802.1Q Virtual LAN") != std::string::npos);
     }
 
     {
@@ -170,6 +232,17 @@ void run_packet_details_tests() {
         PFL_EXPECT(!details->arp.fixed_header_truncated);
         PFL_EXPECT(details->arp.address_section_truncated);
         PFL_EXPECT(details->arp.target_protocol_address.size() < 4U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref);
+        const auto warning_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
+            return layer.id == "warnings";
+        });
+        PFL_EXPECT(warning_layer_it != summary_layers.end());
+        const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
+            return layer.id == "arp";
+        });
+        PFL_EXPECT(arp_layer_it != summary_layers.end());
+        PFL_EXPECT(arp_layer_it->warning);
     }
 
     {

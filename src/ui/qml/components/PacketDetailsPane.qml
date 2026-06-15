@@ -31,6 +31,15 @@ Frame {
         return root.packetDetailsModel.summaryText
     }
 
+    function summaryLayers() {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket || root.isStreamItemDetails()) {
+            return []
+        }
+
+        const layers = root.packetDetailsModel.summaryLayers
+        return layers && layers.length !== undefined ? layers : []
+    }
+
     function headerPrimaryText() {
         if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
             return ""
@@ -118,6 +127,188 @@ Frame {
                 font.pixelSize: monospace ? 12 : 13
                 padding: 8
                 text: viewText
+            }
+        }
+    }
+
+    component SummaryFieldRow: Item {
+        required property var modelData
+        readonly property string labelText: modelData && modelData["label"] !== undefined && modelData["label"] !== null
+            ? String(modelData["label"])
+            : ""
+        readonly property string valueText: modelData && modelData["value"] !== undefined && modelData["value"] !== null
+            ? String(modelData["value"])
+            : ""
+        readonly property bool fullWidth: labelText.length === 0
+        implicitWidth: rowLayout.implicitWidth
+        implicitHeight: rowLayout.implicitHeight
+
+        GridLayout {
+            id: rowLayout
+            anchors.fill: parent
+            columns: fullWidth ? 1 : 2
+            columnSpacing: 8
+            rowSpacing: 2
+
+            Label {
+                visible: !fullWidth
+                text: fullWidth ? "" : labelText
+                color: "#64748b"
+                font.pixelSize: 12
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: valueText
+                color: "#0f172a"
+                font.pixelSize: 12
+                font.bold: !fullWidth
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+
+    component SummaryLayerCard: Rectangle {
+        id: summaryLayerCard
+        required property var modelData
+        readonly property string titleText: modelData && modelData["title"] !== undefined && modelData["title"] !== null
+            ? String(modelData["title"])
+            : ""
+        readonly property string markerText: modelData && modelData["marker_text"] !== undefined && modelData["marker_text"] !== null
+            ? String(modelData["marker_text"])
+            : ""
+        readonly property bool warningState: modelData && modelData["warning"] !== undefined && modelData["warning"] !== null
+            ? Boolean(modelData["warning"])
+            : false
+        readonly property var fieldRows: modelData && modelData["fields"] && modelData["fields"].length !== undefined
+            ? modelData["fields"]
+            : []
+        readonly property var childLayers: modelData && modelData["children"] && modelData["children"].length !== undefined
+            ? modelData["children"]
+            : []
+        property bool expanded: !modelData || modelData["expanded_by_default"] === undefined || modelData["expanded_by_default"] === null
+            ? true
+            : Boolean(modelData["expanded_by_default"])
+
+        color: "#fbfcfe"
+        border.color: warningState ? "#f4c97d" : "#dbe4ee"
+        radius: 8
+        implicitHeight: layerColumn.implicitHeight + 16
+
+        ColumnLayout {
+            id: layerColumn
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 6
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                ToolButton {
+                    text: summaryLayerCard.expanded ? "\u25be" : "\u25b8"
+                    onClicked: summaryLayerCard.expanded = !summaryLayerCard.expanded
+                    padding: 0
+                    implicitWidth: 18
+                    implicitHeight: 18
+
+                    contentItem: Label {
+                        text: parent.text
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        color: "#475569"
+                        font.pixelSize: 12
+                    }
+
+                    background: Rectangle {
+                        color: "transparent"
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: summaryLayerCard.titleText
+                    font.pixelSize: 13
+                    font.bold: true
+                    color: "#0f172a"
+                }
+
+                Rectangle {
+                    visible: summaryLayerCard.markerText.length > 0
+                    color: summaryLayerCard.warningState ? "#fff4db" : "#e8eef8"
+                    border.color: summaryLayerCard.warningState ? "#f0d08b" : "#c8d7ea"
+                    radius: 9
+                    implicitWidth: markerLabel.implicitWidth + 12
+                    implicitHeight: markerLabel.implicitHeight + 4
+
+                    Label {
+                        id: markerLabel
+                        anchors.centerIn: parent
+                        text: summaryLayerCard.markerText
+                        color: summaryLayerCard.warningState ? "#8a4d00" : "#355070"
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: summaryLayerCard.expanded
+                spacing: 5
+
+                Repeater {
+                    model: summaryLayerCard.fieldRows
+
+                    delegate: SummaryFieldRow { Layout.fillWidth: true }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    visible: childRepeater.count > 0
+                    height: 1
+                    color: "#e2e8f0"
+                }
+
+                Repeater {
+                    id: childRepeater
+                    model: summaryLayerCard.childLayers
+
+                    delegate: Rectangle {
+                        readonly property string childTitleText: modelData && modelData["title"] !== undefined && modelData["title"] !== null
+                            ? String(modelData["title"])
+                            : ""
+                        readonly property var childFieldRows: modelData && modelData["fields"] && modelData["fields"].length !== undefined
+                            ? modelData["fields"]
+                            : []
+                        Layout.fillWidth: true
+                        color: "#ffffff"
+                        border.color: "#e2e8f0"
+                        radius: 7
+                        implicitHeight: childColumn.implicitHeight + 12
+
+                        ColumnLayout {
+                            id: childColumn
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 4
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: childTitleText
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: "#334155"
+                            }
+
+                            Repeater {
+                                model: childFieldRows
+
+                                delegate: SummaryFieldRow { Layout.fillWidth: true }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -397,9 +588,11 @@ Frame {
             currentIndex: packetTabs.currentIndex
 
             Rectangle {
+                id: packetSummaryPane
                 color: "transparent"
 
                 readonly property string summary: root.summaryText()
+                readonly property var layers: root.summaryLayers()
                 readonly property string warningText: root.warningBlockText(summary)
                 readonly property string bodyText: root.summaryBodyText(summary)
 
@@ -409,7 +602,7 @@ Frame {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        visible: parent.parent.warningText.length > 0
+                        visible: packetSummaryPane.layers.length === 0 && packetSummaryPane.warningText.length > 0
                         color: "#fff6d6"
                         border.color: "#e7d38d"
                         radius: 6
@@ -423,16 +616,37 @@ Frame {
                             anchors.margins: 7
                             wrapMode: Text.Wrap
                             color: "#7a5d10"
-                            text: parent.parent.parent.warningText.length > 0
-                                ? "Warnings\n" + parent.parent.parent.warningText
+                            text: packetSummaryPane.warningText.length > 0
+                                ? "Warnings\n" + packetSummaryPane.warningText
                                 : ""
+                        }
+                    }
+
+                    ScrollView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        visible: packetSummaryPane.layers.length > 0
+                        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        ColumnLayout {
+                            width: parent.width
+                            spacing: 8
+
+                            Repeater {
+                                model: packetSummaryPane.layers
+
+                                delegate: SummaryLayerCard { Layout.fillWidth: true }
+                            }
                         }
                     }
 
                     TextPane {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        viewText: parent.parent.bodyText
+                        visible: packetSummaryPane.layers.length === 0
+                        viewText: packetSummaryPane.bodyText
                     }
                 }
             }

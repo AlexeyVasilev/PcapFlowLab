@@ -9,6 +9,11 @@ namespace pfl::session_detail {
 
 namespace {
 
+constexpr std::uint16_t kEtherTypeArp = 0x0806U;
+constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
+constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
+constexpr std::uint16_t kEtherTypeVlan = 0x8100U;
+constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
@@ -71,6 +76,84 @@ std::string format_arp_address_field(
         }
     }
     return builder.str();
+}
+
+std::string format_protocol_summary_value(const std::uint8_t protocol) {
+    switch (protocol) {
+    case 1U:
+        return "ICMP";
+    case 6U:
+        return "TCP";
+    case 17U:
+        return "UDP";
+    case 58U:
+        return "ICMPv6";
+    default:
+        return std::to_string(protocol);
+    }
+}
+
+std::string format_ether_type_name(const std::uint16_t ether_type) {
+    switch (ether_type) {
+    case kEtherTypeArp:
+        return "ARP";
+    case kEtherTypeIpv4:
+        return "IPv4";
+    case kEtherTypeIpv6:
+        return "IPv6";
+    case kEtherTypeVlan:
+        return "802.1Q VLAN";
+    case kEtherTypeQinq:
+        return "802.1ad QinQ";
+    default:
+        return {};
+    }
+}
+
+std::string format_ether_type_value(const std::uint16_t ether_type) {
+    const auto name = format_ether_type_name(ether_type);
+    if (name.empty()) {
+        return format_hex16_value(ether_type);
+    }
+
+    return name + " (" + format_hex16_value(ether_type) + ")";
+}
+
+std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
+    return static_cast<std::uint16_t>(tci & 0x0FFFU);
+}
+
+unsigned vlan_priority(const std::uint16_t tci) noexcept {
+    return static_cast<unsigned>((tci >> 13U) & 0x7U);
+}
+
+unsigned vlan_drop_eligible_indicator(const std::uint16_t tci) noexcept {
+    return static_cast<unsigned>((tci >> 12U) & 0x1U);
+}
+
+PacketSummaryField make_summary_field(std::string label, std::string value) {
+    return PacketSummaryField {
+        .label = std::move(label),
+        .value = std::move(value),
+    };
+}
+
+PacketSummaryField make_summary_line_field(const std::string& line) {
+    const auto separator_index = line.find(": ");
+    if (separator_index == std::string::npos) {
+        return make_summary_field({}, line);
+    }
+
+    return make_summary_field(
+        line.substr(0, separator_index),
+        line.substr(separator_index + 2U)
+    );
+}
+
+void append_layer_if_not_empty(std::vector<PacketSummaryLayer>& layers, PacketSummaryLayer layer) {
+    if (!layer.fields.empty() || !layer.children.empty()) {
+        layers.push_back(std::move(layer));
+    }
 }
 
 }  // namespace
@@ -370,6 +453,241 @@ std::vector<std::string> build_basic_summary_lines(const PacketDetails& details)
     }
 
     return lines;
+}
+
+std::vector<PacketSummaryLayer> build_packet_summary_layers(
+    const PacketDetails& details,
+    const PacketRef& packet,
+    const PacketSummaryOptions& options
+) {
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(8U);
+
+    append_layer_if_not_empty(layers, PacketSummaryLayer {
+        .id = "frame",
+        .title = "Frame " + std::to_string(details.packet_index),
+        .fields = {
+            make_summary_field("Packet index in file", std::to_string(details.packet_index)),
+            make_summary_field("Timestamp", format_packet_timestamp_full(packet)),
+            make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"),
+            make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"),
+        },
+    });
+
+    std::vector<PacketSummaryField> warning_fields {};
+    if (packet.is_ip_fragmented) {
+        warning_fields.push_back(make_summary_field({}, "Packet is IP-fragmented"));
+    }
+    if (details.captured_length != details.original_length) {
+        warning_fields.push_back(make_summary_field({}, "Packet is truncated in capture"));
+        warning_fields.push_back(make_summary_field("Captured Length", std::to_string(details.captured_length)));
+        warning_fields.push_back(make_summary_field("Original Length", std::to_string(details.original_length)));
+    }
+    if (details.ipv4_bounds_from_captured_bytes) {
+        warning_fields.push_back(make_summary_field({}, "IPv4 total length is unavailable; packet was parsed using captured bytes only"));
+        warning_fields.push_back(make_summary_field({}, "Header interpretation is conservative (possible pre-offload packet)"));
+    }
+    if (!options.source_capture_accessible) {
+        warning_fields.push_back(make_summary_field({}, "Byte-backed packet details are unavailable because the original source capture cannot be read."));
+    }
+    for (const auto& warning : options.checksum_warning_lines) {
+        warning_fields.push_back(make_summary_line_field(warning));
+    }
+    append_layer_if_not_empty(layers, PacketSummaryLayer {
+        .id = "warnings",
+        .title = "Warnings",
+        .fields = std::move(warning_fields),
+        .warning = true,
+        .marker_text = "Warning",
+    });
+
+    std::vector<PacketSummaryField> checksum_fields {};
+    checksum_fields.reserve(options.checksum_summary_lines.size());
+    for (const auto& line : options.checksum_summary_lines) {
+        checksum_fields.push_back(make_summary_line_field(line));
+    }
+    append_layer_if_not_empty(layers, PacketSummaryLayer {
+        .id = "checksums",
+        .title = "Checksums",
+        .fields = std::move(checksum_fields),
+    });
+
+    if (details.has_ethernet) {
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ethernet",
+            .title = "Ethernet II",
+            .fields = {
+                make_summary_field("EtherType", format_ether_type_value(details.ethernet.ether_type)),
+            },
+        });
+    }
+
+    if (details.has_vlan) {
+        for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
+            const auto& tag = details.vlan_tags[index];
+            std::string vlan_id = "vlan";
+            if (details.vlan_tags.size() > 1U) {
+                vlan_id += "-" + std::to_string(index + 1U);
+            }
+            append_layer_if_not_empty(layers, PacketSummaryLayer {
+                .id = std::move(vlan_id),
+                .title = "802.1Q Virtual LAN, PRI: " + std::to_string(vlan_priority(tag.tci)) +
+                    ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
+                    ", ID: " + std::to_string(vlan_identifier(tag.tci)),
+                .fields = {
+                    make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+                    make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+                    make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+                    make_summary_field("Tag Control Information", std::to_string(tag.tci)),
+                    make_summary_field("Encapsulated EtherType", format_ether_type_value(tag.encapsulated_ether_type)),
+                },
+            });
+        }
+    }
+
+    if (details.has_arp) {
+        std::vector<PacketSummaryField> arp_fields {};
+        const auto shared_lines = build_basic_summary_lines(details);
+        arp_fields.reserve(shared_lines.size() + 5U);
+        if (const auto presentation = describe_arp_packet(details); presentation.has_value()) {
+            arp_fields.push_back(make_summary_field("Message", presentation->title));
+            if (!presentation->detail.empty()) {
+                arp_fields.push_back(make_summary_field({}, presentation->detail));
+            }
+        }
+        arp_fields.push_back(make_summary_field("Hardware Type", format_arp_hardware_type(details.arp.hardware_type)));
+        arp_fields.push_back(make_summary_field("Protocol Type", format_arp_protocol_type(details.arp.protocol_type)));
+        arp_fields.push_back(make_summary_field("Hardware Size", std::to_string(details.arp.hardware_size)));
+        arp_fields.push_back(make_summary_field("Protocol Size", std::to_string(details.arp.protocol_size)));
+        arp_fields.push_back(make_summary_field("Opcode", format_arp_opcode(details.arp.opcode)));
+        for (const auto& line : shared_lines) {
+            if (line.rfind("Message: ", 0U) == 0U ||
+                line == "ARP fixed header is truncated." ||
+                line == "ARP address section is truncated.") {
+                continue;
+            }
+            arp_fields.push_back(make_summary_line_field(line));
+        }
+        if (details.arp.fixed_header_truncated) {
+            arp_fields.push_back(make_summary_field({}, "ARP fixed header is truncated."));
+        } else if (details.arp.address_section_truncated) {
+            arp_fields.push_back(make_summary_field({}, "ARP address section is truncated."));
+        }
+
+        std::string arp_title = "Address Resolution Protocol";
+        if (const auto presentation = describe_arp_packet(details);
+            presentation.has_value() && !presentation->detail.empty()) {
+            arp_title += ", " + presentation->detail;
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "arp",
+            .title = std::move(arp_title),
+            .fields = std::move(arp_fields),
+            .warning = details.arp.fixed_header_truncated || details.arp.address_section_truncated,
+            .marker_text = (details.arp.fixed_header_truncated || details.arp.address_section_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+    }
+
+    if (details.has_ipv4) {
+        std::vector<PacketSummaryField> ipv4_fields {
+            make_summary_field("Version", "4"),
+            make_summary_field("Source", format_ipv4_address(details.ipv4.src_addr)),
+            make_summary_field("Destination", format_ipv4_address(details.ipv4.dst_addr)),
+            make_summary_field("Protocol", format_protocol_summary_value(details.ipv4.protocol)),
+            make_summary_field("TTL", std::to_string(details.ipv4.ttl)),
+            make_summary_field("Total Length", std::to_string(details.ipv4.total_length) + " bytes"),
+        };
+        if (packet.is_ip_fragmented) {
+            ipv4_fields.push_back(make_summary_field("Fragmentation", "Packet is fragmented"));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ipv4",
+            .title = "Internet Protocol Version 4, Src: " +
+                format_ipv4_address(details.ipv4.src_addr) +
+                ", Dst: " + format_ipv4_address(details.ipv4.dst_addr),
+            .fields = std::move(ipv4_fields),
+        });
+    }
+
+    if (details.has_ipv6) {
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ipv6",
+            .title = "Internet Protocol Version 6, Src: " +
+                format_ipv6_address(details.ipv6.src_addr) +
+                ", Dst: " + format_ipv6_address(details.ipv6.dst_addr),
+            .fields = {
+                make_summary_field("Version", "6"),
+                make_summary_field("Source", format_ipv6_address(details.ipv6.src_addr)),
+                make_summary_field("Destination", format_ipv6_address(details.ipv6.dst_addr)),
+                make_summary_field("Next Header", format_protocol_summary_value(details.ipv6.next_header)),
+                make_summary_field("Hop Limit", std::to_string(details.ipv6.hop_limit)),
+                make_summary_field("Payload Length", std::to_string(details.ipv6.payload_length) + " bytes"),
+            },
+        });
+    }
+
+    if (details.has_tcp) {
+        std::vector<PacketSummaryField> tcp_fields {
+            make_summary_field("Source Port", std::to_string(details.tcp.src_port)),
+            make_summary_field("Destination Port", std::to_string(details.tcp.dst_port)),
+            make_summary_field("Flags", format_tcp_flags_text(details.tcp.flags)),
+            make_summary_field("Sequence Number", std::to_string(details.tcp.seq_number)),
+            make_summary_field("Acknowledgment Number", std::to_string(details.tcp.ack_number)),
+        };
+        if (options.original_transport_payload_length.has_value()) {
+            if (options.transport_payload_length.has_value() &&
+                *options.transport_payload_length != *options.original_transport_payload_length) {
+                tcp_fields.push_back(make_summary_field("Captured Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
+                tcp_fields.push_back(make_summary_field("Original Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
+            } else {
+                tcp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
+            }
+        } else if (options.transport_payload_length.has_value()) {
+            tcp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "tcp",
+            .title = "Transmission Control Protocol, Src Port: " +
+                std::to_string(details.tcp.src_port) +
+                ", Dst Port: " + std::to_string(details.tcp.dst_port) +
+                ", Seq: " + std::to_string(details.tcp.seq_number) +
+                ", Ack: " + std::to_string(details.tcp.ack_number) +
+                ", Len: " + std::to_string(options.original_transport_payload_length.value_or(
+                    options.transport_payload_length.value_or(0U))),
+            .fields = std::move(tcp_fields),
+        });
+    }
+
+    if (details.has_udp) {
+        std::vector<PacketSummaryField> udp_fields {
+            make_summary_field("Source Port", std::to_string(details.udp.src_port)),
+            make_summary_field("Destination Port", std::to_string(details.udp.dst_port)),
+            make_summary_field("Length", std::to_string(details.udp.length)),
+        };
+        if (options.original_transport_payload_length.has_value()) {
+            if (options.transport_payload_length.has_value() &&
+                *options.transport_payload_length != *options.original_transport_payload_length) {
+                udp_fields.push_back(make_summary_field("Captured Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
+                udp_fields.push_back(make_summary_field("Original Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
+            } else {
+                udp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.original_transport_payload_length) + " bytes"));
+            }
+        } else if (options.transport_payload_length.has_value()) {
+            udp_fields.push_back(make_summary_field("Payload Length", std::to_string(*options.transport_payload_length) + " bytes"));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "udp",
+            .title = "User Datagram Protocol, Src Port: " +
+                std::to_string(details.udp.src_port) +
+                ", Dst Port: " + std::to_string(details.udp.dst_port) +
+                ", Len: " + std::to_string(details.udp.length),
+            .fields = std::move(udp_fields),
+        });
+    }
+
+    return layers;
 }
 
 std::string packet_payload_tab_title(const PacketDetails& details) {

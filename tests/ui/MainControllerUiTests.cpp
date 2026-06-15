@@ -1975,6 +1975,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(details_model != nullptr);
     UI_EXPECT(details_model->hasPacket());
     UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet index in file: 0")));
+    UI_EXPECT(!details_model->summaryLayers().isEmpty());
     UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(!details_model->protocolText().isEmpty());
 

@@ -1198,6 +1198,46 @@ struct ProtocolField {
     QString value {};
 };
 
+QVariantMap packet_summary_field_to_variant_map(const session_detail::PacketSummaryField& field) {
+    QVariantMap map {};
+    map.insert(QStringLiteral("label"), QString::fromStdString(field.label));
+    map.insert(QStringLiteral("value"), QString::fromStdString(field.value));
+    return map;
+}
+
+QVariantMap packet_summary_layer_to_variant_map(const session_detail::PacketSummaryLayer& layer) {
+    QVariantMap map {};
+    QVariantList fields {};
+    fields.reserve(static_cast<qsizetype>(layer.fields.size()));
+    for (const auto& field : layer.fields) {
+        fields.push_back(packet_summary_field_to_variant_map(field));
+    }
+
+    QVariantList children {};
+    children.reserve(static_cast<qsizetype>(layer.children.size()));
+    for (const auto& child : layer.children) {
+        children.push_back(packet_summary_layer_to_variant_map(child));
+    }
+
+    map.insert(QStringLiteral("id"), QString::fromStdString(layer.id));
+    map.insert(QStringLiteral("title"), QString::fromStdString(layer.title));
+    map.insert(QStringLiteral("fields"), fields);
+    map.insert(QStringLiteral("children"), children);
+    map.insert(QStringLiteral("expanded_by_default"), layer.expanded_by_default);
+    map.insert(QStringLiteral("warning"), layer.warning);
+    map.insert(QStringLiteral("marker_text"), QString::fromStdString(layer.marker_text));
+    return map;
+}
+
+QVariantList packet_summary_layers_to_variant_list(const std::vector<session_detail::PacketSummaryLayer>& layers) {
+    QVariantList result {};
+    result.reserve(static_cast<qsizetype>(layers.size()));
+    for (const auto& layer : layers) {
+        result.push_back(packet_summary_layer_to_variant_map(layer));
+    }
+    return result;
+}
+
 std::vector<ProtocolField> parse_protocol_fields(const QStringList& lines, const qsizetype start_index = 0) {
     std::vector<ProtocolField> fields {};
     for (auto index = std::max<qsizetype>(0, start_index); index < lines.size(); ++index) {
@@ -3918,6 +3958,7 @@ void MainController::showSourceUnavailablePacketDetailsPlaceholder() {
     packet_details_model_.setDetailsTitle(QStringLiteral("Packet Details"));
     packet_details_model_.clearStreamItemPresentation();
     packet_details_model_.setPacketDetailsText(source_capture_unavailable_packet_summary_text());
+    packet_details_model_.setSummaryLayers({});
     packet_details_model_.setHexText(source_capture_unavailable_packet_raw_text());
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
     packet_details_model_.setPayloadText(source_capture_unavailable_packet_payload_text());
@@ -3928,6 +3969,7 @@ void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
     packet_details_model_.setDetailsTitle(QStringLiteral("Stream Item Details"));
     packet_details_model_.clearStreamItemPresentation();
     packet_details_model_.setPacketDetailsText(source_capture_unavailable_stream_summary_text());
+    packet_details_model_.setSummaryLayers({});
     packet_details_model_.setHexText({});
     packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
     packet_details_model_.setPayloadText(source_capture_unavailable_stream_payload_text());
@@ -4674,6 +4716,29 @@ void MainController::reloadSelectedPacketDetails() {
     }
 
     packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
+    packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+        session_detail::build_packet_summary_layers(*details, *packet, {
+            .source_capture_accessible = true,
+            .transport_payload_length = payload_lengths.real_payload_length,
+            .original_transport_payload_length = payload_lengths.original_payload_length,
+            .checksum_summary_lines = [&]() {
+                std::vector<std::string> lines {};
+                lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
+                for (const auto& line : checksum_sections.summary_lines) {
+                    lines.push_back(line.toStdString());
+                }
+                return lines;
+            }(),
+            .checksum_warning_lines = [&]() {
+                std::vector<std::string> lines {};
+                lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
+                for (const auto& line : checksum_sections.warnings) {
+                    lines.push_back(line.toStdString());
+                }
+                return lines;
+            }(),
+        })
+    ));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
     packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
     packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
@@ -4705,6 +4770,7 @@ void MainController::reloadSelectedStreamDetails() {
         stream_item_header_badge_text(*itemIt)
     );
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
+    packet_details_model_.setSummaryLayers({});
     packet_details_model_.setPayloadTabTitle(stream_item_payload_tab_title(*itemIt));
 
     if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {

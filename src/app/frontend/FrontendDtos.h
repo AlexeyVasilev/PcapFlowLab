@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "app/session/SessionFormatting.h"
 #include "app/session/FlowRows.h"
 #include "core/domain/CaptureSummary.h"
 
@@ -270,6 +271,7 @@ struct FrontendPacketDetailsDto {
     std::string link_summary_text {};
     std::string network_summary_text {};
     std::string transport_summary_text {};
+    std::vector<session_detail::PacketSummaryLayer> summary_layers {};
     std::string protocol_details_text {};
     std::string raw_preview_text {};
     std::string raw_preview_unavailable_text {};

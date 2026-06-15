@@ -2480,6 +2480,13 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         result.checksum_summary_lines = checksum_sections.summary_lines;
         result.checksum_warning_lines = checksum_sections.warnings;
     }
+    result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+        .source_capture_accessible = true,
+        .transport_payload_length = packet.payload_length,
+        .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
+        .checksum_summary_lines = result.checksum_summary_lines,
+        .checksum_warning_lines = result.checksum_warning_lines,
+    });
     result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
 
     const auto raw_preview_text = build_packet_raw_text(packet_bytes);

@@ -471,11 +471,12 @@ Summary should show compact packet metadata and packet-level interpretation, inc
 
 Qt currently uses formatted summary text rather than a purely structured field grid. Shared contract should preserve the information content even if different frontends choose a different compact layout.
 
-Future direction note:
+Current direction note:
 
-- packet details should eventually be backed by a shared structured decoded-layer list;
-- each layer may carry fields such as Ethernet, VLAN, MPLS, ARP, IPv4, IPv6, TCP, UDP, TLS, QUIC, and related metadata;
-- Qt, Tauri, and future CLI surfaces should eventually render this shared layer list consistently instead of relying mainly on frontend-local text reconstruction.
+- packet details Summary now has a first shared structured decoded-layer list for selected-packet/on-demand rendering;
+- the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, ARP, IPv4, IPv6, TCP, and UDP;
+- Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
+- the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.
 
 ### Raw
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -126,6 +127,13 @@ void run_arp_pcap_fixture_tests() {
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->has_vlan);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(summary_layers[0].id == "frame");
+        PFL_EXPECT(summary_layers[1].id == "ethernet");
+        PFL_EXPECT(summary_layers[2].id == "vlan");
+        PFL_EXPECT(summary_layers[3].id == "arp");
     }
 
     {
@@ -173,6 +181,21 @@ void run_arp_pcap_fixture_tests() {
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(!details->arp.fixed_header_truncated);
         PFL_EXPECT(details->arp.address_section_truncated);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, PacketRef {
+            .packet_index = packet.packet_index,
+            .byte_offset = packet.data_offset,
+            .data_link_type = packet.data_link_type,
+            .captured_length = packet.captured_length,
+            .original_length = packet.original_length,
+            .ts_sec = packet.ts_sec,
+            .ts_usec = packet.ts_usec,
+        });
+        const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
+            return layer.id == "arp";
+        });
+        PFL_EXPECT(arp_layer_it != summary_layers.end());
+        PFL_EXPECT(arp_layer_it->warning);
     }
 
     {
