@@ -115,8 +115,8 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | ARP | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Strongest non-IP shared parsing path today. Supports Ethernet/IPv4 ARP well, variable `hlen` / `plen`, truncated warnings, and one-packet-per-item stream rows. Request/reply packets are not grouped into a higher-level conversation item. |
 | IPv4 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv4 facts appear in layered Summary. There is no standalone IPv4 `Protocol` tab renderer today. |
 | IPv6 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv6 facts appear in layered Summary. There is no standalone IPv6 `Protocol` tab renderer today. |
-| ICMP | Supported | Supported | Not supported | Partial | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMP text. Layered Summary currently shows IPv4 context but no dedicated ICMP layer. |
-| ICMPv6 | Supported | Supported | Not supported | Partial | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMPv6 text. Layered Summary currently shows IPv6 context but no dedicated ICMPv6 layer. |
+| ICMP | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMP text, and layered Summary now appends a dedicated ICMP layer after IPv4. |
+| ICMPv6 | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMPv6 text, and layered Summary now appends a dedicated ICMPv6 layer after IPv6. |
 | TCP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes TCP ports, flags, sequence / ack, and payload length. Generic selected-packet `Protocol` text is not emitted for plain TCP packets, but higher-level analyzers can consume TCP payload. Stream falls back to generic `TCP Payload` rows when no HTTP/TLS specialization applies. |
 | UDP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes UDP ports, length, and payload length. Generic selected-packet `Protocol` text is not emitted for plain UDP packets, but higher-level analyzers can consume UDP payload. Stream falls back to generic `UDP Payload` rows when no specialization applies. |
 
@@ -126,11 +126,11 @@ These rows generally ride on top of TCP or UDP flows. They do not create separat
 
 | Protocol / hint | Recognition | Flow key / grouping | Service hint | Packet Summary layer | Protocol details | Payload tab | Stream items | Tests / fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TLS | Supported | Not supported | Supported | Not supported | Supported | Partial | Supported | Supported | Flow hint detection can extract TLS version and SNI where available. Selected-packet `Protocol` has dedicated TLS text. Selected-packet `Payload` remains transport-payload-oriented rather than a full TLS tree. Selected-flow Stream supports TLS record / handshake labeling such as `TLS ClientHello`, `TLS ServerHello`, and `TLS AppData`. |
-| QUIC | Supported | Not supported | Partial | Not supported | Supported | Partial | Supported | Supported | Open-time QUIC detection is intentionally cheap. Service hint may remain empty at open time and refresh later through bounded selected-flow analysis. Selected-packet `Protocol` has dedicated QUIC text, including QUIC+TLS presentation where available. Stream supports QUIC Initial item labeling such as `QUIC Initial: CRYPTO` and `QUIC Initial: ACK`. No claim is made here about full general QUIC reassembly. |
-| DNS | Supported | Not supported | Supported | Not supported | Supported | Partial | Partial | Supported | Open-time hinting supports DNS with QNAME-based service hints. Selected-packet `Protocol` has dedicated DNS text. Selected-packet `Payload` is generic UDP/TCP payload bytes. Stream code contains DNS-specific label hooks, but current tests still primarily cover generic UDP fallback rows, so stream support should be treated as partial. |
+| TLS | Supported | Not supported | Supported | Supported | Supported | Partial | Supported | Supported | Flow hint detection can extract TLS version and SNI where available. Selected-packet layered Summary now appends a final TLS layer using the existing protocol-details path. Selected-packet `Payload` remains transport-payload-oriented rather than a full TLS tree. Selected-flow Stream supports TLS record / handshake labeling such as `TLS ClientHello`, `TLS ServerHello`, and `TLS AppData`. |
+| QUIC | Supported | Not supported | Partial | Supported | Supported | Partial | Supported | Supported | Open-time QUIC detection is intentionally cheap. Service hint may remain empty at open time and refresh later through bounded selected-flow analysis. Selected-packet layered Summary now appends a final QUIC layer using the existing protocol-details path, including QUIC+TLS presentation where available. Stream supports QUIC Initial item labeling such as `QUIC Initial: CRYPTO` and `QUIC Initial: ACK`. No claim is made here about full general QUIC reassembly. |
+| DNS | Supported | Not supported | Supported | Supported | Supported | Partial | Partial | Supported | Open-time hinting supports DNS with QNAME-based service hints. Selected-packet layered Summary now appends a final DNS layer using the existing protocol-details path. Selected-packet `Payload` is generic UDP/TCP payload bytes. Stream code contains DNS-specific label hooks, but current tests still primarily cover generic UDP fallback rows, so stream support should be treated as partial. |
 | mDNS | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Detection depends on UDP/5353 and multicast destination checks. Current behavior stops at hinting plus generic UDP surfaces. |
-| HTTP | Supported | Not supported | Supported | Not supported | Supported | Partial | Supported | Supported | Open-time hinting can use `Host`, and optionally request path fallback when the relevant setting is enabled. Selected-packet `Protocol` has dedicated HTTP text. Stream can build request/response-oriented items such as `HTTP GET /...` from bounded reconstruction. |
+| HTTP | Supported | Not supported | Supported | Supported | Supported | Partial | Supported | Supported | Open-time hinting can use `Host`, and optionally request path fallback when the relevant setting is enabled. Selected-packet layered Summary now appends a final HTTP layer using the existing protocol-details path. Stream can build request/response-oriented items such as `HTTP GET /...` from bounded reconstruction. |
 | DHCP | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is open-time detection from BOOTP/DHCP shape checks. Selected-packet / Stream surfaces fall back to generic UDP behavior. |
 | STUN | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is hint-only. No dedicated selected-packet or stream presentation was found. |
 | BitTorrent | Detection-only | Not supported | Not supported | Not supported | Not supported | Partial | Partial | Supported | Current support is handshake / hint recognition only. No dedicated packet-details or stream presentation was found. |
@@ -156,16 +156,13 @@ The shared layered Summary model is intentionally conservative today.
   - IPv6;
   - TCP;
   - UDP.
-- It does not yet expose full dedicated Summary subtrees for:
-  - TLS;
-  - QUIC;
-  - DNS;
-  - HTTP;
+- It still does not expose full dedicated Summary subtrees for:
   - mDNS;
   - DHCP;
   - STUN;
   - BitTorrent;
   - SMTP / POP3 / IMAP / SSH.
+- For TLS, QUIC, DNS, HTTP, ICMP, and ICMPv6, layered Summary now appends a conservative final protocol layer using the existing selected-packet protocol-details path instead of introducing a separate deep Summary parser.
 
 ### Protocol details
 

@@ -147,7 +147,7 @@ For the current repository-level protocol support matrix and known protocol limi
 |---|---|---|---|---|---|---|
 | details title / header fields | `PacketDetailsViewModel.detailsTitle`, `headerPrimaryText`, `headerSecondaryText`, `badgeText` | `FrontendPacketDetailsDto.details_title` now carries the shared packet-details title; header/badge fields are still absent | Tauri now consumes shared `details_title`; summary labels remain local | title is partially aligned, header/badge remain Qt-specific today | frontend-neutral DTO for shared title, deferred for header/badge | Improved |
 | summary text | `PacketDetailsViewModel.summaryText`; built in `MainController::buildPacketSummary(...)` | `FrontendPacketDetailsDto.summary_text` still carries the legacy shared text summary block built from existing packet/session facts | Qt and Tauri now keep this text as a fallback when structured layered summary data is absent | fallback path remains intentionally text-first for unavailable/older cases | frontend-neutral DTO fallback | Improved |
-| structured summary layers | Qt previously kept summary mostly text-first with local formatting | `FrontendPacketDetailsDto.summary_layers` now carries a shared layered packet-summary tree with generic `layer -> fields -> children` structure | Qt Summary and Tauri Summary now both render collapsible shared layers first and fall back to `summary_text` only when layers are unavailable | first narrow layer model exists, but it intentionally covers only already-decoded Frame/Ethernet/VLAN/IPv4/IPv6/TCP/UDP/ARP facts | frontend-neutral DTO | Improved |
+| structured summary layers | Qt previously kept summary mostly text-first with local formatting | `FrontendPacketDetailsDto.summary_layers` now carries a shared layered packet-summary tree with generic `layer -> fields -> children` structure | Qt Summary and Tauri Summary now both render collapsible shared layers first and fall back to `summary_text` only when layers are unavailable | shared layer model now covers Frame/Ethernet/VLAN/IPv4/IPv6/TCP/UDP/ARP plus a conservative final higher-level layer for already-recognized TLS/QUIC/DNS/HTTP/ICMP/ICMPv6 packets | frontend-neutral DTO | Improved |
 | raw preview text | `PacketDetailsViewModel.hexText` | `FrontendPacketDetailsDto.raw_preview_text` | `PacketDetailsDto.raw_preview_text` | aligned | frontend-neutral DTO | High |
 | raw preview truncated metadata | Qt text and UI state imply it, but not clearly as a standalone property | `FrontendPacketDetailsDto.raw_preview_truncated`, `raw_preview_available`, `raw_preview_unavailable_text` | Tauri uses them explicitly | Tauri/frontend-neutral shape is cleaner than Qt VM surface here | frontend-neutral DTO | High |
 | payload preview text | `PacketDetailsViewModel.payloadText` | `FrontendPacketDetailsDto.payload_preview_text` | `PacketDetailsDto.payload_preview_text` | aligned | frontend-neutral DTO | High |
@@ -258,7 +258,7 @@ These are useful implementation patterns, but they are local Tauri state, not ye
 
 - explicit shell/session-state DTO
 - explicit selected-stream-item frontend-neutral path
-- deeper packet-inspector structured layers beyond the current first narrow `summary_layers` slice
+- deeper packet-inspector structured layers beyond the current conservative `summary_layers` slice
 
 ### Text-only today, candidate for structured DTO
 

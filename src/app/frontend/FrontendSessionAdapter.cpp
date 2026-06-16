@@ -722,6 +722,24 @@ std::string frontend_stream_protocol_text(
     return stream_protocol_unavailable_text();
 }
 
+std::string frontend_packet_protocol_text(
+    const CaptureSession& session,
+    const std::optional<std::size_t> flow_index,
+    const PacketRef& packet
+) {
+    auto protocol_text = session.read_packet_protocol_details_text(packet);
+    if (!flow_index.has_value() || protocol_text.find("QUIC") == std::string::npos) {
+        return protocol_text;
+    }
+
+    if (const auto context_text = session.derive_quic_protocol_text_for_packet(*flow_index, packet.packet_index);
+        context_text.has_value() && !context_text->empty()) {
+        return *context_text;
+    }
+
+    return protocol_text;
+}
+
 std::string build_packet_payload_text(
     const std::vector<std::uint8_t>& packet_bytes,
     const PacketRef& packet
@@ -2470,7 +2488,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     result.link_summary_text = format_link_summary(*details);
     result.network_summary_text = format_network_summary(*details);
     result.transport_summary_text = format_transport_summary(*details);
-    result.protocol_details_text = session_.read_packet_protocol_details_text(packet);
+    result.protocol_details_text = frontend_packet_protocol_text(session_, selected_flow_index_, packet);
 
     PacketChecksumSections checksum_sections {};
     const auto packet_bytes = session_.read_packet_data(packet);
@@ -2484,6 +2502,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         .source_capture_accessible = true,
         .transport_payload_length = packet.payload_length,
         .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
+        .protocol_details_text = result.protocol_details_text,
         .checksum_summary_lines = result.checksum_summary_lines,
         .checksum_warning_lines = result.checksum_warning_lines,
     });

@@ -37,6 +37,7 @@ struct PacketSummaryOptions {
     bool source_capture_accessible {true};
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
+    std::string protocol_details_text {};
     std::vector<std::string> checksum_summary_lines {};
     std::vector<std::string> checksum_warning_lines {};
 };

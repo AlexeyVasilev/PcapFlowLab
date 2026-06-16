@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <vector>
@@ -14,6 +15,20 @@
 #include "PcapTestUtils.h"
 
 namespace pfl::tests {
+
+namespace {
+
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
+    const auto packet = session.find_packet(packet_index);
+    PFL_EXPECT(packet.has_value());
+    return *packet;
+}
+
+}  // namespace
 
 void run_packet_details_tests() {
     const auto tcp_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 12345, 443);
@@ -44,6 +59,7 @@ void run_packet_details_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
+            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "frame");
@@ -54,6 +70,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(summary_layers[3].id == "tcp");
         PFL_EXPECT(summary_layers[2].title.find("Internet Protocol Version 4") != std::string::npos);
         PFL_EXPECT(summary_layers[3].title.find("Transmission Control Protocol") != std::string::npos);
+        PFL_EXPECT(summary_layers.size() == 4U);
         const auto tcp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
             return layer.id == "tcp";
         });
@@ -85,6 +102,7 @@ void run_packet_details_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
+            .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[0].id == "frame");
@@ -92,6 +110,77 @@ void run_packet_details_tests() {
         PFL_EXPECT(summary_layers[2].id == "ipv4");
         PFL_EXPECT(summary_layers[3].id == "udp");
         PFL_EXPECT(summary_layers[3].title.find("User Datagram Protocol") != std::string::npos);
+        PFL_EXPECT(summary_layers.size() == 4U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+            .transport_payload_length = packet.payload_length,
+            .original_transport_payload_length = packet.payload_length,
+            .protocol_details_text = session.read_packet_protocol_details_text(packet),
+        });
+        PFL_EXPECT(summary_layers.size() >= 5U);
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
+        PFL_EXPECT(summary_layers.back().id == "dns");
+        PFL_EXPECT(summary_layers.back().title.find("Domain Name System") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        const auto protocol_text = session.derive_quic_protocol_text_for_packet(0U, packet.packet_index)
+            .value_or(session.read_packet_protocol_details_text(packet));
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+            .transport_payload_length = packet.payload_length,
+            .original_transport_payload_length = packet.payload_length,
+            .protocol_details_text = protocol_text,
+        });
+        PFL_EXPECT(summary_layers.size() >= 5U);
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
+        PFL_EXPECT(summary_layers.back().id == "quic");
+        PFL_EXPECT(summary_layers.back().title.find("QUIC") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+            .transport_payload_length = packet.payload_length,
+            .original_transport_payload_length = packet.payload_length,
+            .protocol_details_text = session.read_packet_protocol_details_text(packet),
+        });
+        PFL_EXPECT(summary_layers.size() >= 5U);
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "tcp");
+        PFL_EXPECT(summary_layers.back().id == "tls");
+        PFL_EXPECT(summary_layers.back().title.find("Transport Layer Security") != std::string::npos);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+            .transport_payload_length = packet.payload_length,
+            .original_transport_payload_length = packet.payload_length,
+            .protocol_details_text = session.read_packet_protocol_details_text(packet),
+        });
+        PFL_EXPECT(summary_layers.size() >= 5U);
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "tcp");
+        PFL_EXPECT(summary_layers.back().id == "http");
+        PFL_EXPECT(summary_layers.back().title.find("Hypertext Transfer Protocol") != std::string::npos);
     }
 
     {
@@ -147,12 +236,17 @@ void run_packet_details_tests() {
         PFL_EXPECT(!details->arp.fixed_header_truncated);
         PFL_EXPECT(!details->arp.address_section_truncated);
 
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
+        });
         const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
             return layer.id == "arp";
         });
         PFL_EXPECT(arp_layer_it != summary_layers.end());
         PFL_EXPECT(arp_layer_it->title.find("Address Resolution Protocol") != std::string::npos);
+        PFL_EXPECT(static_cast<unsigned>(std::count_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
+            return layer.id == "arp";
+        })) == 1U);
         const auto opcode_it = std::find_if(arp_layer_it->fields.begin(), arp_layer_it->fields.end(), [](const session_detail::PacketSummaryField& field) {
             return field.label == "Opcode" && field.value == "request (1)";
         });
@@ -260,6 +354,52 @@ void run_packet_details_tests() {
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.fixed_header_truncated);
+    }
+
+    {
+        PacketDetailsService service {};
+        const auto icmp_packet = make_ethernet_ipv4_icmp_packet(ipv4(10, 0, 0, 10), ipv4(10, 0, 0, 20), 8U, 0U);
+        const PacketRef packet_ref {
+            .packet_index = 25,
+            .byte_offset = 240,
+            .captured_length = static_cast<std::uint32_t>(icmp_packet.size()),
+            .original_length = static_cast<std::uint32_t>(icmp_packet.size()),
+        };
+
+        const auto details = service.decode(icmp_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_icmp);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
+        });
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "ipv4");
+        PFL_EXPECT(summary_layers.back().id == "icmp");
+        PFL_EXPECT(summary_layers.back().title.find("Internet Control Message Protocol") != std::string::npos);
+    }
+
+    {
+        PacketDetailsService service {};
+        const auto ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+        const auto ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02});
+        const auto icmpv6_packet = make_ethernet_ipv6_icmpv6_with_hop_by_hop_packet(ipv6_src, ipv6_dst, 128U, 0U);
+        const PacketRef packet_ref {
+            .packet_index = 26,
+            .byte_offset = 264,
+            .captured_length = static_cast<std::uint32_t>(icmpv6_packet.size()),
+            .original_length = static_cast<std::uint32_t>(icmpv6_packet.size()),
+        };
+
+        const auto details = service.decode(icmpv6_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_icmpv6);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
+        });
+        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "ipv6");
+        PFL_EXPECT(summary_layers.back().id == "icmpv6");
+        PFL_EXPECT(summary_layers.back().title.find("Internet Control Message Protocol v6") != std::string::npos);
     }
 
     {

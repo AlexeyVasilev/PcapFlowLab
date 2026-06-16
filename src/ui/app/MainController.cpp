@@ -4721,6 +4721,7 @@ void MainController::reloadSelectedPacketDetails() {
             .source_capture_accessible = true,
             .transport_payload_length = payload_lengths.real_payload_length,
             .original_transport_payload_length = payload_lengths.original_payload_length,
+            .protocol_details_text = protocolText.toStdString(),
             .checksum_summary_lines = [&]() {
                 std::vector<std::string> lines {};
                 lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
