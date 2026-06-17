@@ -477,6 +477,7 @@ Current direction note:
 
 - packet details Summary now has a first shared structured decoded-layer list for selected-packet/on-demand rendering;
 - the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, ARP, IPv4, IPv6, TCP, and UDP;
+- when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
 - the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.
 

@@ -64,10 +64,14 @@ void run_packet_details_tests() {
         PFL_EXPECT(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "frame");
         PFL_EXPECT(summary_layers.front().title == "Frame 7");
+        PFL_EXPECT(!summary_layers.front().expanded_by_default);
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
+        PFL_EXPECT(!summary_layers[1].expanded_by_default);
         PFL_EXPECT(summary_layers[2].id == "ipv4");
+        PFL_EXPECT(!summary_layers[2].expanded_by_default);
         PFL_EXPECT(summary_layers[3].id == "tcp");
+        PFL_EXPECT(summary_layers[3].expanded_by_default);
         PFL_EXPECT(summary_layers[2].title.find("Internet Protocol Version 4") != std::string::npos);
         PFL_EXPECT(summary_layers[3].title.find("Transmission Control Protocol") != std::string::npos);
         PFL_EXPECT(summary_layers.size() == 4U);
@@ -106,9 +110,13 @@ void run_packet_details_tests() {
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[0].id == "frame");
+        PFL_EXPECT(!summary_layers[0].expanded_by_default);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
+        PFL_EXPECT(!summary_layers[1].expanded_by_default);
         PFL_EXPECT(summary_layers[2].id == "ipv4");
+        PFL_EXPECT(!summary_layers[2].expanded_by_default);
         PFL_EXPECT(summary_layers[3].id == "udp");
+        PFL_EXPECT(summary_layers[3].expanded_by_default);
         PFL_EXPECT(summary_layers[3].title.find("User Datagram Protocol") != std::string::npos);
         PFL_EXPECT(summary_layers.size() == 4U);
     }
@@ -126,7 +134,9 @@ void run_packet_details_tests() {
         });
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "udp");
+        PFL_EXPECT(!summary_layers[summary_layers.size() - 2U].expanded_by_default);
         PFL_EXPECT(summary_layers.back().id == "dns");
+        PFL_EXPECT(summary_layers.back().expanded_by_default);
         PFL_EXPECT(summary_layers.back().title.find("Domain Name System") != std::string::npos);
     }
 
@@ -162,7 +172,9 @@ void run_packet_details_tests() {
         });
         PFL_EXPECT(summary_layers.size() >= 5U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "tcp");
+        PFL_EXPECT(!summary_layers[summary_layers.size() - 2U].expanded_by_default);
         PFL_EXPECT(summary_layers.back().id == "tls");
+        PFL_EXPECT(summary_layers.back().expanded_by_default);
         PFL_EXPECT(summary_layers.back().title.find("Transport Layer Security") != std::string::npos);
     }
 
@@ -334,12 +346,15 @@ void run_packet_details_tests() {
         PFL_EXPECT(warning_layer_it != summary_layers.end());
         PFL_EXPECT(summary_layers.size() >= 2U);
         PFL_EXPECT(summary_layers[0].id == "warnings");
+        PFL_EXPECT(summary_layers[0].expanded_by_default);
         PFL_EXPECT(summary_layers[1].id == "frame");
+        PFL_EXPECT(!summary_layers[1].expanded_by_default);
         const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
             return layer.id == "arp";
         });
         PFL_EXPECT(arp_layer_it != summary_layers.end());
         PFL_EXPECT(arp_layer_it->warning);
+        PFL_EXPECT(arp_layer_it->expanded_by_default);
     }
 
     {

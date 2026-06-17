@@ -159,6 +159,25 @@ void append_layer_if_not_empty(std::vector<PacketSummaryLayer>& layers, PacketSu
     }
 }
 
+void apply_default_summary_layer_expansion(std::vector<PacketSummaryLayer>& layers) {
+    if (layers.empty()) {
+        return;
+    }
+
+    std::optional<std::size_t> last_non_warning_index {};
+    for (std::size_t index = 0; index < layers.size(); ++index) {
+        auto& layer = layers[index];
+        layer.expanded_by_default = layer.warning;
+        if (!layer.warning) {
+            last_non_warning_index = index;
+        }
+    }
+
+    if (last_non_warning_index.has_value()) {
+        layers[*last_non_warning_index].expanded_by_default = true;
+    }
+}
+
 std::string_view trim_ascii(std::string_view text) {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n')) {
         text.remove_prefix(1U);
@@ -750,12 +769,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (details.has_vlan) {
         for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
             const auto& tag = details.vlan_tags[index];
-            std::string vlan_id = "vlan";
-            if (details.vlan_tags.size() > 1U) {
-                vlan_id += "-" + std::to_string(index + 1U);
-            }
             append_layer_if_not_empty(layers, PacketSummaryLayer {
-                .id = std::move(vlan_id),
+                .id = "vlan",
                 .title = "802.1Q Virtual LAN, PRI: " + std::to_string(vlan_priority(tag.tci)) +
                     ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
                     ", ID: " + std::to_string(vlan_identifier(tag.tci)),
@@ -917,6 +932,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *protocol_layer);
     }
 
+    apply_default_summary_layer_expansion(layers);
     return layers;
 }
 

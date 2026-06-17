@@ -6,6 +6,7 @@ Frame {
     id: root
 
     property var packetDetailsModel: null
+    property var summaryExpansionProfiles: ({})
 
     function isStreamItemDetails() {
         return !!root.packetDetailsModel && root.packetDetailsModel.streamItemDetails
@@ -37,7 +38,7 @@ Frame {
         }
 
         const layers = root.packetDetailsModel.summaryLayers
-        return layers && layers.length !== undefined ? layers : []
+        return root.decorateSummaryLayers(layers && layers.length !== undefined ? layers : [])
     }
 
     function headerPrimaryText() {
@@ -70,6 +71,206 @@ Frame {
         }
 
         return root.packetDetailsModel.payloadTabTitle
+    }
+
+    function buildSummaryLayerOccurrences(layers) {
+        const occurrences = {}
+
+        function visit(layerList) {
+            for (let index = 0; index < layerList.length; ++index) {
+                const layer = layerList[index]
+                const layerId = layer && layer["id"] !== undefined && layer["id"] !== null
+                    ? String(layer["id"])
+                    : ""
+                if (layerId.length === 0) {
+                    continue
+                }
+
+                occurrences[layerId] = (occurrences[layerId] || 0) + 1
+                const children = layer && layer["children"] && layer["children"].length !== undefined
+                    ? layer["children"]
+                    : []
+                if (children.length > 0) {
+                    visit(children)
+                }
+            }
+        }
+
+        visit(layers)
+        return occurrences
+    }
+
+    function summaryLayerIdentity(layerId, occurrenceIndex, totalCount) {
+        if (layerId === "warnings") {
+            return "warnings"
+        }
+        if (layerId !== "vlan" && totalCount <= 1) {
+            return layerId
+        }
+        return layerId + "#" + occurrenceIndex
+    }
+
+    function summaryLayerSignature(layers) {
+        const occurrences = root.buildSummaryLayerOccurrences(layers)
+        const nextIndexes = {}
+        const keys = []
+
+        function visit(layerList) {
+            for (let index = 0; index < layerList.length; ++index) {
+                const layer = layerList[index]
+                const layerId = layer && layer["id"] !== undefined && layer["id"] !== null
+                    ? String(layer["id"])
+                    : ""
+                if (layerId.length === 0) {
+                    continue
+                }
+
+                const occurrenceIndex = nextIndexes[layerId] || 0
+                nextIndexes[layerId] = occurrenceIndex + 1
+                const identity = root.summaryLayerIdentity(layerId, occurrenceIndex, occurrences[layerId] || 1)
+                if (identity !== "warnings") {
+                    keys.push(identity)
+                }
+
+                const children = layer && layer["children"] && layer["children"].length !== undefined
+                    ? layer["children"]
+                    : []
+                if (children.length > 0) {
+                    visit(children)
+                }
+            }
+        }
+
+        visit(layers)
+        return keys.join("|")
+    }
+
+    function summaryExpansionProfile(signature) {
+        if (!signature || !root.summaryExpansionProfiles || root.summaryExpansionProfiles[signature] === undefined) {
+            return null
+        }
+
+        return root.summaryExpansionProfiles[signature]
+    }
+
+    function collectExpandedSummaryLayerKeys(layers) {
+        const expandedLayerKeys = {}
+
+        function visit(layerList) {
+            for (let index = 0; index < layerList.length; ++index) {
+                const layer = layerList[index]
+                const layerKey = layer && layer["expansion_key"] !== undefined && layer["expansion_key"] !== null
+                    ? String(layer["expansion_key"])
+                    : ""
+                const expandedByDefault = layer && layer["expanded_by_default"] !== undefined && layer["expanded_by_default"] !== null
+                    ? Boolean(layer["expanded_by_default"])
+                    : true
+
+                if (layerKey.length > 0 && layerKey !== "warnings" && expandedByDefault) {
+                    expandedLayerKeys[layerKey] = true
+                }
+
+                const children = layer && layer["children"] && layer["children"].length !== undefined
+                    ? layer["children"]
+                    : []
+                if (children.length > 0) {
+                    visit(children)
+                }
+            }
+        }
+
+        visit(layers && layers.length !== undefined ? layers : [])
+        return expandedLayerKeys
+    }
+
+    function rememberSummaryExpansion(signature, layerKey, expanded, isWarning, currentLayers) {
+        if (!signature || !layerKey) {
+            return
+        }
+
+        const profiles = Object.assign({}, root.summaryExpansionProfiles || {})
+        let profile = profiles[signature]
+        if (!profile) {
+            profile = {
+                expandedLayerKeys: {},
+                hasExpandedLayerProfile: false,
+                warningExpanded: undefined
+            }
+        }
+
+        if (isWarning) {
+            profile.warningExpanded = expanded
+            if (!profile.hasExpandedLayerProfile) {
+                profile.expandedLayerKeys = root.collectExpandedSummaryLayerKeys(currentLayers)
+            }
+        } else if (expanded) {
+            if (!profile.hasExpandedLayerProfile) {
+                profile.expandedLayerKeys = root.collectExpandedSummaryLayerKeys(currentLayers)
+            }
+            profile.hasExpandedLayerProfile = true
+            profile.expandedLayerKeys[layerKey] = true
+        } else {
+            if (!profile.hasExpandedLayerProfile) {
+                profile.expandedLayerKeys = root.collectExpandedSummaryLayerKeys(currentLayers)
+            }
+            profile.hasExpandedLayerProfile = true
+            delete profile.expandedLayerKeys[layerKey]
+        }
+
+        profiles[signature] = profile
+        root.summaryExpansionProfiles = profiles
+    }
+
+    function decorateSummaryLayers(layers) {
+        const summaryLayers = layers && layers.length !== undefined ? layers : []
+        const signature = root.summaryLayerSignature(summaryLayers)
+        const profile = root.summaryExpansionProfile(signature)
+        const occurrences = root.buildSummaryLayerOccurrences(summaryLayers)
+        const nextIndexes = {}
+
+        function decorate(layerList) {
+            const result = []
+            for (let index = 0; index < layerList.length; ++index) {
+                const layer = layerList[index]
+                const layerId = layer && layer["id"] !== undefined && layer["id"] !== null
+                    ? String(layer["id"])
+                    : ""
+                if (layerId.length === 0) {
+                    continue
+                }
+
+                const occurrenceIndex = nextIndexes[layerId] || 0
+                nextIndexes[layerId] = occurrenceIndex + 1
+                const layerKey = root.summaryLayerIdentity(layerId, occurrenceIndex, occurrences[layerId] || 1)
+                const children = layer && layer["children"] && layer["children"].length !== undefined
+                    ? decorate(layer["children"])
+                    : []
+
+                let expandedByDefault = layer["expanded_by_default"] === undefined || layer["expanded_by_default"] === null
+                    ? true
+                    : Boolean(layer["expanded_by_default"])
+
+                if (profile) {
+                    if (layerKey === "warnings") {
+                        expandedByDefault = profile.warningExpanded === undefined
+                            ? expandedByDefault
+                            : Boolean(profile.warningExpanded)
+                    } else if (profile.hasExpandedLayerProfile) {
+                        expandedByDefault = !!(profile.expandedLayerKeys && profile.expandedLayerKeys[layerKey])
+                    }
+                }
+
+                result.push(Object.assign({}, layer, {
+                    "children": children,
+                    "expanded_by_default": expandedByDefault,
+                    "expansion_key": layerKey,
+                    "summary_signature": signature
+                }))
+            }
+            return result
+        }
+
+        return decorate(summaryLayers)
     }
 
     function warningBlockText(summary) {
@@ -171,6 +372,12 @@ Frame {
     component SummaryLayerCard: Rectangle {
         id: summaryLayerCard
         required property var modelData
+        readonly property string expansionKey: modelData && modelData["expansion_key"] !== undefined && modelData["expansion_key"] !== null
+            ? String(modelData["expansion_key"])
+            : ""
+        readonly property string summarySignature: modelData && modelData["summary_signature"] !== undefined && modelData["summary_signature"] !== null
+            ? String(modelData["summary_signature"])
+            : ""
         readonly property string titleText: modelData && modelData["title"] !== undefined && modelData["title"] !== null
             ? String(modelData["title"])
             : ""
@@ -207,7 +414,16 @@ Frame {
 
                 ToolButton {
                     text: summaryLayerCard.expanded ? "\u25be" : "\u25b8"
-                    onClicked: summaryLayerCard.expanded = !summaryLayerCard.expanded
+                    onClicked: {
+                        summaryLayerCard.expanded = !summaryLayerCard.expanded
+                        root.rememberSummaryExpansion(
+                            summaryLayerCard.summarySignature,
+                            summaryLayerCard.expansionKey,
+                            summaryLayerCard.expanded,
+                            summaryLayerCard.warningState,
+                            root.summaryLayers()
+                        )
+                    }
                     padding: 0
                     implicitWidth: 18
                     implicitHeight: 18

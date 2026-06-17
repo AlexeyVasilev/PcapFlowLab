@@ -117,6 +117,7 @@
     packetDetailsState: "idle",
     packetDetailsErrorText: "",
     packetDetailsTab: "summary",
+    packetSummaryExpansionProfiles: new Map(),
     wiresharkFilterStatusText: "",
     wiresharkFilterStatusKind: "neutral",
     flowSelectionRequestToken: 0,
@@ -2817,6 +2818,164 @@
     return lines.join("\n");
   }
 
+  function buildSummaryLayerOccurrences(layers) {
+    const occurrences = new Map();
+
+    function visit(layerList) {
+      for (const layer of layerList) {
+        const layerId = String(layer?.id || "").trim();
+        if (!layerId) {
+          continue;
+        }
+
+        const nextIndex = occurrences.get(layerId) || 0;
+        occurrences.set(layerId, nextIndex + 1);
+
+        const children = Array.isArray(layer?.children) ? layer.children : [];
+        if (children.length > 0) {
+          visit(children);
+        }
+      }
+    }
+
+    visit(Array.isArray(layers) ? layers : []);
+    return occurrences;
+  }
+
+  function buildSummaryLayerIdentity(layer, index, totalCount) {
+    const layerId = String(layer?.id || "").trim() || "layer";
+    if (layerId === "warnings") {
+      return "warnings";
+    }
+    if (layerId !== "vlan" && totalCount <= 1) {
+      return layerId;
+    }
+    return `${layerId}#${index}`;
+  }
+
+  function buildSummaryLayerSignature(layers) {
+    const occurrences = buildSummaryLayerOccurrences(layers);
+    const nextIndexes = new Map();
+    const signatureKeys = [];
+
+    function visit(layerList) {
+      for (const layer of layerList) {
+        const layerId = String(layer?.id || "").trim();
+        if (!layerId) {
+          continue;
+        }
+
+        const index = nextIndexes.get(layerId) || 0;
+        nextIndexes.set(layerId, index + 1);
+        const identity = buildSummaryLayerIdentity(layer, index, occurrences.get(layerId) || 1);
+        if (identity !== "warnings") {
+          signatureKeys.push(identity);
+        }
+
+        const children = Array.isArray(layer?.children) ? layer.children : [];
+        if (children.length > 0) {
+          visit(children);
+        }
+      }
+    }
+
+    visit(Array.isArray(layers) ? layers : []);
+    return signatureKeys.join("|");
+  }
+
+  function getPacketSummaryExpansionProfile(signature) {
+    return state.packetSummaryExpansionProfiles.get(signature) || null;
+  }
+
+  function collectExpandedPacketSummaryLayerKeys(layers) {
+    const expandedLayerKeys = new Set();
+
+    function visit(layerList) {
+      for (const layer of layerList) {
+        const layerKey = String(layer?.expansion_key || "");
+        if (layerKey && layerKey !== "warnings" && layer?.expanded_by_default !== false) {
+          expandedLayerKeys.add(layerKey);
+        }
+
+        const children = Array.isArray(layer?.children) ? layer.children : [];
+        if (children.length > 0) {
+          visit(children);
+        }
+      }
+    }
+
+    visit(Array.isArray(layers) ? layers : []);
+    return expandedLayerKeys;
+  }
+
+  function rememberPacketSummaryExpansion(signature, layerKey, expanded, isWarning, currentLayers = []) {
+    if (!signature) {
+      return;
+    }
+
+    let profile = state.packetSummaryExpansionProfiles.get(signature);
+    if (!profile) {
+      profile = {
+        expandedLayerKeys: new Set(),
+        hasExpandedLayerProfile: false,
+        warningExpanded: undefined,
+      };
+      state.packetSummaryExpansionProfiles.set(signature, profile);
+    }
+
+    if (isWarning) {
+      profile.warningExpanded = expanded;
+      return;
+    }
+
+    if (!profile.hasExpandedLayerProfile) {
+      profile.expandedLayerKeys = collectExpandedPacketSummaryLayerKeys(currentLayers);
+    }
+
+    profile.hasExpandedLayerProfile = true;
+    if (expanded) {
+      profile.expandedLayerKeys.add(layerKey);
+    } else {
+      profile.expandedLayerKeys.delete(layerKey);
+    }
+  }
+
+  function applyPacketSummaryExpansionProfile(layers, signature) {
+    const occurrences = buildSummaryLayerOccurrences(layers);
+    const nextIndexes = new Map();
+    const profile = getPacketSummaryExpansionProfile(signature);
+
+    function decorate(layerList) {
+      return layerList.map((layer) => {
+        const layerId = String(layer?.id || "").trim();
+        const index = nextIndexes.get(layerId) || 0;
+        nextIndexes.set(layerId, index + 1);
+        const layerKey = buildSummaryLayerIdentity(layer, index, occurrences.get(layerId) || 1);
+        const children = Array.isArray(layer?.children) ? decorate(layer.children) : [];
+
+        let expandedByDefault = layer?.expanded_by_default !== false;
+        if (profile) {
+          if (layerKey === "warnings") {
+            expandedByDefault = profile.warningExpanded !== undefined
+              ? Boolean(profile.warningExpanded)
+              : expandedByDefault;
+          } else if (profile.hasExpandedLayerProfile) {
+            expandedByDefault = profile.expandedLayerKeys.has(layerKey);
+          }
+        }
+
+        return {
+          ...layer,
+          children,
+          expanded_by_default: expandedByDefault,
+          expansion_key: layerKey,
+        };
+      });
+    }
+
+    return decorate(Array.isArray(layers) ? layers : []);
+  }
+
   function renderPacketSummaryField(field) {
     const label = String(field?.label || "").trim();
     const value = String(field?.value || "");
@@ -2840,6 +2999,7 @@
     const fields = Array.isArray(layer?.fields) ? layer.fields : [];
     const children = Array.isArray(layer?.children) ? layer.children : [];
     const markerText = String(layer?.marker_text || "").trim();
+    const expansionKey = String(layer?.expansion_key || "");
     const childHtml = children.length > 0
       ? `
         <div class="packet-summary-children">
@@ -2849,7 +3009,7 @@
       : "";
 
     return `
-      <details class="packet-summary-layer${layer?.warning ? " is-warning" : ""}"${layer?.expanded_by_default === false ? "" : " open"}>
+      <details class="packet-summary-layer${layer?.warning ? " is-warning" : ""}" data-expansion-key="${escapeHtml(expansionKey)}"${layer?.expanded_by_default === false ? "" : " open"}>
         <summary class="packet-summary-layer-header">
           <span class="packet-summary-layer-title">${escapeHtml(String(layer?.title || ""))}</span>
           ${markerText ? `<span class="packet-summary-layer-marker${layer?.warning ? " is-warning" : ""}">${escapeHtml(markerText)}</span>` : ""}
@@ -2867,7 +3027,20 @@
   function renderPacketSummary(container, details, selectedPacket, sourceAvailability) {
     const layers = Array.isArray(details?.summary_layers) ? details.summary_layers : [];
     if (layers.length > 0) {
-      container.innerHTML = `<div class="packet-summary-layers">${layers.map((layer) => renderPacketSummaryLayer(layer)).join("")}</div>`;
+      const signature = buildSummaryLayerSignature(layers);
+      const decoratedLayers = applyPacketSummaryExpansionProfile(layers, signature);
+      container.innerHTML = `<div class="packet-summary-layers" data-summary-signature="${escapeHtml(signature)}">${decoratedLayers.map((layer) => renderPacketSummaryLayer(layer)).join("")}</div>`;
+      for (const detailsElement of container.querySelectorAll(".packet-summary-layer")) {
+        detailsElement.addEventListener("toggle", () => {
+          rememberPacketSummaryExpansion(
+            signature,
+            String(detailsElement.dataset.expansionKey || ""),
+            detailsElement.open,
+            detailsElement.classList.contains("is-warning"),
+            decoratedLayers
+          );
+        });
+      }
       return;
     }
 
