@@ -13,6 +13,8 @@ enum class NetworkAddressFamily : std::uint8_t {
 };
 
 struct EthernetDetails {
+    std::array<std::uint8_t, 6> src_mac {};
+    std::array<std::uint8_t, 6> dst_mac {};
     std::uint16_t ether_type {0};
 };
 
@@ -47,16 +49,24 @@ struct ArpDetails {
 struct IPv4Details {
     std::uint32_t src_addr {0};
     std::uint32_t dst_addr {0};
+    std::uint8_t header_length_bytes {0};
+    std::uint8_t differentiated_services_field {0};
     std::uint8_t protocol {0};
     std::uint8_t ttl {0};
+    std::uint16_t identification {0};
+    std::uint8_t flags {0};
+    std::uint16_t fragment_offset {0};
     std::uint16_t total_length {0};
+    std::uint16_t header_checksum {0};
 };
 
 struct IPv6Details {
     std::array<std::uint8_t, 16> src_addr {};
     std::array<std::uint8_t, 16> dst_addr {};
+    std::uint8_t traffic_class {0};
     std::uint8_t next_header {0};
     std::uint8_t hop_limit {0};
+    std::uint32_t flow_label {0};
     std::uint16_t payload_length {0};
 };
 

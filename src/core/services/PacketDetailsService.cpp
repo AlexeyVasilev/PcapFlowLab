@@ -26,6 +26,8 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
         }
 
         details.has_ethernet = true;
+        std::copy_n(packet_bytes.begin(), 6U, details.ethernet.dst_mac.begin());
+        std::copy_n(packet_bytes.begin() + 6, 6U, details.ethernet.src_mac.begin());
         details.ethernet.ether_type = detail::read_be16(packet_bytes, 12U);
 
         LinkLayerView view {
@@ -222,9 +224,15 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         details.ipv4 = IPv4Details {
             .src_addr = detail::read_be32(packet_bytes, ipv4_offset + 12U),
             .dst_addr = detail::read_be32(packet_bytes, ipv4_offset + 16U),
+            .header_length_bytes = static_cast<std::uint8_t>(ipv4_bounds->header_length),
+            .differentiated_services_field = packet_bytes[ipv4_offset + 1U],
             .protocol = packet_bytes[ipv4_offset + 9U],
             .ttl = packet_bytes[ipv4_offset + 8U],
+            .identification = detail::read_be16(packet_bytes, ipv4_offset + 4U),
+            .flags = static_cast<std::uint8_t>((flags_fragment >> 13U) & 0x7U),
+            .fragment_offset = static_cast<std::uint16_t>(flags_fragment & 0x1FFFU),
             .total_length = ipv4_bounds->total_length,
+            .header_checksum = detail::read_be16(packet_bytes, ipv4_offset + 10U),
         };
 
         if (is_fragmented) {
@@ -300,7 +308,10 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
 
         details.address_family = NetworkAddressFamily::ipv6;
         details.has_ipv6 = true;
+        const auto version_traffic_flow = detail::read_be32(packet_bytes, ipv6_offset);
+        details.ipv6.traffic_class = static_cast<std::uint8_t>((version_traffic_flow >> 20U) & 0xFFU);
         details.ipv6.hop_limit = packet_bytes[ipv6_offset + 7U];
+        details.ipv6.flow_label = version_traffic_flow & 0x000FFFFFU;
         details.ipv6.payload_length = detail::read_be16(packet_bytes, ipv6_offset + 4U);
         for (std::size_t index = 0; index < 16U; ++index) {
             details.ipv6.src_addr[index] = packet_bytes[ipv6_offset + 8U + index];

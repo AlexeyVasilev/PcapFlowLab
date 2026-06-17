@@ -35,6 +35,7 @@ struct PacketSummaryLayer {
 
 struct PacketSummaryOptions {
     bool source_capture_accessible {true};
+    std::optional<std::uint64_t> flow_packet_index {};
     std::optional<std::uint32_t> transport_payload_length {};
     std::optional<std::uint32_t> original_transport_payload_length {};
     std::string protocol_details_text {};

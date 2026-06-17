@@ -78,7 +78,8 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_json(
 );
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
-    std::uint64_t packet_index
+    std::uint64_t packet_index,
+    std::uint64_t flow_packet_index
 );
 char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_export_selected_flow_analysis_sequence_csv_json(

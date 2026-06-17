@@ -43,7 +43,10 @@ public:
     [[nodiscard]] FrontendSelectionResultDto select_flow(std::size_t flow_index);
     [[nodiscard]] FrontendSelectedFlowPacketsResult get_selected_flow_packets(std::size_t offset, std::size_t limit);
     [[nodiscard]] FrontendSelectedFlowStreamResult get_selected_flow_stream(std::size_t max_packets_to_scan, std::size_t limit) const;
-    [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(std::uint64_t packet_index) const;
+    [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(
+        std::uint64_t packet_index,
+        std::uint64_t flow_packet_index = 0U
+    ) const;
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path

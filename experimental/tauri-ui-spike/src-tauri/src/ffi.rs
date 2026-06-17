@@ -98,6 +98,7 @@ extern "C" {
     fn pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         packet_index: u64,
+        flow_packet_index: u64,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_analysis_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -325,9 +326,13 @@ impl CppFrontendSessionAdapter {
         parse_json_owned::<SelectedFlowStreamDto>(json)
     }
 
-    pub fn get_selected_flow_packet_details(&self, packet_index: u64) -> Result<PacketDetailsDto, String> {
+    pub fn get_selected_flow_packet_details(
+        &self,
+        packet_index: u64,
+        flow_packet_index: u64,
+    ) -> Result<PacketDetailsDto, String> {
         let json = unsafe {
-            pfl_frontend_session_adapter_get_selected_flow_packet_details_json(self.handle, packet_index)
+            pfl_frontend_session_adapter_get_selected_flow_packet_details_json(self.handle, packet_index, flow_packet_index)
         };
         parse_json_owned::<PacketDetailsDto>(json)
     }

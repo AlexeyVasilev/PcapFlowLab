@@ -42,10 +42,18 @@ bool is_zero_ipv4(const std::array<std::uint8_t, 4>& address) noexcept {
     });
 }
 
-std::string format_hex16_value(const std::uint16_t value) {
+std::string format_hex_value(const std::uint32_t value, const int width = 0) {
     std::ostringstream builder {};
-    builder << "0x" << std::hex << std::nouppercase << std::setw(4) << std::setfill('0') << value;
+    builder << "0x" << std::hex << std::nouppercase;
+    if (width > 0) {
+        builder << std::setw(width) << std::setfill('0');
+    }
+    builder << value;
     return builder.str();
+}
+
+std::string format_hex16_value(const std::uint16_t value) {
+    return format_hex_value(value, 4);
 }
 
 std::string format_hex_byte_sequence(std::span<const std::uint8_t> bytes, const char separator = ':') {
@@ -60,6 +68,10 @@ std::string format_hex_byte_sequence(std::span<const std::uint8_t> bytes, const 
     }
 
     return builder.str();
+}
+
+std::string format_mac_address(const std::array<std::uint8_t, 6>& address) {
+    return format_hex_byte_sequence(std::span<const std::uint8_t>(address.data(), address.size()));
 }
 
 std::string format_arp_address_field(
@@ -94,6 +106,15 @@ std::string format_protocol_summary_value(const std::uint8_t protocol) {
     default:
         return std::to_string(protocol);
     }
+}
+
+std::string format_protocol_summary_value_with_number(const std::uint8_t protocol) {
+    const auto label = format_protocol_summary_value(protocol);
+    if (label == std::to_string(protocol)) {
+        return label;
+    }
+
+    return label + " (" + std::to_string(protocol) + ")";
 }
 
 std::string format_ether_type_name(const std::uint16_t ether_type) {
@@ -734,15 +755,22 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         .marker_text = "Warning",
     });
 
+    std::vector<PacketSummaryField> frame_fields {};
+    if (options.flow_packet_index.has_value()) {
+        frame_fields.push_back(make_summary_field("Packet index in flow", std::to_string(*options.flow_packet_index)));
+    }
+    frame_fields.push_back(make_summary_field("Packet index in file", std::to_string(details.packet_index)));
+    frame_fields.push_back(make_summary_field("Timestamp", format_packet_timestamp_full(packet)));
+    frame_fields.push_back(make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"));
+    frame_fields.push_back(make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"));
+
     append_layer_if_not_empty(layers, PacketSummaryLayer {
         .id = "frame",
-        .title = "Frame " + std::to_string(details.packet_index),
-        .fields = {
-            make_summary_field("Packet index in file", std::to_string(details.packet_index)),
-            make_summary_field("Timestamp", format_packet_timestamp_full(packet)),
-            make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"),
-            make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"),
-        },
+        .title = options.flow_packet_index.has_value()
+            ? "Frame: Packet " + std::to_string(*options.flow_packet_index) +
+                " in Flow, Packet " + std::to_string(details.packet_index) + " in file"
+            : "Frame: Packet " + std::to_string(details.packet_index) + " in file",
+        .fields = std::move(frame_fields),
     });
 
     std::vector<PacketSummaryField> checksum_fields {};
@@ -757,12 +785,16 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     });
 
     if (details.has_ethernet) {
+        auto ethernet_fields = std::vector<PacketSummaryField> {
+            make_summary_field("Source", format_mac_address(details.ethernet.src_mac)),
+            make_summary_field("Destination", format_mac_address(details.ethernet.dst_mac)),
+            make_summary_field("Type", format_ether_type_value(details.ethernet.ether_type)),
+        };
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ethernet",
-            .title = "Ethernet II",
-            .fields = {
-                make_summary_field("EtherType", format_ether_type_value(details.ethernet.ether_type)),
-            },
+            .title = "Ethernet II, Src: " + format_mac_address(details.ethernet.src_mac) +
+                ", Dst: " + format_mac_address(details.ethernet.dst_mac),
+            .fields = std::move(ethernet_fields),
         });
     }
 
@@ -833,18 +865,28 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (details.has_ipv4) {
         std::vector<PacketSummaryField> ipv4_fields {
             make_summary_field("Version", "4"),
-            make_summary_field("Source", format_ipv4_address(details.ipv4.src_addr)),
-            make_summary_field("Destination", format_ipv4_address(details.ipv4.dst_addr)),
-            make_summary_field("Protocol", format_protocol_summary_value(details.ipv4.protocol)),
-            make_summary_field("TTL", std::to_string(details.ipv4.ttl)),
+            make_summary_field(
+                "Internet Header Length",
+                std::to_string(details.ipv4.header_length_bytes) + " bytes (" +
+                    std::to_string(details.ipv4.header_length_bytes / 4U) + ")"
+            ),
+            make_summary_field("Differentiated Services Field", format_hex_value(details.ipv4.differentiated_services_field, 2)),
             make_summary_field("Total Length", std::to_string(details.ipv4.total_length) + " bytes"),
+            make_summary_field("Identification", format_hex16_value(details.ipv4.identification)),
+            make_summary_field("Flags", format_hex_value(details.ipv4.flags, 1)),
+            make_summary_field("Fragment Offset", std::to_string(details.ipv4.fragment_offset)),
+            make_summary_field("TTL", std::to_string(details.ipv4.ttl)),
+            make_summary_field("Protocol", format_protocol_summary_value_with_number(details.ipv4.protocol)),
+            make_summary_field("Header Checksum", format_hex16_value(details.ipv4.header_checksum)),
+            make_summary_field("Source Address", format_ipv4_address(details.ipv4.src_addr)),
+            make_summary_field("Destination Address", format_ipv4_address(details.ipv4.dst_addr)),
         };
         if (packet.is_ip_fragmented) {
             ipv4_fields.push_back(make_summary_field("Fragmentation", "Packet is fragmented"));
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ipv4",
-            .title = "Internet Protocol Version 4, Src: " +
+            .title = "IPv4, Src: " +
                 format_ipv4_address(details.ipv4.src_addr) +
                 ", Dst: " + format_ipv4_address(details.ipv4.dst_addr),
             .fields = std::move(ipv4_fields),
@@ -852,19 +894,22 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     if (details.has_ipv6) {
+        std::vector<PacketSummaryField> ipv6_fields {
+            make_summary_field("Version", "6"),
+            make_summary_field("Traffic Class", format_hex_value(details.ipv6.traffic_class, 2)),
+            make_summary_field("Flow Label", format_hex_value(details.ipv6.flow_label)),
+            make_summary_field("Payload Length", std::to_string(details.ipv6.payload_length) + " bytes"),
+            make_summary_field("Next Header", format_protocol_summary_value_with_number(details.ipv6.next_header)),
+            make_summary_field("Hop Limit", std::to_string(details.ipv6.hop_limit)),
+            make_summary_field("Source Address", format_ipv6_address(details.ipv6.src_addr)),
+            make_summary_field("Destination Address", format_ipv6_address(details.ipv6.dst_addr)),
+        };
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ipv6",
-            .title = "Internet Protocol Version 6, Src: " +
+            .title = "IPv6, Src: " +
                 format_ipv6_address(details.ipv6.src_addr) +
                 ", Dst: " + format_ipv6_address(details.ipv6.dst_addr),
-            .fields = {
-                make_summary_field("Version", "6"),
-                make_summary_field("Source", format_ipv6_address(details.ipv6.src_addr)),
-                make_summary_field("Destination", format_ipv6_address(details.ipv6.dst_addr)),
-                make_summary_field("Next Header", format_protocol_summary_value(details.ipv6.next_header)),
-                make_summary_field("Hop Limit", std::to_string(details.ipv6.hop_limit)),
-                make_summary_field("Payload Length", std::to_string(details.ipv6.payload_length) + " bytes"),
-            },
+            .fields = std::move(ipv6_fields),
         });
     }
 

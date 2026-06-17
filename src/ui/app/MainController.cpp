@@ -4719,6 +4719,13 @@ void MainController::reloadSelectedPacketDetails() {
     packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
         session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
+            .flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+                const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+                if (it == current_flow_packet_numbers_.end()) {
+                    return std::nullopt;
+                }
+                return it->second;
+            }(),
             .transport_payload_length = payload_lengths.real_payload_length,
             .original_transport_payload_length = payload_lengths.original_payload_length,
             .protocol_details_text = protocolText.toStdString(),

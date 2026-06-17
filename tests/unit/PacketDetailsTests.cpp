@@ -28,6 +28,26 @@ PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_ind
     return *packet;
 }
 
+const session_detail::PacketSummaryLayer* find_summary_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    const auto it = std::find_if(layers.begin(), layers.end(), [&](const session_detail::PacketSummaryLayer& layer) {
+        return layer.id == id;
+    });
+    return it != layers.end() ? &(*it) : nullptr;
+}
+
+const session_detail::PacketSummaryField* find_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto it = std::find_if(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+    return it != layer.fields.end() ? &(*it) : nullptr;
+}
+
 }  // namespace
 
 void run_packet_details_tests() {
@@ -46,10 +66,14 @@ void run_packet_details_tests() {
         const auto details = service.decode(tcp_packet, packet_ref);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->ethernet.dst_mac == (std::array<std::uint8_t, 6> {0x00U, 0x11U, 0x22U, 0x33U, 0x44U, 0x55U}));
+        PFL_EXPECT(details->ethernet.src_mac == (std::array<std::uint8_t, 6> {0x66U, 0x77U, 0x88U, 0x99U, 0xaaU, 0xbbU}));
         PFL_EXPECT(details->ethernet.ether_type == 0x0800);
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->ipv4.src_addr == ipv4(10, 0, 0, 1));
         PFL_EXPECT(details->ipv4.dst_addr == ipv4(10, 0, 0, 2));
+        PFL_EXPECT(details->ipv4.header_length_bytes == 20U);
+        PFL_EXPECT(details->ipv4.differentiated_services_field == 0U);
         PFL_EXPECT(details->ipv4.protocol == 6);
         PFL_EXPECT(details->has_tcp);
         PFL_EXPECT(details->tcp.src_port == 12345);
@@ -57,13 +81,14 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->tcp.flags == 0x10);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .flow_packet_index = 4U,
             .transport_payload_length = 0U,
             .original_transport_payload_length = 0U,
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         PFL_EXPECT(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "frame");
-        PFL_EXPECT(summary_layers.front().title == "Frame 7");
+        PFL_EXPECT(summary_layers.front().title == "Frame: Packet 4 in Flow, Packet 7 in file");
         PFL_EXPECT(!summary_layers.front().expanded_by_default);
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
@@ -72,17 +97,72 @@ void run_packet_details_tests() {
         PFL_EXPECT(!summary_layers[2].expanded_by_default);
         PFL_EXPECT(summary_layers[3].id == "tcp");
         PFL_EXPECT(summary_layers[3].expanded_by_default);
-        PFL_EXPECT(summary_layers[2].title.find("Internet Protocol Version 4") != std::string::npos);
+        PFL_EXPECT(summary_layers[1].title == "Ethernet II, Src: 66:77:88:99:aa:bb, Dst: 00:11:22:33:44:55");
+        PFL_EXPECT(summary_layers[2].title == "IPv4, Src: 10.0.0.1, Dst: 10.0.0.2");
         PFL_EXPECT(summary_layers[3].title.find("Transmission Control Protocol") != std::string::npos);
         PFL_EXPECT(summary_layers.size() == 4U);
-        const auto tcp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
-            return layer.id == "tcp";
-        });
-        PFL_EXPECT(tcp_layer_it != summary_layers.end());
-        const auto source_port_it = std::find_if(tcp_layer_it->fields.begin(), tcp_layer_it->fields.end(), [](const session_detail::PacketSummaryField& field) {
-            return field.label == "Source Port" && field.value == "12345";
-        });
-        PFL_EXPECT(source_port_it != tcp_layer_it->fields.end());
+        const auto* frame_layer = find_summary_layer(summary_layers, "frame");
+        const auto* ethernet_layer = find_summary_layer(summary_layers, "ethernet");
+        const auto* ipv4_layer = find_summary_layer(summary_layers, "ipv4");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(frame_layer != nullptr);
+        PFL_EXPECT(ethernet_layer != nullptr);
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* frame_in_flow_field = find_summary_field(*frame_layer, "Packet index in flow");
+        const auto* frame_in_file_field = find_summary_field(*frame_layer, "Packet index in file");
+        const auto* frame_captured_length_field = find_summary_field(*frame_layer, "Captured Length");
+        const auto* frame_original_length_field = find_summary_field(*frame_layer, "Original Length");
+        const auto* ethernet_source_field = find_summary_field(*ethernet_layer, "Source");
+        const auto* ethernet_destination_field = find_summary_field(*ethernet_layer, "Destination");
+        const auto* ethernet_type_field = find_summary_field(*ethernet_layer, "Type");
+        const auto* ipv4_ihl_field = find_summary_field(*ipv4_layer, "Internet Header Length");
+        const auto* ipv4_ds_field = find_summary_field(*ipv4_layer, "Differentiated Services Field");
+        const auto* ipv4_total_length_field = find_summary_field(*ipv4_layer, "Total Length");
+        const auto* ipv4_identification_field = find_summary_field(*ipv4_layer, "Identification");
+        const auto* ipv4_flags_field = find_summary_field(*ipv4_layer, "Flags");
+        const auto* ipv4_fragment_offset_field = find_summary_field(*ipv4_layer, "Fragment Offset");
+        const auto* ipv4_protocol_field = find_summary_field(*ipv4_layer, "Protocol");
+        const auto* ipv4_checksum_field = find_summary_field(*ipv4_layer, "Header Checksum");
+        const auto* ipv4_src_field = find_summary_field(*ipv4_layer, "Source Address");
+        const auto* ipv4_dst_field = find_summary_field(*ipv4_layer, "Destination Address");
+        const auto* tcp_source_port_field = find_summary_field(*tcp_layer, "Source Port");
+        PFL_EXPECT(frame_in_flow_field != nullptr);
+        PFL_EXPECT(frame_in_file_field != nullptr);
+        PFL_EXPECT(frame_captured_length_field != nullptr);
+        PFL_EXPECT(frame_original_length_field != nullptr);
+        PFL_EXPECT(ethernet_source_field != nullptr);
+        PFL_EXPECT(ethernet_destination_field != nullptr);
+        PFL_EXPECT(ethernet_type_field != nullptr);
+        PFL_EXPECT(ipv4_ihl_field != nullptr);
+        PFL_EXPECT(ipv4_ds_field != nullptr);
+        PFL_EXPECT(ipv4_total_length_field != nullptr);
+        PFL_EXPECT(ipv4_identification_field != nullptr);
+        PFL_EXPECT(ipv4_flags_field != nullptr);
+        PFL_EXPECT(ipv4_fragment_offset_field != nullptr);
+        PFL_EXPECT(ipv4_protocol_field != nullptr);
+        PFL_EXPECT(ipv4_checksum_field != nullptr);
+        PFL_EXPECT(ipv4_src_field != nullptr);
+        PFL_EXPECT(ipv4_dst_field != nullptr);
+        PFL_EXPECT(tcp_source_port_field != nullptr);
+        PFL_EXPECT(frame_in_flow_field->value == "4");
+        PFL_EXPECT(frame_in_file_field->value == "7");
+        PFL_EXPECT(frame_captured_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
+        PFL_EXPECT(frame_original_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
+        PFL_EXPECT(ethernet_source_field->value == "66:77:88:99:aa:bb");
+        PFL_EXPECT(ethernet_destination_field->value == "00:11:22:33:44:55");
+        PFL_EXPECT(ethernet_type_field->value == "IPv4 (0x0800)");
+        PFL_EXPECT(ipv4_ihl_field->value == "20 bytes (5)");
+        PFL_EXPECT(ipv4_ds_field->value == "0x00");
+        PFL_EXPECT(ipv4_total_length_field->value == std::to_string(tcp_packet.size() - 14U) + " bytes");
+        PFL_EXPECT(ipv4_identification_field->value == "0x0000");
+        PFL_EXPECT(ipv4_flags_field->value == "0x0");
+        PFL_EXPECT(ipv4_fragment_offset_field->value == "0");
+        PFL_EXPECT(ipv4_protocol_field->value == "TCP (6)");
+        PFL_EXPECT(ipv4_checksum_field->value == "0x0000");
+        PFL_EXPECT(ipv4_src_field->value == "10.0.0.1");
+        PFL_EXPECT(ipv4_dst_field->value == "10.0.0.2");
+        PFL_EXPECT(tcp_source_port_field->value == "12345");
     }
 
     {
@@ -110,6 +190,7 @@ void run_packet_details_tests() {
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[0].id == "frame");
+        PFL_EXPECT(summary_layers[0].title == "Frame: Packet 8 in file");
         PFL_EXPECT(!summary_layers[0].expanded_by_default);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
         PFL_EXPECT(!summary_layers[1].expanded_by_default);
@@ -411,12 +492,29 @@ void run_packet_details_tests() {
         const auto details = service.decode(icmpv6_packet, packet_ref);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_icmpv6);
+        PFL_EXPECT(details->ipv6.traffic_class == 0U);
+        PFL_EXPECT(details->ipv6.flow_label == 0U);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].id == "ipv6");
         PFL_EXPECT(summary_layers.back().id == "icmpv6");
+        PFL_EXPECT(summary_layers[summary_layers.size() - 2U].title.find("IPv6, Src:") != std::string::npos);
+        const auto* ipv6_layer = find_summary_layer(summary_layers, "ipv6");
+        PFL_EXPECT(ipv6_layer != nullptr);
+        const auto* ipv6_traffic_class_field = find_summary_field(*ipv6_layer, "Traffic Class");
+        const auto* ipv6_flow_label_field = find_summary_field(*ipv6_layer, "Flow Label");
+        const auto* ipv6_payload_length_field = find_summary_field(*ipv6_layer, "Payload Length");
+        const auto* ipv6_next_header_field = find_summary_field(*ipv6_layer, "Next Header");
+        PFL_EXPECT(ipv6_traffic_class_field != nullptr);
+        PFL_EXPECT(ipv6_flow_label_field != nullptr);
+        PFL_EXPECT(ipv6_payload_length_field != nullptr);
+        PFL_EXPECT(ipv6_next_header_field != nullptr);
+        PFL_EXPECT(ipv6_traffic_class_field->value == "0x00");
+        PFL_EXPECT(ipv6_flow_label_field->value == "0x0");
+        PFL_EXPECT(ipv6_payload_length_field->value == "16 bytes");
+        PFL_EXPECT(ipv6_next_header_field->value == "ICMPv6 (58)");
         PFL_EXPECT(summary_layers.back().title.find("Internet Control Message Protocol v6") != std::string::npos);
     }
 

@@ -2409,7 +2409,10 @@ FrontendAnalysisSequenceExportResultDto FrontendSessionAdapter::export_selected_
     return result;
 }
 
-FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_details(const std::uint64_t packet_index) const {
+FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_details(
+    const std::uint64_t packet_index,
+    const std::uint64_t flow_packet_index
+) const {
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
@@ -2500,6 +2503,9 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     }
     result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
         .source_capture_accessible = true,
+        .flow_packet_index = flow_packet_index != 0U
+            ? std::optional<std::uint64_t> {flow_packet_index}
+            : std::nullopt,
         .transport_payload_length = packet.payload_length,
         .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
         .protocol_details_text = result.protocol_details_text,
