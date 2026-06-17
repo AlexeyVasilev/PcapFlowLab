@@ -554,6 +554,10 @@
     return "";
   }
 
+  function isPacketCaptureTruncated(packet) {
+    return Number(packet?.captured_length || 0) < Number(packet?.original_length || 0);
+  }
+
   function loadedPacketsHaveMarkers() {
     return state.packets.some((packet) => packetMarkerText(packet).length > 0);
   }
@@ -2505,6 +2509,7 @@
     elements.packetTableBody.innerHTML = state.packets
       .map((packet) => {
         const selected = state.selectedPacketIndex === packet.packet_index ? " selected" : "";
+        const warning = isPacketCaptureTruncated(packet) ? " is-warning" : "";
         const markerText = packetMarkerText(packet);
         const markerBadgeClass = packet.suspected_tcp_retransmission
           ? "packet-marker-badge is-retransmission"
@@ -2513,7 +2518,7 @@
           ? `<span class="${markerBadgeClass}" title="${escapeHtml(markerText)}">${escapeHtml(markerText)}</span>`
           : "";
         return `
-          <tr class="packet-row${selected}" data-packet-index="${packet.packet_index}">
+          <tr class="packet-row${selected}${warning}" data-packet-index="${packet.packet_index}">
             <td>${packet.row_number}</td>
             <td class="packet-direction-cell">${renderPacketDirectionChip(packet.direction_text)}</td>
             <td>${escapeHtml(packet.timestamp_text)}</td>
@@ -2643,7 +2648,7 @@
             </div>
             <div class="stream-card-summary-row">
               <p class="stream-card-summary">${escapeHtml(summaryText)}</p>
-              ${item.has_constricted_contribution ? '<span class="stream-card-badge">Constricted</span>' : ""}
+              ${item.has_constricted_contribution ? '<span class="stream-card-badge is-warning">Constricted</span>' : ""}
             </div>
           </article>
         </div>
@@ -2756,6 +2761,7 @@
     elements.streamDetailsHeaderSecondary.textContent = item.header_secondary_text || `${formatNumber(item.byte_count)} bytes`;
     elements.streamDetailsHeaderBadge.textContent = item.badge_text || "";
     elements.streamDetailsHeaderBadge.classList.toggle("is-hidden", String(item.badge_text || "").trim().length === 0);
+    elements.streamDetailsHeaderBadge.classList.toggle("is-warning", String(item.badge_text || "").trim() === "Constricted");
     elements.streamDetailsPayloadTabButton.textContent = item.payload_tab_title || "Payload";
     elements.streamDetailsSummaryText.textContent = item.summary_text || "No summary details are available for this stream item.";
 

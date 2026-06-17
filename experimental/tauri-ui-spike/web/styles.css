@@ -1129,6 +1129,18 @@ select:disabled {
   background: var(--selected);
 }
 
+.data-table tbody tr.packet-row.is-warning {
+  background: #fff8e7;
+}
+
+.data-table tbody tr.packet-row.is-warning:hover {
+  background: #fff1d2;
+}
+
+.data-table tbody tr.packet-row.is-warning.selected {
+  background: #ffe7ba;
+}
+
 .packet-direction-cell,
 .packet-flags-cell,
 .packet-marker-cell {
@@ -2060,6 +2072,12 @@ select:disabled {
   font-weight: 700;
 }
 
+.stream-details-header-badge.is-warning {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
 .is-hidden {
   display: none !important;
 }
@@ -2203,6 +2221,12 @@ select:disabled {
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
+}
+
+.stream-card-badge.is-warning {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
 }
 
 .byte-preview-pre {

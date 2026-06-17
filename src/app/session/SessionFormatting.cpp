@@ -688,17 +688,6 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     std::vector<PacketSummaryLayer> layers {};
     layers.reserve(8U);
 
-    append_layer_if_not_empty(layers, PacketSummaryLayer {
-        .id = "frame",
-        .title = "Frame " + std::to_string(details.packet_index),
-        .fields = {
-            make_summary_field("Packet index in file", std::to_string(details.packet_index)),
-            make_summary_field("Timestamp", format_packet_timestamp_full(packet)),
-            make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"),
-            make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"),
-        },
-    });
-
     std::vector<PacketSummaryField> warning_fields {};
     if (packet.is_ip_fragmented) {
         warning_fields.push_back(make_summary_field({}, "Packet is IP-fragmented"));
@@ -724,6 +713,17 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         .fields = std::move(warning_fields),
         .warning = true,
         .marker_text = "Warning",
+    });
+
+    append_layer_if_not_empty(layers, PacketSummaryLayer {
+        .id = "frame",
+        .title = "Frame " + std::to_string(details.packet_index),
+        .fields = {
+            make_summary_field("Packet index in file", std::to_string(details.packet_index)),
+            make_summary_field("Timestamp", format_packet_timestamp_full(packet)),
+            make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"),
+            make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"),
+        },
     });
 
     std::vector<PacketSummaryField> checksum_fields {};

@@ -332,6 +332,9 @@ void run_packet_details_tests() {
             return layer.id == "warnings";
         });
         PFL_EXPECT(warning_layer_it != summary_layers.end());
+        PFL_EXPECT(summary_layers.size() >= 2U);
+        PFL_EXPECT(summary_layers[0].id == "warnings");
+        PFL_EXPECT(summary_layers[1].id == "frame");
         const auto arp_layer_it = std::find_if(summary_layers.begin(), summary_layers.end(), [](const session_detail::PacketSummaryLayer& layer) {
             return layer.id == "arp";
         });
