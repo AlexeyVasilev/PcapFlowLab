@@ -73,15 +73,21 @@ struct IPv6Details {
 struct TcpDetails {
     std::uint16_t src_port {0};
     std::uint16_t dst_port {0};
-    std::uint8_t flags {0};
     std::uint32_t seq_number {0};
     std::uint32_t ack_number {0};
+    std::uint8_t header_length_bytes {0};
+    std::uint8_t flags {0};
+    std::uint16_t window {0};
+    std::uint16_t checksum {0};
+    std::uint16_t urgent_pointer {0};
+    std::vector<std::uint8_t> options_bytes {};
 };
 
 struct UdpDetails {
     std::uint16_t src_port {0};
     std::uint16_t dst_port {0};
     std::uint16_t length {0};
+    std::uint16_t checksum {0};
 };
 
 struct IcmpDetails {

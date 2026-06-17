@@ -257,10 +257,20 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             details.tcp = TcpDetails {
                 .src_port = detail::read_be16(packet_bytes, transport_offset),
                 .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
-                .flags = packet_bytes[transport_offset + 13U],
                 .seq_number = detail::read_be32(packet_bytes, transport_offset + 4U),
                 .ack_number = detail::read_be32(packet_bytes, transport_offset + 8U),
+                .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
+                .flags = packet_bytes[transport_offset + 13U],
+                .window = detail::read_be16(packet_bytes, transport_offset + 14U),
+                .checksum = detail::read_be16(packet_bytes, transport_offset + 16U),
+                .urgent_pointer = detail::read_be16(packet_bytes, transport_offset + 18U),
             };
+            if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
+                details.tcp.options_bytes.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + detail::kTcpMinimumHeaderSize),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
+                );
+            }
             return details;
         }
 
@@ -275,6 +285,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
                 .src_port = detail::read_be16(packet_bytes, transport_offset),
                 .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
                 .length = udp_payload->datagram_length,
+                .checksum = detail::read_be16(packet_bytes, transport_offset + 6U),
             };
             return details;
         }
@@ -347,10 +358,20 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             details.tcp = TcpDetails {
                 .src_port = detail::read_be16(packet_bytes, payload->payload_offset),
                 .dst_port = detail::read_be16(packet_bytes, payload->payload_offset + 2U),
-                .flags = packet_bytes[payload->payload_offset + 13U],
                 .seq_number = detail::read_be32(packet_bytes, payload->payload_offset + 4U),
                 .ack_number = detail::read_be32(packet_bytes, payload->payload_offset + 8U),
+                .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
+                .flags = packet_bytes[payload->payload_offset + 13U],
+                .window = detail::read_be16(packet_bytes, payload->payload_offset + 14U),
+                .checksum = detail::read_be16(packet_bytes, payload->payload_offset + 16U),
+                .urgent_pointer = detail::read_be16(packet_bytes, payload->payload_offset + 18U),
             };
+            if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
+                details.tcp.options_bytes.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + detail::kTcpMinimumHeaderSize),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + tcp_header_length)
+                );
+            }
             return details;
         }
 
@@ -369,6 +390,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
                 .src_port = detail::read_be16(packet_bytes, payload->payload_offset),
                 .dst_port = detail::read_be16(packet_bytes, payload->payload_offset + 2U),
                 .length = udp_payload->datagram_length,
+                .checksum = detail::read_be16(packet_bytes, payload->payload_offset + 6U),
             };
             return details;
         }

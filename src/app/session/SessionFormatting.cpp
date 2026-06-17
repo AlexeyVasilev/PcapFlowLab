@@ -117,6 +117,20 @@ std::string format_protocol_summary_value_with_number(const std::uint8_t protoco
     return label + " (" + std::to_string(protocol) + ")";
 }
 
+std::string format_hex_byte_list(std::span<const std::uint8_t> bytes) {
+    std::ostringstream builder {};
+    builder << std::hex << std::nouppercase << std::setfill('0');
+
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+        if (index != 0U) {
+            builder << ", ";
+        }
+        builder << "0x" << std::setw(2) << static_cast<unsigned>(bytes[index]);
+    }
+
+    return builder.str();
+}
+
 std::string format_ether_type_name(const std::uint16_t ether_type) {
     switch (ether_type) {
     case kEtherTypeArp:
@@ -917,10 +931,25 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         std::vector<PacketSummaryField> tcp_fields {
             make_summary_field("Source Port", std::to_string(details.tcp.src_port)),
             make_summary_field("Destination Port", std::to_string(details.tcp.dst_port)),
+            make_summary_field("Sequence Number (raw)", std::to_string(details.tcp.seq_number)),
+            make_summary_field("Acknowledgment Number (raw)", std::to_string(details.tcp.ack_number)),
+            make_summary_field(
+                "Header Length",
+                std::to_string(details.tcp.header_length_bytes) + " bytes (" +
+                    std::to_string(details.tcp.header_length_bytes / 4U) + ")"
+            ),
             make_summary_field("Flags", format_tcp_flags_text(details.tcp.flags)),
-            make_summary_field("Sequence Number", std::to_string(details.tcp.seq_number)),
-            make_summary_field("Acknowledgment Number", std::to_string(details.tcp.ack_number)),
+            make_summary_field("Window", std::to_string(details.tcp.window)),
+            make_summary_field("Checksum", format_hex16_value(details.tcp.checksum)),
+            make_summary_field("Urgent Pointer", std::to_string(details.tcp.urgent_pointer)),
         };
+        if (!details.tcp.options_bytes.empty()) {
+            tcp_fields.push_back(make_summary_field(
+                "Options",
+                std::to_string(details.tcp.options_bytes.size()) + " bytes: " +
+                    format_hex_byte_list(details.tcp.options_bytes)
+            ));
+        }
         if (options.original_transport_payload_length.has_value()) {
             if (options.transport_payload_length.has_value() &&
                 *options.transport_payload_length != *options.original_transport_payload_length) {
@@ -934,13 +963,9 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "tcp",
-            .title = "Transmission Control Protocol, Src Port: " +
+            .title = "TCP, Src Port: " +
                 std::to_string(details.tcp.src_port) +
-                ", Dst Port: " + std::to_string(details.tcp.dst_port) +
-                ", Seq: " + std::to_string(details.tcp.seq_number) +
-                ", Ack: " + std::to_string(details.tcp.ack_number) +
-                ", Len: " + std::to_string(options.original_transport_payload_length.value_or(
-                    options.transport_payload_length.value_or(0U))),
+                ", Dst Port: " + std::to_string(details.tcp.dst_port),
             .fields = std::move(tcp_fields),
         });
     }
@@ -949,7 +974,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         std::vector<PacketSummaryField> udp_fields {
             make_summary_field("Source Port", std::to_string(details.udp.src_port)),
             make_summary_field("Destination Port", std::to_string(details.udp.dst_port)),
-            make_summary_field("Length", std::to_string(details.udp.length)),
+            make_summary_field("Length", std::to_string(details.udp.length) + " bytes"),
+            make_summary_field("Checksum", format_hex16_value(details.udp.checksum)),
         };
         if (options.original_transport_payload_length.has_value()) {
             if (options.transport_payload_length.has_value() &&
@@ -964,10 +990,9 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "udp",
-            .title = "User Datagram Protocol, Src Port: " +
+            .title = "UDP, Src Port: " +
                 std::to_string(details.udp.src_port) +
-                ", Dst Port: " + std::to_string(details.udp.dst_port) +
-                ", Len: " + std::to_string(details.udp.length),
+                ", Dst Port: " + std::to_string(details.udp.dst_port),
             .fields = std::move(udp_fields),
         });
     }

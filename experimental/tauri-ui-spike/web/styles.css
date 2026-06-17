@@ -1874,7 +1874,7 @@ select:disabled {
   list-style: none;
   color: var(--text-primary);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .packet-summary-layer-header::-webkit-details-marker {
@@ -1948,7 +1948,7 @@ select:disabled {
 .packet-summary-field-value {
   color: var(--text-primary);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   white-space: pre-wrap;
   word-break: break-word;
 }

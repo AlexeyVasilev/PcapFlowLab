@@ -480,6 +480,8 @@ Current direction note:
 - the Frame layer should show packet index in file and, when selected-flow context is available, packet index within the selected flow;
 - the Ethernet layer should expose source/destination MAC addresses and decoded EtherType text;
 - the IPv4 and IPv6 layers should expose conservative decoded header fields from selected-packet/on-demand parsing rather than open-time import work;
+- the TCP and UDP layers should expose conservative transport header fields from selected-packet/on-demand parsing, including header checksums;
+- the TCP layer should expose raw sequence/acknowledgment numbers, header length, window, urgent pointer, and raw options bytes when options are present;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
 - the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.

@@ -48,6 +48,42 @@ const session_detail::PacketSummaryField* find_summary_field(
     return it != layer.fields.end() ? &(*it) : nullptr;
 }
 
+std::vector<std::uint8_t> make_ethernet_ipv4_tcp_syn_with_options_packet(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port
+) {
+    auto bytes = make_ethernet_ipv4_tcp_packet(src_addr, dst_addr, src_port, dst_port);
+    const std::array<std::uint8_t, 12> options {
+        0x02U, 0x04U, 0x05U, 0xb4U,
+        0x01U, 0x01U, 0x04U, 0x02U,
+        0x01U, 0x03U, 0x03U, 0x07U
+    };
+
+    auto write_be16 = [](std::vector<std::uint8_t>& target, const std::size_t offset, const std::uint16_t value) {
+        target[offset] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+        target[offset + 1U] = static_cast<std::uint8_t>(value & 0xFFU);
+    };
+    auto write_be32 = [](std::vector<std::uint8_t>& target, const std::size_t offset, const std::uint32_t value) {
+        target[offset] = static_cast<std::uint8_t>((value >> 24U) & 0xFFU);
+        target[offset + 1U] = static_cast<std::uint8_t>((value >> 16U) & 0xFFU);
+        target[offset + 2U] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
+        target[offset + 3U] = static_cast<std::uint8_t>(value & 0xFFU);
+    };
+
+    bytes.insert(bytes.end(), options.begin(), options.end());
+    write_be16(bytes, 16U, 52U);
+    write_be32(bytes, 38U, 1455851779U);
+    write_be32(bytes, 42U, 0U);
+    bytes[46] = 0x80U;
+    bytes[47] = 0x02U;
+    write_be16(bytes, 48U, 62420U);
+    write_be16(bytes, 50U, 0x1d02U);
+    write_be16(bytes, 52U, 0U);
+    return bytes;
+}
+
 }  // namespace
 
 void run_packet_details_tests() {
@@ -78,7 +114,12 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->has_tcp);
         PFL_EXPECT(details->tcp.src_port == 12345);
         PFL_EXPECT(details->tcp.dst_port == 443);
+        PFL_EXPECT(details->tcp.header_length_bytes == 20U);
         PFL_EXPECT(details->tcp.flags == 0x10);
+        PFL_EXPECT(details->tcp.window == 0U);
+        PFL_EXPECT(details->tcp.checksum == 0U);
+        PFL_EXPECT(details->tcp.urgent_pointer == 0U);
+        PFL_EXPECT(details->tcp.options_bytes.empty());
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .flow_packet_index = 4U,
@@ -99,7 +140,10 @@ void run_packet_details_tests() {
         PFL_EXPECT(summary_layers[3].expanded_by_default);
         PFL_EXPECT(summary_layers[1].title == "Ethernet II, Src: 66:77:88:99:aa:bb, Dst: 00:11:22:33:44:55");
         PFL_EXPECT(summary_layers[2].title == "IPv4, Src: 10.0.0.1, Dst: 10.0.0.2");
-        PFL_EXPECT(summary_layers[3].title.find("Transmission Control Protocol") != std::string::npos);
+        PFL_EXPECT(summary_layers[3].title == "TCP, Src Port: 12345, Dst Port: 443");
+        PFL_EXPECT(summary_layers[3].title.find("Seq:") == std::string::npos);
+        PFL_EXPECT(summary_layers[3].title.find("Ack:") == std::string::npos);
+        PFL_EXPECT(summary_layers[3].title.find("Len:") == std::string::npos);
         PFL_EXPECT(summary_layers.size() == 4U);
         const auto* frame_layer = find_summary_layer(summary_layers, "frame");
         const auto* ethernet_layer = find_summary_layer(summary_layers, "ethernet");
@@ -127,6 +171,15 @@ void run_packet_details_tests() {
         const auto* ipv4_src_field = find_summary_field(*ipv4_layer, "Source Address");
         const auto* ipv4_dst_field = find_summary_field(*ipv4_layer, "Destination Address");
         const auto* tcp_source_port_field = find_summary_field(*tcp_layer, "Source Port");
+        const auto* tcp_destination_port_field = find_summary_field(*tcp_layer, "Destination Port");
+        const auto* tcp_sequence_field = find_summary_field(*tcp_layer, "Sequence Number (raw)");
+        const auto* tcp_acknowledgment_field = find_summary_field(*tcp_layer, "Acknowledgment Number (raw)");
+        const auto* tcp_header_length_field = find_summary_field(*tcp_layer, "Header Length");
+        const auto* tcp_flags_field = find_summary_field(*tcp_layer, "Flags");
+        const auto* tcp_window_field = find_summary_field(*tcp_layer, "Window");
+        const auto* tcp_checksum_field = find_summary_field(*tcp_layer, "Checksum");
+        const auto* tcp_urgent_pointer_field = find_summary_field(*tcp_layer, "Urgent Pointer");
+        const auto* tcp_options_field = find_summary_field(*tcp_layer, "Options");
         PFL_EXPECT(frame_in_flow_field != nullptr);
         PFL_EXPECT(frame_in_file_field != nullptr);
         PFL_EXPECT(frame_captured_length_field != nullptr);
@@ -145,6 +198,15 @@ void run_packet_details_tests() {
         PFL_EXPECT(ipv4_src_field != nullptr);
         PFL_EXPECT(ipv4_dst_field != nullptr);
         PFL_EXPECT(tcp_source_port_field != nullptr);
+        PFL_EXPECT(tcp_destination_port_field != nullptr);
+        PFL_EXPECT(tcp_sequence_field != nullptr);
+        PFL_EXPECT(tcp_acknowledgment_field != nullptr);
+        PFL_EXPECT(tcp_header_length_field != nullptr);
+        PFL_EXPECT(tcp_flags_field != nullptr);
+        PFL_EXPECT(tcp_window_field != nullptr);
+        PFL_EXPECT(tcp_checksum_field != nullptr);
+        PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
+        PFL_EXPECT(tcp_options_field == nullptr);
         PFL_EXPECT(frame_in_flow_field->value == "4");
         PFL_EXPECT(frame_in_file_field->value == "7");
         PFL_EXPECT(frame_captured_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
@@ -163,6 +225,14 @@ void run_packet_details_tests() {
         PFL_EXPECT(ipv4_src_field->value == "10.0.0.1");
         PFL_EXPECT(ipv4_dst_field->value == "10.0.0.2");
         PFL_EXPECT(tcp_source_port_field->value == "12345");
+        PFL_EXPECT(tcp_destination_port_field->value == "443");
+        PFL_EXPECT(tcp_sequence_field->value == "0");
+        PFL_EXPECT(tcp_acknowledgment_field->value == "0");
+        PFL_EXPECT(tcp_header_length_field->value == "20 bytes (5)");
+        PFL_EXPECT(tcp_flags_field->value == "ACK");
+        PFL_EXPECT(tcp_window_field->value == "0");
+        PFL_EXPECT(tcp_checksum_field->value == "0x0000");
+        PFL_EXPECT(tcp_urgent_pointer_field->value == "0");
     }
 
     {
@@ -182,6 +252,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->udp.src_port == 5353);
         PFL_EXPECT(details->udp.dst_port == 53);
         PFL_EXPECT(details->udp.length == 8);
+        PFL_EXPECT(details->udp.checksum == 0U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .transport_payload_length = 0U,
@@ -198,8 +269,88 @@ void run_packet_details_tests() {
         PFL_EXPECT(!summary_layers[2].expanded_by_default);
         PFL_EXPECT(summary_layers[3].id == "udp");
         PFL_EXPECT(summary_layers[3].expanded_by_default);
-        PFL_EXPECT(summary_layers[3].title.find("User Datagram Protocol") != std::string::npos);
+        PFL_EXPECT(summary_layers[3].title == "UDP, Src Port: 5353, Dst Port: 53");
         PFL_EXPECT(summary_layers.size() == 4U);
+        const auto* udp_layer = find_summary_layer(summary_layers, "udp");
+        PFL_EXPECT(udp_layer != nullptr);
+        const auto* udp_source_port_field = find_summary_field(*udp_layer, "Source Port");
+        const auto* udp_destination_port_field = find_summary_field(*udp_layer, "Destination Port");
+        const auto* udp_length_field = find_summary_field(*udp_layer, "Length");
+        const auto* udp_checksum_field = find_summary_field(*udp_layer, "Checksum");
+        const auto* udp_payload_length_field = find_summary_field(*udp_layer, "Payload Length");
+        PFL_EXPECT(udp_source_port_field != nullptr);
+        PFL_EXPECT(udp_destination_port_field != nullptr);
+        PFL_EXPECT(udp_length_field != nullptr);
+        PFL_EXPECT(udp_checksum_field != nullptr);
+        PFL_EXPECT(udp_payload_length_field != nullptr);
+        PFL_EXPECT(udp_source_port_field->value == "5353");
+        PFL_EXPECT(udp_destination_port_field->value == "53");
+        PFL_EXPECT(udp_length_field->value == "8 bytes");
+        PFL_EXPECT(udp_checksum_field->value == "0x0000");
+        PFL_EXPECT(udp_payload_length_field->value == "0 bytes");
+    }
+
+    {
+        PacketDetailsService service {};
+        const auto syn_packet = make_ethernet_ipv4_tcp_syn_with_options_packet(
+            ipv4(10, 0, 0, 11), ipv4(10, 0, 0, 12), 41580, 443);
+        const PacketRef packet_ref {
+            .packet_index = 9,
+            .byte_offset = 120,
+            .captured_length = static_cast<std::uint32_t>(syn_packet.size()),
+            .original_length = static_cast<std::uint32_t>(syn_packet.size()),
+        };
+
+        const auto details = service.decode(syn_packet, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_tcp);
+        PFL_EXPECT(details->tcp.src_port == 41580U);
+        PFL_EXPECT(details->tcp.dst_port == 443U);
+        PFL_EXPECT(details->tcp.seq_number == 1455851779U);
+        PFL_EXPECT(details->tcp.ack_number == 0U);
+        PFL_EXPECT(details->tcp.header_length_bytes == 32U);
+        PFL_EXPECT(details->tcp.flags == 0x02U);
+        PFL_EXPECT(details->tcp.window == 62420U);
+        PFL_EXPECT(details->tcp.checksum == 0x1d02U);
+        PFL_EXPECT(details->tcp.urgent_pointer == 0U);
+        PFL_EXPECT(details->tcp.options_bytes.size() == 12U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .transport_payload_length = 0U,
+            .original_transport_payload_length = 0U,
+            .protocol_details_text = "No protocol-specific details available for this packet.",
+        });
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_EXPECT(tcp_layer->title == "TCP, Src Port: 41580, Dst Port: 443");
+        PFL_EXPECT(tcp_layer->title.find("Seq:") == std::string::npos);
+        PFL_EXPECT(tcp_layer->title.find("Ack:") == std::string::npos);
+        PFL_EXPECT(tcp_layer->title.find("Len:") == std::string::npos);
+        const auto* tcp_sequence_field = find_summary_field(*tcp_layer, "Sequence Number (raw)");
+        const auto* tcp_acknowledgment_field = find_summary_field(*tcp_layer, "Acknowledgment Number (raw)");
+        const auto* tcp_header_length_field = find_summary_field(*tcp_layer, "Header Length");
+        const auto* tcp_flags_field = find_summary_field(*tcp_layer, "Flags");
+        const auto* tcp_window_field = find_summary_field(*tcp_layer, "Window");
+        const auto* tcp_checksum_field = find_summary_field(*tcp_layer, "Checksum");
+        const auto* tcp_urgent_pointer_field = find_summary_field(*tcp_layer, "Urgent Pointer");
+        const auto* tcp_options_field = find_summary_field(*tcp_layer, "Options");
+        PFL_EXPECT(tcp_sequence_field != nullptr);
+        PFL_EXPECT(tcp_acknowledgment_field != nullptr);
+        PFL_EXPECT(tcp_header_length_field != nullptr);
+        PFL_EXPECT(tcp_flags_field != nullptr);
+        PFL_EXPECT(tcp_window_field != nullptr);
+        PFL_EXPECT(tcp_checksum_field != nullptr);
+        PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
+        PFL_EXPECT(tcp_options_field != nullptr);
+        PFL_EXPECT(tcp_sequence_field->value == "1455851779");
+        PFL_EXPECT(tcp_acknowledgment_field->value == "0");
+        PFL_EXPECT(tcp_header_length_field->value == "32 bytes (8)");
+        PFL_EXPECT(tcp_flags_field->value == "SYN");
+        PFL_EXPECT(tcp_window_field->value == "62420");
+        PFL_EXPECT(tcp_checksum_field->value == "0x1d02");
+        PFL_EXPECT(tcp_urgent_pointer_field->value == "0");
+        PFL_EXPECT(tcp_options_field->value ==
+            "12 bytes: 0x02, 0x04, 0x05, 0xb4, 0x01, 0x01, 0x04, 0x02, 0x01, 0x03, 0x03, 0x07");
     }
 
     {
@@ -298,6 +449,57 @@ void run_packet_details_tests() {
         PFL_EXPECT(details->udp.src_port == 54000);
         PFL_EXPECT(details->udp.dst_port == 443);
         PFL_EXPECT(details->udp.length == 15);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .transport_payload_length = 4U,
+            .original_transport_payload_length = 7U,
+            .protocol_details_text = "No protocol-specific details available for this packet.",
+        });
+        const auto* udp_layer = find_summary_layer(summary_layers, "udp");
+        PFL_EXPECT(udp_layer != nullptr);
+        const auto* udp_payload_length_field = find_summary_field(*udp_layer, "Payload Length");
+        const auto* udp_captured_payload_length_field = find_summary_field(*udp_layer, "Captured Payload Length");
+        const auto* udp_original_payload_length_field = find_summary_field(*udp_layer, "Original Payload Length");
+        PFL_EXPECT(udp_payload_length_field == nullptr);
+        PFL_EXPECT(udp_captured_payload_length_field != nullptr);
+        PFL_EXPECT(udp_original_payload_length_field != nullptr);
+        PFL_EXPECT(udp_captured_payload_length_field->value == "4 bytes");
+        PFL_EXPECT(udp_original_payload_length_field->value == "7 bytes");
+    }
+
+    {
+        const auto full_tcp_with_payload = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 0, 7), ipv4(10, 0, 0, 8), 41000, 443, 7, 0x18);
+        auto captured_tcp_with_payload = full_tcp_with_payload;
+        captured_tcp_with_payload.resize(full_tcp_with_payload.size() - 3U);
+
+        PacketDetailsService service {};
+        const PacketRef packet_ref {
+            .packet_index = 21,
+            .byte_offset = 144,
+            .captured_length = static_cast<std::uint32_t>(captured_tcp_with_payload.size()),
+            .original_length = static_cast<std::uint32_t>(full_tcp_with_payload.size()),
+        };
+
+        const auto details = service.decode(captured_tcp_with_payload, packet_ref);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_tcp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
+            .transport_payload_length = 4U,
+            .original_transport_payload_length = 7U,
+            .protocol_details_text = "No protocol-specific details available for this packet.",
+        });
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_payload_length_field = find_summary_field(*tcp_layer, "Payload Length");
+        const auto* tcp_captured_payload_length_field = find_summary_field(*tcp_layer, "Captured Payload Length");
+        const auto* tcp_original_payload_length_field = find_summary_field(*tcp_layer, "Original Payload Length");
+        PFL_EXPECT(tcp_payload_length_field == nullptr);
+        PFL_EXPECT(tcp_captured_payload_length_field != nullptr);
+        PFL_EXPECT(tcp_original_payload_length_field != nullptr);
+        PFL_EXPECT(tcp_captured_payload_length_field->value == "4 bytes");
+        PFL_EXPECT(tcp_original_payload_length_field->value == "7 bytes");
     }
 
     {

@@ -363,7 +363,7 @@ Frame {
                 text: valueText
                 color: "#0f172a"
                 font.pixelSize: 12
-                font.bold: !fullWidth
+                font.bold: false
                 wrapMode: Text.Wrap
             }
         }
@@ -445,7 +445,7 @@ Frame {
                     Layout.fillWidth: true
                     text: summaryLayerCard.titleText
                     font.pixelSize: 13
-                    font.bold: true
+                    font.bold: false
                     color: "#0f172a"
                 }
 
@@ -513,7 +513,7 @@ Frame {
                                 Layout.fillWidth: true
                                 text: childTitleText
                                 font.pixelSize: 12
-                                font.bold: true
+                                font.bold: false
                                 color: "#334155"
                             }
 
