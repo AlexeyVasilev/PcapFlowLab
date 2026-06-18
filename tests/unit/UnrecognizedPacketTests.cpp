@@ -6,6 +6,7 @@
 #include "PcapTestUtils.h"
 #include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionFormatting.h"
 
 namespace pfl::tests {
 
@@ -25,6 +26,16 @@ const session_detail::PacketSummaryLayer* find_layer(
     return it == layers.end() ? nullptr : &(*it);
 }
 
+const session_detail::PacketSummaryField* find_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto it = std::find_if(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+    return it == layer.fields.end() ? nullptr : &(*it);
+}
+
 }  // namespace
 
 void run_unrecognized_packet_tests() {
@@ -34,7 +45,7 @@ void run_unrecognized_packet_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(truncated_tcp_fixture));
-        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().packet_count == 0U);
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
 
@@ -54,6 +65,25 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_tcp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
+            .source_capture_accessible = true,
+            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
+        });
+        PFL_EXPECT(!summary_layers.empty());
+        PFL_EXPECT(summary_layers.front().id == "warnings");
+        PFL_EXPECT(!summary_layers.front().title.empty());
+        const auto* frame_layer = find_layer(summary_layers, "frame");
+        const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
+        const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
+        PFL_EXPECT(frame_layer != nullptr);
+        PFL_EXPECT(ethernet_layer != nullptr);
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(!frame_layer->title.empty());
+        PFL_EXPECT(!ethernet_layer->title.empty());
+        PFL_EXPECT(!ipv4_layer->title.empty());
+        PFL_EXPECT(find_field(*frame_layer, "Packet index in file") != nullptr);
+        PFL_EXPECT(find_field(*ipv4_layer, "Source Address") != nullptr);
 
         const auto raw_dump = session.read_packet_hex_dump(*packet);
         PFL_EXPECT(!raw_dump.empty());
@@ -80,9 +110,20 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(details.packet_found);
         PFL_EXPECT(details.details_available);
         PFL_EXPECT(details.raw_preview_available);
-        PFL_EXPECT(find_layer(details.summary_layers, "frame") != nullptr);
-        PFL_EXPECT(find_layer(details.summary_layers, "ethernet") != nullptr);
-        PFL_EXPECT(find_layer(details.summary_layers, "ipv4") != nullptr);
+        PFL_EXPECT(!details.summary_layers.empty());
+        PFL_EXPECT(details.summary_layers.front().id == "warnings");
+        PFL_EXPECT(!details.summary_layers.front().title.empty());
+        const auto* frame_layer = find_layer(details.summary_layers, "frame");
+        const auto* ethernet_layer = find_layer(details.summary_layers, "ethernet");
+        const auto* ipv4_layer = find_layer(details.summary_layers, "ipv4");
+        PFL_EXPECT(frame_layer != nullptr);
+        PFL_EXPECT(ethernet_layer != nullptr);
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(!frame_layer->title.empty());
+        PFL_EXPECT(!ethernet_layer->title.empty());
+        PFL_EXPECT(!ipv4_layer->title.empty());
+        PFL_EXPECT(find_field(*frame_layer, "Packet index in file") != nullptr);
+        PFL_EXPECT(find_field(*ipv4_layer, "Source Address") != nullptr);
         PFL_EXPECT(find_layer(details.summary_layers, "tcp") == nullptr);
     }
 

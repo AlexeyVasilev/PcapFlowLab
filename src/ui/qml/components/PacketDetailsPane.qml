@@ -38,7 +38,7 @@ Frame {
         }
 
         const layers = root.packetDetailsModel.summaryLayers
-        return root.decorateSummaryLayers(layers && layers.length !== undefined ? layers : [])
+        return root.decorateSummaryLayers(root.normalizeSummaryLayers(layers && layers.length !== undefined ? layers : []))
     }
 
     function headerPrimaryText() {
@@ -221,6 +221,62 @@ Frame {
         root.summaryExpansionProfiles = profiles
     }
 
+    function normalizeSummaryFields(fields) {
+        const fieldList = fields && fields.length !== undefined ? fields : []
+        const normalized = []
+        for (let index = 0; index < fieldList.length; ++index) {
+            const field = fieldList[index]
+            normalized.push({
+                "label": field && field["label"] !== undefined && field["label"] !== null
+                    ? String(field["label"])
+                    : "",
+                "value": field && field["value"] !== undefined && field["value"] !== null
+                    ? String(field["value"])
+                    : ""
+            })
+        }
+
+        return normalized
+    }
+
+    function normalizeSummaryLayers(layers) {
+        const layerList = layers && layers.length !== undefined ? layers : []
+        const normalized = []
+
+        for (let index = 0; index < layerList.length; ++index) {
+            const layer = layerList[index]
+            normalized.push({
+                "id": layer && layer["id"] !== undefined && layer["id"] !== null
+                    ? String(layer["id"])
+                    : "",
+                "title": layer && layer["title"] !== undefined && layer["title"] !== null
+                    ? String(layer["title"])
+                    : "",
+                "fields": root.normalizeSummaryFields(
+                    layer && layer["fields"] && layer["fields"].length !== undefined
+                        ? layer["fields"]
+                        : []
+                ),
+                "children": root.normalizeSummaryLayers(
+                    layer && layer["children"] && layer["children"].length !== undefined
+                        ? layer["children"]
+                        : []
+                ),
+                "expanded_by_default": layer && layer["expanded_by_default"] !== undefined && layer["expanded_by_default"] !== null
+                    ? Boolean(layer["expanded_by_default"])
+                    : true,
+                "warning": layer && layer["warning"] !== undefined && layer["warning"] !== null
+                    ? Boolean(layer["warning"])
+                    : false,
+                "marker_text": layer && layer["marker_text"] !== undefined && layer["marker_text"] !== null
+                    ? String(layer["marker_text"])
+                    : ""
+            })
+        }
+
+        return normalized
+    }
+
     function decorateSummaryLayers(layers) {
         const summaryLayers = layers && layers.length !== undefined ? layers : []
         const signature = root.summaryLayerSignature(summaryLayers)
@@ -376,12 +432,12 @@ Frame {
     }
 
     component SummaryFieldRow: Item {
-        required property var fieldData
-        readonly property string labelText: fieldData && fieldData["label"] !== undefined && fieldData["label"] !== null
-            ? String(fieldData["label"])
+        required property var modelData
+        readonly property string labelText: modelData && modelData["label"] !== undefined && modelData["label"] !== null
+            ? String(modelData["label"])
             : ""
-        readonly property string valueText: fieldData && fieldData["value"] !== undefined && fieldData["value"] !== null
-            ? String(fieldData["value"])
+        readonly property string valueText: modelData && modelData["value"] !== undefined && modelData["value"] !== null
+            ? String(modelData["value"])
             : ""
         readonly property bool fullWidth: labelText.length === 0
         implicitWidth: rowLayout.implicitWidth
@@ -414,31 +470,31 @@ Frame {
 
     component SummaryLayerCard: Rectangle {
         id: summaryLayerCard
-        required property var layerData
-        readonly property string expansionKey: layerData && layerData["expansion_key"] !== undefined && layerData["expansion_key"] !== null
-            ? String(layerData["expansion_key"])
+        required property var modelData
+        readonly property string expansionKey: modelData && modelData["expansion_key"] !== undefined && modelData["expansion_key"] !== null
+            ? String(modelData["expansion_key"])
             : ""
-        readonly property string summarySignature: layerData && layerData["summary_signature"] !== undefined && layerData["summary_signature"] !== null
-            ? String(layerData["summary_signature"])
+        readonly property string summarySignature: modelData && modelData["summary_signature"] !== undefined && modelData["summary_signature"] !== null
+            ? String(modelData["summary_signature"])
             : ""
-        readonly property string titleText: layerData && layerData["title"] !== undefined && layerData["title"] !== null
-            ? String(layerData["title"])
+        readonly property string titleText: modelData && modelData["title"] !== undefined && modelData["title"] !== null
+            ? String(modelData["title"])
             : ""
-        readonly property string markerText: layerData && layerData["marker_text"] !== undefined && layerData["marker_text"] !== null
-            ? String(layerData["marker_text"])
+        readonly property string markerText: modelData && modelData["marker_text"] !== undefined && modelData["marker_text"] !== null
+            ? String(modelData["marker_text"])
             : ""
-        readonly property bool warningState: layerData && layerData["warning"] !== undefined && layerData["warning"] !== null
-            ? Boolean(layerData["warning"])
+        readonly property bool warningState: modelData && modelData["warning"] !== undefined && modelData["warning"] !== null
+            ? Boolean(modelData["warning"])
             : false
-        readonly property var fieldRows: layerData && layerData["fields"] && layerData["fields"].length !== undefined
-            ? layerData["fields"]
+        readonly property var fieldRows: modelData && modelData["fields"] && modelData["fields"].length !== undefined
+            ? modelData["fields"]
             : []
-        readonly property var childLayers: layerData && layerData["children"] && layerData["children"].length !== undefined
-            ? layerData["children"]
+        readonly property var childLayers: modelData && modelData["children"] && modelData["children"].length !== undefined
+            ? modelData["children"]
             : []
-        property bool expanded: !layerData || layerData["expanded_by_default"] === undefined || layerData["expanded_by_default"] === null
+        property bool expanded: !modelData || modelData["expanded_by_default"] === undefined || modelData["expanded_by_default"] === null
             ? true
-            : Boolean(layerData["expanded_by_default"])
+            : Boolean(modelData["expanded_by_default"])
 
         color: "#fbfcfe"
         border.color: warningState ? "#f4c97d" : "#dbe4ee"
@@ -521,7 +577,6 @@ Frame {
 
                     delegate: SummaryFieldRow {
                         Layout.fillWidth: true
-                        fieldData: modelData
                     }
                 }
 
@@ -568,7 +623,6 @@ Frame {
 
                                 delegate: SummaryFieldRow {
                                     Layout.fillWidth: true
-                                    fieldData: modelData
                                 }
                             }
                         }
@@ -858,7 +912,7 @@ Frame {
 
                 readonly property string summary: root.summaryText()
                 readonly property var layers: root.summaryLayers()
-                readonly property bool renderableLayers: false
+                readonly property bool renderableLayers: root.hasRenderableSummaryLayers(layers)
                 readonly property string warningText: root.warningBlockText(summary)
                 readonly property string bodyText: root.summaryBodyText(summary)
 
@@ -905,7 +959,6 @@ Frame {
 
                                 delegate: SummaryLayerCard {
                                     Layout.fillWidth: true
-                                    layerData: modelData
                                 }
                             }
                         }
