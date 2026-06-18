@@ -36,13 +36,13 @@ DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const 
 
 DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept {
     const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-    if (!envelope.has_value()) {
+    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+    if (!network.has_value()) {
         return {};
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeArp) {
-        const auto arp_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeArp) {
+        const auto arp_offset = network->payload_offset;
         if (packet_bytes.size() < arp_offset + 8U) {
             return {};
         }
@@ -79,8 +79,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         };
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = network->payload_offset;
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return {};
@@ -191,8 +191,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         return {};
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = network->payload_offset;
         if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return {};
         }

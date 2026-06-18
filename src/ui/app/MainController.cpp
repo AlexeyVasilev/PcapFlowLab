@@ -571,17 +571,17 @@ ChecksumValidationResult validate_ipv4_header_checksum(
     const PacketDetails& details,
     const PacketRef& packet
 ) {
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-    if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv4) {
+    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+    if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv4) {
         return {};
     }
 
-    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, envelope->payload_offset);
+    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, network->payload_offset);
     if (!ipv4_bounds.has_value()) {
         return {};
     }
 
-    const auto checksum_offset = envelope->payload_offset + 10U;
+    const auto checksum_offset = network->payload_offset + 10U;
     if (checksum_offset + 2U > packet_bytes.size()) {
         return {};
     }
@@ -589,7 +589,7 @@ ChecksumValidationResult validate_ipv4_header_checksum(
     const auto stored_checksum = detail::read_be16(packet_bytes, checksum_offset);
     const auto header_bytes = copy_zeroed_range(
         packet_bytes,
-        envelope->payload_offset,
+        network->payload_offset,
         ipv4_bounds->header_length,
         checksum_offset,
         2U
@@ -626,12 +626,12 @@ ChecksumValidationResult validate_tcp_checksum(
     }
 
     if (details.has_ipv4) {
-        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv4) {
+        const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+        if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv4) {
             return {};
         }
 
-        const auto ipv4_offset = envelope->payload_offset;
+        const auto ipv4_offset = network->payload_offset;
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return {};
@@ -685,12 +685,12 @@ ChecksumValidationResult validate_tcp_checksum(
     }
 
     if (details.has_ipv6) {
-        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv6) {
+        const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+        if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv6) {
             return {};
         }
 
-        const auto ipv6_offset = envelope->payload_offset;
+        const auto ipv6_offset = network->payload_offset;
         const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
         if (!payload.has_value() || payload->has_fragment_header) {
             return ChecksumValidationResult {
@@ -759,12 +759,12 @@ ChecksumValidationResult validate_udp_checksum(
     }
 
     if (details.has_ipv4) {
-        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv4) {
+        const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+        if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv4) {
             return {};
         }
 
-        const auto ipv4_offset = envelope->payload_offset;
+        const auto ipv4_offset = network->payload_offset;
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return {};
@@ -821,12 +821,12 @@ ChecksumValidationResult validate_udp_checksum(
     }
 
     if (details.has_ipv6) {
-        const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-        if (!envelope.has_value() || envelope->protocol_type != detail::kEtherTypeIpv6) {
+        const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+        if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv6) {
             return {};
         }
 
-        const auto ipv6_offset = envelope->payload_offset;
+        const auto ipv6_offset = network->payload_offset;
         const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
         if (!payload.has_value() || payload->has_fragment_header) {
             return ChecksumValidationResult {

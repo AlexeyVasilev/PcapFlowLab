@@ -38,13 +38,13 @@ std::optional<std::size_t> derive_original_tcp_payload_length_from_headers(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-    if (!envelope.has_value()) {
+    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+    if (!network.has_value()) {
         return std::nullopt;
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = network->payload_offset;
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return std::nullopt;
@@ -84,8 +84,8 @@ std::optional<std::size_t> derive_original_tcp_payload_length_from_headers(
         return static_cast<std::size_t>(packet.original_length - transport_payload_offset);
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = network->payload_offset;
         if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return std::nullopt;
         }

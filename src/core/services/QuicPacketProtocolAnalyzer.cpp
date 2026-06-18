@@ -494,21 +494,15 @@ struct UdpPayloadView {
 };
 
 std::optional<UdpPayloadView> extract_udp_payload_view(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) {
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, data_link_type);
-    if (!envelope.has_value()) {
+    const auto network = detail::parse_network_payload(packet_bytes, data_link_type);
+    if (!network.has_value()) {
         return std::nullopt;
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = envelope->payload_offset;
-        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
-            return std::nullopt;
-        }
-
-        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
-        const auto ihl = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
-        const auto total_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv4_offset + 2U));
-        if (version != 4U || ihl < detail::kIpv4MinimumHeaderSize || total_length < ihl) {
+    if (network->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = network->payload_offset;
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
             return std::nullopt;
         }
 
@@ -517,8 +511,8 @@ std::optional<UdpPayloadView> extract_udp_payload_view(std::span<const std::uint
             return std::nullopt;
         }
 
-        const auto udp_offset = ipv4_offset + ihl;
-        const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, udp_offset, ipv4_offset + total_length);
+        const auto udp_offset = ipv4_offset + ipv4_bounds->header_length;
+        const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, udp_offset, ipv4_bounds->nominal_packet_end);
         if (!udp_payload.has_value()) {
             return std::nullopt;
         }
@@ -530,8 +524,8 @@ std::optional<UdpPayloadView> extract_udp_payload_view(std::span<const std::uint
         };
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = network->payload_offset;
         if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return std::nullopt;
         }

@@ -149,8 +149,37 @@ std::optional<PacketDetails> decode_packet_details(
         return std::nullopt;
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeArp) {
-        const auto arp_offset = envelope->payload_offset;
+    details.has_mpls = false;
+    details.mpls_ether_type = 0U;
+    details.mpls_labels.clear();
+
+    auto network_protocol_type = envelope->protocol_type;
+    auto network_payload_offset = envelope->payload_offset;
+    if (detail::is_mpls_ether_type(envelope->protocol_type)) {
+        const auto mpls = detail::parse_mpls_stack(packet_bytes, envelope->payload_offset);
+        details.has_mpls = true;
+        details.mpls_ether_type = envelope->protocol_type;
+        details.mpls_labels.reserve(mpls.label_count);
+        for (std::size_t index = 0; index < mpls.label_count; ++index) {
+            const auto& label = mpls.labels[index];
+            details.mpls_labels.push_back(MplsLabelDetails {
+                .label = label.label,
+                .traffic_class = label.traffic_class,
+                .bottom_of_stack = label.bottom_of_stack,
+                .ttl = label.ttl,
+            });
+        }
+
+        if (!detail::mpls_has_resolved_inner_payload(mpls.status)) {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        network_protocol_type = mpls.inner_protocol_type;
+        network_payload_offset = mpls.inner_payload_offset;
+    }
+
+    if (network_protocol_type == detail::kEtherTypeArp) {
+        const auto arp_offset = network_payload_offset;
         details.has_arp = true;
         if (packet_bytes.size() <= arp_offset) {
             details.arp.fixed_header_truncated = true;
@@ -213,11 +242,11 @@ std::optional<PacketDetails> decode_packet_details(
         return details;
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = envelope->payload_offset;
+    if (network_protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = network_payload_offset;
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
-            return std::nullopt;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
@@ -312,15 +341,15 @@ std::optional<PacketDetails> decode_packet_details(
         return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = envelope->payload_offset;
+    if (network_protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = network_payload_offset;
         if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
-            return std::nullopt;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         const auto version = static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U);
         if (version != 6U) {
-            return std::nullopt;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         details.address_family = NetworkAddressFamily::ipv6;
@@ -339,7 +368,7 @@ std::optional<PacketDetails> decode_packet_details(
         const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length),
                                          packet_bytes.size());
         if (!payload.has_value() || payload->payload_offset > packet_end) {
-            return std::nullopt;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         details.ipv6.next_header = payload->next_header;

@@ -118,6 +118,7 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | PCAP / Frame metadata | Supported | N/A | N/A | Supported | Not supported | Not supported | N/A | Supported | Frame layer shows packet index in file, selected-flow packet index when available, timestamp, captured length, original length, and truncation warnings. |
 | Ethernet | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | Ethernet II appears in layered Summary with source/destination MAC addresses and decoded EtherType text. |
 | 802.1Q VLAN | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | VLAN tags appear in layered Summary; multiple tags are represented individually. |
+| MPLS | Partial | Partial | Not supported | Supported | Not supported | Partial | Partial | Supported | Ethernet MPLS unicast/multicast and VLAN-before-MPLS are recognized. Each label becomes its own Summary layer with label / TC / BoS / TTL. Inner IPv4/IPv6 is inferred from the first nibble after the BoS label, and normal TCP/UDP flows group by the inner 5-tuple only. Unknown or malformed MPLS payloads remain in the unrecognized-packet list with conservative reason text. |
 | ARP | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Strongest non-IP shared parsing path today. Supports Ethernet/IPv4 ARP well, variable `hlen` / `plen`, truncated warnings, and one-packet-per-item stream rows. Request/reply packets are not grouped into a higher-level conversation item. |
 | IPv4 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv4 facts appear in layered Summary, including conservative selected-packet header fields such as IHL, DS field, identification, flags, fragment offset, TTL, protocol, checksum, and addresses. There is no standalone IPv4 `Protocol` tab renderer today. |
 | IPv6 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv6 facts appear in layered Summary, including conservative selected-packet header fields such as traffic class, flow label, payload length, next header, hop limit, and addresses. There is no standalone IPv6 `Protocol` tab renderer today. |
@@ -157,6 +158,7 @@ The shared layered Summary model is intentionally conservative today.
   - frame metadata;
   - Ethernet;
   - VLAN;
+  - MPLS label stacks;
   - ARP;
   - IPv4;
   - IPv6;
@@ -248,6 +250,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - basic DNS request/response coverage.
 - `http`
   - request/response and multi-message / partial-response coverage.
+- `mpls`
+  - single-label and multi-label stacks, MPLS multicast EtherType, special labels, VLAN/QinQ before MPLS, unknown inner payloads, and snaplen-truncated inner IPv4/TCP cases.
 - `quic`
   - QUIC Initial, constricted captures, IPv6 variants, and analysis-oriented fixtures.
 - `tcp`

@@ -30,6 +30,13 @@ struct LinuxCookedDetails {
     std::uint16_t hardware_type {0};
 };
 
+struct MplsLabelDetails {
+    std::uint32_t label {0};
+    std::uint8_t traffic_class {0};
+    bool bottom_of_stack {false};
+    std::uint8_t ttl {0};
+};
+
 struct ArpDetails {
     std::uint16_t hardware_type {0};
     std::uint16_t protocol_type {0};
@@ -114,6 +121,10 @@ struct PacketDetails {
 
     bool has_linux_cooked {false};
     LinuxCookedDetails linux_cooked {};
+
+    bool has_mpls {false};
+    std::uint16_t mpls_ether_type {0};
+    std::vector<MplsLabelDetails> mpls_labels {};
 
     bool has_arp {false};
     ArpDetails arp {};

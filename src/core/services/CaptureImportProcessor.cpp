@@ -33,13 +33,28 @@ std::string classify_unrecognized_packet_reason(
     const RawPcapPacket& packet,
     const std::span<const std::uint8_t> packet_bytes
 ) {
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, packet.data_link_type);
-    if (!envelope.has_value()) {
+    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
+    if (!network.has_value()) {
         return "Link-layer header truncated";
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeArp) {
-        const auto arp_offset = envelope->payload_offset;
+    if (network->has_mpls) {
+        switch (network->mpls.status) {
+        case detail::MplsParseStatus::label_truncated:
+            return "MPLS label header truncated";
+        case detail::MplsParseStatus::bottom_of_stack_not_found:
+            return "MPLS bottom-of-stack not found";
+        case detail::MplsParseStatus::missing_inner_payload:
+            return "Missing MPLS inner payload";
+        case detail::MplsParseStatus::unknown_payload:
+            return "Unknown MPLS payload";
+        default:
+            break;
+        }
+    }
+
+    if (network->protocol_type == detail::kEtherTypeArp) {
+        const auto arp_offset = network->payload_offset;
         if (packet_bytes.size() < arp_offset + 8U) {
             return "ARP header truncated";
         }
@@ -54,15 +69,15 @@ std::string classify_unrecognized_packet_reason(
         return "Unsupported or malformed packet";
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = network->payload_offset;
         if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
-            return "IPv4 header truncated";
+            return network->has_mpls ? "Inner IPv4 header truncated" : "IPv4 header truncated";
         }
 
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
-            return "Unsupported or malformed packet";
+            return network->has_mpls ? "Inner IPv4 header truncated" : "Unsupported or malformed packet";
         }
 
         const auto protocol = packet_bytes[ipv4_offset + 9U];
@@ -77,7 +92,7 @@ std::string classify_unrecognized_packet_reason(
         if (protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
-                return "TCP header truncated";
+                return network->has_mpls ? "Inner TCP header truncated" : "TCP header truncated";
             }
 
             const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
@@ -109,10 +124,10 @@ std::string classify_unrecognized_packet_reason(
         return "Could not extract flow key";
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = network->payload_offset;
         if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
-            return "IPv6 header truncated";
+            return network->has_mpls ? "Inner IPv6 header truncated" : "IPv6 header truncated";
         }
 
         if (static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U) != 6U) {
@@ -121,7 +136,7 @@ std::string classify_unrecognized_packet_reason(
 
         const auto ipv6_payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
         if (!ipv6_payload.has_value()) {
-            return "Unsupported or malformed packet";
+            return network->has_mpls ? "Inner IPv6 header truncated" : "Unsupported or malformed packet";
         }
 
         const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
@@ -137,7 +152,7 @@ std::string classify_unrecognized_packet_reason(
         if (ipv6_payload->next_header == detail::kIpProtocolTcp) {
             if (ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 packet_bytes.size() < ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize) {
-                return "TCP header truncated";
+                return network->has_mpls ? "Inner TCP header truncated" : "TCP header truncated";
             }
 
             const auto tcp_header_length =

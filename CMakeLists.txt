@@ -275,6 +275,7 @@ if(BUILD_TESTING)
         tests/unit/PacketPayloadTests.cpp
         tests/unit/PacketProtocolDetailsTests.cpp
         tests/unit/ArpPcapFixtureTests.cpp
+        tests/unit/MplsPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp

@@ -32,13 +32,13 @@ std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(s
 
 std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes,
                                                                           const std::uint32_t data_link_type) const {
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, data_link_type);
-    if (!envelope.has_value()) {
+    const auto network = detail::parse_network_payload(packet_bytes, data_link_type);
+    if (!network.has_value()) {
         return {};
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv4) {
+        const auto ipv4_offset = network->payload_offset;
         const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return {};
@@ -79,8 +79,8 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
         return {};
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = envelope->payload_offset;
+    if (network->protocol_type == detail::kEtherTypeIpv6) {
+        const auto ipv6_offset = network->payload_offset;
         if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return {};
         }
@@ -130,25 +130,25 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
 
 std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(std::span<const std::uint8_t> packet_bytes,
                                                                                const std::uint32_t data_link_type) const {
-    const auto envelope = detail::parse_link_layer_payload(packet_bytes, data_link_type);
-    if (!envelope.has_value()) {
+    const auto network = detail::parse_network_payload(packet_bytes, data_link_type);
+    if (!network.has_value()) {
         return {};
     }
 
-    if (envelope->protocol_type == detail::kEtherTypeArp) {
-        if (packet_bytes.size() <= envelope->payload_offset) {
+    if (network->protocol_type == detail::kEtherTypeArp) {
+        if (packet_bytes.size() <= network->payload_offset) {
             return {};
         }
 
-        const auto available_length = packet_bytes.size() - envelope->payload_offset;
+        const auto available_length = packet_bytes.size() - network->payload_offset;
         if (available_length < 8U) {
-            return copy_payload(packet_bytes, envelope->payload_offset, available_length);
+            return copy_payload(packet_bytes, network->payload_offset, available_length);
         }
 
-        const auto hardware_size = static_cast<std::size_t>(packet_bytes[envelope->payload_offset + 4U]);
-        const auto protocol_size = static_cast<std::size_t>(packet_bytes[envelope->payload_offset + 5U]);
+        const auto hardware_size = static_cast<std::size_t>(packet_bytes[network->payload_offset + 4U]);
+        const auto protocol_size = static_cast<std::size_t>(packet_bytes[network->payload_offset + 5U]);
         const auto declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
-        return copy_payload(packet_bytes, envelope->payload_offset, std::min(available_length, declared_length));
+        return copy_payload(packet_bytes, network->payload_offset, std::min(available_length, declared_length));
     }
 
     return extract_transport_payload(packet_bytes, data_link_type);

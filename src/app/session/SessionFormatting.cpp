@@ -15,6 +15,8 @@ constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
 constexpr std::uint16_t kEtherTypeVlan = 0x8100U;
 constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
+constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
+constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
@@ -143,8 +145,27 @@ std::string format_ether_type_name(const std::uint16_t ether_type) {
         return "802.1Q VLAN";
     case kEtherTypeQinq:
         return "802.1ad QinQ";
+    case kEtherTypeMplsUnicast:
+        return "MPLS Unicast";
+    case kEtherTypeMplsMulticast:
+        return "MPLS Multicast";
     default:
         return {};
+    }
+}
+
+std::optional<std::string> format_mpls_label_name(const std::uint32_t label) {
+    switch (label) {
+    case 0U:
+        return "IPv4 Explicit NULL";
+    case 1U:
+        return "Router Alert";
+    case 2U:
+        return "IPv6 Explicit NULL";
+    case 3U:
+        return "Implicit NULL / unusual on wire";
+    default:
+        return std::nullopt;
     }
 }
 
@@ -827,6 +848,29 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                     make_summary_field("Tag Control Information", std::to_string(tag.tci)),
                     make_summary_field("Encapsulated EtherType", format_ether_type_value(tag.encapsulated_ether_type)),
                 },
+            });
+        }
+    }
+
+    if (details.has_mpls) {
+        for (const auto& label : details.mpls_labels) {
+            std::vector<PacketSummaryField> mpls_fields {
+                make_summary_field("Label", std::to_string(label.label)),
+                make_summary_field("Traffic Class", std::to_string(label.traffic_class)),
+                make_summary_field("Bottom of Stack", label.bottom_of_stack ? "1" : "0"),
+                make_summary_field("TTL", std::to_string(label.ttl)),
+            };
+            if (const auto label_name = format_mpls_label_name(label.label); label_name.has_value()) {
+                mpls_fields.push_back(make_summary_field("Label Name", *label_name));
+            }
+
+            append_layer_if_not_empty(layers, PacketSummaryLayer {
+                .id = "mpls",
+                .title = "MPLS Label, Label: " + std::to_string(label.label) +
+                    ", TC: " + std::to_string(label.traffic_class) +
+                    ", BoS: " + std::string(label.bottom_of_stack ? "1" : "0") +
+                    ", TTL: " + std::to_string(label.ttl),
+                .fields = std::move(mpls_fields),
             });
         }
     }

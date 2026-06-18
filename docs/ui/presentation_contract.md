@@ -360,6 +360,7 @@ Shared expectations:
 - packet details inspection remains available;
 - stream reconstruction is unavailable for this selection mode;
 - the list is capture-backed only and is not guaranteed to persist through saved index round-trips.
+- malformed MPLS packets follow this same unrecognized path: frontends may still show Ethernet/VLAN/MPLS and partial inner-IP Summary details, but a normal flow is created only when a complete inner IPv4/IPv6 transport flow key can be extracted.
 
 ### Backend vs frontend formatting
 
@@ -489,9 +490,10 @@ Qt currently uses formatted summary text rather than a purely structured field g
 Current direction note:
 
 - packet details Summary now has a first shared structured decoded-layer list for selected-packet/on-demand rendering;
-- the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, ARP, IPv4, IPv6, TCP, and UDP;
+- the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, MPLS, ARP, IPv4, IPv6, TCP, and UDP;
 - the Frame layer should show packet index in file and, when selected-flow context is available, packet index within the selected flow;
 - the Ethernet layer should expose source/destination MAC addresses and decoded EtherType text;
+- MPLS should appear as one Summary layer per label between Ethernet/VLAN and the resolved inner IPv4/IPv6 layer, using the stable shared layer id `mpls` so repeated occurrences naturally map to `mpls#0`, `mpls#1`, and so on for expansion-state tracking;
 - the IPv4 and IPv6 layers should expose conservative decoded header fields from selected-packet/on-demand parsing rather than open-time import work;
 - the TCP and UDP layers should expose conservative transport header fields from selected-packet/on-demand parsing, including header checksums;
 - the TCP layer should expose raw sequence/acknowledgment numbers, header length, window, urgent pointer, and raw options bytes when options are present;

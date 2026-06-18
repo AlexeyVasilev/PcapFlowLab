@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -15,12 +16,16 @@ inline constexpr std::size_t kLinuxSllHeaderSize = 16;
 inline constexpr std::size_t kLinuxSll2HeaderSize = 20;
 inline constexpr std::size_t kVlanHeaderSize = 4;
 inline constexpr std::size_t kMaxVlanTags = 2;
+inline constexpr std::size_t kMplsLabelSize = 4;
+inline constexpr std::size_t kMaxMplsLabels = 16;
 inline constexpr std::size_t kMaxIpv6ExtensionHeaders = 8;
 inline constexpr std::uint16_t kEtherTypeArp = 0x0806U;
 inline constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
 inline constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
 inline constexpr std::uint16_t kEtherTypeVlan = 0x8100U;
 inline constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
+inline constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
+inline constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 inline constexpr std::uint8_t kIpProtocolIcmp = 1;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
@@ -68,6 +73,40 @@ struct Ipv4PacketBounds {
     bool bounds_from_captured_bytes {false};
 };
 
+struct MplsLabelView {
+    std::uint32_t label {0};
+    std::uint8_t traffic_class {0};
+    bool bottom_of_stack {false};
+    std::uint8_t ttl {0};
+};
+
+enum class MplsParseStatus : std::uint8_t {
+    not_present,
+    resolved_inner_ipv4,
+    resolved_inner_ipv6,
+    label_truncated,
+    bottom_of_stack_not_found,
+    missing_inner_payload,
+    unknown_payload,
+};
+
+struct MplsStackView {
+    std::array<MplsLabelView, kMaxMplsLabels> labels {};
+    std::size_t label_count {0};
+    MplsParseStatus status {MplsParseStatus::not_present};
+    std::uint16_t inner_protocol_type {0};
+    std::size_t inner_payload_offset {0};
+};
+
+struct NetworkPayloadView {
+    LinkLayerPayloadView link_layer {};
+    std::uint16_t protocol_type {0};
+    std::size_t payload_offset {0};
+    bool has_mpls {false};
+    std::uint16_t mpls_ether_type {0};
+    MplsStackView mpls {};
+};
+
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
                                       static_cast<std::uint16_t>(bytes[offset + 1]));
@@ -82,6 +121,14 @@ inline std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::s
 
 inline bool is_vlan_ether_type(const std::uint16_t ether_type) noexcept {
     return ether_type == kEtherTypeVlan || ether_type == kEtherTypeQinq;
+}
+
+inline bool is_mpls_ether_type(const std::uint16_t ether_type) noexcept {
+    return ether_type == kEtherTypeMplsUnicast || ether_type == kEtherTypeMplsMulticast;
+}
+
+inline bool mpls_has_resolved_inner_payload(const MplsParseStatus status) noexcept {
+    return status == MplsParseStatus::resolved_inner_ipv4 || status == MplsParseStatus::resolved_inner_ipv6;
 }
 
 inline bool is_ipv6_extension_header(const std::uint8_t next_header) noexcept {
@@ -152,6 +199,95 @@ inline std::optional<LinkLayerPayloadView> parse_link_layer_payload(std::span<co
     }
 
     return std::nullopt;
+}
+
+inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::size_t offset) {
+    MplsStackView stack {};
+
+    for (std::size_t label_index = 0; label_index < kMaxMplsLabels; ++label_index) {
+        if (offset >= bytes.size()) {
+            stack.status = MplsParseStatus::bottom_of_stack_not_found;
+            return stack;
+        }
+
+        if (bytes.size() < offset + kMplsLabelSize) {
+            stack.status = MplsParseStatus::label_truncated;
+            return stack;
+        }
+
+        const auto entry = read_be32(bytes, offset);
+        const auto label = static_cast<std::uint32_t>((entry >> 12U) & 0x000FFFFFU);
+        const auto traffic_class = static_cast<std::uint8_t>((entry >> 9U) & 0x7U);
+        const auto bottom_of_stack = ((entry >> 8U) & 0x1U) != 0U;
+        const auto ttl = static_cast<std::uint8_t>(entry & 0xFFU);
+
+        stack.labels[stack.label_count] = MplsLabelView {
+            .label = label,
+            .traffic_class = traffic_class,
+            .bottom_of_stack = bottom_of_stack,
+            .ttl = ttl,
+        };
+        ++stack.label_count;
+        offset += kMplsLabelSize;
+
+        if (!bottom_of_stack) {
+            continue;
+        }
+
+        stack.inner_payload_offset = offset;
+        if (offset >= bytes.size()) {
+            stack.status = MplsParseStatus::missing_inner_payload;
+            return stack;
+        }
+
+        const auto version_nibble = static_cast<std::uint8_t>(bytes[offset] >> 4U);
+        if (version_nibble == 4U) {
+            stack.inner_protocol_type = kEtherTypeIpv4;
+            stack.status = MplsParseStatus::resolved_inner_ipv4;
+            return stack;
+        }
+        if (version_nibble == 6U) {
+            stack.inner_protocol_type = kEtherTypeIpv6;
+            stack.status = MplsParseStatus::resolved_inner_ipv6;
+            return stack;
+        }
+
+        stack.status = MplsParseStatus::unknown_payload;
+        return stack;
+    }
+
+    stack.status = MplsParseStatus::bottom_of_stack_not_found;
+    return stack;
+}
+
+inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const std::uint8_t> bytes,
+                                                               const std::uint32_t data_link_type) {
+    const auto envelope = parse_link_layer_payload(bytes, data_link_type);
+    if (!envelope.has_value()) {
+        return std::nullopt;
+    }
+
+    NetworkPayloadView view {};
+    view.link_layer = *envelope;
+    view.protocol_type = envelope->protocol_type;
+    view.payload_offset = envelope->payload_offset;
+
+    if (!is_mpls_ether_type(envelope->protocol_type)) {
+        return view;
+    }
+
+    view.has_mpls = true;
+    view.mpls_ether_type = envelope->protocol_type;
+    view.mpls = parse_mpls_stack(bytes, envelope->payload_offset);
+
+    if (mpls_has_resolved_inner_payload(view.mpls.status)) {
+        view.protocol_type = view.mpls.inner_protocol_type;
+        view.payload_offset = view.mpls.inner_payload_offset;
+    } else {
+        view.protocol_type = 0;
+    }
+
+    return view;
 }
 
 inline std::optional<Ipv6PayloadView> parse_ipv6_payload(std::span<const std::uint8_t> bytes, const std::size_t ipv6_offset) {
