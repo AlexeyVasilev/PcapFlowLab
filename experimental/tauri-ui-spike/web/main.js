@@ -72,6 +72,7 @@
     flowVirtualizationActive: false,
     checkedFlowIndices: new Set(),
     selectedFlowIndex: null,
+    unrecognizedPacketsSelected: false,
     packets: [],
     packetsTotalCount: 0,
     packetOffset: 0,
@@ -205,6 +206,7 @@
     analysisHorizontalSplitter: document.getElementById("analysisHorizontalSplitter"),
     flowViewTabButtons: Array.from(document.querySelectorAll(".subtab-button")),
     flowViewPanels: Array.from(document.querySelectorAll(".flow-view-panel")),
+    flowViewTabStreamButton: document.querySelector('[data-flow-view-tab="stream"]'),
     overviewMeta: document.getElementById("overviewMeta"),
     flowMeta: document.getElementById("flowMeta"),
     flowFilterInput: document.getElementById("flowFilterInput"),
@@ -216,12 +218,17 @@
     flowRenderCapText: document.getElementById("flowRenderCapText"),
     checkedFlowsStatusBar: document.getElementById("checkedFlowsStatusBar"),
     checkedFlowsStatusText: document.getElementById("checkedFlowsStatusText"),
+    unrecognizedPacketsButton: document.getElementById("unrecognizedPacketsButton"),
+    unrecognizedPacketsMeta: document.getElementById("unrecognizedPacketsMeta"),
     wiresharkFilterRow: document.getElementById("wiresharkFilterRow"),
     wiresharkFilterText: document.getElementById("wiresharkFilterText"),
     wiresharkFilterStatusText: document.getElementById("wiresharkFilterStatusText"),
     copyWiresharkFilterButton: document.getElementById("copyWiresharkFilterButton"),
     packetMeta: document.getElementById("packetMeta"),
     packetTableBody: document.getElementById("packetTableBody"),
+    packetDirectionHeader: document.getElementById("packetDirectionHeader"),
+    packetPayloadHeader: document.getElementById("packetPayloadHeader"),
+    packetFlagsHeader: document.getElementById("packetFlagsHeader"),
     packetMarkerHeader: document.getElementById("packetMarkerHeader"),
     packetLoadMoreButton: document.getElementById("packetLoadMoreButton"),
     streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
@@ -560,7 +567,14 @@
   }
 
   function loadedPacketsHaveMarkers() {
+    if (state.unrecognizedPacketsSelected) {
+      return false;
+    }
     return state.packets.some((packet) => packetMarkerText(packet).length > 0);
+  }
+
+  function unrecognizedPacketCount() {
+    return Number(state.overview?.unrecognized_packet_count || 0);
   }
 
   function formatPercent(part, total) {
@@ -1436,6 +1450,7 @@
     resetAnalysisFlowVirtualizationState();
     state.checkedFlowIndices.clear();
     state.selectedFlowIndex = null;
+    state.unrecognizedPacketsSelected = false;
     state.flowState = "idle";
     clearAnalysis(false);
     setWiresharkFilterStatus("", "neutral");
@@ -1976,17 +1991,35 @@
 
     elements.flowViewTitle.textContent = state.flowViewTab === "stream"
       ? "Stream"
-      : "Selected-Flow Packets";
+      : (state.unrecognizedPacketsSelected ? "Unrecognized Packets" : "Selected-Flow Packets");
 
     const showingPackets = state.flowViewTab === "packets";
+    if (elements.flowViewTabStreamButton) {
+      elements.flowViewTabStreamButton.disabled = state.unrecognizedPacketsSelected;
+    }
     elements.packetLoadMoreButton.style.display = showingPackets ? "" : "none";
-    elements.streamLoadMoreButton.style.display = showingPackets ? "none" : "";
+    elements.streamLoadMoreButton.style.display = showingPackets || state.unrecognizedPacketsSelected ? "none" : "";
   }
 
   function renderInspectorMode() {
     const showingPacketInspector = state.flowViewTab !== "stream";
     elements.packetInspectorView.classList.toggle("active", showingPacketInspector);
     elements.streamInspectorView.classList.toggle("active", !showingPacketInspector);
+  }
+
+  function renderUnrecognizedPacketsPanel() {
+    if (!elements.unrecognizedPacketsButton || !elements.unrecognizedPacketsMeta) {
+      return;
+    }
+
+    const count = unrecognizedPacketCount();
+    const visible = state.openState === "opened" && count > 0;
+    elements.unrecognizedPacketsButton.classList.toggle("is-hidden", !visible);
+    elements.unrecognizedPacketsButton.classList.toggle("is-selected", visible && state.unrecognizedPacketsSelected);
+    elements.unrecognizedPacketsButton.disabled = !visible || state.openState === "opening";
+    elements.unrecognizedPacketsMeta.textContent = visible
+      ? `${formatPlainInteger(count)} packets could not be assigned to a recognized flow`
+      : "";
   }
 
   function renderPacketDetailsTabs() {
@@ -2307,6 +2340,7 @@
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
     elements.checkedFlowsStatusBar.classList.toggle("is-visible", checkedCount > 0);
     elements.checkedFlowsStatusText.textContent = checkedCount === 1 ? "1 flow selected" : `${formatNumber(checkedCount)} flows selected`;
+    renderUnrecognizedPacketsPanel();
 
     if (state.openState === "opening" || state.flowState === "loading") {
       elements.flowMeta.textContent = "Loading flows...";
@@ -2463,14 +2497,24 @@
       return;
     }
 
+    const unrecognizedMode = state.unrecognizedPacketsSelected;
     const showMarkerColumn = loadedPacketsHaveMarkers();
-    const packetTableColspan = showMarkerColumn ? 7 : 6;
+    const packetTableColspan = unrecognizedMode ? 5 : (showMarkerColumn ? 7 : 6);
+    if (elements.packetDirectionHeader) {
+      elements.packetDirectionHeader.style.display = unrecognizedMode ? "none" : "";
+    }
+    if (elements.packetPayloadHeader) {
+      elements.packetPayloadHeader.textContent = unrecognizedMode ? "Original" : "Payload";
+    }
+    if (elements.packetFlagsHeader) {
+      elements.packetFlagsHeader.textContent = unrecognizedMode ? "Parsed up to / Reason" : "Flags";
+    }
     if (elements.packetMarkerHeader) {
-      elements.packetMarkerHeader.style.display = showMarkerColumn ? "" : "none";
+      elements.packetMarkerHeader.style.display = !unrecognizedMode && showMarkerColumn ? "" : "none";
     }
 
     if (state.packetState === "loading" && !state.packetLoadingMore) {
-      elements.packetMeta.textContent = "Loading packets...";
+      elements.packetMeta.textContent = unrecognizedMode ? "Loading unrecognized packets..." : "Loading packets...";
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">Loading packets...</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = false;
@@ -2485,7 +2529,7 @@
       return;
     }
 
-    if (state.selectedFlowIndex == null) {
+    if (!unrecognizedMode && state.selectedFlowIndex == null) {
       elements.packetMeta.textContent = "Select a flow to load packets.";
       elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No selected flow.</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
@@ -2493,9 +2537,25 @@
       return;
     }
 
+    if (unrecognizedMode && state.openState !== "opened") {
+      elements.packetMeta.textContent = "Open a capture or index to inspect unrecognized packets.";
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No capture loaded.</td></tr>`;
+      elements.packetLoadMoreButton.disabled = true;
+      elements.packetLoadMoreButton.hidden = true;
+      return;
+    }
+
+    if (unrecognizedMode && unrecognizedPacketCount() === 0) {
+      elements.packetMeta.textContent = "No unrecognized packets were collected.";
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No unrecognized packets.</td></tr>`;
+      elements.packetLoadMoreButton.disabled = true;
+      elements.packetLoadMoreButton.hidden = true;
+      return;
+    }
+
     if (state.packetsTotalCount === 0) {
-      elements.packetMeta.textContent = "Showing 0 of 0 packets";
-      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">No packets available for the selected flow.</td></tr>`;
+      elements.packetMeta.textContent = unrecognizedMode ? "Showing 0 of 0 unrecognized packets" : "Showing 0 of 0 packets";
+      elements.packetTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${packetTableColspan}">${unrecognizedMode ? "No unrecognized packets available." : "No packets available for the selected flow."}</td></tr>`;
       elements.packetLoadMoreButton.disabled = true;
       elements.packetLoadMoreButton.hidden = true;
       return;
@@ -2504,8 +2564,8 @@
     const loadedCount = state.packets.length;
     const totalCount = state.packetsTotalCount;
     elements.packetMeta.textContent = state.packetLoadingMore
-      ? `Showing ${loadedCount} of ${totalCount} packets. Loading more...`
-      : `Showing ${loadedCount} of ${totalCount} packets`;
+      ? `Showing ${loadedCount} of ${totalCount} ${unrecognizedMode ? "unrecognized packets" : "packets"}. Loading more...`
+      : `Showing ${loadedCount} of ${totalCount} ${unrecognizedMode ? "unrecognized packets" : "packets"}`;
 
     elements.packetTableBody.innerHTML = state.packets
       .map((packet) => {
@@ -2518,6 +2578,18 @@
         const markerContent = markerText
           ? `<span class="${markerBadgeClass}" title="${escapeHtml(markerText)}">${escapeHtml(markerText)}</span>`
           : "";
+        if (unrecognizedMode) {
+          return `
+            <tr class="packet-row${selected}${warning}" data-packet-index="${packet.packet_index}">
+              <td>${packet.row_number}</td>
+              <td>${escapeHtml(packet.timestamp_text)}</td>
+              <td>${packet.captured_length}</td>
+              <td>${packet.original_length}</td>
+              <td class="packet-reason-cell" title="${escapeHtml(packet.reason_text || "")}">${escapeHtml(packet.reason_text || "")}</td>
+            </tr>
+          `;
+        }
+
         return `
           <tr class="packet-row${selected}${warning}" data-packet-index="${packet.packet_index}">
             <td>${packet.row_number}</td>
@@ -2546,6 +2618,13 @@
 
   function renderStream() {
     if (state.flowViewTab !== "stream") {
+      elements.streamLoadMoreButton.disabled = true;
+      return;
+    }
+
+    if (state.unrecognizedPacketsSelected) {
+      elements.packetMeta.textContent = "Stream view is unavailable for unrecognized packets.";
+      elements.streamTableBody.innerHTML = `<div class="stream-list-state">Stream reconstruction is unavailable for unrecognized packets.</div>`;
       elements.streamLoadMoreButton.disabled = true;
       return;
     }
@@ -3845,6 +3924,11 @@
   }
 
   async function loadSelectedFlowPackets(selectionToken = state.flowSelectionRequestToken, options = {}) {
+    if (state.unrecognizedPacketsSelected) {
+      await loadUnrecognizedPackets(selectionToken, options);
+      return;
+    }
+
     if (state.selectedFlowIndex == null) {
       clearPackets();
       render();
@@ -3924,6 +4008,82 @@
     render();
     await waitForNextPaint();
     await logMemoryPhase("packets_render_finished");
+  }
+
+  async function loadUnrecognizedPackets(selectionToken = state.flowSelectionRequestToken, options = {}) {
+    if (!state.unrecognizedPacketsSelected) {
+      clearPackets();
+      render();
+      return;
+    }
+
+    const append = options.append === true;
+    const requestedOffset = append ? state.packets.length : 0;
+    const requestedLimit = packetPageSize;
+    const requestToken = ++state.packetRequestToken;
+    if (!append) {
+      clearPacketDetails();
+    }
+    state.packetState = "loading";
+    state.packetLoadingMore = append && state.packets.length > 0;
+    state.packetErrorText = "";
+    state.packetOffset = requestedOffset;
+    state.diagnosticsPacketRequestOffset = requestedOffset;
+    state.diagnosticsPacketRequestLimit = requestedLimit;
+    state.diagnosticsPacketReturnedRowCount = 0;
+    state.diagnosticsPacketReturnedTotalCount = 0;
+    render();
+
+    try {
+      const packetResult = await invoke("get_unrecognized_packets", {
+        offset: requestedOffset,
+        limit: requestedLimit,
+      });
+
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.packetRequestToken
+        || !state.unrecognizedPacketsSelected
+        || state.packetOffset !== requestedOffset
+      ) {
+        return;
+      }
+
+      const receivedPackets = packetResult?.packets || [];
+      if (append) {
+        const existingPacketIndices = new Set(state.packets.map((packet) => packet.packet_index));
+        state.packets = state.packets.concat(receivedPackets.filter((packet) => !existingPacketIndices.has(packet.packet_index)));
+      } else {
+        state.packets = receivedPackets;
+      }
+      state.packetsTotalCount = packetResult?.total_count || 0;
+      state.packetOffset = packetResult?.offset ?? requestedOffset;
+      state.packetCanLoadMore = state.packets.length < state.packetsTotalCount;
+      state.packetLoadingMore = false;
+      state.packetState = "loaded";
+      state.diagnosticsPacketReturnedRowCount = receivedPackets.length;
+      state.diagnosticsPacketReturnedTotalCount = state.packetsTotalCount;
+    } catch (error) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.packetRequestToken
+        || !state.unrecognizedPacketsSelected
+      ) {
+        return;
+      }
+
+      state.packets = [];
+      state.packetsTotalCount = 0;
+      state.packetCanLoadMore = false;
+      state.packetLoadingMore = false;
+      state.packetState = "error";
+      state.packetErrorText = `Failed to load unrecognized packets: ${String(error)}`;
+      state.diagnosticsPacketReturnedRowCount = 0;
+      state.diagnosticsPacketReturnedTotalCount = 0;
+      setStatus(state.packetErrorText, "error");
+    }
+
+    render();
   }
 
   async function loadSelectedFlowStream(selectionToken = state.flowSelectionRequestToken) {
@@ -4087,10 +4247,14 @@
     render();
 
     try {
-      const details = await invoke("get_selected_flow_packet_details", {
-        packet_index: state.selectedPacketIndex,
-        flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
-      });
+      const details = state.unrecognizedPacketsSelected
+        ? await invoke("get_unrecognized_packet_details", {
+          packet_index: state.selectedPacketIndex,
+        })
+        : await invoke("get_selected_flow_packet_details", {
+          packet_index: state.selectedPacketIndex,
+          flow_packet_index: Number(state.selectedPacketRow?.row_number || 0),
+        });
       const sourceAvailability = packetDetailsSourceAvailability(details);
       state.sourceAvailability = sourceAvailability;
 
@@ -4127,6 +4291,7 @@
 
     const selectionToken = ++state.flowSelectionRequestToken;
     state.selectedFlowIndex = flowIndex;
+    state.unrecognizedPacketsSelected = false;
     clearCurrentFlowExportStatusIfPresent();
     clearSmartExportMainStatusIfPresent();
     state.packetOffset = 0;
@@ -4191,6 +4356,34 @@
       setStatus(state.packetErrorText, "error");
       render();
     }
+  }
+
+  async function selectUnrecognizedPackets() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (unrecognizedPacketCount() === 0 || state.unrecognizedPacketsSelected) {
+      return;
+    }
+
+    const selectionToken = ++state.flowSelectionRequestToken;
+    state.selectedFlowIndex = null;
+    state.unrecognizedPacketsSelected = true;
+    state.flowViewTab = "packets";
+    clearCurrentFlowExportStatusIfPresent();
+    clearSmartExportMainStatusIfPresent();
+    state.packetOffset = 0;
+    clearPackets();
+    clearStream();
+    clearAnalysis(false);
+    setWiresharkFilterStatus("", "neutral");
+    state.packetState = state.activeTab === "flows" ? "loading" : "idle";
+    render();
+
+    await loadUnrecognizedPackets(selectionToken, { append: false });
   }
 
   async function selectPacket(packetIndex) {
@@ -5137,6 +5330,9 @@
       render();
     });
   }
+  elements.unrecognizedPacketsButton?.addEventListener("click", async () => {
+    await selectUnrecognizedPackets();
+  });
   elements.flowTableViewport?.addEventListener("scroll", () => {
     scheduleFlowViewportRender();
   });

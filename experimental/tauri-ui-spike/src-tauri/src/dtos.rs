@@ -174,6 +174,7 @@ pub struct TopPortDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewDto {
     pub has_capture: bool,
+    pub unrecognized_packet_count: u64,
     pub summary: OverviewSummaryDto,
     pub protocol_summary: OverviewProtocolSummaryDto,
     pub quic_recognition: QuicRecognitionDto,
@@ -227,6 +228,25 @@ pub struct SelectedFlowPacketsDto {
     pub limit: usize,
     pub total_count: usize,
     pub packets: Vec<PacketDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnrecognizedPacketDto {
+    pub row_number: u64,
+    pub packet_index: u64,
+    pub timestamp_text: String,
+    pub captured_length: u32,
+    pub original_length: u32,
+    pub reason_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnrecognizedPacketsDto {
+    pub has_capture: bool,
+    pub offset: usize,
+    pub limit: usize,
+    pub total_count: usize,
+    pub packets: Vec<UnrecognizedPacketDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,0 +1,111 @@
+#include <algorithm>
+#include <filesystem>
+#include <string>
+
+#include "TestSupport.h"
+#include "PcapTestUtils.h"
+#include "app/frontend/FrontendSessionAdapter.h"
+#include "app/session/CaptureSession.h"
+
+namespace pfl::tests {
+
+namespace {
+
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+const session_detail::PacketSummaryLayer* find_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    const auto it = std::find_if(layers.begin(), layers.end(), [&](const session_detail::PacketSummaryLayer& layer) {
+        return layer.id == id;
+    });
+    return it == layers.end() ? nullptr : &(*it);
+}
+
+}  // namespace
+
+void run_unrecognized_packet_tests() {
+    const auto truncated_tcp_fixture = fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap");
+    const auto normal_tcp_fixture = fixture_path("parsing/tcp_options/01_tcp_syn_no_options.pcap");
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(truncated_tcp_fixture));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].row_number == 1U);
+        PFL_EXPECT(rows[0].packet_index == 0U);
+        PFL_EXPECT(rows[0].captured_length > 0U);
+        PFL_EXPECT(rows[0].original_length >= rows[0].captured_length);
+        PFL_EXPECT(rows[0].reason_text == "TCP header truncated");
+
+        const auto packet = session.find_packet(rows[0].packet_index);
+        PFL_EXPECT(packet.has_value());
+
+        const auto details = session.read_packet_details(*packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(!details->has_tcp);
+
+        const auto raw_dump = session.read_packet_hex_dump(*packet);
+        PFL_EXPECT(!raw_dump.empty());
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto open_result = adapter.open_capture(truncated_tcp_fixture, FrontendOpenMode::fast);
+        PFL_EXPECT(open_result.opened);
+
+        const auto overview = adapter.get_overview();
+        PFL_EXPECT(overview.has_capture);
+        PFL_EXPECT(overview.unrecognized_packet_count == 1U);
+
+        const auto packets = adapter.get_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(packets.has_capture);
+        PFL_EXPECT(packets.total_count == 1U);
+        PFL_EXPECT(packets.packets.size() == 1U);
+        PFL_EXPECT(packets.packets[0].row_number == 1U);
+        PFL_EXPECT(packets.packets[0].reason_text == "TCP header truncated");
+
+        const auto details = adapter.get_unrecognized_packet_details(packets.packets[0].packet_index);
+        PFL_EXPECT(details.has_capture);
+        PFL_EXPECT(details.packet_found);
+        PFL_EXPECT(details.details_available);
+        PFL_EXPECT(details.raw_preview_available);
+        PFL_EXPECT(find_layer(details.summary_layers, "frame") != nullptr);
+        PFL_EXPECT(find_layer(details.summary_layers, "ethernet") != nullptr);
+        PFL_EXPECT(find_layer(details.summary_layers, "ipv4") != nullptr);
+        PFL_EXPECT(find_layer(details.summary_layers, "tcp") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(normal_tcp_fixture));
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        PFL_EXPECT(session.list_unrecognized_packets().empty());
+        PFL_EXPECT(session.list_flows().size() == 1U);
+    }
+
+    {
+        CaptureSession source_session {};
+        PFL_EXPECT(source_session.open_capture(truncated_tcp_fixture));
+        PFL_EXPECT(source_session.unrecognized_packet_count() == 1U);
+
+        const auto index_path = std::filesystem::temp_directory_path() / "pfl_unrecognized_packets_roundtrip.idx";
+        PFL_EXPECT(source_session.save_index(index_path));
+
+        CaptureSession loaded_index_session {};
+        PFL_EXPECT(loaded_index_session.load_index(index_path));
+        PFL_EXPECT(loaded_index_session.unrecognized_packet_count() == 0U);
+    }
+}
+
+}  // namespace pfl::tests

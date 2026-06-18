@@ -14,6 +14,7 @@ namespace pfl {
 class PacketListModel final : public QAbstractListModel {
     Q_OBJECT
     Q_PROPERTY(bool hasVisibleMarkers READ hasVisibleMarkers NOTIFY hasVisibleMarkersChanged)
+    Q_PROPERTY(bool unrecognizedMode READ unrecognizedMode NOTIFY modeChanged)
 
 public:
     enum Role {
@@ -27,6 +28,12 @@ public:
         IsIpFragmentedRole,
         SuspectedTcpRetransmissionRole,
         TcpFlagsTextRole,
+        ReasonTextRole,
+    };
+
+    enum class Mode {
+        recognized,
+        unrecognized,
     };
 
     explicit PacketListModel(QObject* parent = nullptr);
@@ -35,15 +42,19 @@ public:
     [[nodiscard]] QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     [[nodiscard]] QHash<int, QByteArray> roleNames() const override;
     [[nodiscard]] bool hasVisibleMarkers() const noexcept;
+    [[nodiscard]] bool unrecognizedMode() const noexcept;
 
     Q_INVOKABLE int rowForPacketIndex(qulonglong packetIndex) const noexcept;
 
     void refresh(const std::vector<PacketRow>& rows);
+    void refresh(const std::vector<UnrecognizedPacketRow>& rows);
     void append(const std::vector<PacketRow>& rows);
+    void append(const std::vector<UnrecognizedPacketRow>& rows);
     void clear();
 
 signals:
     void hasVisibleMarkersChanged();
+    void modeChanged();
 
 private:
     struct Item {
@@ -57,12 +68,15 @@ private:
         bool is_ip_fragmented {false};
         bool suspected_tcp_retransmission {false};
         QString tcp_flags_text {};
+        QString reason_text {};
     };
 
     void updateHasVisibleMarkers();
+    void setMode(Mode mode);
 
     std::vector<Item> items_ {};
     bool has_visible_markers_ {false};
+    Mode mode_ {Mode::recognized};
 };
 
 }  // namespace pfl

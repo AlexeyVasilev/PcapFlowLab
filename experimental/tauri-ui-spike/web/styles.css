@@ -1147,6 +1147,10 @@ select:disabled {
   white-space: nowrap;
 }
 
+.packet-reason-cell {
+  color: var(--text-secondary);
+}
+
 .packet-direction-chip {
   display: inline-flex;
   align-items: center;
@@ -1265,6 +1269,40 @@ select:disabled {
 
 .checked-flows-statusbar.is-visible {
   display: flex;
+}
+
+.unrecognized-packets-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text);
+  text-align: left;
+}
+
+.unrecognized-packets-panel:hover:not(:disabled) {
+  background: #eef4fb;
+}
+
+.unrecognized-packets-panel.is-selected {
+  border-color: var(--selection-border);
+  background: var(--selection-bg);
+}
+
+.unrecognized-packets-title {
+  font-weight: 600;
+}
+
+.unrecognized-packets-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: right;
 }
 
 .table-cap-bar {

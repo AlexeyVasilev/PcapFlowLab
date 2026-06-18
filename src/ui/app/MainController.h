@@ -212,6 +212,8 @@ class MainController final : public QObject {
     Q_PROPERTY(QObject* streamModel READ streamModel CONSTANT)
     Q_PROPERTY(QObject* packetDetailsModel READ packetDetailsModel CONSTANT)
     Q_PROPERTY(int selectedFlowIndex READ selectedFlowIndex WRITE setSelectedFlowIndex NOTIFY selectedFlowIndexChanged)
+    Q_PROPERTY(bool unrecognizedPacketsSelected READ unrecognizedPacketsSelected NOTIFY unrecognizedPacketsSelectionChanged)
+    Q_PROPERTY(qulonglong unrecognizedPacketCount READ unrecognizedPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong selectedPacketIndex READ selectedPacketIndex WRITE setSelectedPacketIndex NOTIFY selectedPacketIndexChanged)
     Q_PROPERTY(qulonglong selectedStreamItemIndex READ selectedStreamItemIndex WRITE setSelectedStreamItemIndex NOTIFY selectedStreamItemIndexChanged)
     Q_PROPERTY(QString flowFilterText READ flowFilterText WRITE setFlowFilterText NOTIFY flowFilterTextChanged)
@@ -408,6 +410,8 @@ public:
     [[nodiscard]] QObject* streamModel() noexcept;
     [[nodiscard]] QObject* packetDetailsModel() noexcept;
     [[nodiscard]] int selectedFlowIndex() const noexcept;
+    [[nodiscard]] bool unrecognizedPacketsSelected() const noexcept;
+    [[nodiscard]] qulonglong unrecognizedPacketCount() const noexcept;
     [[nodiscard]] qulonglong selectedPacketIndex() const noexcept;
     [[nodiscard]] qulonglong selectedStreamItemIndex() const noexcept;
     [[nodiscard]] QString flowFilterText() const;
@@ -455,6 +459,7 @@ public:
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
     Q_INVOKABLE void drillDownToPort(quint32 port);
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
+    Q_INVOKABLE void selectUnrecognizedPackets();
 
     void setCaptureOpenMode(int mode);
     void setStatisticsMode(int mode);
@@ -483,6 +488,7 @@ signals:
     void selectedFlowWiresharkFilterChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
+    void unrecognizedPacketsSelectionChanged();
     void selectedFlowCountChanged();
     void selectedPacketIndexChanged();
     void selectedStreamItemIndexChanged();
@@ -515,6 +521,7 @@ private:
     void ensureSelectedFlowPacketNumbers(std::size_t packetWindowCount);
     void prepareSelectedFlowTcpContributionState(std::size_t maxPacketsToScan);
     void refreshSelectedFlowPackets(bool resetRows);
+    void refreshUnrecognizedPackets(bool resetRows);
     void refreshSelectedStreamItems(bool resetRows);
     void refreshSelectedFlowAnalysis();
     void clearSelectedFlowAnalysis();
@@ -607,6 +614,7 @@ private:
     std::size_t stream_item_budget_count_ {0};
     bool stream_tab_active_ {false};
     bool analysis_tab_active_ {false};
+    bool unrecognized_packets_selected_ {false};
     bool can_load_more_stream_items_ {false};
     bool stream_state_materialized_for_selected_flow_ {false};
     std::size_t prepared_tcp_contribution_packet_window_count_ {0U};

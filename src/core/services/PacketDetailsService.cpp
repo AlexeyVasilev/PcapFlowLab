@@ -9,6 +9,11 @@ namespace pfl {
 
 namespace {
 
+enum class DecodeMode : std::uint8_t {
+    strict,
+    best_effort,
+};
+
 struct LinkLayerView {
     std::uint16_t protocol_type {0};
     std::size_t payload_offset {0};
@@ -128,10 +133,11 @@ std::vector<std::uint8_t> copy_partial_field(
     );
 }
 
-}  // namespace
-
-std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::uint8_t> packet_bytes,
-                                                          const PacketRef& packet_ref) const {
+std::optional<PacketDetails> decode_packet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    const DecodeMode mode
+) {
     PacketDetails details {
         .packet_index = packet_ref.packet_index,
         .captured_length = packet_ref.captured_length,
@@ -243,14 +249,14 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         if (details.ipv4.protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 transport_offset + tcp_header_length > packet_end ||
                 packet_bytes.size() < transport_offset + tcp_header_length) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_tcp = true;
@@ -277,7 +283,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         if (details.ipv4.protocol == detail::kIpProtocolUdp) {
             const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
             if (!udp_payload.has_value()) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_udp = true;
@@ -292,7 +298,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
 
         if (details.ipv4.protocol == detail::kIpProtocolIcmp) {
             if (transport_offset + 2U > packet_end || packet_bytes.size() < transport_offset + 2U) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_icmp = true;
@@ -303,7 +309,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             return details;
         }
 
-        return std::nullopt;
+        return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
     }
 
     if (envelope->protocol_type == detail::kEtherTypeIpv6) {
@@ -344,14 +350,14 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
         if (payload->next_header == detail::kIpProtocolTcp) {
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 packet_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 payload->payload_offset + tcp_header_length > packet_end ||
                 packet_bytes.size() < payload->payload_offset + tcp_header_length) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_tcp = true;
@@ -382,7 +388,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
                 ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)
             );
             if (!udp_payload.has_value()) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_udp = true;
@@ -397,7 +403,7 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
 
         if (payload->next_header == detail::kIpProtocolIcmpV6) {
             if (payload->payload_offset + 2U > packet_end || packet_bytes.size() < payload->payload_offset + 2U) {
-                return std::nullopt;
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_icmpv6 = true;
@@ -408,10 +414,26 @@ std::optional<PacketDetails> PacketDetailsService::decode(std::span<const std::u
             return details;
         }
 
-        return std::nullopt;
+        return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
     }
 
     return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<PacketDetails> PacketDetailsService::decode(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref
+) const {
+    return decode_packet_details(packet_bytes, packet_ref, DecodeMode::strict);
+}
+
+std::optional<PacketDetails> PacketDetailsService::decode_best_effort(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref
+) const {
+    return decode_packet_details(packet_bytes, packet_ref, DecodeMode::best_effort);
 }
 
 }  // namespace pfl

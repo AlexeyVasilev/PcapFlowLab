@@ -348,6 +348,19 @@ Flows view should clearly distinguish:
 - filter has no matches;
 - general flow-list error state if one exists.
 
+### Unrecognized packets list
+
+Frontends may show a separate selectable list for packets that could not be assigned to a normal flow.
+
+Shared expectations:
+
+- this list is distinct from the normal flow table rather than fabricated as a pseudo-flow;
+- rows are paginated like the selected-flow packet list;
+- selecting the unrecognized-packet list clears the active selected flow;
+- packet details inspection remains available;
+- stream reconstruction is unavailable for this selection mode;
+- the list is capture-backed only and is not guaranteed to persist through saved index round-trips.
+
 ### Backend vs frontend formatting
 
 Backend/frontend-neutral DTOs should ideally provide structured fields:

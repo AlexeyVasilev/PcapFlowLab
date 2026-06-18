@@ -98,6 +98,20 @@ PacketRow make_packet_row(const PacketRef& packet, const std::string_view direct
     };
 }
 
+UnrecognizedPacketRow make_unrecognized_packet_row(
+    const UnrecognizedPacketRecord& record,
+    const std::uint64_t row_number
+) {
+    return UnrecognizedPacketRow {
+        .row_number = row_number,
+        .packet_index = record.packet.packet_index,
+        .timestamp_text = format_packet_timestamp(record.packet),
+        .captured_length = record.packet.captured_length,
+        .original_length = record.packet.original_length,
+        .reason_text = record.reason_text,
+    };
+}
+
 struct StreamPacketCandidate {
     PacketRef packet {};
     std::string_view direction_text {};
@@ -1588,7 +1602,7 @@ std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef
     }
 
     PacketDetailsService service {};
-    return service.decode(bytes, packet);
+    return service.decode_best_effort(bytes, packet);
 }
 
 std::string CaptureSession::read_packet_hex_dump(const PacketRef& packet) const {
@@ -1944,6 +1958,32 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
     return slice_connection_packets(*connections[flow_index].ipv6, offset, limit);
 }
 
+std::vector<UnrecognizedPacketRow> CaptureSession::list_unrecognized_packets() const {
+    return list_unrecognized_packets(0U, unrecognized_packet_count());
+}
+
+std::vector<UnrecognizedPacketRow> CaptureSession::list_unrecognized_packets(
+    const std::size_t offset,
+    const std::size_t limit
+) const {
+    if (offset >= state_.unrecognized_packets.size() || limit == 0U) {
+        return {};
+    }
+
+    const auto slice_end = std::min(state_.unrecognized_packets.size(), offset + limit);
+    std::vector<UnrecognizedPacketRow> rows {};
+    rows.reserve(slice_end - offset);
+
+    for (std::size_t index = offset; index < slice_end; ++index) {
+        rows.push_back(make_unrecognized_packet_row(
+            state_.unrecognized_packets[index],
+            static_cast<std::uint64_t>(index + 1U)
+        ));
+    }
+
+    return rows;
+}
+
 std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_indices(const std::size_t flow_index) const {
     return suspected_tcp_retransmission_packet_indices(flow_index, flow_packet_count(flow_index));
 }
@@ -2138,6 +2178,10 @@ std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) cons
     }
 
     return connection_packet_count(*connections[flow_index].ipv6);
+}
+
+std::size_t CaptureSession::unrecognized_packet_count() const noexcept {
+    return state_.unrecognized_packets.size();
 }
 
 std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::size_t flow_index) const {
@@ -3020,6 +3064,17 @@ std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index)
         if (packet.has_value()) {
             return packet;
         }
+    }
+
+    const auto unrecognized_packet = std::find_if(
+        state_.unrecognized_packets.begin(),
+        state_.unrecognized_packets.end(),
+        [packet_index](const UnrecognizedPacketRecord& record) {
+            return record.packet.packet_index == packet_index;
+        }
+    );
+    if (unrecognized_packet != state_.unrecognized_packets.end()) {
+        return unrecognized_packet->packet;
     }
 
     return std::nullopt;

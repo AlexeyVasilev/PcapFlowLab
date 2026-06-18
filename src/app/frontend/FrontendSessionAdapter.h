@@ -42,11 +42,13 @@ public:
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] FrontendSelectionResultDto select_flow(std::size_t flow_index);
     [[nodiscard]] FrontendSelectedFlowPacketsResult get_selected_flow_packets(std::size_t offset, std::size_t limit);
+    [[nodiscard]] FrontendUnrecognizedPacketsResult get_unrecognized_packets(std::size_t offset, std::size_t limit) const;
     [[nodiscard]] FrontendSelectedFlowStreamResult get_selected_flow_stream(std::size_t max_packets_to_scan, std::size_t limit) const;
     [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(
         std::uint64_t packet_index,
         std::uint64_t flow_packet_index = 0U
     ) const;
+    [[nodiscard]] FrontendPacketDetailsDto get_unrecognized_packet_details(std::uint64_t packet_index) const;
     [[nodiscard]] FrontendSelectedFlowAnalysisDto get_selected_flow_analysis() const;
     [[nodiscard]] FrontendAnalysisSequenceExportResultDto export_selected_flow_analysis_sequence_csv(
         const std::filesystem::path& output_path
@@ -72,6 +74,12 @@ private:
     [[nodiscard]] FrontendSourceAvailabilityDto current_source_availability() const;
     [[nodiscard]] static FrontendFlowDto to_frontend_flow(const FlowRow& row);
     [[nodiscard]] static FrontendPacketDto to_frontend_packet(const PacketRow& row);
+    [[nodiscard]] static FrontendUnrecognizedPacketDto to_frontend_unrecognized_packet(const UnrecognizedPacketRow& row);
+    [[nodiscard]] FrontendPacketDetailsDto build_frontend_packet_details(
+        const PacketRef& packet,
+        std::optional<std::size_t> flow_index,
+        std::optional<std::uint64_t> flow_packet_index
+    ) const;
     [[nodiscard]] static AnalysisSettings to_analysis_settings(const FrontendSettingsDto& settings) noexcept;
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(
         const StreamItemRow& row,

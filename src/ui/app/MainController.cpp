@@ -1925,6 +1925,35 @@ QString buildPacketSummary(
     return lines.join(QLatin1Char('\n'));
 }
 
+QString buildPacketSummaryFallback(
+    const PacketRef& packet,
+    const PacketChecksumSections& checksum_sections = {}
+) {
+    QStringList lines {};
+
+    appendSection(lines, QStringLiteral("Packet"), {
+        QStringLiteral("Packet index in file: %1").arg(packet.packet_index),
+        QStringLiteral("Time: %1").arg(QString::fromStdString(session_detail::format_packet_timestamp_full(packet))),
+        QStringLiteral("Captured Length: %1").arg(packet.captured_length),
+        QStringLiteral("Original Length: %1").arg(packet.original_length),
+    });
+
+    QStringList warnings {};
+    if (packet.is_ip_fragmented) {
+        warnings.push_back(QStringLiteral("Packet is IP-fragmented"));
+    }
+    if (packet.captured_length != packet.original_length) {
+        warnings.push_back(QStringLiteral("Packet is truncated in capture"));
+        warnings.push_back(QStringLiteral("Captured Length: %1").arg(packet.captured_length));
+        warnings.push_back(QStringLiteral("Original Length: %1").arg(packet.original_length));
+    }
+    warnings.append(checksum_sections.warnings);
+    appendSection(lines, QStringLiteral("Warnings"), warnings);
+    appendSection(lines, QStringLiteral("Checksums"), checksum_sections.summary_lines);
+
+    return lines.join(QLatin1Char('\n'));
+}
+
 }  // namespace
 
 MainController::MainController(QObject* parent)
@@ -2080,7 +2109,7 @@ qulonglong MainController::totalPacketRowCount() const noexcept {
 }
 
 bool MainController::canLoadMorePackets() const noexcept {
-    return selected_flow_index_ >= 0 && loaded_packet_row_count_ < total_packet_row_count_;
+    return (selected_flow_index_ >= 0 || unrecognized_packets_selected_) && loaded_packet_row_count_ < total_packet_row_count_;
 }
 
 
@@ -3024,6 +3053,14 @@ int MainController::selectedFlowIndex() const noexcept {
     return selected_flow_index_;
 }
 
+bool MainController::unrecognizedPacketsSelected() const noexcept {
+    return unrecognized_packets_selected_;
+}
+
+qulonglong MainController::unrecognizedPacketCount() const noexcept {
+    return static_cast<qulonglong>(session_.unrecognized_packet_count());
+}
+
 qulonglong MainController::selectedPacketIndex() const noexcept {
     return selected_packet_index_;
 }
@@ -3121,6 +3158,11 @@ void MainController::cancelOpen() {
 
 void MainController::loadMorePackets() {
     if (!canLoadMorePackets()) {
+        return;
+    }
+
+    if (unrecognized_packets_selected_) {
+        refreshUnrecognizedPackets(false);
         return;
     }
 
@@ -3646,6 +3688,16 @@ void MainController::drillDownToPort(const quint32 port) {
 
 void MainController::setFlowDetailsTabIndex(const int index) {
     const bool streamActive = index == 1;
+    if (streamActive && unrecognized_packets_selected_) {
+        if (stream_tab_active_) {
+            stream_tab_active_ = false;
+            emit streamListStateChanged();
+        }
+        details_selection_context_ = DetailsSelectionContext::none;
+        packet_details_model_.clear();
+        return;
+    }
+
     if (stream_tab_active_ == streamActive) {
         return;
     }
@@ -3773,7 +3825,7 @@ void MainController::setCurrentTabIndex(const int index) {
     const bool analysisActive = current_tab_index_ == kAnalysisTabIndex;
     if (analysis_tab_active_ != analysisActive) {
         analysis_tab_active_ = analysisActive;
-        if (analysis_tab_active_ && selected_flow_index_ >= 0) {
+        if (analysis_tab_active_ && selected_flow_index_ >= 0 && !unrecognized_packets_selected_) {
             refreshSelectedFlowAnalysis();
         } else if (!analysis_tab_active_ && analysis_loading_) {
             ++active_analysis_request_id_;
@@ -3785,7 +3837,7 @@ void MainController::setCurrentTabIndex(const int index) {
 }
 
 void MainController::setSelectedFlowIndex(const int index) {
-    if (selected_flow_index_ == index) {
+    if (selected_flow_index_ == index && !unrecognized_packets_selected_) {
         return;
     }
 
@@ -3793,6 +3845,8 @@ void MainController::setSelectedFlowIndex(const int index) {
         setAnalysisSequenceExportState(false, {}, false);
     }
 
+    const bool unrecognizedSelectionChanged = unrecognized_packets_selected_;
+    unrecognized_packets_selected_ = false;
     selected_flow_index_ = index;
     clearPacketSelection();
     clearStreamSelection();
@@ -3819,6 +3873,9 @@ void MainController::setSelectedFlowIndex(const int index) {
     stream_state_materialized_for_selected_flow_ = false;
 
     emit selectedFlowIndexChanged();
+    if (unrecognizedSelectionChanged) {
+        emit unrecognizedPacketsSelectionChanged();
+    }
     emit selectedFlowWiresharkFilterChanged();
     emit packetListStateChanged();
     emit streamListStateChanged();
@@ -3856,6 +3913,51 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     details_selection_context_ = DetailsSelectionContext::packet;
     reloadSelectedPacketDetails();
     emit selectedPacketIndexChanged();
+}
+
+void MainController::selectUnrecognizedPackets() {
+    if (session_.unrecognized_packet_count() == 0U || unrecognized_packets_selected_) {
+        return;
+    }
+
+    if (!analysis_sequence_export_in_progress_ && (!analysis_sequence_export_status_text_.isEmpty() || analysis_sequence_export_status_is_error_)) {
+        setAnalysisSequenceExportState(false, {}, false);
+    }
+
+    selected_flow_index_ = -1;
+    unrecognized_packets_selected_ = true;
+    stream_tab_active_ = false;
+    clearPacketSelection();
+    clearStreamSelection();
+    clearSelectedFlowAnalysis();
+    current_flow_packet_numbers_.clear();
+    current_suspected_retransmission_packet_indices_.clear();
+    prepared_tcp_contribution_packet_window_count_ = 0U;
+    session_.clear_selected_flow_packet_cache();
+    session_.clear_selected_flow_tcp_payload_suppression();
+    packet_model_.clear();
+    current_stream_items_.clear();
+    stream_model_.clear();
+    total_packet_row_count_ = session_.unrecognized_packet_count();
+    loaded_packet_row_count_ = 0U;
+    packets_loading_ = true;
+    stream_loading_ = false;
+    loaded_stream_item_count_ = 0U;
+    total_stream_item_count_ = 0U;
+    stream_packet_window_count_ = 0U;
+    stream_item_budget_count_ = 0U;
+    can_load_more_stream_items_ = false;
+    stream_state_materialized_for_selected_flow_ = false;
+
+    emit selectedFlowIndexChanged();
+    emit unrecognizedPacketsSelectionChanged();
+    emit selectedFlowWiresharkFilterChanged();
+    emit packetListStateChanged();
+    emit streamListStateChanged();
+    emit actionAvailabilityChanged();
+
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
+    refreshUnrecognizedPackets(true);
 }
 
 void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex) {
@@ -4113,6 +4215,50 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     }
 }
 
+void MainController::refreshUnrecognizedPackets(const bool resetRows) {
+    const bool previousLoading = packets_loading_;
+    const auto previousLoaded = loaded_packet_row_count_;
+    const auto previousTotal = total_packet_row_count_;
+
+    if (!unrecognized_packets_selected_) {
+        packet_model_.clear();
+        loaded_packet_row_count_ = 0U;
+        total_packet_row_count_ = 0U;
+        packets_loading_ = false;
+        if (previousLoading != packets_loading_ || previousLoaded != loaded_packet_row_count_ || previousTotal != total_packet_row_count_) {
+            emit packetListStateChanged();
+        }
+        return;
+    }
+
+    total_packet_row_count_ = session_.unrecognized_packet_count();
+    const auto offset = resetRows ? std::size_t {0U} : loaded_packet_row_count_;
+    const auto batchSize = resetRows
+        ? std::min(kInitialPacketRows, total_packet_row_count_)
+        : std::min(kPacketRowBatchSize, total_packet_row_count_ - offset);
+
+    packets_loading_ = true;
+    const auto rows = session_.list_unrecognized_packets(offset, batchSize);
+
+    if (resetRows) {
+        packet_model_.refresh(rows);
+        loaded_packet_row_count_ = 0U;
+    } else {
+        packet_model_.append(rows);
+    }
+
+    loaded_packet_row_count_ = std::min(total_packet_row_count_, offset + rows.size());
+    packets_loading_ = false;
+
+    if (selected_packet_index_ != kInvalidPacketSelection && packet_model_.rowForPacketIndex(selected_packet_index_) < 0) {
+        clearPacketSelection();
+    }
+
+    if (previousLoading != packets_loading_ || previousLoaded != loaded_packet_row_count_ || previousTotal != total_packet_row_count_) {
+        emit packetListStateChanged();
+    }
+}
+
 void MainController::refreshSelectedStreamItems(const bool resetRows) {
     const bool previousLoading = stream_loading_;
     const auto previousLoaded = loaded_stream_item_count_;
@@ -4286,9 +4432,11 @@ void MainController::clearStreamSelection() {
 
 void MainController::clearFlowSelection() {
     const bool flowChanged = selected_flow_index_ != -1;
+    const bool unrecognizedSelectionChanged = unrecognized_packets_selected_;
     const bool packetStateChanged = packets_loading_ || loaded_packet_row_count_ != 0U || total_packet_row_count_ != 0U;
     const bool streamStateChanged = stream_loading_ || loaded_stream_item_count_ != 0U || total_stream_item_count_ != 0U || stream_packet_window_count_ != 0U || stream_item_budget_count_ != 0U || can_load_more_stream_items_ || stream_state_materialized_for_selected_flow_;
     selected_flow_index_ = -1;
+    unrecognized_packets_selected_ = false;
     packet_model_.clear();
     current_stream_items_.clear();
     current_flow_packet_numbers_.clear();
@@ -4322,6 +4470,12 @@ void MainController::clearFlowSelection() {
 
     if (flowChanged) {
         emit selectedFlowIndexChanged();
+    }
+    if (unrecognizedSelectionChanged) {
+        emit unrecognizedPacketsSelectionChanged();
+    }
+    if (flowChanged || unrecognizedSelectionChanged) {
+        emit selectedFlowWiresharkFilterChanged();
         emit actionAvailabilityChanged();
     }
 }
@@ -4364,6 +4518,7 @@ void MainController::resetLoadedState() {
     top_endpoints_model_.clear();
     top_ports_model_.clear();
     selected_flow_index_ = -1;
+    unrecognized_packets_selected_ = false;
     selected_packet_index_ = kInvalidPacketSelection;
     selected_stream_item_index_ = kInvalidStreamSelection;
     details_selection_context_ = DetailsSelectionContext::none;
@@ -4687,11 +4842,6 @@ void MainController::reloadSelectedPacketDetails() {
     }
 
     const auto details = session_.read_packet_details(*packet);
-    if (!details.has_value()) {
-        packet_details_model_.clear();
-        return;
-    }
-
     const auto hexDump = session_.read_packet_hex_dump(*packet);
     const auto payloadHexDump = session_.read_packet_payload_hex_dump(*packet);
     const auto protocolText = selected_flow_quic_protocol_text_for_packet(
@@ -4701,13 +4851,8 @@ void MainController::reloadSelectedPacketDetails() {
         QString::fromStdString(session_.read_packet_protocol_details_text(*packet))
     );
     const auto packetBytes = session_.read_packet_data(*packet);
-    const auto payload_lengths = resolve_transport_payload_lengths(
-        *details,
-        std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
-        *packet
-    );
     PacketChecksumSections checksum_sections {};
-    if (validate_selected_packet_checksums_) {
+    if (details.has_value() && validate_selected_packet_checksums_) {
         checksum_sections = build_packet_checksum_sections(
             *details,
             *packet,
@@ -4715,41 +4860,59 @@ void MainController::reloadSelectedPacketDetails() {
         );
     }
 
-    packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
-    packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
-        session_detail::build_packet_summary_layers(*details, *packet, {
-            .source_capture_accessible = true,
-            .flow_packet_index = [&]() -> std::optional<std::uint64_t> {
-                const auto it = current_flow_packet_numbers_.find(packet->packet_index);
-                if (it == current_flow_packet_numbers_.end()) {
-                    return std::nullopt;
-                }
-                return it->second;
-            }(),
-            .transport_payload_length = payload_lengths.real_payload_length,
-            .original_transport_payload_length = payload_lengths.original_payload_length,
-            .protocol_details_text = protocolText.toStdString(),
-            .checksum_summary_lines = [&]() {
-                std::vector<std::string> lines {};
-                lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
-                for (const auto& line : checksum_sections.summary_lines) {
-                    lines.push_back(line.toStdString());
-                }
-                return lines;
-            }(),
-            .checksum_warning_lines = [&]() {
-                std::vector<std::string> lines {};
-                lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
-                for (const auto& line : checksum_sections.warnings) {
-                    lines.push_back(line.toStdString());
-                }
-                return lines;
-            }(),
-        })
-    ));
     packet_details_model_.setHexText(QString::fromStdString(hexDump));
-    packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
-    packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
+
+    if (details.has_value()) {
+        const auto payload_lengths = resolve_transport_payload_lengths(
+            *details,
+            std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
+            *packet
+        );
+        packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
+        packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+            session_detail::build_packet_summary_layers(*details, *packet, {
+                .source_capture_accessible = true,
+                .flow_packet_index = [&]() -> std::optional<std::uint64_t> {
+                    const auto it = current_flow_packet_numbers_.find(packet->packet_index);
+                    if (it == current_flow_packet_numbers_.end()) {
+                        return std::nullopt;
+                    }
+                    return it->second;
+                }(),
+                .transport_payload_length = packet->payload_length,
+                .original_transport_payload_length = payload_lengths.original_payload_length,
+                .protocol_details_text = protocolText.toStdString(),
+                .checksum_summary_lines = [&]() {
+                    std::vector<std::string> lines {};
+                    lines.reserve(static_cast<std::size_t>(checksum_sections.summary_lines.size()));
+                    for (const auto& line : checksum_sections.summary_lines) {
+                        lines.push_back(line.toStdString());
+                    }
+                    return lines;
+                }(),
+                .checksum_warning_lines = [&]() {
+                    std::vector<std::string> lines {};
+                    lines.reserve(static_cast<std::size_t>(checksum_sections.warnings.size()));
+                    for (const auto& line : checksum_sections.warnings) {
+                        lines.push_back(line.toStdString());
+                    }
+                    return lines;
+                }(),
+            })
+        ));
+        packet_details_model_.setPayloadTabTitle(packet_payload_tab_title(*details));
+        packet_details_model_.setPayloadText(buildPayloadText(*details, payloadHexDump));
+    } else {
+        packet_details_model_.setPacketDetailsText(buildPacketSummaryFallback(*packet, checksum_sections));
+        packet_details_model_.setSummaryLayers({});
+        packet_details_model_.setPayloadTabTitle(QStringLiteral("Payload"));
+        packet_details_model_.setPayloadText(
+            !payloadHexDump.empty()
+                ? QString::fromStdString(payloadHexDump)
+                : QStringLiteral("Transport payload not available for this packet")
+        );
+    }
+
     packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
 }
 

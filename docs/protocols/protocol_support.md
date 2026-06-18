@@ -79,6 +79,12 @@ Selected-packet inspection is on-demand:
 - layered Summary is built from decoded packet details;
 - `Raw`, `Payload`, and `Protocol` tabs are populated only for the selected packet.
 
+For malformed or truncated packets, selected-packet inspection is best-effort:
+
+- the inspector may still show Frame / link / network facts that were decoded safely;
+- deeper transport or application layers may be absent when parsing stops conservatively;
+- raw packet bytes can still be shown when the source capture is attached and readable.
+
 If the original source capture is unavailable, index-backed metadata may still be shown, but byte-backed details remain unavailable.
 
 ### Selected-flow work
@@ -199,6 +205,15 @@ Service hints are intentionally heuristic and bounded.
 - QUIC service hints may require deferred selected-flow analysis.
 - ARP can produce descriptive request/reply/probe/gratuitous text.
 - Many other hint-only protocols do not currently produce service text.
+
+### Unrecognized packets
+
+Packets that cannot be assigned to a normal flow are collected separately during direct source-capture open.
+
+- they do not participate in normal flow grouping;
+- they remain selectable for packet-details inspection;
+- stream reconstruction does not apply to them;
+- they are not currently persisted into saved index files, so reopening an index can lose the unrecognized-packet list.
 
 ### Stream items
 

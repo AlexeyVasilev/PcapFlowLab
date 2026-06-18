@@ -880,6 +880,8 @@ ApplicationWindow {
             FlowWorkspacePane {
                 flowModel: mainController.flowModel
                 selectedFlowIndex: mainController.selectedFlowIndex
+                unrecognizedPacketsSelected: mainController.unrecognizedPacketsSelected
+                unrecognizedPacketCount: mainController.unrecognizedPacketCount
                 sourceCaptureAvailable: mainController.hasSourceCapture
                 filterText: mainController.flowFilterText
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
@@ -905,6 +907,9 @@ ApplicationWindow {
                 packetDetailsModel: mainController.packetDetailsModel
                 onFlowSelected: function(flowIndex) {
                     mainController.selectedFlowIndex = flowIndex
+                }
+                onUnrecognizedPacketsRequested: function() {
+                    mainController.selectUnrecognizedPackets()
                 }
                 onFilterTextEdited: function(text) {
                     mainController.flowFilterText = text

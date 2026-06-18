@@ -2010,6 +2010,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .summary = session_.summary(),
         .captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes + protocol_summary.other.captured_bytes,
         .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes + protocol_summary.other.original_bytes,
+        .unrecognized_packet_count = session_.unrecognized_packet_count(),
         .protocol_summary = protocol_summary,
         .quic_recognition = session_.quic_recognition_stats(),
         .tls_recognition = session_.tls_recognition_stats(),
@@ -2111,6 +2112,30 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
     result.packets.reserve(rows.size());
     for (const auto& row : rows) {
         result.packets.push_back(to_frontend_packet(row));
+    }
+
+    return result;
+}
+
+FrontendUnrecognizedPacketsResult FrontendSessionAdapter::get_unrecognized_packets(
+    const std::size_t offset,
+    const std::size_t limit
+) const {
+    FrontendUnrecognizedPacketsResult result {
+        .has_capture = session_.has_capture(),
+        .offset = offset,
+        .limit = limit,
+        .total_count = session_.unrecognized_packet_count(),
+    };
+
+    if (!result.has_capture || offset >= result.total_count || limit == 0U) {
+        return result;
+    }
+
+    const auto rows = session_.list_unrecognized_packets(offset, limit);
+    result.packets.reserve(rows.size());
+    for (const auto& row : rows) {
+        result.packets.push_back(to_frontend_unrecognized_packet(row));
     }
 
     return result;
@@ -2416,19 +2441,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
-        .packet_found = false,
-        .source_capture_accessible = session_.source_capture_accessible(),
-        .details_available = false,
-        .raw_preview_available = false,
-        .raw_preview_truncated = false,
-        .payload_preview_available = false,
-        .payload_preview_truncated = false,
-        .payload_preview_no_payload = false,
-        .checksum_validation_enabled = settings_.validate_selected_packet_checksums,
-        .flow_index = selected_flow_index_.value_or(0U),
         .packet_index = packet_index,
         .details_title = packet_details_title(),
-        .summary_text = {},
         .payload_tab_title = "Payload",
         .source_availability = current_source_availability(),
     };
@@ -2457,14 +2471,79 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         return result;
     }
 
-    const auto& packet = *packet_it;
-    result.packet_found = true;
-    result.timestamp_text = session_detail::format_packet_timestamp_full(packet);
-    result.captured_length = packet.captured_length;
-    result.original_length = packet.original_length;
-    result.payload_length = packet.payload_length;
-    result.is_ip_fragmented = packet.is_ip_fragmented;
-    result.tcp_flags_text = session_detail::format_tcp_flags_text(packet.tcp_flags);
+    return build_frontend_packet_details(
+        *packet_it,
+        selected_flow_index_,
+        flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt
+    );
+}
+
+FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) const {
+    FrontendPacketDetailsDto result {
+        .has_capture = session_.has_capture(),
+        .has_selected_flow = false,
+        .packet_index = packet_index,
+        .details_title = packet_details_title(),
+        .payload_tab_title = "Payload",
+        .source_availability = current_source_availability(),
+    };
+
+    if (!result.has_capture) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    const auto packet = session_.find_packet(packet_index);
+    if (!packet.has_value()) {
+        result.error_text = "The selected packet is unavailable.";
+        return result;
+    }
+
+    const auto matches_unrecognized = std::any_of(
+        session_.state().unrecognized_packets.begin(),
+        session_.state().unrecognized_packets.end(),
+        [packet_index](const UnrecognizedPacketRecord& record) {
+            return record.packet.packet_index == packet_index;
+        }
+    );
+    if (!matches_unrecognized) {
+        result.error_text = "The selected packet is unavailable in the unrecognized packet context.";
+        return result;
+    }
+
+    return build_frontend_packet_details(*packet, std::nullopt, std::nullopt);
+}
+
+FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
+    const PacketRef& packet,
+    const std::optional<std::size_t> flow_index,
+    const std::optional<std::uint64_t> flow_packet_index
+) const {
+    FrontendPacketDetailsDto result {
+        .has_capture = session_.has_capture(),
+        .has_selected_flow = flow_index.has_value(),
+        .packet_found = true,
+        .source_capture_accessible = session_.source_capture_accessible(),
+        .details_available = false,
+        .raw_preview_available = false,
+        .raw_preview_truncated = false,
+        .payload_preview_available = false,
+        .payload_preview_truncated = false,
+        .payload_preview_no_payload = false,
+        .checksum_validation_enabled = settings_.validate_selected_packet_checksums,
+        .flow_index = flow_index.value_or(0U),
+        .packet_index = packet.packet_index,
+        .details_title = packet_details_title(),
+        .summary_text = {},
+        .payload_tab_title = "Payload",
+        .timestamp_text = session_detail::format_packet_timestamp_full(packet),
+        .captured_length = packet.captured_length,
+        .original_length = packet.original_length,
+        .payload_length = packet.payload_length,
+        .is_ip_fragmented = packet.is_ip_fragmented,
+        .tcp_flags_text = session_detail::format_tcp_flags_text(packet.tcp_flags),
+        .source_availability = current_source_availability(),
+    };
 
     if (!result.source_capture_accessible) {
         result.summary_text = build_frontend_packet_summary_text(packet, std::nullopt, {}, false);
@@ -2481,39 +2560,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     }
 
     const auto details = session_.read_packet_details(packet);
-    if (!details.has_value()) {
-        result.unavailable_text = "Packet details are unavailable for this packet.";
-        return result;
-    }
-
-    result.details_available = true;
-    result.payload_tab_title = packet_payload_tab_title(*details);
-    result.link_summary_text = format_link_summary(*details);
-    result.network_summary_text = format_network_summary(*details);
-    result.transport_summary_text = format_transport_summary(*details);
-    result.protocol_details_text = frontend_packet_protocol_text(session_, selected_flow_index_, packet);
-
-    PacketChecksumSections checksum_sections {};
     const auto packet_bytes = session_.read_packet_data(packet);
-    if (result.checksum_validation_enabled) {
-        checksum_sections =
-            build_packet_checksum_sections(*details, packet, std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
-        result.checksum_summary_lines = checksum_sections.summary_lines;
-        result.checksum_warning_lines = checksum_sections.warnings;
-    }
-    result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
-        .source_capture_accessible = true,
-        .flow_packet_index = flow_packet_index != 0U
-            ? std::optional<std::uint64_t> {flow_packet_index}
-            : std::nullopt,
-        .transport_payload_length = packet.payload_length,
-        .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
-        .protocol_details_text = result.protocol_details_text,
-        .checksum_summary_lines = result.checksum_summary_lines,
-        .checksum_warning_lines = result.checksum_warning_lines,
-    });
-    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
-
     const auto raw_preview_text = build_packet_raw_text(packet_bytes);
     result.raw_preview_text = raw_preview_text;
     result.raw_preview_truncated = false;
@@ -2526,15 +2573,46 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     result.payload_preview_text = payload_preview_text;
     result.payload_preview_truncated = false;
     result.payload_preview_available = !payload_preview_text.empty();
+
+    PacketChecksumSections checksum_sections {};
+    result.protocol_details_text = frontend_packet_protocol_text(session_, flow_index, packet);
+
+    if (details.has_value() && result.checksum_validation_enabled) {
+        checksum_sections =
+            build_packet_checksum_sections(*details, packet, std::span<const std::uint8_t>(packet_bytes.data(), packet_bytes.size()));
+        result.checksum_summary_lines = checksum_sections.summary_lines;
+        result.checksum_warning_lines = checksum_sections.warnings;
+    }
+
+    if (details.has_value()) {
+        result.details_available = true;
+        result.payload_tab_title = packet_payload_tab_title(*details);
+        result.link_summary_text = format_link_summary(*details);
+        result.network_summary_text = format_network_summary(*details);
+        result.transport_summary_text = format_transport_summary(*details);
+        result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
+            .source_capture_accessible = true,
+            .flow_packet_index = flow_packet_index,
+            .transport_payload_length = packet.payload_length,
+            .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
+            .protocol_details_text = result.protocol_details_text,
+            .checksum_summary_lines = result.checksum_summary_lines,
+            .checksum_warning_lines = result.checksum_warning_lines,
+        });
+    } else {
+        result.unavailable_text = "Only partial packet details are available for this packet.";
+    }
+
+    result.summary_text = build_frontend_packet_summary_text(packet, details, checksum_sections, true);
     result.payload_preview_no_payload =
-        !result.payload_preview_available && (details->has_tcp || details->has_udp) && packet.payload_length == 0U;
+        !result.payload_preview_available && packet.payload_length == 0U && (details.has_value() ? (details->has_tcp || details->has_udp) : true);
     result.payload_preview_unavailable_text = result.payload_preview_available
         ? std::string {}
         : (result.payload_preview_no_payload
             ? "No transport payload is available for this packet."
             : "Transport payload bytes are unavailable for this packet.");
 
-    if (!result.payload_preview_available) {
+    if (!result.payload_preview_available && result.unavailable_text.empty()) {
         result.unavailable_text = result.payload_preview_unavailable_text;
     }
 
@@ -2660,6 +2738,17 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .payload_preview_text = payload_preview_text,
         .payload_preview_unavailable_text = payload_preview_text.empty() ? stream_payload_unavailable_text() : std::string {},
         .protocol_details_text = frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row),
+    };
+}
+
+FrontendUnrecognizedPacketDto FrontendSessionAdapter::to_frontend_unrecognized_packet(const UnrecognizedPacketRow& row) {
+    return FrontendUnrecognizedPacketDto {
+        .row_number = row.row_number,
+        .packet_index = row.packet_index,
+        .timestamp_text = row.timestamp_text,
+        .captured_length = row.captured_length,
+        .original_length = row.original_length,
+        .reason_text = row.reason_text,
     };
 }
 

@@ -298,6 +298,7 @@ if(BUILD_TESTING)
         tests/unit/FlowHintsRawFixturesTests.cpp
         tests/unit/FlowHintsRealFixturesTests.cpp
         tests/unit/ProtocolRecognitionStatsTests.cpp
+        tests/unit/UnrecognizedPacketTests.cpp
     )
 
     target_link_libraries(

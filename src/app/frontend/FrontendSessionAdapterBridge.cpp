@@ -288,6 +288,7 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     std::ostringstream out {};
     out << '{'
         << "\"has_capture\":" << bool_json(overview.has_capture) << ','
+        << "\"unrecognized_packet_count\":" << overview.unrecognized_packet_count << ','
         << "\"summary\":{"
         << "\"packet_count\":" << overview.summary.packet_count << ','
         << "\"flow_count\":" << overview.summary.flow_count << ','
@@ -459,6 +460,35 @@ std::string packet_result_json(const pfl::FrontendSelectedFlowPacketsResult& res
             << "\"is_ip_fragmented\":" << bool_json(packet.is_ip_fragmented) << ','
             << "\"suspected_tcp_retransmission\":" << bool_json(packet.suspected_tcp_retransmission) << ','
             << "\"tcp_flags_text\":" << json_string(packet.tcp_flags_text)
+            << '}';
+    }
+
+    out << "]}";
+    return out.str();
+}
+
+std::string unrecognized_packet_result_json(const pfl::FrontendUnrecognizedPacketsResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"has_capture\":" << bool_json(result.has_capture) << ','
+        << "\"offset\":" << result.offset << ','
+        << "\"limit\":" << result.limit << ','
+        << "\"total_count\":" << result.total_count << ','
+        << "\"packets\":[";
+
+    for (std::size_t index = 0; index < result.packets.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        const auto& packet = result.packets[index];
+        out << '{'
+            << "\"row_number\":" << packet.row_number << ','
+            << "\"packet_index\":" << packet.packet_index << ','
+            << "\"timestamp_text\":" << json_string(packet.timestamp_text) << ','
+            << "\"captured_length\":" << packet.captured_length << ','
+            << "\"original_length\":" << packet.original_length << ','
+            << "\"reason_text\":" << json_string(packet.reason_text)
             << '}';
     }
 
@@ -785,6 +815,10 @@ std::string selection_json(const pfl::FrontendSelectionResultDto& result) {
     return pfl::FrontendSelectedFlowPacketsResult {};
 }
 
+[[nodiscard]] pfl::FrontendUnrecognizedPacketsResult unavailable_unrecognized_packets() {
+    return pfl::FrontendUnrecognizedPacketsResult {};
+}
+
 [[nodiscard]] pfl::FrontendSelectedFlowStreamResult unavailable_selected_flow_stream() {
     pfl::FrontendSelectedFlowStreamResult result {};
     result.unavailable_text = std::string {kAdapterUnavailableText};
@@ -1036,6 +1070,18 @@ char* pfl_frontend_session_adapter_get_selected_flow_packets_json(
     return make_c_string(packet_result_json(handle->adapter.get_selected_flow_packets(offset, limit)));
 }
 
+char* pfl_frontend_session_adapter_get_unrecognized_packets_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::size_t offset,
+    const std::size_t limit
+) {
+    if (handle == nullptr) {
+        return make_c_string(unrecognized_packet_result_json(unavailable_unrecognized_packets()));
+    }
+
+    return make_c_string(unrecognized_packet_result_json(handle->adapter.get_unrecognized_packets(offset, limit)));
+}
+
 char* pfl_frontend_session_adapter_get_selected_flow_stream_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::size_t max_packets_to_scan,
@@ -1058,6 +1104,17 @@ char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     }
 
     return make_c_string(packet_details_json(handle->adapter.get_selected_flow_packet_details(packet_index, flow_packet_index)));
+}
+
+char* pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint64_t packet_index
+) {
+    if (handle == nullptr) {
+        return make_c_string(packet_details_json(unavailable_packet_details()));
+    }
+
+    return make_c_string(packet_details_json(handle->adapter.get_unrecognized_packet_details(packet_index)));
 }
 
 char* pfl_frontend_session_adapter_get_selected_flow_analysis_json(PflFrontendSessionAdapterHandle* handle) {

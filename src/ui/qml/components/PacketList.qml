@@ -5,6 +5,8 @@ import QtQuick.Layouts
 Frame {
     id: root
 
+    property string titleText: "Packets"
+    property string emptyText: "Select a flow to inspect packets"
     property var packetModel: null
     property var selectedPacketIndex: -1
     property bool packetsLoading: false
@@ -13,6 +15,7 @@ Frame {
     property var totalPacketRowCount: 0
     property bool canLoadMorePackets: false
     readonly property bool showMarkerColumn: !!root.packetModel && root.packetModel.hasVisibleMarkers
+    readonly property bool unrecognizedMode: !!root.packetModel && root.packetModel.unrecognizedMode
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
 
@@ -164,7 +167,7 @@ Frame {
         spacing: 8
 
         Label {
-            text: "Packets"
+            text: root.titleText
             font.pixelSize: 18
             font.bold: true
         }
@@ -214,6 +217,7 @@ Frame {
                 font.bold: true
                 Layout.preferredWidth: 68
                 horizontalAlignment: Text.AlignHCenter
+                visible: !root.unrecognizedMode
             }
 
             Label {
@@ -230,14 +234,14 @@ Frame {
             }
 
             Label {
-                text: "Payload"
+                text: root.unrecognizedMode ? "Original" : "Payload"
                 font.bold: true
                 Layout.preferredWidth: 68
                 horizontalAlignment: Text.AlignRight
             }
 
             Label {
-                text: "Flags"
+                text: root.unrecognizedMode ? "Parsed up to / Reason" : "Flags"
                 font.bold: true
                 Layout.fillWidth: true
             }
@@ -284,6 +288,7 @@ Frame {
                     required property bool isIpFragmented
                     required property bool suspectedTcpRetransmission
                     required property string tcpFlagsText
+                    required property string reasonText
 
                     readonly property bool selected: index === packetListView.currentIndex
 
@@ -311,6 +316,7 @@ Frame {
                             color: root.directionBackgroundColor(directionText, selected)
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+                            visible: !root.unrecognizedMode
 
                             Text {
                                 anchors.centerIn: parent
@@ -349,7 +355,7 @@ Frame {
                         }
 
                         Text {
-                            text: payloadLength
+                            text: root.unrecognizedMode ? originalLength : payloadLength
                             Layout.preferredWidth: 68
                             horizontalAlignment: Text.AlignRight
                             verticalAlignment: Text.AlignVCenter
@@ -359,7 +365,9 @@ Frame {
                             Layout.fillWidth: true
                             implicitHeight: 24
                             radius: 4
-                            color: root.flagBackgroundColor(tcpFlagsText, payloadLength, selected)
+                            color: root.unrecognizedMode
+                                ? "transparent"
+                                : root.flagBackgroundColor(tcpFlagsText, payloadLength, selected)
                             border.width: color === "transparent" ? 0 : 1
                             border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
@@ -369,14 +377,16 @@ Frame {
                                 anchors.leftMargin: 8
                                 anchors.right: parent.right
                                 anchors.rightMargin: 8
-                                text: tcpFlagsText
+                                text: root.unrecognizedMode ? reasonText : tcpFlagsText
                                 font.family: "Consolas"
-                                color: root.flagTextColor(tcpFlagsText, payloadLength, selected)
+                                color: root.unrecognizedMode
+                                    ? "#0f172a"
+                                    : root.flagTextColor(tcpFlagsText, payloadLength, selected)
                                 elide: Text.ElideRight
                             }
 
-                            ToolTip.visible: flagsHoverArea.containsMouse && tcpFlagsText.length > 0
-                            ToolTip.text: tcpFlagsText
+                            ToolTip.visible: flagsHoverArea.containsMouse && (root.unrecognizedMode ? reasonText.length > 0 : tcpFlagsText.length > 0)
+                            ToolTip.text: root.unrecognizedMode ? reasonText : tcpFlagsText
 
                             MouseArea {
                                 id: flagsHoverArea
@@ -433,7 +443,7 @@ Frame {
                 anchors.centerIn: parent
                 visible: !root.packetsLoading && packetListView.count === 0
                 color: "#64748b"
-                text: "Select a flow to inspect packets"
+                text: root.emptyText
             }
         }
     }

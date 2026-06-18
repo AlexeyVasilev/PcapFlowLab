@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
+    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -90,6 +90,11 @@ extern "C" {
         offset: usize,
         limit: usize,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_unrecognized_packets_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        offset: usize,
+        limit: usize,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_stream_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         max_packets_to_scan: usize,
@@ -99,6 +104,10 @@ extern "C" {
         handle: *mut PflFrontendSessionAdapterHandle,
         packet_index: u64,
         flow_packet_index: u64,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_unrecognized_packet_details_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        packet_index: u64,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_selected_flow_analysis_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -315,6 +324,17 @@ impl CppFrontendSessionAdapter {
         parse_json_owned::<SelectedFlowPacketsDto>(json)
     }
 
+    pub fn get_unrecognized_packets(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<UnrecognizedPacketsDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_unrecognized_packets_json(self.handle, offset, limit)
+        };
+        parse_json_owned::<UnrecognizedPacketsDto>(json)
+    }
+
     pub fn get_selected_flow_stream(
         &self,
         max_packets_to_scan: usize,
@@ -333,6 +353,16 @@ impl CppFrontendSessionAdapter {
     ) -> Result<PacketDetailsDto, String> {
         let json = unsafe {
             pfl_frontend_session_adapter_get_selected_flow_packet_details_json(self.handle, packet_index, flow_packet_index)
+        };
+        parse_json_owned::<PacketDetailsDto>(json)
+    }
+
+    pub fn get_unrecognized_packet_details(
+        &self,
+        packet_index: u64,
+    ) -> Result<PacketDetailsDto, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_unrecognized_packet_details_json(self.handle, packet_index)
         };
         parse_json_owned::<PacketDetailsDto>(json)
     }

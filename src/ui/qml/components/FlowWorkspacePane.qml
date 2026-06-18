@@ -7,6 +7,8 @@ Item {
 
     property var flowModel: null
     property int selectedFlowIndex: -1
+    property bool unrecognizedPacketsSelected: false
+    property int unrecognizedPacketCount: 0
     property bool sourceCaptureAvailable: true
     property string filterText: ""
     property string wiresharkFilterText: ""
@@ -33,6 +35,7 @@ Item {
     readonly property bool selectedFlowWorkspaceLoading: root.selectedFlowIndex >= 0 && (root.packetsLoading || root.streamLoading)
 
     signal flowSelected(int flowIndex)
+    signal unrecognizedPacketsRequested()
     signal filterTextEdited(string text)
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
@@ -42,6 +45,13 @@ Item {
     signal streamItemSelected(var streamItemIndex)
     signal loadMoreStreamItemsRequested()
     signal flowDetailsTabChanged(int index)
+
+    onUnrecognizedPacketsSelectedChanged: {
+        if (unrecognizedPacketsSelected && flowDetailTabs.currentIndex !== 0) {
+            flowDetailTabs.currentIndex = 0
+            root.flowDetailsTabChanged(0)
+        }
+    }
 
     SplitView {
         anchors.fill: parent
@@ -53,6 +63,8 @@ Item {
             SplitView.preferredHeight: 430
             flowModel: root.flowModel
             selectedFlowIndex: root.selectedFlowIndex
+            unrecognizedPacketsSelected: root.unrecognizedPacketsSelected
+            unrecognizedPacketCount: root.unrecognizedPacketCount
             filterText: root.filterText
             wiresharkFilterText: root.wiresharkFilterText
             wiresharkFilterVisible: root.wiresharkFilterVisible
@@ -72,6 +84,9 @@ Item {
             }
             onSendFlowToAnalysisRequested: function() {
                 root.sendFlowToAnalysisRequested()
+            }
+            onUnrecognizedPacketsRequested: function() {
+                root.unrecognizedPacketsRequested()
             }
         }
 
@@ -95,6 +110,13 @@ Item {
                         Layout.fillWidth: true
                         onCurrentIndexChanged: root.flowDetailsTabChanged(currentIndex)
                         spacing: 6
+
+                        onVisibleChanged: {
+                            if (visible && root.unrecognizedPacketsSelected && currentIndex !== 0) {
+                                currentIndex = 0
+                                root.flowDetailsTabChanged(0)
+                            }
+                        }
 
                         background: Rectangle {
                             color: "transparent"
@@ -127,6 +149,7 @@ Item {
                         TabButton {
                             text: "Stream"
                             implicitHeight: 34
+                            enabled: !root.unrecognizedPacketsSelected
 
                             contentItem: Label {
                                 text: parent.text
@@ -155,6 +178,10 @@ Item {
                         currentIndex: flowDetailTabs.currentIndex
 
                         PacketList {
+                            titleText: root.unrecognizedPacketsSelected ? "Unrecognized Packets" : "Packets"
+                            emptyText: root.unrecognizedPacketsSelected
+                                ? "Select the unrecognized packets list to inspect packets"
+                                : "Select a flow to inspect packets"
                             packetModel: root.packetModel
                             selectedPacketIndex: root.selectedPacketIndex
                             packetsLoading: root.packetsLoading
@@ -171,7 +198,7 @@ Item {
                         }
 
                         StreamView {
-                            flowSelected: root.selectedFlowIndex >= 0
+                            flowSelected: root.selectedFlowIndex >= 0 && !root.unrecognizedPacketsSelected
                             sourceCaptureAvailable: root.sourceCaptureAvailable
                             streamModel: root.streamModel
                             selectedStreamItemIndex: root.selectedStreamItemIndex

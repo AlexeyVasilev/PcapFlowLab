@@ -42,6 +42,7 @@ void run_reassembly_v1_tests();
 void run_perf_open_logger_tests();
 void run_quic_initial_parser_tests();
 void run_protocol_recognition_stats_tests();
+void run_unrecognized_packet_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -93,6 +94,7 @@ int main() {
         pfl::tests::run_perf_open_logger_tests();
         pfl::tests::run_quic_initial_parser_tests();
         pfl::tests::run_protocol_recognition_stats_tests();
+        pfl::tests::run_unrecognized_packet_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
         return 1;

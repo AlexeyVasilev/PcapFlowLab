@@ -153,6 +153,10 @@
               <div id="checkedFlowsStatusBar" class="checked-flows-statusbar" aria-live="polite">
                 <span id="checkedFlowsStatusText"></span>
               </div>
+              <button id="unrecognizedPacketsButton" type="button" class="unrecognized-packets-panel is-hidden">
+                <span class="unrecognized-packets-title">Unrecognized packets</span>
+                <span id="unrecognizedPacketsMeta" class="unrecognized-packets-meta"></span>
+              </button>
             </section>
 
             <div
@@ -185,11 +189,11 @@
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Direction</th>
+                        <th id="packetDirectionHeader">Direction</th>
                         <th>Time</th>
                         <th>Captured</th>
-                        <th>Payload</th>
-                        <th>Flags</th>
+                        <th id="packetPayloadHeader">Payload</th>
+                        <th id="packetFlagsHeader">Flags</th>
                         <th id="packetMarkerHeader">Marker</th>
                       </tr>
                     </thead>

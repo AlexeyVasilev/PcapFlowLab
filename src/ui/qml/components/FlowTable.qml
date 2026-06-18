@@ -10,6 +10,8 @@ Frame {
     property string filterText: ""
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
+    property bool unrecognizedPacketsSelected: false
+    property int unrecognizedPacketCount: 0
     property int sortColumn: 0
     property bool sortAscending: true
     readonly property int tableRowSpacing: 8
@@ -32,6 +34,7 @@ Frame {
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
     signal sendFlowToAnalysisRequested()
+    signal unrecognizedPacketsRequested()
 
     function sortIndicator(column) {
         if (root.sortColumn !== column) {
@@ -438,6 +441,43 @@ Frame {
                 visible: flowListView.count === 0
                 color: "#64748b"
                 text: "No flows loaded"
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.unrecognizedPacketCount > 0
+            color: root.unrecognizedPacketsSelected ? "#dbeafe" : "#f8fafc"
+            border.color: root.unrecognizedPacketsSelected ? "#93c5fd" : "#d8dee9"
+            border.width: 1
+            radius: 6
+            implicitHeight: 46
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 10
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Unrecognized packets list (%1 packets)".arg(root.unrecognizedPacketCount)
+                    font.bold: true
+                    color: "#0f172a"
+                    elide: Text.ElideRight
+                }
+
+                Label {
+                    text: "Inspect packets that could not be assigned to a normal flow"
+                    color: "#64748b"
+                    visible: parent.width >= 520
+                    elide: Text.ElideRight
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.unrecognizedPacketsRequested()
             }
         }
     }

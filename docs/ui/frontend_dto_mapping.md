@@ -29,12 +29,14 @@ For the current repository-level protocol support matrix and known protocol limi
 - Session row/query shapes in `FlowRows.h`:
   - `FlowRow`;
   - `PacketRow`;
+  - `UnrecognizedPacketRow`;
   - `StreamItemRow`;
   - protocol/statistics summary structs.
 - The `FrontendSessionAdapter` layer already exposes a useful read-side API for:
   - overview;
   - flows;
   - selected-flow packets;
+  - unrecognized packets and unrecognized selected-packet details;
   - selected-flow stream;
   - selected-flow packet details.
 

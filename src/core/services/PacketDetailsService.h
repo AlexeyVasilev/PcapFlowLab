@@ -14,6 +14,11 @@ public:
         std::span<const std::uint8_t> packet_bytes,
         const PacketRef& packet_ref
     ) const;
+
+    [[nodiscard]] std::optional<PacketDetails> decode_best_effort(
+        std::span<const std::uint8_t> packet_bytes,
+        const PacketRef& packet_ref
+    ) const;
 };
 
 }  // namespace pfl

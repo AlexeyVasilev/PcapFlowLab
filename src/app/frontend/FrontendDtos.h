@@ -149,6 +149,7 @@ struct FrontendOverviewDto {
     CaptureSummary summary {};
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
+    std::uint64_t unrecognized_packet_count {0};
     CaptureProtocolSummary protocol_summary {};
     QuicRecognitionStats quic_recognition {};
     TlsRecognitionStats tls_recognition {};
@@ -195,6 +196,15 @@ struct FrontendPacketDto {
     std::string tcp_flags_text {};
 };
 
+struct FrontendUnrecognizedPacketDto {
+    std::uint64_t row_number {0};
+    std::uint64_t packet_index {0};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::string reason_text {};
+};
+
 struct FrontendSelectedFlowPacketsResult {
     bool has_capture {false};
     bool has_selected_flow {false};
@@ -203,6 +213,14 @@ struct FrontendSelectedFlowPacketsResult {
     std::size_t limit {0};
     std::size_t total_count {0};
     std::vector<FrontendPacketDto> packets {};
+};
+
+struct FrontendUnrecognizedPacketsResult {
+    bool has_capture {false};
+    std::size_t offset {0};
+    std::size_t limit {0};
+    std::size_t total_count {0};
+    std::vector<FrontendUnrecognizedPacketDto> packets {};
 };
 
 struct FrontendStreamItemDto {

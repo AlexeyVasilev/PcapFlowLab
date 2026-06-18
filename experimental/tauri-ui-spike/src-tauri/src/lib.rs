@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto,
+    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -616,6 +616,18 @@ fn get_selected_flow_packets(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_unrecognized_packets(
+    state: State<'_, Mutex<AdapterState>>,
+    offset: usize,
+    limit: usize,
+) -> Result<UnrecognizedPacketsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_unrecognized_packets(offset, limit)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_selected_flow_stream(
     state: State<'_, Mutex<AdapterState>>,
     max_packets_to_scan: usize,
@@ -637,6 +649,17 @@ fn get_selected_flow_packet_details(
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
     state.adapter.get_selected_flow_packet_details(packet_index, flow_packet_index)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn get_unrecognized_packet_details(
+    state: State<'_, Mutex<AdapterState>>,
+    packet_index: u64,
+) -> Result<PacketDetailsDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_unrecognized_packet_details(packet_index)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -778,8 +801,10 @@ pub fn run() {
             get_flows,
             select_flow,
             get_selected_flow_packets,
+            get_unrecognized_packets,
             get_selected_flow_stream,
             get_selected_flow_packet_details,
+            get_unrecognized_packet_details,
             get_selected_flow_analysis,
             export_selected_flow_analysis_sequence_csv
         ])

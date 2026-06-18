@@ -43,6 +43,8 @@ QVariant PacketListModel::data(const QModelIndex& index, const int role) const {
         return item.suspected_tcp_retransmission;
     case TcpFlagsTextRole:
         return item.tcp_flags_text;
+    case ReasonTextRole:
+        return item.reason_text;
     default:
         return {};
     }
@@ -60,11 +62,16 @@ QHash<int, QByteArray> PacketListModel::roleNames() const {
         {IsIpFragmentedRole, "isIpFragmented"},
         {SuspectedTcpRetransmissionRole, "suspectedTcpRetransmission"},
         {TcpFlagsTextRole, "tcpFlagsText"},
+        {ReasonTextRole, "reasonText"},
     };
 }
 
 bool PacketListModel::hasVisibleMarkers() const noexcept {
     return has_visible_markers_;
+}
+
+bool PacketListModel::unrecognizedMode() const noexcept {
+    return mode_ == Mode::unrecognized;
 }
 
 int PacketListModel::rowForPacketIndex(const qulonglong packetIndex) const noexcept {
@@ -78,6 +85,7 @@ int PacketListModel::rowForPacketIndex(const qulonglong packetIndex) const noexc
 }
 
 void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
+    setMode(Mode::recognized);
     beginResetModel();
     items_.clear();
     items_.reserve(rows.size());
@@ -94,6 +102,33 @@ void PacketListModel::refresh(const std::vector<PacketRow>& rows) {
             .is_ip_fragmented = row.is_ip_fragmented,
             .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
             .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
+            .reason_text = {},
+        });
+    }
+
+    endResetModel();
+    updateHasVisibleMarkers();
+}
+
+void PacketListModel::refresh(const std::vector<UnrecognizedPacketRow>& rows) {
+    setMode(Mode::unrecognized);
+    beginResetModel();
+    items_.clear();
+    items_.reserve(rows.size());
+
+    for (const auto& row : rows) {
+        items_.push_back(Item {
+            .row_number = static_cast<qulonglong>(row.row_number),
+            .packet_index = static_cast<qulonglong>(row.packet_index),
+            .direction_text = {},
+            .timestamp = QString::fromStdString(row.timestamp_text),
+            .captured_length = row.captured_length,
+            .original_length = row.original_length,
+            .payload_length = 0U,
+            .is_ip_fragmented = false,
+            .suspected_tcp_retransmission = false,
+            .tcp_flags_text = {},
+            .reason_text = QString::fromStdString(row.reason_text),
         });
     }
 
@@ -106,6 +141,7 @@ void PacketListModel::append(const std::vector<PacketRow>& rows) {
         return;
     }
 
+    setMode(Mode::recognized);
     const auto beginIndex = static_cast<int>(items_.size());
     const auto endIndex = beginIndex + static_cast<int>(rows.size()) - 1;
     beginInsertRows(QModelIndex {}, beginIndex, endIndex);
@@ -123,6 +159,38 @@ void PacketListModel::append(const std::vector<PacketRow>& rows) {
             .is_ip_fragmented = row.is_ip_fragmented,
             .suspected_tcp_retransmission = row.suspected_tcp_retransmission,
             .tcp_flags_text = QString::fromStdString(row.tcp_flags_text),
+            .reason_text = {},
+        });
+    }
+
+    endInsertRows();
+    updateHasVisibleMarkers();
+}
+
+void PacketListModel::append(const std::vector<UnrecognizedPacketRow>& rows) {
+    if (rows.empty()) {
+        return;
+    }
+
+    setMode(Mode::unrecognized);
+    const auto beginIndex = static_cast<int>(items_.size());
+    const auto endIndex = beginIndex + static_cast<int>(rows.size()) - 1;
+    beginInsertRows(QModelIndex {}, beginIndex, endIndex);
+    items_.reserve(items_.size() + rows.size());
+
+    for (const auto& row : rows) {
+        items_.push_back(Item {
+            .row_number = static_cast<qulonglong>(row.row_number),
+            .packet_index = static_cast<qulonglong>(row.packet_index),
+            .direction_text = {},
+            .timestamp = QString::fromStdString(row.timestamp_text),
+            .captured_length = row.captured_length,
+            .original_length = row.original_length,
+            .payload_length = 0U,
+            .is_ip_fragmented = false,
+            .suspected_tcp_retransmission = false,
+            .tcp_flags_text = {},
+            .reason_text = QString::fromStdString(row.reason_text),
         });
     }
 
@@ -131,10 +199,21 @@ void PacketListModel::append(const std::vector<PacketRow>& rows) {
 }
 
 void PacketListModel::clear() {
-    refresh({});
+    beginResetModel();
+    items_.clear();
+    endResetModel();
+    updateHasVisibleMarkers();
 }
 
 void PacketListModel::updateHasVisibleMarkers() {
+    if (mode_ == Mode::unrecognized) {
+        if (has_visible_markers_) {
+            has_visible_markers_ = false;
+            emit hasVisibleMarkersChanged();
+        }
+        return;
+    }
+
     const bool nextHasVisibleMarkers = std::any_of(items_.begin(), items_.end(), [](const Item& item) {
         return item.suspected_tcp_retransmission;
     });
@@ -145,6 +224,15 @@ void PacketListModel::updateHasVisibleMarkers() {
 
     has_visible_markers_ = nextHasVisibleMarkers;
     emit hasVisibleMarkersChanged();
+}
+
+void PacketListModel::setMode(const Mode mode) {
+    if (mode_ == mode) {
+        return;
+    }
+
+    mode_ = mode;
+    emit modeChanged();
 }
 
 }  // namespace pfl

@@ -49,6 +49,15 @@ struct PacketRow {
     std::string tcp_flags_text {};
 };
 
+struct UnrecognizedPacketRow {
+    std::uint64_t row_number {0};
+    std::uint64_t packet_index {0};
+    std::string timestamp_text {};
+    std::uint32_t captured_length {0};
+    std::uint32_t original_length {0};
+    std::string reason_text {};
+};
+
 struct StreamItemRow {
     std::uint64_t stream_item_index {0};
     std::string direction_text {};
