@@ -28,6 +28,7 @@ inline constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 inline constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 inline constexpr std::uint8_t kIpProtocolIcmp = 1;
+inline constexpr std::uint8_t kIpProtocolIgmp = 2;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
 inline constexpr std::uint8_t kIpProtocolUdp = 17;
 inline constexpr std::uint8_t kIpProtocolRouting = 43;
@@ -43,6 +44,12 @@ inline constexpr std::size_t kIpv6HeaderSize = 40;
 inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
+inline constexpr std::size_t kIgmpMinimumHeaderSize = 8;
+inline constexpr std::uint8_t kIgmpTypeMembershipQuery = 0x11;
+inline constexpr std::uint8_t kIgmpTypeV1MembershipReport = 0x12;
+inline constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16;
+inline constexpr std::uint8_t kIgmpTypeLeaveGroup = 0x17;
+inline constexpr std::uint8_t kIgmpTypeV3MembershipReport = 0x22;
 
 struct LinkLayerPayloadView {
     std::uint16_t protocol_type {0};
@@ -71,6 +78,18 @@ struct Ipv4PacketBounds {
     std::size_t nominal_packet_end {0};
     std::size_t packet_end {0};
     bool bounds_from_captured_bytes {false};
+};
+
+struct IgmpHeaderView {
+    std::size_t available_length {0};
+    std::uint8_t type {0};
+    std::uint8_t max_resp_code {0};
+    std::uint16_t checksum {0};
+    std::uint32_t group_address {0};
+    std::uint16_t group_record_count {0};
+    bool has_group_address {false};
+    bool is_v3_membership_report {false};
+    bool header_truncated {false};
 };
 
 struct MplsLabelView {
@@ -400,6 +419,48 @@ inline std::optional<UdpPayloadBounds> parse_udp_payload_bounds(std::span<const 
         .payload_offset = payload_offset,
         .payload_length = std::min(udp_length - kUdpHeaderSize, available_payload_length),
     };
+}
+
+inline std::optional<IgmpHeaderView> parse_igmp_header(std::span<const std::uint8_t> bytes,
+                                                       const std::size_t igmp_offset,
+                                                       const std::size_t packet_end) {
+    if (igmp_offset >= bytes.size() || igmp_offset >= packet_end) {
+        return std::nullopt;
+    }
+
+    const auto available_length = std::min(packet_end - igmp_offset, bytes.size() - igmp_offset);
+    IgmpHeaderView header {
+        .available_length = available_length,
+        .type = bytes[igmp_offset],
+        .header_truncated = available_length < kIgmpMinimumHeaderSize,
+    };
+
+    if (available_length >= 2U) {
+        header.max_resp_code = bytes[igmp_offset + 1U];
+    }
+    if (available_length >= 4U) {
+        header.checksum = read_be16(bytes, igmp_offset + 2U);
+    }
+    if (available_length >= kIgmpMinimumHeaderSize) {
+        header.is_v3_membership_report = header.type == kIgmpTypeV3MembershipReport;
+        if (header.is_v3_membership_report) {
+            header.group_record_count = read_be16(bytes, igmp_offset + 6U);
+        } else {
+            header.group_address = read_be32(bytes, igmp_offset + 4U);
+            header.has_group_address = true;
+        }
+    }
+
+    return header;
+}
+
+inline std::uint32_t igmp_effective_group_address(const IgmpHeaderView& header,
+                                                  const std::uint32_t ipv4_destination) noexcept {
+    if (header.has_group_address && header.group_address != 0U) {
+        return header.group_address;
+    }
+
+    return ipv4_destination;
 }
 
 }  // namespace pfl::detail

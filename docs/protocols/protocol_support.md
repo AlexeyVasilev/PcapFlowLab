@@ -122,6 +122,7 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | ARP | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Strongest non-IP shared parsing path today. Supports Ethernet/IPv4 ARP well, variable `hlen` / `plen`, truncated warnings, and one-packet-per-item stream rows. Request/reply packets are not grouped into a higher-level conversation item. |
 | IPv4 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv4 facts appear in layered Summary, including conservative selected-packet header fields such as IHL, DS field, identification, flags, fragment offset, TTL, protocol, checksum, and addresses. There is no standalone IPv4 `Protocol` tab renderer today. |
 | IPv6 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv6 facts appear in layered Summary, including conservative selected-packet header fields such as traffic class, flow label, payload length, next header, hop limit, and addresses. There is no standalone IPv6 `Protocol` tab renderer today. |
+| IGMP | Supported | Supported | Supported | Supported | Supported | Not supported | Not supported | Supported | First-pass IPv4 IGMP support groups by source plus effective multicast-group key, keeps ports internally at zero but empty in UI, supports IGMPv1/v2 base-header parsing, safe unknown-type handling, and partial IGMPv3 membership-report presentation. Malformed or truncated IGMP packets can remain in the unrecognized-packet list with explicit reason text. |
 | ICMP | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMP text, and layered Summary now appends a dedicated ICMP layer after IPv4. |
 | ICMPv6 | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMPv6 text, and layered Summary now appends a dedicated ICMPv6 layer after IPv6. |
 | TCP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes TCP ports, raw sequence / acknowledgment numbers, header length, flags, window, checksum, urgent pointer, payload length, and a nested `TCP Options (N bytes)` subtree when options are present. The first shared on-demand parser handles EOL, NOP, MSS, Window Scale, SACK Permitted, SACK, Timestamps, unknown valid options, and conservative malformed/truncation warnings. Generic selected-packet `Protocol` text is not emitted for plain TCP packets, but higher-level analyzers can consume TCP payload. Stream falls back to generic `TCP Payload` rows when no HTTP/TLS specialization applies. |
@@ -160,6 +161,7 @@ The shared layered Summary model is intentionally conservative today.
   - VLAN;
   - MPLS label stacks;
   - ARP;
+  - IGMP;
   - IPv4;
   - IPv6;
   - TCP;
@@ -184,6 +186,7 @@ Selected-packet `Protocol` currently has three main modes:
   - HTTP;
 - shared basic protocol text for:
   - ARP;
+  - IGMP;
   - ICMP;
   - ICMPv6;
 - explicit "unavailable" or "no protocol-specific details" fallbacks for other packets.
@@ -247,6 +250,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
 
 - `arp`
   - ARP request/reply, gratuitous ARP, probe, VLAN-tagged ARP, Ethernet padding, malformed/truncated cases, snaplen-truncated capture, and uncommon opcode / address-size variants.
+- `igmp`
+  - IGMPv1/v2 reports and queries, same-group/source grouping cases, Router Alert / IPv4 IHL handling, safe unknown-type handling, partial IGMPv3 membership reports, bad checksum, and truncated / snaplen-truncated IGMP fixtures.
 - `dns`
   - basic DNS request/response coverage.
 - `http`

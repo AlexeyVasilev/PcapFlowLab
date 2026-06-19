@@ -1191,6 +1191,10 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
         case FlowProtocolHint::possible_quic:
             add_protocol_stats(summary.hint_possible_quic, connection);
             break;
+        case FlowProtocolHint::igmp:
+        case FlowProtocolHint::igmpv1:
+        case FlowProtocolHint::igmpv2:
+        case FlowProtocolHint::igmpv3:
         case FlowProtocolHint::unknown:
         default:
             add_protocol_stats(summary.hint_unknown, connection);

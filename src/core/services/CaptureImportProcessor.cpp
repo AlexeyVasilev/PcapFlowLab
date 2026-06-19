@@ -121,6 +121,19 @@ std::string classify_unrecognized_packet_reason(
                 : "Could not extract flow key";
         }
 
+        if (protocol == detail::kIpProtocolIgmp) {
+            if (transport_offset >= packet_end || transport_offset >= packet_bytes.size()) {
+                return "Missing IGMP payload";
+            }
+
+            const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, packet_end);
+            if (!igmp.has_value() || igmp->available_length < detail::kIgmpMinimumHeaderSize) {
+                return "IGMP header truncated";
+            }
+
+            return "Could not extract flow key";
+        }
+
         return "Could not extract flow key";
     }
 

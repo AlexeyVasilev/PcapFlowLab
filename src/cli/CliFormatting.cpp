@@ -12,6 +12,8 @@ std::string format_protocol(ProtocolId protocol) {
         return "ARP";
     case ProtocolId::icmp:
         return "ICMP";
+    case ProtocolId::igmp:
+        return "IGMP";
     case ProtocolId::tcp:
         return "TCP";
     case ProtocolId::udp:
@@ -53,13 +55,19 @@ std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address) {
 
 std::string format_endpoint(const EndpointKeyV4& endpoint) {
     std::ostringstream output {};
-    output << format_ipv4_address(endpoint.addr) << ':' << endpoint.port;
+    output << format_ipv4_address(endpoint.addr);
+    if (endpoint.port != 0U) {
+        output << ':' << endpoint.port;
+    }
     return output.str();
 }
 
 std::string format_endpoint(const EndpointKeyV6& endpoint) {
     std::ostringstream output {};
-    output << '[' << format_ipv6_address(endpoint.addr) << "]:" << endpoint.port;
+    output << '[' << format_ipv6_address(endpoint.addr) << ']';
+    if (endpoint.port != 0U) {
+        output << ':' << endpoint.port;
+    }
     return output.str();
 }
 

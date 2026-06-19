@@ -37,6 +37,8 @@ std::string protocol_text(const ProtocolId protocol) {
         return "ARP";
     case ProtocolId::icmp:
         return "ICMP";
+    case ProtocolId::igmp:
+        return "IGMP";
     case ProtocolId::tcp:
         return "TCP";
     case ProtocolId::udp:

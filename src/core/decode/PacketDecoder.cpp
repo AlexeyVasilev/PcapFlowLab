@@ -108,6 +108,9 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             case detail::kIpProtocolIcmp:
                 flow_base.protocol = ProtocolId::icmp;
                 break;
+            case detail::kIpProtocolIgmp:
+                flow_base.protocol = ProtocolId::igmp;
+                break;
             default:
                 return {};
             }
@@ -179,6 +182,24 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
             auto flow_key = flow_base;
             flow_key.protocol = ProtocolId::icmp;
+
+            return DecodedPacket {
+                .ipv4 = IngestedPacketV4 {
+                    .flow_key = flow_key,
+                    .packet_ref = make_packet_ref(packet),
+                },
+            };
+        }
+
+        if (protocol == detail::kIpProtocolIgmp) {
+            const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, packet_end);
+            if (!igmp.has_value() || igmp->available_length < detail::kIgmpMinimumHeaderSize) {
+                return {};
+            }
+
+            auto flow_key = flow_base;
+            flow_key.dst_addr = detail::igmp_effective_group_address(*igmp, flow_base.dst_addr);
+            flow_key.protocol = ProtocolId::igmp;
 
             return DecodedPacket {
                 .ipv4 = IngestedPacketV4 {

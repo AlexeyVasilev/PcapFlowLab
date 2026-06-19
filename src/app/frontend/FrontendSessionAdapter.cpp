@@ -93,6 +93,18 @@ std::string format_protocol_hint_display(const std::string& value) {
     if (value == "possible_quic") {
         return "Possible QUIC";
     }
+    if (value == "igmp") {
+        return "IGMP";
+    }
+    if (value == "igmpv1") {
+        return "IGMPv1";
+    }
+    if (value == "igmpv2") {
+        return "IGMPv2";
+    }
+    if (value == "igmpv3") {
+        return "IGMPv3";
+    }
 
     std::string formatted = value;
     std::transform(formatted.begin(), formatted.end(), formatted.begin(), [](unsigned char ch) {
@@ -274,6 +286,8 @@ std::string format_protocol_value(const std::uint8_t protocol) {
     switch (protocol) {
     case detail::kIpProtocolIcmp:
         return "ICMP";
+    case detail::kIpProtocolIgmp:
+        return "IGMP";
     case detail::kIpProtocolTcp:
         return "TCP";
     case detail::kIpProtocolUdp:
@@ -1429,9 +1443,9 @@ std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const st
 
 std::string build_analysis_endpoint_summary(const FlowRow& row) {
     std::ostringstream out {};
-    out << row.address_a << ':' << row.port_a
+    out << row.endpoint_a
         << " <-> "
-        << row.address_b << ':' << row.port_b;
+        << row.endpoint_b;
     return out.str();
 }
 

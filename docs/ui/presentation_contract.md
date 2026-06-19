@@ -491,7 +491,7 @@ Qt currently uses formatted summary text rather than a purely structured field g
 Current direction note:
 
 - packet details Summary now has a first shared structured decoded-layer list for selected-packet/on-demand rendering;
-- the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, MPLS, ARP, IPv4, IPv6, TCP, and UDP;
+- the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, MPLS, ARP, IGMP, IPv4, IPv6, TCP, and UDP;
 - the Frame layer should show packet index in file and, when selected-flow context is available, packet index within the selected flow;
 - the Ethernet layer should expose source/destination MAC addresses and decoded EtherType text;
 - MPLS should appear as one Summary layer per label between Ethernet/VLAN and the resolved inner IPv4/IPv6 layer, using the stable shared layer id `mpls` so repeated occurrences naturally map to `mpls#0`, `mpls#1`, and so on for expansion-state tracking;

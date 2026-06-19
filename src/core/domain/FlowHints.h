@@ -21,6 +21,10 @@ enum class FlowProtocolHint : std::uint8_t {
     imap = 12,
     possible_tls = 13,
     possible_quic = 14,
+    igmp = 15,
+    igmpv1 = 16,
+    igmpv2 = 17,
+    igmpv3 = 18,
 };
 
 enum class QuicVersionHint : std::uint8_t {
@@ -97,6 +101,14 @@ struct FlowHintUpdate {
         return "possible_tls";
     case FlowProtocolHint::possible_quic:
         return "possible_quic";
+    case FlowProtocolHint::igmp:
+        return "igmp";
+    case FlowProtocolHint::igmpv1:
+        return "igmpv1";
+    case FlowProtocolHint::igmpv2:
+        return "igmpv2";
+    case FlowProtocolHint::igmpv3:
+        return "igmpv3";
     default:
         return "unknown";
     }

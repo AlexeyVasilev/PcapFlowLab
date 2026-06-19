@@ -21,6 +21,12 @@ constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
+constexpr std::uint8_t kIpProtocolIgmp = 2U;
+constexpr std::uint8_t kIgmpTypeMembershipQuery = 0x11U;
+constexpr std::uint8_t kIgmpTypeV1MembershipReport = 0x12U;
+constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16U;
+constexpr std::uint8_t kIgmpTypeLeaveGroup = 0x17U;
+constexpr std::uint8_t kIgmpTypeV3MembershipReport = 0x22U;
 constexpr std::uint8_t kTcpOptionEndOfList = 0U;
 constexpr std::uint8_t kTcpOptionNoOperation = 1U;
 constexpr std::uint8_t kTcpOptionMaximumSegmentSize = 2U;
@@ -106,6 +112,8 @@ std::string format_protocol_summary_value(const std::uint8_t protocol) {
     switch (protocol) {
     case 1U:
         return "ICMP";
+    case 2U:
+        return "IGMP";
     case 6U:
         return "TCP";
     case 17U:
@@ -589,6 +597,99 @@ std::optional<PacketSummaryLayer> build_icmp_summary_layer(const PacketDetails& 
     };
 }
 
+std::string format_igmp_type_text(const IgmpDetails& igmp) {
+    switch (igmp.type) {
+    case kIgmpTypeMembershipQuery:
+        return (igmp.max_resp_code == 0U) ? "General Query" : "Membership Query";
+    case kIgmpTypeV1MembershipReport:
+        return "Membership Report";
+    case kIgmpTypeV2MembershipReport:
+        return "Membership Report";
+    case kIgmpTypeLeaveGroup:
+        return "Leave Group";
+    case kIgmpTypeV3MembershipReport:
+        return "Membership Report";
+    default:
+        return "Unknown Type";
+    }
+}
+
+std::string format_igmp_type_value(const IgmpDetails& igmp) {
+    std::ostringstream builder {};
+    builder << format_igmp_type_text(igmp) << " (" << format_hex_value(igmp.type, 2) << ")";
+    return builder.str();
+}
+
+std::string infer_igmp_version_text(const IgmpDetails& igmp) {
+    switch (igmp.type) {
+    case kIgmpTypeMembershipQuery:
+        return igmp.max_resp_code == 0U ? "IGMPv1" : "IGMPv2";
+    case kIgmpTypeV1MembershipReport:
+        return "IGMPv1";
+    case kIgmpTypeV2MembershipReport:
+    case kIgmpTypeLeaveGroup:
+        return "IGMPv2";
+    case kIgmpTypeV3MembershipReport:
+        return "IGMPv3";
+    default:
+        return "IGMP";
+    }
+}
+
+std::string build_igmp_summary_title(const PacketDetails& details) {
+    const auto version = infer_igmp_version_text(details.igmp);
+    if (details.igmp.type == kIgmpTypeMembershipQuery) {
+        if (details.igmp.has_group_address && details.igmp.group_address != 0U) {
+            return version + ", Group-Specific Query " + format_ipv4_address(details.igmp.group_address);
+        }
+        return version + ", General Query";
+    }
+
+    if (details.igmp.type == kIgmpTypeV3MembershipReport) {
+        return version + ", Membership Report";
+    }
+
+    if (details.igmp.has_group_address && details.igmp.group_address != 0U) {
+        return version + ", " + format_igmp_type_text(details.igmp) + ' ' + format_ipv4_address(details.igmp.group_address);
+    }
+
+    return version + ", " + format_igmp_type_text(details.igmp);
+}
+
+std::optional<PacketSummaryLayer> build_igmp_summary_layer(const PacketDetails& details) {
+    if (!details.has_igmp) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Type", format_igmp_type_value(details.igmp)),
+        make_summary_field("Max Resp Code", std::to_string(details.igmp.max_resp_code)),
+        make_summary_field("Checksum", format_hex16_value(details.igmp.checksum)),
+    };
+    if (details.igmp.has_group_address) {
+        fields.push_back(make_summary_field("Group Address", format_ipv4_address(details.igmp.group_address)));
+    }
+    if (details.igmp.is_v3_membership_report) {
+        fields.push_back(make_summary_field("Group Record Count", std::to_string(details.igmp.group_record_count)));
+    }
+    if (details.has_ipv4) {
+        fields.push_back(make_summary_field("Source", format_ipv4_address(details.ipv4.src_addr)));
+        fields.push_back(make_summary_field("Destination", format_ipv4_address(details.ipv4.dst_addr)));
+    }
+    if (details.igmp.header_truncated) {
+        fields.push_back(make_summary_field({}, "IGMP header is truncated."));
+    }
+
+    return PacketSummaryLayer {
+        .id = "igmp",
+        .title = build_igmp_summary_title(details),
+        .fields = std::move(fields),
+        .expanded_by_default = details.igmp.header_truncated,
+        .warning = details.igmp.header_truncated,
+        .marker_text = details.igmp.header_truncated ? std::string {"Warning"} : std::string {},
+    };
+}
+
 std::optional<PacketSummaryLayer> build_icmpv6_summary_layer(const PacketDetails& details) {
     if (!details.has_icmpv6) {
         return std::nullopt;
@@ -618,7 +719,8 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     if (protocol_details_text.empty() ||
         protocol_details_text == kNoProtocolDetailsMessage ||
         protocol_details_text == kUnavailableProtocolDetailsMessage ||
-        details.has_arp) {
+        details.has_arp ||
+        details.has_igmp) {
         return std::nullopt;
     }
 
@@ -850,13 +952,19 @@ std::string format_ipv6_address(const std::array<std::uint8_t, 16>& address) {
 
 std::string format_endpoint(const EndpointKeyV4& endpoint) {
     std::ostringstream builder {};
-    builder << format_ipv4_address(endpoint.addr) << ':' << endpoint.port;
+    builder << format_ipv4_address(endpoint.addr);
+    if (endpoint.port != 0U) {
+        builder << ':' << endpoint.port;
+    }
     return builder.str();
 }
 
 std::string format_endpoint(const EndpointKeyV6& endpoint) {
     std::ostringstream builder {};
-    builder << '[' << format_ipv6_address(endpoint.addr) << "]:" << endpoint.port;
+    builder << '[' << format_ipv6_address(endpoint.addr) << ']';
+    if (endpoint.port != 0U) {
+        builder << ':' << endpoint.port;
+    }
     return builder.str();
 }
 
@@ -982,11 +1090,29 @@ std::optional<ArpPresentation> describe_arp_packet(const PacketDetails& details)
 }
 
 std::vector<std::string> build_basic_summary_lines(const PacketDetails& details) {
+    std::vector<std::string> lines {};
+    if (details.has_igmp) {
+        lines.push_back("Message: " + build_igmp_summary_title(details));
+        if (details.igmp.has_group_address) {
+            lines.push_back("Group Address: " + format_ipv4_address(details.igmp.group_address));
+        }
+        if (details.has_ipv4) {
+            lines.push_back("Source: " + format_ipv4_address(details.ipv4.src_addr));
+            lines.push_back("Destination: " + format_ipv4_address(details.ipv4.dst_addr));
+        }
+        if (details.igmp.is_v3_membership_report) {
+            lines.push_back("Group Record Count: " + std::to_string(details.igmp.group_record_count));
+        }
+        if (details.igmp.header_truncated) {
+            lines.push_back("IGMP header is truncated.");
+        }
+        return lines;
+    }
+
     if (!details.has_arp) {
         return {};
     }
 
-    std::vector<std::string> lines {};
     if (const auto presentation = describe_arp_packet(details); presentation.has_value()) {
         lines.push_back("Message: " + presentation->title);
         if (!presentation->detail.empty()) {
@@ -1254,6 +1380,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
+    if (const auto igmp_layer = build_igmp_summary_layer(details); igmp_layer.has_value()) {
+        append_layer_if_not_empty(layers, *igmp_layer);
+    }
+
     if (details.has_tcp) {
         std::vector<PacketSummaryField> tcp_fields {
             make_summary_field("Source Port", std::to_string(details.tcp.src_port)),
@@ -1346,6 +1476,35 @@ std::string packet_payload_tab_title(const PacketDetails& details) {
 
 std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details) {
     std::ostringstream builder {};
+
+    if (details.has_igmp) {
+        builder << "Protocol: " << infer_igmp_version_text(details.igmp);
+        if (details.igmp.type == kIgmpTypeMembershipQuery ||
+            details.igmp.type == kIgmpTypeV1MembershipReport ||
+            details.igmp.type == kIgmpTypeV2MembershipReport ||
+            details.igmp.type == kIgmpTypeLeaveGroup) {
+            builder << " (" << format_igmp_type_text(details.igmp) << ")";
+        }
+        builder << '\n'
+                << '\t' << "Type: " << format_igmp_type_value(details.igmp) << '\n'
+                << '\t' << "Max Resp Code: " << static_cast<unsigned>(details.igmp.max_resp_code) << '\n'
+                << '\t' << "Checksum: " << format_hex16_value(details.igmp.checksum);
+        if (details.igmp.has_group_address) {
+            builder << '\n' << '\t' << "Group Address: " << format_ipv4_address(details.igmp.group_address);
+        }
+        if (details.igmp.is_v3_membership_report) {
+            builder << '\n' << '\t' << "Group Record Count: " << details.igmp.group_record_count
+                    << '\n' << '\t' << "Detailed IGMPv3 group-record parsing is deferred.";
+        }
+        if (details.has_ipv4) {
+            builder << '\n' << '\t' << "Source: " << format_ipv4_address(details.ipv4.src_addr)
+                    << '\n' << '\t' << "Destination: " << format_ipv4_address(details.ipv4.dst_addr);
+        }
+        if (details.igmp.header_truncated) {
+            builder << '\n' << '\t' << "Warning: IGMP header is truncated.";
+        }
+        return builder.str();
+    }
 
     if (details.has_arp) {
         builder << "Protocol: ARP (Address Resolution Protocol)\n";

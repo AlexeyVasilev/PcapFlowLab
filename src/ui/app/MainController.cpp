@@ -154,6 +154,8 @@ QString formatProtocol(const std::uint8_t protocol) {
         return "ARP";
     case ProtocolId::icmp:
         return "ICMP";
+    case ProtocolId::igmp:
+        return "IGMP";
     case ProtocolId::tcp:
         return "TCP";
     case ProtocolId::udp:
@@ -232,6 +234,18 @@ QString format_protocol_hint_display(const QString& protocol_hint) {
     }
     if (protocol_hint.compare(QStringLiteral("possible_quic"), Qt::CaseInsensitive) == 0) {
         return QStringLiteral("Possible QUIC");
+    }
+    if (protocol_hint.compare(QStringLiteral("igmp"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("IGMP");
+    }
+    if (protocol_hint.compare(QStringLiteral("igmpv1"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("IGMPv1");
+    }
+    if (protocol_hint.compare(QStringLiteral("igmpv2"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("IGMPv2");
+    }
+    if (protocol_hint.compare(QStringLiteral("igmpv3"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("IGMPv3");
     }
 
     return protocol_hint.toUpper();

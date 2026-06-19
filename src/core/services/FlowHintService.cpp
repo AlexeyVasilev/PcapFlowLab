@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/domain/ProtocolId.h"
@@ -74,6 +75,13 @@ std::string format_ipv4_address(const std::uint32_t address) {
            std::to_string((address >> 16U) & 0xFFU) + '.' +
            std::to_string((address >> 8U) & 0xFFU) + '.' +
            std::to_string(address & 0xFFU);
+}
+
+std::string format_igmp_type_hex(const std::uint8_t type) {
+    std::ostringstream builder {};
+    builder << "0x" << std::hex << std::nouppercase << std::setfill('0') << std::setw(2)
+            << static_cast<unsigned>(type);
+    return builder.str();
 }
 
 std::string format_mac_address(std::span<const std::uint8_t> address) {
@@ -158,6 +166,71 @@ std::optional<FlowHintUpdate> detect_arp_hint(std::span<const std::uint8_t> pack
     }
 
     return FlowHintUpdate {.service_hint = "ARP opcode " + std::to_string(opcode)};
+}
+
+std::optional<FlowHintUpdate> detect_igmp_hint(std::span<const std::uint8_t> packet_bytes, const std::uint32_t data_link_type) {
+    const auto network = detail::parse_network_payload(packet_bytes, data_link_type);
+    if (!network.has_value() || network->protocol_type != detail::kEtherTypeIpv4) {
+        return std::nullopt;
+    }
+
+    const auto ipv4_offset = network->payload_offset;
+    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+    if (!ipv4_bounds.has_value()) {
+        return std::nullopt;
+    }
+
+    if (packet_bytes[ipv4_offset + 9U] != detail::kIpProtocolIgmp) {
+        return std::nullopt;
+    }
+
+    const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+    const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, ipv4_bounds->packet_end);
+    if (!igmp.has_value() || igmp->available_length < detail::kIgmpMinimumHeaderSize) {
+        return FlowHintUpdate {
+            .protocol_hint = FlowProtocolHint::igmp,
+            .service_hint = "IGMP",
+        };
+    }
+
+    const auto destination = detail::read_be32(packet_bytes, ipv4_offset + 16U);
+    const auto effective_group = detail::igmp_effective_group_address(*igmp, destination);
+    const auto group_text = format_ipv4_address(effective_group);
+
+    switch (igmp->type) {
+    case detail::kIgmpTypeMembershipQuery:
+        return FlowHintUpdate {
+            .protocol_hint = igmp->max_resp_code == 0U ? FlowProtocolHint::igmpv1 : FlowProtocolHint::igmpv2,
+            .service_hint = (igmp->has_group_address && igmp->group_address != 0U)
+                ? "Group-Specific Query " + group_text
+                : std::string {"General Query"},
+        };
+    case detail::kIgmpTypeV1MembershipReport:
+        return FlowHintUpdate {
+            .protocol_hint = FlowProtocolHint::igmpv1,
+            .service_hint = "Membership Report " + group_text,
+        };
+    case detail::kIgmpTypeV2MembershipReport:
+        return FlowHintUpdate {
+            .protocol_hint = FlowProtocolHint::igmpv2,
+            .service_hint = "Membership Report " + group_text,
+        };
+    case detail::kIgmpTypeLeaveGroup:
+        return FlowHintUpdate {
+            .protocol_hint = FlowProtocolHint::igmpv2,
+            .service_hint = "Leave Group " + group_text,
+        };
+    case detail::kIgmpTypeV3MembershipReport:
+        return FlowHintUpdate {
+            .protocol_hint = FlowProtocolHint::igmpv3,
+            .service_hint = "IGMPv3 Membership Report",
+        };
+    default:
+        return FlowHintUpdate {
+            .protocol_hint = FlowProtocolHint::igmp,
+            .service_hint = "Unknown IGMP Type " + format_igmp_type_hex(igmp->type),
+        };
+    }
 }
 
 std::string_view payload_as_text(std::span<const std::uint8_t> payload) {
@@ -837,6 +910,13 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
     if (flow_key.protocol == ProtocolId::arp) {
         const auto arp_hint = detect_arp_hint(packet_bytes, data_link_type);
         return arp_hint.value_or(FlowHintUpdate {});
+    }
+
+    if constexpr (std::is_same_v<FlowKey, FlowKeyV4>) {
+        if (flow_key.protocol == ProtocolId::igmp) {
+            const auto igmp_hint = detect_igmp_hint(packet_bytes, data_link_type);
+            return igmp_hint.value_or(FlowHintUpdate {});
+        }
     }
 
     PacketPayloadService payload_service {};

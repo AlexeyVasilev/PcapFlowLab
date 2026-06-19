@@ -338,6 +338,31 @@ std::optional<PacketDetails> decode_packet_details(
             return details;
         }
 
+        if (details.ipv4.protocol == detail::kIpProtocolIgmp) {
+            const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, packet_end);
+            if (!igmp.has_value()) {
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+            }
+
+            details.has_igmp = true;
+            details.igmp = IgmpDetails {
+                .type = igmp->type,
+                .max_resp_code = igmp->max_resp_code,
+                .checksum = igmp->checksum,
+                .group_address = igmp->group_address,
+                .group_record_count = igmp->group_record_count,
+                .has_group_address = igmp->has_group_address,
+                .is_v3_membership_report = igmp->is_v3_membership_report,
+                .header_truncated = igmp->header_truncated,
+            };
+
+            if (igmp->available_length < detail::kIgmpMinimumHeaderSize && mode == DecodeMode::strict) {
+                return std::nullopt;
+            }
+
+            return details;
+        }
+
         return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
     }
 

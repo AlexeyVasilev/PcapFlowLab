@@ -1,4 +1,4 @@
-Synthetic IGMP parsing fixtures for current unrecognized-packet handling and future IGMP flow support.
+Synthetic IGMP parsing fixtures for current IGMP flow recognition, grouping, and safe malformed-packet handling.
 
 This directory is intended to contain tiny deterministic `.pcap` fixtures for:
 - IGMPv1/v2 Membership Reports and Queries;
@@ -61,36 +61,28 @@ IPv4 multicast destination MAC mapping used where practical:
 - `224.0.0.2` -> `01:00:5e:00:00:02`
 - `239.1.2.3` -> `01:00:5e:01:02:03`
 
-## Expected current behavior before IGMP parser implementation
+## Current behavior
 
-For most current builds before an IGMP parser exists:
-- packets may appear in the unrecognized packets list;
-- selected-packet Summary may only show `Frame`, `Ethernet`, and `IPv4`;
-- no normal IGMP flow may be created;
-- there should be no crash for valid, unknown, malformed, or snaplen-truncated fixtures.
+Current IGMP support uses the following flow-key semantics:
+- protocol = `IGMP`
+- source address = IPv4 source address
+- destination/group key = IGMP group address when non-zero
+- for General Query with group `0.0.0.0`, use the IPv4 destination address as the effective group key
+- source port = `0` internally / empty in UI
+- destination port = `0` internally / empty in UI
+- IGMP message type is **not** part of the flow key
 
-## Expected future behavior after IGMP parser implementation
+Current presentation behavior:
+- valid IGMP packets appear as normal `IGMP` flows, not in the unrecognized list;
+- Summary includes an IGMP layer after IPv4;
+- Hint/Service describe IGMP version and message type without splitting flows;
+- Raw remains available;
+- detailed IGMPv3 group-record parsing remains deferred;
+- malformed/truncated IGMP packets stay safe and may remain in the unrecognized list with explicit reason text.
 
-After IGMP parser implementation:
-- IGMP packets should be recognized as protocol `IGMP`;
-- basic IGMPv1/v2 messages should create normal user-facing IGMP flows;
-- the IGMP flow key should be:
-  - protocol = `IGMP`
-  - source address = IPv4 source address
-  - destination/group key = IGMP group address when non-zero
-  - for General Query with group `0.0.0.0`, use the IPv4 destination address as the group key
-  - source port = `0` / empty in UI
-  - destination port = `0` / empty in UI
-  - IGMP message type is **not** part of the flow key
-- Summary should include an IGMP layer after IPv4;
-- Hint/Service should describe IGMP version/message type but should not split flows;
-- Raw should remain available;
-- Stream support may remain deferred initially;
-- IGMPv3 detailed record parsing may be partial in the first pass.
+## Current flow grouping behavior
 
-## Future flow grouping behavior
-
-The planned grouping behavior for future IGMP flow support is:
+IGMP grouping behavior is intentionally:
 - same source host + same multicast group => one user-facing IGMP flow, even if message type changes;
 - same group but different sources => different flows;
 - same source but different multicast groups => different flows;
@@ -112,8 +104,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: normal IGMP flow, Hint `IGMPv1`, Service `Membership Report 224.0.0.251`
+  - Expected behavior: normal IGMP flow, Hint `IGMPv1`, Service `Membership Report 224.0.0.251`
 
 - `02_igmpv2_membership_report_mdns_group.pcap`
   - Packets: `1`
@@ -122,8 +113,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: normal IGMP flow, Hint `IGMPv2`, Service `Membership Report 224.0.0.251`
+  - Expected behavior: normal IGMP flow, Hint `IGMPv2`, Service `Membership Report 224.0.0.251`
 
 - `03_igmpv2_leave_group_mdns_group.pcap`
   - Packets: `1`
@@ -132,8 +122,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.2`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: grouped by Host A + group `224.0.0.251`, Service `Leave Group 224.0.0.251`
+  - Expected behavior: grouped by Host A + group `224.0.0.251`, Service `Leave Group 224.0.0.251`
 
 - `04_igmpv2_general_query.pcap`
   - Packets: `1`
@@ -142,8 +131,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.1` -> `224.0.0.1`
   - IGMP group address: `0.0.0.0`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: normal IGMP flow keyed by source `192.0.2.1` + effective group key `224.0.0.1`, Service `General Query`
+  - Expected behavior: normal IGMP flow keyed by source `192.0.2.1` + effective group key `224.0.0.1`, Service `General Query`
 
 - `05_igmpv2_group_specific_query.pcap`
   - Packets: `1`
@@ -152,8 +140,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.1` -> `239.1.2.3`
   - IGMP group address: `239.1.2.3`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: normal IGMP flow, Service `Group-Specific Query 239.1.2.3`
+  - Expected behavior: normal IGMP flow, Service `Group-Specific Query 239.1.2.3`
 
 ### B. Grouping behavior
 
@@ -163,8 +150,7 @@ This means, for example:
   - Packet 1: Host A IGMPv2 Membership Report for `224.0.0.251`
   - Packet 2: Host A IGMPv2 Leave Group for `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely two unrecognized packets
-  - Expected future behavior: one IGMP flow with two packets because message type is not part of the key
+  - Expected behavior: one IGMP flow with two packets because message type is not part of the key
 
 - `07_igmp_two_sources_same_group.pcap`
   - Packets: `2`
@@ -172,8 +158,7 @@ This means, for example:
   - Packet 1: Host A report for `224.0.0.251`
   - Packet 2: Host B report for `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely two unrecognized packets
-  - Expected future behavior: two IGMP flows because source host differs
+  - Expected behavior: two IGMP flows because source host differs
 
 - `08_igmp_same_source_two_groups.pcap`
   - Packets: `2`
@@ -181,8 +166,7 @@ This means, for example:
   - Packet 1: Host A report for `224.0.0.251`
   - Packet 2: Host A report for `239.1.2.3`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely two unrecognized packets
-  - Expected future behavior: two IGMP flows because group key differs
+  - Expected behavior: two IGMP flows because group key differs
 
 ### C. IPv4 options / Router Alert
 
@@ -193,8 +177,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `yes`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: IGMP parser uses correct IPv4 IHL and places IGMP after IPv4 with no offset bug
+  - Expected behavior: IGMP parser uses correct IPv4 IHL and places IGMP after IPv4 with no offset bug
 
 - `10_igmpv2_general_query_with_router_alert.pcap`
   - Packets: `1`
@@ -203,10 +186,9 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.1` -> `224.0.0.1`
   - IGMP group address: `0.0.0.0`
   - IPv4 Router Alert: `yes`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: normal IGMP flow, IPv4 IHL displayed correctly, IGMP offset correct
+  - Expected behavior: normal IGMP flow, IPv4 IHL displayed correctly, IGMP offset correct
 
-### D. Unknown / partial future cases
+### D. Unknown / partial cases
 
 - `11_igmp_unknown_type.pcap`
   - Packets: `1`
@@ -215,8 +197,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: unknown IGMP type shown safely, no crash, grouping may still use source + group
+  - Expected behavior: unknown IGMP type shown safely, no crash, grouping still uses source + group
 
 - `12_igmpv3_membership_report_minimal.pcap`
   - Packets: `1`
@@ -225,8 +206,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.1` -> `239.1.2.3`
   - IGMP group address: not a v1/v2 group field; minimal IGMPv3 report body only
   - IPv4 Router Alert: `yes`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: first-pass parser may mark IGMPv3 as partial, but should not crash
+  - Expected behavior: IGMPv3 is recognized safely with partial details; detailed group-record parsing remains deferred
 
 ### E. Malformed / truncated cases
 
@@ -237,8 +217,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: incomplete/truncated in payload
   - IPv4 Router Alert: `no`
-  - Expected current behavior: unrecognized packet, no crash
-  - Expected future behavior: unrecognized list or partial IGMP details with reason such as `IGMP header truncated`
+  - Expected behavior: safe unrecognized packet or partial IGMP details with reason such as `IGMP header truncated`
 
 - `14_igmp_snaplen_truncated_header.pcap`
   - Packets: `1`
@@ -247,8 +226,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: unrecognized or partial details, capture truncation warning preserved, no crash
-  - Expected future behavior: partial IGMP details where safe, capture truncation warning preserved
+  - Expected behavior: partial IGMP details where safe, capture truncation warning preserved
 
 - `15_igmp_bad_checksum.pcap`
   - Packets: `1`
@@ -257,8 +235,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.10` -> `224.0.0.251`
   - IGMP group address: `224.0.0.251`
   - IPv4 Router Alert: `no`
-  - Expected current behavior: likely unrecognized or only Frame/Ethernet/IPv4 details
-  - Expected future behavior: checksum value shown, checksum validation may remain deferred, grouping can still work unless policy changes later
+  - Expected behavior: checksum value shown, checksum validation remains deferred, grouping still works
 
 - `16_ipv4_protocol_igmp_no_payload.pcap`
   - Packets: `1`
@@ -267,8 +244,7 @@ This means, for example:
   - IPv4 source/destination: `192.0.2.1` -> `224.0.0.1`
   - IGMP group address: none
   - IPv4 Router Alert: `no`
-  - Expected current behavior: unrecognized packet, no crash
-  - Expected future behavior: reason such as `IGMP header truncated` or `Missing IGMP payload`
+  - Expected behavior: unrecognized packet with reason such as `Missing IGMP payload`, no crash
 
 ## Cases that require manual classic pcap writing semantics
 

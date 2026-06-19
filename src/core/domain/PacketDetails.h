@@ -107,6 +107,17 @@ struct IcmpV6Details {
     std::uint8_t code {0};
 };
 
+struct IgmpDetails {
+    std::uint8_t type {0};
+    std::uint8_t max_resp_code {0};
+    std::uint16_t checksum {0};
+    std::uint32_t group_address {0};
+    std::uint16_t group_record_count {0};
+    bool has_group_address {false};
+    bool is_v3_membership_report {false};
+    bool header_truncated {false};
+};
+
 struct PacketDetails {
     std::uint64_t packet_index {0};
     std::uint32_t captured_length {0};
@@ -148,6 +159,9 @@ struct PacketDetails {
 
     bool has_icmpv6 {false};
     IcmpV6Details icmpv6 {};
+
+    bool has_igmp {false};
+    IgmpDetails igmp {};
 
     [[nodiscard]] bool empty() const noexcept;
 };
