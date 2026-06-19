@@ -78,6 +78,7 @@ The contract should use consistent identifier vocabulary across Qt, Tauri, and f
   - row number within the selected-flow packet list;
   - not the same as `packet_index`;
   - may be 1-based for human readability.
+- user-facing packet numbers shown in details/summary should be 1-based as well, even when the underlying stable `packet_index` remains 0-based internally.
 - `stream_item_display_number`
   - optional user-facing row number in the stream table;
   - not required to be the same thing as `stream_item_index`.

@@ -1071,11 +1071,13 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         .marker_text = "Warning",
     });
 
+    const auto packet_number_in_file = details.packet_index + 1U;
+
     std::vector<PacketSummaryField> frame_fields {};
     if (options.flow_packet_index.has_value()) {
-        frame_fields.push_back(make_summary_field("Packet index in flow", std::to_string(*options.flow_packet_index)));
+        frame_fields.push_back(make_summary_field("Packet number in flow", std::to_string(*options.flow_packet_index)));
     }
-    frame_fields.push_back(make_summary_field("Packet index in file", std::to_string(details.packet_index)));
+    frame_fields.push_back(make_summary_field("Packet number in file", std::to_string(packet_number_in_file)));
     frame_fields.push_back(make_summary_field("Timestamp", format_packet_timestamp_full(packet)));
     frame_fields.push_back(make_summary_field("Captured Length", std::to_string(details.captured_length) + " bytes"));
     frame_fields.push_back(make_summary_field("Original Length", std::to_string(details.original_length) + " bytes"));
@@ -1084,8 +1086,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         .id = "frame",
         .title = options.flow_packet_index.has_value()
             ? "Frame: Packet " + std::to_string(*options.flow_packet_index) +
-                " in Flow, Packet " + std::to_string(details.packet_index) + " in file"
-            : "Frame: Packet " + std::to_string(details.packet_index) + " in file",
+                " in Flow, Packet " + std::to_string(packet_number_in_file) + " in file"
+            : "Frame: Packet " + std::to_string(packet_number_in_file) + " in file",
         .fields = std::move(frame_fields),
     });
 

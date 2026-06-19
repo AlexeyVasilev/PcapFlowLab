@@ -82,7 +82,9 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(!frame_layer->title.empty());
         PFL_EXPECT(!ethernet_layer->title.empty());
         PFL_EXPECT(!ipv4_layer->title.empty());
-        PFL_EXPECT(find_field(*frame_layer, "Packet index in file") != nullptr);
+        const auto* frame_number_in_file = find_field(*frame_layer, "Packet number in file");
+        PFL_EXPECT(frame_number_in_file != nullptr);
+        PFL_EXPECT(frame_number_in_file->value == "1");
         PFL_EXPECT(find_field(*ipv4_layer, "Source Address") != nullptr);
 
         const auto raw_dump = session.read_packet_hex_dump(*packet);
@@ -122,7 +124,9 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(!frame_layer->title.empty());
         PFL_EXPECT(!ethernet_layer->title.empty());
         PFL_EXPECT(!ipv4_layer->title.empty());
-        PFL_EXPECT(find_field(*frame_layer, "Packet index in file") != nullptr);
+        const auto* frame_number_in_file = find_field(*frame_layer, "Packet number in file");
+        PFL_EXPECT(frame_number_in_file != nullptr);
+        PFL_EXPECT(frame_number_in_file->value == "1");
         PFL_EXPECT(find_field(*ipv4_layer, "Source Address") != nullptr);
         PFL_EXPECT(find_layer(details.summary_layers, "tcp") == nullptr);
     }

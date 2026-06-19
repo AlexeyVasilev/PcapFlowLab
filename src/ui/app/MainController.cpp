@@ -1801,9 +1801,10 @@ QString buildPacketSummary(
     const TransportPayloadLengths& payload_lengths = {}
 ) {
     QStringList lines {};
+    const auto packet_number_in_file = details.packet_index + 1U;
 
     appendSection(lines, QStringLiteral("Packet"), {
-        QStringLiteral("Packet index in file: %1").arg(details.packet_index),
+        QStringLiteral("Packet number in file: %1").arg(packet_number_in_file),
         QStringLiteral("Time: %1").arg(QString::fromStdString(session_detail::format_packet_timestamp_full(packet))),
         QStringLiteral("Captured Length: %1").arg(details.captured_length),
         QStringLiteral("Original Length: %1").arg(details.original_length),
@@ -1930,9 +1931,10 @@ QString buildPacketSummaryFallback(
     const PacketChecksumSections& checksum_sections = {}
 ) {
     QStringList lines {};
+    const auto packet_number_in_file = packet.packet_index + 1U;
 
     appendSection(lines, QStringLiteral("Packet"), {
-        QStringLiteral("Packet index in file: %1").arg(packet.packet_index),
+        QStringLiteral("Packet number in file: %1").arg(packet_number_in_file),
         QStringLiteral("Time: %1").arg(QString::fromStdString(session_detail::format_packet_timestamp_full(packet))),
         QStringLiteral("Captured Length: %1").arg(packet.captured_length),
         QStringLiteral("Original Length: %1").arg(packet.original_length),

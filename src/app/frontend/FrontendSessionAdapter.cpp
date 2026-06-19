@@ -311,9 +311,10 @@ std::string build_frontend_packet_summary_text(
     const bool source_capture_accessible
 ) {
     std::vector<std::string> lines {};
+    const auto packet_number_in_file = packet.packet_index + 1U;
 
     append_summary_section(lines, "Packet", {
-        "Packet index in file: " + std::to_string(packet.packet_index),
+        "Packet number in file: " + std::to_string(packet_number_in_file),
         "Time: " + session_detail::format_packet_timestamp_full(packet),
         "Captured Length: " + std::to_string(packet.captured_length),
         "Original Length: " + std::to_string(packet.original_length),

@@ -163,7 +163,7 @@ void run_packet_details_tests() {
         });
         PFL_EXPECT(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "frame");
-        PFL_EXPECT(summary_layers.front().title == "Frame: Packet 4 in Flow, Packet 7 in file");
+        PFL_EXPECT(summary_layers.front().title == "Frame: Packet 4 in Flow, Packet 8 in file");
         PFL_EXPECT(!summary_layers.front().expanded_by_default);
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
@@ -187,8 +187,8 @@ void run_packet_details_tests() {
         PFL_EXPECT(ethernet_layer != nullptr);
         PFL_EXPECT(ipv4_layer != nullptr);
         PFL_EXPECT(tcp_layer != nullptr);
-        const auto* frame_in_flow_field = find_summary_field(*frame_layer, "Packet index in flow");
-        const auto* frame_in_file_field = find_summary_field(*frame_layer, "Packet index in file");
+        const auto* frame_in_flow_field = find_summary_field(*frame_layer, "Packet number in flow");
+        const auto* frame_in_file_field = find_summary_field(*frame_layer, "Packet number in file");
         const auto* frame_captured_length_field = find_summary_field(*frame_layer, "Captured Length");
         const auto* frame_original_length_field = find_summary_field(*frame_layer, "Original Length");
         const auto* ethernet_source_field = find_summary_field(*ethernet_layer, "Source");
@@ -242,7 +242,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
         PFL_EXPECT(tcp_options_layer == nullptr);
         PFL_EXPECT(frame_in_flow_field->value == "4");
-        PFL_EXPECT(frame_in_file_field->value == "7");
+        PFL_EXPECT(frame_in_file_field->value == "8");
         PFL_EXPECT(frame_captured_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
         PFL_EXPECT(frame_original_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
         PFL_EXPECT(ethernet_source_field->value == "66:77:88:99:aa:bb");
@@ -295,7 +295,7 @@ void run_packet_details_tests() {
         });
         PFL_EXPECT(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[0].id == "frame");
-        PFL_EXPECT(summary_layers[0].title == "Frame: Packet 8 in file");
+        PFL_EXPECT(summary_layers[0].title == "Frame: Packet 9 in file");
         PFL_EXPECT(!summary_layers[0].expanded_by_default);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
         PFL_EXPECT(!summary_layers[1].expanded_by_default);

@@ -1974,7 +1974,7 @@ int main(int argc, char* argv[]) {
     auto* details_model = qobject_cast<PacketDetailsViewModel*>(controller.packetDetailsModel());
     UI_EXPECT(details_model != nullptr);
     UI_EXPECT(details_model->hasPacket());
-    UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet index in file: 0")));
+    UI_EXPECT(details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
     UI_EXPECT(!details_model->summaryLayers().isEmpty());
     UI_EXPECT(details_model->payloadText().contains(QStringLiteral("47 45 54 20 2f")));
     UI_EXPECT(!details_model->protocolText().isEmpty());
@@ -2263,7 +2263,7 @@ int main(int argc, char* argv[]) {
     stream_controller.setSelectedPacketIndex(0);
     UI_EXPECT(stream_controller.selectedPacketIndex() == 0U);
     UI_EXPECT(stream_details_model->detailsTitle() == QStringLiteral("Packet Details"));
-    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet index in file: 0")));
+    UI_EXPECT(stream_details_model->summaryText().contains(QStringLiteral("Packet number in file: 1")));
     UI_EXPECT(stream_details_model->payloadTabTitle() == QStringLiteral("TCP Payload"));
 
     stream_controller.setSelectedFlowIndex(dns_stream_flow_index);
@@ -3317,7 +3317,7 @@ int main(int argc, char* argv[]) {
 
     packet_loading_controller.setSelectedPacketIndex(10U);
     UI_EXPECT(packet_loading_controller.selectedPacketIndex() == 10U);
-    UI_EXPECT(packet_loading_details_model->summaryText().contains(QStringLiteral("Packet index in file: 10")));
+    UI_EXPECT(packet_loading_details_model->summaryText().contains(QStringLiteral("Packet number in file: 11")));
 
     packet_loading_controller.setSelectedFlowIndex(small_flow_index);
     UI_EXPECT(packet_loading_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
