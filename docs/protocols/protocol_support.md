@@ -124,7 +124,7 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | IPv6 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv6 facts appear in layered Summary, including conservative selected-packet header fields such as traffic class, flow label, payload length, next header, hop limit, and addresses. There is no standalone IPv6 `Protocol` tab renderer today. |
 | ICMP | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMP text, and layered Summary now appends a dedicated ICMP layer after IPv4. |
 | ICMPv6 | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMPv6 text, and layered Summary now appends a dedicated ICMPv6 layer after IPv6. |
-| TCP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes TCP ports, raw sequence / acknowledgment numbers, header length, flags, window, checksum, urgent pointer, payload length, and raw TCP options bytes when present. Full TCP option parsing remains deferred. Generic selected-packet `Protocol` text is not emitted for plain TCP packets, but higher-level analyzers can consume TCP payload. Stream falls back to generic `TCP Payload` rows when no HTTP/TLS specialization applies. |
+| TCP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes TCP ports, raw sequence / acknowledgment numbers, header length, flags, window, checksum, urgent pointer, payload length, and a nested `TCP Options (N bytes)` subtree when options are present. The first shared on-demand parser handles EOL, NOP, MSS, Window Scale, SACK Permitted, SACK, Timestamps, unknown valid options, and conservative malformed/truncation warnings. Generic selected-packet `Protocol` text is not emitted for plain TCP packets, but higher-level analyzers can consume TCP payload. Stream falls back to generic `TCP Payload` rows when no HTTP/TLS specialization applies. |
 | UDP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes UDP ports, length, checksum, and payload length. Generic selected-packet `Protocol` text is not emitted for plain UDP packets, but higher-level analyzers can consume UDP payload. Stream falls back to generic `UDP Payload` rows when no specialization applies. |
 
 ## Support Matrix: Higher-Level Protocols And Hints
@@ -164,6 +164,7 @@ The shared layered Summary model is intentionally conservative today.
   - IPv6;
   - TCP;
   - UDP.
+- TCP Summary now includes a first structured nested TCP options subtree under the TCP layer, but this remains selected-packet/on-demand only and does not affect open/import behavior.
 - It still does not expose full dedicated Summary subtrees for:
   - mDNS;
   - DHCP;

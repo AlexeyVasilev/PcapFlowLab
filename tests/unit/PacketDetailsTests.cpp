@@ -48,6 +48,40 @@ const session_detail::PacketSummaryField* find_summary_field(
     return it != layer.fields.end() ? &(*it) : nullptr;
 }
 
+const session_detail::PacketSummaryLayer* find_summary_child(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& id,
+    const std::size_t occurrence = 0U
+) {
+    std::size_t seen = 0U;
+    for (const auto& child : layer.children) {
+        if (child.id != id) {
+            continue;
+        }
+        if (seen == occurrence) {
+            return &child;
+        }
+        ++seen;
+    }
+    return nullptr;
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
+    const std::filesystem::path& relative_fixture_path
+) {
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(fixture_path(relative_fixture_path), CaptureImportOptions {.mode = ImportMode::fast}));
+    const auto packet = require_packet(session, 0U);
+    const auto details = session.read_packet_details(packet);
+    PFL_EXPECT(details.has_value());
+    return session_detail::build_packet_summary_layers(*details, packet, {
+        .source_capture_accessible = true,
+        .transport_payload_length = packet.payload_length,
+        .original_transport_payload_length = packet.payload_length,
+        .protocol_details_text = session.read_packet_protocol_details_text(packet),
+    });
+}
+
 std::vector<std::uint8_t> make_ethernet_ipv4_tcp_syn_with_options_packet(
     const std::uint32_t src_addr,
     const std::uint32_t dst_addr,
@@ -179,7 +213,7 @@ void run_packet_details_tests() {
         const auto* tcp_window_field = find_summary_field(*tcp_layer, "Window");
         const auto* tcp_checksum_field = find_summary_field(*tcp_layer, "Checksum");
         const auto* tcp_urgent_pointer_field = find_summary_field(*tcp_layer, "Urgent Pointer");
-        const auto* tcp_options_field = find_summary_field(*tcp_layer, "Options");
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
         PFL_EXPECT(frame_in_flow_field != nullptr);
         PFL_EXPECT(frame_in_file_field != nullptr);
         PFL_EXPECT(frame_captured_length_field != nullptr);
@@ -206,7 +240,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(tcp_window_field != nullptr);
         PFL_EXPECT(tcp_checksum_field != nullptr);
         PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
-        PFL_EXPECT(tcp_options_field == nullptr);
+        PFL_EXPECT(tcp_options_layer == nullptr);
         PFL_EXPECT(frame_in_flow_field->value == "4");
         PFL_EXPECT(frame_in_file_field->value == "7");
         PFL_EXPECT(frame_captured_length_field->value == std::to_string(tcp_packet.size()) + " bytes");
@@ -333,7 +367,7 @@ void run_packet_details_tests() {
         const auto* tcp_window_field = find_summary_field(*tcp_layer, "Window");
         const auto* tcp_checksum_field = find_summary_field(*tcp_layer, "Checksum");
         const auto* tcp_urgent_pointer_field = find_summary_field(*tcp_layer, "Urgent Pointer");
-        const auto* tcp_options_field = find_summary_field(*tcp_layer, "Options");
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
         PFL_EXPECT(tcp_sequence_field != nullptr);
         PFL_EXPECT(tcp_acknowledgment_field != nullptr);
         PFL_EXPECT(tcp_header_length_field != nullptr);
@@ -341,7 +375,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(tcp_window_field != nullptr);
         PFL_EXPECT(tcp_checksum_field != nullptr);
         PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
-        PFL_EXPECT(tcp_options_field != nullptr);
+        PFL_EXPECT(tcp_options_layer != nullptr);
         PFL_EXPECT(tcp_sequence_field->value == "1455851779");
         PFL_EXPECT(tcp_acknowledgment_field->value == "0");
         PFL_EXPECT(tcp_header_length_field->value == "32 bytes (8)");
@@ -349,8 +383,142 @@ void run_packet_details_tests() {
         PFL_EXPECT(tcp_window_field->value == "62420");
         PFL_EXPECT(tcp_checksum_field->value == "0x1d02");
         PFL_EXPECT(tcp_urgent_pointer_field->value == "0");
-        PFL_EXPECT(tcp_options_field->value ==
-            "12 bytes: 0x02, 0x04, 0x05, 0xb4, 0x01, 0x01, 0x04, 0x02, 0x01, 0x03, 0x03, 0x07");
+        PFL_EXPECT(tcp_options_layer->title == "TCP Options (12 bytes)");
+        const auto* tcp_options_raw_field = find_summary_field(*tcp_options_layer, "Raw");
+        const auto* tcp_mss_option = find_summary_child(*tcp_options_layer, "tcp_option_mss");
+        const auto* tcp_nop_option0 = find_summary_child(*tcp_options_layer, "tcp_option_nop", 0U);
+        const auto* tcp_nop_option1 = find_summary_child(*tcp_options_layer, "tcp_option_nop", 1U);
+        const auto* tcp_sack_permitted_option = find_summary_child(*tcp_options_layer, "tcp_option_sack_permitted");
+        const auto* tcp_window_scale_option = find_summary_child(*tcp_options_layer, "tcp_option_window_scale");
+        PFL_EXPECT(tcp_options_raw_field != nullptr);
+        PFL_EXPECT(tcp_options_raw_field->value ==
+            "0x02, 0x04, 0x05, 0xb4, 0x01, 0x01, 0x04, 0x02, 0x01, 0x03, 0x03, 0x07");
+        PFL_EXPECT(tcp_mss_option != nullptr);
+        PFL_EXPECT(tcp_nop_option0 != nullptr);
+        PFL_EXPECT(tcp_nop_option1 != nullptr);
+        PFL_EXPECT(tcp_sack_permitted_option != nullptr);
+        PFL_EXPECT(tcp_window_scale_option != nullptr);
+        const auto* tcp_mss_value_field = find_summary_field(*tcp_mss_option, "MSS");
+        const auto* tcp_window_scale_field = find_summary_field(*tcp_window_scale_option, "Shift Count");
+        PFL_EXPECT(tcp_mss_value_field != nullptr);
+        PFL_EXPECT(tcp_window_scale_field != nullptr);
+        PFL_EXPECT(tcp_mss_value_field->value == "1460 bytes");
+        PFL_EXPECT(tcp_window_scale_field->value == "7");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/03_tcp_syn_mss.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_EXPECT(tcp_options_layer->title == "TCP Options (4 bytes)");
+        const auto* tcp_mss_option = find_summary_child(*tcp_options_layer, "tcp_option_mss");
+        PFL_EXPECT(tcp_mss_option != nullptr);
+        const auto* tcp_mss_value = find_summary_field(*tcp_mss_option, "MSS");
+        PFL_EXPECT(tcp_mss_value != nullptr);
+        PFL_EXPECT(tcp_mss_value->value == "1460 bytes");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/04_tcp_syn_mss_window_scale_sack_timestamp.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_mss") != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_sack_permitted") != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_timestamp") != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_window_scale") != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_nop", 0U) != nullptr);
+        const auto* timestamp_option = find_summary_child(*tcp_options_layer, "tcp_option_timestamp");
+        PFL_EXPECT(timestamp_option != nullptr);
+        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp value") != nullptr);
+        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp echo reply") != nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/07_tcp_ack_sack_blocks.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        const auto* sack_option = find_summary_child(*tcp_options_layer, "tcp_option_sack");
+        PFL_EXPECT(sack_option != nullptr);
+        PFL_EXPECT(find_summary_field(*sack_option, "Block 1 Left Edge") != nullptr);
+        PFL_EXPECT(find_summary_field(*sack_option, "Block 1 Right Edge") != nullptr);
+        PFL_EXPECT(find_summary_field(*sack_option, "Block 2 Left Edge") != nullptr);
+        PFL_EXPECT(find_summary_field(*sack_option, "Block 2 Right Edge") != nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/08_tcp_ack_timestamp_only.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        const auto* timestamp_option = find_summary_child(*tcp_options_layer, "tcp_option_timestamp");
+        PFL_EXPECT(timestamp_option != nullptr);
+        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp value") != nullptr);
+        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp echo reply") != nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/09_tcp_syn_unknown_valid_option.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        const auto* unknown_option = find_summary_child(*tcp_options_layer, "tcp_option_unknown");
+        PFL_EXPECT(unknown_option != nullptr);
+        PFL_EXPECT(find_summary_field(*unknown_option, "Kind") != nullptr);
+        PFL_EXPECT(find_summary_field(*unknown_option, "Raw") != nullptr);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/13_tcp_option_length_zero_malformed.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        const auto* malformed_option = find_summary_child(*tcp_options_layer, "tcp_option_malformed");
+        PFL_EXPECT(malformed_option != nullptr);
+        PFL_EXPECT(malformed_option->warning);
+        PFL_EXPECT(malformed_option->title.find("invalid length 0") != std::string::npos);
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/16_tcp_option_truncated_timestamp_malformed.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        const auto* malformed_option = find_summary_child(*tcp_options_layer, "tcp_option_malformed");
+        PFL_EXPECT(malformed_option != nullptr);
+        PFL_EXPECT(malformed_option->warning);
+        PFL_EXPECT(malformed_option->title == "Malformed Timestamp Option");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/17_tcp_option_eol_then_nonzero_padding.pcap");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(tcp_layer != nullptr);
+        const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
+        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_eol") != nullptr);
+        const auto* malformed_option = find_summary_child(*tcp_options_layer, "tcp_option_malformed");
+        PFL_EXPECT(malformed_option != nullptr);
+        PFL_EXPECT(malformed_option->title == "Non-zero padding after EOL");
+    }
+
+    {
+        const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/20_tcp_syn_ipv4_options_and_tcp_options.pcap");
+        const auto* ipv4_layer = find_summary_layer(summary_layers, "ipv4");
+        const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_EXPECT(find_summary_field(*ipv4_layer, "Internet Header Length") != nullptr);
+        PFL_EXPECT(find_summary_child(*tcp_layer, "tcp_options") != nullptr);
     }
 
     {

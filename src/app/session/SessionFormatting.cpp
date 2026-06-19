@@ -21,6 +21,13 @@ constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
+constexpr std::uint8_t kTcpOptionEndOfList = 0U;
+constexpr std::uint8_t kTcpOptionNoOperation = 1U;
+constexpr std::uint8_t kTcpOptionMaximumSegmentSize = 2U;
+constexpr std::uint8_t kTcpOptionWindowScale = 3U;
+constexpr std::uint8_t kTcpOptionSackPermitted = 4U;
+constexpr std::uint8_t kTcpOptionSack = 5U;
+constexpr std::uint8_t kTcpOptionTimestamp = 8U;
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 
@@ -207,6 +214,280 @@ PacketSummaryField make_summary_line_field(const std::string& line) {
         line.substr(0, separator_index),
         line.substr(separator_index + 2U)
     );
+}
+
+std::string format_byte_count(const std::size_t bytes) {
+    return std::to_string(bytes) + (bytes == 1U ? " byte" : " bytes");
+}
+
+std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(bytes[offset]) << 8U) |
+        static_cast<std::uint16_t>(bytes[offset + 1U])
+    );
+}
+
+std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return (static_cast<std::uint32_t>(bytes[offset]) << 24U) |
+           (static_cast<std::uint32_t>(bytes[offset + 1U]) << 16U) |
+           (static_cast<std::uint32_t>(bytes[offset + 2U]) << 8U) |
+           static_cast<std::uint32_t>(bytes[offset + 3U]);
+}
+
+PacketSummaryLayer make_tcp_option_layer(
+    std::string id,
+    std::string title,
+    std::vector<PacketSummaryField> fields = {},
+    const bool warning = false
+) {
+    return PacketSummaryLayer {
+        .id = std::move(id),
+        .title = std::move(title),
+        .fields = std::move(fields),
+        .expanded_by_default = warning,
+        .warning = warning,
+        .marker_text = warning ? std::string {"Warning"} : std::string {},
+    };
+}
+
+PacketSummaryLayer make_malformed_tcp_option_layer(
+    std::string title,
+    std::span<const std::uint8_t> raw_bytes,
+    std::vector<PacketSummaryField> fields = {}
+) {
+    if (!raw_bytes.empty()) {
+        fields.push_back(make_summary_field("Raw", format_hex_byte_list(raw_bytes)));
+    }
+    return make_tcp_option_layer("tcp_option_malformed", std::move(title), std::move(fields), true);
+}
+
+std::optional<PacketSummaryLayer> build_tcp_options_summary_layer(std::span<const std::uint8_t> options_bytes) {
+    if (options_bytes.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryLayer> option_layers {};
+    const auto make_parent_layer = [&]() {
+        return PacketSummaryLayer {
+            .id = "tcp_options",
+            .title = "TCP Options (" + format_byte_count(options_bytes.size()) + ")",
+            .fields = {
+                make_summary_field("Length", format_byte_count(options_bytes.size())),
+                make_summary_field("Raw", format_hex_byte_list(options_bytes)),
+            },
+            .children = std::move(option_layers),
+            .expanded_by_default = true,
+        };
+    };
+
+    std::size_t offset = 0U;
+    while (offset < options_bytes.size()) {
+        const auto kind = options_bytes[offset];
+        if (kind == kTcpOptionEndOfList) {
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_eol",
+                "End of Option List (EOL)",
+                {
+                    make_summary_field("Kind", "0"),
+                    make_summary_field("Length", "1 byte"),
+                }
+            ));
+
+            const auto padding = options_bytes.subspan(offset + 1U);
+            if (!padding.empty()) {
+                const auto first_non_zero = std::find_if(padding.begin(), padding.end(), [](const auto byte) {
+                    return byte != 0U;
+                });
+                if (first_non_zero != padding.end()) {
+                    option_layers.push_back(make_malformed_tcp_option_layer(
+                        "Non-zero padding after EOL",
+                        padding,
+                        {
+                            make_summary_field("Length", format_byte_count(padding.size())),
+                        }
+                    ));
+                }
+            }
+            break;
+        }
+
+        if (kind == kTcpOptionNoOperation) {
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_nop",
+                "No-Operation (NOP)",
+                {
+                    make_summary_field("Kind", "1"),
+                    make_summary_field("Length", "1 byte"),
+                }
+            ));
+            ++offset;
+            continue;
+        }
+
+        if (offset + 2U > options_bytes.size()) {
+            option_layers.push_back(make_malformed_tcp_option_layer(
+                "Malformed TCP Option: missing length field",
+                options_bytes.subspan(offset),
+                {
+                    make_summary_field("Kind", std::to_string(kind)),
+                }
+            ));
+            break;
+        }
+
+        const auto length = static_cast<std::size_t>(options_bytes[offset + 1U]);
+        if (length == 0U || length == 1U) {
+            option_layers.push_back(make_malformed_tcp_option_layer(
+                "Malformed TCP Option: invalid length " + std::to_string(length),
+                options_bytes.subspan(offset),
+                {
+                    make_summary_field("Kind", std::to_string(kind)),
+                    make_summary_field("Length", std::to_string(length)),
+                }
+            ));
+            break;
+        }
+
+        if (offset + length > options_bytes.size()) {
+            const auto title = kind == kTcpOptionTimestamp
+                ? std::string {"Malformed Timestamp Option"}
+                : std::string {"Malformed TCP Option: length extends past TCP header"};
+            option_layers.push_back(make_malformed_tcp_option_layer(
+                title,
+                options_bytes.subspan(offset),
+                {
+                    make_summary_field("Kind", std::to_string(kind)),
+                    make_summary_field("Length", std::to_string(length)),
+                    make_summary_field("Available Bytes", format_byte_count(options_bytes.size() - offset)),
+                }
+            ));
+            break;
+        }
+
+        const auto option_bytes = options_bytes.subspan(offset, length);
+        std::vector<PacketSummaryField> fields {
+            make_summary_field("Kind", std::to_string(kind)),
+            make_summary_field("Length", format_byte_count(length)),
+        };
+
+        switch (kind) {
+        case kTcpOptionMaximumSegmentSize:
+            if (length != 4U) {
+                option_layers.push_back(make_malformed_tcp_option_layer(
+                    "Malformed TCP Option: MSS length must be 4",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            fields.push_back(make_summary_field("MSS", std::to_string(read_be16(option_bytes, 2U)) + " bytes"));
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_mss",
+                "Maximum Segment Size: " + std::to_string(read_be16(option_bytes, 2U)) + " bytes",
+                std::move(fields)
+            ));
+            break;
+
+        case kTcpOptionWindowScale:
+            if (length != 3U) {
+                option_layers.push_back(make_malformed_tcp_option_layer(
+                    "Malformed TCP Option: Window Scale length must be 3",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            fields.push_back(make_summary_field("Shift Count", std::to_string(option_bytes[2U])));
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_window_scale",
+                "Window Scale: " + std::to_string(option_bytes[2U]),
+                std::move(fields)
+            ));
+            break;
+
+        case kTcpOptionSackPermitted:
+            if (length != 2U) {
+                option_layers.push_back(make_malformed_tcp_option_layer(
+                    "Malformed TCP Option: SACK Permitted length must be 2",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_sack_permitted",
+                "SACK Permitted",
+                std::move(fields)
+            ));
+            break;
+
+        case kTcpOptionSack: {
+            if (length < 10U || ((length - 2U) % 8U) != 0U) {
+                option_layers.push_back(make_malformed_tcp_option_layer(
+                    "Malformed TCP Option: invalid SACK length",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            const auto block_count = (length - 2U) / 8U;
+            for (std::size_t block_index = 0U; block_index < block_count; ++block_index) {
+                const auto block_offset = 2U + (block_index * 8U);
+                fields.push_back(make_summary_field(
+                    "Block " + std::to_string(block_index + 1U) + " Left Edge",
+                    std::to_string(read_be32(option_bytes, block_offset))
+                ));
+                fields.push_back(make_summary_field(
+                    "Block " + std::to_string(block_index + 1U) + " Right Edge",
+                    std::to_string(read_be32(option_bytes, block_offset + 4U))
+                ));
+            }
+
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_sack",
+                "SACK: " + std::to_string(block_count) + (block_count == 1U ? " block" : " blocks"),
+                std::move(fields)
+            ));
+            break;
+        }
+
+        case kTcpOptionTimestamp:
+            if (length != 10U) {
+                option_layers.push_back(make_malformed_tcp_option_layer(
+                    "Malformed Timestamp Option",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            fields.push_back(make_summary_field("Timestamp value", std::to_string(read_be32(option_bytes, 2U))));
+            fields.push_back(make_summary_field("Timestamp echo reply", std::to_string(read_be32(option_bytes, 6U))));
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_timestamp",
+                "Timestamps",
+                std::move(fields)
+            ));
+            break;
+
+        default:
+            fields.push_back(make_summary_field("Raw", format_hex_byte_list(option_bytes)));
+            option_layers.push_back(make_tcp_option_layer(
+                "tcp_option_unknown",
+                "Unknown Option " + std::to_string(kind) + " (" + format_byte_count(length) + ")",
+                std::move(fields)
+            ));
+            break;
+        }
+
+        offset += length;
+    }
+
+    return make_parent_layer();
 }
 
 void append_layer_if_not_empty(std::vector<PacketSummaryLayer>& layers, PacketSummaryLayer layer) {
@@ -987,12 +1268,9 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             make_summary_field("Checksum", format_hex16_value(details.tcp.checksum)),
             make_summary_field("Urgent Pointer", std::to_string(details.tcp.urgent_pointer)),
         };
-        if (!details.tcp.options_bytes.empty()) {
-            tcp_fields.push_back(make_summary_field(
-                "Options",
-                std::to_string(details.tcp.options_bytes.size()) + " bytes: " +
-                    format_hex_byte_list(details.tcp.options_bytes)
-            ));
+        std::vector<PacketSummaryLayer> tcp_children {};
+        if (const auto tcp_options = build_tcp_options_summary_layer(details.tcp.options_bytes); tcp_options.has_value()) {
+            tcp_children.push_back(*tcp_options);
         }
         if (options.original_transport_payload_length.has_value()) {
             if (options.transport_payload_length.has_value() &&
@@ -1011,6 +1289,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 std::to_string(details.tcp.src_port) +
                 ", Dst Port: " + std::to_string(details.tcp.dst_port),
             .fields = std::move(tcp_fields),
+            .children = std::move(tcp_children),
         });
     }
 

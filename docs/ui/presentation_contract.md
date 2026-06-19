@@ -496,7 +496,8 @@ Current direction note:
 - MPLS should appear as one Summary layer per label between Ethernet/VLAN and the resolved inner IPv4/IPv6 layer, using the stable shared layer id `mpls` so repeated occurrences naturally map to `mpls#0`, `mpls#1`, and so on for expansion-state tracking;
 - the IPv4 and IPv6 layers should expose conservative decoded header fields from selected-packet/on-demand parsing rather than open-time import work;
 - the TCP and UDP layers should expose conservative transport header fields from selected-packet/on-demand parsing, including header checksums;
-- the TCP layer should expose raw sequence/acknowledgment numbers, header length, window, urgent pointer, and raw options bytes when options are present;
+- the TCP layer should expose raw sequence/acknowledgment numbers, header length, window, urgent pointer, and a nested `tcp_options` child when options are present;
+- the `tcp_options` child should keep raw option bytes visible and may contain nested child nodes such as MSS, Window Scale, SACK Permitted, SACK, Timestamps, unknown options, and malformed/warning nodes;
 - when structured layers are present, default expansion should open `Warnings` when present plus the final non-warning protocol layer, and frontends should remember user expansion state per protocol-chain signature for the current UI session;
 - Qt, Tauri, and future CLI surfaces should continue converging on this shared layer list instead of relying mainly on frontend-local text reconstruction;
 - the Protocol tab remains the protocol-specific text surface for deeper or more specialized packet presentation.

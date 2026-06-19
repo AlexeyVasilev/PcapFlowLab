@@ -468,9 +468,12 @@ Frame {
         }
     }
 
-    component SummaryLayerCard: Rectangle {
+    Component {
+        id: summaryLayerCardComponent
+
+        Rectangle {
         id: summaryLayerCard
-        required property var modelData
+        property var modelData
         readonly property string expansionKey: modelData && modelData["expansion_key"] !== undefined && modelData["expansion_key"] !== null
             ? String(modelData["expansion_key"])
             : ""
@@ -591,45 +594,23 @@ Frame {
                     id: childRepeater
                     model: summaryLayerCard.childLayers
 
-                    delegate: Rectangle {
-                        readonly property string childTitleText: modelData && modelData["title"] !== undefined && modelData["title"] !== null
-                            ? String(modelData["title"])
-                            : ""
-                        readonly property var childFieldRows: modelData && modelData["fields"] && modelData["fields"].length !== undefined
-                            ? modelData["fields"]
-                            : []
+                    delegate: Loader {
+                        required property var modelData
                         Layout.fillWidth: true
-                        color: "#ffffff"
-                        border.color: "#e2e8f0"
-                        radius: 7
-                        implicitHeight: childColumn.implicitHeight + 12
+                        Layout.leftMargin: 8
+                        sourceComponent: summaryLayerCardComponent
 
-                        ColumnLayout {
-                            id: childColumn
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 4
-
-                            Label {
-                                Layout.fillWidth: true
-                                text: childTitleText
-                                font.pixelSize: 12
-                                font.bold: false
-                                color: "#334155"
-                            }
-
-                            Repeater {
-                                model: childFieldRows
-
-                                delegate: SummaryFieldRow {
-                                    Layout.fillWidth: true
-                                }
+                        onLoaded: {
+                            if (item) {
+                                item.modelData = modelData
                             }
                         }
                     }
                 }
             }
         }
+    }
+
     }
 
     background: Rectangle {
@@ -957,8 +938,16 @@ Frame {
                             Repeater {
                                 model: packetSummaryPane.layers
 
-                                delegate: SummaryLayerCard {
+                                delegate: Loader {
+                                    required property var modelData
                                     Layout.fillWidth: true
+                                    sourceComponent: summaryLayerCardComponent
+
+                                    onLoaded: {
+                                        if (item) {
+                                            item.modelData = modelData
+                                        }
+                                    }
                                 }
                             }
                         }
