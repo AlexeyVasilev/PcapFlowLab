@@ -258,6 +258,21 @@ void report_open_progress(OpenContext* ctx) {
     return ctx != nullptr && ctx->is_cancel_requested();
 }
 
+template <typename Connection, typename FlowKey>
+void apply_import_hints_if_needed(const RawPcapPacket& packet,
+                                  const std::span<const std::uint8_t> packet_bytes,
+                                  const PacketRef& packet_ref,
+                                  Connection& connection,
+                                  const FlowKey& flow_key,
+                                  const FlowHintService& hint_service) {
+    if (packet_ref.is_ip_fragmented || !connection.should_attempt_hint_detection(packet_ref, flow_key.protocol)) {
+        return;
+    }
+
+    connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, flow_key));
+    connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
+}
+
 [[nodiscard]] bool is_safe_partial_import(const CaptureState& state, const OpenContext* ctx) noexcept {
     return !should_cancel(ctx) && state.summary.packet_count > 0U;
 }
@@ -328,18 +343,26 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     if (decoded.ipv4.has_value()) {
         ingestor.ingest(*decoded.ipv4);
         auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
-        if (!decoded.ipv4->packet_ref.is_ip_fragmented) {
-            connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv4->flow_key));
-        }
+        apply_import_hints_if_needed(
+            packet,
+            packet_bytes,
+            decoded.ipv4->packet_ref,
+            connection,
+            decoded.ipv4->flow_key,
+            hint_service_);
         return;
     }
 
     if (decoded.ipv6.has_value()) {
         ingestor.ingest(*decoded.ipv6);
         auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
-        if (!decoded.ipv6->packet_ref.is_ip_fragmented) {
-            connection.apply_hints(hint_service_.detect(packet_bytes, packet.data_link_type, decoded.ipv6->flow_key));
-        }
+        apply_import_hints_if_needed(
+            packet,
+            packet_bytes,
+            decoded.ipv6->packet_ref,
+            connection,
+            decoded.ipv6->flow_key,
+            hint_service_);
         return;
     }
 

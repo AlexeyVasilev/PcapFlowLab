@@ -26,12 +26,17 @@ std::array<std::uint8_t, 16> ipv6(std::initializer_list<std::uint8_t> bytes) {
     return address;
 }
 
-PacketRef packet_ref(std::uint64_t index, std::uint32_t original_length) {
+PacketRef packet_ref(std::uint64_t index,
+                     std::uint32_t original_length,
+                     std::uint32_t payload_length = 0U,
+                     bool is_ip_fragmented = false) {
     return PacketRef {
         .packet_index = index,
         .byte_offset = index * 64U,
         .captured_length = original_length,
         .original_length = original_length,
+        .payload_length = payload_length,
+        .is_ip_fragmented = is_ip_fragmented,
     };
 }
 
@@ -118,6 +123,40 @@ void run_connection_tests() {
 
     PFL_EXPECT(empty_flow_v4.empty());
     PFL_EXPECT(empty_flow_v6.empty());
+
+    {
+        ConnectionV4 http_connection {};
+        http_connection.protocol_hint = FlowProtocolHint::http;
+        PFL_EXPECT(!http_connection.hint_detection_settled());
+        PFL_EXPECT(http_connection.should_attempt_hint_detection(packet_ref(20, 64, 24), ProtocolId::tcp));
+        PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_ref(21, 64, 0), ProtocolId::tcp));
+
+        for (std::uint8_t attempt = 0; attempt < kMaxUnresolvedHintPayloadAttemptsPerConnection; ++attempt) {
+            http_connection.note_hint_detection_attempt(packet_ref(30U + attempt, 96, 24), ProtocolId::tcp);
+        }
+
+        PFL_EXPECT(http_connection.hint_search_state.unresolved_payload_attempt_count ==
+                   kMaxUnresolvedHintPayloadAttemptsPerConnection);
+        PFL_EXPECT(http_connection.hint_search_state.unresolved_payload_attempt_budget_exhausted);
+        PFL_EXPECT(!http_connection.should_attempt_hint_detection(packet_ref(99, 96, 24), ProtocolId::tcp));
+    }
+
+    {
+        ConnectionV4 settled_service_connection {};
+        settled_service_connection.service_hint = "example.org";
+        PFL_EXPECT(settled_service_connection.hint_detection_settled());
+        PFL_EXPECT(!settled_service_connection.should_attempt_hint_detection(packet_ref(40, 128, 64), ProtocolId::tcp));
+        settled_service_connection.note_hint_detection_attempt(packet_ref(41, 128, 64), ProtocolId::tcp);
+        PFL_EXPECT(settled_service_connection.hint_search_state.unresolved_payload_attempt_count == 0U);
+        PFL_EXPECT(!settled_service_connection.hint_search_state.unresolved_payload_attempt_budget_exhausted);
+    }
+
+    {
+        ConnectionV6 ssh_connection {};
+        ssh_connection.protocol_hint = FlowProtocolHint::ssh;
+        PFL_EXPECT(ssh_connection.hint_detection_settled());
+        PFL_EXPECT(!ssh_connection.should_attempt_hint_detection(packet_ref(50, 90, 12), ProtocolId::tcp));
+    }
 }
 
 }  // namespace pfl::tests

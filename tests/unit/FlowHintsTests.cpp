@@ -3,6 +3,7 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "core/domain/Connection.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/services/ChunkedCaptureImporter.h"
 #include "PcapTestUtils.h"
@@ -190,6 +191,15 @@ std::vector<std::uint8_t> make_mdns_payload() {
     append_be16(payload, 0x0000U);
     append_be16(payload, 0x0000U);
     return payload;
+}
+
+std::vector<std::uint8_t> make_unknown_tcp_payload() {
+    return {
+        0xF1, 0x02, 0x03, 0x04,
+        0xA5, 0xB6, 0xC7, 0xD8,
+        0x19, 0x2A, 0x3B, 0x4C,
+        0x55, 0x66, 0x77, 0x88,
+    };
 }
 
 }  // namespace
@@ -774,6 +784,66 @@ void run_flow_hints_tests() {
         PFL_EXPECT(rows.size() == 1);
         PFL_EXPECT(rows[0].protocol_hint == "tls");
         PFL_EXPECT(rows[0].service_hint == "example.org");
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> records {};
+        records.push_back({100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 52000, 80, make_http_request_payload(), 0x18)});
+        for (std::uint32_t packet_index = 0; packet_index < 12U; ++packet_index) {
+            records.push_back({101U + packet_index, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 52000, 80, make_unknown_tcp_payload(), 0x18)});
+        }
+
+        const auto path = write_temp_pcap("pfl_flow_hint_settled_http_short_circuit.pcap", make_classic_pcap(records));
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint == "http");
+        PFL_EXPECT(rows[0].service_hint == "www.example.com");
+
+        const auto* connection = session.state().ipv4_connections.find(make_connection_key(FlowKeyV4 {
+            .src_addr = ipv4(10, 20, 0, 1),
+            .dst_addr = ipv4(10, 20, 0, 2),
+            .src_port = 52000,
+            .dst_port = 80,
+            .protocol = ProtocolId::tcp,
+        }));
+        PFL_EXPECT(connection != nullptr);
+        PFL_EXPECT(connection->hint_detection_settled());
+        PFL_EXPECT(connection->hint_search_state.unresolved_payload_attempt_count == 0U);
+        PFL_EXPECT(!connection->hint_search_state.unresolved_payload_attempt_budget_exhausted);
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> records {};
+        for (std::uint32_t packet_index = 0; packet_index < 12U; ++packet_index) {
+            records.push_back({200U + packet_index, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+                ipv4(10, 21, 0, 1), ipv4(10, 21, 0, 2), 52001, 8080, make_unknown_tcp_payload(), 0x18)});
+        }
+
+        const auto path = write_temp_pcap("pfl_flow_hint_unresolved_budget_limit.pcap", make_classic_pcap(records));
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_hint.empty());
+        PFL_EXPECT(rows[0].service_hint.empty());
+
+        const auto* connection = session.state().ipv4_connections.find(make_connection_key(FlowKeyV4 {
+            .src_addr = ipv4(10, 21, 0, 1),
+            .dst_addr = ipv4(10, 21, 0, 2),
+            .src_port = 52001,
+            .dst_port = 8080,
+            .protocol = ProtocolId::tcp,
+        }));
+        PFL_EXPECT(connection != nullptr);
+        PFL_EXPECT(connection->hint_search_state.unresolved_payload_attempt_count ==
+                   kMaxUnresolvedHintPayloadAttemptsPerConnection);
+        PFL_EXPECT(connection->hint_search_state.unresolved_payload_attempt_budget_exhausted);
     }
 
     {

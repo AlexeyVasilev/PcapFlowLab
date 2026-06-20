@@ -11,7 +11,17 @@ Related context:
 - [docs/architecture.md](architecture.md)
 - [docs/decisions.md](decisions.md)
 
-No code changes were made for this analysis.
+Status:
+
+- first conservative import-time hint-detection gating pass is now implemented;
+- reader ownership, index serialization, export behavior, and on-demand packet detail rereads remain unchanged.
+
+Implemented first pass:
+
+- skip import-time hint detection for TCP/UDP packets with zero transport payload;
+- skip import-time hint detection once a connection already has a settled user-visible hint state;
+- cap unresolved payload-bearing TCP/UDP hint attempts at `10` per connection during import/open;
+- store that per-connection attempt state only in runtime `Connection` objects; it is not serialized into indexes.
 
 ## 1. Current byte ownership
 
@@ -374,9 +384,19 @@ So progress is worth keeping in mind, but it is not the first optimization targe
 
 ### A. Short-circuit repeated `FlowHintService::detect`
 
+Status:
+
+- implemented as the first optimization pass.
+
 Idea:
 
 - stop calling expensive hint detection once a connection already has the hints this pass can realistically add.
+
+Implemented behavior:
+
+- TCP/UDP packets with `payload_length == 0` no longer invoke import-time hint detection;
+- connections with settled hint state no longer invoke import-time hint detection;
+- unresolved payload-bearing TCP/UDP hint attempts stop after `10` attempts per connection.
 
 Expected benefit:
 
