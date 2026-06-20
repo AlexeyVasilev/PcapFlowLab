@@ -920,12 +920,12 @@ FlowHintUpdate detect_transport_hints(std::span<const std::uint8_t> packet_bytes
     }
 
     PacketPayloadService payload_service {};
-    const auto payload = payload_service.extract_transport_payload(packet_bytes, data_link_type);
-    if (payload.empty()) {
+    const auto payload = payload_service.extract_transport_payload_view(packet_bytes, data_link_type);
+    if (!payload.found) {
         return {};
     }
 
-    const auto payload_view = std::span<const std::uint8_t>(payload.data(), payload.size());
+    const auto payload_view = payload.payload;
 
     switch (flow_key.protocol) {
     case ProtocolId::tcp:

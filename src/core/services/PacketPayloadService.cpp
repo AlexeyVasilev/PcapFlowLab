@@ -20,18 +20,33 @@ std::vector<std::uint8_t> copy_payload(std::span<const std::uint8_t> bytes, cons
     return std::vector<std::uint8_t>(begin, end);
 }
 
+TransportPayloadView make_payload_view(std::span<const std::uint8_t> bytes,
+                                       const std::size_t offset,
+                                       const std::size_t length) {
+    if (length == 0U) {
+        return {};
+    }
+
+    return TransportPayloadView {
+        .found = true,
+        .offset = offset,
+        .length = length,
+        .payload = bytes.subspan(offset, length),
+    };
+}
+
 }  // namespace
 
-std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes) const {
-    return extract_transport_payload(packet_bytes, kLinkTypeEthernet);
+TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::span<const std::uint8_t> packet_bytes) const {
+    return extract_transport_payload_view(packet_bytes, kLinkTypeEthernet);
 }
 
 std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(std::span<const std::uint8_t> packet_bytes) const {
     return extract_packet_details_payload(packet_bytes, kLinkTypeEthernet);
 }
 
-std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes,
-                                                                          const std::uint32_t data_link_type) const {
+TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::span<const std::uint8_t> packet_bytes,
+                                                                         const std::uint32_t data_link_type) const {
     const auto network = detail::parse_network_payload(packet_bytes, data_link_type);
     if (!network.has_value()) {
         return {};
@@ -64,7 +79,8 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
                 return {};
             }
 
-            return copy_payload(packet_bytes, transport_offset + tcp_header_length, packet_end - (transport_offset + tcp_header_length));
+            return make_payload_view(packet_bytes, transport_offset + tcp_header_length,
+                                     packet_end - (transport_offset + tcp_header_length));
         }
 
         if (protocol == detail::kIpProtocolUdp) {
@@ -73,7 +89,7 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
                 return {};
             }
 
-            return copy_payload(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
+            return make_payload_view(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
         }
 
         return {};
@@ -109,8 +125,8 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
                 return {};
             }
 
-            return copy_payload(packet_bytes, payload->payload_offset + tcp_header_length,
-                                packet_end - (payload->payload_offset + tcp_header_length));
+            return make_payload_view(packet_bytes, payload->payload_offset + tcp_header_length,
+                                     packet_end - (payload->payload_offset + tcp_header_length));
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
@@ -119,13 +135,27 @@ std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::s
                 return {};
             }
 
-            return copy_payload(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
+            return make_payload_view(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
         }
 
         return {};
     }
 
     return {};
+}
+
+std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes) const {
+    return extract_transport_payload(packet_bytes, kLinkTypeEthernet);
+}
+
+std::vector<std::uint8_t> PacketPayloadService::extract_transport_payload(std::span<const std::uint8_t> packet_bytes,
+                                                                          const std::uint32_t data_link_type) const {
+    const auto payload = extract_transport_payload_view(packet_bytes, data_link_type);
+    if (!payload.found) {
+        return {};
+    }
+
+    return copy_payload(packet_bytes, payload.offset, payload.length);
 }
 
 std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(std::span<const std::uint8_t> packet_bytes,

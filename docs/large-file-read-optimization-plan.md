@@ -14,6 +14,7 @@ Related context:
 Status:
 
 - first conservative import-time hint-detection gating pass is now implemented;
+- second import-time pass now avoids transport-payload allocation/copy during flow-hint detection by using non-owning payload views;
 - reader ownership, index serialization, export behavior, and on-demand packet detail rereads remain unchanged.
 
 Implemented first pass:
@@ -22,6 +23,13 @@ Implemented first pass:
 - skip import-time hint detection once a connection already has a settled user-visible hint state;
 - cap unresolved payload-bearing TCP/UDP hint attempts at `10` per connection during import/open;
 - store that per-connection attempt state only in runtime `Connection` objects; it is not serialized into indexes.
+
+Implemented second pass:
+
+- `PacketPayloadService` now exposes a transport-payload view helper that returns payload-found state, byte offset, byte length, and a non-owning span into the current packet bytes;
+- `FlowHintService` now uses that non-owning helper for TCP/UDP import-time hint detection instead of first copying transport payload bytes into a temporary vector;
+- the existing vector-returning payload extraction API remains available for packet details, payload dumps, stream/presentation paths, and other callers that still need owning bytes;
+- QUIC Initial assembly still intentionally copies retained payload fragments into per-flow runtime state when multi-packet SNI extraction is enabled.
 
 ## 1. Current byte ownership
 
@@ -331,18 +339,14 @@ This is a clear static inefficiency for large `pcapng` inputs.
 
 ### 4.3 Transport payload vector copy in hint detection
 
-Every TCP/UDP hint attempt currently does:
+That import-time copy has now been removed for `FlowHintService`.
+
+Current state:
 
 1. parse packet bounds;
-2. allocate transport payload vector;
-3. copy payload bytes;
-4. run hint detection over the copy.
-
-This cost is paid even when:
-
-- no hint is eventually found;
-- the connection already has stable hints;
-- the payload is large but only a prefix is useful to the detectors.
+2. build a non-owning payload span/view into the current packet bytes;
+3. run hint detection over that span;
+4. only specialized downstream paths such as retained QUIC Initial assembly still copy when they intentionally need ownership.
 
 ### 4.4 Repeated `FlowHintService::detect(...)` after hints are already stable
 
@@ -437,17 +441,20 @@ Idea:
 
 - change hint detection to use spans/views into packet bytes instead of always materializing a new payload vector.
 
-Expected benefit:
+Status:
 
-- real per-packet allocation/copy reduction for TCP/UDP imports;
-- especially helpful on large payload captures.
+- implemented for import-time `FlowHintService` payload inspection;
+- broader vector-removal for other later consumers remains deferred.
 
-Risk:
+Observed intended benefit:
 
-- medium;
-- touches common payload extraction semantics;
-- must ensure all detectors remain safe on truncated bounds;
-- more surface area than pass A.
+- per-packet allocation/copy reduction for TCP/UDP imports;
+- especially helpful on large payload captures where hint detection previously copied payloads that were only read once.
+
+Residual risk:
+
+- low to medium;
+- shared payload-boundary logic is now reused by both the view helper and the legacy vector helper, so regressions would affect both paths and need fixture coverage.
 
 Affected areas:
 
@@ -631,14 +638,12 @@ Acceptance criteria for recommended pass A:
 - no change to index format or exported packet bytes;
 - no regression in ARP / IGMP / QUIC / TLS hint coverage.
 
-## 8. Phased roadmap after the first pass
+## 8. Phased roadmap after the current passes
 
-1. Implement pass A: conservative hint short-circuiting.
-2. If still needed, implement pass B: remove payload vector copies from hint detection.
-3. Re-measure import CPU and large-flow responsiveness.
-4. If import allocation churn still dominates, evaluate pass C for reader-local scratch reuse.
-5. Only after that, design pass D as a dedicated reader-contract change with explicit protocol-fixture coverage.
-6. Treat pass E as a separate random-access optimization track for selected-flow latency, not as an import rewrite.
+1. Re-measure import CPU and large-flow responsiveness after passes A and B together.
+2. If import allocation churn still dominates, evaluate pass C for reader-local scratch reuse.
+3. Only after that, design pass D as a dedicated reader-contract change with explicit protocol-fixture coverage.
+4. Treat pass E as a separate random-access optimization track for selected-flow latency, not as an import rewrite.
 
 ## 9. Bottom line
 
@@ -650,7 +655,8 @@ Current biggest static wastes are:
 
 - full captured-packet read during import;
 - pcapng extra allocation/copy;
-- copied transport payload vectors for hint detection;
 - repeated hint detection after connection hints are already stable.
 
-The safest first win is not staged reading. It is reducing repeated hint work while keeping the current reader/import ownership model intact.
+The copied transport-payload vector on the flow-hint path is no longer one of those wastes; the remaining large items are still full import-time packet reads and pcapng block-copy overhead.
+
+The safest initial wins were reducing repeated hint work and removing unnecessary hint-path payload copies while keeping the current reader/import ownership model intact.
