@@ -34,6 +34,13 @@ constexpr std::uint8_t kTcpOptionWindowScale = 3U;
 constexpr std::uint8_t kTcpOptionSackPermitted = 4U;
 constexpr std::uint8_t kTcpOptionSack = 5U;
 constexpr std::uint8_t kTcpOptionTimestamp = 8U;
+constexpr std::uint8_t kIpv4OptionEndOfList = 0U;
+constexpr std::uint8_t kIpv4OptionNoOperation = 1U;
+constexpr std::uint8_t kIpv4OptionRecordRoute = 7U;
+constexpr std::uint8_t kIpv4OptionTimestamp = 68U;
+constexpr std::uint8_t kIpv4OptionLooseSourceRoute = 131U;
+constexpr std::uint8_t kIpv4OptionStrictSourceRoute = 137U;
+constexpr std::uint8_t kIpv4OptionRouterAlert = 148U;
 constexpr std::string_view kNoProtocolDetailsMessage = "No protocol-specific details available for this packet.";
 constexpr std::string_view kUnavailableProtocolDetailsMessage = "Protocol details unavailable for this packet.";
 
@@ -486,6 +493,324 @@ std::optional<PacketSummaryLayer> build_tcp_options_summary_layer(std::span<cons
             fields.push_back(make_summary_field("Raw", format_hex_byte_list(option_bytes)));
             option_layers.push_back(make_tcp_option_layer(
                 "tcp_option_unknown",
+                "Unknown Option " + std::to_string(kind) + " (" + format_byte_count(length) + ")",
+                std::move(fields)
+            ));
+            break;
+        }
+
+        offset += length;
+    }
+
+    return make_parent_layer();
+}
+
+PacketSummaryLayer make_ipv4_option_layer(
+    std::string id,
+    std::string title,
+    std::vector<PacketSummaryField> fields = {},
+    const bool warning = false
+) {
+    return PacketSummaryLayer {
+        .id = std::move(id),
+        .title = std::move(title),
+        .fields = std::move(fields),
+        .expanded_by_default = warning,
+        .warning = warning,
+        .marker_text = warning ? std::string {"Warning"} : std::string {},
+    };
+}
+
+PacketSummaryLayer make_malformed_ipv4_option_layer(
+    std::string title,
+    std::span<const std::uint8_t> raw_bytes,
+    std::vector<PacketSummaryField> fields = {}
+) {
+    if (!raw_bytes.empty()) {
+        fields.push_back(make_summary_field("Raw", format_hex_byte_list(raw_bytes)));
+    }
+    return make_ipv4_option_layer("ipv4_option_malformed", std::move(title), std::move(fields), true);
+}
+
+void append_ipv4_route_fields(
+    std::vector<PacketSummaryField>& fields,
+    std::span<const std::uint8_t> route_bytes,
+    bool& warning
+) {
+    const auto route_count = route_bytes.size() / 4U;
+    for (std::size_t index = 0U; index < route_count; ++index) {
+        const auto route_offset = index * 4U;
+        fields.push_back(make_summary_field(
+            "Route Address " + std::to_string(index + 1U),
+            format_ipv4_address(read_be32(route_bytes, route_offset))
+        ));
+    }
+
+    if ((route_bytes.size() % 4U) != 0U) {
+        fields.push_back(make_summary_field(
+            "Warning",
+            "Route data is not aligned to complete IPv4 addresses"
+        ));
+        warning = true;
+    }
+}
+
+void append_ipv4_timestamp_fields(
+    std::vector<PacketSummaryField>& fields,
+    std::span<const std::uint8_t> timestamp_bytes,
+    const std::uint8_t flag,
+    bool& warning
+) {
+    if (timestamp_bytes.empty()) {
+        return;
+    }
+
+    if (flag == 0U) {
+        const auto timestamp_count = timestamp_bytes.size() / 4U;
+        for (std::size_t index = 0U; index < timestamp_count; ++index) {
+            fields.push_back(make_summary_field(
+                "Timestamp " + std::to_string(index + 1U),
+                std::to_string(read_be32(timestamp_bytes, index * 4U))
+            ));
+        }
+        if ((timestamp_bytes.size() % 4U) != 0U) {
+            fields.push_back(make_summary_field("Warning", "Timestamp data has trailing bytes"));
+            warning = true;
+        }
+        return;
+    }
+
+    if (flag == 1U || flag == 3U) {
+        const auto entry_count = timestamp_bytes.size() / 8U;
+        for (std::size_t index = 0U; index < entry_count; ++index) {
+            const auto entry_offset = index * 8U;
+            fields.push_back(make_summary_field(
+                "Entry " + std::to_string(index + 1U) + " Address",
+                format_ipv4_address(read_be32(timestamp_bytes, entry_offset))
+            ));
+            fields.push_back(make_summary_field(
+                "Entry " + std::to_string(index + 1U) + " Timestamp",
+                std::to_string(read_be32(timestamp_bytes, entry_offset + 4U))
+            ));
+        }
+        if ((timestamp_bytes.size() % 8U) != 0U) {
+            fields.push_back(make_summary_field("Warning", "Timestamp data has trailing bytes"));
+            warning = true;
+        }
+        return;
+    }
+
+    fields.push_back(make_summary_field("Timestamp Data", format_hex_byte_list(timestamp_bytes)));
+}
+
+std::optional<PacketSummaryLayer> build_ipv4_options_summary_layer(const PacketDetails& details) {
+    const auto claimed_options_length = details.ipv4.header_length_bytes > 20U
+        ? static_cast<std::size_t>(details.ipv4.header_length_bytes - 20U)
+        : 0U;
+    const auto options_bytes = std::span<const std::uint8_t>(details.ipv4.options_bytes.data(), details.ipv4.options_bytes.size());
+    if (claimed_options_length == 0U && !details.ipv4.options_truncated) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryLayer> option_layers {};
+    if (details.ipv4.options_truncated) {
+        option_layers.push_back(make_malformed_ipv4_option_layer(
+            "IPv4 options truncated",
+            options_bytes,
+            {
+                make_summary_field("Expected Length", format_byte_count(claimed_options_length)),
+                make_summary_field("Captured Length", format_byte_count(options_bytes.size())),
+            }
+        ));
+    }
+
+    const auto make_parent_layer = [&]() {
+        std::vector<PacketSummaryField> fields {
+            make_summary_field("Length", format_byte_count(claimed_options_length)),
+        };
+        if (!options_bytes.empty()) {
+            fields.push_back(make_summary_field("Raw", format_hex_byte_list(options_bytes)));
+        }
+        return PacketSummaryLayer {
+            .id = "ipv4_options",
+            .title = "IPv4 Options (" + format_byte_count(claimed_options_length) + ")",
+            .fields = std::move(fields),
+            .children = std::move(option_layers),
+            .expanded_by_default = true,
+            .warning = details.ipv4.options_truncated,
+            .marker_text = details.ipv4.options_truncated ? std::string {"Warning"} : std::string {},
+        };
+    };
+
+    std::size_t offset = 0U;
+    while (offset < options_bytes.size()) {
+        const auto kind = options_bytes[offset];
+        if (kind == kIpv4OptionEndOfList) {
+            option_layers.push_back(make_ipv4_option_layer(
+                "ipv4_option_eol",
+                "End of Options List (EOL)",
+                {
+                    make_summary_field("Type", "0"),
+                    make_summary_field("Length", "1 byte"),
+                }
+            ));
+
+            const auto padding = options_bytes.subspan(offset + 1U);
+            if (!padding.empty()) {
+                const auto first_non_zero = std::find_if(padding.begin(), padding.end(), [](const auto byte) {
+                    return byte != 0U;
+                });
+                if (first_non_zero != padding.end()) {
+                    option_layers.push_back(make_malformed_ipv4_option_layer(
+                        "Non-zero padding after EOL",
+                        padding,
+                        {
+                            make_summary_field("Length", format_byte_count(padding.size())),
+                        }
+                    ));
+                }
+            }
+            break;
+        }
+
+        if (kind == kIpv4OptionNoOperation) {
+            option_layers.push_back(make_ipv4_option_layer(
+                "ipv4_option_nop",
+                "No-Operation (NOP)",
+                {
+                    make_summary_field("Type", "1"),
+                    make_summary_field("Length", "1 byte"),
+                }
+            ));
+            ++offset;
+            continue;
+        }
+
+        if (offset + 2U > options_bytes.size()) {
+            option_layers.push_back(make_malformed_ipv4_option_layer(
+                "IPv4 option length field missing",
+                options_bytes.subspan(offset),
+                {
+                    make_summary_field("Type", std::to_string(kind)),
+                }
+            ));
+            break;
+        }
+
+        const auto length = static_cast<std::size_t>(options_bytes[offset + 1U]);
+        if (length < 2U) {
+            option_layers.push_back(make_malformed_ipv4_option_layer(
+                "IPv4 option length is invalid",
+                options_bytes.subspan(offset),
+                {
+                    make_summary_field("Type", std::to_string(kind)),
+                    make_summary_field("Length", std::to_string(length)),
+                }
+            ));
+            break;
+        }
+
+        if (offset + length > options_bytes.size()) {
+            option_layers.push_back(make_malformed_ipv4_option_layer(
+                "IPv4 option length exceeds header",
+                options_bytes.subspan(offset),
+                {
+                    make_summary_field("Type", std::to_string(kind)),
+                    make_summary_field("Length", std::to_string(length)),
+                    make_summary_field("Available Bytes", format_byte_count(options_bytes.size() - offset)),
+                }
+            ));
+            break;
+        }
+
+        const auto option_bytes = options_bytes.subspan(offset, length);
+        std::vector<PacketSummaryField> fields {
+            make_summary_field("Type", std::to_string(kind)),
+            make_summary_field("Length", format_byte_count(length)),
+        };
+        bool warning = false;
+
+        switch (kind) {
+        case kIpv4OptionRecordRoute:
+        case kIpv4OptionLooseSourceRoute:
+        case kIpv4OptionStrictSourceRoute: {
+            if (length < 3U) {
+                option_layers.push_back(make_malformed_ipv4_option_layer(
+                    "IPv4 option length is invalid",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            fields.push_back(make_summary_field("Pointer", std::to_string(option_bytes[2U])));
+            fields.push_back(make_summary_field("Raw", format_hex_byte_list(option_bytes)));
+            append_ipv4_route_fields(fields, option_bytes.subspan(3U), warning);
+
+            std::string title = "Record Route (RR)";
+            std::string id = "ipv4_option_rr";
+            if (kind == kIpv4OptionLooseSourceRoute) {
+                title = "Loose Source Route (LSRR)";
+                id = "ipv4_option_lsrr";
+            } else if (kind == kIpv4OptionStrictSourceRoute) {
+                title = "Strict Source Route (SSRR)";
+                id = "ipv4_option_ssrr";
+            }
+            option_layers.push_back(make_ipv4_option_layer(id, std::move(title), std::move(fields), warning));
+            break;
+        }
+
+        case kIpv4OptionTimestamp: {
+            if (length < 4U) {
+                option_layers.push_back(make_malformed_ipv4_option_layer(
+                    "IPv4 timestamp option length is invalid",
+                    option_bytes,
+                    std::move(fields)
+                ));
+                return make_parent_layer();
+            }
+
+            const auto overflow = static_cast<std::uint8_t>((option_bytes[3U] >> 4U) & 0x0FU);
+            const auto flag = static_cast<std::uint8_t>(option_bytes[3U] & 0x0FU);
+            fields.push_back(make_summary_field("Pointer", std::to_string(option_bytes[2U])));
+            fields.push_back(make_summary_field("Overflow", std::to_string(overflow)));
+            fields.push_back(make_summary_field("Flag", std::to_string(flag)));
+            fields.push_back(make_summary_field("Raw", format_hex_byte_list(option_bytes)));
+            append_ipv4_timestamp_fields(fields, option_bytes.subspan(4U), flag, warning);
+            option_layers.push_back(make_ipv4_option_layer(
+                "ipv4_option_timestamp",
+                "Timestamp",
+                std::move(fields),
+                warning
+            ));
+            break;
+        }
+
+        case kIpv4OptionRouterAlert: {
+            fields.push_back(make_summary_field("Raw", format_hex_byte_list(option_bytes)));
+            if (length != 4U) {
+                fields.push_back(make_summary_field("Warning", "Router Alert length should be 4 bytes"));
+                warning = true;
+            } else {
+                const auto value = read_be16(option_bytes, 2U);
+                fields.push_back(make_summary_field("Value", std::to_string(value)));
+                if (value == 0U) {
+                    fields.push_back(make_summary_field("Meaning", "Router shall examine packet"));
+                }
+            }
+            option_layers.push_back(make_ipv4_option_layer(
+                "ipv4_option_router_alert",
+                "Router Alert",
+                std::move(fields),
+                warning
+            ));
+            break;
+        }
+
+        default:
+            fields.push_back(make_summary_field("Raw", format_hex_byte_list(option_bytes)));
+            option_layers.push_back(make_ipv4_option_layer(
+                "ipv4_option_unknown",
                 "Unknown Option " + std::to_string(kind) + " (" + format_byte_count(length) + ")",
                 std::move(fields)
             ));
@@ -1183,6 +1508,18 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         warning_fields.push_back(make_summary_field({}, "IPv4 total length is unavailable; packet was parsed using captured bytes only"));
         warning_fields.push_back(make_summary_field({}, "Header interpretation is conservative (possible pre-offload packet)"));
     }
+    if (details.has_ipv4 && details.ipv4.invalid_header_length) {
+        warning_fields.push_back(make_summary_field({}, "IPv4 header length is invalid"));
+    }
+    if (details.has_ipv4 && details.ipv4.total_length_invalid) {
+        warning_fields.push_back(make_summary_field({}, "IPv4 total length is smaller than the declared IPv4 header length"));
+    }
+    if (details.has_ipv4 && details.ipv4.header_truncated) {
+        warning_fields.push_back(make_summary_field({}, "IPv4 header is truncated"));
+    }
+    if (details.has_ipv4 && details.ipv4.options_truncated) {
+        warning_fields.push_back(make_summary_field({}, "IPv4 options truncated"));
+    }
     if (!options.source_capture_accessible) {
         warning_fields.push_back(make_summary_field({}, "Byte-backed packet details are unavailable because the original source capture cannot be read."));
     }
@@ -1351,12 +1688,21 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (packet.is_ip_fragmented) {
             ipv4_fields.push_back(make_summary_field("Fragmentation", "Packet is fragmented"));
         }
+        std::vector<PacketSummaryLayer> ipv4_children {};
+        if (const auto ipv4_options = build_ipv4_options_summary_layer(details); ipv4_options.has_value()) {
+            ipv4_children.push_back(*ipv4_options);
+        }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ipv4",
             .title = "IPv4, Src: " +
                 format_ipv4_address(details.ipv4.src_addr) +
                 ", Dst: " + format_ipv4_address(details.ipv4.dst_addr),
             .fields = std::move(ipv4_fields),
+            .children = std::move(ipv4_children),
+            .warning = details.ipv4.invalid_header_length || details.ipv4.total_length_invalid || details.ipv4.header_truncated,
+            .marker_text = (details.ipv4.invalid_header_length || details.ipv4.total_length_invalid || details.ipv4.header_truncated)
+                ? "Warning"
+                : std::string {},
         });
     }
 

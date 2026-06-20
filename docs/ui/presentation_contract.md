@@ -496,6 +496,7 @@ Current direction note:
 - the Ethernet layer should expose source/destination MAC addresses and decoded EtherType text;
 - MPLS should appear as one Summary layer per label between Ethernet/VLAN and the resolved inner IPv4/IPv6 layer, using the stable shared layer id `mpls` so repeated occurrences naturally map to `mpls#0`, `mpls#1`, and so on for expansion-state tracking;
 - the IPv4 and IPv6 layers should expose conservative decoded header fields from selected-packet/on-demand parsing rather than open-time import work;
+- when IPv4 options are present, the IPv4 layer should expose a nested `ipv4_options` child with overall length/raw bytes plus per-option child nodes in wire order; the first supported set includes EOL, NOP, RR, Timestamp, LSRR, SSRR, Router Alert, and unknown valid options, while malformed/truncated entries surface warning children and stop parsing conservatively;
 - the TCP and UDP layers should expose conservative transport header fields from selected-packet/on-demand parsing, including header checksums;
 - the TCP layer should expose raw sequence/acknowledgment numbers, header length, window, urgent pointer, and a nested `tcp_options` child when options are present;
 - the `tcp_options` child should keep raw option bytes visible and may contain nested child nodes such as MSS, Window Scale, SACK Permitted, SACK, Timestamps, unknown options, and malformed/warning nodes;

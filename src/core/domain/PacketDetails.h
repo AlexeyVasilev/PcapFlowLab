@@ -65,6 +65,11 @@ struct IPv4Details {
     std::uint16_t fragment_offset {0};
     std::uint16_t total_length {0};
     std::uint16_t header_checksum {0};
+    std::vector<std::uint8_t> options_bytes {};
+    bool invalid_header_length {false};
+    bool header_truncated {false};
+    bool options_truncated {false};
+    bool total_length_invalid {false};
 };
 
 struct IPv6Details {

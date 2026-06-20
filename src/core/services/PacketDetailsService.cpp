@@ -244,37 +244,82 @@ std::optional<PacketDetails> decode_packet_details(
 
     if (network_protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network_payload_offset;
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
-        if (!ipv4_bounds.has_value()) {
+        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
+        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
+        if (version != 4U) {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        const auto claimed_header_length = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
+        const auto total_length = detail::read_be16(packet_bytes, ipv4_offset + 2U);
         const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
-        const auto packet_end = ipv4_bounds->packet_end;
 
         details.address_family = NetworkAddressFamily::ipv4;
         details.has_ipv4 = true;
-        details.ipv4_bounds_from_captured_bytes = ipv4_bounds->bounds_from_captured_bytes;
+        details.ipv4_bounds_from_captured_bytes = total_length == 0U;
         details.ipv4 = IPv4Details {
             .src_addr = detail::read_be32(packet_bytes, ipv4_offset + 12U),
             .dst_addr = detail::read_be32(packet_bytes, ipv4_offset + 16U),
-            .header_length_bytes = static_cast<std::uint8_t>(ipv4_bounds->header_length),
+            .header_length_bytes = static_cast<std::uint8_t>(claimed_header_length),
             .differentiated_services_field = packet_bytes[ipv4_offset + 1U],
             .protocol = packet_bytes[ipv4_offset + 9U],
             .ttl = packet_bytes[ipv4_offset + 8U],
             .identification = detail::read_be16(packet_bytes, ipv4_offset + 4U),
             .flags = static_cast<std::uint8_t>((flags_fragment >> 13U) & 0x7U),
             .fragment_offset = static_cast<std::uint16_t>(flags_fragment & 0x1FFFU),
-            .total_length = ipv4_bounds->total_length,
+            .total_length = total_length,
             .header_checksum = detail::read_be16(packet_bytes, ipv4_offset + 10U),
         };
+
+        const auto claimed_options_length = claimed_header_length > detail::kIpv4MinimumHeaderSize
+            ? (claimed_header_length - detail::kIpv4MinimumHeaderSize)
+            : 0U;
+        if (claimed_options_length > 0U && packet_bytes.size() > ipv4_offset + detail::kIpv4MinimumHeaderSize) {
+            const auto available_options_length = std::min(
+                claimed_options_length,
+                packet_bytes.size() - (ipv4_offset + detail::kIpv4MinimumHeaderSize)
+            );
+            details.ipv4.options_bytes.assign(
+                packet_bytes.begin() + static_cast<std::ptrdiff_t>(ipv4_offset + detail::kIpv4MinimumHeaderSize),
+                packet_bytes.begin() + static_cast<std::ptrdiff_t>(
+                    ipv4_offset + detail::kIpv4MinimumHeaderSize + available_options_length
+                )
+            );
+            details.ipv4.options_truncated = available_options_length < claimed_options_length;
+        }
+
+        if (claimed_header_length < detail::kIpv4MinimumHeaderSize) {
+            details.ipv4.invalid_header_length = true;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        if (total_length != 0U && total_length < claimed_header_length) {
+            details.ipv4.total_length_invalid = true;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        if (packet_bytes.size() < ipv4_offset + claimed_header_length) {
+            details.ipv4.header_truncated = true;
+            details.ipv4.options_truncated = claimed_options_length > details.ipv4.options_bytes.size();
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        if (!ipv4_bounds.has_value()) {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        const auto packet_end = ipv4_bounds->packet_end;
 
         if (is_fragmented) {
             return details;
         }
 
-        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+        const auto transport_offset = ipv4_offset + claimed_header_length;
         if (details.ipv4.protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {

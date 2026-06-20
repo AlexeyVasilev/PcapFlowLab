@@ -20,6 +20,7 @@ void run_packet_payload_tests();
 void run_packet_protocol_details_tests();
 void run_arp_pcap_fixture_tests();
 void run_igmp_pcap_fixture_tests();
+void run_ipv4_options_pcap_fixture_tests();
 void run_packet_metadata_tests();
 void run_flow_hints_tests();
 void run_flow_hints_raw_fixtures_tests();
@@ -74,6 +75,7 @@ int main() {
         pfl::tests::run_packet_protocol_details_tests();
         pfl::tests::run_arp_pcap_fixture_tests();
         pfl::tests::run_igmp_pcap_fixture_tests();
+        pfl::tests::run_ipv4_options_pcap_fixture_tests();
         pfl::tests::run_packet_metadata_tests();
         pfl::tests::run_flow_hints_tests();
         pfl::tests::run_flow_hints_raw_fixtures_tests();

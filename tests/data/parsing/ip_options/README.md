@@ -63,24 +63,17 @@ Security and other historical/rare options can remain deferred unless represente
 - TCP source port: `40000`
 - TCP destination port: `443`
 
-## Expected current behavior before IPv4 Options parser implementation
+## Expected current behavior
 
-Before detailed IPv4 Options Summary parsing exists:
-- many valid packets in this directory may already form normal TCP/UDP/IGMP flows because existing IPv4 IHL handling is already used by packet decoding;
-- Summary may show generic IPv4 facts such as header length, but not detailed option children;
-- malformed and truncated option packets should stay safe and should not crash the app;
-- option names, per-option fields, and structured warnings may still be absent.
-
-## Expected future behavior after IPv4 Options parser implementation
-
-After production parsing is added:
+Current shared selected-packet behavior:
+- valid packets can still form normal TCP/UDP/IGMP flows because next-protocol parsing uses the actual IPv4 IHL;
 - Summary should contain a nested `IPv4 Options (N bytes)` block when options are present;
 - option entries should be shown in wire order;
 - `EOL` and `NOP` should be handled specially;
-- known options should show useful fields such as pointer/length/body data where safe;
+- known options should show safe parsed fields plus raw bytes where useful;
 - unknown valid options should preserve Type / Length / Raw;
-- malformed options should produce warnings or partial details without crashing;
-- next-protocol parsing should continue to use actual IPv4 IHL.
+- malformed and truncated option packets should stay safe, preserve partial IPv4 details where possible, and surface warning entries such as invalid length, missing length, or truncated options;
+- malformed option semantics inside a bounded IPv4 header should not by themselves force the decoder to lose a safely reachable UDP/TCP/IGMP next header.
 
 ## Fixture map
 
