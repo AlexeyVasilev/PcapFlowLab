@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 
 #include "core/decode/PacketDecoder.h"
@@ -19,6 +20,10 @@ public:
     explicit CaptureImportProcessor(AnalysisSettings settings = {}, bool enable_quic_initial_sni = false);
 
     void process_packet(const RawPcapPacket& packet, CaptureState& state) const;
+    [[nodiscard]] bool process_classic_import_packet(PcapReader& reader,
+                                                     RawPcapPacket& packet,
+                                                     CaptureState& state,
+                                                     std::size_t& adaptive_header_prefix_bytes) const;
 
 private:
     PacketDecoder decoder_ {};

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -14,6 +15,7 @@
 namespace pfl::tests {
 
 void run_import_tests() {
+    constexpr std::size_t kMinCapturedLengthForStagedImportBytes = 16U * 1024U;
     const auto tcp_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 12345, 443);
     const auto udp_packet = make_ethernet_ipv4_udp_packet(ipv4(10, 0, 0, 3), ipv4(10, 0, 0, 4), 5353, 53);
 
@@ -33,6 +35,126 @@ void run_import_tests() {
         PFL_EXPECT(packet->data_offset == 40);
         PFL_EXPECT(packet->bytes == tcp_packet);
         PFL_EXPECT(!reader.read_next().has_value());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_reader_prefix_materialize.pcap",
+            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        auto first_packet = reader.read_next_prefix(16U);
+        PFL_EXPECT(first_packet.has_value());
+        PFL_EXPECT(first_packet->packet_index == 0U);
+        PFL_EXPECT(first_packet->captured_length == tcp_packet.size());
+        PFL_EXPECT(first_packet->original_length == tcp_packet.size());
+        PFL_EXPECT(first_packet->bytes.size() == 16U);
+        PFL_EXPECT(std::equal(first_packet->bytes.begin(), first_packet->bytes.end(), tcp_packet.begin()));
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + 16U);
+        PFL_EXPECT(!reader.read_next_prefix(8U).has_value());
+        PFL_EXPECT(reader.has_error());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_reader_prefix_materialize_sequential.pcap",
+            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        auto first_packet = reader.read_next_prefix(16U);
+        PFL_EXPECT(first_packet.has_value());
+        PFL_EXPECT(reader.materialize_packet_bytes(*first_packet));
+        PFL_EXPECT(first_packet->bytes == tcp_packet);
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
+        PFL_EXPECT(reader.finish_prefix_packet(*first_packet));
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
+
+        auto second_packet = reader.read_next_prefix(8U);
+        PFL_EXPECT(second_packet.has_value());
+        PFL_EXPECT(second_packet->packet_index == 1U);
+        PFL_EXPECT(second_packet->captured_length == udp_packet.size());
+        PFL_EXPECT(second_packet->original_length == udp_packet.size());
+        PFL_EXPECT(second_packet->bytes.size() == 8U);
+        PFL_EXPECT(std::equal(second_packet->bytes.begin(), second_packet->bytes.end(), udp_packet.begin()));
+        PFL_EXPECT(reader.materialize_packet_bytes(*second_packet));
+        PFL_EXPECT(second_packet->bytes == udp_packet);
+        PFL_EXPECT(!reader.read_next_prefix(8U).has_value());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_reader_prefix_finalize_only.pcap",
+            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        auto first_packet = reader.read_next_prefix(16U);
+        PFL_EXPECT(first_packet.has_value());
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + 16U);
+        PFL_EXPECT(reader.finish_prefix_packet(*first_packet));
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
+
+        auto second_packet = reader.read_next_prefix(8U);
+        PFL_EXPECT(second_packet.has_value());
+        PFL_EXPECT(second_packet->packet_index == 1U);
+        PFL_EXPECT(second_packet->bytes.size() == 8U);
+        PFL_EXPECT(reader.finish_prefix_packet(*second_packet));
+        PFL_EXPECT(!reader.read_next_prefix(8U).has_value());
+    }
+
+    {
+        const auto path = write_temp_pcap(
+            "pfl_reader_import_small_full_read_threshold.pcap",
+            make_classic_pcap({{100, tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        auto first_packet = reader.read_next_import_packet(16U, kMinCapturedLengthForStagedImportBytes);
+        PFL_EXPECT(first_packet.has_value());
+        PFL_EXPECT(first_packet->packet_index == 0U);
+        PFL_EXPECT(first_packet->bytes == tcp_packet);
+        PFL_EXPECT(first_packet->bytes.size() == first_packet->captured_length);
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
+
+        auto second_packet = reader.read_next_import_packet(8U, kMinCapturedLengthForStagedImportBytes);
+        PFL_EXPECT(second_packet.has_value());
+        PFL_EXPECT(second_packet->packet_index == 1U);
+        PFL_EXPECT(second_packet->bytes == udp_packet);
+        PFL_EXPECT(second_packet->bytes.size() == second_packet->captured_length);
+        PFL_EXPECT(!reader.read_next_import_packet(8U, kMinCapturedLengthForStagedImportBytes).has_value());
+    }
+
+    {
+        const auto large_tcp_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 2, 1),
+            ipv4(10, 0, 2, 2),
+            22345,
+            443,
+            static_cast<std::uint16_t>(kMinCapturedLengthForStagedImportBytes + 1024U - 40U),
+            0x18
+        );
+        const auto path = write_temp_pcap(
+            "pfl_reader_import_large_staged_threshold.pcap",
+            make_classic_pcap({{100, large_tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        auto first_packet = reader.read_next_import_packet(192U, kMinCapturedLengthForStagedImportBytes);
+        PFL_EXPECT(first_packet.has_value());
+        PFL_EXPECT(first_packet->packet_index == 0U);
+        PFL_EXPECT(first_packet->captured_length == large_tcp_packet.size());
+        PFL_EXPECT(first_packet->bytes.size() == 192U);
+        PFL_EXPECT(std::equal(first_packet->bytes.begin(), first_packet->bytes.end(), large_tcp_packet.begin()));
+        PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + 192U);
+        PFL_EXPECT(!reader.read_next_import_packet(8U, kMinCapturedLengthForStagedImportBytes).has_value());
+        PFL_EXPECT(reader.has_error());
     }
 
     {
@@ -125,6 +247,80 @@ void run_import_tests() {
         PFL_EXPECT(state.summary.packet_count == 2);
         PFL_EXPECT(state.summary.flow_count == 2);
         PFL_EXPECT(state.ipv4_connections.size() == 2);
+    }
+
+    {
+        CaptureSession session {};
+        const auto path =
+            std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_1_3_client_hello_5.pcap";
+        PFL_EXPECT(session.open_capture(path));
+
+        const auto rows = session.list_flows();
+        const auto flow_it = std::find_if(rows.begin(), rows.end(), [](const FlowRow& row) {
+            return row.protocol_hint == "tls";
+        });
+        PFL_EXPECT(flow_it != rows.end());
+        PFL_EXPECT(flow_it->service_hint == "p101-fmf.icloud.com");
+    }
+
+    {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> packets {};
+        packets.reserve(11U);
+        for (std::uint32_t index = 0U; index < 11U; ++index) {
+            packets.push_back({
+                100U + index,
+                make_ethernet_ipv4_tcp_packet_with_payload(
+                    ipv4(10, 10, 0, 1),
+                    ipv4(10, 10, 0, 2),
+                    41000,
+                    41001,
+                    512U,
+                    0x18
+                ),
+            });
+        }
+
+        const auto path = write_temp_pcap("pfl_import_prefix_payload_lengths_after_hint_budget.pcap",
+                                          make_classic_pcap(packets));
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        PFL_EXPECT(session.summary().packet_count == 11U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto flow_packets = session.list_flow_packets(0);
+        PFL_EXPECT(flow_packets.size() == 11U);
+        PFL_EXPECT(flow_packets.back().payload_length == 512U);
+
+        const auto packet = session.find_packet(10U);
+        PFL_EXPECT(packet.has_value());
+        PFL_EXPECT(packet->payload_length == 512U);
+    }
+
+    {
+        const auto large_import_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 3, 1),
+            ipv4(10, 0, 3, 2),
+            33001,
+            443,
+            static_cast<std::uint16_t>(kMinCapturedLengthForStagedImportBytes + 1024U - 40U),
+            0x18
+        );
+        const auto path = write_temp_pcap(
+            "pfl_import_large_packet_staged_threshold.pcap",
+            make_classic_pcap({{100, large_import_packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path));
+        PFL_EXPECT(session.summary().packet_count == 1U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+
+        const auto rows = session.list_flow_packets(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows.front().captured_length == large_import_packet.size());
+        PFL_EXPECT(rows.front().payload_length ==
+                   static_cast<std::uint32_t>(large_import_packet.size() - 14U - 20U - 20U));
     }
 
     {

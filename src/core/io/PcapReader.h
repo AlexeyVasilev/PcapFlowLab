@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -51,16 +52,41 @@ public:
     [[nodiscard]] std::uint32_t data_link_type() const noexcept;
     [[nodiscard]] std::uint64_t next_input_offset() const noexcept;
     std::optional<RawPcapPacket> read_next();
+    std::optional<RawPcapPacket> read_next_prefix(std::size_t prefix_bytes);
+    // Import-specific hybrid path: small packets are read fully, while staged-eligible
+    // packets return only the current prefix and must be materialized/finalized before
+    // the next packet can be read.
+    std::optional<RawPcapPacket> read_next_import_packet(
+        std::size_t prefix_bytes,
+        std::size_t min_staged_captured_length_bytes
+    );
+    bool materialize_packet_bytes(RawPcapPacket& packet);
+    bool finish_prefix_packet(const RawPcapPacket& packet);
 
 private:
+    struct PrefixPacketState {
+        // `read_next_prefix()` leaves the reader positioned after the prefix bytes
+        // of the current packet until the caller either materializes the
+        // remaining bytes sequentially or explicitly finalizes/skips them.
+        bool active {false};
+        std::uint64_t packet_index {0};
+        std::uint64_t data_offset {0};
+        std::uint64_t next_record_offset {0};
+        std::uint32_t captured_length {0};
+    };
+
+    void clear_prefix_packet_state() noexcept;
+    [[nodiscard]] bool is_current_prefix_packet(const RawPcapPacket& packet) const noexcept;
     void clear_error();
     void set_error(std::uint64_t file_offset, const char* reason, bool include_packet_index = false);
+    void set_error(std::uint64_t file_offset, const char* reason, std::uint64_t packet_index);
     void set_error(const char* reason);
 
     std::ifstream stream_ {};
     PcapGlobalHeader global_header_ {};
     std::uint64_t next_packet_index_ {0};
     std::uint64_t next_input_offset_ {0};
+    PrefixPacketState prefix_packet_state_ {};
     bool has_error_ {false};
     OpenFailureInfo last_error_ {};
 };

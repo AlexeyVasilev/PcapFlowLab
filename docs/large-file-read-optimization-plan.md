@@ -15,6 +15,7 @@ Status:
 
 - first conservative import-time hint-detection gating pass is now implemented;
 - second import-time pass now avoids transport-payload allocation/copy during flow-hint detection by using non-owning payload views;
+- third import-time pass now uses hybrid classic-PCAP import: sequential full reads for normal packets and staged/prefix reading for large packets with adaptive full fallback;
 - reader ownership, index serialization, export behavior, and on-demand packet detail rereads remain unchanged.
 
 Implemented first pass:
@@ -30,6 +31,21 @@ Implemented second pass:
 - `FlowHintService` now uses that non-owning helper for TCP/UDP import-time hint detection instead of first copying transport payload bytes into a temporary vector;
 - the existing vector-returning payload extraction API remains available for packet details, payload dumps, stream/presentation paths, and other callers that still need owning bytes;
 - QUIC Initial assembly still intentionally copies retained payload fragments into per-flow runtime state when multi-packet SNI extraction is enabled.
+
+Implemented third pass:
+
+- classic `.pcap` import is now hybrid: packets below `16 KiB` use old-style sequential full reads, while packets at or above `16 KiB` are eligible for staged prefix import;
+- staged-eligible classic packets start with a `192`-byte header prefix instead of always materializing full captured bytes up front;
+- staged classic import leaves the reader positioned immediately after the current packet prefix until the import path decides whether the packet needs full bytes;
+- when classic import can determine flow key, packet metadata, and unrecognized-vs-recognized status from that prefix, the unread packet remainder is skipped exactly once and the reader then advances to the next packet record;
+- when the current prefix is insufficient for safe header/flow decoding, classic import reads the remaining bytes of the current packet sequentially, decodes from full captured bytes, and grows the future adaptive header prefix in `64`-byte increments;
+- adaptive classic-import header prefix growth is capped at `4096` bytes;
+- full packet materialization for TLS/QUIC/HTTP/DNS and other transport payload hints still happens per-packet when the existing unresolved hint budget says hint detection is still worthwhile;
+- hint-triggered sequential full materialization does not grow the adaptive header prefix;
+- classic import still preserves true `PacketRef.byte_offset`, `captured_length`, `original_length`, timestamps, and data-link type from the file;
+- normal staged classic import no longer seeks backward by `data_offset` to materialize the current packet;
+- the `16 KiB` staging threshold is intentional to avoid prefix-read plus remainder-skip overhead on ordinary MTU-sized traffic;
+- `pcapng` import remains on the unchanged full-read path in this pass.
 
 ## 1. Current byte ownership
 
@@ -659,4 +675,4 @@ Current biggest static wastes are:
 
 The copied transport-payload vector on the flow-hint path is no longer one of those wastes; the remaining large items are still full import-time packet reads and pcapng block-copy overhead.
 
-The safest initial wins were reducing repeated hint work and removing unnecessary hint-path payload copies while keeping the current reader/import ownership model intact.
+The safest initial wins were reducing repeated hint work, removing unnecessary hint-path payload copies, and keeping staged prefix import limited to large classic packets while preserving the current reader/import ownership model for ordinary traffic.
