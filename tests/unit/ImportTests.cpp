@@ -131,6 +131,32 @@ void run_import_tests() {
     }
 
     {
+        const auto larger_small_tcp_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 1, 1), ipv4(10, 0, 1, 2), 15000, 443, 48U, 0x18);
+        const auto path = write_temp_pcap(
+            "pfl_reader_import_into_reuses_small_buffer.pcap",
+            make_classic_pcap({{100, larger_small_tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        RawPcapPacket packet {};
+        PFL_EXPECT(reader.read_next_import_packet_into(packet, 16U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(packet.packet_index == 0U);
+        PFL_EXPECT(packet.bytes == larger_small_tcp_packet);
+        PFL_EXPECT(packet.bytes.size() == packet.captured_length);
+        PFL_EXPECT(packet.bytes.capacity() >= larger_small_tcp_packet.size());
+
+        PFL_EXPECT(reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(packet.packet_index == 1U);
+        PFL_EXPECT(packet.bytes == udp_packet);
+        PFL_EXPECT(packet.bytes.size() == packet.captured_length);
+        PFL_EXPECT(packet.captured_length == udp_packet.size());
+        PFL_EXPECT(!reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(!reader.has_error());
+    }
+
+    {
         const auto large_tcp_packet = make_ethernet_ipv4_tcp_packet_with_payload(
             ipv4(10, 0, 2, 1),
             ipv4(10, 0, 2, 2),
@@ -155,6 +181,69 @@ void run_import_tests() {
         PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + 192U);
         PFL_EXPECT(!reader.read_next_import_packet(8U, kMinCapturedLengthForStagedImportBytes).has_value());
         PFL_EXPECT(reader.has_error());
+    }
+
+    {
+        const auto large_tcp_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 2, 11),
+            ipv4(10, 0, 2, 12),
+            32345,
+            443,
+            static_cast<std::uint16_t>(kMinCapturedLengthForStagedImportBytes + 1024U - 40U),
+            0x18
+        );
+        const auto path = write_temp_pcap(
+            "pfl_reader_import_into_staged_then_small.pcap",
+            make_classic_pcap({{100, large_tcp_packet}, {200, udp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        RawPcapPacket packet {};
+        PFL_EXPECT(reader.read_next_import_packet_into(packet, 192U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(packet.packet_index == 0U);
+        PFL_EXPECT(packet.captured_length == large_tcp_packet.size());
+        PFL_EXPECT(packet.bytes.size() == 192U);
+        PFL_EXPECT(reader.next_input_offset() == packet.data_offset + 192U);
+        PFL_EXPECT(reader.materialize_packet_bytes(packet));
+        PFL_EXPECT(packet.bytes == large_tcp_packet);
+        PFL_EXPECT(reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(packet.packet_index == 1U);
+        PFL_EXPECT(packet.bytes == udp_packet);
+        PFL_EXPECT(packet.bytes.size() == packet.captured_length);
+        PFL_EXPECT(!reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(!reader.has_error());
+    }
+
+    {
+        const auto large_tcp_packet = make_ethernet_ipv4_tcp_packet_with_payload(
+            ipv4(10, 0, 2, 21),
+            ipv4(10, 0, 2, 22),
+            42345,
+            443,
+            static_cast<std::uint16_t>(kMinCapturedLengthForStagedImportBytes + 1024U - 40U),
+            0x18
+        );
+        const auto path = write_temp_pcap(
+            "pfl_reader_import_into_small_then_staged.pcap",
+            make_classic_pcap({{100, udp_packet}, {200, large_tcp_packet}})
+        );
+        PcapReader reader {};
+        PFL_EXPECT(reader.open(path));
+
+        RawPcapPacket packet {};
+        PFL_EXPECT(reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(packet.packet_index == 0U);
+        PFL_EXPECT(packet.bytes == udp_packet);
+        PFL_EXPECT(packet.bytes.size() == packet.captured_length);
+        PFL_EXPECT(reader.read_next_import_packet_into(packet, 192U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(packet.packet_index == 1U);
+        PFL_EXPECT(packet.captured_length == large_tcp_packet.size());
+        PFL_EXPECT(packet.bytes.size() == 192U);
+        PFL_EXPECT(reader.next_input_offset() == packet.data_offset + 192U);
+        PFL_EXPECT(reader.finish_prefix_packet(packet));
+        PFL_EXPECT(!reader.read_next_import_packet_into(packet, 8U, kMinCapturedLengthForStagedImportBytes));
+        PFL_EXPECT(!reader.has_error());
     }
 
     {

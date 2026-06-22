@@ -16,6 +16,7 @@ Status:
 - first conservative import-time hint-detection gating pass is now implemented;
 - second import-time pass now avoids transport-payload allocation/copy during flow-hint detection by using non-owning payload views;
 - third import-time pass now uses hybrid classic-PCAP import: sequential full reads for normal packets and staged/prefix reading for large packets with adaptive full fallback;
+- fourth import-time pass now reuses a caller-owned packet byte buffer for below-threshold classic-PCAP sequential full-read packets;
 - reader ownership, index serialization, export behavior, and on-demand packet detail rereads remain unchanged.
 
 Implemented first pass:
@@ -46,6 +47,16 @@ Implemented third pass:
 - normal staged classic import no longer seeks backward by `data_offset` to materialize the current packet;
 - the `16 KiB` staging threshold is intentional to avoid prefix-read plus remainder-skip overhead on ordinary MTU-sized traffic;
 - `pcapng` import remains on the unchanged full-read path in this pass.
+
+Implemented fourth pass:
+
+- classic `.pcap` import now has an import-only reusable-buffer API for the hybrid import path;
+- below-threshold classic packets still use sequential full reads, but those reads now resize/fill a caller-owned `RawPcapPacket.bytes` buffer instead of always allocating a brand-new vector;
+- public full `PcapReader::read_next()` remains unchanged and still returns an owning independent `RawPcapPacket`;
+- staged large-packet behavior remains separate and semantically equivalent to the previous hybrid pass;
+- `pcapng` remains unchanged and does not participate in reusable-buffer import;
+- classic import explicitly releases oversized reusable-packet capacity after a staged packet grows beyond the small-packet threshold, so the normal small-packet buffer does not accidentally retain a huge materialized packet allocation;
+- selected-flow reread/stream/detail optimization remains deferred.
 
 ## 1. Current byte ownership
 

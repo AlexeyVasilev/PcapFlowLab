@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include "../../../core/open_context.h"
 #include "core/index/CaptureIndex.h"
@@ -782,6 +783,16 @@ void apply_import_hints_if_needed(const RawPcapPacket& packet,
     return !should_cancel(ctx) && state.summary.packet_count > 0U;
 }
 
+void release_large_import_packet_capacity(RawPcapPacket& packet) {
+    if (packet.bytes.capacity() < kMinCapturedLengthForStagedImportBytes) {
+        return;
+    }
+
+    // Keep import-only small-packet reuse from pinning a large staged packet buffer
+    // for the rest of the capture open.
+    std::vector<std::uint8_t> {}.swap(packet.bytes);
+}
+
 template <typename Reader>
 void capture_reader_failure(OpenContext* ctx, const Reader& reader) {
     if (ctx != nullptr && reader.last_error().has_details()) {
@@ -794,15 +805,13 @@ CaptureImportResult import_classic_packets(PcapReader& reader,
                                            const CaptureImportProcessor& processor,
                                            OpenContext* ctx) {
     auto adaptive_header_prefix_bytes = kInitialImportHeaderPrefixBytes;
+    RawPcapPacket reusable_packet {};
 
-    while (true) {
-        auto packet = reader.read_next_import_packet(
+    while (reader.read_next_import_packet_into(
+        reusable_packet,
             adaptive_header_prefix_bytes,
             kMinCapturedLengthForStagedImportBytes
-        );
-        if (!packet.has_value()) {
-            break;
-        }
+        )) {
 
         if (should_cancel(ctx)) {
             report_open_progress(ctx);
@@ -811,16 +820,18 @@ CaptureImportResult import_classic_packets(PcapReader& reader,
 
         if (ctx != nullptr) {
             ++ctx->progress.packets_processed;
-            ctx->progress.bytes_processed += packet->captured_length;
+            ctx->progress.bytes_processed += reusable_packet.captured_length;
 
             if (ctx->on_progress && (ctx->progress.packets_processed % kOpenProgressReportPacketInterval) == 0U) {
                 ctx->on_progress(ctx->progress);
             }
         }
 
-        if (!processor.process_classic_import_packet(reader, *packet, state, adaptive_header_prefix_bytes)) {
+        if (!processor.process_classic_import_packet(reader, reusable_packet, state, adaptive_header_prefix_bytes)) {
             break;
         }
+
+        release_large_import_packet_capacity(reusable_packet);
 
         if (should_cancel(ctx)) {
             report_open_progress(ctx);

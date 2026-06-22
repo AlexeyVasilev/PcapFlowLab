@@ -60,6 +60,13 @@ public:
         std::size_t prefix_bytes,
         std::size_t min_staged_captured_length_bytes
     );
+    // Import-only reusable-buffer path. EOF and read failures both return false;
+    // callers distinguish them through has_error().
+    bool read_next_import_packet_into(
+        RawPcapPacket& packet,
+        std::size_t prefix_bytes,
+        std::size_t min_staged_captured_length_bytes
+    );
     bool materialize_packet_bytes(RawPcapPacket& packet);
     bool finish_prefix_packet(const RawPcapPacket& packet);
 

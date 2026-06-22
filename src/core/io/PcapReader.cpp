@@ -360,6 +360,102 @@ std::optional<RawPcapPacket> PcapReader::read_next_import_packet(
     return packet;
 }
 
+bool PcapReader::read_next_import_packet_into(
+    RawPcapPacket& packet,
+    const std::size_t prefix_bytes,
+    const std::size_t min_staged_captured_length_bytes
+) {
+    if (!stream_.is_open()) {
+        return false;
+    }
+
+    if (prefix_packet_state_.active) {
+        set_error(next_input_offset_, "current prefix packet must be finalized before reading next packet",
+                  prefix_packet_state_.packet_index);
+        return false;
+    }
+
+    const auto packet_header_offset = next_input_offset_;
+    PcapPacketHeader packet_header {};
+    stream_.read(reinterpret_cast<char*>(&packet_header), sizeof(packet_header));
+    if (stream_.gcount() == 0) {
+        return false;
+    }
+
+    if (stream_.gcount() != static_cast<std::streamsize>(sizeof(packet_header))) {
+        set_error(packet_header_offset, "unexpected EOF while reading packet header", true);
+        return false;
+    }
+
+    const auto data_offset = packet_header_offset + sizeof(packet_header);
+    if (packet_header.included_length < min_staged_captured_length_bytes) {
+        packet.bytes.resize(packet_header.included_length);
+        if (!packet.bytes.empty()) {
+            stream_.read(
+                reinterpret_cast<char*>(packet.bytes.data()),
+                static_cast<std::streamsize>(packet.bytes.size())
+            );
+            if (stream_.gcount() != static_cast<std::streamsize>(packet.bytes.size())) {
+                set_error(data_offset, "unexpected EOF while reading packet data", next_packet_index_);
+                return false;
+            }
+        }
+
+        next_input_offset_ = data_offset + packet_header.included_length;
+        clear_prefix_packet_state();
+
+        packet.packet_index = next_packet_index_;
+        packet.ts_sec = packet_header.ts_sec;
+        packet.ts_usec = packet_header.ts_usec;
+        packet.captured_length = packet_header.included_length;
+        packet.original_length = packet_header.original_length;
+        packet.data_offset = data_offset;
+        packet.data_link_type = global_header_.network;
+
+        ++next_packet_index_;
+        return true;
+    }
+
+    const auto available_prefix_bytes = std::min<std::size_t>(prefix_bytes, packet_header.included_length);
+    packet.bytes.resize(available_prefix_bytes);
+    if (!packet.bytes.empty()) {
+        stream_.read(
+            reinterpret_cast<char*>(packet.bytes.data()),
+            static_cast<std::streamsize>(packet.bytes.size())
+        );
+        if (stream_.gcount() != static_cast<std::streamsize>(packet.bytes.size())) {
+            set_error(data_offset, "unexpected EOF while reading packet data", next_packet_index_);
+            return false;
+        }
+    }
+
+    next_input_offset_ = data_offset + static_cast<std::uint64_t>(available_prefix_bytes);
+    const auto next_record_offset = data_offset + packet_header.included_length;
+    if (available_prefix_bytes < packet_header.included_length) {
+        prefix_packet_state_ = PrefixPacketState {
+            .active = true,
+            .packet_index = next_packet_index_,
+            .data_offset = data_offset,
+            .next_record_offset = next_record_offset,
+            .captured_length = packet_header.included_length,
+        };
+    } else {
+        clear_prefix_packet_state();
+        next_input_offset_ = next_record_offset;
+    }
+
+    packet.packet_index = next_packet_index_;
+    packet.ts_sec = packet_header.ts_sec;
+    packet.ts_usec = packet_header.ts_usec;
+    packet.captured_length = packet_header.included_length;
+    packet.original_length = packet_header.original_length;
+    packet.data_offset = data_offset;
+    packet.data_link_type = global_header_.network;
+
+    ++next_packet_index_;
+    return true;
+}
+
 bool PcapReader::materialize_packet_bytes(RawPcapPacket& packet) {
     if (!stream_.is_open()) {
         return false;
