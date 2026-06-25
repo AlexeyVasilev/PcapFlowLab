@@ -193,6 +193,34 @@ private:
         bool window_fully_cached {false};
     };
 
+    struct SelectedFlowTcpPrefixWindowPacket {
+        PacketRef packet {};
+        Direction direction {Direction::a_to_b};
+        std::uint64_t flow_local_packet_number {0};
+    };
+
+    struct SelectedFlowTcpPrefixContext {
+        std::size_t flow_index {0};
+        std::size_t prepared_packet_window_count {0};
+        FlowAddressFamily family {FlowAddressFamily::ipv4};
+        const ConnectionV4* ipv4 {nullptr};
+        const ConnectionV6* ipv6 {nullptr};
+        std::size_t prefix_count_a {0};
+        std::size_t prefix_count_b {0};
+        std::size_t payload_packet_count {0};
+        std::vector<PacketRef> prefix_packets_a {};
+        std::vector<PacketRef> prefix_packets_b {};
+        std::vector<SelectedFlowTcpPrefixWindowPacket> ordered_prefix_packets {};
+    };
+
+    struct SelectedFlowTcpPrefixResolution {
+        const SelectedFlowTcpPrefixContext* context {nullptr};
+        const char* result {"invalid"};
+        double resolve_elapsed_ms {0.0};
+        bool reused_existing_context {false};
+        bool listed_connections_called {false};
+    };
+
     struct SelectedFlowFullPacketCache {
         std::size_t flow_index {0};
         std::map<std::uint64_t, std::vector<std::uint8_t>> packet_bytes_by_packet_index {};
@@ -202,11 +230,16 @@ private:
 
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
     void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
+    [[nodiscard]] SelectedFlowTcpPrefixResolution prepare_selected_flow_tcp_prefix_context(
+        std::size_t flow_index,
+        std::size_t max_packets_to_scan
+    ) const;
     [[nodiscard]] const std::vector<std::uint8_t>* find_selected_flow_full_packet_cache_bytes(std::uint64_t packet_index) const noexcept;
     [[nodiscard]] const SelectedFlowPacketCacheEntry* find_selected_flow_packet_cache_entry(
         std::size_t flow_index,
         std::uint64_t packet_index
     ) const noexcept;
+    void prepare_selected_flow_packet_cache(std::size_t flow_index, const SelectedFlowTcpPrefixContext& context) const;
 
     void reset_runtime_state() noexcept;
 
@@ -224,6 +257,7 @@ private:
     std::string last_open_error_text_ {};
     mutable std::optional<SelectedFlowFullPacketCache> selected_flow_full_packet_cache_ {};
     mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
+    mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };
 

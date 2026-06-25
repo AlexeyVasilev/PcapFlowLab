@@ -367,8 +367,34 @@ void run_query_tests() {
     PFL_EXPECT(cached_udp_flow_packets.has_value());
     PFL_EXPECT(cached_udp_flow_packets->size() == 1U);
     PFL_EXPECT(cache_session.read_packet_data((*cached_udp_flow_packets)[0]) == cache_packet_dns);
+
+    CaptureSession tcp_contribution_cache_session {};
+    PFL_EXPECT(tcp_contribution_cache_session.open_capture(cache_path));
+    PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 2U).empty());
+    auto tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_EXPECT(tcp_contribution_cache_info->flow_index == 0U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 6U);
+
+    PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 2U).empty());
+    tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 6U);
+
+    tcp_contribution_cache_session.set_selected_flow_tcp_payload_suppression(0U, {}, 2U);
+    PFL_EXPECT(!tcp_contribution_cache_session.should_suppress_selected_flow_tcp_payload(0U, 0U));
+
+    PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 4U).empty());
+    tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 4U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 4U);
+    PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 15U);
 }
 
 }  // namespace pfl::tests
-
 
