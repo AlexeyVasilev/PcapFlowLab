@@ -1,10 +1,58 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowDiagnostics.h"
 
 #include "core/decode/PacketDecodeSupport.h"
 
+#include <chrono>
+#include <sstream>
+
 namespace pfl::session_detail {
+
+namespace {
+
+std::optional<std::uint32_t> derive_original_transport_payload_length_from_metadata(
+    const std::uint32_t captured_length,
+    const std::uint32_t original_length,
+    const std::uint32_t captured_transport_payload_length,
+    const bool is_ip_fragmented
+) {
+    if (is_ip_fragmented) {
+        return std::nullopt;
+    }
+
+    if (captured_length < captured_transport_payload_length || original_length < captured_length) {
+        return std::nullopt;
+    }
+
+    if (original_length == captured_length) {
+        return captured_transport_payload_length;
+    }
+
+    if (captured_transport_payload_length == 0U) {
+        return std::nullopt;
+    }
+
+    const auto transport_payload_offset =
+        static_cast<std::size_t>(captured_length) - static_cast<std::size_t>(captured_transport_payload_length);
+    if (static_cast<std::size_t>(original_length) < transport_payload_offset) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint32_t>(static_cast<std::size_t>(original_length) - transport_payload_offset);
+}
+
+std::optional<std::uint32_t> derive_original_transport_payload_length_from_row_metadata(const PacketRow& row) {
+    return derive_original_transport_payload_length_from_metadata(
+        row.captured_length,
+        row.original_length,
+        row.payload_length,
+        row.is_ip_fragmented
+    );
+}
+
+}  // namespace
 
 std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
     const std::span<const std::uint8_t> packet_bytes,
@@ -144,16 +192,61 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
 }
 
 void apply_original_transport_payload_lengths(CaptureSession& session, std::vector<PacketRow>& rows) {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+
+    std::size_t metadata_rows = 0;
+    std::size_t fragmented_rows_skipped = 0;
+    std::size_t fallback_lookup_rows = 0;
+    std::size_t fallback_lookup_misses = 0;
+    std::size_t fallback_byte_rows = 0;
+    std::size_t fallback_byte_resolved_rows = 0;
+
     for (auto& row : rows) {
-        const auto packet = session.find_packet(row.packet_index);
-        if (!packet.has_value()) {
+        if (const auto original_transport_payload_length =
+                derive_original_transport_payload_length_from_row_metadata(row);
+            original_transport_payload_length.has_value()) {
+            row.payload_length = *original_transport_payload_length;
+            ++metadata_rows;
             continue;
         }
 
+        if (row.is_ip_fragmented) {
+            ++fragmented_rows_skipped;
+            continue;
+        }
+
+        ++fallback_lookup_rows;
+        const auto packet = session.find_packet(row.packet_index);
+        if (!packet.has_value()) {
+            ++fallback_lookup_misses;
+            continue;
+        }
+
+        ++fallback_byte_rows;
         const auto original_transport_payload_length = derive_transport_payload_length_from_headers(session, *packet);
         if (original_transport_payload_length.has_value()) {
             row.payload_length = *original_transport_payload_length;
+            ++fallback_byte_resolved_rows;
         }
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "apply_original_transport_payload_lengths"
+            << " rows=" << rows.size()
+            << " metadata_rows=" << metadata_rows
+            << " fragmented_rows_skipped=" << fragmented_rows_skipped
+            << " fallback_lookup_rows=" << fallback_lookup_rows
+            << " fallback_lookup_misses=" << fallback_lookup_misses
+            << " fallback_byte_rows=" << fallback_byte_rows
+            << " fallback_byte_resolved_rows=" << fallback_byte_resolved_rows
+            << " elapsed_ms=" << selected_flow_diagnostics::elapsed_ms(started_at)
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
     }
 }
 
