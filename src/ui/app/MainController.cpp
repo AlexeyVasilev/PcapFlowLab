@@ -198,6 +198,21 @@ QString selected_flow_protocol_hint(const FlowListModel& flow_model, const int s
     return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolHintRole).toString();
 }
 
+bool selected_flow_uses_tcp(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return false;
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return false;
+    }
+
+    return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolRole)
+        .toString()
+        .compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0;
+}
+
 QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -4193,42 +4208,82 @@ void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
 void MainController::prepareSelectedFlowTcpContributionState(const std::size_t maxPacketsToScan) {
     const auto started_at = std::chrono::steady_clock::now();
     const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    if (selected_flow_index_ < 0 || maxPacketsToScan == 0U) {
-        current_suspected_retransmission_packet_indices_.clear();
-        prepared_tcp_contribution_packet_window_count_ = 0U;
-        session_.clear_selected_flow_packet_cache();
-        session_.clear_selected_flow_tcp_payload_suppression();
-        return;
-    }
+    const auto log_result = [&](const std::string_view result,
+                                const std::size_t suppressed_packet_count = 0U,
+                                const double eligibility_elapsed_ms = 0.0,
+                                const double retransmission_elapsed_ms = 0.0,
+                                const double suppression_elapsed_ms = 0.0) {
+        if (!selected_flow_diagnostics::enabled()) {
+            return;
+        }
 
-    if (prepared_tcp_contribution_packet_window_count_ >= maxPacketsToScan) {
-        return;
-    }
-
-    const auto flowIndex = static_cast<std::size_t>(selected_flow_index_);
-    const auto suppressedPacketIndices = session_.suspected_tcp_retransmission_packet_indices(flowIndex, maxPacketsToScan);
-    current_suspected_retransmission_packet_indices_.clear();
-    for (const auto packetIndex : suppressedPacketIndices) {
-        current_suspected_retransmission_packet_indices_.insert(packetIndex);
-    }
-
-    session_.set_selected_flow_tcp_payload_suppression(flowIndex, suppressedPacketIndices, maxPacketsToScan);
-    prepared_tcp_contribution_packet_window_count_ = maxPacketsToScan;
-
-    if (selected_flow_diagnostics::enabled()) {
         std::ostringstream out {};
         out << "prepareSelectedFlowTcpContributionState "
             << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
             << " max_packets_to_scan=" << maxPacketsToScan
-            << " suppressed_packet_count=" << suppressedPacketIndices.size()
+            << " result=" << result
+            << " suppressed_packet_count=" << suppressed_packet_count
             << " prepared_window=" << prepared_tcp_contribution_packet_window_count_
+            << " eligibility_ms=" << format_elapsed_ms(eligibility_elapsed_ms)
+            << " retransmission_ms=" << format_elapsed_ms(retransmission_elapsed_ms)
+            << " suppression_ms=" << format_elapsed_ms(suppression_elapsed_ms)
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(
                 read_counters_before,
                 selected_flow_diagnostics::snapshot_read_counters()
             );
         selected_flow_diagnostics::log(out.str());
+    };
+
+    const auto eligibility_started_at = std::chrono::steady_clock::now();
+
+    if (selected_flow_index_ < 0 || maxPacketsToScan == 0U) {
+        current_suspected_retransmission_packet_indices_.clear();
+        prepared_tcp_contribution_packet_window_count_ = 0U;
+        session_.clear_selected_flow_packet_cache();
+        session_.clear_selected_flow_tcp_payload_suppression();
+        log_result("reset", 0U, selected_flow_diagnostics::elapsed_ms(eligibility_started_at));
+        return;
     }
+
+    if (prepared_tcp_contribution_packet_window_count_ >= maxPacketsToScan) {
+        log_result(
+            "reuse-window",
+            current_suspected_retransmission_packet_indices_.size(),
+            selected_flow_diagnostics::elapsed_ms(eligibility_started_at)
+        );
+        return;
+    }
+
+    if (!selected_flow_uses_tcp(flow_model_, selected_flow_index_)) {
+        current_suspected_retransmission_packet_indices_.clear();
+        session_.clear_selected_flow_tcp_payload_suppression();
+        prepared_tcp_contribution_packet_window_count_ = maxPacketsToScan;
+        log_result("non-tcp-flow", 0U, selected_flow_diagnostics::elapsed_ms(eligibility_started_at));
+        return;
+    }
+
+    const auto eligibility_elapsed_ms = selected_flow_diagnostics::elapsed_ms(eligibility_started_at);
+    const auto flowIndex = static_cast<std::size_t>(selected_flow_index_);
+    const auto retransmission_started_at = std::chrono::steady_clock::now();
+    const auto suppressedPacketIndices = session_.suspected_tcp_retransmission_packet_indices(flowIndex, maxPacketsToScan);
+    const auto retransmission_elapsed_ms = selected_flow_diagnostics::elapsed_ms(retransmission_started_at);
+    current_suspected_retransmission_packet_indices_.clear();
+    for (const auto packetIndex : suppressedPacketIndices) {
+        current_suspected_retransmission_packet_indices_.insert(packetIndex);
+    }
+
+    const auto suppression_started_at = std::chrono::steady_clock::now();
+    session_.set_selected_flow_tcp_payload_suppression(flowIndex, suppressedPacketIndices, maxPacketsToScan);
+    const auto suppression_elapsed_ms = selected_flow_diagnostics::elapsed_ms(suppression_started_at);
+    prepared_tcp_contribution_packet_window_count_ = maxPacketsToScan;
+    log_result(
+        "ok",
+        suppressedPacketIndices.size(),
+        eligibility_elapsed_ms,
+        retransmission_elapsed_ms,
+        suppression_elapsed_ms
+    );
 }
 
 void MainController::maybeEnrichSelectedFlowServiceHint() {

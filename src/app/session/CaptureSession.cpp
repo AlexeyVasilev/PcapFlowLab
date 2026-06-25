@@ -796,6 +796,68 @@ std::pair<std::size_t, std::size_t> flow_packet_prefix_direction_counts(
     return {count_a, count_b};
 }
 
+template <typename PacketContainer>
+bool packet_prefix_has_visible_tcp_payload(
+    const PacketContainer& packets,
+    const std::size_t packet_count
+) {
+    const auto limit = std::min(packet_count, packets.size());
+    for (std::size_t index = 0; index < limit; ++index) {
+        const auto& packet = packets[index];
+        if (packet.payload_length > 0U && !packet.is_ip_fragmented) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+template <typename PacketContainer>
+std::size_t count_packet_prefix_visible_tcp_payload(
+    const PacketContainer& packets,
+    const std::size_t packet_count
+) {
+    const auto limit = std::min(packet_count, packets.size());
+    std::size_t visible_payload_packet_count = 0U;
+    for (std::size_t index = 0; index < limit; ++index) {
+        const auto& packet = packets[index];
+        if (packet.payload_length == 0U || packet.is_ip_fragmented) {
+            continue;
+        }
+        ++visible_payload_packet_count;
+    }
+
+    return visible_payload_packet_count;
+}
+
+bool flow_prefix_has_visible_tcp_payload(
+    const ListedConnectionRef& connection,
+    const std::size_t prefix_count_a,
+    const std::size_t prefix_count_b
+) {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return packet_prefix_has_visible_tcp_payload(connection.ipv4->flow_a.packets, prefix_count_a)
+            || packet_prefix_has_visible_tcp_payload(connection.ipv4->flow_b.packets, prefix_count_b);
+    }
+
+    return packet_prefix_has_visible_tcp_payload(connection.ipv6->flow_a.packets, prefix_count_a)
+        || packet_prefix_has_visible_tcp_payload(connection.ipv6->flow_b.packets, prefix_count_b);
+}
+
+std::size_t count_flow_prefix_visible_tcp_payload(
+    const ListedConnectionRef& connection,
+    const std::size_t prefix_count_a,
+    const std::size_t prefix_count_b
+) {
+    if (connection.family == FlowAddressFamily::ipv4) {
+        return count_packet_prefix_visible_tcp_payload(connection.ipv4->flow_a.packets, prefix_count_a)
+            + count_packet_prefix_visible_tcp_payload(connection.ipv4->flow_b.packets, prefix_count_b);
+    }
+
+    return count_packet_prefix_visible_tcp_payload(connection.ipv6->flow_a.packets, prefix_count_a)
+        + count_packet_prefix_visible_tcp_payload(connection.ipv6->flow_b.packets, prefix_count_b);
+}
+
 std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const CaptureSession& session,
     const ListedConnectionRef& connection,
@@ -2328,42 +2390,101 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan
 ) const {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+    const auto log_result = [&](const std::string_view result,
+                                const std::size_t prefix_count_a = 0U,
+                                const std::size_t prefix_count_b = 0U,
+                                const std::size_t payload_packet_count = 0U,
+                                const std::size_t suspected_count = 0U,
+                                const double cache_elapsed_ms = 0.0,
+                                const double collect_elapsed_ms = 0.0) {
+        if (!selected_flow_diagnostics::enabled()) {
+            return;
+        }
+
+        std::ostringstream out {};
+        out << "suspected_tcp_retransmission_packet_indices"
+            << " flow_index=" << flow_index
+            << " max_packets_to_scan=" << max_packets_to_scan
+            << " result=" << result
+            << " prefix_count_a=" << prefix_count_a
+            << " prefix_count_b=" << prefix_count_b
+            << " payload_packet_count=" << payload_packet_count
+            << " suspected_count=" << suspected_count
+            << " cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
+            << " collect_ms=" << format_elapsed_ms(collect_elapsed_ms)
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    };
+
     if (!has_source_capture()) {
+        log_result("no-source");
         return {};
     }
-
-    prepare_selected_flow_packet_cache(flow_index, max_packets_to_scan);
 
     const auto connections = list_connections(state_);
     if (flow_index >= connections.size()) {
+        log_result("invalid-flow-index");
         return {};
     }
 
-    if (connections[flow_index].family == FlowAddressFamily::ipv4) {
-        if (connections[flow_index].ipv4->key.protocol != ProtocolId::tcp) {
-            return {};
-        }
+    const auto& connection = connections[flow_index];
+    if (protocol_id(connection) != ProtocolId::tcp) {
+        log_result("non-tcp");
+        return {};
+    }
 
-        return collect_suspected_tcp_retransmission_packet_indices(
+    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
+        ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
+        : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
+    if (prefix_count_a + prefix_count_b == 0U) {
+        log_result("empty-prefix", prefix_count_a, prefix_count_b);
+        return {};
+    }
+
+    const auto payload_packet_count = count_flow_prefix_visible_tcp_payload(connection, prefix_count_a, prefix_count_b);
+    if (!flow_prefix_has_visible_tcp_payload(connection, prefix_count_a, prefix_count_b)) {
+        log_result("no-visible-tcp-payload", prefix_count_a, prefix_count_b, payload_packet_count);
+        return {};
+    }
+
+    const auto cache_started_at = std::chrono::steady_clock::now();
+    prepare_selected_flow_packet_cache(flow_index, max_packets_to_scan);
+    const auto cache_elapsed_ms = selected_flow_diagnostics::elapsed_ms(cache_started_at);
+
+    const auto collect_started_at = std::chrono::steady_clock::now();
+    const auto suspected = connection.family == FlowAddressFamily::ipv4
+        ? collect_suspected_tcp_retransmission_packet_indices(
             *this,
             flow_index,
-            connections[flow_index].ipv4->flow_a.packets,
-            connections[flow_index].ipv4->flow_b.packets,
+            connection.ipv4->flow_a.packets,
+            connection.ipv4->flow_b.packets,
+            max_packets_to_scan
+        )
+        : collect_suspected_tcp_retransmission_packet_indices(
+            *this,
+            flow_index,
+            connection.ipv6->flow_a.packets,
+            connection.ipv6->flow_b.packets,
             max_packets_to_scan
         );
-    }
+    const auto collect_elapsed_ms = selected_flow_diagnostics::elapsed_ms(collect_started_at);
 
-    if (connections[flow_index].ipv6->key.protocol != ProtocolId::tcp) {
-        return {};
-    }
-
-    return collect_suspected_tcp_retransmission_packet_indices(
-        *this,
-        flow_index,
-        connections[flow_index].ipv6->flow_a.packets,
-        connections[flow_index].ipv6->flow_b.packets,
-        max_packets_to_scan
+    log_result(
+        "ok",
+        prefix_count_a,
+        prefix_count_b,
+        payload_packet_count,
+        suspected.size(),
+        cache_elapsed_ms,
+        collect_elapsed_ms
     );
+    return suspected;
 }
 
 void CaptureSession::set_selected_flow_tcp_payload_suppression(
@@ -2378,23 +2499,71 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
     const std::vector<std::uint64_t>& packet_indices,
     const std::size_t max_packets_to_scan
 ) noexcept {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+    const auto log_result = [&](const std::string_view result,
+                                const std::size_t prefix_count_a = 0U,
+                                const std::size_t prefix_count_b = 0U,
+                                const std::size_t payload_packet_count = 0U,
+                                const std::size_t duplicate_count = 0U,
+                                const std::size_t contribution_count = 0U,
+                                const double analyze_elapsed_ms = 0.0) {
+        if (!selected_flow_diagnostics::enabled()) {
+            return;
+        }
+
+        std::ostringstream out {};
+        out << "set_selected_flow_tcp_payload_suppression"
+            << " flow_index=" << flow_index
+            << " max_packets_to_scan=" << max_packets_to_scan
+            << " result=" << result
+            << " prefix_count_a=" << prefix_count_a
+            << " prefix_count_b=" << prefix_count_b
+            << " payload_packet_count=" << payload_packet_count
+            << " duplicate_count=" << duplicate_count
+            << " contribution_count=" << contribution_count
+            << " analyze_ms=" << format_elapsed_ms(analyze_elapsed_ms)
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    };
+
     const auto connections = list_connections(state_);
     if (flow_index >= connections.size()) {
         selected_flow_tcp_payload_suppression_.reset();
+        log_result("invalid-flow-index");
         return;
     }
 
     const auto& connection = connections[flow_index];
     if (protocol_id(connection) != ProtocolId::tcp) {
         selected_flow_tcp_payload_suppression_.reset();
+        log_result("non-tcp");
+        return;
+    }
+
+    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
+        ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
+        : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
+    if (prefix_count_a + prefix_count_b == 0U) {
+        selected_flow_tcp_payload_suppression_.reset();
+        log_result("empty-prefix", prefix_count_a, prefix_count_b);
+        return;
+    }
+
+    const auto payload_packet_count = count_flow_prefix_visible_tcp_payload(connection, prefix_count_a, prefix_count_b);
+    if (!flow_prefix_has_visible_tcp_payload(connection, prefix_count_a, prefix_count_b)) {
+        selected_flow_tcp_payload_suppression_.reset();
+        log_result("no-visible-tcp-payload", prefix_count_a, prefix_count_b, payload_packet_count);
         return;
     }
 
     const std::set<std::uint64_t> exact_duplicate_packet_indices(packet_indices.begin(), packet_indices.end());
-    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
-        ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
-        : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
 
+    const auto analyze_started_at = std::chrono::steady_clock::now();
     const auto analysis = connection.family == FlowAddressFamily::ipv4
         ? analyze_selected_flow_tcp_payload_suppression(
             *this,
@@ -2414,11 +2583,21 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
             prefix_count_a,
             prefix_count_b
         );
+    const auto analyze_elapsed_ms = selected_flow_diagnostics::elapsed_ms(analyze_started_at);
 
     if (analysis.packet_contributions.empty() &&
         !analysis.gap_state_a_to_b.tainted_by_gap &&
         !analysis.gap_state_b_to_a.tainted_by_gap) {
         selected_flow_tcp_payload_suppression_.reset();
+        log_result(
+            "no-contributions",
+            prefix_count_a,
+            prefix_count_b,
+            payload_packet_count,
+            exact_duplicate_packet_indices.size(),
+            0U,
+            analyze_elapsed_ms
+        );
         return;
     }
 
@@ -2439,6 +2618,15 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
         });
     }
     selected_flow_tcp_payload_suppression_ = std::move(suppression);
+    log_result(
+        "ok",
+        prefix_count_a,
+        prefix_count_b,
+        payload_packet_count,
+        exact_duplicate_packet_indices.size(),
+        analysis.packet_contributions.size(),
+        analyze_elapsed_ms
+    );
 }
 
 void CaptureSession::clear_selected_flow_tcp_payload_suppression() noexcept {

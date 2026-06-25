@@ -207,6 +207,22 @@ void run_query_tests() {
     CaptureSession pure_ack_session {};
     PFL_EXPECT(pure_ack_session.open_capture(pure_ack_path));
     PFL_EXPECT(pure_ack_session.suspected_tcp_retransmission_packet_indices(0).empty());
+    PFL_EXPECT(!pure_ack_session.selected_flow_packet_cache_info().has_value());
+
+    const auto udp_only_path = write_temp_pcap(
+        "pfl_query_retransmit_udp_no_cache.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                ipv4(10, 2, 4, 1), ipv4(10, 2, 4, 2), 53000, 53, make_dns_query_payload())},
+        })
+    );
+
+    CaptureSession udp_only_session {};
+    PFL_EXPECT(udp_only_session.open_capture(udp_only_path));
+    PFL_EXPECT(udp_only_session.suspected_tcp_retransmission_packet_indices(0).empty());
+    PFL_EXPECT(!udp_only_session.selected_flow_packet_cache_info().has_value());
+    udp_only_session.set_selected_flow_tcp_payload_suppression(0U, {}, 1U);
+    PFL_EXPECT(!udp_only_session.should_suppress_selected_flow_tcp_payload(0U, 0U));
 
     const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(192, 168, 1, 10), ipv4(93, 184, 216, 34), 51515, 80, make_http_request_payload(), 0x18);
@@ -354,6 +370,5 @@ void run_query_tests() {
 }
 
 }  // namespace pfl::tests
-
 
 
