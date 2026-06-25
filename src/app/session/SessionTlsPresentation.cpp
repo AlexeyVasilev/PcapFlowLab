@@ -1494,15 +1494,18 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
     const CaptureSession& session,
     const std::size_t flow_index,
     const Direction direction,
-    const std::size_t max_packets_to_scan
+    const std::span<const PacketRef> direction_packets
 ) {
     TlsDirectionalStreamPresentation presentation {};
-    const auto result = session.reassemble_flow_direction(ReassemblyRequest {
-        .flow_index = flow_index,
-        .direction = direction,
-        .max_packets = max_packets_to_scan,
-        .max_bytes = 256U * 1024U,
-    });
+    const auto result = session.reassemble_flow_direction(
+        ReassemblyRequest {
+            .flow_index = flow_index,
+            .direction = direction,
+            .max_packets = direction_packets.size(),
+            .max_bytes = 256U * 1024U,
+        },
+        direction_packets
+    );
     if (!result.has_value() || result->bytes.empty()) {
         return presentation;
     }
@@ -1816,7 +1819,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly(
         session,
         flow_index,
         direction,
-        direction_packets.size()
+        direction_packets
     );
 }
 

@@ -103,6 +103,10 @@ public:
     [[nodiscard]] std::string read_packet_payload_hex_dump(const PacketRef& packet) const;
     [[nodiscard]] std::string read_packet_protocol_details_text(const PacketRef& packet) const;
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(const ReassemblyRequest& request) const;
+    [[nodiscard]] std::optional<ReassemblyResult> reassemble_flow_direction(
+        const ReassemblyRequest& request,
+        std::span<const PacketRef> direction_packets
+    ) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
     [[nodiscard]] std::optional<FlowAnalysisResult> get_flow_analysis(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_service_hint_for_flow(std::size_t flow_index) const;

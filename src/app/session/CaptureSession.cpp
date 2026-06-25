@@ -240,10 +240,10 @@ DirectionalStreamPolicy append_http_stream_items_from_reassembly(
     const std::size_t flow_index,
     const std::string_view direction_text,
     const Direction direction,
-    const std::size_t max_packets_to_scan
+    const std::span<const PacketRef> direction_packets
 ) {
     DirectionalStreamPolicy policy {};
-    const auto presentation = build_http_stream_items_from_reassembly(session, flow_index, direction, max_packets_to_scan);
+    const auto presentation = build_http_stream_items_from_reassembly(session, flow_index, direction, direction_packets);
     for (const auto& item : presentation.items) {
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
@@ -875,6 +875,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const auto flow_protocol = protocol_id(connection);
     std::vector<StreamItemRow> rows {};
+    bool bounded_prefix_path_used = false;
 
     const auto total_packets = connection.family == FlowAddressFamily::ipv4
         ? connection_packet_count(*connection.ipv4)
@@ -924,7 +925,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 flow_index,
                 kDirectionAToB,
                 Direction::a_to_b,
-                prefix_count_a
+                direction_packets_a
             );
         }
         if (!direction_policy_b.used_reassembly) {
@@ -934,9 +935,10 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 flow_index,
                 kDirectionBToA,
                 Direction::b_to_a,
-                prefix_count_b
+                direction_packets_b
             );
         }
+        bounded_prefix_path_used = true;
     }
 
     if (rows.size() < target) {
@@ -988,6 +990,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             << " target_rows=" << target
             << " returned_rows=" << rows.size()
             << " total_packets=" << total_packets
+            << " bounded_prefix_path_used=" << (bounded_prefix_path_used ? "true" : "false")
             << " deep_protocol_details=" << (deep_protocol_details_enabled ? "true" : "false")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
@@ -2346,22 +2349,72 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const 
         return std::nullopt;
     }
 
-    if (!flow_packets(request.flow_index).has_value()) {
+    const auto& connections = listed_connections();
+    if (request.flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+    if (protocol_id(connections[request.flow_index]) != ProtocolId::tcp) {
         return std::nullopt;
     }
 
     ReassemblyService service {};
     auto result = service.reassemble_tcp_payload(*this, request);
     if (selected_flow_diagnostics::enabled()) {
-        const auto& connections = listed_connections();
         std::ostringstream out {};
         out << "reassemble_flow_direction flow_index=" << request.flow_index
             << " direction=" << (request.direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
             << " max_packets=" << request.max_packets
-            << " max_bytes=" << request.max_bytes;
+            << " max_bytes=" << request.max_bytes
+            << " bounded_direction_input=false";
         if (request.flow_index < connections.size()) {
             out << ' ' << diagnostics_flow_identity(request.flow_index, connections[request.flow_index], analysis_settings_);
         }
+        if (result.has_value()) {
+            out << " payload_packets_used=" << result->payload_packets_used
+                << " total_packets_seen=" << result->total_packets_seen
+                << " output_bytes=" << result->bytes.size()
+                << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false");
+        } else {
+            out << " result=null";
+        }
+        out << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    }
+    return result;
+}
+std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
+    const ReassemblyRequest& request,
+    const std::span<const PacketRef> direction_packets
+) const {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+    if (!has_loaded_state_ || !has_source_capture()) {
+        return std::nullopt;
+    }
+
+    const auto& connections = listed_connections();
+    if (request.flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+    if (protocol_id(connections[request.flow_index]) != ProtocolId::tcp) {
+        return std::nullopt;
+    }
+
+    ReassemblyService service {};
+    auto result = service.reassemble_tcp_payload(*this, request, direction_packets);
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "reassemble_flow_direction flow_index=" << request.flow_index
+            << " direction=" << (request.direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
+            << " max_packets=" << request.max_packets
+            << " max_bytes=" << request.max_bytes
+            << " bounded_direction_input=true"
+            << " bounded_direction_packet_count=" << direction_packets.size()
+            << ' ' << diagnostics_flow_identity(request.flow_index, connections[request.flow_index], analysis_settings_);
         if (result.has_value()) {
             out << " payload_packets_used=" << result->payload_packets_used
                 << " total_packets_seen=" << result->total_packets_seen
@@ -3085,7 +3138,13 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     }
 
     const auto total_packets = flow_packet_count(flow_index);
-    prepare_selected_flow_packet_cache(flow_index, std::min(total_packets, max_packets_to_scan));
+    const auto bounded_packet_budget = std::min(total_packets, max_packets_to_scan);
+    const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, bounded_packet_budget);
+    if (prefix_resolution.context != nullptr) {
+        prepare_selected_flow_packet_cache(flow_index, *prefix_resolution.context);
+    } else {
+        prepare_selected_flow_packet_cache(flow_index, bounded_packet_budget);
+    }
     if (total_packets <= max_packets_to_scan) {
         return list_flow_stream_items(flow_index, 0U, limit);
     }

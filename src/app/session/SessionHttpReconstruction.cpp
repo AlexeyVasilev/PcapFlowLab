@@ -603,17 +603,20 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     const CaptureSession& session,
     const std::size_t flow_index,
     const Direction direction,
-    const std::size_t max_packets_to_scan
+    const std::span<const PacketRef> direction_packets
 ) {
     HttpDirectionalStreamPresentation presentation {};
     constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
 
-    const auto result = session.reassemble_flow_direction(ReassemblyRequest {
-        .flow_index = flow_index,
-        .direction = direction,
-        .max_packets = max_packets_to_scan,
-        .max_bytes = kHttpReassemblyMaxBytes,
-    });
+    const auto result = session.reassemble_flow_direction(
+        ReassemblyRequest {
+            .flow_index = flow_index,
+            .direction = direction,
+            .max_packets = direction_packets.size(),
+            .max_bytes = kHttpReassemblyMaxBytes,
+        },
+        direction_packets
+    );
     if (!result.has_value() || result->bytes.empty()) {
         return presentation;
     }

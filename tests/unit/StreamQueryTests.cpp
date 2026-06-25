@@ -866,8 +866,12 @@ void run_stream_query_tests() {
     CaptureSession bounded_prefix_http_session {};
     PFL_EXPECT(bounded_prefix_http_session.open_capture(bounded_prefix_http_path, fast_options));
     const auto bounded_prefix_rows = bounded_prefix_http_session.list_flow_stream_items_for_packet_prefix(0, 30U, 16U);
+    const auto bounded_prefix_full_rows = bounded_prefix_http_session.list_flow_stream_items(0, 0U, 16U);
     PFL_EXPECT(!bounded_prefix_rows.empty());
+    PFL_EXPECT(!bounded_prefix_full_rows.empty());
     PFL_EXPECT(bounded_prefix_rows.size() <= 16U);
+    PFL_EXPECT(!bounded_prefix_rows.front().label.empty());
+    PFL_EXPECT(!bounded_prefix_rows.front().direction_text.empty());
     for (const auto& row : bounded_prefix_rows) {
         for (const auto packet_index : row.packet_indices) {
             PFL_EXPECT(packet_index < 30U);
@@ -891,6 +895,11 @@ void run_stream_query_tests() {
     const auto extended_prefix_rows = bounded_prefix_http_session.list_flow_stream_items_for_packet_prefix(0, 40U, 16U);
     PFL_EXPECT(!extended_prefix_rows.empty());
     PFL_EXPECT(extended_prefix_rows.size() <= 16U);
+    const auto extended_comparable_row_count = std::min(extended_prefix_rows.size(), bounded_prefix_full_rows.size());
+    for (std::size_t index = 0; index < extended_comparable_row_count; ++index) {
+        PFL_EXPECT(extended_prefix_rows[index].label == bounded_prefix_full_rows[index].label);
+        PFL_EXPECT(extended_prefix_rows[index].direction_text == bounded_prefix_full_rows[index].direction_text);
+    }
     for (const auto& row : extended_prefix_rows) {
         for (const auto packet_index : row.packet_indices) {
             PFL_EXPECT(packet_index < 40U);
