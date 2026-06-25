@@ -495,6 +495,10 @@ void log_selected_flow_cache_clear(const char* reason) {
     selected_flow_diagnostics::log(std::string {"cache-clear reason="} + reason);
 }
 
+void log_listed_connections_cache_clear(const char* reason) {
+    selected_flow_diagnostics::log(std::string {"listed-connections-cache-clear reason="} + reason);
+}
+
 bool append_arp_stream_item_for_packet(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
@@ -997,6 +1001,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
 
 void CaptureSession::reset_runtime_state() noexcept {
     log_selected_flow_cache_clear("reset_runtime_state");
+    log_listed_connections_cache_clear("reset_runtime_state");
     capture_path_.clear();
     source_capture_path_.clear();
     source_info_ = {};
@@ -1010,6 +1015,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
+    listed_connections_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 }
 
@@ -1079,6 +1085,9 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     source_info_ = {};
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
+    selected_flow_tcp_prefix_context_.reset();
+    log_listed_connections_cache_clear("open_capture");
+    listed_connections_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
@@ -1101,7 +1110,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
         std::ostringstream out {};
         out << "open_capture result mode=" << ((options.mode == ImportMode::deep) ? "deep" : "fast")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << " flows=" << list_connections(state_).size()
+            << " flows=" << listed_connections().size()
             << " packets=" << summary().packet_count
             << " bytes=" << summary().total_bytes;
         selected_flow_diagnostics::log(out.str());
@@ -1186,6 +1195,9 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     partial_open_failure_ = {};
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
+    selected_flow_tcp_prefix_context_.reset();
+    log_listed_connections_cache_clear("load_index");
+    listed_connections_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 
     if (validate_capture_source(source_info_)) {
@@ -1208,7 +1220,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     if (selected_flow_diagnostics::enabled()) {
         std::ostringstream out {};
         out << "load_index result elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << " flows=" << list_connections(state_).size()
+            << " flows=" << listed_connections().size()
             << " packets=" << summary().packet_count
             << " bytes=" << summary().total_bytes
             << " source_attached=" << (has_source_capture() ? "true" : "false");
@@ -1270,6 +1282,8 @@ bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
     log_selected_flow_cache_clear("attach_source_capture");
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
+    selected_flow_tcp_prefix_context_.reset();
+    selected_flow_tcp_payload_suppression_.reset();
     return true;
 }
 
@@ -1278,6 +1292,7 @@ void CaptureSession::clear_source_capture_attachment() noexcept {
     log_selected_flow_cache_clear("clear_source_capture_attachment");
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
+    selected_flow_tcp_prefix_context_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 }
 
@@ -1300,7 +1315,7 @@ const CaptureSummary& CaptureSession::summary() const noexcept {
 CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
     CaptureProtocolSummary summary {};
 
-    for (const auto& connection : list_connections(state_)) {
+    for (const auto& connection : listed_connections()) {
         if (connection.family == FlowAddressFamily::ipv4) {
             add_protocol_stats(summary.ipv4, connection);
         } else {
@@ -1386,7 +1401,7 @@ void CaptureSession::set_analysis_settings(const AnalysisSettings& settings) noe
 QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
     QuicRecognitionStats stats {};
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     for (const auto& connection : connections) {
         const auto protocol_hint = (connection.family == FlowAddressFamily::ipv4)
             ? connection.ipv4->protocol_hint
@@ -1439,7 +1454,7 @@ QuicRecognitionStats CaptureSession::quic_recognition_stats() const noexcept {
 TlsRecognitionStats CaptureSession::tls_recognition_stats() const noexcept {
     TlsRecognitionStats stats {};
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     for (const auto& connection : connections) {
         const auto protocol_hint = (connection.family == FlowAddressFamily::ipv4)
             ? connection.ipv4->protocol_hint
@@ -1490,7 +1505,7 @@ CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
     std::map<std::string, TopEndpointRow> endpoints {};
     std::map<std::uint16_t, TopPortRow> ports {};
 
-    for (const auto& connection : list_connections(state_)) {
+    for (const auto& connection : listed_connections()) {
         const auto connection_packets = packet_count(connection);
         const auto connection_bytes = total_bytes(connection);
 
@@ -1758,6 +1773,29 @@ const CaptureSession::SelectedFlowPacketCacheEntry* CaptureSession::find_selecte
     return &selected_flow_packet_cache_->entries[it->second];
 }
 
+const std::vector<session_detail::ListedConnectionRef>& CaptureSession::listed_connections(bool* cache_hit) const {
+    if (listed_connections_cache_.has_value()) {
+        if (cache_hit != nullptr) {
+            *cache_hit = true;
+        }
+        return *listed_connections_cache_;
+    }
+
+    if (cache_hit != nullptr) {
+        *cache_hit = false;
+    }
+    const auto started_at = std::chrono::steady_clock::now();
+    listed_connections_cache_ = session_detail::list_connections(state_);
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "listed_connections_cache populate"
+            << " flows=" << listed_connections_cache_->size()
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at));
+        selected_flow_diagnostics::log(out.str());
+    }
+    return *listed_connections_cache_;
+}
+
 CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected_flow_tcp_prefix_context(
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan
@@ -1790,8 +1828,10 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
         return resolution;
     }
 
-    resolution.listed_connections_called = true;
-    const auto connections = list_connections(state_);
+    bool listed_connections_cache_hit = false;
+    const auto& connections = listed_connections(&listed_connections_cache_hit);
+    resolution.listed_connections_cache_hit = listed_connections_cache_hit;
+    resolution.listed_connections_called = !listed_connections_cache_hit;
     if (flow_index >= connections.size()) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "invalid-flow-index";
@@ -2027,7 +2067,8 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         return;
     }
 
-    const auto connections = list_connections(state_);
+    bool listed_connections_cache_hit = false;
+    const auto& connections = listed_connections(&listed_connections_cache_hit);
     if (flow_index >= connections.size()) {
         log_selected_flow_cache_clear("prepare_selected_flow_packet_cache invalid-flow-index");
         selected_flow_full_packet_cache_.reset();
@@ -2058,6 +2099,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
                 << " max_packets_to_scan=" << max_packets_to_scan
                 << " prefix_packets=" << prefix_packet_refs.size()
                 << " protocol=no-transport-cache"
+                << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
                 << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
                 << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
             selected_flow_diagnostics::log(out.str());
@@ -2088,6 +2130,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
                 << " cache_bytes=" << cache.bytes.size()
                 << " limit_reached=" << (cache.limit_reached ? "true" : "false")
                 << " window_fully_cached=" << (cache.window_fully_cached ? "true" : "false");
+            out << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false");
             selected_flow_diagnostics::log(out.str());
         }
         return;
@@ -2165,6 +2208,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
             << " has_uncached_payload_entries=" << (cache.has_uncached_payload_entries ? "true" : "false")
             << " limit_reached=" << (cache.limit_reached ? "true" : "false")
             << " window_fully_cached=" << (cache.window_fully_cached ? "true" : "false")
+            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
         selected_flow_diagnostics::log(out.str());
@@ -2309,7 +2353,7 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const 
     ReassemblyService service {};
     auto result = service.reassemble_tcp_payload(*this, request);
     if (selected_flow_diagnostics::enabled()) {
-        const auto connections = list_connections(state_);
+        const auto& connections = listed_connections();
         std::ostringstream out {};
         out << "reassemble_flow_direction flow_index=" << request.flow_index
             << " direction=" << (request.direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
@@ -2340,7 +2384,7 @@ std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(con
         return std::nullopt;
     }
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }
@@ -2427,7 +2471,7 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_text_for_packet_
         return std::nullopt;
     }
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }
@@ -2500,7 +2544,7 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_pack
         return std::nullopt;
     }
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }
@@ -2559,7 +2603,7 @@ std::optional<std::string> CaptureSession::derive_quic_protocol_details_for_pack
 }
 
 std::vector<FlowRow> CaptureSession::list_flows() const {
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     std::vector<FlowRow> rows {};
     rows.reserve(connections.size());
 
@@ -2571,7 +2615,7 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
 }
 
 std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::size_t flow_index) const {
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }
@@ -2595,7 +2639,8 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
     const std::size_t limit
 ) const {
     const auto started_at = std::chrono::steady_clock::now();
-    const auto connections = list_connections(state_);
+    bool listed_connections_cache_hit = false;
+    const auto& connections = listed_connections(&listed_connections_cache_hit);
     if (flow_index >= connections.size()) {
         return {};
     }
@@ -2610,6 +2655,7 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
             << " offset=" << offset
             << " limit=" << limit
             << " returned_rows=" << rows.size()
+            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at));
         selected_flow_diagnostics::log(out.str());
     }
@@ -2661,7 +2707,8 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
                                 const double cache_elapsed_ms = 0.0,
                                 const double collect_elapsed_ms = 0.0,
                                 const bool reused_existing_context = false,
-                                const bool listed_connections_called = false) {
+                                const bool listed_connections_called = false,
+                                const bool listed_connections_cache_hit = false) {
         if (!selected_flow_diagnostics::enabled()) {
             return;
         }
@@ -2680,6 +2727,7 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
             << " collect_ms=" << format_elapsed_ms(collect_elapsed_ms)
             << " reused_existing_context=" << (reused_existing_context ? "true" : "false")
             << " listed_connections_called=" << (listed_connections_called ? "true" : "false")
+            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(
                 read_counters_before,
@@ -2705,7 +2753,8 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
             0.0,
             0.0,
             prefix_resolution.reused_existing_context,
-            prefix_resolution.listed_connections_called
+            prefix_resolution.listed_connections_called,
+            prefix_resolution.listed_connections_cache_hit
         );
         return {};
     }
@@ -2744,7 +2793,8 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
         cache_elapsed_ms,
         collect_elapsed_ms,
         prefix_resolution.reused_existing_context,
-        prefix_resolution.listed_connections_called
+        prefix_resolution.listed_connections_called,
+        prefix_resolution.listed_connections_cache_hit
     );
     return suspected;
 }
@@ -2772,7 +2822,8 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
                                 const std::size_t contribution_count = 0U,
                                 const double analyze_elapsed_ms = 0.0,
                                 const bool reused_existing_context = false,
-                                const bool listed_connections_called = false) {
+                                const bool listed_connections_called = false,
+                                const bool listed_connections_cache_hit = false) {
         if (!selected_flow_diagnostics::enabled()) {
             return;
         }
@@ -2791,6 +2842,7 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
             << " analyze_ms=" << format_elapsed_ms(analyze_elapsed_ms)
             << " reused_existing_context=" << (reused_existing_context ? "true" : "false")
             << " listed_connections_called=" << (listed_connections_called ? "true" : "false")
+            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(
                 read_counters_before,
@@ -2812,7 +2864,8 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
             0U,
             0.0,
             prefix_resolution.reused_existing_context,
-            prefix_resolution.listed_connections_called
+            prefix_resolution.listed_connections_called,
+            prefix_resolution.listed_connections_cache_hit
         );
         return;
     }
@@ -2857,7 +2910,8 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
             0U,
             analyze_elapsed_ms,
             prefix_resolution.reused_existing_context,
-            prefix_resolution.listed_connections_called
+            prefix_resolution.listed_connections_called,
+            prefix_resolution.listed_connections_cache_hit
         );
         return;
     }
@@ -2889,7 +2943,8 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
         analysis.packet_contributions.size(),
         analyze_elapsed_ms,
         prefix_resolution.reused_existing_context,
-        prefix_resolution.listed_connections_called
+        prefix_resolution.listed_connections_called,
+        prefix_resolution.listed_connections_cache_hit
     );
 }
 
@@ -2956,7 +3011,7 @@ std::optional<std::uint64_t> CaptureSession::selected_flow_tcp_direction_first_g
 }
 
 std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) const noexcept {
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return 0U;
     }
@@ -2985,7 +3040,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
         return {};
     }
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return {};
     }
@@ -3035,7 +3090,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         return list_flow_stream_items(flow_index, 0U, limit);
     }
 
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return {};
     }
@@ -3074,7 +3129,7 @@ std::size_t CaptureSession::flow_stream_item_count(const std::size_t flow_index)
 
 std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t flow_index) const {
     const auto started_at = std::chrono::steady_clock::now();
-    const auto connections = list_connections(state_);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }

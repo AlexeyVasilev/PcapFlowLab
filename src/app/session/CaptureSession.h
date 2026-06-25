@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "app/session/FlowRows.h"
+#include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
@@ -219,6 +220,7 @@ private:
         double resolve_elapsed_ms {0.0};
         bool reused_existing_context {false};
         bool listed_connections_called {false};
+        bool listed_connections_cache_hit {false};
     };
 
     struct SelectedFlowFullPacketCache {
@@ -239,6 +241,7 @@ private:
         std::size_t flow_index,
         std::uint64_t packet_index
     ) const noexcept;
+    [[nodiscard]] const std::vector<session_detail::ListedConnectionRef>& listed_connections(bool* cache_hit = nullptr) const;
     void prepare_selected_flow_packet_cache(std::size_t flow_index, const SelectedFlowTcpPrefixContext& context) const;
 
     void reset_runtime_state() noexcept;
@@ -258,6 +261,7 @@ private:
     mutable std::optional<SelectedFlowFullPacketCache> selected_flow_full_packet_cache_ {};
     mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
+    mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };
 
