@@ -193,7 +193,16 @@ private:
         bool window_fully_cached {false};
     };
 
+    struct SelectedFlowFullPacketCache {
+        std::size_t flow_index {0};
+        std::map<std::uint64_t, std::vector<std::uint8_t>> packet_bytes_by_packet_index {};
+        std::size_t total_cached_bytes {0};
+        bool limit_reached {false};
+    };
+
     [[nodiscard]] std::vector<std::uint8_t> read_transport_payload_direct(const PacketRef& packet) const;
+    void prepare_selected_flow_full_packet_cache(std::size_t flow_index, std::span<const PacketRef> packets) const;
+    [[nodiscard]] const std::vector<std::uint8_t>* find_selected_flow_full_packet_cache_bytes(std::uint64_t packet_index) const noexcept;
     [[nodiscard]] const SelectedFlowPacketCacheEntry* find_selected_flow_packet_cache_entry(
         std::size_t flow_index,
         std::uint64_t packet_index
@@ -213,6 +222,7 @@ private:
     bool partial_open_ {false};
     OpenFailureInfo partial_open_failure_ {};
     std::string last_open_error_text_ {};
+    mutable std::optional<SelectedFlowFullPacketCache> selected_flow_full_packet_cache_ {};
     mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };

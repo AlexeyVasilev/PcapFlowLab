@@ -1,16 +1,21 @@
 ﻿#include "ui/app/MainController.h"
 
+#include "app/session/SelectedFlowDiagnostics.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/decode/PacketDecodeSupport.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <span>
 
 #include <QClipboard>
@@ -273,6 +278,47 @@ QString selected_flow_endpoint_summary(const FlowListModel& flow_model, const in
         .arg(address_b)
         .arg(port_b)
         .arg(protocol);
+}
+
+std::string format_elapsed_ms(const double elapsed_ms) {
+    std::ostringstream out {};
+    out << std::fixed << std::setprecision(2) << elapsed_ms << " ms";
+    return out.str();
+}
+
+std::string selected_flow_diagnostics_identity(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return "flow_index=none";
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return "flow_index=" + std::to_string(selected_flow_index) + " row=hidden";
+    }
+
+    const auto model_index = flow_model.index(row, 0);
+    const auto family = flow_model.data(model_index, FlowListModel::FamilyRole).toString();
+    const auto protocol = flow_model.data(model_index, FlowListModel::ProtocolRole).toString();
+    const auto hint = flow_model.data(model_index, FlowListModel::ProtocolHintRole).toString();
+    const auto service = flow_model.data(model_index, FlowListModel::ServiceHintRole).toString();
+    const auto address_a = flow_model.data(model_index, FlowListModel::AddressARole).toString();
+    const auto port_a = flow_model.data(model_index, FlowListModel::PortARole).toUInt();
+    const auto address_b = flow_model.data(model_index, FlowListModel::AddressBRole).toString();
+    const auto port_b = flow_model.data(model_index, FlowListModel::PortBRole).toUInt();
+    const auto packets = flow_model.data(model_index, FlowListModel::PacketsRole).toULongLong();
+    const auto bytes = flow_model.data(model_index, FlowListModel::BytesRole).toULongLong();
+
+    std::ostringstream out {};
+    out << "flow_index=" << selected_flow_index
+        << " packets=" << packets
+        << " bytes=" << bytes
+        << " family=" << family.toStdString()
+        << " proto=" << protocol.toStdString()
+        << " hint=" << (hint.isEmpty() ? "-" : hint.toStdString())
+        << " service=" << (service.isEmpty() ? "-" : service.toStdString())
+        << " endpoints=" << address_a.toStdString() << ':' << port_a
+        << " -> " << address_b.toStdString() << ':' << port_b;
+    return out.str();
 }
 
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
@@ -3703,6 +3749,8 @@ void MainController::drillDownToPort(const quint32 port) {
 }
 
 void MainController::setFlowDetailsTabIndex(const int index) {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const bool streamActive = index == 1;
     if (streamActive && unrecognized_packets_selected_) {
         if (stream_tab_active_) {
@@ -3748,6 +3796,20 @@ void MainController::setFlowDetailsTabIndex(const int index) {
     } else {
         details_selection_context_ = DetailsSelectionContext::none;
         packet_details_model_.clear();
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "setFlowDetailsTabIndex index=" << index
+            << " stream_active=" << (stream_tab_active_ ? "true" : "false")
+            << " stream_materialized=" << (stream_state_materialized_for_selected_flow_ ? "true" : "false")
+            << ' ' << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
     }
 }
 
@@ -3857,6 +3919,9 @@ void MainController::setSelectedFlowIndex(const int index) {
         return;
     }
 
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+
     if (!analysis_sequence_export_in_progress_ && (!analysis_sequence_export_status_text_.isEmpty() || analysis_sequence_export_status_is_error_)) {
         setAnalysisSequenceExportState(false, {}, false);
     }
@@ -3909,12 +3974,31 @@ void MainController::setSelectedFlowIndex(const int index) {
             refreshSelectedFlowAnalysis();
         }
     }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "setSelectedFlowIndex target=" << index
+            << " stream_tab_active=" << (stream_tab_active_ ? "true" : "false")
+            << " analysis_tab_active=" << (analysis_tab_active_ ? "true" : "false")
+            << " total_packet_row_count=" << total_packet_row_count_
+            << " loaded_packet_row_count=" << loaded_packet_row_count_
+            << ' ' << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    }
 }
 
 void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     if (selected_packet_index_ == packetIndex) {
         return;
     }
+
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
 
     selected_packet_index_ = packetIndex;
     if (selected_packet_index_ == kInvalidPacketSelection) {
@@ -3929,6 +4013,18 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     details_selection_context_ = DetailsSelectionContext::packet;
     reloadSelectedPacketDetails();
     emit selectedPacketIndexChanged();
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "setSelectedPacketIndex packet_index=" << packetIndex
+            << ' ' << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    }
 }
 
 void MainController::selectUnrecognizedPackets() {
@@ -4095,6 +4191,8 @@ void MainController::showSourceUnavailableStreamDetailsPlaceholder() {
 }
 
 void MainController::prepareSelectedFlowTcpContributionState(const std::size_t maxPacketsToScan) {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     if (selected_flow_index_ < 0 || maxPacketsToScan == 0U) {
         current_suspected_retransmission_packet_indices_.clear();
         prepared_tcp_contribution_packet_window_count_ = 0U;
@@ -4116,9 +4214,26 @@ void MainController::prepareSelectedFlowTcpContributionState(const std::size_t m
 
     session_.set_selected_flow_tcp_payload_suppression(flowIndex, suppressedPacketIndices, maxPacketsToScan);
     prepared_tcp_contribution_packet_window_count_ = maxPacketsToScan;
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "prepareSelectedFlowTcpContributionState "
+            << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " max_packets_to_scan=" << maxPacketsToScan
+            << " suppressed_packet_count=" << suppressedPacketIndices.size()
+            << " prepared_window=" << prepared_tcp_contribution_packet_window_count_
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    }
 }
 
 void MainController::maybeEnrichSelectedFlowServiceHint() {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     if (selected_flow_index_ < 0 || !ensureSourceCaptureAvailable()) {
         return;
     }
@@ -4137,10 +4252,33 @@ void MainController::maybeEnrichSelectedFlowServiceHint() {
 
     const auto derivedServiceHint = session_.derive_quic_service_hint_for_flow(static_cast<std::size_t>(selected_flow_index_));
     if (!derivedServiceHint.has_value() || derivedServiceHint->empty()) {
+        if (selected_flow_diagnostics::enabled()) {
+            std::ostringstream out {};
+            out << "maybeEnrichSelectedFlowServiceHint no-change "
+                << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+                << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+                << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                    read_counters_before,
+                    selected_flow_diagnostics::snapshot_read_counters()
+                );
+            selected_flow_diagnostics::log(out.str());
+        }
         return;
     }
 
     flow_model_.setServiceHintForFlowIndex(selected_flow_index_, QString::fromStdString(*derivedServiceHint));
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "maybeEnrichSelectedFlowServiceHint updated "
+            << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " derived_service=" << *derivedServiceHint
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    }
 }
 
 void MainController::ensureSelectedFlowPacketNumbers(const std::size_t packetWindowCount) {
@@ -4164,6 +4302,8 @@ void MainController::ensureSelectedFlowPacketNumbers(const std::size_t packetWin
 }
 
 void MainController::refreshSelectedFlowPackets(const bool resetRows) {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const bool previousLoading = packets_loading_;
     const auto previousLoaded = loaded_packet_row_count_;
     const auto previousTotal = total_packet_row_count_;
@@ -4190,17 +4330,28 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
         : std::min(kPacketRowBatchSize, total_packet_row_count_ - offset);
 
     packets_loading_ = true;
+    const auto list_started_at = std::chrono::steady_clock::now();
     auto rows = session_.list_flow_packets(static_cast<std::size_t>(selected_flow_index_), offset, batchSize);
+    const auto list_elapsed_ms = selected_flow_diagnostics::elapsed_ms(list_started_at);
 
     if (resetRows) {
         current_suspected_retransmission_packet_indices_.clear();
         prepared_tcp_contribution_packet_window_count_ = 0U;
     }
 
+    double cache_elapsed_ms = 0.0;
+    double tcp_state_elapsed_ms = 0.0;
+    double payload_enrichment_elapsed_ms = 0.0;
     if (!rows.empty()) {
+        const auto cache_started_at = std::chrono::steady_clock::now();
         session_.prepare_selected_flow_packet_cache(static_cast<std::size_t>(selected_flow_index_), offset + rows.size());
+        cache_elapsed_ms = selected_flow_diagnostics::elapsed_ms(cache_started_at);
+        const auto tcp_state_started_at = std::chrono::steady_clock::now();
         prepareSelectedFlowTcpContributionState(offset + rows.size());
+        tcp_state_elapsed_ms = selected_flow_diagnostics::elapsed_ms(tcp_state_started_at);
+        const auto payload_started_at = std::chrono::steady_clock::now();
         apply_original_transport_payload_lengths(session_, rows);
+        payload_enrichment_elapsed_ms = selected_flow_diagnostics::elapsed_ms(payload_started_at);
     }
 
     for (auto& packet_row : rows) {
@@ -4228,6 +4379,29 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
 
     if (previousLoading != packets_loading_ || previousLoaded != loaded_packet_row_count_ || previousTotal != total_packet_row_count_) {
         emit packetListStateChanged();
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "refreshSelectedFlowPackets "
+            << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " reset_rows=" << (resetRows ? "true" : "false")
+            << " offset=" << offset
+            << " batch_size=" << batchSize
+            << " returned_rows=" << rows.size()
+            << " loaded_rows=" << loaded_packet_row_count_
+            << " total_rows=" << total_packet_row_count_
+            << " suspected_retx_count=" << current_suspected_retransmission_packet_indices_.size()
+            << " list_ms=" << format_elapsed_ms(list_elapsed_ms)
+            << " cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
+            << " tcp_state_ms=" << format_elapsed_ms(tcp_state_elapsed_ms)
+            << " payload_enrichment_ms=" << format_elapsed_ms(payload_enrichment_elapsed_ms)
+            << " total_elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
     }
 }
 
@@ -4276,6 +4450,8 @@ void MainController::refreshUnrecognizedPackets(const bool resetRows) {
 }
 
 void MainController::refreshSelectedStreamItems(const bool resetRows) {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const bool previousLoading = stream_loading_;
     const auto previousLoaded = loaded_stream_item_count_;
     const auto previousTotal = total_stream_item_count_;
@@ -4336,16 +4512,24 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     }
 
     stream_loading_ = true;
+    const auto cache_started_at = std::chrono::steady_clock::now();
     session_.prepare_selected_flow_packet_cache(flowIndex, stream_packet_window_count_);
+    const auto cache_elapsed_ms = selected_flow_diagnostics::elapsed_ms(cache_started_at);
+    const auto tcp_state_started_at = std::chrono::steady_clock::now();
     prepareSelectedFlowTcpContributionState(stream_packet_window_count_);
+    const auto tcp_state_elapsed_ms = selected_flow_diagnostics::elapsed_ms(tcp_state_started_at);
+    const auto packet_number_started_at = std::chrono::steady_clock::now();
     ensureSelectedFlowPacketNumbers(stream_packet_window_count_);
+    const auto packet_number_elapsed_ms = selected_flow_diagnostics::elapsed_ms(packet_number_started_at);
     const auto requestLimit = stream_item_budget_count_ + 1U;
     const bool packetBudgetExhausted = stream_packet_window_count_ < totalFlowPacketCount;
+    const auto list_started_at = std::chrono::steady_clock::now();
     auto rows = session_.list_flow_stream_items_for_packet_prefix(
         flowIndex,
         stream_packet_window_count_,
         requestLimit
     );
+    const auto list_elapsed_ms = selected_flow_diagnostics::elapsed_ms(list_started_at);
 
     const bool hasMoreItems = rows.size() > stream_item_budget_count_;
     if (hasMoreItems) {
@@ -4376,6 +4560,30 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         || previousPacketWindow != stream_packet_window_count_
         || previousCanLoadMore != can_load_more_stream_items_) {
         emit streamListStateChanged();
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "refreshSelectedStreamItems "
+            << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " reset_rows=" << (resetRows ? "true" : "false")
+            << " packet_window=" << stream_packet_window_count_
+            << " item_budget=" << stream_item_budget_count_
+            << " request_limit=" << requestLimit
+            << " packet_budget_exhausted=" << (packetBudgetExhausted ? "true" : "false")
+            << " returned_rows=" << rows.size()
+            << " loaded_items=" << loaded_stream_item_count_
+            << " can_load_more=" << (can_load_more_stream_items_ ? "true" : "false")
+            << " cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
+            << " tcp_state_ms=" << format_elapsed_ms(tcp_state_elapsed_ms)
+            << " packet_numbers_ms=" << format_elapsed_ms(packet_number_elapsed_ms)
+            << " list_ms=" << format_elapsed_ms(list_elapsed_ms)
+            << " total_elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
     }
 }
 
@@ -4843,6 +5051,9 @@ void MainController::reloadSelectedPacketDetails() {
         return;
     }
 
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+
     packet_details_model_.setDetailsTitle(QStringLiteral("Packet Details"));
     packet_details_model_.clearStreamItemPresentation();
 
@@ -4930,6 +5141,22 @@ void MainController::reloadSelectedPacketDetails() {
     }
 
     packet_details_model_.setProtocolText(normalize_stream_protocol_text(protocolText));
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "reloadSelectedPacketDetails packet_index=" << selected_packet_index_
+            << " details=" << (details.has_value() ? "true" : "false")
+            << " packet_bytes=" << packetBytes.size()
+            << " hex_chars=" << hexDump.size()
+            << " payload_hex_chars=" << payloadHexDump.size()
+            << ' ' << selected_flow_diagnostics_identity(flow_model_, selected_flow_index_)
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
+    }
 }
 
 void MainController::reloadSelectedStreamDetails() {

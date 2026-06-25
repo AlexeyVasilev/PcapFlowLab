@@ -1,10 +1,14 @@
 #include "core/io/CaptureFilePacketReader.h"
 
+#include "app/session/SelectedFlowDiagnostics.h"
+
 namespace pfl {
 
 CaptureFilePacketReader::CaptureFilePacketReader(const std::filesystem::path& path)
     : source_(path)
-    , reader_(source_) {}
+    , reader_(source_) {
+    selected_flow_diagnostics::record_capture_file_reader_created(source_.is_open());
+}
 
 bool CaptureFilePacketReader::is_open() const noexcept {
     return source_.is_open();

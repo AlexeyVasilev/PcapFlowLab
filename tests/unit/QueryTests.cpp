@@ -282,19 +282,24 @@ void run_query_tests() {
     PFL_EXPECT(tail_rows.back().row_number == 65U);
     PFL_EXPECT(tail_rows.back().packet_index == 64U);
 
+    const auto cache_packet_one = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("one"), 0x18);
+    const auto cache_packet_dns = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 9, 1, 1), ipv4(10, 9, 1, 2), 53000, 53, bytes_payload("dns"));
+    const auto cache_packet_two = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("two"), 0x18);
+    const auto cache_packet_three = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("three"), 0x18);
+    const auto cache_packet_four = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("four"), 0x18);
     const auto cache_path = write_temp_pcap(
         "pfl_query_selected_flow_cache.pcap",
         make_classic_pcap({
-            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("one"), 0x18)},
-            {200, make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                ipv4(10, 9, 1, 1), ipv4(10, 9, 1, 2), 53000, 53, bytes_payload("dns"))},
-            {300, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("two"), 0x18)},
-            {400, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("three"), 0x18)},
-            {500, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("four"), 0x18)},
+            {100, cache_packet_one},
+            {200, cache_packet_dns},
+            {300, cache_packet_two},
+            {400, cache_packet_three},
+            {500, cache_packet_four},
         })
     );
 
@@ -315,6 +320,8 @@ void run_query_tests() {
     const auto cached_flow_packets = cache_session.flow_packets(0);
     PFL_EXPECT(cached_flow_packets.has_value());
     PFL_EXPECT(cached_flow_packets->size() == 4U);
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[0]) == cache_packet_one);
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[1]) == cache_packet_two);
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[0]) == bytes_payload("one"));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[1]) == bytes_payload("two"));
 
@@ -328,7 +335,9 @@ void run_query_tests() {
     PFL_EXPECT(!cache_info->limit_reached);
     PFL_EXPECT(cache_info->window_fully_cached);
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[0]) == bytes_payload("one"));
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[2]) == cache_packet_three);
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[3]) == bytes_payload("four"));
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[3]) == cache_packet_four);
 
     cache_session.prepare_selected_flow_packet_cache(1, 1U);
     cache_info = cache_session.selected_flow_packet_cache_info();
@@ -338,10 +347,13 @@ void run_query_tests() {
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 1U);
     PFL_EXPECT(cache_info->total_cached_bytes == 3U);
     PFL_EXPECT(cache_info->window_fully_cached);
+    const auto cached_udp_flow_packets = cache_session.flow_packets(1);
+    PFL_EXPECT(cached_udp_flow_packets.has_value());
+    PFL_EXPECT(cached_udp_flow_packets->size() == 1U);
+    PFL_EXPECT(cache_session.read_packet_data((*cached_udp_flow_packets)[0]) == cache_packet_dns);
 }
 
 }  // namespace pfl::tests
-
 
 
 

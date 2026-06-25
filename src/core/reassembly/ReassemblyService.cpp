@@ -1,8 +1,12 @@
 #include "core/reassembly/ReassemblyService.h"
 
 #include <algorithm>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <variant>
 
+#include "app/session/SelectedFlowDiagnostics.h"
 #include "app/session/CaptureSession.h"
 
 namespace pfl {
@@ -84,11 +88,24 @@ std::vector<PacketRef> collect_direction_packets(const ListedConnectionRef& conn
     std::sort(packets.begin(), packets.end(), [](const PacketRef& left, const PacketRef& right) {
         return left.packet_index < right.packet_index;
     });
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "collect_direction_packets direction=" << (direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
+            << " copied_packets=" << packets.size()
+            << " sorted=true";
+        selected_flow_diagnostics::log(out.str());
+    }
     return packets;
 }
 
 void set_flag(ReassemblyResult& result, const ReassemblyQualityFlag flag) noexcept {
     result.quality_flags |= static_cast<std::uint32_t>(flag);
+}
+
+std::string format_elapsed_ms(const double elapsed_ms) {
+    std::ostringstream out {};
+    out << std::fixed << std::setprecision(2) << elapsed_ms << " ms";
+    return out.str();
 }
 
 }  // namespace
@@ -97,6 +114,8 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
     const CaptureSession& session,
     const ReassemblyRequest& request
 ) const {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     if (!session.has_source_capture()) {
         return std::nullopt;
     }
@@ -189,6 +208,24 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
             set_flag(result, ReassemblyQualityFlag::truncated_by_byte_budget);
             break;
         }
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "reassemble_tcp_payload flow_index=" << request.flow_index
+            << " direction=" << (request.direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
+            << " direction_packets_total=" << packets.size()
+            << " packet_budget=" << packet_budget
+            << " payload_packets_used=" << result.payload_packets_used
+            << " total_packets_seen=" << result.total_packets_seen
+            << " output_bytes=" << result.bytes.size()
+            << " stopped_at_gap=" << (result.stopped_at_gap ? "true" : "false")
+            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
+                read_counters_before,
+                selected_flow_diagnostics::snapshot_read_counters()
+            );
+        selected_flow_diagnostics::log(out.str());
     }
 
     return result;
