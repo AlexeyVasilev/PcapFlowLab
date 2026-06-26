@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -8,6 +9,7 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionQuicPresentation.h"
 
 namespace pfl::tests {
 
@@ -1124,6 +1126,22 @@ void run_stream_query_tests() {
 
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(path, fast_options));
+
+        const auto bounded_prefix_packet_rows = session.list_flow_packets(0, 0U, 30U);
+        std::vector<PacketRef> bounded_prefix_packet_refs {};
+        bounded_prefix_packet_refs.reserve(bounded_prefix_packet_rows.size());
+        for (const auto& row : bounded_prefix_packet_rows) {
+            const auto packet = session.find_packet(row.packet_index);
+            PFL_EXPECT(packet.has_value());
+            bounded_prefix_packet_refs.push_back(*packet);
+        }
+        const auto bounded_prefix_dcid = session_detail::find_quic_client_initial_connection_id_for_packets(
+            session,
+            std::span<const PacketRef>(bounded_prefix_packet_refs.data(), bounded_prefix_packet_refs.size()),
+            0U
+        );
+        PFL_EXPECT(bounded_prefix_dcid.has_value());
+        PFL_EXPECT(!bounded_prefix_dcid->empty());
 
         const auto bounded_prefix_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 16U);
         const auto extended_prefix_rows = session.list_flow_stream_items_for_packet_prefix(0, 40U, 40U);

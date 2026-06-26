@@ -71,6 +71,7 @@ using session_detail::packet_count;
 using session_detail::protocol_id;
 using session_detail::effective_protocol_hint;
 using session_detail::find_quic_client_initial_connection_id_for_connection;
+using session_detail::find_quic_client_initial_connection_id_for_packets;
 using session_detail::build_quic_presentation_for_selected_direction;
 using session_detail::build_quic_stream_packet_presentation;
 using session_detail::QuicPresentationResult;
@@ -486,10 +487,14 @@ struct FallbackStreamBuildMetrics {
     std::size_t tls_single_packet_attempts {0U};
     std::size_t tls_single_packet_rows_added {0U};
     std::size_t quic_attempts {0U};
+    std::size_t quic_packets_considered {0U};
+    std::size_t quic_packets_read {0U};
     std::size_t quic_rows_added {0U};
     std::size_t fallback_rows_added {0U};
     std::size_t gap_rows_added {0U};
     std::size_t rows_appended {0U};
+    std::uint64_t quic_packet_index_min {std::numeric_limits<std::uint64_t>::max()};
+    std::uint64_t quic_packet_index_max {0U};
     selected_flow_diagnostics::ReadCounters read_counters_before {};
     selected_flow_diagnostics::ReadCounters read_counters_after {};
     double tls_single_packet_ms {0.0};
@@ -501,7 +506,13 @@ struct FallbackStreamBuildMetrics {
     bool ran {false};
     bool stopped_by_item_limit {false};
     bool touched_packet_outside_bounded_prefix {false};
+    bool quic_bounded_path_used {false};
 };
+
+std::vector<PacketRef> merge_packet_refs_by_index(
+    std::span<const PacketRef> packets_a,
+    std::span<const PacketRef> packets_b
+);
 
 std::string diagnostics_flow_identity(
     const std::size_t flow_index,
@@ -588,9 +599,23 @@ void append_connection_stream_items_bounded(
     const auto started_at = std::chrono::steady_clock::now();
     const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     HexDumpService hex_dump_service {};
+    const auto bounded_quic_packets = flow_protocol == ProtocolId::udp
+        ? merge_packet_refs_by_index(bounded_direction_packets_a, bounded_direction_packets_b)
+        : std::vector<PacketRef> {};
+    if (metrics != nullptr && flow_protocol == ProtocolId::udp) {
+        metrics->quic_packets_considered = bounded_quic_packets.size();
+        metrics->quic_bounded_path_used = true;
+        if (!bounded_quic_packets.empty()) {
+            metrics->quic_packet_index_min = bounded_quic_packets.front().packet_index;
+            metrics->quic_packet_index_max = bounded_quic_packets.back().packet_index;
+        }
+    }
     const auto quic_initial_secret_connection_id =
         flow_protocol == ProtocolId::udp
-            ? find_quic_client_initial_connection_id_for_connection(session, connection, flow_index)
+            ? find_quic_client_initial_connection_id_for_packets(
+                session,
+                std::span<const PacketRef>(bounded_quic_packets.data(), bounded_quic_packets.size()),
+                flow_index)
             : std::optional<std::vector<std::uint8_t>> {};
     std::size_t index_a = 0U;
     std::size_t index_b = 0U;
@@ -729,6 +754,7 @@ void append_connection_stream_items_bounded(
             const auto row_count_before = rows.size();
             if (metrics != nullptr) {
                 ++metrics->quic_attempts;
+                ++metrics->quic_packets_read;
             }
             const bool handled_quic = use_a
                 ? append_quic_stream_items_for_packet(
@@ -828,6 +854,9 @@ void append_connection_stream_items_bounded(
         metrics->total_ms += selected_flow_diagnostics::elapsed_ms(started_at);
         metrics->stopped_by_item_limit = stopped_by_item_limit;
         metrics->touched_packet_outside_bounded_prefix = false;
+        if (metrics->quic_packet_index_min == std::numeric_limits<std::uint64_t>::max()) {
+            metrics->quic_packet_index_min = 0U;
+        }
     }
 }
 
@@ -956,6 +985,20 @@ std::vector<PacketRef> collect_packet_prefix_refs(
         prefix_packets.push_back(packets[index]);
     }
     return prefix_packets;
+}
+
+std::vector<PacketRef> merge_packet_refs_by_index(
+    const std::span<const PacketRef> packets_a,
+    const std::span<const PacketRef> packets_b
+) {
+    std::vector<PacketRef> merged_packets {};
+    merged_packets.reserve(packets_a.size() + packets_b.size());
+    merged_packets.insert(merged_packets.end(), packets_a.begin(), packets_a.end());
+    merged_packets.insert(merged_packets.end(), packets_b.begin(), packets_b.end());
+    std::sort(merged_packets.begin(), merged_packets.end(), [](const PacketRef& left, const PacketRef& right) {
+        return left.packet_index < right.packet_index;
+    });
+    return merged_packets;
 }
 
 std::size_t count_flow_prefix_visible_tcp_payload(
@@ -1193,6 +1236,11 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             << " fallback_tls_packet_rows_added=" << fallback_metrics.tls_single_packet_rows_added
             << " fallback_tls_packet_ms=" << format_elapsed_ms(fallback_metrics.tls_single_packet_ms)
             << " fallback_quic_attempts=" << fallback_metrics.quic_attempts
+            << " fallback_quic_packets_considered=" << fallback_metrics.quic_packets_considered
+            << " fallback_quic_packets_read=" << fallback_metrics.quic_packets_read
+            << " fallback_quic_packet_index_min=" << fallback_metrics.quic_packet_index_min
+            << " fallback_quic_packet_index_max=" << fallback_metrics.quic_packet_index_max
+            << " fallback_quic_bounded_path_used=" << (fallback_metrics.quic_bounded_path_used ? "true" : "false")
             << " fallback_quic_rows_added=" << fallback_metrics.quic_rows_added
             << " fallback_quic_ms=" << format_elapsed_ms(fallback_metrics.quic_ms)
             << " fallback_classify_ms=" << format_elapsed_ms(fallback_metrics.classify_ms)

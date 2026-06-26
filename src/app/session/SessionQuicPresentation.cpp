@@ -1286,6 +1286,14 @@ std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_
     return find_quic_client_initial_connection_id_for_connection_impl(session, connection, flow_index);
 }
 
+std::optional<std::vector<std::uint8_t>> find_quic_client_initial_connection_id_for_packets(
+    const CaptureSession& session,
+    std::span<const PacketRef> packets,
+    const std::optional<std::size_t> flow_index
+) {
+    return find_quic_client_initial_connection_id_impl(session, packets, flow_index);
+}
+
 std::optional<QuicPresentationResult> build_quic_presentation_for_selected_direction(
     const CaptureSession& session,
     const FlowKeyV4& flow_key,
