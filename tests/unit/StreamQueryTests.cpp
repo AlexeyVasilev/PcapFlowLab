@@ -971,7 +971,9 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_normal_1.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 32U);
         PFL_EXPECT(!rows.empty());
+        PFL_EXPECT(!bounded_rows.empty());
 
         const auto* client_hello = find_stream_row_by_label(rows, "TLS ClientHello");
         const auto* server_hello = find_stream_row_by_label(rows, "TLS ServerHello");
@@ -992,6 +994,9 @@ void run_stream_query_tests() {
         PFL_EXPECT(server_hello->protocol_text.find("Extensions:") != std::string::npos);
         PFL_EXPECT(!change_cipher_spec->protocol_text.empty());
         PFL_EXPECT(!change_cipher_spec->payload_hex_text.empty());
+        PFL_EXPECT(std::none_of(bounded_rows.begin(), bounded_rows.end(), [](const StreamItemRow& row) {
+            return starts_with(row.label, "HTTP");
+        }));
 
         const auto data_like_it = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return row.label == "TLS AppData" || row.label == "TLS Payload";
@@ -1974,13 +1979,20 @@ void run_stream_query_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tcp/tcp_generic_payload_7.pcap"), fast_options));
 
         const auto rows = session.list_flow_stream_items(0);
+        const auto bounded_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 32U);
         PFL_EXPECT(!rows.empty());
+        PFL_EXPECT(!bounded_rows.empty());
         for (const auto& row : rows) {
             PFL_EXPECT(row.label == "TCP Payload");
             PFL_EXPECT(!starts_with(row.label, "HTTP"));
             PFL_EXPECT(!starts_with(row.label, "TLS"));
             PFL_EXPECT(row.protocol_text.empty());
             PFL_EXPECT(row.payload_hex_text.empty());
+        }
+        for (const auto& row : bounded_rows) {
+            PFL_EXPECT(row.label == "TCP Payload");
+            PFL_EXPECT(!starts_with(row.label, "HTTP"));
+            PFL_EXPECT(!starts_with(row.label, "TLS"));
         }
     }
 

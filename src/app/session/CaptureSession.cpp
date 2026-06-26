@@ -480,6 +480,18 @@ struct StreamBuildBranchMetrics {
     bool used {false};
 };
 
+enum class StreamPrefixPrecheckResult : std::uint8_t {
+    empty = 0,
+    positive = 1,
+    negative = 2,
+    unknown = 3,
+};
+
+struct DirectionPrefixProbe {
+    std::vector<std::uint8_t> bytes {};
+    std::size_t payload_packets_considered {0U};
+};
+
 struct FallbackStreamBuildMetrics {
     std::size_t bounded_input_packet_count {0U};
     std::size_t packets_scanned {0U};
@@ -509,10 +521,194 @@ struct FallbackStreamBuildMetrics {
     bool quic_bounded_path_used {false};
 };
 
+struct StreamBranchPrecheckMetrics {
+    double tls_precheck_ms {0.0};
+    double http_precheck_ms {0.0};
+    StreamPrefixPrecheckResult tls_result_a {StreamPrefixPrecheckResult::empty};
+    StreamPrefixPrecheckResult tls_result_b {StreamPrefixPrecheckResult::empty};
+    StreamPrefixPrecheckResult http_result_a {StreamPrefixPrecheckResult::empty};
+    StreamPrefixPrecheckResult http_result_b {StreamPrefixPrecheckResult::empty};
+    bool tls_skipped_due_hint {false};
+    bool http_skipped_due_hint {false};
+    bool tls_skipped_due_prefix {false};
+    bool http_skipped_due_prefix {false};
+};
+
 std::vector<PacketRef> merge_packet_refs_by_index(
     std::span<const PacketRef> packets_a,
     std::span<const PacketRef> packets_b
 );
+
+constexpr std::size_t kTlsRecordHeaderSize = 5U;
+constexpr std::size_t kStreamPrefixProbeMaxPackets = 4U;
+constexpr std::size_t kStreamPrefixProbeMaxBytes = 32U;
+
+const char* stream_prefix_precheck_result_text(const StreamPrefixPrecheckResult result) noexcept {
+    switch (result) {
+    case StreamPrefixPrecheckResult::positive:
+        return "positive";
+    case StreamPrefixPrecheckResult::negative:
+        return "negative";
+    case StreamPrefixPrecheckResult::unknown:
+        return "unknown";
+    case StreamPrefixPrecheckResult::empty:
+    default:
+        return "empty";
+    }
+}
+
+std::string format_directional_precheck_results(
+    const StreamPrefixPrecheckResult result_a,
+    const StreamPrefixPrecheckResult result_b
+) {
+    return std::string("A:") + stream_prefix_precheck_result_text(result_a)
+        + ",B:" + stream_prefix_precheck_result_text(result_b);
+}
+
+bool looks_like_tls_record_prefix_bytes(std::span<const std::uint8_t> payload) noexcept {
+    if (payload.size() < kTlsRecordHeaderSize) {
+        return false;
+    }
+
+    const auto content_type = payload[0];
+    if (content_type < 20U || content_type > 23U) {
+        return false;
+    }
+
+    return payload[1] == 0x03U && payload[2] <= 0x04U;
+}
+
+bool looks_like_http_request_line_prefix(const std::string_view line) noexcept {
+    constexpr std::array<std::string_view, 9> methods {
+        "GET ", "POST ", "PUT ", "HEAD ", "OPTIONS ", "DELETE ", "PATCH ", "CONNECT ", "TRACE ",
+    };
+
+    for (const auto method : methods) {
+        if (line.starts_with(method)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool looks_like_http_response_line_prefix(const std::string_view line) noexcept {
+    return line.starts_with("HTTP/1.");
+}
+
+bool looks_binary_non_http_prefix(std::span<const std::uint8_t> bytes) noexcept {
+    const auto limit = std::min<std::size_t>(bytes.size(), 8U);
+    for (std::size_t index = 0U; index < limit; ++index) {
+        const auto value = bytes[index];
+        if (value == '\r' || value == '\n' || value == '\t') {
+            continue;
+        }
+        if (value < 0x20U || value > 0x7EU) {
+            return true;
+        }
+    }
+    return false;
+}
+
+DirectionPrefixProbe collect_direction_transport_prefix_bytes(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::span<const PacketRef> direction_packets,
+    const std::size_t max_packets_to_probe = kStreamPrefixProbeMaxPackets,
+    const std::size_t max_bytes_to_collect = kStreamPrefixProbeMaxBytes
+) {
+    DirectionPrefixProbe probe {};
+    probe.bytes.reserve(max_bytes_to_collect);
+
+    const auto packet_limit = std::min(direction_packets.size(), max_packets_to_probe);
+    for (std::size_t index = 0U; index < packet_limit && probe.bytes.size() < max_bytes_to_collect; ++index) {
+        const auto& packet = direction_packets[index];
+        if (packet.payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
+            continue;
+        }
+
+        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, packet);
+        if (payload_bytes.empty()) {
+            continue;
+        }
+
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index);
+        if (trim_prefix_bytes >= payload_bytes.size()) {
+            continue;
+        }
+
+        auto payload_span = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
+        payload_span = payload_span.subspan(trim_prefix_bytes);
+        const auto copy_count = std::min(max_bytes_to_collect - probe.bytes.size(), payload_span.size());
+        probe.bytes.insert(probe.bytes.end(), payload_span.begin(), payload_span.begin() + static_cast<std::ptrdiff_t>(copy_count));
+        ++probe.payload_packets_considered;
+    }
+
+    return probe;
+}
+
+StreamPrefixPrecheckResult sniff_http_prefix(std::span<const std::uint8_t> bytes) noexcept {
+    if (bytes.empty()) {
+        return StreamPrefixPrecheckResult::empty;
+    }
+
+    if (looks_like_tls_record_prefix_bytes(bytes)) {
+        return StreamPrefixPrecheckResult::negative;
+    }
+
+    const auto text = std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    if (looks_like_http_request_line_prefix(text) || looks_like_http_response_line_prefix(text)) {
+        return StreamPrefixPrecheckResult::positive;
+    }
+
+    if (bytes.size() < 5U) {
+        return StreamPrefixPrecheckResult::unknown;
+    }
+
+    if (looks_binary_non_http_prefix(bytes)) {
+        return StreamPrefixPrecheckResult::negative;
+    }
+
+    const auto leading = static_cast<unsigned char>(text.front());
+    if ((leading >= 'A' && leading <= 'Z') || leading == 'H') {
+        return StreamPrefixPrecheckResult::unknown;
+    }
+
+    return StreamPrefixPrecheckResult::negative;
+}
+
+StreamPrefixPrecheckResult sniff_tls_prefix(std::span<const std::uint8_t> bytes) noexcept {
+    if (bytes.empty()) {
+        return StreamPrefixPrecheckResult::empty;
+    }
+
+    if (looks_like_tls_record_prefix_bytes(bytes)) {
+        return StreamPrefixPrecheckResult::positive;
+    }
+
+    const auto text = std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    if (looks_like_http_request_line_prefix(text) || looks_like_http_response_line_prefix(text)) {
+        return StreamPrefixPrecheckResult::negative;
+    }
+
+    if (bytes.size() < kTlsRecordHeaderSize) {
+        return StreamPrefixPrecheckResult::unknown;
+    }
+
+    if (looks_binary_non_http_prefix(bytes)) {
+        return StreamPrefixPrecheckResult::negative;
+    }
+
+    return StreamPrefixPrecheckResult::unknown;
+}
+
+bool is_strong_tls_stream_hint(const FlowProtocolHint hint) noexcept {
+    return hint == FlowProtocolHint::tls;
+}
+
+bool is_strong_http_stream_hint(const FlowProtocolHint hint) noexcept {
+    return hint == FlowProtocolHint::http;
+}
 
 std::string diagnostics_flow_identity(
     const std::size_t flow_index,
@@ -1032,6 +1228,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     StreamBuildBranchMetrics tls_metrics {};
     StreamBuildBranchMetrics http_metrics {};
     FallbackStreamBuildMetrics fallback_metrics {};
+    StreamBranchPrecheckMetrics precheck_metrics {};
     double setup_elapsed_ms = 0.0;
     double sort_elapsed_ms = 0.0;
     double index_assign_elapsed_ms = 0.0;
@@ -1063,46 +1260,61 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             connection.ipv6->flow_b.packets.data(),
             std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
     if (flow_protocol == ProtocolId::tcp) {
+        const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
         const auto setup_started_at = std::chrono::steady_clock::now();
+        const auto tls_precheck_started_at = std::chrono::steady_clock::now();
+        const auto probe_a = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_a);
+        const auto probe_b = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_b);
+        precheck_metrics.tls_result_a = sniff_tls_prefix(probe_a.bytes);
+        precheck_metrics.tls_result_b = sniff_tls_prefix(probe_b.bytes);
+        precheck_metrics.tls_precheck_ms = selected_flow_diagnostics::elapsed_ms(tls_precheck_started_at);
+
+        const auto http_precheck_started_at = std::chrono::steady_clock::now();
+        precheck_metrics.http_result_a = sniff_http_prefix(probe_a.bytes);
+        precheck_metrics.http_result_b = sniff_http_prefix(probe_b.bytes);
+        precheck_metrics.http_precheck_ms = selected_flow_diagnostics::elapsed_ms(http_precheck_started_at);
         setup_elapsed_ms += selected_flow_diagnostics::elapsed_ms(setup_started_at);
 
-        const auto tls_a_started_at = std::chrono::steady_clock::now();
-        const auto rows_before_tls_a = rows.size();
-        ++tls_metrics.calls;
-        tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_a >= target;
-        direction_policy_a = append_tls_stream_items_from_reassembly(
-            rows,
-            session,
-            flow_index,
-            kDirectionAToB,
-            Direction::a_to_b,
-            direction_packets_a
-        );
-        tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_a_started_at);
-        tls_metrics.rows_added += rows.size() - rows_before_tls_a;
-        tls_metrics.used = tls_metrics.used || direction_policy_a.used_reassembly;
+        const auto should_run_tls = [&](const StreamPrefixPrecheckResult result) {
+            if (is_strong_http_stream_hint(effective_hint)) {
+                if (result == StreamPrefixPrecheckResult::positive) {
+                    return true;
+                }
+                precheck_metrics.tls_skipped_due_hint = true;
+                return false;
+            }
 
-        const auto tls_b_started_at = std::chrono::steady_clock::now();
-        const auto rows_before_tls_b = rows.size();
-        ++tls_metrics.calls;
-        tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_b >= target;
-        direction_policy_b = append_tls_stream_items_from_reassembly(
-            rows,
-            session,
-            flow_index,
-            kDirectionBToA,
-            Direction::b_to_a,
-            direction_packets_b
-        );
-        tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_b_started_at);
-        tls_metrics.rows_added += rows.size() - rows_before_tls_b;
-        tls_metrics.used = tls_metrics.used || direction_policy_b.used_reassembly;
-        if (!direction_policy_a.used_reassembly) {
-            const auto http_a_started_at = std::chrono::steady_clock::now();
-            const auto rows_before_http_a = rows.size();
-            ++http_metrics.calls;
-            http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_a >= target;
-            direction_policy_a = append_http_stream_items_from_reassembly(
+            if (result == StreamPrefixPrecheckResult::negative && !is_strong_tls_stream_hint(effective_hint)) {
+                precheck_metrics.tls_skipped_due_prefix = true;
+                return false;
+            }
+
+            return true;
+        };
+
+        const auto should_run_http = [&](const StreamPrefixPrecheckResult result) {
+            if (is_strong_tls_stream_hint(effective_hint)) {
+                if (result == StreamPrefixPrecheckResult::positive) {
+                    return true;
+                }
+                precheck_metrics.http_skipped_due_hint = true;
+                return false;
+            }
+
+            if (result == StreamPrefixPrecheckResult::negative) {
+                precheck_metrics.http_skipped_due_prefix = true;
+                return false;
+            }
+
+            return true;
+        };
+
+        if (should_run_tls(precheck_metrics.tls_result_a)) {
+            const auto tls_a_started_at = std::chrono::steady_clock::now();
+            const auto rows_before_tls_a = rows.size();
+            ++tls_metrics.calls;
+            tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_a >= target;
+            direction_policy_a = append_tls_stream_items_from_reassembly(
                 rows,
                 session,
                 flow_index,
@@ -1110,16 +1322,17 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::a_to_b,
                 direction_packets_a
             );
-            http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_a_started_at);
-            http_metrics.rows_added += rows.size() - rows_before_http_a;
-            http_metrics.used = http_metrics.used || direction_policy_a.used_reassembly;
+            tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_a_started_at);
+            tls_metrics.rows_added += rows.size() - rows_before_tls_a;
+            tls_metrics.used = tls_metrics.used || direction_policy_a.used_reassembly;
         }
-        if (!direction_policy_b.used_reassembly) {
-            const auto http_b_started_at = std::chrono::steady_clock::now();
-            const auto rows_before_http_b = rows.size();
-            ++http_metrics.calls;
-            http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_b >= target;
-            direction_policy_b = append_http_stream_items_from_reassembly(
+
+        if (should_run_tls(precheck_metrics.tls_result_b)) {
+            const auto tls_b_started_at = std::chrono::steady_clock::now();
+            const auto rows_before_tls_b = rows.size();
+            ++tls_metrics.calls;
+            tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_b >= target;
+            direction_policy_b = append_tls_stream_items_from_reassembly(
                 rows,
                 session,
                 flow_index,
@@ -1127,9 +1340,47 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::b_to_a,
                 direction_packets_b
             );
-            http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_b_started_at);
-            http_metrics.rows_added += rows.size() - rows_before_http_b;
-            http_metrics.used = http_metrics.used || direction_policy_b.used_reassembly;
+            tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_b_started_at);
+            tls_metrics.rows_added += rows.size() - rows_before_tls_b;
+            tls_metrics.used = tls_metrics.used || direction_policy_b.used_reassembly;
+        }
+        if (!direction_policy_a.used_reassembly) {
+            if (should_run_http(precheck_metrics.http_result_a)) {
+                const auto http_a_started_at = std::chrono::steady_clock::now();
+                const auto rows_before_http_a = rows.size();
+                ++http_metrics.calls;
+                http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_a >= target;
+                direction_policy_a = append_http_stream_items_from_reassembly(
+                    rows,
+                    session,
+                    flow_index,
+                    kDirectionAToB,
+                    Direction::a_to_b,
+                    direction_packets_a
+                );
+                http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_a_started_at);
+                http_metrics.rows_added += rows.size() - rows_before_http_a;
+                http_metrics.used = http_metrics.used || direction_policy_a.used_reassembly;
+            }
+        }
+        if (!direction_policy_b.used_reassembly) {
+            if (should_run_http(precheck_metrics.http_result_b)) {
+                const auto http_b_started_at = std::chrono::steady_clock::now();
+                const auto rows_before_http_b = rows.size();
+                ++http_metrics.calls;
+                http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_b >= target;
+                direction_policy_b = append_http_stream_items_from_reassembly(
+                    rows,
+                    session,
+                    flow_index,
+                    kDirectionBToA,
+                    Direction::b_to_a,
+                    direction_packets_b
+                );
+                http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_b_started_at);
+                http_metrics.rows_added += rows.size() - rows_before_http_b;
+                http_metrics.used = http_metrics.used || direction_policy_b.used_reassembly;
+            }
         }
         bounded_prefix_path_used = true;
     }
@@ -1212,12 +1463,20 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                    : (flow_protocol == ProtocolId::arp ? "fallback-arp" : "unknown")))
             << " deep_protocol_details=" << (deep_protocol_details_enabled ? "true" : "false")
             << " setup_ms=" << format_elapsed_ms(setup_elapsed_ms)
+            << " tls_precheck_ms=" << format_elapsed_ms(precheck_metrics.tls_precheck_ms)
+            << " tls_precheck_result=" << format_directional_precheck_results(precheck_metrics.tls_result_a, precheck_metrics.tls_result_b)
+            << " tls_skipped_due_hint=" << (precheck_metrics.tls_skipped_due_hint ? "true" : "false")
+            << " tls_skipped_due_prefix=" << (precheck_metrics.tls_skipped_due_prefix ? "true" : "false")
             << " tls_calls=" << tls_metrics.calls
             << " tls_rows_added=" << tls_metrics.rows_added
             << " tls_ms=" << format_elapsed_ms(tls_metrics.elapsed_ms)
             << " tls_used=" << (tls_metrics.used ? "true" : "false")
             << " tls_ran_after_limit=" << (tls_metrics.ran_after_limit ? "true" : "false")
             << " both_direction_tls_attempted=" << (tls_metrics.calls > 1U ? "true" : "false")
+            << " http_precheck_ms=" << format_elapsed_ms(precheck_metrics.http_precheck_ms)
+            << " http_precheck_result=" << format_directional_precheck_results(precheck_metrics.http_result_a, precheck_metrics.http_result_b)
+            << " http_skipped_due_hint=" << (precheck_metrics.http_skipped_due_hint ? "true" : "false")
+            << " http_skipped_due_prefix=" << (precheck_metrics.http_skipped_due_prefix ? "true" : "false")
             << " http_calls=" << http_metrics.calls
             << " http_rows_added=" << http_metrics.rows_added
             << " http_ms=" << format_elapsed_ms(http_metrics.elapsed_ms)
