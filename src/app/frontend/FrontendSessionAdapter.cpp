@@ -85,6 +85,19 @@ std::size_t estimate_packet_dto_bytes(const FrontendPacketDto& dto) {
         + sizeof(dto);
 }
 
+std::size_t estimate_flow_dto_bytes(const FrontendFlowDto& dto) {
+    return dto.protocol_text.size()
+        + dto.protocol_hint.size()
+        + dto.protocol_hint_display.size()
+        + dto.service_hint.size()
+        + dto.address_a.size()
+        + dto.endpoint_a.size()
+        + dto.address_b.size()
+        + dto.endpoint_b.size()
+        + dto.wireshark_display_filter.size()
+        + sizeof(dto);
+}
+
 std::size_t estimate_stream_item_dto_bytes(const FrontendStreamItemDto& dto) {
     return dto.direction_text.size()
         + dto.label.size()
@@ -1507,15 +1520,7 @@ std::string format_size_value(const std::uint64_t value) {
 }
 
 std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const std::size_t flow_index) {
-    const auto rows = session.list_flows();
-    const auto it = std::find_if(rows.begin(), rows.end(), [flow_index](const FlowRow& row) {
-        return row.index == flow_index;
-    });
-    if (it == rows.end()) {
-        return std::nullopt;
-    }
-
-    return *it;
+    return session.flow_row(flow_index);
 }
 
 std::string build_analysis_endpoint_summary(const FlowRow& row) {
@@ -2143,20 +2148,27 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
     result.selected = true;
 
     const auto session_started_at = std::chrono::steady_clock::now();
-    const auto rows = session_.list_flows();
-    const auto list_flows_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
-    if (flow_index >= rows.size()) {
+    const auto row = session_.flow_row(flow_index);
+    const auto session_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
+    if (!row.has_value()) {
         return result;
     }
 
-    const auto& row = rows[flow_index];
-    const auto protocol_hint_is_quic = row.protocol_hint == "quic" || row.protocol_hint == "QUIC";
-    if (!protocol_hint_is_quic || !row.service_hint.empty()) {
+    const auto protocol_hint_is_quic = row->protocol_hint == "quic" || row->protocol_hint == "QUIC";
+    if (!protocol_hint_is_quic || !row->service_hint.empty()) {
         if (selected_flow_diagnostics::enabled()) {
+            const auto estimated_bytes = sizeof(result);
             std::ostringstream out {};
             out << "tauri-select-flow"
                 << " flow_index=" << flow_index
-                << " list_flows_ms=" << format_diag_elapsed_ms(list_flows_elapsed_ms)
+                << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
+                << " dto_ms=" << format_diag_elapsed_ms(0.0)
+                << " list_flows_called=false"
+                << " flows_returned=0"
+                << " full_snapshot_returned=false"
+                << " selection_only_dto=true"
+                << " updated_flow_row_returned=false"
+                << " estimated_bytes=" << estimated_bytes
                 << " derive_service_hint=false"
                 << " updated_flow=false"
                 << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at));
@@ -2170,10 +2182,18 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
     const auto derive_elapsed_ms = selected_flow_diagnostics::elapsed_ms(derive_started_at);
     if (!derived_service_hint.has_value() || derived_service_hint->empty()) {
         if (selected_flow_diagnostics::enabled()) {
+            const auto estimated_bytes = sizeof(result);
             std::ostringstream out {};
             out << "tauri-select-flow"
                 << " flow_index=" << flow_index
-                << " list_flows_ms=" << format_diag_elapsed_ms(list_flows_elapsed_ms)
+                << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms + derive_elapsed_ms)
+                << " dto_ms=" << format_diag_elapsed_ms(0.0)
+                << " list_flows_called=false"
+                << " flows_returned=0"
+                << " full_snapshot_returned=false"
+                << " selection_only_dto=true"
+                << " updated_flow_row_returned=false"
+                << " estimated_bytes=" << estimated_bytes
                 << " derive_service_hint=true"
                 << " derive_service_hint_ms=" << format_diag_elapsed_ms(derive_elapsed_ms)
                 << " updated_flow=false"
@@ -2183,15 +2203,25 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
         return result;
     }
 
-    auto updated_row = row;
+    auto updated_row = *row;
     updated_row.service_hint = *derived_service_hint;
+    const auto dto_started_at = std::chrono::steady_clock::now();
     result.updated_flow = to_frontend_flow(updated_row);
+    const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
 
     if (selected_flow_diagnostics::enabled()) {
+        const auto estimated_bytes = sizeof(result) + estimate_flow_dto_bytes(*result.updated_flow);
         std::ostringstream out {};
         out << "tauri-select-flow"
             << " flow_index=" << flow_index
-            << " list_flows_ms=" << format_diag_elapsed_ms(list_flows_elapsed_ms)
+            << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms + derive_elapsed_ms)
+            << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
+            << " list_flows_called=false"
+            << " flows_returned=0"
+            << " full_snapshot_returned=false"
+            << " selection_only_dto=true"
+            << " updated_flow_row_returned=true"
+            << " estimated_bytes=" << estimated_bytes
             << " derive_service_hint=true"
             << " derive_service_hint_ms=" << format_diag_elapsed_ms(derive_elapsed_ms)
             << " updated_flow=true"

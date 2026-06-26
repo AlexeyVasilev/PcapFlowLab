@@ -108,6 +108,7 @@ public:
         std::span<const PacketRef> direction_packets
     ) const;
     [[nodiscard]] std::vector<FlowRow> list_flows() const;
+    [[nodiscard]] std::optional<FlowRow> flow_row(std::size_t flow_index) const;
     [[nodiscard]] std::optional<FlowAnalysisResult> get_flow_analysis(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_service_hint_for_flow(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::string> derive_quic_protocol_text_for_packet(std::size_t flow_index, std::uint64_t packet_index) const;

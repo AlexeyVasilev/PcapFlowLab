@@ -120,6 +120,25 @@ void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
     PFL_EXPECT(fast_sni == deep_sni);
 }
 
+void expect_flow_row_accessor_matches_list_flows(const std::filesystem::path& relative_path) {
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+
+    const auto rows = session.list_flows();
+    PFL_EXPECT(!rows.empty());
+
+    const auto quic_flow_index = find_flow_index_with_protocol_hint(rows, "quic");
+    PFL_EXPECT(quic_flow_index.has_value());
+
+    const auto row = session.flow_row(*quic_flow_index);
+    PFL_EXPECT(row.has_value());
+    PFL_EXPECT(row->index == rows[*quic_flow_index].index);
+    PFL_EXPECT(row->protocol_hint == rows[*quic_flow_index].protocol_hint);
+    PFL_EXPECT(row->service_hint == rows[*quic_flow_index].service_hint);
+    PFL_EXPECT(row->packet_count == rows[*quic_flow_index].packet_count);
+    PFL_EXPECT(row->total_bytes == rows[*quic_flow_index].total_bytes);
+}
+
 void expect_frontend_adapter_quic_service_hint_refresh(
     const std::filesystem::path& relative_path,
     const std::string& expected_sni
@@ -190,6 +209,7 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_quic_service_hint_refresh(
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
+    expect_flow_row_accessor_matches_list_flows("parsing/quic/quic_test_1.pcap");
 }
 
 }  // namespace pfl::tests

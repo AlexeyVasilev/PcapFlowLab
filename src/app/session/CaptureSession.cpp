@@ -3202,6 +3202,15 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
     return rows;
 }
 
+std::optional<FlowRow> CaptureSession::flow_row(const std::size_t flow_index) const {
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    return make_flow_row(flow_index, connections[flow_index], analysis_settings_);
+}
+
 std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::size_t flow_index) const {
     const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
