@@ -115,23 +115,6 @@ std::size_t estimate_stream_item_dto_bytes(const FrontendStreamItemDto& dto) {
         + sizeof(dto);
 }
 
-std::size_t count_stream_source_packet_indices(const std::vector<FrontendStreamItemDto>& items) {
-    std::size_t total = 0U;
-    for (const auto& item : items) {
-        total += item.source_packet_indices.size();
-    }
-    return total;
-}
-
-std::size_t count_stream_note_bytes(const std::vector<FrontendStreamItemDto>& items) {
-    std::size_t total = 0U;
-    for (const auto& item : items) {
-        total += estimate_string_vector_bytes(item.constricted_contribution_notes);
-        total += estimate_string_vector_bytes(item.constricted_packet_notes);
-    }
-    return total;
-}
-
 std::map<std::uint64_t, std::uint64_t> build_cached_flow_packet_numbers(
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -2400,12 +2383,70 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.total_item_count = result.can_load_more ? 0U : result.loaded_item_count;
 
     const auto dto_started_at = std::chrono::steady_clock::now();
+    const auto packet_number_started_at = std::chrono::steady_clock::now();
+    const auto packet_number_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const auto flow_packet_numbers = build_cached_flow_packet_numbers(session_, flow_index, rows);
+    const auto packet_number_counters_after = selected_flow_diagnostics::snapshot_read_counters();
+    const auto packet_number_elapsed_ms = selected_flow_diagnostics::elapsed_ms(packet_number_started_at);
+
+    double source_indices_elapsed_ms = 0.0;
+    double notes_elapsed_ms = 0.0;
+    double details_elapsed_ms = 0.0;
+    std::size_t source_packet_indices_count = 0U;
+    std::size_t notes_bytes = 0U;
+    std::size_t details_bytes = 0U;
+    const auto item_build_started_at = std::chrono::steady_clock::now();
+    const auto item_build_counters_before = selected_flow_diagnostics::snapshot_read_counters();
 
     result.items.reserve(rows.size());
     for (const auto& row : rows) {
-        result.items.push_back(to_frontend_stream_item(row, flow_packet_numbers));
+        const auto source_indices_started_at = std::chrono::steady_clock::now();
+        auto source_packet_indices = row.packet_indices;
+        source_packet_indices_count += source_packet_indices.size();
+        source_indices_elapsed_ms += selected_flow_diagnostics::elapsed_ms(source_indices_started_at);
+
+        const auto notes_started_at = std::chrono::steady_clock::now();
+        auto constricted_contribution_notes = row.constricted_contribution_notes;
+        auto constricted_packet_notes = row.constricted_packet_notes;
+        notes_bytes += estimate_string_vector_bytes(constricted_contribution_notes);
+        notes_bytes += estimate_string_vector_bytes(constricted_packet_notes);
+        notes_elapsed_ms += selected_flow_diagnostics::elapsed_ms(notes_started_at);
+
+        const auto details_started_at = std::chrono::steady_clock::now();
+        const auto source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers);
+        const auto header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers);
+        const auto badge_text = stream_item_header_badge_text(row);
+        const auto summary_text = build_stream_item_summary_text(row, flow_packet_numbers);
+        const auto payload_tab_title = stream_item_payload_tab_title(row);
+        details_bytes += source_packets_text.size()
+            + header_secondary_text.size()
+            + badge_text.size()
+            + summary_text.size()
+            + payload_tab_title.size();
+        details_elapsed_ms += selected_flow_diagnostics::elapsed_ms(details_started_at);
+
+        result.items.push_back(FrontendStreamItemDto {
+            .stream_item_index = row.stream_item_index,
+            .direction_text = row.direction_text,
+            .label = row.label,
+            .byte_count = row.byte_count,
+            .packet_count = row.packet_count,
+            .source_packet_indices = std::move(source_packet_indices),
+            .source_packets_text = source_packets_text,
+            .has_constricted_contribution = row.has_constricted_contribution,
+            .constricted_contribution_notes = std::move(constricted_contribution_notes),
+            .constricted_packet_notes = std::move(constricted_packet_notes),
+            .header_secondary_text = header_secondary_text,
+            .badge_text = badge_text,
+            .summary_text = summary_text,
+            .payload_tab_title = payload_tab_title,
+            .payload_preview_text = {},
+            .payload_preview_unavailable_text = {},
+            .protocol_details_text = {},
+        });
     }
+    const auto item_build_counters_after = selected_flow_diagnostics::snapshot_read_counters();
+    const auto item_build_elapsed_ms = selected_flow_diagnostics::elapsed_ms(item_build_started_at);
     const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
 
     if (selected_flow_diagnostics::enabled()) {
@@ -2427,9 +2468,95 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
             << " session_calls=prepare_selected_flow_packet_cache,list_flow_stream_items_for_packet_prefix"
             << " full_flow_packet_numbers_built=false"
             << " cached_packet_numbers=" << flow_packet_numbers.size()
-            << " source_packet_indices_count=" << count_stream_source_packet_indices(result.items)
-            << " notes_bytes=" << count_stream_note_bytes(result.items)
+            << " source_packet_indices_count=" << source_packet_indices_count
+            << " notes_bytes=" << notes_bytes
+            << " details_bytes=" << details_bytes
             << " estimated_bytes=" << estimated_bytes
+            << " stream_dto_packet_number_ms=" << format_diag_elapsed_ms(packet_number_elapsed_ms)
+            << " stream_dto_source_indices_ms=" << format_diag_elapsed_ms(source_indices_elapsed_ms)
+            << " stream_dto_notes_ms=" << format_diag_elapsed_ms(notes_elapsed_ms)
+            << " stream_dto_details_ms=" << format_diag_elapsed_ms(details_elapsed_ms)
+            << " stream_dto_item_build_ms=" << format_diag_elapsed_ms(item_build_elapsed_ms)
+            << " stream_dto_json_ms=" << format_diag_elapsed_ms(0.0)
+            << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
+            << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
+            << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at))
+            << " stream_dto_packet_number_reads="
+            << selected_flow_diagnostics::format_read_counter_delta(packet_number_counters_before, packet_number_counters_after)
+            << " stream_dto_item_build_reads="
+            << selected_flow_diagnostics::format_read_counter_delta(item_build_counters_before, item_build_counters_after)
+            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
+        selected_flow_diagnostics::log(out.str());
+    }
+
+    return result;
+}
+
+FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_details(
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    const auto total_started_at = std::chrono::steady_clock::now();
+    FrontendStreamItemDto result {
+        .stream_item_index = stream_item_index,
+        .payload_tab_title = "Payload",
+    };
+
+    if (!session_.has_capture() || !selected_flow_index_.has_value()) {
+        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.protocol_details_text = stream_protocol_unavailable_text();
+        return result;
+    }
+
+    if (!session_.source_capture_accessible()) {
+        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.protocol_details_text = stream_protocol_unavailable_text();
+        return result;
+    }
+
+    const auto flow_index = *selected_flow_index_;
+    const auto total_flow_packet_count = session_.flow_packet_count(flow_index);
+    if (limit == 0U || max_packets_to_scan == 0U || total_flow_packet_count == 0U) {
+        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.protocol_details_text = stream_protocol_unavailable_text();
+        return result;
+    }
+
+    const auto packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
+    const auto session_started_at = std::chrono::steady_clock::now();
+    session_.prepare_selected_flow_packet_cache(flow_index, packet_window_count);
+    auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, packet_window_count, limit + 1U);
+    const auto session_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
+    if (rows.size() > limit) {
+        rows.resize(limit);
+    }
+
+    const auto dto_started_at = std::chrono::steady_clock::now();
+    const auto flow_packet_numbers = build_cached_flow_packet_numbers(session_, flow_index, rows);
+    if (const auto it = std::find_if(
+            rows.begin(),
+            rows.end(),
+            [stream_item_index](const StreamItemRow& row) { return row.stream_item_index == stream_item_index; }
+        );
+        it != rows.end()) {
+        result = to_frontend_stream_item(*it, flow_packet_numbers, true);
+    } else {
+        result.payload_preview_unavailable_text = "The selected stream item is no longer available in the current stream window.";
+        result.protocol_details_text = stream_protocol_unavailable_text();
+    }
+    const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
+
+    if (selected_flow_diagnostics::enabled()) {
+        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
+        std::ostringstream out {};
+        out << "tauri-selected-flow-stream-item-details"
+            << " flow_index=" << flow_index
+            << " stream_item_index=" << stream_item_index
+            << " packet_budget=" << max_packets_to_scan
+            << " item_limit=" << limit
+            << " packet_window=" << packet_window_count
             << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
             << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
             << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at))
@@ -2968,9 +3095,10 @@ FrontendPacketDto FrontendSessionAdapter::to_frontend_packet(const PacketRow& ro
 
 FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
     const StreamItemRow& row,
-    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
+    const bool include_details
 ) const {
-    const auto payload_preview_text = frontend_stream_payload_text(session_, row);
+    const auto payload_preview_text = include_details ? frontend_stream_payload_text(session_, row) : std::string {};
     return FrontendStreamItemDto {
         .stream_item_index = row.stream_item_index,
         .direction_text = row.direction_text,
@@ -2987,8 +3115,12 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
         .payload_tab_title = stream_item_payload_tab_title(row),
         .payload_preview_text = payload_preview_text,
-        .payload_preview_unavailable_text = payload_preview_text.empty() ? stream_payload_unavailable_text() : std::string {},
-        .protocol_details_text = frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row),
+        .payload_preview_unavailable_text = include_details && payload_preview_text.empty()
+            ? stream_payload_unavailable_text()
+            : std::string {},
+        .protocol_details_text = include_details
+            ? frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row)
+            : std::string {},
     };
 }
 

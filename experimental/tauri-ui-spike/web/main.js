@@ -99,6 +99,9 @@
     streamLoadedForFlowIndex: null,
     selectedStreamItemIndex: null,
     selectedStreamItem: null,
+    selectedStreamItemDetails: null,
+    streamDetailsState: "idle",
+    streamDetailsErrorText: "",
     streamDetailsTab: "summary",
     analysis: null,
     analysisState: "idle",
@@ -124,6 +127,7 @@
     flowSelectionRequestToken: 0,
     packetRequestToken: 0,
     streamRequestToken: 0,
+    streamDetailsRequestToken: 0,
     analysisRequestToken: 0,
     diagnosticsPacketRequestOffset: 0,
     diagnosticsPacketRequestLimit: packetPageSize,
@@ -1414,6 +1418,9 @@
     state.streamLoadedForFlowIndex = null;
     state.selectedStreamItemIndex = null;
     state.selectedStreamItem = null;
+    state.selectedStreamItemDetails = null;
+    state.streamDetailsState = "idle";
+    state.streamDetailsErrorText = "";
   }
 
   function clearAnalysis(resetFlowListState = true) {
@@ -2833,7 +2840,7 @@
       return;
     }
 
-    const item = state.selectedStreamItem;
+    const item = state.selectedStreamItemDetails || state.selectedStreamItem;
     elements.packetDetailsTitle.textContent = "Stream Item Details";
     elements.packetDetailsMeta.textContent = "";
     elements.streamDetailsStateText.textContent = "";
@@ -2844,6 +2851,22 @@
     elements.streamDetailsHeaderBadge.classList.toggle("is-warning", String(item.badge_text || "").trim() === "Constricted");
     elements.streamDetailsPayloadTabButton.textContent = item.payload_tab_title || "Payload";
     elements.streamDetailsSummaryText.textContent = item.summary_text || "No summary details are available for this stream item.";
+
+    if (state.streamDetailsState === "loading") {
+      elements.streamDetailsPayloadStateText.textContent = "Loading payload details...";
+      elements.streamDetailsProtocolStateText.textContent = "Loading protocol details...";
+      elements.streamDetailsPayloadText.textContent = "Loading payload details...";
+      elements.streamDetailsProtocolText.textContent = "Loading protocol details...";
+      elements.streamDetailsPayloadText.classList.add("is-muted");
+      elements.streamDetailsProtocolText.classList.add("is-muted");
+      return;
+    }
+
+    if (state.streamDetailsState === "error" && state.streamDetailsErrorText) {
+      elements.streamDetailsStateText.classList.remove("is-hidden");
+      elements.streamDetailsStateText.classList.add("is-error");
+      elements.streamDetailsStateText.textContent = state.streamDetailsErrorText;
+    }
 
     if (item.payload_preview_text) {
       elements.streamDetailsPayloadText.textContent = item.payload_preview_text;
@@ -4147,9 +4170,18 @@
         const selectedItem = state.streamItems.find((item) => item.stream_item_index === previousSelectedStreamItemIndex) || null;
         state.selectedStreamItemIndex = selectedItem?.stream_item_index ?? null;
         state.selectedStreamItem = selectedItem;
+        state.selectedStreamItemDetails = selectedItem;
+        state.streamDetailsState = selectedItem ? "loading" : "idle";
+        state.streamDetailsErrorText = "";
+        if (selectedItem) {
+          void loadSelectedStreamItemDetails(selectedItem.stream_item_index, selectionToken);
+        }
       } else {
         state.selectedStreamItemIndex = null;
         state.selectedStreamItem = null;
+        state.selectedStreamItemDetails = null;
+        state.streamDetailsState = "idle";
+        state.streamDetailsErrorText = "";
       }
     } catch (error) {
       if (
@@ -4166,6 +4198,9 @@
       state.streamLoadedForFlowIndex = null;
       state.selectedStreamItemIndex = null;
       state.selectedStreamItem = null;
+      state.selectedStreamItemDetails = null;
+      state.streamDetailsState = "error";
+      state.streamDetailsErrorText = state.streamErrorText;
       setStatus(state.streamErrorText, "error");
     }
 
@@ -4409,6 +4444,9 @@
     if (item == null) {
       state.selectedStreamItemIndex = null;
       state.selectedStreamItem = null;
+      state.selectedStreamItemDetails = null;
+      state.streamDetailsState = "idle";
+      state.streamDetailsErrorText = "";
       setStatus("The selected stream item is not available in the current stream window.", "error");
       render();
       return;
@@ -4416,6 +4454,61 @@
 
     state.selectedStreamItemIndex = streamItemIndex;
     state.selectedStreamItem = item;
+    state.selectedStreamItemDetails = item;
+    state.streamDetailsState = "loading";
+    state.streamDetailsErrorText = "";
+    render();
+    void loadSelectedStreamItemDetails(streamItemIndex);
+  }
+
+  async function loadSelectedStreamItemDetails(streamItemIndex, selectionToken = state.flowSelectionRequestToken) {
+    if (state.selectedFlowIndex == null) {
+      state.selectedStreamItemDetails = null;
+      state.streamDetailsState = "idle";
+      state.streamDetailsErrorText = "";
+      render();
+      return;
+    }
+
+    const requestedFlowIndex = state.selectedFlowIndex;
+    const requestToken = ++state.streamDetailsRequestToken;
+
+    try {
+      const details = await invoke("get_selected_flow_stream_item_details", {
+        max_packets_to_scan: state.streamRequestedPacketBudget,
+        limit: state.streamRequestedItemLimit,
+        stream_item_index: streamItemIndex,
+      });
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.streamDetailsRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+        || state.selectedStreamItemIndex !== streamItemIndex
+      ) {
+        return;
+      }
+
+      state.selectedStreamItemDetails = {
+        ...(state.selectedStreamItem || {}),
+        ...(details || {}),
+      };
+      state.streamDetailsState = "loaded";
+      state.streamDetailsErrorText = "";
+    } catch (error) {
+      if (
+        selectionToken !== state.flowSelectionRequestToken
+        || requestToken !== state.streamDetailsRequestToken
+        || state.selectedFlowIndex !== requestedFlowIndex
+        || state.selectedStreamItemIndex !== streamItemIndex
+      ) {
+        return;
+      }
+
+      state.selectedStreamItemDetails = state.selectedStreamItem;
+      state.streamDetailsState = "error";
+      state.streamDetailsErrorText = `Failed to load stream item details: ${String(error)}`;
+    }
+
     render();
   }
 

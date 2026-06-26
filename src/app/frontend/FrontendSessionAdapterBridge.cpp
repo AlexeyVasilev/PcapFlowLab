@@ -496,6 +496,8 @@ std::string unrecognized_packet_result_json(const pfl::FrontendUnrecognizedPacke
     return out.str();
 }
 
+std::string stream_item_json(const pfl::FrontendStreamItemDto& item);
+
 std::string stream_result_json(const pfl::FrontendSelectedFlowStreamResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -522,53 +524,7 @@ std::string stream_result_json(const pfl::FrontendSelectedFlowStreamResult& resu
             out << ',';
         }
 
-        const auto& item = result.items[index];
-        out << '{'
-            << "\"stream_item_index\":" << item.stream_item_index << ','
-            << "\"direction_text\":" << json_string(item.direction_text) << ','
-            << "\"label\":" << json_string(item.label) << ','
-            << "\"byte_count\":" << item.byte_count << ','
-            << "\"packet_count\":" << item.packet_count << ','
-            << "\"source_packet_indices\":[";
-
-        for (std::size_t packet_index = 0; packet_index < item.source_packet_indices.size(); ++packet_index) {
-            if (packet_index != 0U) {
-                out << ',';
-            }
-            out << item.source_packet_indices[packet_index];
-        }
-
-        out << "],"
-            << "\"source_packets_text\":" << json_string(item.source_packets_text) << ','
-            << "\"has_constricted_contribution\":" << bool_json(item.has_constricted_contribution) << ','
-            << "\"header_secondary_text\":" << json_string(item.header_secondary_text) << ','
-            << "\"badge_text\":" << json_string(item.badge_text) << ','
-            << "\"summary_text\":" << json_string(item.summary_text) << ','
-            << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
-            << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
-            << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
-            << "\"protocol_details_text\":" << json_string(item.protocol_details_text) << ','
-            << "\"constricted_contribution_notes\":[";
-
-        for (std::size_t note_index = 0; note_index < item.constricted_contribution_notes.size(); ++note_index) {
-            if (note_index != 0U) {
-                out << ',';
-            }
-            out << json_string(item.constricted_contribution_notes[note_index]);
-        }
-
-        out << "],"
-            << "\"constricted_packet_notes\":[";
-
-        for (std::size_t note_index = 0; note_index < item.constricted_packet_notes.size(); ++note_index) {
-            if (note_index != 0U) {
-                out << ',';
-            }
-            out << json_string(item.constricted_packet_notes[note_index]);
-        }
-
-        out << "]"
-            << '}';
+        out << stream_item_json(result.items[index]);
     }
 
     out << "]}";
@@ -807,6 +763,57 @@ std::string selection_json(const pfl::FrontendSelectionResultDto& result) {
     return out.str();
 }
 
+std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"stream_item_index\":" << item.stream_item_index << ','
+        << "\"direction_text\":" << json_string(item.direction_text) << ','
+        << "\"label\":" << json_string(item.label) << ','
+        << "\"byte_count\":" << item.byte_count << ','
+        << "\"packet_count\":" << item.packet_count << ','
+        << "\"source_packet_indices\":[";
+
+    for (std::size_t packet_index = 0; packet_index < item.source_packet_indices.size(); ++packet_index) {
+        if (packet_index != 0U) {
+            out << ',';
+        }
+        out << item.source_packet_indices[packet_index];
+    }
+
+    out << "],"
+        << "\"source_packets_text\":" << json_string(item.source_packets_text) << ','
+        << "\"has_constricted_contribution\":" << bool_json(item.has_constricted_contribution) << ','
+        << "\"header_secondary_text\":" << json_string(item.header_secondary_text) << ','
+        << "\"badge_text\":" << json_string(item.badge_text) << ','
+        << "\"summary_text\":" << json_string(item.summary_text) << ','
+        << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
+        << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
+        << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','
+        << "\"protocol_details_text\":" << json_string(item.protocol_details_text) << ','
+        << "\"constricted_contribution_notes\":[";
+
+    for (std::size_t note_index = 0; note_index < item.constricted_contribution_notes.size(); ++note_index) {
+        if (note_index != 0U) {
+            out << ',';
+        }
+        out << json_string(item.constricted_contribution_notes[note_index]);
+    }
+
+    out << "],"
+        << "\"constricted_packet_notes\":[";
+
+    for (std::size_t note_index = 0; note_index < item.constricted_packet_notes.size(); ++note_index) {
+        if (note_index != 0U) {
+            out << ',';
+        }
+        out << json_string(item.constricted_packet_notes[note_index]);
+    }
+
+    out << "]"
+        << '}';
+    return out.str();
+}
+
 [[nodiscard]] pfl::FrontendOverviewDto unavailable_overview() {
     return pfl::FrontendOverviewDto {};
 }
@@ -824,6 +831,14 @@ std::string selection_json(const pfl::FrontendSelectionResultDto& result) {
     result.unavailable_text = std::string {kAdapterUnavailableText};
     result.error_text = std::string {kAdapterUnavailableText};
     return result;
+}
+
+[[nodiscard]] pfl::FrontendStreamItemDto unavailable_stream_item() {
+    pfl::FrontendStreamItemDto item {};
+    item.payload_tab_title = "Payload";
+    item.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
+    item.protocol_details_text = std::string {kAdapterUnavailableText};
+    return item;
 }
 
 [[nodiscard]] pfl::FrontendPacketDetailsDto unavailable_packet_details() {
@@ -1092,6 +1107,25 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_json(
     }
 
     return make_c_string(stream_result_json(handle->adapter.get_selected_flow_stream(max_packets_to_scan, limit)));
+}
+
+char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) {
+    if (handle == nullptr) {
+        return make_c_string(stream_item_json(unavailable_stream_item()));
+    }
+
+    return make_c_string(
+        stream_item_json(handle->adapter.get_selected_flow_stream_item_details(
+            max_packets_to_scan,
+            limit,
+            stream_item_index
+        ))
+    );
 }
 
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(

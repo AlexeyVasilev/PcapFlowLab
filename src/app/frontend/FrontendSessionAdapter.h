@@ -44,6 +44,11 @@ public:
     [[nodiscard]] FrontendSelectedFlowPacketsResult get_selected_flow_packets(std::size_t offset, std::size_t limit);
     [[nodiscard]] FrontendUnrecognizedPacketsResult get_unrecognized_packets(std::size_t offset, std::size_t limit) const;
     [[nodiscard]] FrontendSelectedFlowStreamResult get_selected_flow_stream(std::size_t max_packets_to_scan, std::size_t limit) const;
+    [[nodiscard]] FrontendStreamItemDto get_selected_flow_stream_item_details(
+        std::size_t max_packets_to_scan,
+        std::size_t limit,
+        std::uint64_t stream_item_index
+    ) const;
     [[nodiscard]] FrontendPacketDetailsDto get_selected_flow_packet_details(
         std::uint64_t packet_index,
         std::uint64_t flow_packet_index = 0U
@@ -83,7 +88,8 @@ private:
     [[nodiscard]] static AnalysisSettings to_analysis_settings(const FrontendSettingsDto& settings) noexcept;
     [[nodiscard]] FrontendStreamItemDto to_frontend_stream_item(
         const StreamItemRow& row,
-        const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+        const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
+        bool include_details
     ) const;
     void join_finished_open_worker();
     void cancel_and_join_open_worker();
