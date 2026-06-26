@@ -480,6 +480,7 @@ struct StreamBuildBranchMetrics {
 };
 
 struct FallbackStreamBuildMetrics {
+    std::size_t bounded_input_packet_count {0U};
     std::size_t packets_scanned {0U};
     std::size_t payload_packets {0U};
     std::size_t tls_single_packet_attempts {0U};
@@ -498,6 +499,8 @@ struct FallbackStreamBuildMetrics {
     double row_append_ms {0.0};
     double total_ms {0.0};
     bool ran {false};
+    bool stopped_by_item_limit {false};
+    bool touched_packet_outside_bounded_prefix {false};
 };
 
 std::string diagnostics_flow_identity(
@@ -572,6 +575,8 @@ void append_connection_stream_items_bounded(
     const CaptureSession& session,
     const std::size_t flow_index,
     const Connection& connection,
+    const std::span<const PacketRef> bounded_direction_packets_a,
+    const std::span<const PacketRef> bounded_direction_packets_b,
     const ProtocolId flow_protocol,
     const std::size_t target_count,
     const std::size_t max_packets_to_scan,
@@ -592,6 +597,7 @@ void append_connection_stream_items_bounded(
     std::size_t scanned_packets = 0U;
     bool gap_item_emitted_a = direction_policy_a.explicit_gap_item_emitted;
     bool gap_item_emitted_b = direction_policy_b.explicit_gap_item_emitted;
+    bool stopped_by_item_limit = false;
 
     while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) &&
            rows.size() < target_count &&
@@ -610,6 +616,7 @@ void append_connection_stream_items_bounded(
         const auto direction = use_a ? Direction::a_to_b : Direction::b_to_a;
         const auto& direction_policy = use_a ? direction_policy_a : direction_policy_b;
         auto& gap_item_emitted = use_a ? gap_item_emitted_a : gap_item_emitted_b;
+        const auto bounded_direction_packets = use_a ? bounded_direction_packets_a : bounded_direction_packets_b;
 
         if (direction_policy.covered_packet_indices.contains(packet.packet_index)) {
             continue;
@@ -729,7 +736,7 @@ void append_connection_stream_items_bounded(
                     session,
                     flow_index,
                     connection.flow_a.key,
-                    connection.flow_a.packets,
+                    bounded_direction_packets,
                     packet,
                     direction_text,
                     payload_span,
@@ -745,7 +752,7 @@ void append_connection_stream_items_bounded(
                     session,
                     flow_index,
                     connection.flow_b.key,
-                    connection.flow_b.packets,
+                    bounded_direction_packets,
                     packet,
                     direction_text,
                     payload_span,
@@ -810,10 +817,17 @@ void append_connection_stream_items_bounded(
         }
     }
 
+    if (rows.size() >= target_count) {
+        stopped_by_item_limit = true;
+    }
+
     if (metrics != nullptr) {
+        metrics->bounded_input_packet_count = bounded_direction_packets_a.size() + bounded_direction_packets_b.size();
         metrics->read_counters_before = read_counters_before;
         metrics->read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
         metrics->total_ms += selected_flow_diagnostics::elapsed_ms(started_at);
+        metrics->stopped_by_item_limit = stopped_by_item_limit;
+        metrics->touched_packet_outside_bounded_prefix = false;
     }
 }
 
@@ -988,25 +1002,25 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
 
     DirectionalStreamPolicy direction_policy_a {};
     DirectionalStreamPolicy direction_policy_b {};
+    const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
+        ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
+        : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
+    const auto direction_packets_a = connection.family == FlowAddressFamily::ipv4
+        ? std::span<const PacketRef>(
+            connection.ipv4->flow_a.packets.data(),
+            std::min(prefix_count_a, connection.ipv4->flow_a.packets.size()))
+        : std::span<const PacketRef>(
+            connection.ipv6->flow_a.packets.data(),
+            std::min(prefix_count_a, connection.ipv6->flow_a.packets.size()));
+    const auto direction_packets_b = connection.family == FlowAddressFamily::ipv4
+        ? std::span<const PacketRef>(
+            connection.ipv4->flow_b.packets.data(),
+            std::min(prefix_count_b, connection.ipv4->flow_b.packets.size()))
+        : std::span<const PacketRef>(
+            connection.ipv6->flow_b.packets.data(),
+            std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
     if (flow_protocol == ProtocolId::tcp) {
         const auto setup_started_at = std::chrono::steady_clock::now();
-        const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
-            ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
-            : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
-        const auto direction_packets_a = connection.family == FlowAddressFamily::ipv4
-            ? std::span<const PacketRef>(
-                connection.ipv4->flow_a.packets.data(),
-                std::min(prefix_count_a, connection.ipv4->flow_a.packets.size()))
-            : std::span<const PacketRef>(
-                connection.ipv6->flow_a.packets.data(),
-                std::min(prefix_count_a, connection.ipv6->flow_a.packets.size()));
-        const auto direction_packets_b = connection.family == FlowAddressFamily::ipv4
-            ? std::span<const PacketRef>(
-                connection.ipv4->flow_b.packets.data(),
-                std::min(prefix_count_b, connection.ipv4->flow_b.packets.size()))
-            : std::span<const PacketRef>(
-                connection.ipv6->flow_b.packets.data(),
-                std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
         setup_elapsed_ms += selected_flow_diagnostics::elapsed_ms(setup_started_at);
 
         const auto tls_a_started_at = std::chrono::steady_clock::now();
@@ -1085,6 +1099,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 session,
                 flow_index,
                 *connection.ipv4,
+                direction_packets_a,
+                direction_packets_b,
                 flow_protocol,
                 target,
                 max_packets_to_scan,
@@ -1099,6 +1115,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 session,
                 flow_index,
                 *connection.ipv6,
+                direction_packets_a,
+                direction_packets_b,
                 flow_protocol,
                 target,
                 max_packets_to_scan,
@@ -1141,6 +1159,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             << diagnostics_flow_identity(flow_index, connection, analysis_settings)
             << " max_packets_to_scan=" << max_packets_to_scan
             << " target_rows=" << target
+            << " bounded_input_packet_count=" << fallback_metrics.bounded_input_packet_count
             << " returned_rows=" << rows.size()
             << " total_packets=" << total_packets
             << " bounded_prefix_path_used=" << (bounded_prefix_path_used ? "true" : "false")
@@ -1168,6 +1187,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             << " fallback_payload_packets=" << fallback_metrics.payload_packets
             << " fallback_rows_added=" << fallback_metrics.fallback_rows_added
             << " fallback_gap_rows=" << fallback_metrics.gap_rows_added
+            << " fallback_stopped_by_item_limit=" << (fallback_metrics.stopped_by_item_limit ? "true" : "false")
+            << " fallback_touched_packet_outside_bounded_prefix=" << (fallback_metrics.touched_packet_outside_bounded_prefix ? "true" : "false")
             << " fallback_tls_packet_attempts=" << fallback_metrics.tls_single_packet_attempts
             << " fallback_tls_packet_rows_added=" << fallback_metrics.tls_single_packet_rows_added
             << " fallback_tls_packet_ms=" << format_elapsed_ms(fallback_metrics.tls_single_packet_ms)

@@ -1093,6 +1093,59 @@ void run_stream_query_tests() {
     }
 
     {
+        std::vector<std::pair<std::uint32_t, std::vector<std::uint8_t>>> bounded_prefix_quic_packets {};
+        bounded_prefix_quic_packets.reserve(40U);
+        for (std::uint32_t packet_index = 0; packet_index < 30U; ++packet_index) {
+            bounded_prefix_quic_packets.push_back({
+                4000U + packet_index,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 41, 10, 1),
+                    ipv4(10, 41, 10, 2),
+                    54060,
+                    443,
+                    make_plaintext_quic_initial_payload(make_quic_ack_frame_bytes()))
+            });
+        }
+        for (std::uint32_t packet_index = 30U; packet_index < 40U; ++packet_index) {
+            bounded_prefix_quic_packets.push_back({
+                4000U + packet_index,
+                make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 41, 10, 1),
+                    ipv4(10, 41, 10, 2),
+                    54060,
+                    443,
+                    make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes()))
+            });
+        }
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_bounded_prefix.pcap",
+            make_classic_pcap(bounded_prefix_quic_packets)
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+
+        const auto bounded_prefix_rows = session.list_flow_stream_items_for_packet_prefix(0, 30U, 16U);
+        const auto extended_prefix_rows = session.list_flow_stream_items_for_packet_prefix(0, 40U, 40U);
+        PFL_EXPECT(!bounded_prefix_rows.empty());
+        PFL_EXPECT(!extended_prefix_rows.empty());
+        for (const auto& row : bounded_prefix_rows) {
+            for (const auto packet_index : row.packet_indices) {
+                PFL_EXPECT(packet_index < 30U);
+            }
+            PFL_EXPECT(row.label != "QUIC Initial: CRYPTO");
+        }
+        PFL_EXPECT(std::any_of(extended_prefix_rows.begin(), extended_prefix_rows.end(), [](const StreamItemRow& row) {
+            return row.label == "QUIC Initial: CRYPTO";
+        }));
+        for (const auto& row : extended_prefix_rows) {
+            for (const auto packet_index : row.packet_indices) {
+                PFL_EXPECT(packet_index < 40U);
+            }
+        }
+    }
+
+    {
         const auto crypto_with_padding_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
             ipv4(10, 41, 1, 1),
             ipv4(10, 41, 1, 2),
