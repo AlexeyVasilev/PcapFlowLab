@@ -4587,9 +4587,11 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
     const auto list_elapsed_ms = selected_flow_diagnostics::elapsed_ms(list_started_at);
 
     const bool hasMoreItems = rows.size() > stream_item_budget_count_;
+    const auto truncate_started_at = std::chrono::steady_clock::now();
     if (hasMoreItems) {
         rows.resize(stream_item_budget_count_);
     }
+    const auto truncate_elapsed_ms = selected_flow_diagnostics::elapsed_ms(truncate_started_at);
 
     current_stream_items_ = rows;
     stream_model_.refresh(current_stream_items_, current_flow_packet_numbers_);
@@ -4629,10 +4631,13 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
             << " returned_rows=" << rows.size()
             << " loaded_items=" << loaded_stream_item_count_
             << " can_load_more=" << (can_load_more_stream_items_ ? "true" : "false")
+            << " stream_item_limit_reached_before_ui_truncate=" << (hasMoreItems ? "true" : "false")
             << " cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
             << " tcp_state_ms=" << format_elapsed_ms(tcp_state_elapsed_ms)
             << " packet_numbers_ms=" << format_elapsed_ms(packet_number_elapsed_ms)
             << " list_ms=" << format_elapsed_ms(list_elapsed_ms)
+            << " truncate_ms=" << format_elapsed_ms(truncate_elapsed_ms)
+            << " bounded_reassembly_call_count=1"
             << " total_elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(
                 read_counters_before,

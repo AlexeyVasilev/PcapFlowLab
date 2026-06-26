@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <limits>
 #include <optional>
 #include <span>
 #include <sstream>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowDiagnostics.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/HexDumpService.h"
 
@@ -572,6 +574,17 @@ std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
     return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
 }
 
+const char* direction_text(const Direction direction) noexcept {
+    switch (direction) {
+    case Direction::a_to_b:
+        return "a_to_b";
+    case Direction::b_to_a:
+        return "b_to_a";
+    default:
+        return "unknown";
+    }
+}
+
 }  // namespace
 
 std::string http_stream_label_from_protocol_text(const std::string_view protocol_text) {
@@ -607,7 +620,18 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
 ) {
     HttpDirectionalStreamPresentation presentation {};
     constexpr std::size_t kHttpReassemblyMaxBytes = 2U * 1024U * 1024U;
+    const auto started_at = std::chrono::steady_clock::now();
+    double reassembly_elapsed_ms = 0.0;
+    double chunk_map_elapsed_ms = 0.0;
+    double parse_elapsed_ms = 0.0;
+    double row_build_elapsed_ms = 0.0;
+    std::size_t items_before_limit = 0U;
+    std::size_t packets_consumed = 0U;
+    bool returned_empty_reassembly = false;
+    bool returned_no_chunks = false;
+    bool returned_no_http_prefix = false;
 
+    const auto reassembly_started_at = std::chrono::steady_clock::now();
     const auto result = session.reassemble_flow_direction(
         ReassemblyRequest {
             .flow_index = flow_index,
@@ -617,14 +641,62 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
         },
         direction_packets
     );
+    reassembly_elapsed_ms = selected_flow_diagnostics::elapsed_ms(reassembly_started_at);
     if (!result.has_value() || result->bytes.empty()) {
+        returned_empty_reassembly = true;
+        if (selected_flow_diagnostics::enabled()) {
+            std::ostringstream out {};
+            out << "selected-stream-build http"
+                << " flow_index=" << flow_index
+                << " direction=" << direction_text(direction)
+                << " direction_packets=" << direction_packets.size()
+                << " reassembly_ms=" << reassembly_elapsed_ms
+                << " chunk_map_ms=" << chunk_map_elapsed_ms
+                << " parse_ms=" << parse_elapsed_ms
+                << " row_build_ms=" << row_build_elapsed_ms
+                << " items=0"
+                << " packets_consumed=0"
+                << " returned_empty_reassembly=true"
+                << " returned_no_chunks=false"
+                << " returned_no_http_prefix=false"
+                << " returned_early_after_limit=false"
+                << " kept_parsing_after_limit=false"
+                << " stopped_at_gap=false"
+                << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+            selected_flow_diagnostics::log(out.str());
+        }
         return presentation;
     }
+    packets_consumed = result->packet_indices.size();
 
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
     const auto payload_text = bytes_as_text(payload_bytes);
+    const auto chunk_map_started_at = std::chrono::steady_clock::now();
     const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
+    chunk_map_elapsed_ms = selected_flow_diagnostics::elapsed_ms(chunk_map_started_at);
     if (!chunks.has_value() || chunks->empty()) {
+        returned_no_chunks = true;
+        if (selected_flow_diagnostics::enabled()) {
+            std::ostringstream out {};
+            out << "selected-stream-build http"
+                << " flow_index=" << flow_index
+                << " direction=" << direction_text(direction)
+                << " direction_packets=" << direction_packets.size()
+                << " reassembly_ms=" << reassembly_elapsed_ms
+                << " chunk_map_ms=" << chunk_map_elapsed_ms
+                << " parse_ms=" << parse_elapsed_ms
+                << " row_build_ms=" << row_build_elapsed_ms
+                << " items=0"
+                << " packets_consumed=" << packets_consumed
+                << " returned_empty_reassembly=false"
+                << " returned_no_chunks=true"
+                << " returned_no_http_prefix=false"
+                << " returned_early_after_limit=false"
+                << " kept_parsing_after_limit=false"
+                << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false")
+                << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+            selected_flow_diagnostics::log(out.str());
+        }
         return presentation;
     }
 
@@ -635,14 +707,39 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     bool emitted_any = false;
 
     while (offset < payload_bytes.size()) {
+        const auto parse_started_at = std::chrono::steady_clock::now();
         const auto parsed = parse_http_header_block(payload_bytes, offset);
+        parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(parse_started_at);
         if (!parsed.has_value()) {
             if (offset == 0U) {
+                returned_no_http_prefix = true;
+                if (selected_flow_diagnostics::enabled()) {
+                    std::ostringstream out {};
+                    out << "selected-stream-build http"
+                        << " flow_index=" << flow_index
+                        << " direction=" << direction_text(direction)
+                        << " direction_packets=" << direction_packets.size()
+                        << " reassembly_ms=" << reassembly_elapsed_ms
+                        << " chunk_map_ms=" << chunk_map_elapsed_ms
+                        << " parse_ms=" << parse_elapsed_ms
+                        << " row_build_ms=" << row_build_elapsed_ms
+                        << " items=0"
+                        << " packets_consumed=" << packets_consumed
+                        << " returned_empty_reassembly=false"
+                        << " returned_no_chunks=false"
+                        << " returned_no_http_prefix=true"
+                        << " returned_early_after_limit=false"
+                        << " kept_parsing_after_limit=false"
+                        << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false")
+                        << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+                    selected_flow_diagnostics::log(out.str());
+                }
                 return presentation;
             }
 
             const auto trailing = payload_bytes.subspan(offset);
             if (!trailing.empty()) {
+                const auto row_started_at = std::chrono::steady_clock::now();
                 presentation.items.push_back(HttpStreamPresentationItem {
                     .label = "HTTP Payload (partial)",
                     .byte_count = trailing.size(),
@@ -650,12 +747,14 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = limited_quality_http_protocol_text(),
                 });
+                row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
             }
             presentation.used_reassembly = true;
             break;
         }
 
         const auto block_bytes = payload_bytes.subspan(offset, parsed->size);
+        const auto row_started_at = std::chrono::steady_clock::now();
         presentation.items.push_back(HttpStreamPresentationItem {
             .label = parsed->label,
             .byte_count = block_bytes.size(),
@@ -663,15 +762,20 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
             .payload_hex_text = hex_dump_service.format(block_bytes),
             .protocol_text = parsed->protocol_text,
         });
+        row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
         emitted_any = true;
+        ++items_before_limit;
         offset += parsed->size;
 
         if (offset < payload_text.size()) {
+            const auto parse_next_started_at = std::chrono::steady_clock::now();
             const auto next_line_end = http_line_end(payload_text, offset);
             const auto next_line = payload_text.substr(offset, ((next_line_end == std::string_view::npos) ? payload_text.size() : next_line_end) - offset);
+            parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(parse_next_started_at);
             if (!looks_like_http_request_line(next_line) && !looks_like_http_response_line(next_line)) {
                 const auto trailing = payload_bytes.subspan(offset);
                 if (!trailing.empty()) {
+                    const auto trailing_row_started_at = std::chrono::steady_clock::now();
                     presentation.items.push_back(HttpStreamPresentationItem {
                         .label = "HTTP Payload (partial)",
                         .byte_count = trailing.size(),
@@ -679,6 +783,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
                         .payload_hex_text = hex_dump_service.format(trailing),
                         .protocol_text = limited_quality_http_protocol_text(),
                     });
+                    row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(trailing_row_started_at);
                 }
                 presentation.used_reassembly = true;
                 break;
@@ -691,6 +796,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
         presentation.covered_packet_indices.insert(result->packet_indices.begin(), result->packet_indices.end());
     }
     if (result->stopped_at_gap && result->first_gap_packet_index != 0U) {
+        const auto gap_row_started_at = std::chrono::steady_clock::now();
         presentation.items.push_back(HttpStreamPresentationItem {
             .label = "HTTP Gap",
             .byte_count = 0U,
@@ -698,11 +804,36 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("HTTP"),
         });
+        row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(gap_row_started_at);
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = result->first_gap_packet_index;
         presentation.fallback_label = "HTTP Payload";
         presentation.fallback_protocol_text = tcp_gap_protocol_text("HTTP");
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "selected-stream-build http"
+            << " flow_index=" << flow_index
+            << " direction=" << direction_text(direction)
+            << " direction_packets=" << direction_packets.size()
+            << " reassembly_ms=" << reassembly_elapsed_ms
+            << " chunk_map_ms=" << chunk_map_elapsed_ms
+            << " parse_ms=" << parse_elapsed_ms
+            << " row_build_ms=" << row_build_elapsed_ms
+            << " items=" << presentation.items.size()
+            << " base_items=" << items_before_limit
+            << " packets_consumed=" << packets_consumed
+            << " returned_empty_reassembly=" << (returned_empty_reassembly ? "true" : "false")
+            << " returned_no_chunks=" << (returned_no_chunks ? "true" : "false")
+            << " returned_no_http_prefix=" << (returned_no_http_prefix ? "true" : "false")
+            << " returned_early_after_limit=false"
+            << " kept_parsing_after_limit=false"
+            << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false")
+            << " first_gap_packet_index=" << result->first_gap_packet_index
+            << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+        selected_flow_diagnostics::log(out.str());
     }
 
     return presentation;

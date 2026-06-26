@@ -471,6 +471,35 @@ std::string format_elapsed_ms(const double elapsed_ms) {
     return out.str();
 }
 
+struct StreamBuildBranchMetrics {
+    std::size_t calls {0U};
+    std::size_t rows_added {0U};
+    double elapsed_ms {0.0};
+    bool ran_after_limit {false};
+    bool used {false};
+};
+
+struct FallbackStreamBuildMetrics {
+    std::size_t packets_scanned {0U};
+    std::size_t payload_packets {0U};
+    std::size_t tls_single_packet_attempts {0U};
+    std::size_t tls_single_packet_rows_added {0U};
+    std::size_t quic_attempts {0U};
+    std::size_t quic_rows_added {0U};
+    std::size_t fallback_rows_added {0U};
+    std::size_t gap_rows_added {0U};
+    std::size_t rows_appended {0U};
+    selected_flow_diagnostics::ReadCounters read_counters_before {};
+    selected_flow_diagnostics::ReadCounters read_counters_after {};
+    double tls_single_packet_ms {0.0};
+    double quic_ms {0.0};
+    double classify_ms {0.0};
+    double format_ms {0.0};
+    double row_append_ms {0.0};
+    double total_ms {0.0};
+    bool ran {false};
+};
+
 std::string diagnostics_flow_identity(
     const std::size_t flow_index,
     const ListedConnectionRef& connection,
@@ -548,8 +577,11 @@ void append_connection_stream_items_bounded(
     const std::size_t max_packets_to_scan,
     const bool deep_protocol_details_enabled,
     const DirectionalStreamPolicy& direction_policy_a,
-    const DirectionalStreamPolicy& direction_policy_b
+    const DirectionalStreamPolicy& direction_policy_b,
+    FallbackStreamBuildMetrics* metrics = nullptr
 ) {
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     HexDumpService hex_dump_service {};
     const auto quic_initial_secret_connection_id =
         flow_protocol == ProtocolId::udp
@@ -570,6 +602,10 @@ void append_connection_stream_items_bounded(
 
         const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
         ++scanned_packets;
+        if (metrics != nullptr) {
+            metrics->ran = true;
+            metrics->packets_scanned = scanned_packets;
+        }
         const auto direction_text = use_a ? kDirectionAToB : kDirectionBToA;
         const auto direction = use_a ? Direction::a_to_b : Direction::b_to_a;
         const auto& direction_policy = use_a ? direction_policy_a : direction_policy_b;
@@ -580,12 +616,21 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::arp) {
+            const auto row_count_before = rows.size();
             append_arp_stream_item_for_packet(rows, session, packet, direction_text);
+            if (metrics != nullptr) {
+                metrics->rows_appended += rows.size() - row_count_before;
+                metrics->fallback_rows_added += rows.size() - row_count_before;
+            }
             continue;
         }
 
         if (packet.payload_length == 0U) {
             continue;
+        }
+
+        if (metrics != nullptr) {
+            ++metrics->payload_packets;
         }
 
         if (flow_protocol == ProtocolId::tcp && session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
@@ -623,6 +668,7 @@ void append_connection_stream_items_bounded(
         const bool direction_tainted_by_gap = gap_packet_index.has_value() && packet.packet_index >= *gap_packet_index;
 
         if (direction_tainted_by_gap && !gap_item_emitted) {
+            const auto gap_row_started_at = std::chrono::steady_clock::now();
             const auto gap_label = direction_policy.fallback_label == "HTTP Payload"
                 ? std::string {"HTTP Gap"}
                 : direction_policy.fallback_label == "TLS Payload"
@@ -641,6 +687,11 @@ void append_connection_stream_items_bounded(
                 {},
                 gap_protocol
             ));
+            if (metrics != nullptr) {
+                ++metrics->gap_rows_added;
+                ++metrics->rows_appended;
+                metrics->row_append_ms += selected_flow_diagnostics::elapsed_ms(gap_row_started_at);
+            }
             gap_item_emitted = true;
             if (rows.size() >= target_count) {
                 break;
@@ -648,12 +699,30 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::tcp && !trimmed_tcp_payload && !direction_tainted_by_gap) {
+            const auto tls_started_at = std::chrono::steady_clock::now();
+            const auto row_count_before = rows.size();
+            if (metrics != nullptr) {
+                ++metrics->tls_single_packet_attempts;
+            }
             if (append_tls_stream_items(rows, candidate, payload_span)) {
+                if (metrics != nullptr) {
+                    metrics->tls_single_packet_ms += selected_flow_diagnostics::elapsed_ms(tls_started_at);
+                    metrics->tls_single_packet_rows_added += rows.size() - row_count_before;
+                    metrics->rows_appended += rows.size() - row_count_before;
+                }
                 continue;
+            }
+            if (metrics != nullptr) {
+                metrics->tls_single_packet_ms += selected_flow_diagnostics::elapsed_ms(tls_started_at);
             }
         }
 
         if (flow_protocol == ProtocolId::udp) {
+            const auto quic_started_at = std::chrono::steady_clock::now();
+            const auto row_count_before = rows.size();
+            if (metrics != nullptr) {
+                ++metrics->quic_attempts;
+            }
             const bool handled_quic = use_a
                 ? append_quic_stream_items_for_packet(
                     rows,
@@ -688,6 +757,13 @@ void append_connection_stream_items_bounded(
                         : std::span<const std::uint8_t> {}
                 );
 
+            if (metrics != nullptr) {
+                metrics->quic_ms += selected_flow_diagnostics::elapsed_ms(quic_started_at);
+                if (handled_quic) {
+                    metrics->quic_rows_added += rows.size() - row_count_before;
+                    metrics->rows_appended += rows.size() - row_count_before;
+                }
+            }
             if (handled_quic) {
                 continue;
             }
@@ -695,6 +771,7 @@ void append_connection_stream_items_bounded(
 
         std::string label = fallback_stream_label(flow_protocol);
         std::string protocol_text {};
+        const auto format_started_at = std::chrono::steady_clock::now();
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
@@ -703,11 +780,19 @@ void append_connection_stream_items_bounded(
                 ? direction_policy.fallback_protocol_text
                 : tcp_gap_protocol_text("TCP");
         } else if (!trimmed_tcp_payload) {
+            const auto classify_started_at = std::chrono::steady_clock::now();
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
                 label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol, deep_protocol_details_enabled);
             }
+            if (metrics != nullptr) {
+                metrics->classify_ms += selected_flow_diagnostics::elapsed_ms(classify_started_at);
+            }
         }
+        if (metrics != nullptr) {
+            metrics->format_ms += selected_flow_diagnostics::elapsed_ms(format_started_at);
+        }
+        const auto row_started_at = std::chrono::steady_clock::now();
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
             direction_text,
@@ -718,6 +803,17 @@ void append_connection_stream_items_bounded(
             {},
             protocol_text
         ));
+        if (metrics != nullptr) {
+            metrics->fallback_rows_added += 1U;
+            metrics->rows_appended += 1U;
+            metrics->row_append_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
+        }
+    }
+
+    if (metrics != nullptr) {
+        metrics->read_counters_before = read_counters_before;
+        metrics->read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
+        metrics->total_ms += selected_flow_diagnostics::elapsed_ms(started_at);
     }
 }
 
@@ -876,6 +972,14 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const auto flow_protocol = protocol_id(connection);
     std::vector<StreamItemRow> rows {};
     bool bounded_prefix_path_used = false;
+    StreamBuildBranchMetrics tls_metrics {};
+    StreamBuildBranchMetrics http_metrics {};
+    FallbackStreamBuildMetrics fallback_metrics {};
+    double setup_elapsed_ms = 0.0;
+    double sort_elapsed_ms = 0.0;
+    double index_assign_elapsed_ms = 0.0;
+    double limit_truncation_elapsed_ms = 0.0;
+    bool limit_reached_before_fallback = false;
 
     const auto total_packets = connection.family == FlowAddressFamily::ipv4
         ? connection_packet_count(*connection.ipv4)
@@ -885,6 +989,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     DirectionalStreamPolicy direction_policy_a {};
     DirectionalStreamPolicy direction_policy_b {};
     if (flow_protocol == ProtocolId::tcp) {
+        const auto setup_started_at = std::chrono::steady_clock::now();
         const auto [prefix_count_a, prefix_count_b] = connection.family == FlowAddressFamily::ipv4
             ? flow_packet_prefix_direction_counts(*connection.ipv4, max_packets_to_scan)
             : flow_packet_prefix_direction_counts(*connection.ipv6, max_packets_to_scan);
@@ -902,6 +1007,12 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             : std::span<const PacketRef>(
                 connection.ipv6->flow_b.packets.data(),
                 std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
+        setup_elapsed_ms += selected_flow_diagnostics::elapsed_ms(setup_started_at);
+
+        const auto tls_a_started_at = std::chrono::steady_clock::now();
+        const auto rows_before_tls_a = rows.size();
+        ++tls_metrics.calls;
+        tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_a >= target;
         direction_policy_a = append_tls_stream_items_from_reassembly(
             rows,
             session,
@@ -910,6 +1021,14 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             Direction::a_to_b,
             direction_packets_a
         );
+        tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_a_started_at);
+        tls_metrics.rows_added += rows.size() - rows_before_tls_a;
+        tls_metrics.used = tls_metrics.used || direction_policy_a.used_reassembly;
+
+        const auto tls_b_started_at = std::chrono::steady_clock::now();
+        const auto rows_before_tls_b = rows.size();
+        ++tls_metrics.calls;
+        tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_b >= target;
         direction_policy_b = append_tls_stream_items_from_reassembly(
             rows,
             session,
@@ -918,7 +1037,14 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             Direction::b_to_a,
             direction_packets_b
         );
+        tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_b_started_at);
+        tls_metrics.rows_added += rows.size() - rows_before_tls_b;
+        tls_metrics.used = tls_metrics.used || direction_policy_b.used_reassembly;
         if (!direction_policy_a.used_reassembly) {
+            const auto http_a_started_at = std::chrono::steady_clock::now();
+            const auto rows_before_http_a = rows.size();
+            ++http_metrics.calls;
+            http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_a >= target;
             direction_policy_a = append_http_stream_items_from_reassembly(
                 rows,
                 session,
@@ -927,8 +1053,15 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::a_to_b,
                 direction_packets_a
             );
+            http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_a_started_at);
+            http_metrics.rows_added += rows.size() - rows_before_http_a;
+            http_metrics.used = http_metrics.used || direction_policy_a.used_reassembly;
         }
         if (!direction_policy_b.used_reassembly) {
+            const auto http_b_started_at = std::chrono::steady_clock::now();
+            const auto rows_before_http_b = rows.size();
+            ++http_metrics.calls;
+            http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_b >= target;
             direction_policy_b = append_http_stream_items_from_reassembly(
                 rows,
                 session,
@@ -937,10 +1070,14 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::b_to_a,
                 direction_packets_b
             );
+            http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_b_started_at);
+            http_metrics.rows_added += rows.size() - rows_before_http_b;
+            http_metrics.used = http_metrics.used || direction_policy_b.used_reassembly;
         }
         bounded_prefix_path_used = true;
     }
 
+    limit_reached_before_fallback = rows.size() >= target;
     if (rows.size() < target) {
         if (connection.family == FlowAddressFamily::ipv4) {
             append_connection_stream_items_bounded(
@@ -953,7 +1090,8 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 max_packets_to_scan,
                 deep_protocol_details_enabled,
                 direction_policy_a,
-                direction_policy_b
+                direction_policy_b,
+                &fallback_metrics
             );
         } else {
             append_connection_stream_items_bounded(
@@ -966,23 +1104,38 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 max_packets_to_scan,
                 deep_protocol_details_enabled,
                 direction_policy_a,
-                direction_policy_b
+                direction_policy_b,
+                &fallback_metrics
             );
         }
     }
 
+    const auto sort_started_at = std::chrono::steady_clock::now();
     std::stable_sort(rows.begin(), rows.end(), [](const StreamItemRow& left, const StreamItemRow& right) {
         const auto left_packet_index = left.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : left.packet_indices.front();
         const auto right_packet_index = right.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : right.packet_indices.front();
         return left_packet_index < right_packet_index;
     });
+    sort_elapsed_ms = selected_flow_diagnostics::elapsed_ms(sort_started_at);
 
+    const auto index_assign_started_at = std::chrono::steady_clock::now();
     for (std::size_t index = 0; index < rows.size(); ++index) {
         rows[index].stream_item_index = static_cast<std::uint64_t>(index + 1U);
     }
+    index_assign_elapsed_ms = selected_flow_diagnostics::elapsed_ms(index_assign_started_at);
+
+    const auto limit_truncation_started_at = std::chrono::steady_clock::now();
+    if (rows.size() > target) {
+        rows.resize(target);
+    }
+    limit_truncation_elapsed_ms = selected_flow_diagnostics::elapsed_ms(limit_truncation_started_at);
 
     if (selected_flow_diagnostics::enabled()) {
         const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
+        const auto fallback_read_delta = selected_flow_diagnostics::delta(
+            fallback_metrics.read_counters_before,
+            fallback_metrics.read_counters_after
+        );
         std::ostringstream out {};
         out << "build_flow_stream_items_bounded "
             << diagnostics_flow_identity(flow_index, connection, analysis_settings)
@@ -991,7 +1144,50 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             << " returned_rows=" << rows.size()
             << " total_packets=" << total_packets
             << " bounded_prefix_path_used=" << (bounded_prefix_path_used ? "true" : "false")
+            << " branch=" << (flow_protocol == ProtocolId::tcp
+                ? (tls_metrics.used ? "tls" : (http_metrics.used ? "http" : "fallback-tcp"))
+                : (flow_protocol == ProtocolId::udp ? (fallback_metrics.quic_rows_added > 0U ? "quic" : "fallback-udp")
+                   : (flow_protocol == ProtocolId::arp ? "fallback-arp" : "unknown")))
             << " deep_protocol_details=" << (deep_protocol_details_enabled ? "true" : "false")
+            << " setup_ms=" << format_elapsed_ms(setup_elapsed_ms)
+            << " tls_calls=" << tls_metrics.calls
+            << " tls_rows_added=" << tls_metrics.rows_added
+            << " tls_ms=" << format_elapsed_ms(tls_metrics.elapsed_ms)
+            << " tls_used=" << (tls_metrics.used ? "true" : "false")
+            << " tls_ran_after_limit=" << (tls_metrics.ran_after_limit ? "true" : "false")
+            << " both_direction_tls_attempted=" << (tls_metrics.calls > 1U ? "true" : "false")
+            << " http_calls=" << http_metrics.calls
+            << " http_rows_added=" << http_metrics.rows_added
+            << " http_ms=" << format_elapsed_ms(http_metrics.elapsed_ms)
+            << " http_used=" << (http_metrics.used ? "true" : "false")
+            << " http_ran_after_limit=" << (http_metrics.ran_after_limit ? "true" : "false")
+            << " both_direction_http_attempted=" << (http_metrics.calls > 1U ? "true" : "false")
+            << " tls_and_http_both_ran=" << ((tls_metrics.calls > 0U && http_metrics.calls > 0U) ? "true" : "false")
+            << " fallback_ran=" << (fallback_metrics.ran ? "true" : "false")
+            << " fallback_packets_scanned=" << fallback_metrics.packets_scanned
+            << " fallback_payload_packets=" << fallback_metrics.payload_packets
+            << " fallback_rows_added=" << fallback_metrics.fallback_rows_added
+            << " fallback_gap_rows=" << fallback_metrics.gap_rows_added
+            << " fallback_tls_packet_attempts=" << fallback_metrics.tls_single_packet_attempts
+            << " fallback_tls_packet_rows_added=" << fallback_metrics.tls_single_packet_rows_added
+            << " fallback_tls_packet_ms=" << format_elapsed_ms(fallback_metrics.tls_single_packet_ms)
+            << " fallback_quic_attempts=" << fallback_metrics.quic_attempts
+            << " fallback_quic_rows_added=" << fallback_metrics.quic_rows_added
+            << " fallback_quic_ms=" << format_elapsed_ms(fallback_metrics.quic_ms)
+            << " fallback_classify_ms=" << format_elapsed_ms(fallback_metrics.classify_ms)
+            << " fallback_format_ms=" << format_elapsed_ms(fallback_metrics.format_ms)
+            << " fallback_row_append_ms=" << format_elapsed_ms(fallback_metrics.row_append_ms)
+            << " fallback_total_ms=" << format_elapsed_ms(fallback_metrics.total_ms)
+            << " fallback_reads_session_calls=" << fallback_read_delta.read_packet_data_calls
+            << " fallback_reads_cache_hits=" << fallback_read_delta.read_packet_data_cache_hits
+            << " fallback_reads_direct_attempts=" << fallback_read_delta.read_packet_data_direct_attempts
+            << " fallback_reads_file_reads=" << fallback_read_delta.file_byte_source_read_calls
+            << " fallback_reads_file_read_bytes=" << fallback_read_delta.file_byte_source_read_requested_bytes
+            << " limit_reached_before_fallback=" << (limit_reached_before_fallback ? "true" : "false")
+            << " fallback_still_ran=" << ((limit_reached_before_fallback && fallback_metrics.ran) ? "true" : "false")
+            << " sort_ms=" << format_elapsed_ms(sort_elapsed_ms)
+            << " index_assign_ms=" << format_elapsed_ms(index_assign_elapsed_ms)
+            << " limit_truncation_ms=" << format_elapsed_ms(limit_truncation_elapsed_ms)
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
         selected_flow_diagnostics::log(out.str());
@@ -3139,12 +3335,16 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
 
     const auto total_packets = flow_packet_count(flow_index);
     const auto bounded_packet_budget = std::min(total_packets, max_packets_to_scan);
+    const auto prefix_started_at = std::chrono::steady_clock::now();
     const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, bounded_packet_budget);
+    const auto prefix_elapsed_ms = selected_flow_diagnostics::elapsed_ms(prefix_started_at);
+    const auto cache_started_at = std::chrono::steady_clock::now();
     if (prefix_resolution.context != nullptr) {
         prepare_selected_flow_packet_cache(flow_index, *prefix_resolution.context);
     } else {
         prepare_selected_flow_packet_cache(flow_index, bounded_packet_budget);
     }
+    const auto cache_elapsed_ms = selected_flow_diagnostics::elapsed_ms(cache_started_at);
     if (total_packets <= max_packets_to_scan) {
         return list_flow_stream_items(flow_index, 0U, limit);
     }
@@ -3159,6 +3359,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         return {};
     }
 
+    const auto build_started_at = std::chrono::steady_clock::now();
     auto rows = build_flow_stream_items_bounded(
         *this,
         connections[flow_index],
@@ -3168,6 +3369,7 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         deep_protocol_details_enabled_,
         analysis_settings_
     );
+    const auto build_elapsed_ms = selected_flow_diagnostics::elapsed_ms(build_started_at);
     if (selected_flow_diagnostics::enabled()) {
         const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
         std::ostringstream out {};
@@ -3176,6 +3378,10 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
             << " max_packets_to_scan=" << max_packets_to_scan
             << " limit=" << limit
             << " returned_rows=" << rows.size()
+            << " prefix_context_ms=" << format_elapsed_ms(prefix_elapsed_ms)
+            << " packet_cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
+            << " build_ms=" << format_elapsed_ms(build_elapsed_ms)
+            << " prefix_context_ready=" << (prefix_resolution.context != nullptr ? "true" : "false")
             << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
             << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
         selected_flow_diagnostics::log(out.str());

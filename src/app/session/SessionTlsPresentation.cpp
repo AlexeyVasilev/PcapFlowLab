@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <iomanip>
 #include <initializer_list>
 #include <optional>
@@ -9,6 +10,7 @@
 #include <utility>
 
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowDiagnostics.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/HexDumpService.h"
@@ -1385,6 +1387,17 @@ std::string tcp_gap_protocol_text(const std::string_view protocol_name) {
     return std::string(protocol_name) + "\n  Semantic parsing stopped for this direction because earlier TCP bytes are missing.\n  Later bytes are shown conservatively.";
 }
 
+const char* direction_text(const Direction direction) noexcept {
+    switch (direction) {
+    case Direction::a_to_b:
+        return "a_to_b";
+    case Direction::b_to_a:
+        return "b_to_a";
+    default:
+        return "unknown";
+    }
+}
+
 }  // namespace
 
 std::string tls_stream_label_from_protocol_text(const std::string_view protocol_text) {
@@ -1497,6 +1510,16 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
     const std::span<const PacketRef> direction_packets
 ) {
     TlsDirectionalStreamPresentation presentation {};
+    const auto started_at = std::chrono::steady_clock::now();
+    double reassembly_elapsed_ms = 0.0;
+    double chunk_map_elapsed_ms = 0.0;
+    double parse_elapsed_ms = 0.0;
+    double protocol_elapsed_ms = 0.0;
+    double row_build_elapsed_ms = 0.0;
+    std::size_t record_count = 0U;
+    std::size_t partial_item_count = 0U;
+
+    const auto reassembly_started_at = std::chrono::steady_clock::now();
     const auto result = session.reassemble_flow_direction(
         ReassemblyRequest {
             .flow_index = flow_index,
@@ -1506,17 +1529,96 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         },
         direction_packets
     );
+    reassembly_elapsed_ms = selected_flow_diagnostics::elapsed_ms(reassembly_started_at);
     if (!result.has_value() || result->bytes.empty()) {
+        if (selected_flow_diagnostics::enabled()) {
+            std::ostringstream out {};
+            out << "selected-stream-build tls"
+                << " flow_index=" << flow_index
+                << " direction=" << direction_text(direction)
+                << " mode=contiguous"
+                << " direction_packets=" << direction_packets.size()
+                << " reassembly_ms=" << reassembly_elapsed_ms
+                << " record_parse_ms=" << parse_elapsed_ms
+                << " handshake_ms=" << protocol_elapsed_ms
+                << " row_build_ms=" << row_build_elapsed_ms
+                << " items=0"
+                << " records=0"
+                << " partial_items=0"
+                << " packets_consumed=0"
+                << " returned_early_after_limit=false"
+                << " kept_parsing_after_limit=false"
+                << " returned_empty_reassembly=true"
+                << " returned_no_tls_prefix=false"
+                << " returned_no_chunks=false"
+                << " stopped_at_gap=false"
+                << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+            selected_flow_diagnostics::log(out.str());
+        }
         return presentation;
     }
 
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
-    if (!looks_like_tls_record_prefix(payload_bytes)) {
+    const auto parse_prefix_started_at = std::chrono::steady_clock::now();
+    const bool has_tls_prefix = looks_like_tls_record_prefix(payload_bytes);
+    parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(parse_prefix_started_at);
+    if (!has_tls_prefix) {
+        if (selected_flow_diagnostics::enabled()) {
+            std::ostringstream out {};
+            out << "selected-stream-build tls"
+                << " flow_index=" << flow_index
+                << " direction=" << direction_text(direction)
+                << " mode=contiguous"
+                << " direction_packets=" << direction_packets.size()
+                << " reassembly_ms=" << reassembly_elapsed_ms
+                << " record_parse_ms=" << parse_elapsed_ms
+                << " handshake_ms=" << protocol_elapsed_ms
+                << " row_build_ms=" << row_build_elapsed_ms
+                << " items=0"
+                << " records=0"
+                << " partial_items=0"
+                << " packets_consumed=" << result->packet_indices.size()
+                << " returned_early_after_limit=false"
+                << " kept_parsing_after_limit=false"
+                << " returned_empty_reassembly=false"
+                << " returned_no_tls_prefix=true"
+                << " returned_no_chunks=false"
+                << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false")
+                << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+            selected_flow_diagnostics::log(out.str());
+        }
         return presentation;
     }
 
+    const auto chunk_map_started_at = std::chrono::steady_clock::now();
     const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
+    chunk_map_elapsed_ms = selected_flow_diagnostics::elapsed_ms(chunk_map_started_at);
     if (!chunks.has_value() || chunks->empty()) {
+        if (selected_flow_diagnostics::enabled()) {
+            std::ostringstream out {};
+            out << "selected-stream-build tls"
+                << " flow_index=" << flow_index
+                << " direction=" << direction_text(direction)
+                << " mode=contiguous"
+                << " direction_packets=" << direction_packets.size()
+                << " reassembly_ms=" << reassembly_elapsed_ms
+                << " chunk_map_ms=" << chunk_map_elapsed_ms
+                << " record_parse_ms=" << parse_elapsed_ms
+                << " handshake_ms=" << protocol_elapsed_ms
+                << " row_build_ms=" << row_build_elapsed_ms
+                << " items=0"
+                << " records=0"
+                << " partial_items=0"
+                << " packets_consumed=" << result->packet_indices.size()
+                << " returned_early_after_limit=false"
+                << " kept_parsing_after_limit=false"
+                << " returned_empty_reassembly=false"
+                << " returned_no_tls_prefix=false"
+                << " returned_no_chunks=true"
+                << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false")
+                << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+            selected_flow_diagnostics::log(out.str());
+        }
         return presentation;
     }
 
@@ -1527,9 +1629,13 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
     bool emitted_any = false;
 
     while (offset < payload_bytes.size()) {
-        if (!looks_like_tls_record_prefix(payload_bytes, offset)) {
+        const auto parse_started_at = std::chrono::steady_clock::now();
+        const bool has_record_prefix = looks_like_tls_record_prefix(payload_bytes, offset);
+        parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(parse_started_at);
+        if (!has_record_prefix) {
             const auto trailing = payload_bytes.subspan(offset);
             if (!trailing.empty()) {
+                const auto row_started_at = std::chrono::steady_clock::now();
                 const auto packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset);
                 presentation.items.push_back(TlsStreamPresentationItem {
                     .label = "TLS Payload (partial)",
@@ -1538,14 +1644,19 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
                     .payload_hex_text = hex_dump_service.format(trailing),
                     .protocol_text = limited_quality_tls_protocol_text(false),
                 });
+                row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
+                ++partial_item_count;
             }
             presentation.used_reassembly = true;
             break;
         }
 
+        const auto record_size_started_at = std::chrono::steady_clock::now();
         const auto record_size = tls_record_size(payload_bytes, offset);
+        parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(record_size_started_at);
         if (!record_size.has_value()) {
             const auto trailing = payload_bytes.subspan(offset);
+            const auto row_started_at = std::chrono::steady_clock::now();
             const auto packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset);
             presentation.items.push_back(TlsStreamPresentationItem {
                 .label = "TLS Record Fragment (partial)",
@@ -1554,20 +1665,29 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
                 .payload_hex_text = hex_dump_service.format(trailing),
                 .protocol_text = limited_quality_tls_protocol_text(true),
             });
+            row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
+            ++partial_item_count;
             presentation.used_reassembly = true;
             break;
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
+        const auto protocol_started_at = std::chrono::steady_clock::now();
+        const auto label = tls_stream_label(record_bytes);
+        const auto protocol_text = tls_record_protocol_text(record_bytes);
+        protocol_elapsed_ms += selected_flow_diagnostics::elapsed_ms(protocol_started_at);
+        const auto row_started_at = std::chrono::steady_clock::now();
         const auto packet_indices = consume_reassembled_packet_indices(*chunks, record_bytes.size(), chunk_index, chunk_offset);
         presentation.items.push_back(TlsStreamPresentationItem {
-            .label = tls_stream_label(record_bytes),
+            .label = std::move(label),
             .byte_count = record_bytes.size(),
             .packet_indices = packet_indices,
             .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = tls_record_protocol_text(record_bytes),
+            .protocol_text = std::move(protocol_text),
         });
+        row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
         emitted_any = true;
+        ++record_count;
         offset += *record_size;
     }
 
@@ -1576,6 +1696,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         presentation.covered_packet_indices.insert(result->packet_indices.begin(), result->packet_indices.end());
     }
     if (result->stopped_at_gap && result->first_gap_packet_index != 0U) {
+        const auto row_started_at = std::chrono::steady_clock::now();
         presentation.items.push_back(TlsStreamPresentationItem {
             .label = "TLS Gap",
             .byte_count = 0U,
@@ -1583,11 +1704,39 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("TLS"),
         });
+        row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = result->first_gap_packet_index;
         presentation.fallback_label = "TLS Payload";
         presentation.fallback_protocol_text = tcp_gap_protocol_text("TLS");
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "selected-stream-build tls"
+            << " flow_index=" << flow_index
+            << " direction=" << direction_text(direction)
+            << " mode=contiguous"
+            << " direction_packets=" << direction_packets.size()
+            << " reassembly_ms=" << reassembly_elapsed_ms
+            << " chunk_map_ms=" << chunk_map_elapsed_ms
+            << " record_parse_ms=" << parse_elapsed_ms
+            << " handshake_ms=" << protocol_elapsed_ms
+            << " row_build_ms=" << row_build_elapsed_ms
+            << " items=" << presentation.items.size()
+            << " records=" << record_count
+            << " partial_items=" << partial_item_count
+            << " packets_consumed=" << result->packet_indices.size()
+            << " returned_early_after_limit=false"
+            << " kept_parsing_after_limit=false"
+            << " returned_empty_reassembly=false"
+            << " returned_no_tls_prefix=false"
+            << " returned_no_chunks=false"
+            << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false")
+            << " first_gap_packet_index=" << result->first_gap_packet_index
+            << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+        selected_flow_diagnostics::log(out.str());
     }
 
     return presentation;
@@ -1600,6 +1749,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
     std::span<const PacketRef> direction_packets
 ) {
     TlsDirectionalStreamPresentation presentation {};
+    const auto started_at = std::chrono::steady_clock::now();
     if (direction_packets.empty()) {
         return presentation;
     }
@@ -1607,12 +1757,19 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
     HexDumpService hex_dump_service {};
     std::optional<PendingTlsRecord> pending_record {};
     const auto gap_packet_index = session.selected_flow_tcp_direction_first_gap_packet_index(flow_index, direction);
+    double parse_elapsed_ms = 0.0;
+    double protocol_elapsed_ms = 0.0;
+    double row_build_elapsed_ms = 0.0;
+    std::size_t packets_consumed = 0U;
+    std::size_t record_count = 0U;
+    std::size_t partial_item_count = 0U;
 
     auto emit_gap_item = [&]() {
         if (presentation.explicit_gap_item_emitted || !gap_packet_index.has_value()) {
             return;
         }
 
+        const auto row_started_at = std::chrono::steady_clock::now();
         presentation.items.push_back(TlsStreamPresentationItem {
             .label = "TLS Gap",
             .byte_count = 0U,
@@ -1620,6 +1777,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .payload_hex_text = {},
             .protocol_text = tcp_gap_protocol_text("TLS"),
         });
+        row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
         presentation.used_reassembly = true;
         presentation.explicit_gap_item_emitted = true;
         presentation.first_gap_packet_index = *gap_packet_index;
@@ -1628,6 +1786,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
     };
 
     for (const auto& packet : direction_packets) {
+        ++packets_consumed;
         if (packet.payload_length == 0U || session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
             continue;
         }
@@ -1696,12 +1855,15 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                 handled_this_packet = true;
 
                 if (pending_record->remaining_original_bytes == 0U) {
+                    const auto row_started_at = std::chrono::steady_clock::now();
                     presentation.items.push_back(finalize_pending_tls_record(std::move(*pending_record), hex_dump_service));
+                    row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
                     presentation.used_reassembly = true;
                     presentation.covered_packet_indices.insert(
                         presentation.items.back().packet_indices.begin(),
                         presentation.items.back().packet_indices.end()
                     );
+                    ++record_count;
                     pending_record.reset();
                     continue;
                 }
@@ -1714,7 +1876,11 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             }
 
             const auto captured_remaining = payload_span.size() - captured_offset;
-            if (captured_remaining < kTlsRecordHeaderSize || !looks_like_tls_record_prefix(payload_span, captured_offset)) {
+            const auto parse_started_at = std::chrono::steady_clock::now();
+            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize
+                && looks_like_tls_record_prefix(payload_span, captured_offset);
+            parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(parse_started_at);
+            if (captured_remaining < kTlsRecordHeaderSize || !has_record_prefix) {
                 const bool have_tls_context = pending_record.has_value() || !presentation.items.empty() || presentation.used_reassembly;
                 if (!have_tls_context) {
                     return {};
@@ -1729,6 +1895,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                     return presentation;
                 }
 
+                const auto row_started_at = std::chrono::steady_clock::now();
                 presentation.items.push_back(TlsStreamPresentationItem {
                     .label = captured_remaining < kTlsRecordHeaderSize ? "TLS Payload (partial)" : "TLS Record Fragment (partial)",
                     .byte_count = captured_remaining,
@@ -1736,26 +1903,34 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
                     .payload_hex_text = hex_dump_service.format(payload_span.subspan(captured_offset)),
                     .protocol_text = limited_quality_tls_protocol_text(captured_remaining >= kTlsRecordHeaderSize),
                 });
+                row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
                 presentation.used_reassembly = true;
                 presentation.covered_packet_indices.insert(packet.packet_index);
+                ++partial_item_count;
                 handled_this_packet = true;
                 break;
             }
 
+            const auto record_size_started_at = std::chrono::steady_clock::now();
             const auto record_body_length = static_cast<std::size_t>(read_be16(payload_span, captured_offset + 3U));
             const auto record_size = kTlsRecordHeaderSize + record_body_length;
+            parse_elapsed_ms += selected_flow_diagnostics::elapsed_ms(record_size_started_at);
             const auto contributed_original_bytes = std::min(record_budget_remaining, record_size);
             const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
+            const auto protocol_started_at = std::chrono::steady_clock::now();
+            const auto label = tls_stream_label(captured_record_bytes);
+            const auto protocol_text = tls_record_protocol_text(captured_record_bytes);
+            protocol_elapsed_ms += selected_flow_diagnostics::elapsed_ms(protocol_started_at);
 
             PendingTlsRecord record {
-                .label = tls_stream_label(captured_record_bytes),
+                .label = std::move(label),
                 .total_byte_count = record_size,
                 .remaining_original_bytes = record_size - contributed_original_bytes,
                 .packet_indices = {packet.packet_index},
                 .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
-                .protocol_text = tls_record_protocol_text(captured_record_bytes),
+                .protocol_text = std::move(protocol_text),
             };
             if (packet.captured_length < packet.original_length && captured_contribution < record_size) {
                 append_constricted_packet_note(record, packet);
@@ -1773,12 +1948,15 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             handled_this_packet = true;
 
             if (record.remaining_original_bytes == 0U) {
+                const auto row_started_at = std::chrono::steady_clock::now();
                 presentation.items.push_back(finalize_pending_tls_record(std::move(record), hex_dump_service));
+                row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
                 presentation.used_reassembly = true;
                 presentation.covered_packet_indices.insert(
                     presentation.items.back().packet_indices.begin(),
                     presentation.items.back().packet_indices.end()
                 );
+                ++record_count;
                 continue;
             }
 
@@ -1788,6 +1966,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
     }
 
     if (pending_record.has_value()) {
+        const auto row_started_at = std::chrono::steady_clock::now();
         presentation.items.push_back(TlsStreamPresentationItem {
             .label = "TLS Record Fragment (partial)",
             .byte_count = pending_record->captured_bytes.size(),
@@ -1795,11 +1974,36 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             .payload_hex_text = hex_dump_service.format(pending_record->captured_bytes),
             .protocol_text = limited_quality_tls_protocol_text(true),
         });
+        row_build_elapsed_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
         presentation.used_reassembly = true;
         presentation.covered_packet_indices.insert(
             pending_record->packet_indices.begin(),
             pending_record->packet_indices.end()
         );
+        ++partial_item_count;
+    }
+
+    if (selected_flow_diagnostics::enabled()) {
+        std::ostringstream out {};
+        out << "selected-stream-build tls"
+            << " flow_index=" << flow_index
+            << " direction=" << direction_text(direction)
+            << " mode=constricted"
+            << " direction_packets=" << direction_packets.size()
+            << " reassembly_ms=0.00"
+            << " record_parse_ms=" << parse_elapsed_ms
+            << " handshake_ms=" << protocol_elapsed_ms
+            << " row_build_ms=" << row_build_elapsed_ms
+            << " items=" << presentation.items.size()
+            << " records=" << record_count
+            << " partial_items=" << partial_item_count
+            << " packets_consumed=" << packets_consumed
+            << " returned_early_after_limit=false"
+            << " kept_parsing_after_limit=false"
+            << " stopped_at_gap=" << (presentation.explicit_gap_item_emitted ? "true" : "false")
+            << " first_gap_packet_index=" << presentation.first_gap_packet_index
+            << " total_ms=" << selected_flow_diagnostics::elapsed_ms(started_at);
+        selected_flow_diagnostics::log(out.str());
     }
 
     return presentation;
