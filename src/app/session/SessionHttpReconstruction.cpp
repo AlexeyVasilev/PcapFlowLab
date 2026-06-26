@@ -492,43 +492,29 @@ std::string limited_quality_http_protocol_text() {
 }
 
 std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_chunks(
-    const CaptureSession& session,
-    const std::size_t flow_index,
     const ReassemblyResult& result
 ) {
+    if (result.packet_indices.size() != result.packet_byte_counts.size()) {
+        return std::nullopt;
+    }
+
     std::vector<ReassembledPayloadChunk> chunks {};
     chunks.reserve(result.packet_indices.size());
     std::size_t consumed_bytes = 0U;
 
-    for (const auto packet_index : result.packet_indices) {
+    for (std::size_t index = 0U; index < result.packet_indices.size(); ++index) {
         if (consumed_bytes >= result.bytes.size()) {
             break;
         }
 
-        const auto packet = session.find_packet(packet_index);
-        if (!packet.has_value()) {
-            return std::nullopt;
-        }
-
-        const auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
-        if (payload_bytes.empty()) {
-            return std::nullopt;
-        }
-
-        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet_index);
-        if (trim_prefix_bytes >= payload_bytes.size()) {
-            continue;
-        }
-
         const auto remaining_bytes = result.bytes.size() - consumed_bytes;
-        const auto contributed_bytes = payload_bytes.size() - trim_prefix_bytes;
-        const auto chunk_size = std::min<std::size_t>(contributed_bytes, remaining_bytes);
+        const auto chunk_size = std::min<std::size_t>(result.packet_byte_counts[index], remaining_bytes);
         if (chunk_size == 0U) {
             continue;
         }
 
         chunks.push_back(ReassembledPayloadChunk {
-            .packet_index = packet_index,
+            .packet_index = result.packet_indices[index],
             .byte_count = chunk_size,
         });
         consumed_bytes += chunk_size;
@@ -672,7 +658,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
     const auto payload_text = bytes_as_text(payload_bytes);
     const auto chunk_map_started_at = std::chrono::steady_clock::now();
-    const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
+    const auto chunks = build_reassembled_payload_chunks(*result);
     chunk_map_elapsed_ms = selected_flow_diagnostics::elapsed_ms(chunk_map_started_at);
     if (!chunks.has_value() || chunks->empty()) {
         returned_no_chunks = true;

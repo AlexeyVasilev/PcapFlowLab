@@ -191,6 +191,7 @@ std::optional<ReassemblyResult> reassemble_tcp_payload_from_packet_span(
             payload.begin() + static_cast<std::ptrdiff_t>(trim_prefix_bytes + appended_bytes)
         );
         result.packet_indices.push_back(packet.packet_index);
+        result.packet_byte_counts.push_back(appended_bytes);
         ++result.payload_packets_used;
 
         if (trim_prefix_bytes > 0U) {
