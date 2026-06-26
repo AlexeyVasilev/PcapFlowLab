@@ -130,6 +130,10 @@ public:
     void clear_selected_flow_packet_cache() noexcept;
     [[nodiscard]] std::optional<SelectedFlowPacketCacheInfo> selected_flow_packet_cache_info() const noexcept;
     [[nodiscard]] bool selected_flow_packet_cache_limit_reached() const noexcept;
+    [[nodiscard]] std::optional<std::uint64_t> selected_flow_cached_packet_number(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const noexcept;
     [[nodiscard]] std::vector<std::uint8_t> read_selected_flow_transport_payload(std::size_t flow_index, const PacketRef& packet) const;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices) noexcept;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices, std::size_t max_packets_to_scan) noexcept;

@@ -2769,6 +2769,17 @@ bool CaptureSession::selected_flow_packet_cache_limit_reached() const noexcept {
     return selected_flow_packet_cache_.has_value() && selected_flow_packet_cache_->limit_reached;
 }
 
+std::optional<std::uint64_t> CaptureSession::selected_flow_cached_packet_number(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const noexcept {
+    if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet_index); entry != nullptr) {
+        return entry->flow_local_packet_number;
+    }
+
+    return std::nullopt;
+}
+
 std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload(
     const std::size_t flow_index,
     const PacketRef& packet
