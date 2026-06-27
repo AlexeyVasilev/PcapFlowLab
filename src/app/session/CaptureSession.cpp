@@ -1904,6 +1904,10 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
             cache.total_cached_bytes,
             kSelectedFlowFullPacketCacheMaxBytes
         );
+        if (remaining_budget == 0U) {
+            cache.limit_reached = true;
+            break;
+        }
         if (static_cast<std::size_t>(packet.captured_length) > remaining_budget) {
             cache.limit_reached = true;
             continue;
