@@ -2139,6 +2139,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         cache.entry_index_by_packet_index.insert_or_assign(packet.packet_index, cache.entries.size());
         cache.entries.push_back(SelectedFlowPacketCacheEntry {
             .flow_local_packet_number = window_packet.flow_local_packet_number,
+            .packet = packet,
             .packet_index = packet.packet_index,
             .direction = window_packet.direction,
             .cache_offset = cache_offset,
@@ -2236,6 +2237,7 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         cache.entry_index_by_packet_index.insert_or_assign(packet.packet_index, cache.entries.size());
         cache.entries.push_back(SelectedFlowPacketCacheEntry {
             .flow_local_packet_number = window_packet.flow_local_packet_number,
+            .packet = packet,
             .packet_index = packet.packet_index,
             .direction = direction,
             .cache_offset = cache_offset,
@@ -2288,6 +2290,28 @@ std::optional<std::uint64_t> CaptureSession::selected_flow_cached_packet_number(
     }
 
     return std::nullopt;
+}
+
+std::optional<PacketRef> CaptureSession::selected_flow_cached_packet_at(
+    const std::size_t flow_index,
+    const std::uint64_t flow_packet_index
+) const noexcept {
+    if (!selected_flow_packet_cache_.has_value() || selected_flow_packet_cache_->flow_index != flow_index) {
+        return std::nullopt;
+    }
+
+    if (flow_packet_index == 0U ||
+        flow_packet_index > static_cast<std::uint64_t>(selected_flow_packet_cache_->cached_packet_window_count) ||
+        flow_packet_index > static_cast<std::uint64_t>(selected_flow_packet_cache_->entries.size())) {
+        return std::nullopt;
+    }
+
+    const auto& entry = selected_flow_packet_cache_->entries[static_cast<std::size_t>(flow_packet_index - 1U)];
+    if (entry.flow_local_packet_number != flow_packet_index) {
+        return std::nullopt;
+    }
+
+    return entry.packet;
 }
 
 std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload(
@@ -3017,6 +3041,10 @@ std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
     const std::size_t flow_index,
     const std::uint64_t flow_packet_index
 ) const {
+    if (const auto packet = selected_flow_cached_packet_at(flow_index, flow_packet_index); packet.has_value()) {
+        return packet;
+    }
+
     const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
@@ -3028,6 +3056,13 @@ std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
 }
 
 std::optional<std::uint64_t> CaptureSession::selected_flow_packet_number(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const {
+    return selected_flow_cached_packet_number(flow_index, packet_index);
+}
+
+std::optional<std::uint64_t> CaptureSession::selected_flow_exact_packet_number(
     const std::size_t flow_index,
     const std::uint64_t packet_index
 ) const {

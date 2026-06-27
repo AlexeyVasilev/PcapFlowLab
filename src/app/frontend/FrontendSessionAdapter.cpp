@@ -2236,11 +2236,11 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
         auto constricted_contribution_notes = row.constricted_contribution_notes;
         auto constricted_packet_notes = row.constricted_packet_notes;
 
-        const auto source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers);
-        const auto header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers);
-        const auto badge_text = stream_item_header_badge_text(row);
-        const auto summary_text = build_stream_item_summary_text(row, flow_packet_numbers);
-        const auto payload_tab_title = stream_item_payload_tab_title(row);
+        auto source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers);
+        auto header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers);
+        auto badge_text = stream_item_header_badge_text(row);
+        auto summary_text = build_stream_item_summary_text(row, flow_packet_numbers);
+        auto payload_tab_title = stream_item_payload_tab_title(row);
 
         result.items.push_back(FrontendStreamItemDto {
             .stream_item_index = row.stream_item_index,
@@ -2249,14 +2249,14 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
             .byte_count = row.byte_count,
             .packet_count = row.packet_count,
             .source_packet_indices = std::move(source_packet_indices),
-            .source_packets_text = source_packets_text,
+            .source_packets_text = std::move(source_packets_text),
             .has_constricted_contribution = row.has_constricted_contribution,
             .constricted_contribution_notes = std::move(constricted_contribution_notes),
             .constricted_packet_notes = std::move(constricted_packet_notes),
-            .header_secondary_text = header_secondary_text,
-            .badge_text = badge_text,
-            .summary_text = summary_text,
-            .payload_tab_title = payload_tab_title,
+            .header_secondary_text = std::move(header_secondary_text),
+            .badge_text = std::move(badge_text),
+            .summary_text = std::move(summary_text),
+            .payload_tab_title = std::move(payload_tab_title),
             .payload_preview_text = {},
             .payload_preview_unavailable_text = {},
             .protocol_details_text = {},
@@ -2562,7 +2562,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
             return result;
         }
     } else {
-        if (!session_.selected_flow_packet_number(*selected_flow_index_, packet_index).has_value()) {
+        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
             result.error_text = "The selected packet is unavailable.";
             return result;
         }

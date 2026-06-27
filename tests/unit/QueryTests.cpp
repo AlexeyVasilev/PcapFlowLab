@@ -359,8 +359,14 @@ void run_query_tests() {
     const auto second_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 2U);
     PFL_EXPECT(second_selected_flow_packet.has_value());
     PFL_EXPECT(second_selected_flow_packet->packet_index == 2U);
+    const auto third_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 3U);
+    PFL_EXPECT(third_selected_flow_packet.has_value());
+    PFL_EXPECT(third_selected_flow_packet->packet_index == 3U);
     PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 0U) == std::optional<std::uint64_t> {1U});
     PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 2U) == std::optional<std::uint64_t> {2U});
+    PFL_EXPECT(!cache_session.selected_flow_cached_packet_number(0U, 3U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 3U).has_value());
+    PFL_EXPECT(cache_session.selected_flow_exact_packet_number(0U, 3U) == std::optional<std::uint64_t> {3U});
     PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 1U).has_value());
     PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 0U).has_value());
     PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 5U).has_value());

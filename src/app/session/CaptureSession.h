@@ -152,6 +152,10 @@ public:
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
     [[nodiscard]] std::optional<PacketRef> selected_flow_packet_at(std::size_t flow_index, std::uint64_t flow_packet_index) const;
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_packet_number(std::size_t flow_index, std::uint64_t packet_index) const;
+    [[nodiscard]] std::optional<std::uint64_t> selected_flow_exact_packet_number(
+        std::size_t flow_index,
+        std::uint64_t packet_index
+    ) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
@@ -186,6 +190,7 @@ private:
 
     struct SelectedFlowPacketCacheEntry {
         std::uint64_t flow_local_packet_number {0};
+        PacketRef packet {};
         std::uint64_t packet_index {0};
         Direction direction {Direction::a_to_b};
         std::size_t cache_offset {0};
@@ -253,6 +258,10 @@ private:
     ) const noexcept;
     [[nodiscard]] const std::vector<session_detail::ListedConnectionRef>& listed_connections(bool* cache_hit = nullptr) const;
     void prepare_selected_flow_packet_cache(std::size_t flow_index, const SelectedFlowTcpPrefixContext& context) const;
+    [[nodiscard]] std::optional<PacketRef> selected_flow_cached_packet_at(
+        std::size_t flow_index,
+        std::uint64_t flow_packet_index
+    ) const noexcept;
 
     void reset_runtime_state() noexcept;
 
