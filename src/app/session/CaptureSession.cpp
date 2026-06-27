@@ -548,12 +548,18 @@ DirectionPrefixProbe collect_direction_transport_prefix_bytes(
             continue;
         }
 
-        auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, packet);
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index);
+        const auto remaining_needed = max_bytes_to_collect - probe.bytes.size();
+        const auto requested_prefix = remaining_needed + trim_prefix_bytes;
+        auto payload_bytes = session.read_selected_flow_transport_payload_prefix(
+            flow_index,
+            packet,
+            requested_prefix
+        );
         if (payload_bytes.empty()) {
             continue;
         }
 
-        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index);
         if (trim_prefix_bytes >= payload_bytes.size()) {
             continue;
         }
@@ -2329,6 +2335,37 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload(
     }
 
     return read_transport_payload_direct(packet);
+}
+
+std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_prefix(
+    const std::size_t flow_index,
+    const PacketRef& packet,
+    const std::size_t max_bytes
+) const {
+    if (max_bytes == 0U) {
+        return {};
+    }
+
+    if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet.packet_index); entry != nullptr) {
+        if (entry->payload_cached) {
+            const auto prefix_length = std::min(entry->cache_length, max_bytes);
+            const auto begin = selected_flow_packet_cache_->bytes.begin() + static_cast<std::ptrdiff_t>(entry->cache_offset);
+            const auto end = begin + static_cast<std::ptrdiff_t>(prefix_length);
+            return std::vector<std::uint8_t>(begin, end);
+        }
+
+        auto payload = read_transport_payload_direct(packet);
+        if (payload.size() > max_bytes) {
+            payload.resize(max_bytes);
+        }
+        return payload;
+    }
+
+    auto payload = read_transport_payload_direct(packet);
+    if (payload.size() > max_bytes) {
+        payload.resize(max_bytes);
+    }
+    return payload;
 }
 
 std::optional<PacketDetails> CaptureSession::read_packet_details(const PacketRef& packet) const {

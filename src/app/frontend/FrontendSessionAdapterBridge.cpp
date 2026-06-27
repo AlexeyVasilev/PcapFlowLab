@@ -833,8 +833,9 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
     return result;
 }
 
-[[nodiscard]] pfl::FrontendStreamItemDto unavailable_stream_item() {
+[[nodiscard]] pfl::FrontendStreamItemDto unavailable_stream_item(const std::uint64_t stream_item_index = 0U) {
     pfl::FrontendStreamItemDto item {};
+    item.stream_item_index = stream_item_index;
     item.payload_tab_title = "Payload";
     item.payload_preview_unavailable_text = std::string {kAdapterUnavailableText};
     item.protocol_details_text = std::string {kAdapterUnavailableText};
@@ -1116,7 +1117,7 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
     const std::uint64_t stream_item_index
 ) {
     if (handle == nullptr) {
-        return make_c_string(stream_item_json(unavailable_stream_item()));
+        return make_c_string(stream_item_json(unavailable_stream_item(stream_item_index)));
     }
 
     return make_c_string(
