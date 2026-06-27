@@ -63,6 +63,40 @@ std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
 }
 
+std::map<std::uint64_t, std::uint64_t> build_bounded_flow_packet_numbers(
+    const CaptureSession& session,
+    const std::size_t flow_index,
+    const std::size_t packet_window_count,
+    const std::vector<StreamItemRow>& rows
+) {
+    std::set<std::uint64_t> needed_packet_indices {};
+    for (const auto& row : rows) {
+        needed_packet_indices.insert(row.packet_indices.begin(), row.packet_indices.end());
+    }
+
+    std::map<std::uint64_t, std::uint64_t> flow_packet_numbers {};
+    for (const auto packet_index : needed_packet_indices) {
+        if (const auto packet_number = session.selected_flow_cached_packet_number(flow_index, packet_index);
+            packet_number.has_value()) {
+            flow_packet_numbers.emplace(packet_index, *packet_number);
+        }
+    }
+
+    if (flow_packet_numbers.size() == needed_packet_indices.size() || packet_window_count == 0U) {
+        return flow_packet_numbers;
+    }
+
+    const auto bounded_packet_rows = session.list_flow_packets(flow_index, 0U, packet_window_count);
+    for (const auto& row : bounded_packet_rows) {
+        if (!needed_packet_indices.contains(row.packet_index)) {
+            continue;
+        }
+        flow_packet_numbers.emplace(row.packet_index, row.row_number);
+    }
+
+    return flow_packet_numbers;
+}
+
 std::string format_partial_open_warning_message(const OpenFailureInfo& failure) {
     std::string message = "Capture opened partially.";
 
@@ -1430,15 +1464,7 @@ std::string format_size_value(const std::uint64_t value) {
 }
 
 std::optional<FlowRow> selected_flow_row(const CaptureSession& session, const std::size_t flow_index) {
-    const auto rows = session.list_flows();
-    const auto it = std::find_if(rows.begin(), rows.end(), [flow_index](const FlowRow& row) {
-        return row.index == flow_index;
-    });
-    if (it == rows.end()) {
-        return std::nullopt;
-    }
-
-    return *it;
+    return session.flow_row(flow_index);
 }
 
 std::string build_analysis_endpoint_summary(const FlowRow& row) {
@@ -2064,14 +2090,13 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
     session_.clear_selected_flow_tcp_payload_suppression();
     result.selected = true;
 
-    const auto rows = session_.list_flows();
-    if (flow_index >= rows.size()) {
+    const auto row = session_.flow_row(flow_index);
+    if (!row.has_value()) {
         return result;
     }
 
-    const auto& row = rows[flow_index];
-    const auto protocol_hint_is_quic = row.protocol_hint == "quic" || row.protocol_hint == "QUIC";
-    if (!protocol_hint_is_quic || !row.service_hint.empty()) {
+    const auto protocol_hint_is_quic = row->protocol_hint == "quic" || row->protocol_hint == "QUIC";
+    if (!protocol_hint_is_quic || !row->service_hint.empty()) {
         return result;
     }
 
@@ -2080,7 +2105,7 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
         return result;
     }
 
-    auto updated_row = row;
+    auto updated_row = *row;
     updated_row.service_hint = *derived_service_hint;
     result.updated_flow = to_frontend_flow(updated_row);
     return result;
@@ -2123,12 +2148,10 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
             row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
         }
     }
-
     result.packets.reserve(rows.size());
     for (const auto& row : rows) {
         result.packets.push_back(to_frontend_packet(row));
     }
-
     return result;
 }
 
@@ -2205,7 +2228,6 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
     result.packet_window_partial = result.packet_window_count < total_flow_packet_count;
 
-    session_.prepare_selected_flow_packet_cache(flow_index, result.packet_window_count);
     auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, result.packet_window_count, limit + 1U);
 
     const bool has_more_items = rows.size() > limit;
@@ -2219,18 +2241,101 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.stream_partially_loaded = result.can_load_more;
     result.total_item_count = result.can_load_more ? 0U : result.loaded_item_count;
 
-    std::map<std::uint64_t, std::uint64_t> flow_packet_numbers {};
-    if (const auto flow_packets = session_.flow_packets(flow_index); flow_packets.has_value()) {
-        for (std::size_t index = 0; index < flow_packets->size(); ++index) {
-            flow_packet_numbers.emplace((*flow_packets)[index].packet_index, static_cast<std::uint64_t>(index + 1U));
-        }
-    }
+    const auto flow_packet_numbers = build_bounded_flow_packet_numbers(
+        session_,
+        flow_index,
+        result.packet_window_count,
+        rows
+    );
 
     result.items.reserve(rows.size());
     for (const auto& row : rows) {
-        result.items.push_back(to_frontend_stream_item(row, flow_packet_numbers));
+        auto source_packet_indices = row.packet_indices;
+        auto constricted_contribution_notes = row.constricted_contribution_notes;
+        auto constricted_packet_notes = row.constricted_packet_notes;
+
+        auto source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers);
+        auto header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers);
+        auto badge_text = stream_item_header_badge_text(row);
+        auto summary_text = build_stream_item_summary_text(row, flow_packet_numbers);
+        auto payload_tab_title = stream_item_payload_tab_title(row);
+
+        result.items.push_back(FrontendStreamItemDto {
+            .stream_item_index = row.stream_item_index,
+            .direction_text = row.direction_text,
+            .label = row.label,
+            .byte_count = row.byte_count,
+            .packet_count = row.packet_count,
+            .source_packet_indices = std::move(source_packet_indices),
+            .source_packets_text = std::move(source_packets_text),
+            .has_constricted_contribution = row.has_constricted_contribution,
+            .constricted_contribution_notes = std::move(constricted_contribution_notes),
+            .constricted_packet_notes = std::move(constricted_packet_notes),
+            .header_secondary_text = std::move(header_secondary_text),
+            .badge_text = std::move(badge_text),
+            .summary_text = std::move(summary_text),
+            .payload_tab_title = std::move(payload_tab_title),
+            .payload_preview_text = {},
+            .payload_preview_unavailable_text = {},
+            .protocol_details_text = {},
+        });
+    }
+    return result;
+}
+
+FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_details(
+    const std::size_t max_packets_to_scan,
+    const std::size_t limit,
+    const std::uint64_t stream_item_index
+) const {
+    FrontendStreamItemDto result {
+        .stream_item_index = stream_item_index,
+        .payload_tab_title = "Payload",
+    };
+
+    if (!session_.has_capture() || !selected_flow_index_.has_value()) {
+        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.protocol_details_text = stream_protocol_unavailable_text();
+        return result;
     }
 
+    if (!session_.source_capture_accessible()) {
+        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.protocol_details_text = stream_protocol_unavailable_text();
+        return result;
+    }
+
+    const auto flow_index = *selected_flow_index_;
+    const auto total_flow_packet_count = session_.flow_packet_count(flow_index);
+    if (limit == 0U || max_packets_to_scan == 0U || total_flow_packet_count == 0U) {
+        result.payload_preview_unavailable_text = stream_payload_unavailable_text();
+        result.protocol_details_text = stream_protocol_unavailable_text();
+        return result;
+    }
+
+    const auto packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
+    auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, packet_window_count, limit + 1U);
+    if (rows.size() > limit) {
+        rows.resize(limit);
+    }
+
+    const auto flow_packet_numbers = build_bounded_flow_packet_numbers(
+        session_,
+        flow_index,
+        packet_window_count,
+        rows
+    );
+    if (const auto it = std::find_if(
+            rows.begin(),
+            rows.end(),
+            [stream_item_index](const StreamItemRow& row) { return row.stream_item_index == stream_item_index; }
+        );
+        it != rows.end()) {
+        result = to_frontend_stream_item(*it, flow_packet_numbers, true);
+    } else {
+        result.payload_preview_unavailable_text = "The selected stream item is no longer available in the current stream window.";
+        result.protocol_details_text = stream_protocol_unavailable_text();
+    }
     return result;
 }
 
@@ -2472,25 +2577,31 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         return result;
     }
 
-    const auto flow_packets = session_.flow_packets(*selected_flow_index_);
-    if (!flow_packets.has_value()) {
-        result.error_text = "The selected flow is unavailable.";
-        return result;
+    std::optional<PacketRef> packet {};
+    if (flow_packet_index != 0U) {
+        packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
+        if (!packet.has_value() || packet->packet_index != packet_index) {
+            result.error_text = "The selected packet is unavailable.";
+            return result;
+        }
+    } else {
+        if (!session_.selected_flow_exact_packet_number(*selected_flow_index_, packet_index).has_value()) {
+            result.error_text = "The selected packet is unavailable.";
+            return result;
+        }
+        packet = session_.find_packet(packet_index);
+        if (!packet.has_value()) {
+            result.error_text = "The selected packet is unavailable.";
+            return result;
+        }
     }
 
-    const auto packet_it = std::find_if(flow_packets->begin(), flow_packets->end(), [&](const PacketRef& packet) {
-        return packet.packet_index == packet_index;
-    });
-    if (packet_it == flow_packets->end()) {
-        result.error_text = "The selected packet is unavailable in the active flow context.";
-        return result;
-    }
-
-    return build_frontend_packet_details(
-        *packet_it,
+    auto details = build_frontend_packet_details(
+        *packet,
         selected_flow_index_,
         flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt
     );
+    return details;
 }
 
 FrontendPacketDetailsDto FrontendSessionAdapter::get_unrecognized_packet_details(const std::uint64_t packet_index) const {
@@ -2732,9 +2843,10 @@ FrontendPacketDto FrontendSessionAdapter::to_frontend_packet(const PacketRow& ro
 
 FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
     const StreamItemRow& row,
-    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers,
+    const bool include_details
 ) const {
-    const auto payload_preview_text = frontend_stream_payload_text(session_, row);
+    const auto payload_preview_text = include_details ? frontend_stream_payload_text(session_, row) : std::string {};
     return FrontendStreamItemDto {
         .stream_item_index = row.stream_item_index,
         .direction_text = row.direction_text,
@@ -2751,8 +2863,12 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
         .payload_tab_title = stream_item_payload_tab_title(row),
         .payload_preview_text = payload_preview_text,
-        .payload_preview_unavailable_text = payload_preview_text.empty() ? stream_payload_unavailable_text() : std::string {},
-        .protocol_details_text = frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row),
+        .payload_preview_unavailable_text = include_details && payload_preview_text.empty()
+            ? stream_payload_unavailable_text()
+            : std::string {},
+        .protocol_details_text = include_details
+            ? frontend_stream_protocol_text(session_, selected_flow_index_.value_or(0U), row)
+            : std::string {},
     };
 }
 

@@ -3,11 +3,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "core/domain/Direction.h"
+#include "core/domain/PacketRef.h"
 
 namespace pfl {
 
@@ -37,7 +39,7 @@ HttpDirectionalStreamPresentation build_http_stream_items_from_reassembly(
     const CaptureSession& session,
     std::size_t flow_index,
     Direction direction,
-    std::size_t max_packets_to_scan
+    std::span<const PacketRef> direction_packets
 );
 
 std::string http_stream_label_from_protocol_text(std::string_view protocol_text);

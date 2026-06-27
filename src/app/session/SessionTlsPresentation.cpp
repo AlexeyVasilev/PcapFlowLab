@@ -5,7 +5,6 @@
 #include <iomanip>
 #include <initializer_list>
 #include <optional>
-#include <sstream>
 #include <utility>
 
 #include "app/session/CaptureSession.h"
@@ -1295,43 +1294,29 @@ struct ReassembledPayloadChunk {
 };
 
 std::optional<std::vector<ReassembledPayloadChunk>> build_reassembled_payload_chunks(
-    const CaptureSession& session,
-    const std::size_t flow_index,
     const ReassemblyResult& result
 ) {
+    if (result.packet_indices.size() != result.packet_byte_counts.size()) {
+        return std::nullopt;
+    }
+
     std::vector<ReassembledPayloadChunk> chunks {};
     chunks.reserve(result.packet_indices.size());
     std::size_t consumed_bytes = 0U;
 
-    for (const auto packet_index : result.packet_indices) {
+    for (std::size_t index = 0U; index < result.packet_indices.size(); ++index) {
         if (consumed_bytes >= result.bytes.size()) {
             break;
         }
 
-        const auto packet = session.find_packet(packet_index);
-        if (!packet.has_value()) {
-            return std::nullopt;
-        }
-
-        const auto payload_bytes = session.read_selected_flow_transport_payload(flow_index, *packet);
-        if (payload_bytes.empty()) {
-            return std::nullopt;
-        }
-
-        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet_index);
-        if (trim_prefix_bytes >= payload_bytes.size()) {
-            continue;
-        }
-
         const auto remaining_bytes = result.bytes.size() - consumed_bytes;
-        const auto contributed_bytes = payload_bytes.size() - trim_prefix_bytes;
-        const auto chunk_size = std::min<std::size_t>(contributed_bytes, remaining_bytes);
+        const auto chunk_size = std::min<std::size_t>(result.packet_byte_counts[index], remaining_bytes);
         if (chunk_size == 0U) {
             continue;
         }
 
         chunks.push_back(ReassembledPayloadChunk {
-            .packet_index = packet_index,
+            .packet_index = result.packet_indices[index],
             .byte_count = chunk_size,
         });
         consumed_bytes += chunk_size;
@@ -1348,10 +1333,18 @@ std::vector<std::uint64_t> consume_reassembled_packet_indices(
     const std::vector<ReassembledPayloadChunk>& chunks,
     const std::size_t byte_count,
     std::size_t& chunk_index,
-    std::size_t& chunk_offset
+    std::size_t& chunk_offset,
+    std::size_t* lookup_calls = nullptr,
+    std::size_t* lookup_bytes = nullptr
 ) {
     std::vector<std::uint64_t> packet_indices {};
     std::size_t remaining_bytes = byte_count;
+    if (lookup_calls != nullptr) {
+        ++(*lookup_calls);
+    }
+    if (lookup_bytes != nullptr) {
+        *lookup_bytes += byte_count;
+    }
 
     while (remaining_bytes > 0U && chunk_index < chunks.size()) {
         const auto& chunk = chunks[chunk_index];
@@ -1494,25 +1487,29 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
     const CaptureSession& session,
     const std::size_t flow_index,
     const Direction direction,
-    const std::size_t max_packets_to_scan
+    const std::span<const PacketRef> direction_packets
 ) {
     TlsDirectionalStreamPresentation presentation {};
-    const auto result = session.reassemble_flow_direction(ReassemblyRequest {
-        .flow_index = flow_index,
-        .direction = direction,
-        .max_packets = max_packets_to_scan,
-        .max_bytes = 256U * 1024U,
-    });
+    const auto result = session.reassemble_flow_direction(
+        ReassemblyRequest {
+            .flow_index = flow_index,
+            .direction = direction,
+            .max_packets = direction_packets.size(),
+            .max_bytes = 256U * 1024U,
+        },
+        direction_packets
+    );
     if (!result.has_value() || result->bytes.empty()) {
         return presentation;
     }
 
     const auto payload_bytes = std::span<const std::uint8_t>(result->bytes.data(), result->bytes.size());
-    if (!looks_like_tls_record_prefix(payload_bytes)) {
+    const bool has_tls_prefix = looks_like_tls_record_prefix(payload_bytes);
+    if (!has_tls_prefix) {
         return presentation;
     }
 
-    const auto chunks = build_reassembled_payload_chunks(session, flow_index, *result);
+    const auto chunks = build_reassembled_payload_chunks(*result);
     if (!chunks.has_value() || chunks->empty()) {
         return presentation;
     }
@@ -1524,10 +1521,18 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
     bool emitted_any = false;
 
     while (offset < payload_bytes.size()) {
-        if (!looks_like_tls_record_prefix(payload_bytes, offset)) {
+        const bool has_record_prefix = looks_like_tls_record_prefix(payload_bytes, offset);
+        if (!has_record_prefix) {
             const auto trailing = payload_bytes.subspan(offset);
             if (!trailing.empty()) {
-                const auto packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset);
+                const auto packet_indices = consume_reassembled_packet_indices(
+                    *chunks,
+                    trailing.size(),
+                    chunk_index,
+                    chunk_offset,
+                    nullptr,
+                    nullptr
+                );
                 presentation.items.push_back(TlsStreamPresentationItem {
                     .label = "TLS Payload (partial)",
                     .byte_count = trailing.size(),
@@ -1543,7 +1548,14 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         const auto record_size = tls_record_size(payload_bytes, offset);
         if (!record_size.has_value()) {
             const auto trailing = payload_bytes.subspan(offset);
-            const auto packet_indices = consume_reassembled_packet_indices(*chunks, trailing.size(), chunk_index, chunk_offset);
+            const auto packet_indices = consume_reassembled_packet_indices(
+                *chunks,
+                trailing.size(),
+                chunk_index,
+                chunk_offset,
+                nullptr,
+                nullptr
+            );
             presentation.items.push_back(TlsStreamPresentationItem {
                 .label = "TLS Record Fragment (partial)",
                 .byte_count = trailing.size(),
@@ -1556,13 +1568,22 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_contiguous_reassemb
         }
 
         const auto record_bytes = payload_bytes.subspan(offset, *record_size);
-        const auto packet_indices = consume_reassembled_packet_indices(*chunks, record_bytes.size(), chunk_index, chunk_offset);
+        const auto label = tls_stream_label(record_bytes);
+        const auto protocol_text = tls_record_protocol_text(record_bytes);
+        const auto packet_indices = consume_reassembled_packet_indices(
+            *chunks,
+            record_bytes.size(),
+            chunk_index,
+            chunk_offset,
+            nullptr,
+            nullptr
+        );
         presentation.items.push_back(TlsStreamPresentationItem {
-            .label = tls_stream_label(record_bytes),
+            .label = std::move(label),
             .byte_count = record_bytes.size(),
             .packet_indices = packet_indices,
             .payload_hex_text = hex_dump_service.format(record_bytes),
-            .protocol_text = tls_record_protocol_text(record_bytes),
+            .protocol_text = std::move(protocol_text),
         });
         emitted_any = true;
         offset += *record_size;
@@ -1711,7 +1732,9 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             }
 
             const auto captured_remaining = payload_span.size() - captured_offset;
-            if (captured_remaining < kTlsRecordHeaderSize || !looks_like_tls_record_prefix(payload_span, captured_offset)) {
+            const bool has_record_prefix = captured_remaining >= kTlsRecordHeaderSize
+                && looks_like_tls_record_prefix(payload_span, captured_offset);
+            if (captured_remaining < kTlsRecordHeaderSize || !has_record_prefix) {
                 const bool have_tls_context = pending_record.has_value() || !presentation.items.empty() || presentation.used_reassembly;
                 if (!have_tls_context) {
                     return {};
@@ -1745,14 +1768,16 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_constricted_packets
             const auto contributed_unique_bytes = std::min(unique_original_remaining, contributed_original_bytes);
             const auto captured_contribution = std::min(captured_remaining, contributed_original_bytes);
             const auto captured_record_bytes = payload_span.subspan(captured_offset, captured_contribution);
+            const auto label = tls_stream_label(captured_record_bytes);
+            const auto protocol_text = tls_record_protocol_text(captured_record_bytes);
 
             PendingTlsRecord record {
-                .label = tls_stream_label(captured_record_bytes),
+                .label = std::move(label),
                 .total_byte_count = record_size,
                 .remaining_original_bytes = record_size - contributed_original_bytes,
                 .packet_indices = {packet.packet_index},
                 .captured_bytes = std::vector<std::uint8_t>(captured_record_bytes.begin(), captured_record_bytes.end()),
-                .protocol_text = tls_record_protocol_text(captured_record_bytes),
+                .protocol_text = std::move(protocol_text),
             };
             if (packet.captured_length < packet.original_length && captured_contribution < record_size) {
                 append_constricted_packet_note(record, packet);
@@ -1816,7 +1841,7 @@ TlsDirectionalStreamPresentation build_tls_stream_items_from_reassembly(
         session,
         flow_index,
         direction,
-        direction_packets.size()
+        direction_packets
     );
 }
 

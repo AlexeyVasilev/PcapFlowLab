@@ -91,23 +91,12 @@ void set_flag(ReassemblyResult& result, const ReassemblyQualityFlag flag) noexce
     result.quality_flags |= static_cast<std::uint32_t>(flag);
 }
 
-}  // namespace
-
-std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
+std::optional<ReassemblyResult> reassemble_tcp_payload_from_packet_span(
     const CaptureSession& session,
-    const ReassemblyRequest& request
-) const {
+    const ReassemblyRequest& request,
+    const std::span<const PacketRef> direction_packets
+) {
     if (!session.has_source_capture()) {
-        return std::nullopt;
-    }
-
-    const auto connections = list_connections(session.state());
-    if (request.flow_index >= connections.size()) {
-        return std::nullopt;
-    }
-
-    const auto& connection = connections[request.flow_index];
-    if (protocol_id(connection) != ProtocolId::tcp) {
         return std::nullopt;
     }
 
@@ -117,14 +106,13 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
     const auto selected_flow_gap_packet_index =
         session.selected_flow_tcp_direction_first_gap_packet_index(request.flow_index, request.direction);
 
-    const auto packets = collect_direction_packets(connection, request.direction);
-    const auto packet_budget = std::min(request.max_packets, packets.size());
-    if (packet_budget < packets.size()) {
+    const auto packet_budget = std::min(request.max_packets, direction_packets.size());
+    if (packet_budget < direction_packets.size()) {
         set_flag(result, ReassemblyQualityFlag::truncated_by_packet_budget);
     }
 
     for (std::size_t index = 0; index < packet_budget; ++index) {
-        const auto& packet = packets[index];
+        const auto& packet = direction_packets[index];
         ++result.total_packets_seen;
 
         if (packet.is_ip_fragmented) {
@@ -159,7 +147,10 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
             break;
         }
 
-        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(request.flow_index, packet.packet_index);
+        const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(
+            request.flow_index,
+            packet.packet_index
+        );
         if (trim_prefix_bytes >= payload.size()) {
             set_flag(result, ReassemblyQualityFlag::duplicate_tcp_segment_suppressed);
             continue;
@@ -179,6 +170,7 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
             payload.begin() + static_cast<std::ptrdiff_t>(trim_prefix_bytes + appended_bytes)
         );
         result.packet_indices.push_back(packet.packet_index);
+        result.packet_byte_counts.push_back(appended_bytes);
         ++result.payload_packets_used;
 
         if (trim_prefix_bytes > 0U) {
@@ -192,6 +184,56 @@ std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
     }
 
     return result;
+}
+
+}  // namespace
+
+std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
+    const CaptureSession& session,
+    const ReassemblyRequest& request
+) const {
+    if (!session.has_source_capture()) {
+        return std::nullopt;
+    }
+
+    const auto connections = list_connections(session.state());
+    if (request.flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    const auto& connection = connections[request.flow_index];
+    if (protocol_id(connection) != ProtocolId::tcp) {
+        return std::nullopt;
+    }
+
+    const auto packets = collect_direction_packets(connection, request.direction);
+    return reassemble_tcp_payload_from_packet_span(
+        session,
+        request,
+        std::span<const PacketRef>(packets.data(), packets.size())
+    );
+}
+
+std::optional<ReassemblyResult> ReassemblyService::reassemble_tcp_payload(
+    const CaptureSession& session,
+    const ReassemblyRequest& request,
+    const std::span<const PacketRef> direction_packets
+) const {
+    if (!std::is_sorted(direction_packets.begin(), direction_packets.end(), [](const PacketRef& left, const PacketRef& right) {
+            return left.packet_index < right.packet_index;
+        })) {
+        std::vector<PacketRef> sorted_packets(direction_packets.begin(), direction_packets.end());
+        std::sort(sorted_packets.begin(), sorted_packets.end(), [](const PacketRef& left, const PacketRef& right) {
+            return left.packet_index < right.packet_index;
+        });
+        return reassemble_tcp_payload_from_packet_span(
+            session,
+            request,
+            std::span<const PacketRef>(sorted_packets.data(), sorted_packets.size())
+        );
+    }
+
+    return reassemble_tcp_payload_from_packet_span(session, request, direction_packets);
 }
 
 }  // namespace pfl

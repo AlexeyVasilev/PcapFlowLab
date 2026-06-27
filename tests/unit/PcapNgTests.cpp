@@ -67,6 +67,20 @@ void run_pcapng_tests() {
         PFL_EXPECT(connection->flow_b.packet_count == 1);
         PFL_EXPECT(connection->flow_a.packets.front().packet_index == 0);
         PFL_EXPECT(connection->flow_b.packets.front().packet_index == 1);
+
+        session.prepare_selected_flow_packet_cache(0U, 2U);
+        const auto cache_info = session.selected_flow_packet_cache_info();
+        PFL_EXPECT(cache_info.has_value());
+        PFL_EXPECT(cache_info->flow_index == 0U);
+        PFL_EXPECT(cache_info->cached_packet_window_count == 2U);
+        PFL_EXPECT(cache_info->cached_packet_contribution_count == 2U);
+        PFL_EXPECT(cache_info->window_fully_cached);
+
+        const auto flow_packets = session.flow_packets(0U);
+        PFL_EXPECT(flow_packets.has_value());
+        PFL_EXPECT(flow_packets->size() == 2U);
+        PFL_EXPECT(session.read_packet_data((*flow_packets)[0]) == tcp_packet);
+        PFL_EXPECT(session.read_packet_data((*flow_packets)[1]) == reverse_tcp_packet);
     }
 
     {

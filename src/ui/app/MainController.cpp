@@ -193,6 +193,21 @@ QString selected_flow_protocol_hint(const FlowListModel& flow_model, const int s
     return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolHintRole).toString();
 }
 
+bool selected_flow_uses_tcp(const FlowListModel& flow_model, const int selected_flow_index) {
+    if (selected_flow_index < 0) {
+        return false;
+    }
+
+    const auto row = flow_model.rowForFlowIndex(selected_flow_index);
+    if (row < 0) {
+        return false;
+    }
+
+    return flow_model.data(flow_model.index(row, 0), FlowListModel::ProtocolRole)
+        .toString()
+        .compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0;
+}
+
 QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -3749,6 +3764,7 @@ void MainController::setFlowDetailsTabIndex(const int index) {
         details_selection_context_ = DetailsSelectionContext::none;
         packet_details_model_.clear();
     }
+
 }
 
 void MainController::setCaptureOpenMode(const int mode) {
@@ -3909,6 +3925,7 @@ void MainController::setSelectedFlowIndex(const int index) {
             refreshSelectedFlowAnalysis();
         }
     }
+
 }
 
 void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
@@ -3929,6 +3946,7 @@ void MainController::setSelectedPacketIndex(const qulonglong packetIndex) {
     details_selection_context_ = DetailsSelectionContext::packet;
     reloadSelectedPacketDetails();
     emit selectedPacketIndexChanged();
+
 }
 
 void MainController::selectUnrecognizedPackets() {
@@ -4107,6 +4125,13 @@ void MainController::prepareSelectedFlowTcpContributionState(const std::size_t m
         return;
     }
 
+    if (!selected_flow_uses_tcp(flow_model_, selected_flow_index_)) {
+        current_suspected_retransmission_packet_indices_.clear();
+        session_.clear_selected_flow_tcp_payload_suppression();
+        prepared_tcp_contribution_packet_window_count_ = maxPacketsToScan;
+        return;
+    }
+
     const auto flowIndex = static_cast<std::size_t>(selected_flow_index_);
     const auto suppressedPacketIndices = session_.suspected_tcp_retransmission_packet_indices(flowIndex, maxPacketsToScan);
     current_suspected_retransmission_packet_indices_.clear();
@@ -4229,6 +4254,7 @@ void MainController::refreshSelectedFlowPackets(const bool resetRows) {
     if (previousLoading != packets_loading_ || previousLoaded != loaded_packet_row_count_ || previousTotal != total_packet_row_count_) {
         emit packetListStateChanged();
     }
+
 }
 
 void MainController::refreshUnrecognizedPackets(const bool resetRows) {
@@ -4377,6 +4403,7 @@ void MainController::refreshSelectedStreamItems(const bool resetRows) {
         || previousCanLoadMore != can_load_more_stream_items_) {
         emit streamListStateChanged();
     }
+
 }
 
 void MainController::refreshSelectedFlowAnalysis() {

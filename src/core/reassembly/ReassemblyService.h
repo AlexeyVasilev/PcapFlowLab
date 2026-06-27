@@ -1,7 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <span>
 
+#include "core/domain/PacketRef.h"
 #include "core/reassembly/ReassemblyTypes.h"
 
 namespace pfl {
@@ -16,6 +18,12 @@ public:
     [[nodiscard]] std::optional<ReassemblyResult> reassemble_tcp_payload(
         const CaptureSession& session,
         const ReassemblyRequest& request
+    ) const;
+
+    [[nodiscard]] std::optional<ReassemblyResult> reassemble_tcp_payload(
+        const CaptureSession& session,
+        const ReassemblyRequest& request,
+        std::span<const PacketRef> direction_packets
     ) const;
 };
 
