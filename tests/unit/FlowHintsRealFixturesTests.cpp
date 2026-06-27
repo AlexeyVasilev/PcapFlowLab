@@ -186,6 +186,26 @@ void expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_pac
     PFL_EXPECT(mismatched_details.error_text == "The selected packet is unavailable.");
 }
 
+void expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers(
+    const std::filesystem::path& relative_path
+) {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_EXPECT(flows.size() == 1U);
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto stream = adapter.get_selected_flow_stream(8U, 8U);
+    PFL_EXPECT(stream.stream_available);
+    PFL_EXPECT(stream.items.size() >= 2U);
+    PFL_EXPECT(stream.items[0].source_packets_text == "packet #1");
+    PFL_EXPECT(stream.items[1].source_packets_text == "packet #2");
+}
+
 }  // namespace
 
 void run_flow_hints_real_fixtures_tests() {
@@ -233,6 +253,7 @@ void run_flow_hints_real_fixtures_tests() {
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
     expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
+    expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers("parsing/arp/03_arp_request_reply_ipv4.pcap");
     expect_flow_row_accessor_matches_list_flows("parsing/quic/quic_test_1.pcap");
 }
 

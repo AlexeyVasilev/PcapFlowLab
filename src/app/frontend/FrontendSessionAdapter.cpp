@@ -63,9 +63,10 @@ std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
 }
 
-std::map<std::uint64_t, std::uint64_t> build_cached_flow_packet_numbers(
+std::map<std::uint64_t, std::uint64_t> build_bounded_flow_packet_numbers(
     const CaptureSession& session,
     const std::size_t flow_index,
+    const std::size_t packet_window_count,
     const std::vector<StreamItemRow>& rows
 ) {
     std::set<std::uint64_t> needed_packet_indices {};
@@ -79,6 +80,18 @@ std::map<std::uint64_t, std::uint64_t> build_cached_flow_packet_numbers(
             packet_number.has_value()) {
             flow_packet_numbers.emplace(packet_index, *packet_number);
         }
+    }
+
+    if (flow_packet_numbers.size() == needed_packet_indices.size() || packet_window_count == 0U) {
+        return flow_packet_numbers;
+    }
+
+    const auto bounded_packet_rows = session.list_flow_packets(flow_index, 0U, packet_window_count);
+    for (const auto& row : bounded_packet_rows) {
+        if (!needed_packet_indices.contains(row.packet_index)) {
+            continue;
+        }
+        flow_packet_numbers.emplace(row.packet_index, row.row_number);
     }
 
     return flow_packet_numbers;
@@ -2228,7 +2241,12 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.stream_partially_loaded = result.can_load_more;
     result.total_item_count = result.can_load_more ? 0U : result.loaded_item_count;
 
-    const auto flow_packet_numbers = build_cached_flow_packet_numbers(session_, flow_index, rows);
+    const auto flow_packet_numbers = build_bounded_flow_packet_numbers(
+        session_,
+        flow_index,
+        result.packet_window_count,
+        rows
+    );
 
     result.items.reserve(rows.size());
     for (const auto& row : rows) {
@@ -2301,7 +2319,12 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
         rows.resize(limit);
     }
 
-    const auto flow_packet_numbers = build_cached_flow_packet_numbers(session_, flow_index, rows);
+    const auto flow_packet_numbers = build_bounded_flow_packet_numbers(
+        session_,
+        flow_index,
+        packet_window_count,
+        rows
+    );
     if (const auto it = std::find_if(
             rows.begin(),
             rows.end(),
