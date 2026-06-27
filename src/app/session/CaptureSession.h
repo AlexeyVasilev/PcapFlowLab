@@ -150,6 +150,8 @@ public:
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items_for_packet_prefix(std::size_t flow_index, std::size_t max_packets_to_scan, std::size_t limit) const;
     [[nodiscard]] std::size_t flow_stream_item_count(std::size_t flow_index) const;
     [[nodiscard]] std::optional<std::vector<PacketRef>> flow_packets(std::size_t flow_index) const;
+    [[nodiscard]] std::optional<PacketRef> selected_flow_packet_at(std::size_t flow_index, std::uint64_t flow_packet_index) const;
+    [[nodiscard]] std::optional<std::uint64_t> selected_flow_packet_number(std::size_t flow_index, std::uint64_t packet_index) const;
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;

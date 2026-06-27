@@ -353,6 +353,17 @@ void run_query_tests() {
     PFL_EXPECT(cache_info->total_cached_bytes == 6U);
     PFL_EXPECT(!cache_info->limit_reached);
     PFL_EXPECT(cache_info->window_fully_cached);
+    const auto first_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 1U);
+    PFL_EXPECT(first_selected_flow_packet.has_value());
+    PFL_EXPECT(first_selected_flow_packet->packet_index == 0U);
+    const auto second_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 2U);
+    PFL_EXPECT(second_selected_flow_packet.has_value());
+    PFL_EXPECT(second_selected_flow_packet->packet_index == 2U);
+    PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 0U) == std::optional<std::uint64_t> {1U});
+    PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 2U) == std::optional<std::uint64_t> {2U});
+    PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 1U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 0U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 5U).has_value());
 
     const auto cached_flow_packets = cache_session.flow_packets(0);
     PFL_EXPECT(cached_flow_packets.has_value());

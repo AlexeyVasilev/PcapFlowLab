@@ -2215,7 +2215,6 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
     result.packet_window_partial = result.packet_window_count < total_flow_packet_count;
 
-    session_.prepare_selected_flow_packet_cache(flow_index, result.packet_window_count);
     auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, result.packet_window_count, limit + 1U);
 
     const bool has_more_items = rows.size() > limit;
@@ -2297,7 +2296,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
     }
 
     const auto packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
-    session_.prepare_selected_flow_packet_cache(flow_index, packet_window_count);
     auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, packet_window_count, limit + 1U);
     if (rows.size() > limit) {
         rows.resize(limit);
@@ -2556,10 +2554,23 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         return result;
     }
 
-    const auto packet = session_.find_packet(packet_index);
-    if (!packet.has_value()) {
-        result.error_text = "The selected flow is unavailable.";
-        return result;
+    std::optional<PacketRef> packet {};
+    if (flow_packet_index != 0U) {
+        packet = session_.selected_flow_packet_at(*selected_flow_index_, flow_packet_index);
+        if (!packet.has_value() || packet->packet_index != packet_index) {
+            result.error_text = "The selected packet is unavailable.";
+            return result;
+        }
+    } else {
+        if (!session_.selected_flow_packet_number(*selected_flow_index_, packet_index).has_value()) {
+            result.error_text = "The selected packet is unavailable.";
+            return result;
+        }
+        packet = session_.find_packet(packet_index);
+        if (!packet.has_value()) {
+            result.error_text = "The selected packet is unavailable.";
+            return result;
+        }
     }
 
     auto details = build_frontend_packet_details(

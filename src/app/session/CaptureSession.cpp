@@ -465,14 +465,6 @@ std::string join_summary_lines(const std::vector<std::string>& lines) {
     return out.str();
 }
 
-struct StreamBuildBranchMetrics {
-    std::size_t calls {0U};
-    std::size_t rows_added {0U};
-    double elapsed_ms {0.0};
-    bool ran_after_limit {false};
-    bool used {false};
-};
-
 enum class StreamPrefixPrecheckResult : std::uint8_t {
     empty = 0,
     positive = 1,
@@ -483,46 +475,6 @@ enum class StreamPrefixPrecheckResult : std::uint8_t {
 struct DirectionPrefixProbe {
     std::vector<std::uint8_t> bytes {};
     std::size_t payload_packets_considered {0U};
-};
-
-struct FallbackStreamBuildMetrics {
-    std::size_t bounded_input_packet_count {0U};
-    std::size_t packets_scanned {0U};
-    std::size_t payload_packets {0U};
-    std::size_t tls_single_packet_attempts {0U};
-    std::size_t tls_single_packet_rows_added {0U};
-    std::size_t quic_attempts {0U};
-    std::size_t quic_packets_considered {0U};
-    std::size_t quic_packets_read {0U};
-    std::size_t quic_rows_added {0U};
-    std::size_t fallback_rows_added {0U};
-    std::size_t gap_rows_added {0U};
-    std::size_t rows_appended {0U};
-    std::uint64_t quic_packet_index_min {std::numeric_limits<std::uint64_t>::max()};
-    std::uint64_t quic_packet_index_max {0U};
-    double tls_single_packet_ms {0.0};
-    double quic_ms {0.0};
-    double classify_ms {0.0};
-    double format_ms {0.0};
-    double row_append_ms {0.0};
-    double total_ms {0.0};
-    bool ran {false};
-    bool stopped_by_item_limit {false};
-    bool touched_packet_outside_bounded_prefix {false};
-    bool quic_bounded_path_used {false};
-};
-
-struct StreamBranchPrecheckMetrics {
-    double tls_precheck_ms {0.0};
-    double http_precheck_ms {0.0};
-    StreamPrefixPrecheckResult tls_result_a {StreamPrefixPrecheckResult::empty};
-    StreamPrefixPrecheckResult tls_result_b {StreamPrefixPrecheckResult::empty};
-    StreamPrefixPrecheckResult http_result_a {StreamPrefixPrecheckResult::empty};
-    StreamPrefixPrecheckResult http_result_b {StreamPrefixPrecheckResult::empty};
-    bool tls_skipped_due_hint {false};
-    bool http_skipped_due_hint {false};
-    bool tls_skipped_due_prefix {false};
-    bool http_skipped_due_prefix {false};
 };
 
 std::vector<PacketRef> merge_packet_refs_by_index(
@@ -730,21 +682,12 @@ void append_connection_stream_items_bounded(
     const std::size_t max_packets_to_scan,
     const bool deep_protocol_details_enabled,
     const DirectionalStreamPolicy& direction_policy_a,
-    const DirectionalStreamPolicy& direction_policy_b,
-    FallbackStreamBuildMetrics* metrics = nullptr
+    const DirectionalStreamPolicy& direction_policy_b
 ) {
     HexDumpService hex_dump_service {};
     const auto bounded_quic_packets = flow_protocol == ProtocolId::udp
         ? merge_packet_refs_by_index(bounded_direction_packets_a, bounded_direction_packets_b)
         : std::vector<PacketRef> {};
-    if (metrics != nullptr && flow_protocol == ProtocolId::udp) {
-        metrics->quic_packets_considered = bounded_quic_packets.size();
-        metrics->quic_bounded_path_used = true;
-        if (!bounded_quic_packets.empty()) {
-            metrics->quic_packet_index_min = bounded_quic_packets.front().packet_index;
-            metrics->quic_packet_index_max = bounded_quic_packets.back().packet_index;
-        }
-    }
     const auto quic_initial_secret_connection_id =
         flow_protocol == ProtocolId::udp
             ? find_quic_client_initial_connection_id_for_packets(
@@ -757,8 +700,6 @@ void append_connection_stream_items_bounded(
     std::size_t scanned_packets = 0U;
     bool gap_item_emitted_a = direction_policy_a.explicit_gap_item_emitted;
     bool gap_item_emitted_b = direction_policy_b.explicit_gap_item_emitted;
-    bool stopped_by_item_limit = false;
-
     while ((index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) &&
            rows.size() < target_count &&
            scanned_packets < max_packets_to_scan) {
@@ -768,10 +709,6 @@ void append_connection_stream_items_bounded(
 
         const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
         ++scanned_packets;
-        if (metrics != nullptr) {
-            metrics->ran = true;
-            metrics->packets_scanned = scanned_packets;
-        }
         const auto direction_text = use_a ? kDirectionAToB : kDirectionBToA;
         const auto direction = use_a ? Direction::a_to_b : Direction::b_to_a;
         const auto& direction_policy = use_a ? direction_policy_a : direction_policy_b;
@@ -783,21 +720,12 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::arp) {
-            const auto row_count_before = rows.size();
             append_arp_stream_item_for_packet(rows, session, packet, direction_text);
-            if (metrics != nullptr) {
-                metrics->rows_appended += rows.size() - row_count_before;
-                metrics->fallback_rows_added += rows.size() - row_count_before;
-            }
             continue;
         }
 
         if (packet.payload_length == 0U) {
             continue;
-        }
-
-        if (metrics != nullptr) {
-            ++metrics->payload_packets;
         }
 
         if (flow_protocol == ProtocolId::tcp && session.should_suppress_selected_flow_tcp_payload(flow_index, packet.packet_index)) {
@@ -853,10 +781,6 @@ void append_connection_stream_items_bounded(
                 {},
                 gap_protocol
             ));
-            if (metrics != nullptr) {
-                ++metrics->gap_rows_added;
-                ++metrics->rows_appended;
-            }
             gap_item_emitted = true;
             if (rows.size() >= target_count) {
                 break;
@@ -864,25 +788,12 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::tcp && !trimmed_tcp_payload && !direction_tainted_by_gap) {
-            const auto row_count_before = rows.size();
-            if (metrics != nullptr) {
-                ++metrics->tls_single_packet_attempts;
-            }
             if (append_tls_stream_items(rows, candidate, payload_span)) {
-                if (metrics != nullptr) {
-                    metrics->tls_single_packet_rows_added += rows.size() - row_count_before;
-                    metrics->rows_appended += rows.size() - row_count_before;
-                }
                 continue;
             }
         }
 
         if (flow_protocol == ProtocolId::udp) {
-            const auto row_count_before = rows.size();
-            if (metrics != nullptr) {
-                ++metrics->quic_attempts;
-                ++metrics->quic_packets_read;
-            }
             const bool handled_quic = use_a
                 ? append_quic_stream_items_for_packet(
                     rows,
@@ -917,12 +828,6 @@ void append_connection_stream_items_bounded(
                         : std::span<const std::uint8_t> {}
                 );
 
-            if (metrics != nullptr) {
-                if (handled_quic) {
-                    metrics->quic_rows_added += rows.size() - row_count_before;
-                    metrics->rows_appended += rows.size() - row_count_before;
-                }
-            }
             if (handled_quic) {
                 continue;
             }
@@ -953,23 +858,6 @@ void append_connection_stream_items_bounded(
             {},
             protocol_text
         ));
-        if (metrics != nullptr) {
-            metrics->fallback_rows_added += 1U;
-            metrics->rows_appended += 1U;
-        }
-    }
-
-    if (rows.size() >= target_count) {
-        stopped_by_item_limit = true;
-    }
-
-    if (metrics != nullptr) {
-        metrics->bounded_input_packet_count = bounded_direction_packets_a.size() + bounded_direction_packets_b.size();
-        metrics->stopped_by_item_limit = stopped_by_item_limit;
-        metrics->touched_packet_outside_bounded_prefix = false;
-        if (metrics->quic_packet_index_min == std::numeric_limits<std::uint64_t>::max()) {
-            metrics->quic_packet_index_min = 0U;
-        }
     }
 }
 
@@ -1019,6 +907,58 @@ std::vector<PacketRow> slice_connection_packets(
     }
 
     return rows;
+}
+
+template <typename Connection>
+std::optional<PacketRef> connection_packet_at(
+    const Connection& connection,
+    const std::uint64_t flow_packet_index
+) {
+    if (flow_packet_index == 0U) {
+        return std::nullopt;
+    }
+
+    std::uint64_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        ++row_number;
+        if (row_number == flow_packet_index) {
+            return packet;
+        }
+    }
+
+    return std::nullopt;
+}
+
+template <typename Connection>
+std::optional<std::uint64_t> connection_packet_number(
+    const Connection& connection,
+    const std::uint64_t packet_index
+) {
+    std::uint64_t row_number = 0U;
+    std::size_t index_a = 0U;
+    std::size_t index_b = 0U;
+
+    while (index_a < connection.flow_a.packets.size() || index_b < connection.flow_b.packets.size()) {
+        const bool use_a = index_b >= connection.flow_b.packets.size() ||
+            (index_a < connection.flow_a.packets.size() &&
+             connection.flow_a.packets[index_a].packet_index <= connection.flow_b.packets[index_b].packet_index);
+
+        const auto& packet = use_a ? connection.flow_a.packets[index_a++] : connection.flow_b.packets[index_b++];
+        ++row_number;
+        if (packet.packet_index == packet_index) {
+            return row_number;
+        }
+    }
+
+    return std::nullopt;
 }
 
 template <typename Connection>
@@ -1139,10 +1079,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
 ) {
     const auto flow_protocol = protocol_id(connection);
     std::vector<StreamItemRow> rows {};
-    StreamBuildBranchMetrics tls_metrics {};
-    StreamBuildBranchMetrics http_metrics {};
-    FallbackStreamBuildMetrics fallback_metrics {};
-    StreamBranchPrecheckMetrics precheck_metrics {};
 
     const auto total_packets = connection.family == FlowAddressFamily::ipv4
         ? connection_packet_count(*connection.ipv4)
@@ -1172,23 +1108,20 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
         const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
         const auto probe_a = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_a);
         const auto probe_b = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_b);
-        precheck_metrics.tls_result_a = sniff_tls_prefix(probe_a.bytes);
-        precheck_metrics.tls_result_b = sniff_tls_prefix(probe_b.bytes);
-
-        precheck_metrics.http_result_a = sniff_http_prefix(probe_a.bytes);
-        precheck_metrics.http_result_b = sniff_http_prefix(probe_b.bytes);
+        const auto tls_result_a = sniff_tls_prefix(probe_a.bytes);
+        const auto tls_result_b = sniff_tls_prefix(probe_b.bytes);
+        const auto http_result_a = sniff_http_prefix(probe_a.bytes);
+        const auto http_result_b = sniff_http_prefix(probe_b.bytes);
 
         const auto should_run_tls = [&](const StreamPrefixPrecheckResult result) {
             if (is_strong_http_stream_hint(effective_hint)) {
                 if (result == StreamPrefixPrecheckResult::positive) {
                     return true;
                 }
-                precheck_metrics.tls_skipped_due_hint = true;
                 return false;
             }
 
             if (result == StreamPrefixPrecheckResult::negative && !is_strong_tls_stream_hint(effective_hint)) {
-                precheck_metrics.tls_skipped_due_prefix = true;
                 return false;
             }
 
@@ -1200,22 +1133,17 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 if (result == StreamPrefixPrecheckResult::positive) {
                     return true;
                 }
-                precheck_metrics.http_skipped_due_hint = true;
                 return false;
             }
 
             if (result == StreamPrefixPrecheckResult::negative) {
-                precheck_metrics.http_skipped_due_prefix = true;
                 return false;
             }
 
             return true;
         };
 
-        if (should_run_tls(precheck_metrics.tls_result_a)) {
-            const auto rows_before_tls_a = rows.size();
-            ++tls_metrics.calls;
-            tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_a >= target;
+        if (should_run_tls(tls_result_a)) {
             direction_policy_a = append_tls_stream_items_from_reassembly(
                 rows,
                 session,
@@ -1224,14 +1152,9 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::a_to_b,
                 direction_packets_a
             );
-            tls_metrics.rows_added += rows.size() - rows_before_tls_a;
-            tls_metrics.used = tls_metrics.used || direction_policy_a.used_reassembly;
         }
 
-        if (should_run_tls(precheck_metrics.tls_result_b)) {
-            const auto rows_before_tls_b = rows.size();
-            ++tls_metrics.calls;
-            tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_b >= target;
+        if (should_run_tls(tls_result_b)) {
             direction_policy_b = append_tls_stream_items_from_reassembly(
                 rows,
                 session,
@@ -1240,14 +1163,9 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::b_to_a,
                 direction_packets_b
             );
-            tls_metrics.rows_added += rows.size() - rows_before_tls_b;
-            tls_metrics.used = tls_metrics.used || direction_policy_b.used_reassembly;
         }
         if (!direction_policy_a.used_reassembly) {
-            if (should_run_http(precheck_metrics.http_result_a)) {
-                const auto rows_before_http_a = rows.size();
-                ++http_metrics.calls;
-                http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_a >= target;
+            if (should_run_http(http_result_a)) {
                 direction_policy_a = append_http_stream_items_from_reassembly(
                     rows,
                     session,
@@ -1256,15 +1174,10 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                     Direction::a_to_b,
                     direction_packets_a
                 );
-                http_metrics.rows_added += rows.size() - rows_before_http_a;
-                http_metrics.used = http_metrics.used || direction_policy_a.used_reassembly;
             }
         }
         if (!direction_policy_b.used_reassembly) {
-            if (should_run_http(precheck_metrics.http_result_b)) {
-                const auto rows_before_http_b = rows.size();
-                ++http_metrics.calls;
-                http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_b >= target;
+            if (should_run_http(http_result_b)) {
                 direction_policy_b = append_http_stream_items_from_reassembly(
                     rows,
                     session,
@@ -1273,8 +1186,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                     Direction::b_to_a,
                     direction_packets_b
                 );
-                http_metrics.rows_added += rows.size() - rows_before_http_b;
-                http_metrics.used = http_metrics.used || direction_policy_b.used_reassembly;
             }
         }
     }
@@ -1293,8 +1204,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 max_packets_to_scan,
                 deep_protocol_details_enabled,
                 direction_policy_a,
-                direction_policy_b,
-                &fallback_metrics
+                direction_policy_b
             );
         } else {
             append_connection_stream_items_bounded(
@@ -1309,8 +1219,7 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 max_packets_to_scan,
                 deep_protocol_details_enabled,
                 direction_policy_a,
-                direction_policy_b,
-                &fallback_metrics
+                direction_policy_b
             );
         }
     }
@@ -1980,10 +1889,6 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
         return;
     }
 
-    std::size_t packets_cached_now = 0U;
-    std::size_t packets_skipped_by_budget = 0U;
-    std::size_t packets_failed_to_read = 0U;
-
     for (const auto& packet : missing_packets) {
         if (cache.packet_bytes_by_packet_index.contains(packet.packet_index)) {
             continue;
@@ -1995,19 +1900,16 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
         );
         if (static_cast<std::size_t>(packet.captured_length) > remaining_budget) {
             cache.limit_reached = true;
-            ++packets_skipped_by_budget;
             continue;
         }
 
         std::vector<std::uint8_t> packet_bytes {};
         if (!reader.read_packet_data(packet, packet_bytes)) {
-            ++packets_failed_to_read;
             continue;
         }
 
         cache.total_cached_bytes += packet_bytes.size();
         cache.packet_bytes_by_packet_index.insert_or_assign(packet.packet_index, std::move(packet_bytes));
-        ++packets_cached_now;
     }
 
 }
@@ -3109,6 +3011,34 @@ std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t f
     return connections[flow_index].family == FlowAddressFamily::ipv4
         ? std::optional<std::vector<PacketRef>> {collect_packets(*connections[flow_index].ipv4)}
         : std::optional<std::vector<PacketRef>> {collect_packets(*connections[flow_index].ipv6)};
+}
+
+std::optional<PacketRef> CaptureSession::selected_flow_packet_at(
+    const std::size_t flow_index,
+    const std::uint64_t flow_packet_index
+) const {
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    return connections[flow_index].family == FlowAddressFamily::ipv4
+        ? connection_packet_at(*connections[flow_index].ipv4, flow_packet_index)
+        : connection_packet_at(*connections[flow_index].ipv6, flow_packet_index);
+}
+
+std::optional<std::uint64_t> CaptureSession::selected_flow_packet_number(
+    const std::size_t flow_index,
+    const std::uint64_t packet_index
+) const {
+    const auto& connections = listed_connections();
+    if (flow_index >= connections.size()) {
+        return std::nullopt;
+    }
+
+    return connections[flow_index].family == FlowAddressFamily::ipv4
+        ? connection_packet_number(*connections[flow_index].ipv4, packet_index)
+        : connection_packet_number(*connections[flow_index].ipv6, packet_index);
 }
 
 namespace {
