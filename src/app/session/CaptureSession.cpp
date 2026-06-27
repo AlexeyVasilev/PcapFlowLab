@@ -550,22 +550,17 @@ DirectionPrefixProbe collect_direction_transport_prefix_bytes(
 
         const auto trim_prefix_bytes = session.selected_flow_tcp_payload_trim_prefix_bytes(flow_index, packet.packet_index);
         const auto remaining_needed = max_bytes_to_collect - probe.bytes.size();
-        const auto requested_prefix = remaining_needed + trim_prefix_bytes;
-        auto payload_bytes = session.read_selected_flow_transport_payload_prefix(
+        auto payload_bytes = session.read_selected_flow_transport_payload_slice(
             flow_index,
             packet,
-            requested_prefix
+            trim_prefix_bytes,
+            remaining_needed
         );
         if (payload_bytes.empty()) {
             continue;
         }
 
-        if (trim_prefix_bytes >= payload_bytes.size()) {
-            continue;
-        }
-
         auto payload_span = std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size());
-        payload_span = payload_span.subspan(trim_prefix_bytes);
         const auto copy_count = std::min(max_bytes_to_collect - probe.bytes.size(), payload_span.size());
         probe.bytes.insert(probe.bytes.end(), payload_span.begin(), payload_span.begin() + static_cast<std::ptrdiff_t>(copy_count));
         ++probe.payload_packets_considered;
@@ -2346,19 +2341,42 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_p
     const PacketRef& packet,
     const std::size_t max_bytes
 ) const {
+    return read_selected_flow_transport_payload_slice(flow_index, packet, 0U, max_bytes);
+}
+
+std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_slice(
+    const std::size_t flow_index,
+    const PacketRef& packet,
+    const std::size_t payload_offset,
+    const std::size_t max_bytes
+) const {
     if (max_bytes == 0U) {
+        return {};
+    }
+    if (payload_offset >= packet.payload_length) {
         return {};
     }
 
     if (const auto* entry = find_selected_flow_packet_cache_entry(flow_index, packet.packet_index); entry != nullptr) {
         if (entry->payload_cached) {
-            const auto prefix_length = std::min(entry->cache_length, max_bytes);
-            const auto begin = selected_flow_packet_cache_->bytes.begin() + static_cast<std::ptrdiff_t>(entry->cache_offset);
-            const auto end = begin + static_cast<std::ptrdiff_t>(prefix_length);
+            if (payload_offset >= entry->cache_length) {
+                return {};
+            }
+
+            const auto slice_length = std::min(entry->cache_length - payload_offset, max_bytes);
+            const auto begin = selected_flow_packet_cache_->bytes.begin()
+                + static_cast<std::ptrdiff_t>(entry->cache_offset + payload_offset);
+            const auto end = begin + static_cast<std::ptrdiff_t>(slice_length);
             return std::vector<std::uint8_t>(begin, end);
         }
 
         auto payload = read_transport_payload_direct(packet);
+        if (payload_offset >= payload.size()) {
+            return {};
+        }
+        if (payload_offset != 0U) {
+            payload.erase(payload.begin(), payload.begin() + static_cast<std::ptrdiff_t>(payload_offset));
+        }
         if (payload.size() > max_bytes) {
             payload.resize(max_bytes);
         }
@@ -2366,6 +2384,12 @@ std::vector<std::uint8_t> CaptureSession::read_selected_flow_transport_payload_p
     }
 
     auto payload = read_transport_payload_direct(packet);
+    if (payload_offset >= payload.size()) {
+        return {};
+    }
+    if (payload_offset != 0U) {
+        payload.erase(payload.begin(), payload.begin() + static_cast<std::ptrdiff_t>(payload_offset));
+    }
     if (payload.size() > max_bytes) {
         payload.resize(max_bytes);
     }

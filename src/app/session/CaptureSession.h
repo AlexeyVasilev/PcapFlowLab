@@ -141,6 +141,12 @@ public:
         const PacketRef& packet,
         std::size_t max_bytes
     ) const;
+    [[nodiscard]] std::vector<std::uint8_t> read_selected_flow_transport_payload_slice(
+        std::size_t flow_index,
+        const PacketRef& packet,
+        std::size_t payload_offset,
+        std::size_t max_bytes
+    ) const;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices) noexcept;
     void set_selected_flow_tcp_payload_suppression(std::size_t flow_index, const std::vector<std::uint64_t>& packet_indices, std::size_t max_packets_to_scan) noexcept;
     void clear_selected_flow_tcp_payload_suppression() noexcept;

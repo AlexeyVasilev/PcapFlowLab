@@ -379,9 +379,12 @@ void run_query_tests() {
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[0]) == bytes_payload("one"));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload_prefix(0, (*cached_flow_packets)[0], 2U) ==
         std::vector<std::uint8_t>({'o', 'n'}));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_slice(0, (*cached_flow_packets)[0], 1U, 2U) ==
+        std::vector<std::uint8_t>({'n', 'e'}));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[1]) == bytes_payload("two"));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload_prefix(0, (*cached_flow_packets)[1], 99U) ==
         bytes_payload("two"));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_slice(0, (*cached_flow_packets)[1], 99U, 2U).empty());
 
     cache_session.prepare_selected_flow_packet_cache(0, 4U);
     cache_info = cache_session.selected_flow_packet_cache_info();
@@ -396,6 +399,8 @@ void run_query_tests() {
     PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[2]) == cache_packet_three);
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload_prefix(0, (*cached_flow_packets)[2], 2U) ==
         std::vector<std::uint8_t>({'t', 'h'}));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_slice(0, (*cached_flow_packets)[2], 1U, 2U) ==
+        std::vector<std::uint8_t>({'h', 'r'}));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[3]) == bytes_payload("four"));
     PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[3]) == cache_packet_four);
 
