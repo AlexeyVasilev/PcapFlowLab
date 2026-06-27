@@ -3,7 +3,6 @@
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionOpenHelpers.h"
-#include "app/session/SelectedFlowDiagnostics.h"
 #include "app/session/SessionQuicPresentation.h"
 #include "app/session/SessionTlsPresentation.h"
 #include "app/session/SessionTcpStreamSupport.h"
@@ -466,12 +465,6 @@ std::string join_summary_lines(const std::vector<std::string>& lines) {
     return out.str();
 }
 
-std::string format_elapsed_ms(const double elapsed_ms) {
-    std::ostringstream out {};
-    out << std::fixed << std::setprecision(2) << elapsed_ms << " ms";
-    return out.str();
-}
-
 struct StreamBuildBranchMetrics {
     std::size_t calls {0U};
     std::size_t rows_added {0U};
@@ -507,8 +500,6 @@ struct FallbackStreamBuildMetrics {
     std::size_t rows_appended {0U};
     std::uint64_t quic_packet_index_min {std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t quic_packet_index_max {0U};
-    selected_flow_diagnostics::ReadCounters read_counters_before {};
-    selected_flow_diagnostics::ReadCounters read_counters_after {};
     double tls_single_packet_ms {0.0};
     double quic_ms {0.0};
     double classify_ms {0.0};
@@ -542,28 +533,6 @@ std::vector<PacketRef> merge_packet_refs_by_index(
 constexpr std::size_t kTlsRecordHeaderSize = 5U;
 constexpr std::size_t kStreamPrefixProbeMaxPackets = 4U;
 constexpr std::size_t kStreamPrefixProbeMaxBytes = 32U;
-
-const char* stream_prefix_precheck_result_text(const StreamPrefixPrecheckResult result) noexcept {
-    switch (result) {
-    case StreamPrefixPrecheckResult::positive:
-        return "positive";
-    case StreamPrefixPrecheckResult::negative:
-        return "negative";
-    case StreamPrefixPrecheckResult::unknown:
-        return "unknown";
-    case StreamPrefixPrecheckResult::empty:
-    default:
-        return "empty";
-    }
-}
-
-std::string format_directional_precheck_results(
-    const StreamPrefixPrecheckResult result_a,
-    const StreamPrefixPrecheckResult result_b
-) {
-    return std::string("A:") + stream_prefix_precheck_result_text(result_a)
-        + ",B:" + stream_prefix_precheck_result_text(result_b);
-}
 
 bool looks_like_tls_record_prefix_bytes(std::span<const std::uint8_t> payload) noexcept {
     if (payload.size() < kTlsRecordHeaderSize) {
@@ -710,34 +679,6 @@ bool is_strong_http_stream_hint(const FlowProtocolHint hint) noexcept {
     return hint == FlowProtocolHint::http;
 }
 
-std::string diagnostics_flow_identity(
-    const std::size_t flow_index,
-    const ListedConnectionRef& connection,
-    const AnalysisSettings& analysis_settings
-) {
-    const auto row = make_flow_row(flow_index, connection, analysis_settings);
-
-    std::ostringstream out {};
-    const char* family = row.family == FlowAddressFamily::ipv4 ? "IPv4" : "IPv6";
-    out << "flow_index=" << flow_index
-        << " packets=" << row.packet_count
-        << " bytes=" << row.total_bytes
-        << " family=" << family
-        << " proto=" << row.protocol_text
-        << " hint=" << (row.protocol_hint.empty() ? "-" : row.protocol_hint)
-        << " service=" << (row.service_hint.empty() ? "-" : row.service_hint)
-        << " endpoints=" << row.endpoint_a << " -> " << row.endpoint_b;
-    return out.str();
-}
-
-void log_selected_flow_cache_clear(const char* reason) {
-    selected_flow_diagnostics::log(std::string {"cache-clear reason="} + reason);
-}
-
-void log_listed_connections_cache_clear(const char* reason) {
-    selected_flow_diagnostics::log(std::string {"listed-connections-cache-clear reason="} + reason);
-}
-
 bool append_arp_stream_item_for_packet(
     std::vector<StreamItemRow>& rows,
     const CaptureSession& session,
@@ -792,8 +733,6 @@ void append_connection_stream_items_bounded(
     const DirectionalStreamPolicy& direction_policy_b,
     FallbackStreamBuildMetrics* metrics = nullptr
 ) {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     HexDumpService hex_dump_service {};
     const auto bounded_quic_packets = flow_protocol == ProtocolId::udp
         ? merge_packet_refs_by_index(bounded_direction_packets_a, bounded_direction_packets_b)
@@ -896,7 +835,6 @@ void append_connection_stream_items_bounded(
         const bool direction_tainted_by_gap = gap_packet_index.has_value() && packet.packet_index >= *gap_packet_index;
 
         if (direction_tainted_by_gap && !gap_item_emitted) {
-            const auto gap_row_started_at = std::chrono::steady_clock::now();
             const auto gap_label = direction_policy.fallback_label == "HTTP Payload"
                 ? std::string {"HTTP Gap"}
                 : direction_policy.fallback_label == "TLS Payload"
@@ -918,7 +856,6 @@ void append_connection_stream_items_bounded(
             if (metrics != nullptr) {
                 ++metrics->gap_rows_added;
                 ++metrics->rows_appended;
-                metrics->row_append_ms += selected_flow_diagnostics::elapsed_ms(gap_row_started_at);
             }
             gap_item_emitted = true;
             if (rows.size() >= target_count) {
@@ -927,26 +864,20 @@ void append_connection_stream_items_bounded(
         }
 
         if (flow_protocol == ProtocolId::tcp && !trimmed_tcp_payload && !direction_tainted_by_gap) {
-            const auto tls_started_at = std::chrono::steady_clock::now();
             const auto row_count_before = rows.size();
             if (metrics != nullptr) {
                 ++metrics->tls_single_packet_attempts;
             }
             if (append_tls_stream_items(rows, candidate, payload_span)) {
                 if (metrics != nullptr) {
-                    metrics->tls_single_packet_ms += selected_flow_diagnostics::elapsed_ms(tls_started_at);
                     metrics->tls_single_packet_rows_added += rows.size() - row_count_before;
                     metrics->rows_appended += rows.size() - row_count_before;
                 }
                 continue;
             }
-            if (metrics != nullptr) {
-                metrics->tls_single_packet_ms += selected_flow_diagnostics::elapsed_ms(tls_started_at);
-            }
         }
 
         if (flow_protocol == ProtocolId::udp) {
-            const auto quic_started_at = std::chrono::steady_clock::now();
             const auto row_count_before = rows.size();
             if (metrics != nullptr) {
                 ++metrics->quic_attempts;
@@ -987,7 +918,6 @@ void append_connection_stream_items_bounded(
                 );
 
             if (metrics != nullptr) {
-                metrics->quic_ms += selected_flow_diagnostics::elapsed_ms(quic_started_at);
                 if (handled_quic) {
                     metrics->quic_rows_added += rows.size() - row_count_before;
                     metrics->rows_appended += rows.size() - row_count_before;
@@ -1000,7 +930,6 @@ void append_connection_stream_items_bounded(
 
         std::string label = fallback_stream_label(flow_protocol);
         std::string protocol_text {};
-        const auto format_started_at = std::chrono::steady_clock::now();
         if (direction_tainted_by_gap) {
             if (!direction_policy.fallback_label.empty()) {
                 label = direction_policy.fallback_label;
@@ -1009,19 +938,11 @@ void append_connection_stream_items_bounded(
                 ? direction_policy.fallback_protocol_text
                 : tcp_gap_protocol_text("TCP");
         } else if (!trimmed_tcp_payload) {
-            const auto classify_started_at = std::chrono::steady_clock::now();
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
                 label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol, deep_protocol_details_enabled);
             }
-            if (metrics != nullptr) {
-                metrics->classify_ms += selected_flow_diagnostics::elapsed_ms(classify_started_at);
-            }
         }
-        if (metrics != nullptr) {
-            metrics->format_ms += selected_flow_diagnostics::elapsed_ms(format_started_at);
-        }
-        const auto row_started_at = std::chrono::steady_clock::now();
         rows.push_back(make_stream_item_row(
             static_cast<std::uint64_t>(rows.size() + 1U),
             direction_text,
@@ -1035,7 +956,6 @@ void append_connection_stream_items_bounded(
         if (metrics != nullptr) {
             metrics->fallback_rows_added += 1U;
             metrics->rows_appended += 1U;
-            metrics->row_append_ms += selected_flow_diagnostics::elapsed_ms(row_started_at);
         }
     }
 
@@ -1045,9 +965,6 @@ void append_connection_stream_items_bounded(
 
     if (metrics != nullptr) {
         metrics->bounded_input_packet_count = bounded_direction_packets_a.size() + bounded_direction_packets_b.size();
-        metrics->read_counters_before = read_counters_before;
-        metrics->read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        metrics->total_ms += selected_flow_diagnostics::elapsed_ms(started_at);
         metrics->stopped_by_item_limit = stopped_by_item_limit;
         metrics->touched_packet_outside_bounded_prefix = false;
         if (metrics->quic_packet_index_min == std::numeric_limits<std::uint64_t>::max()) {
@@ -1220,20 +1137,12 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const bool deep_protocol_details_enabled,
     const AnalysisSettings& analysis_settings
 ) {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const auto flow_protocol = protocol_id(connection);
     std::vector<StreamItemRow> rows {};
-    bool bounded_prefix_path_used = false;
     StreamBuildBranchMetrics tls_metrics {};
     StreamBuildBranchMetrics http_metrics {};
     FallbackStreamBuildMetrics fallback_metrics {};
     StreamBranchPrecheckMetrics precheck_metrics {};
-    double setup_elapsed_ms = 0.0;
-    double sort_elapsed_ms = 0.0;
-    double index_assign_elapsed_ms = 0.0;
-    double limit_truncation_elapsed_ms = 0.0;
-    bool limit_reached_before_fallback = false;
 
     const auto total_packets = connection.family == FlowAddressFamily::ipv4
         ? connection_packet_count(*connection.ipv4)
@@ -1261,19 +1170,13 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
             std::min(prefix_count_b, connection.ipv6->flow_b.packets.size()));
     if (flow_protocol == ProtocolId::tcp) {
         const auto effective_hint = effective_protocol_hint(connection, analysis_settings);
-        const auto setup_started_at = std::chrono::steady_clock::now();
-        const auto tls_precheck_started_at = std::chrono::steady_clock::now();
         const auto probe_a = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_a);
         const auto probe_b = collect_direction_transport_prefix_bytes(session, flow_index, direction_packets_b);
         precheck_metrics.tls_result_a = sniff_tls_prefix(probe_a.bytes);
         precheck_metrics.tls_result_b = sniff_tls_prefix(probe_b.bytes);
-        precheck_metrics.tls_precheck_ms = selected_flow_diagnostics::elapsed_ms(tls_precheck_started_at);
 
-        const auto http_precheck_started_at = std::chrono::steady_clock::now();
         precheck_metrics.http_result_a = sniff_http_prefix(probe_a.bytes);
         precheck_metrics.http_result_b = sniff_http_prefix(probe_b.bytes);
-        precheck_metrics.http_precheck_ms = selected_flow_diagnostics::elapsed_ms(http_precheck_started_at);
-        setup_elapsed_ms += selected_flow_diagnostics::elapsed_ms(setup_started_at);
 
         const auto should_run_tls = [&](const StreamPrefixPrecheckResult result) {
             if (is_strong_http_stream_hint(effective_hint)) {
@@ -1310,7 +1213,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
         };
 
         if (should_run_tls(precheck_metrics.tls_result_a)) {
-            const auto tls_a_started_at = std::chrono::steady_clock::now();
             const auto rows_before_tls_a = rows.size();
             ++tls_metrics.calls;
             tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_a >= target;
@@ -1322,13 +1224,11 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::a_to_b,
                 direction_packets_a
             );
-            tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_a_started_at);
             tls_metrics.rows_added += rows.size() - rows_before_tls_a;
             tls_metrics.used = tls_metrics.used || direction_policy_a.used_reassembly;
         }
 
         if (should_run_tls(precheck_metrics.tls_result_b)) {
-            const auto tls_b_started_at = std::chrono::steady_clock::now();
             const auto rows_before_tls_b = rows.size();
             ++tls_metrics.calls;
             tls_metrics.ran_after_limit = tls_metrics.ran_after_limit || rows_before_tls_b >= target;
@@ -1340,13 +1240,11 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 Direction::b_to_a,
                 direction_packets_b
             );
-            tls_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(tls_b_started_at);
             tls_metrics.rows_added += rows.size() - rows_before_tls_b;
             tls_metrics.used = tls_metrics.used || direction_policy_b.used_reassembly;
         }
         if (!direction_policy_a.used_reassembly) {
             if (should_run_http(precheck_metrics.http_result_a)) {
-                const auto http_a_started_at = std::chrono::steady_clock::now();
                 const auto rows_before_http_a = rows.size();
                 ++http_metrics.calls;
                 http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_a >= target;
@@ -1358,14 +1256,12 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                     Direction::a_to_b,
                     direction_packets_a
                 );
-                http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_a_started_at);
                 http_metrics.rows_added += rows.size() - rows_before_http_a;
                 http_metrics.used = http_metrics.used || direction_policy_a.used_reassembly;
             }
         }
         if (!direction_policy_b.used_reassembly) {
             if (should_run_http(precheck_metrics.http_result_b)) {
-                const auto http_b_started_at = std::chrono::steady_clock::now();
                 const auto rows_before_http_b = rows.size();
                 ++http_metrics.calls;
                 http_metrics.ran_after_limit = http_metrics.ran_after_limit || rows_before_http_b >= target;
@@ -1377,15 +1273,12 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                     Direction::b_to_a,
                     direction_packets_b
                 );
-                http_metrics.elapsed_ms += selected_flow_diagnostics::elapsed_ms(http_b_started_at);
                 http_metrics.rows_added += rows.size() - rows_before_http_b;
                 http_metrics.used = http_metrics.used || direction_policy_b.used_reassembly;
             }
         }
-        bounded_prefix_path_used = true;
     }
 
-    limit_reached_before_fallback = rows.size() >= target;
     if (rows.size() < target) {
         if (connection.family == FlowAddressFamily::ipv4) {
             append_connection_stream_items_bounded(
@@ -1422,103 +1315,18 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
         }
     }
 
-    const auto sort_started_at = std::chrono::steady_clock::now();
     std::stable_sort(rows.begin(), rows.end(), [](const StreamItemRow& left, const StreamItemRow& right) {
         const auto left_packet_index = left.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : left.packet_indices.front();
         const auto right_packet_index = right.packet_indices.empty() ? std::numeric_limits<std::uint64_t>::max() : right.packet_indices.front();
         return left_packet_index < right_packet_index;
     });
-    sort_elapsed_ms = selected_flow_diagnostics::elapsed_ms(sort_started_at);
 
-    const auto index_assign_started_at = std::chrono::steady_clock::now();
     for (std::size_t index = 0; index < rows.size(); ++index) {
         rows[index].stream_item_index = static_cast<std::uint64_t>(index + 1U);
     }
-    index_assign_elapsed_ms = selected_flow_diagnostics::elapsed_ms(index_assign_started_at);
 
-    const auto limit_truncation_started_at = std::chrono::steady_clock::now();
     if (rows.size() > target) {
         rows.resize(target);
-    }
-    limit_truncation_elapsed_ms = selected_flow_diagnostics::elapsed_ms(limit_truncation_started_at);
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        const auto fallback_read_delta = selected_flow_diagnostics::delta(
-            fallback_metrics.read_counters_before,
-            fallback_metrics.read_counters_after
-        );
-        std::ostringstream out {};
-        out << "build_flow_stream_items_bounded "
-            << diagnostics_flow_identity(flow_index, connection, analysis_settings)
-            << " max_packets_to_scan=" << max_packets_to_scan
-            << " target_rows=" << target
-            << " bounded_input_packet_count=" << fallback_metrics.bounded_input_packet_count
-            << " returned_rows=" << rows.size()
-            << " total_packets=" << total_packets
-            << " bounded_prefix_path_used=" << (bounded_prefix_path_used ? "true" : "false")
-            << " branch=" << (flow_protocol == ProtocolId::tcp
-                ? (tls_metrics.used ? "tls" : (http_metrics.used ? "http" : "fallback-tcp"))
-                : (flow_protocol == ProtocolId::udp ? (fallback_metrics.quic_rows_added > 0U ? "quic" : "fallback-udp")
-                   : (flow_protocol == ProtocolId::arp ? "fallback-arp" : "unknown")))
-            << " deep_protocol_details=" << (deep_protocol_details_enabled ? "true" : "false")
-            << " setup_ms=" << format_elapsed_ms(setup_elapsed_ms)
-            << " tls_precheck_ms=" << format_elapsed_ms(precheck_metrics.tls_precheck_ms)
-            << " tls_precheck_result=" << format_directional_precheck_results(precheck_metrics.tls_result_a, precheck_metrics.tls_result_b)
-            << " tls_skipped_due_hint=" << (precheck_metrics.tls_skipped_due_hint ? "true" : "false")
-            << " tls_skipped_due_prefix=" << (precheck_metrics.tls_skipped_due_prefix ? "true" : "false")
-            << " tls_calls=" << tls_metrics.calls
-            << " tls_rows_added=" << tls_metrics.rows_added
-            << " tls_ms=" << format_elapsed_ms(tls_metrics.elapsed_ms)
-            << " tls_used=" << (tls_metrics.used ? "true" : "false")
-            << " tls_ran_after_limit=" << (tls_metrics.ran_after_limit ? "true" : "false")
-            << " both_direction_tls_attempted=" << (tls_metrics.calls > 1U ? "true" : "false")
-            << " http_precheck_ms=" << format_elapsed_ms(precheck_metrics.http_precheck_ms)
-            << " http_precheck_result=" << format_directional_precheck_results(precheck_metrics.http_result_a, precheck_metrics.http_result_b)
-            << " http_skipped_due_hint=" << (precheck_metrics.http_skipped_due_hint ? "true" : "false")
-            << " http_skipped_due_prefix=" << (precheck_metrics.http_skipped_due_prefix ? "true" : "false")
-            << " http_calls=" << http_metrics.calls
-            << " http_rows_added=" << http_metrics.rows_added
-            << " http_ms=" << format_elapsed_ms(http_metrics.elapsed_ms)
-            << " http_used=" << (http_metrics.used ? "true" : "false")
-            << " http_ran_after_limit=" << (http_metrics.ran_after_limit ? "true" : "false")
-            << " both_direction_http_attempted=" << (http_metrics.calls > 1U ? "true" : "false")
-            << " tls_and_http_both_ran=" << ((tls_metrics.calls > 0U && http_metrics.calls > 0U) ? "true" : "false")
-            << " fallback_ran=" << (fallback_metrics.ran ? "true" : "false")
-            << " fallback_packets_scanned=" << fallback_metrics.packets_scanned
-            << " fallback_payload_packets=" << fallback_metrics.payload_packets
-            << " fallback_rows_added=" << fallback_metrics.fallback_rows_added
-            << " fallback_gap_rows=" << fallback_metrics.gap_rows_added
-            << " fallback_stopped_by_item_limit=" << (fallback_metrics.stopped_by_item_limit ? "true" : "false")
-            << " fallback_touched_packet_outside_bounded_prefix=" << (fallback_metrics.touched_packet_outside_bounded_prefix ? "true" : "false")
-            << " fallback_tls_packet_attempts=" << fallback_metrics.tls_single_packet_attempts
-            << " fallback_tls_packet_rows_added=" << fallback_metrics.tls_single_packet_rows_added
-            << " fallback_tls_packet_ms=" << format_elapsed_ms(fallback_metrics.tls_single_packet_ms)
-            << " fallback_quic_attempts=" << fallback_metrics.quic_attempts
-            << " fallback_quic_packets_considered=" << fallback_metrics.quic_packets_considered
-            << " fallback_quic_packets_read=" << fallback_metrics.quic_packets_read
-            << " fallback_quic_packet_index_min=" << fallback_metrics.quic_packet_index_min
-            << " fallback_quic_packet_index_max=" << fallback_metrics.quic_packet_index_max
-            << " fallback_quic_bounded_path_used=" << (fallback_metrics.quic_bounded_path_used ? "true" : "false")
-            << " fallback_quic_rows_added=" << fallback_metrics.quic_rows_added
-            << " fallback_quic_ms=" << format_elapsed_ms(fallback_metrics.quic_ms)
-            << " fallback_classify_ms=" << format_elapsed_ms(fallback_metrics.classify_ms)
-            << " fallback_format_ms=" << format_elapsed_ms(fallback_metrics.format_ms)
-            << " fallback_row_append_ms=" << format_elapsed_ms(fallback_metrics.row_append_ms)
-            << " fallback_total_ms=" << format_elapsed_ms(fallback_metrics.total_ms)
-            << " fallback_reads_session_calls=" << fallback_read_delta.read_packet_data_calls
-            << " fallback_reads_cache_hits=" << fallback_read_delta.read_packet_data_cache_hits
-            << " fallback_reads_direct_attempts=" << fallback_read_delta.read_packet_data_direct_attempts
-            << " fallback_reads_file_reads=" << fallback_read_delta.file_byte_source_read_calls
-            << " fallback_reads_file_read_bytes=" << fallback_read_delta.file_byte_source_read_requested_bytes
-            << " limit_reached_before_fallback=" << (limit_reached_before_fallback ? "true" : "false")
-            << " fallback_still_ran=" << ((limit_reached_before_fallback && fallback_metrics.ran) ? "true" : "false")
-            << " sort_ms=" << format_elapsed_ms(sort_elapsed_ms)
-            << " index_assign_ms=" << format_elapsed_ms(index_assign_elapsed_ms)
-            << " limit_truncation_ms=" << format_elapsed_ms(limit_truncation_elapsed_ms)
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
     }
 
     return rows;
@@ -1527,8 +1335,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
 }  // namespace
 
 void CaptureSession::reset_runtime_state() noexcept {
-    log_selected_flow_cache_clear("reset_runtime_state");
-    log_listed_connections_cache_clear("reset_runtime_state");
     capture_path_.clear();
     source_capture_path_.clear();
     source_info_ = {};
@@ -1613,7 +1419,6 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
-    log_listed_connections_cache_clear("open_capture");
     listed_connections_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
@@ -1633,15 +1438,6 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
         opened_from_index(),
         has_source_capture()
     );
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "open_capture result mode=" << ((options.mode == ImportMode::deep) ? "deep" : "fast")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << " flows=" << listed_connections().size()
-            << " packets=" << summary().packet_count
-            << " bytes=" << summary().total_bytes;
-        selected_flow_diagnostics::log(out.str());
-    }
     return true;
 }
 
@@ -1723,7 +1519,6 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
-    log_listed_connections_cache_clear("load_index");
     listed_connections_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 
@@ -1744,15 +1539,6 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
         opened_from_index(),
         has_source_capture()
     );
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "load_index result elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << " flows=" << listed_connections().size()
-            << " packets=" << summary().packet_count
-            << " bytes=" << summary().total_bytes
-            << " source_attached=" << (has_source_capture() ? "true" : "false");
-        selected_flow_diagnostics::log(out.str());
-    }
     return true;
 }
 
@@ -1806,7 +1592,6 @@ bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
     capture_path_ = path;
     source_capture_path_ = path;
     source_info_.capture_path = path;
-    log_selected_flow_cache_clear("attach_source_capture");
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
@@ -1816,7 +1601,6 @@ bool CaptureSession::attach_source_capture(const std::filesystem::path& path) {
 
 void CaptureSession::clear_source_capture_attachment() noexcept {
     capture_path_.clear();
-    log_selected_flow_cache_clear("clear_source_capture_attachment");
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
@@ -2124,29 +1908,20 @@ CaptureTopSummary CaptureSession::top_summary(const std::size_t limit) const {
 
 std::vector<std::uint8_t> CaptureSession::read_packet_data(const PacketRef& packet) const {
     if (!has_source_capture()) {
-        selected_flow_diagnostics::record_read_packet_data_call(false);
-        selected_flow_diagnostics::record_read_packet_data_empty_result();
         return {};
     }
 
     if (const auto* cached_bytes = find_selected_flow_full_packet_cache_bytes(packet.packet_index);
         cached_bytes != nullptr) {
-        selected_flow_diagnostics::record_read_packet_data_call(true);
         return *cached_bytes;
     }
 
-    selected_flow_diagnostics::record_read_packet_data_call(false);
     CaptureFilePacketReader reader {capture_path_};
     if (!reader.is_open()) {
-        selected_flow_diagnostics::record_read_packet_data_empty_result();
         return {};
     }
 
-    auto bytes = reader.read_packet_data(packet);
-    if (bytes.empty()) {
-        selected_flow_diagnostics::record_read_packet_data_empty_result();
-    }
-    return bytes;
+    return reader.read_packet_data(packet);
 }
 
 std::vector<std::uint8_t> CaptureSession::read_transport_payload_direct(const PacketRef& packet) const {
@@ -2164,13 +1939,9 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
     const std::span<const PacketRef> packets
 ) const {
     if (!has_source_capture() || packets.empty()) {
-        log_selected_flow_cache_clear("prepare_selected_flow_full_packet_cache empty-or-no-source");
         selected_flow_full_packet_cache_.reset();
         return;
     }
-
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto started_at = std::chrono::steady_clock::now();
 
     if (!selected_flow_full_packet_cache_.has_value() || selected_flow_full_packet_cache_->flow_index != flow_index) {
         SelectedFlowFullPacketCache cache {};
@@ -2194,14 +1965,6 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
     }
 
     if (missing_packets.empty()) {
-        if (selected_flow_diagnostics::enabled()) {
-            std::ostringstream out {};
-            out << "prepare_selected_flow_full_packet_cache no-op flow_index=" << flow_index
-                << " requested_packets=" << packets.size()
-                << " cached_packets=" << cache.packet_bytes_by_packet_index.size()
-                << " cached_bytes=" << cache.total_cached_bytes;
-            selected_flow_diagnostics::log(out.str());
-        }
         return;
     }
 
@@ -2214,9 +1977,6 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
 
     CaptureFilePacketReader reader {capture_path_};
     if (!reader.is_open()) {
-        selected_flow_diagnostics::log(
-            std::string {"prepare_selected_flow_full_packet_cache reader-open-failed flow_index="} + std::to_string(flow_index)
-        );
         return;
     }
 
@@ -2250,22 +2010,6 @@ void CaptureSession::prepare_selected_flow_full_packet_cache(
         ++packets_cached_now;
     }
 
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::ostringstream out {};
-        out << "prepare_selected_flow_full_packet_cache flow_index=" << flow_index
-            << " requested_packets=" << packets.size()
-            << " missing_packets=" << missing_packets.size()
-            << " cached_now=" << packets_cached_now
-            << " skipped_budget=" << packets_skipped_by_budget
-            << " read_failures=" << packets_failed_to_read
-            << " cache_packets_total=" << cache.packet_bytes_by_packet_index.size()
-            << " cache_bytes_total=" << cache.total_cached_bytes
-            << " limit_reached=" << (cache.limit_reached ? "true" : "false")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
 }
 
 const std::vector<std::uint8_t>* CaptureSession::find_selected_flow_full_packet_cache_bytes(
@@ -2311,15 +2055,7 @@ const std::vector<session_detail::ListedConnectionRef>& CaptureSession::listed_c
     if (cache_hit != nullptr) {
         *cache_hit = false;
     }
-    const auto started_at = std::chrono::steady_clock::now();
     listed_connections_cache_ = session_detail::list_connections(state_);
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "listed_connections_cache populate"
-            << " flows=" << listed_connections_cache_->size()
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at));
-        selected_flow_diagnostics::log(out.str());
-    }
     return *listed_connections_cache_;
 }
 
@@ -2327,21 +2063,18 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan
 ) const {
-    const auto started_at = std::chrono::steady_clock::now();
     SelectedFlowTcpPrefixResolution resolution {};
     resolution.result = "invalid";
 
     if (!has_source_capture()) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "no-source";
-        resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
         return resolution;
     }
 
     if (max_packets_to_scan == 0U) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "empty-prefix";
-        resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
         return resolution;
     }
 
@@ -2351,7 +2084,6 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
         resolution.context = &*selected_flow_tcp_prefix_context_;
         resolution.result = "ok";
         resolution.reused_existing_context = true;
-        resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
         return resolution;
     }
 
@@ -2362,7 +2094,6 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
     if (flow_index >= connections.size()) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "invalid-flow-index";
-        resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
         return resolution;
     }
 
@@ -2370,7 +2101,6 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
     if (protocol_id(connection) != ProtocolId::tcp) {
         selected_flow_tcp_prefix_context_.reset();
         resolution.result = "non-tcp";
-        resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
         return resolution;
     }
 
@@ -2390,13 +2120,11 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
         if (context.prefix_count_a + context.prefix_count_b == 0U) {
             selected_flow_tcp_prefix_context_.reset();
             resolution.result = "empty-prefix";
-            resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
             return resolution;
         }
         if (context.payload_packet_count == 0U) {
             selected_flow_tcp_prefix_context_.reset();
             resolution.result = "no-visible-tcp-payload";
-            resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
             return resolution;
         }
         context.prefix_packets_a = collect_packet_prefix_refs(connection.ipv4->flow_a.packets, context.prefix_count_a);
@@ -2419,13 +2147,11 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
         if (context.prefix_count_a + context.prefix_count_b == 0U) {
             selected_flow_tcp_prefix_context_.reset();
             resolution.result = "empty-prefix";
-            resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
             return resolution;
         }
         if (context.payload_packet_count == 0U) {
             selected_flow_tcp_prefix_context_.reset();
             resolution.result = "no-visible-tcp-payload";
-            resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
             return resolution;
         }
         context.prefix_packets_a = collect_packet_prefix_refs(connection.ipv6->flow_a.packets, context.prefix_count_a);
@@ -2444,7 +2170,6 @@ CaptureSession::SelectedFlowTcpPrefixResolution CaptureSession::prepare_selected
     selected_flow_tcp_prefix_context_ = std::move(context);
     resolution.context = &*selected_flow_tcp_prefix_context_;
     resolution.result = "ok";
-    resolution.resolve_elapsed_ms = selected_flow_diagnostics::elapsed_ms(started_at);
     return resolution;
 }
 
@@ -2453,14 +2178,10 @@ void CaptureSession::prepare_selected_flow_packet_cache(
     const SelectedFlowTcpPrefixContext& context
 ) const {
     if (!has_source_capture() || context.ordered_prefix_packets.empty()) {
-        log_selected_flow_cache_clear("prepare_selected_flow_packet_cache context empty-or-no-source");
         selected_flow_full_packet_cache_.reset();
         selected_flow_packet_cache_.reset();
         return;
     }
-
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
 
     std::vector<PacketRef> prefix_packet_refs {};
     prefix_packet_refs.reserve(context.ordered_prefix_packets.size());
@@ -2481,29 +2202,8 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         cache.window_fully_cached = !cache.limit_reached &&
             !cache.has_uncached_payload_entries &&
             cache.cached_packet_window_count >= context.prepared_packet_window_count;
-        if (selected_flow_diagnostics::enabled()) {
-            std::ostringstream out {};
-            out << "prepare_selected_flow_packet_cache short-circuit "
-                << diagnostics_flow_identity(flow_index, ListedConnectionRef {
-                    .family = context.family,
-                    .ipv4 = context.ipv4,
-                    .ipv6 = context.ipv6,
-                }, analysis_settings_)
-                << " max_packets_to_scan=" << context.prepared_packet_window_count
-                << " cached_window=" << cache.cached_packet_window_count
-                << " cache_entries=" << cache.entries.size()
-                << " cache_bytes=" << cache.bytes.size()
-                << " limit_reached=" << (cache.limit_reached ? "true" : "false")
-                << " window_fully_cached=" << (cache.window_fully_cached ? "true" : "false")
-                << " used_pre_resolved_context=true";
-            selected_flow_diagnostics::log(out.str());
-        }
         return;
     }
-
-    std::size_t payload_cached_count = 0U;
-    std::size_t payload_uncached_count = 0U;
-    std::size_t skipped_by_budget = 0U;
 
     for (const auto& window_packet : context.ordered_prefix_packets) {
         if (cache.limit_reached) {
@@ -2520,18 +2220,14 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         if (!payload_cached) {
             if (packet.payload_length > 0U) {
                 cache.has_uncached_payload_entries = true;
-                ++payload_uncached_count;
             }
             payload_bytes.clear();
-        } else if (packet.payload_length > 0U) {
-            ++payload_cached_count;
         }
 
         const auto additional_bytes = payload_bytes.size();
         if (cache.bytes.size() + additional_bytes > kSelectedFlowPacketCacheMaxBytes) {
             cache.limit_reached = true;
             cache.window_fully_cached = false;
-            ++skipped_by_budget;
             break;
         }
 
@@ -2555,32 +2251,6 @@ void CaptureSession::prepare_selected_flow_packet_cache(
     cache.window_fully_cached = !cache.limit_reached &&
         !cache.has_uncached_payload_entries &&
         cache.cached_packet_window_count >= context.prepared_packet_window_count;
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::ostringstream out {};
-        out << "prepare_selected_flow_packet_cache "
-            << diagnostics_flow_identity(flow_index, ListedConnectionRef {
-                .family = context.family,
-                .ipv4 = context.ipv4,
-                .ipv6 = context.ipv6,
-            }, analysis_settings_)
-            << " max_packets_to_scan=" << context.prepared_packet_window_count
-            << " prefix_packets=" << prefix_packet_refs.size()
-            << " cached_window=" << cache.cached_packet_window_count
-            << " cache_entries=" << cache.entries.size()
-            << " cache_bytes=" << cache.bytes.size()
-            << " payload_cached=" << payload_cached_count
-            << " payload_uncached=" << payload_uncached_count
-            << " skipped_budget=" << skipped_by_budget
-            << " has_uncached_payload_entries=" << (cache.has_uncached_payload_entries ? "true" : "false")
-            << " limit_reached=" << (cache.limit_reached ? "true" : "false")
-            << " window_fully_cached=" << (cache.window_fully_cached ? "true" : "false")
-            << " used_pre_resolved_context=true"
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
 }
 
 void CaptureSession::prepare_selected_flow_packet_cache(
@@ -2588,23 +2258,17 @@ void CaptureSession::prepare_selected_flow_packet_cache(
     const std::size_t max_packets_to_scan
 ) const {
     if (!has_source_capture() || max_packets_to_scan == 0U) {
-        log_selected_flow_cache_clear("prepare_selected_flow_packet_cache empty-or-no-source");
         selected_flow_full_packet_cache_.reset();
         selected_flow_packet_cache_.reset();
         return;
     }
 
-    bool listed_connections_cache_hit = false;
-    const auto& connections = listed_connections(&listed_connections_cache_hit);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
-        log_selected_flow_cache_clear("prepare_selected_flow_packet_cache invalid-flow-index");
         selected_flow_full_packet_cache_.reset();
         selected_flow_packet_cache_.reset();
         return;
     }
-
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const auto& connection_ref = connections[flow_index];
     const auto prefix_packets = connection_ref.family == FlowAddressFamily::ipv4
         ? collect_selected_flow_packet_prefix(*connection_ref.ipv4, max_packets_to_scan)
@@ -2618,19 +2282,6 @@ void CaptureSession::prepare_selected_flow_packet_cache(
 
     const auto flow_protocol = protocol_id(connection_ref);
     if (flow_protocol != ProtocolId::tcp && flow_protocol != ProtocolId::udp) {
-        if (selected_flow_diagnostics::enabled()) {
-            const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-            std::ostringstream out {};
-            out << "prepare_selected_flow_packet_cache "
-                << diagnostics_flow_identity(flow_index, connection_ref, analysis_settings_)
-                << " max_packets_to_scan=" << max_packets_to_scan
-                << " prefix_packets=" << prefix_packet_refs.size()
-                << " protocol=no-transport-cache"
-                << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
-                << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-                << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-            selected_flow_diagnostics::log(out.str());
-        }
         selected_flow_packet_cache_.reset();
         return;
     }
@@ -2647,25 +2298,8 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         cache.window_fully_cached = !cache.limit_reached &&
             !cache.has_uncached_payload_entries &&
             cache.cached_packet_window_count >= max_packets_to_scan;
-        if (selected_flow_diagnostics::enabled()) {
-            std::ostringstream out {};
-            out << "prepare_selected_flow_packet_cache short-circuit "
-                << diagnostics_flow_identity(flow_index, connection_ref, analysis_settings_)
-                << " max_packets_to_scan=" << max_packets_to_scan
-                << " cached_window=" << cache.cached_packet_window_count
-                << " cache_entries=" << cache.entries.size()
-                << " cache_bytes=" << cache.bytes.size()
-                << " limit_reached=" << (cache.limit_reached ? "true" : "false")
-                << " window_fully_cached=" << (cache.window_fully_cached ? "true" : "false");
-            out << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false");
-            selected_flow_diagnostics::log(out.str());
-        }
         return;
     }
-
-    std::size_t payload_cached_count = 0U;
-    std::size_t payload_uncached_count = 0U;
-    std::size_t skipped_by_budget = 0U;
 
     for (const auto& window_packet : prefix_packets) {
         if (cache.limit_reached) {
@@ -2683,18 +2317,14 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         if (!payload_cached) {
             if (packet.payload_length > 0U) {
                 cache.has_uncached_payload_entries = true;
-                ++payload_uncached_count;
             }
             payload_bytes.clear();
-        } else if (packet.payload_length > 0U) {
-            ++payload_cached_count;
         }
 
         const auto additional_bytes = payload_bytes.size();
         if (cache.bytes.size() + additional_bytes > kSelectedFlowPacketCacheMaxBytes) {
             cache.limit_reached = true;
             cache.window_fully_cached = false;
-            ++skipped_by_budget;
             break;
         }
 
@@ -2719,31 +2349,9 @@ void CaptureSession::prepare_selected_flow_packet_cache(
         !cache.has_uncached_payload_entries &&
         cache.cached_packet_window_count >= max_packets_to_scan;
 
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::ostringstream out {};
-        out << "prepare_selected_flow_packet_cache "
-            << diagnostics_flow_identity(flow_index, connection_ref, analysis_settings_)
-            << " max_packets_to_scan=" << max_packets_to_scan
-            << " prefix_packets=" << prefix_packet_refs.size()
-            << " cached_window=" << cache.cached_packet_window_count
-            << " cache_entries=" << cache.entries.size()
-            << " cache_bytes=" << cache.bytes.size()
-            << " payload_cached=" << payload_cached_count
-            << " payload_uncached=" << payload_uncached_count
-            << " skipped_budget=" << skipped_by_budget
-            << " has_uncached_payload_entries=" << (cache.has_uncached_payload_entries ? "true" : "false")
-            << " limit_reached=" << (cache.limit_reached ? "true" : "false")
-            << " window_fully_cached=" << (cache.window_fully_cached ? "true" : "false")
-            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
 }
 
 void CaptureSession::clear_selected_flow_packet_cache() noexcept {
-    log_selected_flow_cache_clear("clear_selected_flow_packet_cache");
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
@@ -2874,8 +2482,6 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
     return std::string {kNoProtocolDetailsMessage};
 }
 std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const ReassemblyRequest& request) const {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     if (!has_loaded_state_) {
         return std::nullopt;
     }
@@ -2893,40 +2499,12 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(const 
     }
 
     ReassemblyService service {};
-    auto result = service.reassemble_tcp_payload(*this, request);
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "reassemble_flow_direction flow_index=" << request.flow_index
-            << " direction=" << (request.direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
-            << " max_packets=" << request.max_packets
-            << " max_bytes=" << request.max_bytes
-            << " bounded_direction_input=false";
-        if (request.flow_index < connections.size()) {
-            out << ' ' << diagnostics_flow_identity(request.flow_index, connections[request.flow_index], analysis_settings_);
-        }
-        if (result.has_value()) {
-            out << " payload_packets_used=" << result->payload_packets_used
-                << " total_packets_seen=" << result->total_packets_seen
-                << " output_bytes=" << result->bytes.size()
-                << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false");
-        } else {
-            out << " result=null";
-        }
-        out << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
-                read_counters_before,
-                selected_flow_diagnostics::snapshot_read_counters()
-            );
-        selected_flow_diagnostics::log(out.str());
-    }
-    return result;
+    return service.reassemble_tcp_payload(*this, request);
 }
 std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
     const ReassemblyRequest& request,
     const std::span<const PacketRef> direction_packets
 ) const {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     if (!has_loaded_state_ || !has_source_capture()) {
         return std::nullopt;
     }
@@ -2940,32 +2518,7 @@ std::optional<ReassemblyResult> CaptureSession::reassemble_flow_direction(
     }
 
     ReassemblyService service {};
-    auto result = service.reassemble_tcp_payload(*this, request, direction_packets);
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "reassemble_flow_direction flow_index=" << request.flow_index
-            << " direction=" << (request.direction == Direction::a_to_b ? "a_to_b" : "b_to_a")
-            << " max_packets=" << request.max_packets
-            << " max_bytes=" << request.max_bytes
-            << " bounded_direction_input=true"
-            << " bounded_direction_packet_count=" << direction_packets.size()
-            << ' ' << diagnostics_flow_identity(request.flow_index, connections[request.flow_index], analysis_settings_);
-        if (result.has_value()) {
-            out << " payload_packets_used=" << result->payload_packets_used
-                << " total_packets_seen=" << result->total_packets_seen
-                << " output_bytes=" << result->bytes.size()
-                << " stopped_at_gap=" << (result->stopped_at_gap ? "true" : "false");
-        } else {
-            out << " result=null";
-        }
-        out << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
-                read_counters_before,
-                selected_flow_diagnostics::snapshot_read_counters()
-            );
-        selected_flow_diagnostics::log(out.str());
-    }
-    return result;
+    return service.reassemble_tcp_payload(*this, request, direction_packets);
 }
 std::optional<std::string> CaptureSession::derive_quic_service_hint_for_flow(const std::size_t flow_index) const {
     if (!has_source_capture()) {
@@ -3235,28 +2788,14 @@ std::vector<PacketRow> CaptureSession::list_flow_packets(
     const std::size_t offset,
     const std::size_t limit
 ) const {
-    const auto started_at = std::chrono::steady_clock::now();
-    bool listed_connections_cache_hit = false;
-    const auto& connections = listed_connections(&listed_connections_cache_hit);
+    const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return {};
     }
 
-    std::vector<PacketRow> rows = connections[flow_index].family == FlowAddressFamily::ipv4
+    return connections[flow_index].family == FlowAddressFamily::ipv4
         ? slice_connection_packets(*connections[flow_index].ipv4, offset, limit)
         : slice_connection_packets(*connections[flow_index].ipv6, offset, limit);
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "list_flow_packets "
-            << diagnostics_flow_identity(flow_index, connections[flow_index], analysis_settings_)
-            << " offset=" << offset
-            << " limit=" << limit
-            << " returned_rows=" << rows.size()
-            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at));
-        selected_flow_diagnostics::log(out.str());
-    }
-    return rows;
 }
 
 std::vector<UnrecognizedPacketRow> CaptureSession::list_unrecognized_packets() const {
@@ -3293,77 +2832,19 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan
 ) const {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto log_result = [&](const std::string_view result,
-                                const double resolve_context_elapsed_ms = 0.0,
-                                const std::size_t prefix_count_a = 0U,
-                                const std::size_t prefix_count_b = 0U,
-                                const std::size_t payload_packet_count = 0U,
-                                const std::size_t suspected_count = 0U,
-                                const double cache_elapsed_ms = 0.0,
-                                const double collect_elapsed_ms = 0.0,
-                                const bool reused_existing_context = false,
-                                const bool listed_connections_called = false,
-                                const bool listed_connections_cache_hit = false) {
-        if (!selected_flow_diagnostics::enabled()) {
-            return;
-        }
-
-        std::ostringstream out {};
-        out << "suspected_tcp_retransmission_packet_indices"
-            << " flow_index=" << flow_index
-            << " max_packets_to_scan=" << max_packets_to_scan
-            << " result=" << result
-            << " resolve_context_ms=" << format_elapsed_ms(resolve_context_elapsed_ms)
-            << " prefix_count_a=" << prefix_count_a
-            << " prefix_count_b=" << prefix_count_b
-            << " payload_packet_count=" << payload_packet_count
-            << " suspected_count=" << suspected_count
-            << " cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
-            << " collect_ms=" << format_elapsed_ms(collect_elapsed_ms)
-            << " reused_existing_context=" << (reused_existing_context ? "true" : "false")
-            << " listed_connections_called=" << (listed_connections_called ? "true" : "false")
-            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
-                read_counters_before,
-                selected_flow_diagnostics::snapshot_read_counters()
-            );
-        selected_flow_diagnostics::log(out.str());
-    };
-
     if (!has_source_capture()) {
-        log_result("no-source");
         return {};
     }
 
     const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, max_packets_to_scan);
     if (prefix_resolution.context == nullptr) {
-        log_result(
-            prefix_resolution.result,
-            prefix_resolution.resolve_elapsed_ms,
-            0U,
-            0U,
-            0U,
-            0U,
-            0.0,
-            0.0,
-            prefix_resolution.reused_existing_context,
-            prefix_resolution.listed_connections_called,
-            prefix_resolution.listed_connections_cache_hit
-        );
         return {};
     }
 
     const auto& context = *prefix_resolution.context;
 
-    const auto cache_started_at = std::chrono::steady_clock::now();
     prepare_selected_flow_packet_cache(flow_index, context);
-    const auto cache_elapsed_ms = selected_flow_diagnostics::elapsed_ms(cache_started_at);
-
-    const auto collect_started_at = std::chrono::steady_clock::now();
-    const auto suspected = context.family == FlowAddressFamily::ipv4
+    return context.family == FlowAddressFamily::ipv4
         ? collect_suspected_tcp_retransmission_packet_indices(
             *this,
             flow_index,
@@ -3378,22 +2859,6 @@ std::vector<std::uint64_t> CaptureSession::suspected_tcp_retransmission_packet_i
             context.prefix_packets_b,
             max_packets_to_scan
         );
-    const auto collect_elapsed_ms = selected_flow_diagnostics::elapsed_ms(collect_started_at);
-
-    log_result(
-        "ok",
-        prefix_resolution.resolve_elapsed_ms,
-        context.prefix_count_a,
-        context.prefix_count_b,
-        context.payload_packet_count,
-        suspected.size(),
-        cache_elapsed_ms,
-        collect_elapsed_ms,
-        prefix_resolution.reused_existing_context,
-        prefix_resolution.listed_connections_called,
-        prefix_resolution.listed_connections_cache_hit
-    );
-    return suspected;
 }
 
 void CaptureSession::set_selected_flow_tcp_payload_suppression(
@@ -3408,62 +2873,9 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
     const std::vector<std::uint64_t>& packet_indices,
     const std::size_t max_packets_to_scan
 ) noexcept {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto log_result = [&](const std::string_view result,
-                                const double resolve_context_elapsed_ms = 0.0,
-                                const std::size_t prefix_count_a = 0U,
-                                const std::size_t prefix_count_b = 0U,
-                                const std::size_t payload_packet_count = 0U,
-                                const std::size_t duplicate_count = 0U,
-                                const std::size_t contribution_count = 0U,
-                                const double analyze_elapsed_ms = 0.0,
-                                const bool reused_existing_context = false,
-                                const bool listed_connections_called = false,
-                                const bool listed_connections_cache_hit = false) {
-        if (!selected_flow_diagnostics::enabled()) {
-            return;
-        }
-
-        std::ostringstream out {};
-        out << "set_selected_flow_tcp_payload_suppression"
-            << " flow_index=" << flow_index
-            << " max_packets_to_scan=" << max_packets_to_scan
-            << " result=" << result
-            << " resolve_context_ms=" << format_elapsed_ms(resolve_context_elapsed_ms)
-            << " prefix_count_a=" << prefix_count_a
-            << " prefix_count_b=" << prefix_count_b
-            << " payload_packet_count=" << payload_packet_count
-            << " duplicate_count=" << duplicate_count
-            << " contribution_count=" << contribution_count
-            << " analyze_ms=" << format_elapsed_ms(analyze_elapsed_ms)
-            << " reused_existing_context=" << (reused_existing_context ? "true" : "false")
-            << " listed_connections_called=" << (listed_connections_called ? "true" : "false")
-            << " listed_connections_cache_hit=" << (listed_connections_cache_hit ? "true" : "false")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(
-                read_counters_before,
-                selected_flow_diagnostics::snapshot_read_counters()
-            );
-        selected_flow_diagnostics::log(out.str());
-    };
-
     const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, max_packets_to_scan);
     if (prefix_resolution.context == nullptr) {
         selected_flow_tcp_payload_suppression_.reset();
-        log_result(
-            prefix_resolution.result,
-            prefix_resolution.resolve_elapsed_ms,
-            0U,
-            0U,
-            0U,
-            packet_indices.size(),
-            0U,
-            0.0,
-            prefix_resolution.reused_existing_context,
-            prefix_resolution.listed_connections_called,
-            prefix_resolution.listed_connections_cache_hit
-        );
         return;
     }
 
@@ -3471,7 +2883,6 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
 
     const std::set<std::uint64_t> exact_duplicate_packet_indices(packet_indices.begin(), packet_indices.end());
 
-    const auto analyze_started_at = std::chrono::steady_clock::now();
     const auto analysis = context.family == FlowAddressFamily::ipv4
         ? analyze_selected_flow_tcp_payload_suppression(
             *this,
@@ -3491,25 +2902,11 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
             context.prefix_count_a,
             context.prefix_count_b
         );
-    const auto analyze_elapsed_ms = selected_flow_diagnostics::elapsed_ms(analyze_started_at);
 
     if (analysis.packet_contributions.empty() &&
         !analysis.gap_state_a_to_b.tainted_by_gap &&
         !analysis.gap_state_b_to_a.tainted_by_gap) {
         selected_flow_tcp_payload_suppression_.reset();
-        log_result(
-            "no-contributions",
-            prefix_resolution.resolve_elapsed_ms,
-            context.prefix_count_a,
-            context.prefix_count_b,
-            context.payload_packet_count,
-            exact_duplicate_packet_indices.size(),
-            0U,
-            analyze_elapsed_ms,
-            prefix_resolution.reused_existing_context,
-            prefix_resolution.listed_connections_called,
-            prefix_resolution.listed_connections_cache_hit
-        );
         return;
     }
 
@@ -3530,19 +2927,6 @@ void CaptureSession::set_selected_flow_tcp_payload_suppression(
         });
     }
     selected_flow_tcp_payload_suppression_ = std::move(suppression);
-    log_result(
-        "ok",
-        prefix_resolution.resolve_elapsed_ms,
-        context.prefix_count_a,
-        context.prefix_count_b,
-        context.payload_packet_count,
-        exact_duplicate_packet_indices.size(),
-        analysis.packet_contributions.size(),
-        analyze_elapsed_ms,
-        prefix_resolution.reused_existing_context,
-        prefix_resolution.listed_connections_called,
-        prefix_resolution.listed_connections_cache_hit
-    );
 }
 
 void CaptureSession::clear_selected_flow_tcp_payload_suppression() noexcept {
@@ -3675,24 +3059,18 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
     const std::size_t max_packets_to_scan,
     const std::size_t limit
 ) const {
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     if (limit == 0U || max_packets_to_scan == 0U || !has_source_capture()) {
         return {};
     }
 
     const auto total_packets = flow_packet_count(flow_index);
     const auto bounded_packet_budget = std::min(total_packets, max_packets_to_scan);
-    const auto prefix_started_at = std::chrono::steady_clock::now();
     const auto prefix_resolution = prepare_selected_flow_tcp_prefix_context(flow_index, bounded_packet_budget);
-    const auto prefix_elapsed_ms = selected_flow_diagnostics::elapsed_ms(prefix_started_at);
-    const auto cache_started_at = std::chrono::steady_clock::now();
     if (prefix_resolution.context != nullptr) {
         prepare_selected_flow_packet_cache(flow_index, *prefix_resolution.context);
     } else {
         prepare_selected_flow_packet_cache(flow_index, bounded_packet_budget);
     }
-    const auto cache_elapsed_ms = selected_flow_diagnostics::elapsed_ms(cache_started_at);
     if (total_packets <= max_packets_to_scan) {
         return list_flow_stream_items(flow_index, 0U, limit);
     }
@@ -3707,7 +3085,6 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         return {};
     }
 
-    const auto build_started_at = std::chrono::steady_clock::now();
     auto rows = build_flow_stream_items_bounded(
         *this,
         connections[flow_index],
@@ -3717,23 +3094,6 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         deep_protocol_details_enabled_,
         analysis_settings_
     );
-    const auto build_elapsed_ms = selected_flow_diagnostics::elapsed_ms(build_started_at);
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::ostringstream out {};
-        out << "list_flow_stream_items_for_packet_prefix "
-            << diagnostics_flow_identity(flow_index, connections[flow_index], analysis_settings_)
-            << " max_packets_to_scan=" << max_packets_to_scan
-            << " limit=" << limit
-            << " returned_rows=" << rows.size()
-            << " prefix_context_ms=" << format_elapsed_ms(prefix_elapsed_ms)
-            << " packet_cache_ms=" << format_elapsed_ms(cache_elapsed_ms)
-            << " build_ms=" << format_elapsed_ms(build_elapsed_ms)
-            << " prefix_context_ready=" << (prefix_resolution.context != nullptr ? "true" : "false")
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
     return rows;
 }
 std::size_t CaptureSession::flow_stream_item_count(const std::size_t flow_index) const {
@@ -3741,25 +3101,14 @@ std::size_t CaptureSession::flow_stream_item_count(const std::size_t flow_index)
 }
 
 std::optional<std::vector<PacketRef>> CaptureSession::flow_packets(std::size_t flow_index) const {
-    const auto started_at = std::chrono::steady_clock::now();
     const auto& connections = listed_connections();
     if (flow_index >= connections.size()) {
         return std::nullopt;
     }
 
-    auto packets = connections[flow_index].family == FlowAddressFamily::ipv4
+    return connections[flow_index].family == FlowAddressFamily::ipv4
         ? std::optional<std::vector<PacketRef>> {collect_packets(*connections[flow_index].ipv4)}
         : std::optional<std::vector<PacketRef>> {collect_packets(*connections[flow_index].ipv6)};
-    if (selected_flow_diagnostics::enabled()) {
-        std::ostringstream out {};
-        out << "flow_packets "
-            << diagnostics_flow_identity(flow_index, connections[flow_index], analysis_settings_)
-            << " returned_packets=" << (packets.has_value() ? packets->size() : 0U)
-            << " collected_full_flow_metadata=true"
-            << " elapsed=" << format_elapsed_ms(selected_flow_diagnostics::elapsed_ms(started_at));
-        selected_flow_diagnostics::log(out.str());
-    }
-    return packets;
 }
 
 namespace {

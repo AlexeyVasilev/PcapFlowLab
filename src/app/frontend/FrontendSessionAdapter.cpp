@@ -1,7 +1,6 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
 #include "app/session/SessionFormatting.h"
-#include "app/session/SelectedFlowDiagnostics.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/index/CaptureIndex.h"
@@ -62,57 +61,6 @@ CaptureImportOptions import_options_for_frontend_mode(const FrontendOpenMode mod
 
 std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
-}
-
-std::string format_diag_elapsed_ms(const double elapsed_ms) {
-    std::ostringstream out {};
-    out << std::fixed << std::setprecision(3) << elapsed_ms << "ms";
-    return out.str();
-}
-
-std::size_t estimate_string_vector_bytes(const std::vector<std::string>& values) {
-    std::size_t total = 0U;
-    for (const auto& value : values) {
-        total += value.size();
-    }
-    return total;
-}
-
-std::size_t estimate_packet_dto_bytes(const FrontendPacketDto& dto) {
-    return dto.direction_text.size()
-        + dto.timestamp_text.size()
-        + dto.tcp_flags_text.size()
-        + sizeof(dto);
-}
-
-std::size_t estimate_flow_dto_bytes(const FrontendFlowDto& dto) {
-    return dto.protocol_text.size()
-        + dto.protocol_hint.size()
-        + dto.protocol_hint_display.size()
-        + dto.service_hint.size()
-        + dto.address_a.size()
-        + dto.endpoint_a.size()
-        + dto.address_b.size()
-        + dto.endpoint_b.size()
-        + dto.wireshark_display_filter.size()
-        + sizeof(dto);
-}
-
-std::size_t estimate_stream_item_dto_bytes(const FrontendStreamItemDto& dto) {
-    return dto.direction_text.size()
-        + dto.label.size()
-        + dto.source_packets_text.size()
-        + dto.header_secondary_text.size()
-        + dto.badge_text.size()
-        + dto.summary_text.size()
-        + dto.payload_tab_title.size()
-        + dto.payload_preview_text.size()
-        + dto.payload_preview_unavailable_text.size()
-        + dto.protocol_details_text.size()
-        + estimate_string_vector_bytes(dto.constricted_contribution_notes)
-        + estimate_string_vector_bytes(dto.constricted_packet_notes)
-        + (dto.source_packet_indices.size() * sizeof(std::uint64_t))
-        + sizeof(dto);
 }
 
 std::map<std::uint64_t, std::uint64_t> build_cached_flow_packet_numbers(
@@ -2113,7 +2061,6 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
 }
 
 FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t flow_index) {
-    const auto total_started_at = std::chrono::steady_clock::now();
     FrontendSelectionResultDto result {};
 
     if (!session_.has_capture()) {
@@ -2130,88 +2077,24 @@ FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t
     session_.clear_selected_flow_tcp_payload_suppression();
     result.selected = true;
 
-    const auto session_started_at = std::chrono::steady_clock::now();
     const auto row = session_.flow_row(flow_index);
-    const auto session_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
     if (!row.has_value()) {
         return result;
     }
 
     const auto protocol_hint_is_quic = row->protocol_hint == "quic" || row->protocol_hint == "QUIC";
     if (!protocol_hint_is_quic || !row->service_hint.empty()) {
-        if (selected_flow_diagnostics::enabled()) {
-            const auto estimated_bytes = sizeof(result);
-            std::ostringstream out {};
-            out << "tauri-select-flow"
-                << " flow_index=" << flow_index
-                << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
-                << " dto_ms=" << format_diag_elapsed_ms(0.0)
-                << " list_flows_called=false"
-                << " flows_returned=0"
-                << " full_snapshot_returned=false"
-                << " selection_only_dto=true"
-                << " updated_flow_row_returned=false"
-                << " estimated_bytes=" << estimated_bytes
-                << " derive_service_hint=false"
-                << " updated_flow=false"
-                << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at));
-            selected_flow_diagnostics::log(out.str());
-        }
         return result;
     }
 
-    const auto derive_started_at = std::chrono::steady_clock::now();
     const auto derived_service_hint = session_.derive_quic_service_hint_for_flow(flow_index);
-    const auto derive_elapsed_ms = selected_flow_diagnostics::elapsed_ms(derive_started_at);
     if (!derived_service_hint.has_value() || derived_service_hint->empty()) {
-        if (selected_flow_diagnostics::enabled()) {
-            const auto estimated_bytes = sizeof(result);
-            std::ostringstream out {};
-            out << "tauri-select-flow"
-                << " flow_index=" << flow_index
-                << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms + derive_elapsed_ms)
-                << " dto_ms=" << format_diag_elapsed_ms(0.0)
-                << " list_flows_called=false"
-                << " flows_returned=0"
-                << " full_snapshot_returned=false"
-                << " selection_only_dto=true"
-                << " updated_flow_row_returned=false"
-                << " estimated_bytes=" << estimated_bytes
-                << " derive_service_hint=true"
-                << " derive_service_hint_ms=" << format_diag_elapsed_ms(derive_elapsed_ms)
-                << " updated_flow=false"
-                << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at));
-            selected_flow_diagnostics::log(out.str());
-        }
         return result;
     }
 
     auto updated_row = *row;
     updated_row.service_hint = *derived_service_hint;
-    const auto dto_started_at = std::chrono::steady_clock::now();
     result.updated_flow = to_frontend_flow(updated_row);
-    const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto estimated_bytes = sizeof(result) + estimate_flow_dto_bytes(*result.updated_flow);
-        std::ostringstream out {};
-        out << "tauri-select-flow"
-            << " flow_index=" << flow_index
-            << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms + derive_elapsed_ms)
-            << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
-            << " list_flows_called=false"
-            << " flows_returned=0"
-            << " full_snapshot_returned=false"
-            << " selection_only_dto=true"
-            << " updated_flow_row_returned=true"
-            << " estimated_bytes=" << estimated_bytes
-            << " derive_service_hint=true"
-            << " derive_service_hint_ms=" << format_diag_elapsed_ms(derive_elapsed_ms)
-            << " updated_flow=true"
-            << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at));
-        selected_flow_diagnostics::log(out.str());
-    }
-
     return result;
 }
 
@@ -2219,7 +2102,6 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
     const std::size_t offset,
     const std::size_t limit
 ) {
-    const auto total_started_at = std::chrono::steady_clock::now();
     FrontendSelectedFlowPacketsResult result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
@@ -2241,8 +2123,6 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
         return result;
     }
 
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto session_started_at = std::chrono::steady_clock::now();
     auto rows = session_.list_flow_packets(flow_index, offset, limit);
     if (!rows.empty()) {
         session_detail::apply_original_transport_payload_lengths(session_, rows);
@@ -2255,39 +2135,10 @@ FrontendSelectedFlowPacketsResult FrontendSessionAdapter::get_selected_flow_pack
             row.suspected_tcp_retransmission = retransmission_set.contains(row.packet_index);
         }
     }
-    const auto session_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
-
-    const auto dto_started_at = std::chrono::steady_clock::now();
     result.packets.reserve(rows.size());
     for (const auto& row : rows) {
         result.packets.push_back(to_frontend_packet(row));
     }
-    const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::size_t estimated_bytes = 0U;
-        for (const auto& packet : result.packets) {
-            estimated_bytes += estimate_packet_dto_bytes(packet);
-        }
-
-        std::ostringstream out {};
-        out << "tauri-selected-flow-packets"
-            << " flow_index=" << flow_index
-            << " offset=" << offset
-            << " limit=" << limit
-            << " rows=" << result.packets.size()
-            << " total_count=" << result.total_count
-            << " session_calls=list_flow_packets,retransmission_scan"
-            << " full_flow_packets_called=false"
-            << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
-            << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
-            << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at))
-            << " estimated_bytes=" << estimated_bytes
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
-
     return result;
 }
 
@@ -2319,7 +2170,6 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     const std::size_t max_packets_to_scan,
     const std::size_t limit
 ) const {
-    const auto total_started_at = std::chrono::steady_clock::now();
     FrontendSelectedFlowStreamResult result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
@@ -2365,11 +2215,8 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
     result.packet_window_partial = result.packet_window_count < total_flow_packet_count;
 
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto session_started_at = std::chrono::steady_clock::now();
     session_.prepare_selected_flow_packet_cache(flow_index, result.packet_window_count);
     auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, result.packet_window_count, limit + 1U);
-    const auto session_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
 
     const bool has_more_items = rows.size() > limit;
     if (has_more_items) {
@@ -2382,48 +2229,19 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
     result.stream_partially_loaded = result.can_load_more;
     result.total_item_count = result.can_load_more ? 0U : result.loaded_item_count;
 
-    const auto dto_started_at = std::chrono::steady_clock::now();
-    const auto packet_number_started_at = std::chrono::steady_clock::now();
-    const auto packet_number_counters_before = selected_flow_diagnostics::snapshot_read_counters();
     const auto flow_packet_numbers = build_cached_flow_packet_numbers(session_, flow_index, rows);
-    const auto packet_number_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-    const auto packet_number_elapsed_ms = selected_flow_diagnostics::elapsed_ms(packet_number_started_at);
-
-    double source_indices_elapsed_ms = 0.0;
-    double notes_elapsed_ms = 0.0;
-    double details_elapsed_ms = 0.0;
-    std::size_t source_packet_indices_count = 0U;
-    std::size_t notes_bytes = 0U;
-    std::size_t details_bytes = 0U;
-    const auto item_build_started_at = std::chrono::steady_clock::now();
-    const auto item_build_counters_before = selected_flow_diagnostics::snapshot_read_counters();
 
     result.items.reserve(rows.size());
     for (const auto& row : rows) {
-        const auto source_indices_started_at = std::chrono::steady_clock::now();
         auto source_packet_indices = row.packet_indices;
-        source_packet_indices_count += source_packet_indices.size();
-        source_indices_elapsed_ms += selected_flow_diagnostics::elapsed_ms(source_indices_started_at);
-
-        const auto notes_started_at = std::chrono::steady_clock::now();
         auto constricted_contribution_notes = row.constricted_contribution_notes;
         auto constricted_packet_notes = row.constricted_packet_notes;
-        notes_bytes += estimate_string_vector_bytes(constricted_contribution_notes);
-        notes_bytes += estimate_string_vector_bytes(constricted_packet_notes);
-        notes_elapsed_ms += selected_flow_diagnostics::elapsed_ms(notes_started_at);
 
-        const auto details_started_at = std::chrono::steady_clock::now();
         const auto source_packets_text = format_stream_source_packets_text(row, flow_packet_numbers);
         const auto header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers);
         const auto badge_text = stream_item_header_badge_text(row);
         const auto summary_text = build_stream_item_summary_text(row, flow_packet_numbers);
         const auto payload_tab_title = stream_item_payload_tab_title(row);
-        details_bytes += source_packets_text.size()
-            + header_secondary_text.size()
-            + badge_text.size()
-            + summary_text.size()
-            + payload_tab_title.size();
-        details_elapsed_ms += selected_flow_diagnostics::elapsed_ms(details_started_at);
 
         result.items.push_back(FrontendStreamItemDto {
             .stream_item_index = row.stream_item_index,
@@ -2445,50 +2263,6 @@ FrontendSelectedFlowStreamResult FrontendSessionAdapter::get_selected_flow_strea
             .protocol_details_text = {},
         });
     }
-    const auto item_build_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-    const auto item_build_elapsed_ms = selected_flow_diagnostics::elapsed_ms(item_build_started_at);
-    const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::size_t estimated_bytes = 0U;
-        for (const auto& item : result.items) {
-            estimated_bytes += estimate_stream_item_dto_bytes(item);
-        }
-
-        std::ostringstream out {};
-        out << "tauri-selected-flow-stream"
-            << " flow_index=" << flow_index
-            << " packet_budget=" << max_packets_to_scan
-            << " item_limit=" << limit
-            << " items=" << result.items.size()
-            << " packet_window=" << result.packet_window_count
-            << " packet_window_partial=" << (result.packet_window_partial ? "true" : "false")
-            << " can_load_more=" << (result.can_load_more ? "true" : "false")
-            << " session_calls=prepare_selected_flow_packet_cache,list_flow_stream_items_for_packet_prefix"
-            << " full_flow_packet_numbers_built=false"
-            << " cached_packet_numbers=" << flow_packet_numbers.size()
-            << " source_packet_indices_count=" << source_packet_indices_count
-            << " notes_bytes=" << notes_bytes
-            << " details_bytes=" << details_bytes
-            << " estimated_bytes=" << estimated_bytes
-            << " stream_dto_packet_number_ms=" << format_diag_elapsed_ms(packet_number_elapsed_ms)
-            << " stream_dto_source_indices_ms=" << format_diag_elapsed_ms(source_indices_elapsed_ms)
-            << " stream_dto_notes_ms=" << format_diag_elapsed_ms(notes_elapsed_ms)
-            << " stream_dto_details_ms=" << format_diag_elapsed_ms(details_elapsed_ms)
-            << " stream_dto_item_build_ms=" << format_diag_elapsed_ms(item_build_elapsed_ms)
-            << " stream_dto_json_ms=" << format_diag_elapsed_ms(0.0)
-            << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
-            << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
-            << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at))
-            << " stream_dto_packet_number_reads="
-            << selected_flow_diagnostics::format_read_counter_delta(packet_number_counters_before, packet_number_counters_after)
-            << " stream_dto_item_build_reads="
-            << selected_flow_diagnostics::format_read_counter_delta(item_build_counters_before, item_build_counters_after)
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
-
     return result;
 }
 
@@ -2497,7 +2271,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
     const std::size_t limit,
     const std::uint64_t stream_item_index
 ) const {
-    const auto total_started_at = std::chrono::steady_clock::now();
     FrontendStreamItemDto result {
         .stream_item_index = stream_item_index,
         .payload_tab_title = "Payload",
@@ -2524,16 +2297,12 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
     }
 
     const auto packet_window_count = std::min(total_flow_packet_count, max_packets_to_scan);
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto session_started_at = std::chrono::steady_clock::now();
     session_.prepare_selected_flow_packet_cache(flow_index, packet_window_count);
     auto rows = session_.list_flow_stream_items_for_packet_prefix(flow_index, packet_window_count, limit + 1U);
-    const auto session_elapsed_ms = selected_flow_diagnostics::elapsed_ms(session_started_at);
     if (rows.size() > limit) {
         rows.resize(limit);
     }
 
-    const auto dto_started_at = std::chrono::steady_clock::now();
     const auto flow_packet_numbers = build_cached_flow_packet_numbers(session_, flow_index, rows);
     if (const auto it = std::find_if(
             rows.begin(),
@@ -2546,24 +2315,6 @@ FrontendStreamItemDto FrontendSessionAdapter::get_selected_flow_stream_item_deta
         result.payload_preview_unavailable_text = "The selected stream item is no longer available in the current stream window.";
         result.protocol_details_text = stream_protocol_unavailable_text();
     }
-    const auto dto_elapsed_ms = selected_flow_diagnostics::elapsed_ms(dto_started_at);
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        std::ostringstream out {};
-        out << "tauri-selected-flow-stream-item-details"
-            << " flow_index=" << flow_index
-            << " stream_item_index=" << stream_item_index
-            << " packet_budget=" << max_packets_to_scan
-            << " item_limit=" << limit
-            << " packet_window=" << packet_window_count
-            << " session_ms=" << format_diag_elapsed_ms(session_elapsed_ms)
-            << " dto_ms=" << format_diag_elapsed_ms(dto_elapsed_ms)
-            << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at))
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
-
     return result;
 }
 
@@ -2786,7 +2537,6 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
     const std::uint64_t packet_index,
     const std::uint64_t flow_packet_index
 ) const {
-    const auto total_started_at = std::chrono::steady_clock::now();
     FrontendPacketDetailsDto result {
         .has_capture = session_.has_capture(),
         .has_selected_flow = selected_flow_index_.has_value(),
@@ -2806,53 +2556,17 @@ FrontendPacketDetailsDto FrontendSessionAdapter::get_selected_flow_packet_detail
         return result;
     }
 
-    const auto read_counters_before = selected_flow_diagnostics::snapshot_read_counters();
-    const auto packet_lookup_started_at = std::chrono::steady_clock::now();
     const auto packet = session_.find_packet(packet_index);
-    const auto packet_lookup_elapsed_ms = selected_flow_diagnostics::elapsed_ms(packet_lookup_started_at);
     if (!packet.has_value()) {
         result.error_text = "The selected flow is unavailable.";
         return result;
     }
 
-    const auto details_started_at = std::chrono::steady_clock::now();
     auto details = build_frontend_packet_details(
         *packet,
         selected_flow_index_,
         flow_packet_index != 0U ? std::optional<std::uint64_t> {flow_packet_index} : std::nullopt
     );
-    const auto details_elapsed_ms = selected_flow_diagnostics::elapsed_ms(details_started_at);
-
-    if (selected_flow_diagnostics::enabled()) {
-        const auto read_counters_after = selected_flow_diagnostics::snapshot_read_counters();
-        const std::size_t estimated_bytes = details.summary_text.size()
-            + details.raw_preview_text.size()
-            + details.payload_preview_text.size()
-            + details.protocol_details_text.size()
-            + details.payload_tab_title.size()
-            + details.details_title.size()
-            + details.error_text.size()
-            + details.unavailable_text.size();
-
-        std::ostringstream out {};
-        out << "tauri-selected-packet-details"
-            << " flow_index=" << *selected_flow_index_
-            << " packet_index=" << packet_index
-            << " flow_packet_index=" << flow_packet_index
-            << " session_calls=find_packet,build_frontend_packet_details"
-            << " full_flow_packets_called=false"
-            << " packet_lookup_ms=" << format_diag_elapsed_ms(packet_lookup_elapsed_ms)
-            << " details_ms=" << format_diag_elapsed_ms(details_elapsed_ms)
-            << " total_ms=" << format_diag_elapsed_ms(selected_flow_diagnostics::elapsed_ms(total_started_at))
-            << " summary_bytes=" << details.summary_text.size()
-            << " raw_bytes=" << details.raw_preview_text.size()
-            << " payload_bytes=" << details.payload_preview_text.size()
-            << " protocol_bytes=" << details.protocol_details_text.size()
-            << " estimated_bytes=" << estimated_bytes
-            << ' ' << selected_flow_diagnostics::format_read_counter_delta(read_counters_before, read_counters_after);
-        selected_flow_diagnostics::log(out.str());
-    }
-
     return details;
 }
 

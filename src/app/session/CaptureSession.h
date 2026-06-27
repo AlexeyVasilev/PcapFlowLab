@@ -226,7 +226,6 @@ private:
     struct SelectedFlowTcpPrefixResolution {
         const SelectedFlowTcpPrefixContext* context {nullptr};
         const char* result {"invalid"};
-        double resolve_elapsed_ms {0.0};
         bool reused_existing_context {false};
         bool listed_connections_called {false};
         bool listed_connections_cache_hit {false};
