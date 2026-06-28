@@ -38,6 +38,14 @@ struct MplsLabelDetails {
     std::uint8_t ttl {0};
 };
 
+struct PppoeTagDetails {
+    std::uint16_t type {0};
+    std::uint16_t declared_length {0};
+    std::vector<std::uint8_t> value {};
+    bool header_truncated {false};
+    bool value_truncated {false};
+};
+
 struct PppoeSessionDetails {
     std::uint8_t version {0};
     std::uint8_t type {0};
@@ -45,9 +53,13 @@ struct PppoeSessionDetails {
     std::uint16_t session_id {0};
     std::uint16_t payload_length {0};
     std::uint16_t ppp_protocol {0};
+    bool is_discovery {false};
     bool header_truncated {false};
     bool protocol_field_truncated {false};
     bool payload_length_mismatch {false};
+    std::vector<PppoeTagDetails> discovery_tags {};
+    bool discovery_tag_header_truncated {false};
+    bool discovery_tag_value_truncated {false};
 };
 
 struct ArpDetails {

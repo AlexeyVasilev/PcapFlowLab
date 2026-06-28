@@ -14,6 +14,8 @@ enum class DecodeMode : std::uint8_t {
     best_effort,
 };
 
+constexpr std::uint16_t kPppoeDiscoveryTagEndOfList = 0x0000U;
+
 struct LinkLayerView {
     std::uint16_t protocol_type {0};
     std::size_t payload_offset {0};
@@ -143,6 +145,55 @@ std::vector<std::uint8_t> copy_partial_field(
     );
 }
 
+void parse_pppoe_discovery_tags(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t payload_offset,
+    const std::size_t declared_payload_length,
+    PacketDetails& details
+) {
+    details.pppoe.discovery_tags.clear();
+    details.pppoe.discovery_tag_header_truncated = false;
+    details.pppoe.discovery_tag_value_truncated = false;
+
+    const auto payload_end = std::min(
+        payload_offset + declared_payload_length,
+        packet_bytes.size()
+    );
+
+    std::size_t cursor = payload_offset;
+    while (cursor < payload_end) {
+        if (payload_end - cursor < 4U) {
+            details.pppoe.discovery_tag_header_truncated = true;
+            details.pppoe.discovery_tags.push_back(PppoeTagDetails {
+                .header_truncated = true,
+            });
+            return;
+        }
+
+        PppoeTagDetails tag {
+            .type = detail::read_be16(packet_bytes, cursor),
+            .declared_length = detail::read_be16(packet_bytes, cursor + 2U),
+        };
+        cursor += 4U;
+
+        const auto available_value_length = std::min<std::size_t>(tag.declared_length, payload_end - cursor);
+        tag.value.assign(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(cursor),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(cursor + available_value_length)
+        );
+        tag.value_truncated = available_value_length < tag.declared_length;
+        if (tag.value_truncated) {
+            details.pppoe.discovery_tag_value_truncated = true;
+        }
+        details.pppoe.discovery_tags.push_back(tag);
+        cursor += available_value_length;
+
+        if (tag.value_truncated || tag.type == kPppoeDiscoveryTagEndOfList) {
+            return;
+        }
+    }
+}
+
 std::optional<PacketDetails> decode_packet_details(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet_ref,
@@ -190,8 +241,10 @@ std::optional<PacketDetails> decode_packet_details(
         network_payload_offset = mpls.inner_payload_offset;
     }
 
-    if (network_protocol_type == detail::kEtherTypePppoeSession) {
+    if (network_protocol_type == detail::kEtherTypePppoeDiscovery ||
+        network_protocol_type == detail::kEtherTypePppoeSession) {
         details.has_pppoe = true;
+        details.pppoe.is_discovery = network_protocol_type == detail::kEtherTypePppoeDiscovery;
         if (packet_bytes.size() < network_payload_offset + detail::kPppoeHeaderSize) {
             details.pppoe.header_truncated = true;
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
@@ -207,7 +260,16 @@ std::optional<PacketDetails> decode_packet_details(
         const auto payload_offset = network_payload_offset + detail::kPppoeHeaderSize;
         const auto available_payload_length = packet_bytes.size() - payload_offset;
         details.pppoe.payload_length_mismatch =
-            available_payload_length != static_cast<std::size_t>(details.pppoe.payload_length);
+            available_payload_length < static_cast<std::size_t>(details.pppoe.payload_length);
+
+        if (details.pppoe.is_discovery) {
+            if (details.pppoe.payload_length_mismatch) {
+                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+            }
+
+            parse_pppoe_discovery_tags(packet_bytes, payload_offset, details.pppoe.payload_length, details);
+            return details;
+        }
 
         if (available_payload_length < detail::kPppProtocolFieldSize ||
             details.pppoe.payload_length < detail::kPppProtocolFieldSize) {

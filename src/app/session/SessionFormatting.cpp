@@ -27,6 +27,15 @@ constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
 constexpr std::uint16_t kPppProtocolLcp = 0xc021U;
 constexpr std::uint16_t kPppProtocolIpcp = 0x8021U;
 constexpr std::uint16_t kPppProtocolIpv6cp = 0x8057U;
+constexpr std::uint16_t kPppoeDiscoveryTagEndOfList = 0x0000U;
+constexpr std::uint16_t kPppoeDiscoveryTagServiceName = 0x0101U;
+constexpr std::uint16_t kPppoeDiscoveryTagAcName = 0x0102U;
+constexpr std::uint16_t kPppoeDiscoveryTagHostUniq = 0x0103U;
+constexpr std::uint16_t kPppoeDiscoveryTagAcCookie = 0x0104U;
+constexpr std::uint16_t kPppoeDiscoveryTagRelaySessionId = 0x0110U;
+constexpr std::uint16_t kPppoeDiscoveryTagServiceNameError = 0x0201U;
+constexpr std::uint16_t kPppoeDiscoveryTagAcSystemError = 0x0202U;
+constexpr std::uint16_t kPppoeDiscoveryTagGenericError = 0x0203U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint8_t kIpProtocolIgmp = 2U;
@@ -261,6 +270,47 @@ std::string format_ppp_protocol(const std::uint16_t protocol) {
     default:
         return format_hex16_value(protocol);
     }
+}
+
+std::string format_pppoe_tag_type(const std::uint16_t tag_type) {
+    switch (tag_type) {
+    case kPppoeDiscoveryTagEndOfList:
+        return "End-Of-List (0x0000)";
+    case kPppoeDiscoveryTagServiceName:
+        return "Service-Name (0x0101)";
+    case kPppoeDiscoveryTagAcName:
+        return "AC-Name (0x0102)";
+    case kPppoeDiscoveryTagHostUniq:
+        return "Host-Uniq (0x0103)";
+    case kPppoeDiscoveryTagAcCookie:
+        return "AC-Cookie (0x0104)";
+    case kPppoeDiscoveryTagRelaySessionId:
+        return "Relay-Session-Id (0x0110)";
+    case kPppoeDiscoveryTagServiceNameError:
+        return "Service-Name-Error (0x0201)";
+    case kPppoeDiscoveryTagAcSystemError:
+        return "AC-System-Error (0x0202)";
+    case kPppoeDiscoveryTagGenericError:
+        return "Generic-Error (0x0203)";
+    default:
+        return format_hex16_value(tag_type);
+    }
+}
+
+bool is_printable_ascii(std::span<const std::uint8_t> bytes) noexcept {
+    return std::all_of(bytes.begin(), bytes.end(), [](const auto byte) {
+        return byte >= 0x20U && byte <= 0x7eU;
+    });
+}
+
+std::string format_pppoe_tag_value(std::span<const std::uint8_t> value) {
+    if (value.empty()) {
+        return "empty";
+    }
+    if (is_printable_ascii(value)) {
+        return std::string(value.begin(), value.end());
+    }
+    return format_hex_byte_list(value);
 }
 
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
@@ -1712,7 +1762,27 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             make_summary_field("Session ID", format_hex16_value(details.pppoe.session_id)),
             make_summary_field("Length", std::to_string(details.pppoe.payload_length) + " bytes"),
         };
-        if (details.pppoe.protocol_field_truncated) {
+        if (details.pppoe.is_discovery) {
+            for (const auto& tag : details.pppoe.discovery_tags) {
+                if (tag.header_truncated) {
+                    pppoe_fields.push_back(make_summary_field("Warning", "PPPoE Discovery tag header is truncated"));
+                    continue;
+                }
+                auto value_text = format_pppoe_tag_value(
+                    std::span<const std::uint8_t>(tag.value.data(), tag.value.size())
+                );
+                if (tag.value_truncated) {
+                    value_text += " (truncated)";
+                }
+                pppoe_fields.push_back(make_summary_field(format_pppoe_tag_type(tag.type), std::move(value_text)));
+            }
+            if (details.pppoe.discovery_tag_header_truncated) {
+                pppoe_fields.push_back(make_summary_field("Warning", "PPPoE Discovery tag header is truncated"));
+            }
+            if (details.pppoe.discovery_tag_value_truncated) {
+                pppoe_fields.push_back(make_summary_field("Warning", "PPPoE Discovery tag value is truncated"));
+            }
+        } else if (details.pppoe.protocol_field_truncated) {
             pppoe_fields.push_back(make_summary_field("Warning", "PPP protocol field is truncated"));
         } else if (details.pppoe.ppp_protocol != 0U) {
             pppoe_fields.push_back(make_summary_field("PPP Protocol", format_ppp_protocol(details.pppoe.ppp_protocol)));
@@ -1726,19 +1796,27 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "pppoe",
-            .title = "PPPoE Session, Session ID: " + format_hex16_value(details.pppoe.session_id),
+            .title = (details.pppoe.is_discovery
+                ? "PPPoE Discovery, Code: " + format_pppoe_code(details.pppoe.code)
+                : "PPPoE Session, Session ID: " + format_hex16_value(details.pppoe.session_id)),
             .fields = std::move(pppoe_fields),
             .warning = details.pppoe.header_truncated ||
                 details.pppoe.protocol_field_truncated ||
-                details.pppoe.payload_length_mismatch,
+                details.pppoe.payload_length_mismatch ||
+                details.pppoe.discovery_tag_header_truncated ||
+                details.pppoe.discovery_tag_value_truncated,
             .marker_text = (details.pppoe.header_truncated ||
                 details.pppoe.protocol_field_truncated ||
-                details.pppoe.payload_length_mismatch)
+                details.pppoe.payload_length_mismatch ||
+                details.pppoe.discovery_tag_header_truncated ||
+                details.pppoe.discovery_tag_value_truncated)
                 ? "Warning"
                 : std::string {},
         });
 
-        if (!details.pppoe.protocol_field_truncated && details.pppoe.ppp_protocol != 0U) {
+        if (!details.pppoe.is_discovery &&
+            !details.pppoe.protocol_field_truncated &&
+            details.pppoe.ppp_protocol != 0U) {
             append_layer_if_not_empty(layers, PacketSummaryLayer {
                 .id = "ppp",
                 .title = "PPP, Protocol: " + format_ppp_protocol(details.pppoe.ppp_protocol),
@@ -1952,13 +2030,33 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
     std::ostringstream builder {};
 
     if (details.has_pppoe) {
-        builder << "Protocol: PPPoE Session\n"
+        builder << "Protocol: " << (details.pppoe.is_discovery ? "PPPoE Discovery" : "PPPoE Session") << '\n'
                 << '\t' << "Version: " << static_cast<unsigned>(details.pppoe.version) << '\n'
                 << '\t' << "Type: " << static_cast<unsigned>(details.pppoe.type) << '\n'
                 << '\t' << "Code: " << format_pppoe_code(details.pppoe.code) << '\n'
                 << '\t' << "Session ID: " << format_hex16_value(details.pppoe.session_id) << '\n'
                 << '\t' << "Length: " << details.pppoe.payload_length << " bytes";
-        if (details.pppoe.protocol_field_truncated) {
+        if (details.pppoe.is_discovery) {
+            for (const auto& tag : details.pppoe.discovery_tags) {
+                if (tag.header_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPPoE Discovery tag header is truncated.";
+                    continue;
+                }
+                auto value_text = format_pppoe_tag_value(
+                    std::span<const std::uint8_t>(tag.value.data(), tag.value.size())
+                );
+                if (tag.value_truncated) {
+                    value_text += " (truncated)";
+                }
+                builder << '\n' << '\t' << format_pppoe_tag_type(tag.type) << ": " << value_text;
+            }
+            if (details.pppoe.discovery_tag_header_truncated) {
+                builder << '\n' << '\t' << "Warning: PPPoE Discovery tag header is truncated.";
+            }
+            if (details.pppoe.discovery_tag_value_truncated) {
+                builder << '\n' << '\t' << "Warning: PPPoE Discovery tag value is truncated.";
+            }
+        } else if (details.pppoe.protocol_field_truncated) {
             builder << '\n' << '\t' << "Warning: PPP protocol field is truncated.";
         } else if (details.pppoe.ppp_protocol != 0U) {
             builder << '\n' << '\t' << "PPP Protocol: " << format_ppp_protocol(details.pppoe.ppp_protocol);

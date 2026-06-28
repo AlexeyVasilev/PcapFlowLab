@@ -9,14 +9,14 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated PPPoE / PPP envelopes;
 - inconsistent PPPoE length-field cases.
 
-The first parser step now supports only:
+The first parser step now supports:
 - PPPoE Session (`0x8864`) frames with `code = 0x00`;
 - PPP IPv4 (`0x0021`) continuation into normal IPv4 flow parsing;
 - PPP IPv6 (`0x0057`) continuation into normal IPv6 flow parsing;
-- VLAN / QinQ before supported PPPoE Session packets.
+- VLAN / QinQ before supported PPPoE Session packets;
+- PPPoE Discovery (`0x8863`) header parsing with bounded tag presentation for common Discovery tags.
 
 This directory still includes future and conservative fixtures for:
-- PPPoE Discovery (`0x8863`);
 - PPP LCP / IPCP / IPv6CP control payloads;
 - unknown PPP protocols inside Session frames;
 - malformed or truncated PPPoE / PPP envelopes;
@@ -81,7 +81,7 @@ This pass does **not** claim full committed PPPoE parser support.
 Current conservative assumptions after the first parser step:
 - PPPoE Session IPv4 / IPv6 data packets are expected to become normal flows when the PPPoE Session header, PPP protocol field, and PPPoE length are all well-formed;
 - PPP LCP / IPCP / IPv6CP session frames should remain safe and inspectable, but not become normal IP flows;
-- PPPoE Discovery packets are still no-flow candidates and should remain safe to inspect;
+- PPPoE Discovery packets are still no-flow candidates, but selected-packet details should now preserve PPPoE Discovery header fields and common TLV tags when safely present;
 - malformed/truncated/length-mismatch cases are still no-crash robustness fixtures first.
 
 ---
@@ -132,34 +132,34 @@ Current conservative assumptions after the first parser step:
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Discovery PADI / tags
-- Current conservative behavior candidate: discovery recognition only; no PPP payload; should not become an IP flow.
+- Current expected behavior: no-flow Discovery packet with basic PPPoE Discovery header presentation; should not become an IP flow.
 
 ### 09_pppoe_discovery_pado.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Discovery PADO / tags
 - Tags include: `Service-Name`, `AC-Name`, `AC-Cookie`
-- Current conservative behavior candidate: safe discovery inspection only.
+- Current expected behavior: safe no-flow Discovery inspection with bounded tag presentation.
 
 ### 10_pppoe_discovery_padr.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Discovery PADR / tags
-- Current conservative behavior candidate: safe discovery request inspection only.
+- Current expected behavior: safe no-flow Discovery request inspection with bounded tag presentation.
 
 ### 11_pppoe_discovery_pads.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Discovery PADS / tags
 - Session id: `0x1234`
-- Current conservative behavior candidate: safe discovery session-confirmation inspection only.
+- Current expected behavior: safe no-flow Discovery session-confirmation inspection with bounded tag presentation.
 
 ### 12_pppoe_discovery_padt.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Discovery PADT
 - Session id: `0x1234`
-- Current conservative behavior candidate: safe termination-packet inspection only.
+- Current expected behavior: safe no-flow Discovery termination-packet inspection with bounded PPPoE header presentation.
 
 ### 13_vlan_pppoe_session_ipv4_tcp.pcap
 
