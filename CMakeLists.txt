@@ -278,6 +278,7 @@ if(BUILD_TESTING)
         tests/unit/IgmpPcapFixtureTests.cpp
         tests/unit/Ipv4OptionsPcapFixtureTests.cpp
         tests/unit/MplsPcapFixtureTests.cpp
+        tests/unit/VlanPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp

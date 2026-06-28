@@ -117,7 +117,7 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | PCAP / Frame metadata | Supported | N/A | N/A | Supported | Not supported | Not supported | N/A | Supported | Frame layer shows packet index in file, selected-flow packet index when available, timestamp, captured length, original length, and truncation warnings. |
 | Ethernet | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | Ethernet II appears in layered Summary with source/destination MAC addresses and decoded EtherType text. |
-| 802.1Q VLAN | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | VLAN tags appear in layered Summary; multiple tags are represented individually. |
+| 802.1Q VLAN | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | Single-tag `0x8100` VLAN and current two-tag QinQ (`0x88A8` + `0x8100`) are supported in shared decode and layered Summary. VLAN tags appear individually, but legacy `0x9100` and triple-tag stacks are not currently supported. |
 | MPLS | Partial | Partial | Not supported | Supported | Not supported | Partial | Partial | Supported | Ethernet MPLS unicast/multicast and VLAN-before-MPLS are recognized. Each label becomes its own Summary layer with label / TC / BoS / TTL. Inner IPv4/IPv6 is inferred from the first nibble after the BoS label, and normal TCP/UDP flows group by the inner 5-tuple only. Unknown or malformed MPLS payloads remain in the unrecognized-packet list with conservative reason text. |
 | ARP | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Strongest non-IP shared parsing path today. Supports Ethernet/IPv4 ARP well, variable `hlen` / `plen`, truncated warnings, and one-packet-per-item stream rows. Request/reply packets are not grouped into a higher-level conversation item. |
 | IPv4 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv4 facts appear in layered Summary, including conservative selected-packet header fields such as IHL, DS field, identification, flags, fragment offset, TTL, protocol, checksum, and addresses. When IPv4 options are present, Summary can append a nested `IPv4 Options (N bytes)` child with wire-order option entries for EOL, NOP, RR, Timestamp, LSRR, SSRR, Router Alert, and unknown valid options, plus malformed/truncation warnings when parsing must stop conservatively. There is no standalone IPv4 `Protocol` tab renderer today. |
@@ -267,6 +267,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - TLS 1.2 / 1.3, constricted captures, and IPv6 variants.
 - `udp`
   - generic UDP payload, truncation, and checksum-oriented fixtures.
+- `vlan`
+  - single-tag 802.1Q, current two-tag QinQ, VLAN-tagged ARP, unknown inner EtherType, and malformed/truncated VLAN fixtures.
 
 ### Unit-test areas worth checking when protocol support changes
 
@@ -279,6 +281,7 @@ Current protocol behavior is primarily exercised in:
 - `tests/unit/PacketProtocolDetailsTests.cpp`
 - `tests/unit/StreamQueryTests.cpp`
 - `tests/unit/ArpPcapFixtureTests.cpp`
+- `tests/unit/VlanPcapFixtureTests.cpp`
 - `tests/unit/FragmentationTests.cpp`
 - `tests/unit/MalformedPacketHandlingTests.cpp`
 
