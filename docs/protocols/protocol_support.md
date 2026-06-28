@@ -259,6 +259,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - request/response and multi-message / partial-response coverage.
 - `mpls`
   - single-label and multi-label stacks, MPLS multicast EtherType, special labels, VLAN/QinQ before MPLS, unknown inner payloads, and snaplen-truncated inner IPv4/TCP cases.
+- `pppoe`
+  - deterministic PPPoE Session, PPP control, PPPoE Discovery, VLAN/QinQ-before-PPPoE, unknown PPP protocol, and malformed/truncated/length-mismatch fixtures. Fixture coverage exists, but PPPoE parser support is not implemented yet.
 - `quic`
   - QUIC Initial, constricted captures, IPv6 variants, and analysis-oriented fixtures.
 - `tcp`

@@ -70,6 +70,7 @@ PPPoE codes used:
 This pass does **not** claim current committed PPPoE parser support.
 
 Conservative assumptions until parser work is added:
+- current static inspection did not find a committed PPPoE / PPP decode path yet;
 - PPPoE Session frames carrying IPv4 / IPv6 are future expected supported behavior;
 - PPP LCP / IPCP / IPv6CP session frames are control-payload candidates that should remain safe and inspectable, but not become normal IP flows;
 - PPPoE Discovery packets are no-flow candidates and should remain safe to inspect;
