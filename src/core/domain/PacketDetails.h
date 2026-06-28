@@ -38,6 +38,18 @@ struct MplsLabelDetails {
     std::uint8_t ttl {0};
 };
 
+struct PppoeSessionDetails {
+    std::uint8_t version {0};
+    std::uint8_t type {0};
+    std::uint8_t code {0};
+    std::uint16_t session_id {0};
+    std::uint16_t payload_length {0};
+    std::uint16_t ppp_protocol {0};
+    bool header_truncated {false};
+    bool protocol_field_truncated {false};
+    bool payload_length_mismatch {false};
+};
+
 struct ArpDetails {
     std::uint16_t hardware_type {0};
     std::uint16_t protocol_type {0};
@@ -144,6 +156,9 @@ struct PacketDetails {
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     std::vector<MplsLabelDetails> mpls_labels {};
+
+    bool has_pppoe {false};
+    PppoeSessionDetails pppoe {};
 
     bool has_arp {false};
     ArpDetails arp {};

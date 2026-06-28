@@ -257,6 +257,7 @@ struct ImportPrefixDecision {
 
     auto protocol_type = envelope.protocol_type;
     auto payload_offset = envelope.payload_offset;
+    std::optional<std::size_t> bounded_packet_end {};
     if (detail::is_mpls_ether_type(protocol_type)) {
         for (std::size_t label_index = 0U; label_index < detail::kMaxMplsLabels; ++label_index) {
             const auto label_decision =
@@ -294,6 +295,60 @@ struct ImportPrefixDecision {
                 break;
             }
 
+            return import_prefix_sufficient();
+        }
+    }
+
+    if (protocol_type == detail::kEtherTypePppoeSession) {
+        auto decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            captured_length,
+            payload_offset + detail::kPppoeHeaderSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (available_bytes < payload_offset + detail::kPppoeHeaderSize) {
+            return import_prefix_sufficient();
+        }
+
+        const auto version_type = packet_bytes[payload_offset];
+        const auto version = static_cast<std::uint8_t>(version_type >> 4U);
+        const auto type = static_cast<std::uint8_t>(version_type & 0x0FU);
+        const auto code = packet_bytes[payload_offset + 1U];
+        const auto declared_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload_offset + 4U));
+        const auto ppp_payload_offset = payload_offset + detail::kPppoeHeaderSize;
+        if (captured_length < ppp_payload_offset ||
+            (captured_length - ppp_payload_offset) != declared_payload_length ||
+            version != 1U ||
+            type != 1U ||
+            code != 0U ||
+            declared_payload_length < detail::kPppProtocolFieldSize) {
+            return import_prefix_sufficient();
+        }
+
+        decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            captured_length,
+            ppp_payload_offset + detail::kPppProtocolFieldSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (available_bytes < ppp_payload_offset + detail::kPppProtocolFieldSize) {
+            return import_prefix_sufficient();
+        }
+
+        const auto ppp_protocol = detail::read_be16(packet_bytes, ppp_payload_offset);
+        if (ppp_protocol == detail::kPppProtocolIpv4) {
+            protocol_type = detail::kEtherTypeIpv4;
+            payload_offset = ppp_payload_offset + detail::kPppProtocolFieldSize;
+            bounded_packet_end = ppp_payload_offset + declared_payload_length;
+        } else if (ppp_protocol == detail::kPppProtocolIpv6) {
+            protocol_type = detail::kEtherTypeIpv6;
+            payload_offset = ppp_payload_offset + detail::kPppProtocolFieldSize;
+            bounded_packet_end = ppp_payload_offset + declared_payload_length;
+        } else {
             return import_prefix_sufficient();
         }
     }
@@ -344,7 +399,10 @@ struct ImportPrefixDecision {
         const auto total_length = detail::read_be16(packet_bytes, payload_offset + 2U);
         const auto nominal_packet_end =
             (total_length == 0U) ? captured_length : payload_offset + static_cast<std::size_t>(total_length);
-        const auto packet_captured_end = captured_packet_end(nominal_packet_end, captured_length);
+        auto packet_captured_end = captured_packet_end(nominal_packet_end, captured_length);
+        if (bounded_packet_end.has_value()) {
+            packet_captured_end = std::min(packet_captured_end, *bounded_packet_end);
+        }
         if (packet_captured_end < payload_offset + ihl) {
             return import_prefix_sufficient();
         }

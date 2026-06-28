@@ -162,6 +162,8 @@ std::optional<PacketDetails> decode_packet_details(
     details.has_mpls = false;
     details.mpls_ether_type = 0U;
     details.mpls_labels.clear();
+    details.has_pppoe = false;
+    details.pppoe = {};
 
     auto network_protocol_type = envelope->protocol_type;
     auto network_payload_offset = envelope->payload_offset;
@@ -186,6 +188,51 @@ std::optional<PacketDetails> decode_packet_details(
 
         network_protocol_type = mpls.inner_protocol_type;
         network_payload_offset = mpls.inner_payload_offset;
+    }
+
+    if (network_protocol_type == detail::kEtherTypePppoeSession) {
+        details.has_pppoe = true;
+        if (packet_bytes.size() < network_payload_offset + detail::kPppoeHeaderSize) {
+            details.pppoe.header_truncated = true;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        const auto version_type = packet_bytes[network_payload_offset];
+        details.pppoe.version = static_cast<std::uint8_t>(version_type >> 4U);
+        details.pppoe.type = static_cast<std::uint8_t>(version_type & 0x0FU);
+        details.pppoe.code = packet_bytes[network_payload_offset + 1U];
+        details.pppoe.session_id = detail::read_be16(packet_bytes, network_payload_offset + 2U);
+        details.pppoe.payload_length = detail::read_be16(packet_bytes, network_payload_offset + 4U);
+
+        const auto payload_offset = network_payload_offset + detail::kPppoeHeaderSize;
+        const auto available_payload_length = packet_bytes.size() - payload_offset;
+        details.pppoe.payload_length_mismatch =
+            available_payload_length != static_cast<std::size_t>(details.pppoe.payload_length);
+
+        if (available_payload_length < detail::kPppProtocolFieldSize ||
+            details.pppoe.payload_length < detail::kPppProtocolFieldSize) {
+            details.pppoe.protocol_field_truncated = true;
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        details.pppoe.ppp_protocol = detail::read_be16(packet_bytes, payload_offset);
+
+        if (details.pppoe.version != 1U ||
+            details.pppoe.type != 1U ||
+            details.pppoe.code != 0U ||
+            details.pppoe.payload_length_mismatch) {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        if (details.pppoe.ppp_protocol == detail::kPppProtocolIpv4) {
+            network_protocol_type = detail::kEtherTypeIpv4;
+            network_payload_offset = payload_offset + detail::kPppProtocolFieldSize;
+        } else if (details.pppoe.ppp_protocol == detail::kPppProtocolIpv6) {
+            network_protocol_type = detail::kEtherTypeIpv6;
+            network_payload_offset = payload_offset + detail::kPppProtocolFieldSize;
+        } else {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
     }
 
     if (network_protocol_type == detail::kEtherTypeArp) {

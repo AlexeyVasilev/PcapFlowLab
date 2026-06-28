@@ -27,7 +27,11 @@ inline constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
 inline constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 inline constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 inline constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
+inline constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
+inline constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
+inline constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
+inline constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
 inline constexpr std::uint8_t kIpProtocolIcmp = 1;
 inline constexpr std::uint8_t kIpProtocolIgmp = 2;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
@@ -46,6 +50,8 @@ inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
 inline constexpr std::size_t kIgmpMinimumHeaderSize = 8;
+inline constexpr std::size_t kPppoeHeaderSize = 6U;
+inline constexpr std::size_t kPppProtocolFieldSize = 2U;
 inline constexpr std::uint8_t kIgmpTypeMembershipQuery = 0x11;
 inline constexpr std::uint8_t kIgmpTypeV1MembershipReport = 0x12;
 inline constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16;
@@ -127,6 +133,11 @@ struct NetworkPayloadView {
     MplsStackView mpls {};
 };
 
+struct PppoeSessionPayloadView {
+    std::uint16_t ppp_protocol {0};
+    std::size_t payload_offset {0};
+};
+
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
                                       static_cast<std::uint16_t>(bytes[offset + 1]));
@@ -147,6 +158,10 @@ inline bool is_vlan_ether_type(const std::uint16_t ether_type) noexcept {
 
 inline bool is_mpls_ether_type(const std::uint16_t ether_type) noexcept {
     return ether_type == kEtherTypeMplsUnicast || ether_type == kEtherTypeMplsMulticast;
+}
+
+inline bool is_pppoe_ether_type(const std::uint16_t ether_type) noexcept {
+    return ether_type == kEtherTypePppoeDiscovery || ether_type == kEtherTypePppoeSession;
 }
 
 inline bool mpls_has_resolved_inner_payload(const MplsParseStatus status) noexcept {
@@ -282,6 +297,56 @@ inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::
     return stack;
 }
 
+inline std::optional<PppoeSessionPayloadView> parse_pppoe_session_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t pppoe_offset
+) {
+    if (bytes.size() < pppoe_offset + kPppoeHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto version_type = bytes[pppoe_offset];
+    const auto version = static_cast<std::uint8_t>(version_type >> 4U);
+    const auto type = static_cast<std::uint8_t>(version_type & 0x0FU);
+    const auto code = bytes[pppoe_offset + 1U];
+    const auto payload_length = static_cast<std::size_t>(read_be16(bytes, pppoe_offset + 4U));
+    const auto payload_offset = pppoe_offset + kPppoeHeaderSize;
+
+    if (version != 1U || type != 1U || code != 0U || payload_length < kPppProtocolFieldSize) {
+        return std::nullopt;
+    }
+
+    const auto available_payload_length = bytes.size() - payload_offset;
+    if (available_payload_length != payload_length) {
+        return std::nullopt;
+    }
+
+    if (bytes.size() < payload_offset + kPppProtocolFieldSize) {
+        return std::nullopt;
+    }
+
+    return PppoeSessionPayloadView {
+        .ppp_protocol = read_be16(bytes, payload_offset),
+        .payload_offset = payload_offset + kPppProtocolFieldSize,
+    };
+}
+
+inline void resolve_pppoe_inner_payload(std::span<const std::uint8_t> bytes, NetworkPayloadView& view) {
+    if (view.protocol_type != kEtherTypePppoeSession) {
+        return;
+    }
+
+    if (const auto pppoe = parse_pppoe_session_payload(bytes, view.payload_offset); pppoe.has_value()) {
+        if (pppoe->ppp_protocol == kPppProtocolIpv4) {
+            view.protocol_type = kEtherTypeIpv4;
+            view.payload_offset = pppoe->payload_offset;
+        } else if (pppoe->ppp_protocol == kPppProtocolIpv6) {
+            view.protocol_type = kEtherTypeIpv6;
+            view.payload_offset = pppoe->payload_offset;
+        }
+    }
+}
+
 inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const std::uint8_t> bytes,
                                                                const std::uint32_t data_link_type) {
     const auto envelope = parse_link_layer_payload(bytes, data_link_type);
@@ -295,6 +360,7 @@ inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const s
     view.payload_offset = envelope->payload_offset;
 
     if (!is_mpls_ether_type(envelope->protocol_type)) {
+        resolve_pppoe_inner_payload(bytes, view);
         return view;
     }
 
@@ -307,7 +373,10 @@ inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const s
         view.payload_offset = view.mpls.inner_payload_offset;
     } else {
         view.protocol_type = 0;
+        return view;
     }
+
+    resolve_pppoe_inner_payload(bytes, view);
 
     return view;
 }

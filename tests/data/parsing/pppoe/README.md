@@ -9,9 +9,18 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated PPPoE / PPP envelopes;
 - inconsistent PPPoE length-field cases.
 
-Parser implementation is intentionally **not** part of this pass. These fixtures
-exist so we can review bytes first, then add focused regression tests and parser
-support in later small steps.
+The first parser step now supports only:
+- PPPoE Session (`0x8864`) frames with `code = 0x00`;
+- PPP IPv4 (`0x0021`) continuation into normal IPv4 flow parsing;
+- PPP IPv6 (`0x0057`) continuation into normal IPv6 flow parsing;
+- VLAN / QinQ before supported PPPoE Session packets.
+
+This directory still includes future and conservative fixtures for:
+- PPPoE Discovery (`0x8863`);
+- PPP LCP / IPCP / IPv6CP control payloads;
+- unknown PPP protocols inside Session frames;
+- malformed or truncated PPPoE / PPP envelopes;
+- inconsistent PPPoE length-field cases.
 
 ## Local generation
 
@@ -67,15 +76,13 @@ PPPoE codes used:
 
 ## Current support assumptions
 
-This pass does **not** claim current committed PPPoE parser support.
+This pass does **not** claim full committed PPPoE parser support.
 
-Conservative assumptions until parser work is added:
-- current static inspection did not find a committed PPPoE / PPP decode path yet;
-- PPPoE Session frames carrying IPv4 / IPv6 are future expected supported behavior;
-- PPP LCP / IPCP / IPv6CP session frames are control-payload candidates that should remain safe and inspectable, but not become normal IP flows;
-- PPPoE Discovery packets are no-flow candidates and should remain safe to inspect;
-- VLAN and QinQ before PPPoE are future shim-composition candidates;
-- malformed/truncated/length-mismatch cases are no-crash robustness fixtures first.
+Current conservative assumptions after the first parser step:
+- PPPoE Session IPv4 / IPv6 data packets are expected to become normal flows when the PPPoE Session header, PPP protocol field, and PPPoE length are all well-formed;
+- PPP LCP / IPCP / IPv6CP session frames should remain safe and inspectable, but not become normal IP flows;
+- PPPoE Discovery packets are still no-flow candidates and should remain safe to inspect;
+- malformed/truncated/length-mismatch cases are still no-crash robustness fixtures first.
 
 ---
 
@@ -83,25 +90,25 @@ Conservative assumptions until parser work is added:
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv4 / IPv4 / TCP / Raw
-- Expected future behavior: normal IPv4/TCP flow through PPPoE Session.
+- Current expected behavior: normal IPv4/TCP flow through PPPoE Session.
 
 ### 02_pppoe_session_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv4 / IPv4 / UDP / Raw
-- Expected future behavior: normal IPv4/UDP flow through PPPoE Session.
+- Current expected behavior: normal IPv4/UDP flow through PPPoE Session.
 
 ### 03_pppoe_session_ipv6_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv6 / IPv6 / TCP / Raw
-- Expected future behavior: normal IPv6/TCP flow through PPPoE Session.
+- Current expected behavior: normal IPv6/TCP flow through PPPoE Session.
 
 ### 04_pppoe_session_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv6 / IPv6 / UDP / Raw
-- Expected future behavior: normal IPv6/UDP flow through PPPoE Session.
+- Current expected behavior: normal IPv6/UDP flow through PPPoE Session.
 
 ### 05_pppoe_session_lcp_config_request.pcap
 
@@ -158,13 +165,13 @@ Conservative assumptions until parser work is added:
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN `0x8100` / PPPoE Session / PPP IPv4 / IPv4 / TCP
-- Expected future behavior: VLAN should not block PPPoE Session or inner IPv4/TCP parsing.
+- Current expected behavior: VLAN should not block PPPoE Session or inner IPv4/TCP parsing.
 
 ### 14_qinq_pppoe_session_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer `0x88A8` / inner `0x8100` / PPPoE Session / PPP IPv4 / IPv4 / UDP
-- Expected future behavior: QinQ should not block PPPoE Session or inner IPv4/UDP parsing.
+- Current expected behavior: QinQ should not block PPPoE Session or inner IPv4/UDP parsing.
 
 ### 15_pppoe_session_unknown_ppp_protocol.pcap
 

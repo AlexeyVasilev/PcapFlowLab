@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
 
 namespace pfl::tests {
@@ -39,18 +41,10 @@ const session_detail::PacketSummaryLayer* find_layer(
     return nullptr;
 }
 
-std::size_t count_layers(
-    const std::vector<session_detail::PacketSummaryLayer>& layers,
-    const std::string& id
-) {
-    return static_cast<std::size_t>(std::count_if(layers.begin(), layers.end(), [&](const session_detail::PacketSummaryLayer& layer) {
-        return layer.id == id;
-    }));
-}
-
 UnrecognizedPacketRow expect_single_unrecognized_packet(
     CaptureSession& session,
-    const std::filesystem::path& relative_path
+    const std::filesystem::path& relative_path,
+    const std::optional<std::string>& expected_reason = std::nullopt
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.summary().packet_count == 0U);
@@ -62,6 +56,9 @@ UnrecognizedPacketRow expect_single_unrecognized_packet(
     PFL_EXPECT(rows[0].row_number == 1U);
     PFL_EXPECT(rows[0].packet_index == 0U);
     PFL_EXPECT(!rows[0].reason_text.empty());
+    if (expected_reason.has_value()) {
+        PFL_EXPECT(rows[0].reason_text == *expected_reason);
+    }
     PFL_EXPECT(rows[0].captured_length > 0U);
     PFL_EXPECT(rows[0].original_length >= rows[0].captured_length);
     return rows[0];
@@ -91,60 +88,129 @@ void expect_ethernet_only_unrecognized(
     PFL_EXPECT(find_layer(summary_layers, "vlan") == nullptr);
 }
 
-void expect_vlan_wrapped_unrecognized(
+void expect_single_session_flow(
     CaptureSession& session,
     const std::filesystem::path& relative_path,
-    const std::size_t expected_vlan_count
+    const FlowAddressFamily expected_family,
+    const std::string& expected_protocol,
+    const std::uint16_t expected_ppp_protocol,
+    const std::initializer_list<const char*> expected_layer_prefix,
+    const std::size_t expected_vlan_count = 0U
 ) {
-    const auto row = expect_single_unrecognized_packet(session, relative_path);
-    const auto packet = require_packet(session, row.packet_index);
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    const auto rows = session.list_flows();
+    PFL_EXPECT(rows.size() == 1U);
+    PFL_EXPECT(rows[0].family == expected_family);
+    PFL_EXPECT(rows[0].protocol_text == expected_protocol);
+    PFL_EXPECT(rows[0].packet_count == 1U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
     PFL_EXPECT(details.has_value());
     PFL_EXPECT(details->has_ethernet);
-    PFL_EXPECT(details->has_vlan);
+    PFL_EXPECT(details->has_pppoe);
+    PFL_EXPECT(details->pppoe.version == 1U);
+    PFL_EXPECT(details->pppoe.type == 1U);
+    PFL_EXPECT(details->pppoe.code == 0U);
+    PFL_EXPECT(details->pppoe.ppp_protocol == expected_ppp_protocol);
+    PFL_EXPECT(!details->pppoe.header_truncated);
+    PFL_EXPECT(!details->pppoe.protocol_field_truncated);
+    PFL_EXPECT(!details->pppoe.payload_length_mismatch);
     PFL_EXPECT(details->vlan_tags.size() == expected_vlan_count);
-    PFL_EXPECT(!details->has_arp);
-    PFL_EXPECT(!details->has_ipv4);
-    PFL_EXPECT(!details->has_ipv6);
-    PFL_EXPECT(!details->has_tcp);
-    PFL_EXPECT(!details->has_udp);
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-    PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
-    PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
-    PFL_EXPECT(count_layers(summary_layers, "vlan") == expected_vlan_count);
+    PFL_EXPECT(summary_layers.size() >= expected_layer_prefix.size());
+    std::size_t index = 0U;
+    for (const auto* expected_id : expected_layer_prefix) {
+        PFL_EXPECT(summary_layers[index].id == expected_id);
+        ++index;
+    }
+
+    const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
+    PFL_EXPECT(pppoe_layer != nullptr);
+    PFL_EXPECT(pppoe_layer->title.find("PPPoE Session") != std::string::npos);
+    PFL_EXPECT(std::any_of(
+        pppoe_layer->fields.begin(),
+        pppoe_layer->fields.end(),
+        [expected_ppp_protocol](const session_detail::PacketSummaryField& field) {
+            return field.label == "PPP Protocol" &&
+                field.value.find(expected_ppp_protocol == 0x0021U ? "IPv4" : "IPv6") != std::string::npos;
+        }
+    ));
+
+    const auto* ppp_layer = find_layer(summary_layers, "ppp");
+    PFL_EXPECT(ppp_layer != nullptr);
+    PFL_EXPECT(!ppp_layer->fields.empty());
+    PFL_EXPECT(ppp_layer->fields.front().label == "Protocol");
 }
 
 }  // namespace
 
 void run_pppoe_pcap_fixture_tests() {
-    // Current expectation: PPPoE parser support is not implemented yet, so
-    // session data candidates remain safe unrecognized packets instead of
-    // becoming normal IPv4/IPv6 flows. Future PPPoE parser work can tighten
-    // these expectations.
-    for (const auto* relative_path : {
-             "parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap",
-             "parsing/pppoe/02_pppoe_session_ipv4_udp.pcap",
-             "parsing/pppoe/03_pppoe_session_ipv6_tcp.pcap",
-             "parsing/pppoe/04_pppoe_session_ipv6_udp.pcap",
-         }) {
+    {
         CaptureSession session {};
-        expect_ethernet_only_unrecognized(session, relative_path, 0x8864U);
+        expect_single_session_flow(
+            session,
+            "parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap",
+            FlowAddressFamily::ipv4,
+            "TCP",
+            0x0021U,
+            {"frame", "ethernet", "pppoe", "ppp", "ipv4", "tcp"}
+        );
     }
 
-    // Current expectation: PPP control protocols remain safe and inspectable
-    // only as unrecognized packets until PPPoE/PPP decoding is introduced.
+    {
+        CaptureSession session {};
+        expect_single_session_flow(
+            session,
+            "parsing/pppoe/02_pppoe_session_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            0x0021U,
+            {"frame", "ethernet", "pppoe", "ppp", "ipv4", "udp"}
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_session_flow(
+            session,
+            "parsing/pppoe/03_pppoe_session_ipv6_tcp.pcap",
+            FlowAddressFamily::ipv6,
+            "TCP",
+            0x0057U,
+            {"frame", "ethernet", "pppoe", "ppp", "ipv6", "tcp"}
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_session_flow(
+            session,
+            "parsing/pppoe/04_pppoe_session_ipv6_udp.pcap",
+            FlowAddressFamily::ipv6,
+            "UDP",
+            0x0057U,
+            {"frame", "ethernet", "pppoe", "ppp", "ipv6", "udp"}
+        );
+    }
+
     for (const auto* relative_path : {
              "parsing/pppoe/05_pppoe_session_lcp_config_request.pcap",
              "parsing/pppoe/06_pppoe_session_ipcp_config_request.pcap",
              "parsing/pppoe/07_pppoe_session_ipv6cp_config_request.pcap",
          }) {
         CaptureSession session {};
-        expect_ethernet_only_unrecognized(session, relative_path, 0x8864U);
+        const auto row = expect_single_unrecognized_packet(session, relative_path);
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_pppoe);
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
     }
 
-    // Current expectation: discovery packets stay outside normal flow
-    // extraction and remain conservative/unrecognized.
     for (const auto* relative_path : {
              "parsing/pppoe/08_pppoe_discovery_padi.pcap",
              "parsing/pppoe/09_pppoe_discovery_pado.pcap",
@@ -156,42 +222,84 @@ void run_pppoe_pcap_fixture_tests() {
         expect_ethernet_only_unrecognized(session, relative_path, 0x8863U);
     }
 
-    // Current expectation: existing VLAN/QinQ support preserves outer shim
-    // details, but PPPoE still blocks inner IPv4/UDP/TCP flow extraction.
     {
         CaptureSession session {};
-        expect_vlan_wrapped_unrecognized(
+        expect_single_session_flow(
             session,
             "parsing/pppoe/13_vlan_pppoe_session_ipv4_tcp.pcap",
+            FlowAddressFamily::ipv4,
+            "TCP",
+            0x0021U,
+            {"frame", "ethernet", "vlan", "pppoe", "ppp", "ipv4", "tcp"},
             1U
         );
     }
 
     {
         CaptureSession session {};
-        expect_vlan_wrapped_unrecognized(
+        expect_single_session_flow(
             session,
             "parsing/pppoe/14_qinq_pppoe_session_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            0x0021U,
+            {"frame", "ethernet", "vlan", "vlan", "pppoe", "ppp", "ipv4", "udp"},
             2U
         );
     }
 
-    // Current expectation: unknown protocol, malformed, truncated, and
-    // length-mismatch cases stay safe and visible as unrecognized packets.
     for (const auto* relative_path : {
              "parsing/pppoe/15_pppoe_session_unknown_ppp_protocol.pcap",
-             "parsing/pppoe/16_pppoe_truncated_header.pcap",
-             "parsing/pppoe/17_pppoe_truncated_ppp_protocol.pcap",
-             "parsing/pppoe/18_pppoe_truncated_inner_ipv4.pcap",
              "parsing/pppoe/19_pppoe_bad_length_short_payload.pcap",
              "parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap",
          }) {
         CaptureSession session {};
-        expect_single_unrecognized_packet(session, relative_path);
+        const auto row = expect_single_unrecognized_packet(session, relative_path);
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_pppoe);
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+        PFL_EXPECT(row.reason_text == "Unsupported or malformed packet");
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_unrecognized_packet(session, "parsing/pppoe/16_pppoe_truncated_header.pcap");
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_pppoe);
+        PFL_EXPECT(details->pppoe.header_truncated);
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_unrecognized_packet(session, "parsing/pppoe/17_pppoe_truncated_ppp_protocol.pcap");
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_pppoe);
+        PFL_EXPECT(details->pppoe.protocol_field_truncated);
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_unrecognized_packet(session, "parsing/pppoe/18_pppoe_truncated_inner_ipv4.pcap");
+        PFL_EXPECT(
+            row.reason_text == "IPv4 header truncated" ||
+            row.reason_text == "Unsupported or malformed packet"
+        );
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_pppoe);
+        PFL_EXPECT(!details->has_ipv4);
     }
 }
 

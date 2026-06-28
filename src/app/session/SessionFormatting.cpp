@@ -18,8 +18,15 @@ constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
 constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
+constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
+constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
+constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
+constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
+constexpr std::uint16_t kPppProtocolLcp = 0xc021U;
+constexpr std::uint16_t kPppProtocolIpcp = 0x8021U;
+constexpr std::uint16_t kPppProtocolIpv6cp = 0x8057U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint8_t kIpProtocolIgmp = 2U;
@@ -174,6 +181,10 @@ std::string format_ether_type_name(const std::uint16_t ether_type) {
         return "MPLS Unicast";
     case kEtherTypeMplsMulticast:
         return "MPLS Multicast";
+    case kEtherTypePppoeDiscovery:
+        return "PPPoE Discovery";
+    case kEtherTypePppoeSession:
+        return "PPPoE Session";
     default:
         return {};
     }
@@ -213,6 +224,42 @@ std::string format_vlan_tpid_name(const std::uint16_t tpid) {
         return "Legacy VLAN (0x9100)";
     default:
         return "VLAN";
+    }
+}
+
+std::string format_pppoe_code(const std::uint8_t code) {
+    switch (code) {
+    case 0x00U:
+        return "Session Data (0x00)";
+    case 0x09U:
+        return "PADI (0x09)";
+    case 0x07U:
+        return "PADO (0x07)";
+    case 0x19U:
+        return "PADR (0x19)";
+    case 0x65U:
+        return "PADS (0x65)";
+    case 0xA7U:
+        return "PADT (0xa7)";
+    default:
+        return format_hex_value(code, 2);
+    }
+}
+
+std::string format_ppp_protocol(const std::uint16_t protocol) {
+    switch (protocol) {
+    case kPppProtocolIpv4:
+        return "IPv4 (0x0021)";
+    case kPppProtocolIpv6:
+        return "IPv6 (0x0057)";
+    case kPppProtocolLcp:
+        return "LCP (0xc021)";
+    case kPppProtocolIpcp:
+        return "IPCP (0x8021)";
+    case kPppProtocolIpv6cp:
+        return "IPv6CP (0x8057)";
+    default:
+        return format_hex16_value(protocol);
     }
 }
 
@@ -1060,6 +1107,7 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     if (protocol_details_text.empty() ||
         protocol_details_text == kNoProtocolDetailsMessage ||
         protocol_details_text == kUnavailableProtocolDetailsMessage ||
+        details.has_pppoe ||
         details.has_arp ||
         details.has_igmp) {
         return std::nullopt;
@@ -1656,6 +1704,51 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_pppoe) {
+        std::vector<PacketSummaryField> pppoe_fields {
+            make_summary_field("Version", std::to_string(details.pppoe.version)),
+            make_summary_field("Type", std::to_string(details.pppoe.type)),
+            make_summary_field("Code", format_pppoe_code(details.pppoe.code)),
+            make_summary_field("Session ID", format_hex16_value(details.pppoe.session_id)),
+            make_summary_field("Length", std::to_string(details.pppoe.payload_length) + " bytes"),
+        };
+        if (details.pppoe.protocol_field_truncated) {
+            pppoe_fields.push_back(make_summary_field("Warning", "PPP protocol field is truncated"));
+        } else if (details.pppoe.ppp_protocol != 0U) {
+            pppoe_fields.push_back(make_summary_field("PPP Protocol", format_ppp_protocol(details.pppoe.ppp_protocol)));
+        }
+        if (details.pppoe.header_truncated) {
+            pppoe_fields.push_back(make_summary_field("Warning", "PPPoE header is truncated"));
+        }
+        if (details.pppoe.payload_length_mismatch) {
+            pppoe_fields.push_back(make_summary_field("Warning", "PPPoE payload length does not match captured payload bytes"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "pppoe",
+            .title = "PPPoE Session, Session ID: " + format_hex16_value(details.pppoe.session_id),
+            .fields = std::move(pppoe_fields),
+            .warning = details.pppoe.header_truncated ||
+                details.pppoe.protocol_field_truncated ||
+                details.pppoe.payload_length_mismatch,
+            .marker_text = (details.pppoe.header_truncated ||
+                details.pppoe.protocol_field_truncated ||
+                details.pppoe.payload_length_mismatch)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (!details.pppoe.protocol_field_truncated && details.pppoe.ppp_protocol != 0U) {
+            append_layer_if_not_empty(layers, PacketSummaryLayer {
+                .id = "ppp",
+                .title = "PPP, Protocol: " + format_ppp_protocol(details.pppoe.ppp_protocol),
+                .fields = {
+                    make_summary_field("Protocol", format_ppp_protocol(details.pppoe.ppp_protocol)),
+                },
+            });
+        }
+    }
+
     if (details.has_arp) {
         std::vector<PacketSummaryField> arp_fields {};
         const auto shared_lines = build_basic_summary_lines(details);
@@ -1857,6 +1950,27 @@ std::string packet_payload_tab_title(const PacketDetails& details) {
 
 std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details) {
     std::ostringstream builder {};
+
+    if (details.has_pppoe) {
+        builder << "Protocol: PPPoE Session\n"
+                << '\t' << "Version: " << static_cast<unsigned>(details.pppoe.version) << '\n'
+                << '\t' << "Type: " << static_cast<unsigned>(details.pppoe.type) << '\n'
+                << '\t' << "Code: " << format_pppoe_code(details.pppoe.code) << '\n'
+                << '\t' << "Session ID: " << format_hex16_value(details.pppoe.session_id) << '\n'
+                << '\t' << "Length: " << details.pppoe.payload_length << " bytes";
+        if (details.pppoe.protocol_field_truncated) {
+            builder << '\n' << '\t' << "Warning: PPP protocol field is truncated.";
+        } else if (details.pppoe.ppp_protocol != 0U) {
+            builder << '\n' << '\t' << "PPP Protocol: " << format_ppp_protocol(details.pppoe.ppp_protocol);
+        }
+        if (details.pppoe.header_truncated) {
+            builder << '\n' << '\t' << "Warning: PPPoE header is truncated.";
+        }
+        if (details.pppoe.payload_length_mismatch) {
+            builder << '\n' << '\t' << "Warning: PPPoE payload length does not match captured payload bytes.";
+        }
+        return builder.str();
+    }
 
     if (details.has_igmp) {
         builder << "Protocol: " << infer_igmp_version_text(details.igmp);
