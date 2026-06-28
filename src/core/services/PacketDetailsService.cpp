@@ -21,9 +21,12 @@ struct LinkLayerView {
 
 std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint8_t> packet_bytes,
                                                        const PacketRef& packet_ref,
-                                                       PacketDetails& details) {
+                                                       PacketDetails& details,
+                                                       const DecodeMode mode) {
     details.vlan_tags.clear();
     details.vlan_tags.reserve(detail::kMaxVlanTags);
+    details.vlan_tag_truncated = false;
+    details.truncated_vlan_tpid = 0U;
 
     if (packet_ref.data_link_type == kLinkTypeEthernet) {
         if (packet_bytes.size() < detail::kEthernetHeaderSize) {
@@ -47,10 +50,17 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             }
 
             if (packet_bytes.size() < view.payload_offset + detail::kVlanHeaderSize) {
+                details.has_vlan = true;
+                details.vlan_tag_truncated = true;
+                details.truncated_vlan_tpid = view.protocol_type;
+                if (mode == DecodeMode::best_effort) {
+                    return view;
+                }
                 return std::nullopt;
             }
 
             const VlanTagDetails tag {
+                .tpid = view.protocol_type,
                 .tci = detail::read_be16(packet_bytes, view.payload_offset),
                 .encapsulated_ether_type = detail::read_be16(packet_bytes, view.payload_offset + 2U),
             };
@@ -144,7 +154,7 @@ std::optional<PacketDetails> decode_packet_details(
         .original_length = packet_ref.original_length,
     };
 
-    const auto envelope = parse_link_layer_envelope(packet_bytes, packet_ref, details);
+    const auto envelope = parse_link_layer_envelope(packet_bytes, packet_ref, details, mode);
     if (!envelope.has_value()) {
         return std::nullopt;
     }
@@ -516,7 +526,7 @@ std::optional<PacketDetails> decode_packet_details(
         return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
     }
 
-    return std::nullopt;
+    return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
 }
 
 }  // namespace

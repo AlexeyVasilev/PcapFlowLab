@@ -44,6 +44,7 @@ void run_vlan_tests() {
         PFL_EXPECT(details->ethernet.ether_type == 0x8100);
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1);
+        PFL_EXPECT(details->vlan_tags[0].tpid == 0x8100);
         PFL_EXPECT(details->vlan_tags[0].tci == 100);
         PFL_EXPECT(details->vlan_tags[0].encapsulated_ether_type == 0x0800);
         PFL_EXPECT(details->has_ipv4);
@@ -88,8 +89,10 @@ void run_vlan_tests() {
         PFL_EXPECT(details->ethernet.ether_type == 0x88A8);
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 2);
+        PFL_EXPECT(details->vlan_tags[0].tpid == 0x88A8);
         PFL_EXPECT(details->vlan_tags[0].tci == 200);
         PFL_EXPECT(details->vlan_tags[0].encapsulated_ether_type == 0x8100);
+        PFL_EXPECT(details->vlan_tags[1].tpid == 0x8100);
         PFL_EXPECT(details->vlan_tags[1].tci == 300);
         PFL_EXPECT(details->vlan_tags[1].encapsulated_ether_type == 0x0800);
         PFL_EXPECT(details->has_ipv4);
@@ -127,6 +130,13 @@ void run_vlan_tests() {
             .original_length = static_cast<std::uint32_t>(malformed_vlan_packet.size()),
         };
         PFL_EXPECT(!service.decode(malformed_vlan_packet, packet_ref).has_value());
+        const auto best_effort = service.decode_best_effort(malformed_vlan_packet, packet_ref);
+        PFL_EXPECT(best_effort.has_value());
+        PFL_EXPECT(best_effort->has_ethernet);
+        PFL_EXPECT(best_effort->has_vlan);
+        PFL_EXPECT(best_effort->vlan_tags.empty());
+        PFL_EXPECT(best_effort->vlan_tag_truncated);
+        PFL_EXPECT(best_effort->truncated_vlan_tpid == 0x8100U);
     }
 }
 

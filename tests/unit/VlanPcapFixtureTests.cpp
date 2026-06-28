@@ -226,20 +226,48 @@ void run_vlan_pcap_fixture_tests() {
 
     {
         CaptureSession session {};
-        expect_single_unrecognized_packet(
+        expect_single_flow(
             session,
             "parsing/vlan/07_legacy_9100_vlan_ipv4_udp.pcap",
-            "Unsupported or malformed packet"
+            FlowAddressFamily::ipv4,
+            "UDP",
+            1U
         );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_vlan);
+        PFL_EXPECT(details->vlan_tags.size() == 1U);
+        PFL_EXPECT(details->vlan_tags[0].tpid == 0x9100U);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_udp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "ipv4", "udp"});
     }
 
     {
         CaptureSession session {};
-        expect_single_unrecognized_packet(
+        expect_single_flow(
             session,
             "parsing/vlan/08_triple_vlan_ipv4_tcp.pcap",
-            "Link-layer header truncated"
+            FlowAddressFamily::ipv4,
+            "TCP",
+            1U
         );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_vlan);
+        PFL_EXPECT(details->vlan_tags.size() == 3U);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_tcp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "vlan", "vlan", "ipv4", "tcp"});
+        PFL_EXPECT(count_layers(summary_layers, "vlan") == 3U);
     }
 
     {
@@ -274,7 +302,16 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(!details.has_value());
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_vlan);
+        PFL_EXPECT(details->vlan_tags.empty());
+        PFL_EXPECT(details->vlan_tag_truncated);
+        PFL_EXPECT(details->truncated_vlan_tpid == 0x8100U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        PFL_EXPECT(find_layer(summary_layers, "warnings") != nullptr);
+        expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "vlan"});
     }
 
     {

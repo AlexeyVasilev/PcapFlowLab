@@ -19,6 +19,7 @@ struct EthernetDetails {
 };
 
 struct VlanTagDetails {
+    std::uint16_t tpid {0};
     std::uint16_t tci {0};
     std::uint16_t encapsulated_ether_type {0};
 };
@@ -134,6 +135,8 @@ struct PacketDetails {
 
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
+    bool vlan_tag_truncated {false};
+    std::uint16_t truncated_vlan_tpid {0};
 
     bool has_linux_cooked {false};
     LinuxCookedDetails linux_cooked {};

@@ -4,7 +4,7 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - single-tag 802.1Q VLAN carrying normal IPv4 / IPv6 transport traffic;
 - VLAN-tagged ARP handling;
 - stacked VLAN / QinQ encapsulation;
-- legacy `0x9100` VLAN-like tagging as a future-support candidate;
+- legacy `0x9100` VLAN-like tagging;
 - unknown inner EtherTypes behind VLAN;
 - malformed or truncated VLAN frames;
 - snaplen-truncated inner payload after a VLAN shim.
@@ -49,10 +49,10 @@ Current repository docs already claim base `802.1Q VLAN` support in shared selec
 
 Current audited parser behavior:
 - single-tag `0x8100` VLAN carrying IPv4 / IPv6 / ARP is supported for normal flow extraction and selected-packet Summary;
-- stacked VLAN / QinQ is currently supported for outer `0x88A8` plus inner `0x8100`;
-- maximum VLAN tag depth is currently `2`, so triple-tag captures remain a future/candidate behavior case;
-- legacy `0x9100` tagging is not currently recognized as a supported VLAN TPID;
-- malformed and snaplen-truncated VLAN cases should never crash, even if they currently fall back to partial or unrecognized behavior.
+- stacked VLAN / QinQ is supported for outer `0x88A8` plus inner VLAN tags;
+- legacy `0x9100` tagging is recognized as a supported VLAN-like TPID;
+- maximum VLAN tag depth is currently `4`, so triple-tag captures are supported within the bounded limit;
+- malformed and snaplen-truncated VLAN cases remain conservative/unrecognized but should preserve Ethernet/VLAN envelope details where they can be decoded safely.
 
 ---
 
@@ -105,35 +105,35 @@ Current audited parser behavior:
 - Packets: 1
 - Layer chain: Ethernet / VLAN-like tag / IPv4 / UDP
 - Tag TPID: `0x9100`
-- Expected current behavior: packet remains conservative/unrecognized because `0x9100` is not currently treated as a supported VLAN TPID.
+- Expected current behavior: normal IPv4/UDP flow through legacy/non-standard VLAN-like encapsulation.
 
 ### 08_triple_vlan_ipv4_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN / VLAN / VLAN / IPv4 / TCP
 - VLAN TPIDs: `0x8100`, `0x8100`, `0x8100`
-- Expected current behavior: future/candidate case only; current parser limit is 2 VLAN tags, so triple-tag traffic is not expected to form a normal flow.
+- Expected current behavior: normal IPv4/TCP flow through three VLAN tags within the bounded depth limit.
 
 ### 09_vlan_unknown_inner_ethertype.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN / unknown inner EtherType
 - VLAN TPID: `0x8100`
-- Expected behavior: conservative fallback only; no crash.
+- Expected behavior: conservative fallback only; no crash; selected packet details should still preserve Ethernet/VLAN envelope information.
 
 ### 10_vlan_truncated_tag.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / partial VLAN
 - VLAN TPID indicated: `0x8100`
-- Expected behavior: malformed/truncated handling only; no crash.
+- Expected behavior: malformed/truncated handling only; no crash; selected packet details should still preserve Ethernet plus VLAN-specific truncation information.
 
 ### 11_vlan_truncated_inner_ipv4.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN / partial IPv4
 - VLAN TPID: `0x8100`
-- Expected behavior: capture truncation remains visible; parser stays safe after VLAN and may produce partial or unrecognized behavior depending on current implementation.
+- Expected behavior: capture truncation remains visible; parser stays safe after VLAN and may produce partial or unrecognized behavior depending on current implementation. Richer partial IPv4 presentation is future IPv4 parser work.
 
 ## Expected generated file list
 

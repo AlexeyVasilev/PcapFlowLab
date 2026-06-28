@@ -15,6 +15,7 @@ constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
 constexpr std::uint16_t kEtherTypeVlan = 0x8100U;
 constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
+constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
@@ -167,6 +168,8 @@ std::string format_ether_type_name(const std::uint16_t ether_type) {
         return "802.1Q VLAN";
     case kEtherTypeQinq:
         return "802.1ad QinQ";
+    case kEtherTypeLegacyVlan:
+        return "Legacy VLAN";
     case kEtherTypeMplsUnicast:
         return "MPLS Unicast";
     case kEtherTypeMplsMulticast:
@@ -198,6 +201,19 @@ std::string format_ether_type_value(const std::uint16_t ether_type) {
     }
 
     return name + " (" + format_hex16_value(ether_type) + ")";
+}
+
+std::string format_vlan_tpid_name(const std::uint16_t tpid) {
+    switch (tpid) {
+    case kEtherTypeVlan:
+        return "802.1Q Virtual LAN";
+    case kEtherTypeQinq:
+        return "802.1ad QinQ";
+    case kEtherTypeLegacyVlan:
+        return "Legacy VLAN (0x9100)";
+    default:
+        return "VLAN";
+    }
 }
 
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
@@ -1520,6 +1536,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (details.has_ipv4 && details.ipv4.options_truncated) {
         warning_fields.push_back(make_summary_field({}, "IPv4 options truncated"));
     }
+    if (details.vlan_tag_truncated) {
+        warning_fields.push_back(make_summary_field({}, "VLAN tag header is truncated"));
+        warning_fields.push_back(make_summary_field("VLAN TPID", format_ether_type_value(details.truncated_vlan_tpid)));
+    }
     if (!options.source_capture_accessible) {
         warning_fields.push_back(make_summary_field({}, "Byte-backed packet details are unavailable because the original source capture cannot be read."));
     }
@@ -1584,16 +1604,31 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             const auto& tag = details.vlan_tags[index];
             append_layer_if_not_empty(layers, PacketSummaryLayer {
                 .id = "vlan",
-                .title = "802.1Q Virtual LAN, PRI: " + std::to_string(vlan_priority(tag.tci)) +
+                .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
                     ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
                     ", ID: " + std::to_string(vlan_identifier(tag.tci)),
                 .fields = {
+                    make_summary_field("TPID", format_ether_type_value(tag.tpid)),
                     make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
                     make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
                     make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
                     make_summary_field("Tag Control Information", std::to_string(tag.tci)),
                     make_summary_field("Encapsulated EtherType", format_ether_type_value(tag.encapsulated_ether_type)),
                 },
+            });
+        }
+
+        if (details.vlan_tag_truncated) {
+            append_layer_if_not_empty(layers, PacketSummaryLayer {
+                .id = "vlan",
+                .title = format_vlan_tpid_name(details.truncated_vlan_tpid) + " (truncated)",
+                .fields = {
+                    make_summary_field("TPID", format_ether_type_value(details.truncated_vlan_tpid)),
+                    make_summary_field("Warning", "VLAN tag header is truncated"),
+                },
+                .expanded_by_default = true,
+                .warning = true,
+                .marker_text = "Warning",
             });
         }
     }

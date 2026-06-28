@@ -15,7 +15,7 @@ inline constexpr std::size_t kEthernetHeaderSize = 14;
 inline constexpr std::size_t kLinuxSllHeaderSize = 16;
 inline constexpr std::size_t kLinuxSll2HeaderSize = 20;
 inline constexpr std::size_t kVlanHeaderSize = 4;
-inline constexpr std::size_t kMaxVlanTags = 2;
+inline constexpr std::size_t kMaxVlanTags = 4;
 inline constexpr std::size_t kMplsLabelSize = 4;
 inline constexpr std::size_t kMaxMplsLabels = 16;
 inline constexpr std::size_t kMaxIpv6ExtensionHeaders = 8;
@@ -24,6 +24,7 @@ inline constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
 inline constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
 inline constexpr std::uint16_t kEtherTypeVlan = 0x8100U;
 inline constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
+inline constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 inline constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 inline constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
@@ -139,7 +140,9 @@ inline std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::s
 }
 
 inline bool is_vlan_ether_type(const std::uint16_t ether_type) noexcept {
-    return ether_type == kEtherTypeVlan || ether_type == kEtherTypeQinq;
+    return ether_type == kEtherTypeVlan ||
+           ether_type == kEtherTypeQinq ||
+           ether_type == kEtherTypeLegacyVlan;
 }
 
 inline bool is_mpls_ether_type(const std::uint16_t ether_type) noexcept {
