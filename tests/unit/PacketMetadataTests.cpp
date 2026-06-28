@@ -3,6 +3,7 @@
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecoder.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/services/ChunkedCaptureImporter.h"
@@ -50,6 +51,11 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(!rows.empty());
         PFL_EXPECT(rows.front().payload_length == 5);
         PFL_EXPECT(rows.front().tcp_flags_text == "ACK|SYN");
+
+        auto enriched_rows = rows;
+        session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
+        PFL_EXPECT(!enriched_rows.empty());
+        PFL_EXPECT(enriched_rows.front().payload_length == 5);
     }
 
     {
@@ -107,6 +113,24 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(!connection->flow_a.packets.empty());
         PFL_EXPECT(connection->flow_a.packets.front().payload_length == 5);
         PFL_EXPECT(connection->flow_a.packets.front().tcp_flags == 0x12);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(
+            std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "udp" / "udp_truncated_quic_like_payload_3.pcap"
+        ));
+
+        const auto rows = session.list_flow_packets(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows.front().captured_length == 74U);
+        PFL_EXPECT(rows.front().original_length == 332U);
+        PFL_EXPECT(rows.front().payload_length == 32U);
+
+        auto enriched_rows = rows;
+        session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
+        PFL_EXPECT(enriched_rows.size() == 1U);
+        PFL_EXPECT(enriched_rows.front().payload_length == 290U);
     }
 
     {

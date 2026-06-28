@@ -1,10 +1,53 @@
 #include "app/session/SelectedFlowPacketSemantics.h"
 
 #include "app/session/CaptureSession.h"
-
 #include "core/decode/PacketDecodeSupport.h"
 
 namespace pfl::session_detail {
+
+namespace {
+
+std::optional<std::uint32_t> derive_original_transport_payload_length_from_metadata(
+    const std::uint32_t captured_length,
+    const std::uint32_t original_length,
+    const std::uint32_t captured_transport_payload_length,
+    const bool is_ip_fragmented
+) {
+    if (is_ip_fragmented) {
+        return std::nullopt;
+    }
+
+    if (captured_length < captured_transport_payload_length || original_length < captured_length) {
+        return std::nullopt;
+    }
+
+    if (original_length == captured_length) {
+        return captured_transport_payload_length;
+    }
+
+    if (captured_transport_payload_length == 0U) {
+        return std::nullopt;
+    }
+
+    const auto transport_payload_offset =
+        static_cast<std::size_t>(captured_length) - static_cast<std::size_t>(captured_transport_payload_length);
+    if (static_cast<std::size_t>(original_length) < transport_payload_offset) {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint32_t>(static_cast<std::size_t>(original_length) - transport_payload_offset);
+}
+
+std::optional<std::uint32_t> derive_original_transport_payload_length_from_row_metadata(const PacketRow& row) {
+    return derive_original_transport_payload_length_from_metadata(
+        row.captured_length,
+        row.original_length,
+        row.payload_length,
+        row.is_ip_fragmented
+    );
+}
+
+}  // namespace
 
 std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
     const std::span<const std::uint8_t> packet_bytes,
@@ -145,6 +188,17 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
 
 void apply_original_transport_payload_lengths(CaptureSession& session, std::vector<PacketRow>& rows) {
     for (auto& row : rows) {
+        if (const auto original_transport_payload_length =
+                derive_original_transport_payload_length_from_row_metadata(row);
+            original_transport_payload_length.has_value()) {
+            row.payload_length = *original_transport_payload_length;
+            continue;
+        }
+
+        if (row.is_ip_fragmented) {
+            continue;
+        }
+
         const auto packet = session.find_packet(row.packet_index);
         if (!packet.has_value()) {
             continue;

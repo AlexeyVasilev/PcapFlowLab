@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, UnrecognizedPacketsDto,
+    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -640,6 +640,21 @@ fn get_selected_flow_stream(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_selected_flow_stream_item_details(
+    state: State<'_, Mutex<AdapterState>>,
+    max_packets_to_scan: usize,
+    limit: usize,
+    stream_item_index: u64,
+) -> Result<StreamItemDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .get_selected_flow_stream_item_details(max_packets_to_scan, limit, stream_item_index)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_selected_flow_packet_details(
     state: State<'_, Mutex<AdapterState>>,
     packet_index: u64,
@@ -803,6 +818,7 @@ pub fn run() {
             get_selected_flow_packets,
             get_unrecognized_packets,
             get_selected_flow_stream,
+            get_selected_flow_stream_item_details,
             get_selected_flow_packet_details,
             get_unrecognized_packet_details,
             get_selected_flow_analysis,

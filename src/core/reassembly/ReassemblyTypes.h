@@ -29,6 +29,9 @@ enum class ReassemblyQualityFlag : std::uint32_t {
 struct ReassemblyResult {
     std::vector<std::uint8_t> bytes {};
     std::vector<std::uint64_t> packet_indices {};
+    // One entry per contributing packet, aligned with packet_indices, storing how many
+    // reassembled bytes were appended from that packet after duplicate-prefix trimming.
+    std::vector<std::size_t> packet_byte_counts {};
     std::uint32_t quality_flags {0};
     std::size_t payload_packets_used {0};
     std::size_t total_packets_seen {0};

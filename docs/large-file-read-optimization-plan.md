@@ -17,7 +17,8 @@ Status:
 - second import-time pass now avoids transport-payload allocation/copy during flow-hint detection by using non-owning payload views;
 - third import-time pass now uses hybrid classic-PCAP import: sequential full reads for normal packets and staged/prefix reading for large packets with adaptive full fallback;
 - fourth import-time pass now reuses a caller-owned packet byte buffer for below-threshold classic-PCAP sequential full-read packets;
-- reader ownership, index serialization, export behavior, and on-demand packet detail rereads remain unchanged.
+- fifth selected-flow pass now batch-warms full packet bytes for the currently visible selected-flow window and makes `CaptureSession::read_packet_data(...)` cache-aware for those warmed packets;
+- reader ownership, index serialization, export behavior, and on-demand packet detail rereads outside the warmed selected-flow window remain unchanged.
 
 Implemented first pass:
 
@@ -56,7 +57,17 @@ Implemented fourth pass:
 - staged large-packet behavior remains separate and semantically equivalent to the previous hybrid pass;
 - `pcapng` remains unchanged and does not participate in reusable-buffer import;
 - classic import explicitly releases oversized reusable-packet capacity after a staged packet grows beyond the small-packet threshold, so the normal small-packet buffer does not accidentally retain a huge materialized packet allocation;
-- selected-flow reread/stream/detail optimization remains deferred.
+- selected-flow whole-flow reread/stream/detail optimization remains deferred beyond the warmed visible window.
+
+Implemented fifth pass:
+
+- `CaptureSession::prepare_selected_flow_packet_cache(...)` now first collects the currently visible selected-flow packet prefix and batch-warms full packet bytes for that packet window with a single opened `CaptureFilePacketReader`;
+- warmed full packet bytes are stored in a new runtime-only selected-flow full-packet cache keyed by packet index and bounded by an `8 MiB` budget;
+- `CaptureSession::read_packet_data(...)` now first checks that selected-flow full-packet cache before falling back to the old direct reread path;
+- the existing selected-flow transport-payload cache remains in place and still serves TCP/UDP payload-oriented consumers;
+- cache invalidation stays conservative: selected-flow full-packet bytes are cleared on session reset, capture/index open, source attach/clear, and selected-flow cache clear;
+- non-TCP/UDP selected flows still benefit from warmed full packet rereads for the visible packet window even though they do not populate the transport-payload cache;
+- this pass does not change import/open semantics, index contents, packet lookup, or whole-flow stream/reassembly strategy.
 
 ## 1. Current byte ownership
 

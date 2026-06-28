@@ -120,6 +120,25 @@ void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
     PFL_EXPECT(fast_sni == deep_sni);
 }
 
+void expect_flow_row_accessor_matches_list_flows(const std::filesystem::path& relative_path) {
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+
+    const auto rows = session.list_flows();
+    PFL_EXPECT(!rows.empty());
+
+    const auto quic_flow_index = find_flow_index_with_protocol_hint(rows, "quic");
+    PFL_EXPECT(quic_flow_index.has_value());
+
+    const auto row = session.flow_row(*quic_flow_index);
+    PFL_EXPECT(row.has_value());
+    PFL_EXPECT(row->index == rows[*quic_flow_index].index);
+    PFL_EXPECT(row->protocol_hint == rows[*quic_flow_index].protocol_hint);
+    PFL_EXPECT(row->service_hint == rows[*quic_flow_index].service_hint);
+    PFL_EXPECT(row->packet_count == rows[*quic_flow_index].packet_count);
+    PFL_EXPECT(row->total_bytes == rows[*quic_flow_index].total_bytes);
+}
+
 void expect_frontend_adapter_quic_service_hint_refresh(
     const std::filesystem::path& relative_path,
     const std::string& expected_sni
@@ -142,6 +161,49 @@ void expect_frontend_adapter_quic_service_hint_refresh(
     PFL_EXPECT(selection.updated_flow.has_value());
     PFL_EXPECT(selection.updated_flow->flow_index == flow_it->flow_index);
     PFL_EXPECT(selection.updated_flow->service_hint == expected_sni);
+}
+
+void expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet(
+    const std::filesystem::path& relative_path
+) {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_EXPECT(!flows.empty());
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto selected_packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_EXPECT(selected_packets.packets.size() >= 2U);
+
+    const auto mismatched_details = adapter.get_selected_flow_packet_details(
+        selected_packets.packets[1].packet_index,
+        selected_packets.packets[0].row_number
+    );
+    PFL_EXPECT(mismatched_details.error_text == "The selected packet is unavailable.");
+}
+
+void expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers(
+    const std::filesystem::path& relative_path
+) {
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    PFL_EXPECT(open_result.opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_EXPECT(flows.size() == 1U);
+
+    const auto selection = adapter.select_flow(flows[0].flow_index);
+    PFL_EXPECT(selection.selected);
+
+    const auto stream = adapter.get_selected_flow_stream(8U, 8U);
+    PFL_EXPECT(stream.stream_available);
+    PFL_EXPECT(stream.items.size() >= 2U);
+    PFL_EXPECT(stream.items[0].source_packets_text == "packet #1");
+    PFL_EXPECT(stream.items[1].source_packets_text == "packet #2");
 }
 
 }  // namespace
@@ -190,6 +252,9 @@ void run_flow_hints_real_fixtures_tests() {
     expect_frontend_adapter_quic_service_hint_refresh(
         "parsing/quic/quic_test_1.pcap",
         "rr1---sn-ug5on-unxs.googlevideo.com");
+    expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet("parsing/quic/quic_test_1.pcap");
+    expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers("parsing/arp/03_arp_request_reply_ipv4.pcap");
+    expect_flow_row_accessor_matches_list_flows("parsing/quic/quic_test_1.pcap");
 }
 
 }  // namespace pfl::tests

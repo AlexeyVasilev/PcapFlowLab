@@ -207,6 +207,22 @@ void run_query_tests() {
     CaptureSession pure_ack_session {};
     PFL_EXPECT(pure_ack_session.open_capture(pure_ack_path));
     PFL_EXPECT(pure_ack_session.suspected_tcp_retransmission_packet_indices(0).empty());
+    PFL_EXPECT(!pure_ack_session.selected_flow_packet_cache_info().has_value());
+
+    const auto udp_only_path = write_temp_pcap(
+        "pfl_query_retransmit_udp_no_cache.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                ipv4(10, 2, 4, 1), ipv4(10, 2, 4, 2), 53000, 53, make_dns_query_payload())},
+        })
+    );
+
+    CaptureSession udp_only_session {};
+    PFL_EXPECT(udp_only_session.open_capture(udp_only_path));
+    PFL_EXPECT(udp_only_session.suspected_tcp_retransmission_packet_indices(0).empty());
+    PFL_EXPECT(!udp_only_session.selected_flow_packet_cache_info().has_value());
+    udp_only_session.set_selected_flow_tcp_payload_suppression(0U, {}, 1U);
+    PFL_EXPECT(!udp_only_session.should_suppress_selected_flow_tcp_payload(0U, 0U));
 
     const auto http_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(192, 168, 1, 10), ipv4(93, 184, 216, 34), 51515, 80, make_http_request_payload(), 0x18);
@@ -267,6 +283,14 @@ void run_query_tests() {
     PFL_EXPECT(initial_rows.front().packet_index == 0U);
     PFL_EXPECT(initial_rows.back().row_number == 30U);
     PFL_EXPECT(initial_rows.back().packet_index == 29U);
+    const auto repeated_initial_rows = heavy_flow_session.list_flow_packets(0, 0U, 30U);
+    PFL_EXPECT(repeated_initial_rows.size() == initial_rows.size());
+    for (std::size_t index = 0; index < initial_rows.size(); ++index) {
+        PFL_EXPECT(repeated_initial_rows[index].row_number == initial_rows[index].row_number);
+        PFL_EXPECT(repeated_initial_rows[index].packet_index == initial_rows[index].packet_index);
+        PFL_EXPECT(repeated_initial_rows[index].direction_text == initial_rows[index].direction_text);
+        PFL_EXPECT(repeated_initial_rows[index].timestamp_text == initial_rows[index].timestamp_text);
+    }
 
     const auto next_rows = heavy_flow_session.list_flow_packets(0, 30U, 30U);
     PFL_EXPECT(next_rows.size() == 30U);
@@ -282,19 +306,37 @@ void run_query_tests() {
     PFL_EXPECT(tail_rows.back().row_number == 65U);
     PFL_EXPECT(tail_rows.back().packet_index == 64U);
 
+    CaptureSession reopen_cache_invalidation_session {};
+    PFL_EXPECT(reopen_cache_invalidation_session.open_capture(path));
+    const auto initial_reopen_rows = reopen_cache_invalidation_session.list_flows();
+    PFL_EXPECT(initial_reopen_rows.size() == 2U);
+    PFL_EXPECT(reopen_cache_invalidation_session.flow_packet_count(0U) == 1U);
+    PFL_EXPECT(reopen_cache_invalidation_session.open_capture(heavy_flow_path));
+    const auto reopened_rows = reopen_cache_invalidation_session.list_flows();
+    PFL_EXPECT(reopened_rows.size() == 1U);
+    PFL_EXPECT(reopen_cache_invalidation_session.flow_packet_count(0U) == 65U);
+    const auto reopened_packet_rows = reopen_cache_invalidation_session.list_flow_packets(0U, 0U, 30U);
+    PFL_EXPECT(reopened_packet_rows.size() == 30U);
+    PFL_EXPECT(reopened_packet_rows.front().packet_index == 0U);
+
+    const auto cache_packet_one = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("one"), 0x18);
+    const auto cache_packet_dns = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+        ipv4(10, 9, 1, 1), ipv4(10, 9, 1, 2), 53000, 53, bytes_payload("dns"));
+    const auto cache_packet_two = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("two"), 0x18);
+    const auto cache_packet_three = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("three"), 0x18);
+    const auto cache_packet_four = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
+        ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("four"), 0x18);
     const auto cache_path = write_temp_pcap(
         "pfl_query_selected_flow_cache.pcap",
         make_classic_pcap({
-            {100, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("one"), 0x18)},
-            {200, make_ethernet_ipv4_udp_packet_with_bytes_payload(
-                ipv4(10, 9, 1, 1), ipv4(10, 9, 1, 2), 53000, 53, bytes_payload("dns"))},
-            {300, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("two"), 0x18)},
-            {400, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("three"), 0x18)},
-            {500, make_ethernet_ipv4_tcp_packet_with_bytes_payload(
-                ipv4(10, 9, 0, 1), ipv4(10, 9, 0, 2), 42000, 443, bytes_payload("four"), 0x18)},
+            {100, cache_packet_one},
+            {200, cache_packet_dns},
+            {300, cache_packet_two},
+            {400, cache_packet_three},
+            {500, cache_packet_four},
         })
     );
 
@@ -311,12 +353,38 @@ void run_query_tests() {
     PFL_EXPECT(cache_info->total_cached_bytes == 6U);
     PFL_EXPECT(!cache_info->limit_reached);
     PFL_EXPECT(cache_info->window_fully_cached);
+    const auto first_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 1U);
+    PFL_EXPECT(first_selected_flow_packet.has_value());
+    PFL_EXPECT(first_selected_flow_packet->packet_index == 0U);
+    const auto second_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 2U);
+    PFL_EXPECT(second_selected_flow_packet.has_value());
+    PFL_EXPECT(second_selected_flow_packet->packet_index == 2U);
+    const auto third_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 3U);
+    PFL_EXPECT(third_selected_flow_packet.has_value());
+    PFL_EXPECT(third_selected_flow_packet->packet_index == 3U);
+    PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 0U) == std::optional<std::uint64_t> {1U});
+    PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 2U) == std::optional<std::uint64_t> {2U});
+    PFL_EXPECT(!cache_session.selected_flow_cached_packet_number(0U, 3U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 3U).has_value());
+    PFL_EXPECT(cache_session.selected_flow_exact_packet_number(0U, 3U) == std::optional<std::uint64_t> {3U});
+    PFL_EXPECT(!cache_session.selected_flow_packet_number(0U, 1U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 0U).has_value());
+    PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 5U).has_value());
 
     const auto cached_flow_packets = cache_session.flow_packets(0);
     PFL_EXPECT(cached_flow_packets.has_value());
     PFL_EXPECT(cached_flow_packets->size() == 4U);
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[0]) == cache_packet_one);
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[1]) == cache_packet_two);
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[0]) == bytes_payload("one"));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_prefix(0, (*cached_flow_packets)[0], 2U) ==
+        std::vector<std::uint8_t>({'o', 'n'}));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_slice(0, (*cached_flow_packets)[0], 1U, 2U) ==
+        std::vector<std::uint8_t>({'n', 'e'}));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[1]) == bytes_payload("two"));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_prefix(0, (*cached_flow_packets)[1], 99U) ==
+        bytes_payload("two"));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_slice(0, (*cached_flow_packets)[1], 99U, 2U).empty());
 
     cache_session.prepare_selected_flow_packet_cache(0, 4U);
     cache_info = cache_session.selected_flow_packet_cache_info();
@@ -328,7 +396,13 @@ void run_query_tests() {
     PFL_EXPECT(!cache_info->limit_reached);
     PFL_EXPECT(cache_info->window_fully_cached);
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[0]) == bytes_payload("one"));
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[2]) == cache_packet_three);
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_prefix(0, (*cached_flow_packets)[2], 2U) ==
+        std::vector<std::uint8_t>({'t', 'h'}));
+    PFL_EXPECT(cache_session.read_selected_flow_transport_payload_slice(0, (*cached_flow_packets)[2], 1U, 2U) ==
+        std::vector<std::uint8_t>({'h', 'r'}));
     PFL_EXPECT(cache_session.read_selected_flow_transport_payload(0, (*cached_flow_packets)[3]) == bytes_payload("four"));
+    PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[3]) == cache_packet_four);
 
     cache_session.prepare_selected_flow_packet_cache(1, 1U);
     cache_info = cache_session.selected_flow_packet_cache_info();
@@ -338,10 +412,45 @@ void run_query_tests() {
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 1U);
     PFL_EXPECT(cache_info->total_cached_bytes == 3U);
     PFL_EXPECT(cache_info->window_fully_cached);
+    const auto cached_udp_flow_packets = cache_session.flow_packets(1);
+    PFL_EXPECT(cached_udp_flow_packets.has_value());
+    PFL_EXPECT(cached_udp_flow_packets->size() == 1U);
+    PFL_EXPECT(cache_session.read_packet_data((*cached_udp_flow_packets)[0]) == cache_packet_dns);
+
+    cache_session.prepare_selected_flow_packet_cache(0, 2U);
+    cache_info = cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(cache_info.has_value());
+    PFL_EXPECT(cache_info->flow_index == 0U);
+    PFL_EXPECT(cache_info->cached_packet_window_count == 2U);
+    PFL_EXPECT(cache_info->cached_packet_contribution_count == 2U);
+    PFL_EXPECT(cache_info->total_cached_bytes == 6U);
+
+    CaptureSession tcp_contribution_cache_session {};
+    PFL_EXPECT(tcp_contribution_cache_session.open_capture(cache_path));
+    PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 2U).empty());
+    auto tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_EXPECT(tcp_contribution_cache_info->flow_index == 0U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 6U);
+
+    PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 2U).empty());
+    tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 2U);
+    PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 6U);
+
+    tcp_contribution_cache_session.set_selected_flow_tcp_payload_suppression(0U, {}, 2U);
+    PFL_EXPECT(!tcp_contribution_cache_session.should_suppress_selected_flow_tcp_payload(0U, 0U));
+
+    PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 4U).empty());
+    tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
+    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 4U);
+    PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 4U);
+    PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 15U);
 }
 
 }  // namespace pfl::tests
-
-
-
-

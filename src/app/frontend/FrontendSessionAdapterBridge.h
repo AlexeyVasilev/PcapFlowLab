@@ -81,6 +81,12 @@ char* pfl_frontend_session_adapter_get_selected_flow_stream_json(
     std::size_t max_packets_to_scan,
     std::size_t limit
 );
+char* pfl_frontend_session_adapter_get_selected_flow_stream_item_details_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::size_t max_packets_to_scan,
+    std::size_t limit,
+    std::uint64_t stream_item_index
+);
 char* pfl_frontend_session_adapter_get_selected_flow_packet_details_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint64_t packet_index,
