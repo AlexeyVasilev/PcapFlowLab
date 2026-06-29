@@ -168,21 +168,24 @@ std::vector<std::uint8_t> PacketPayloadService::extract_packet_details_payload(s
     if (!network.has_value()) {
         return {};
     }
+    const auto bounded_bytes = network->bounded_packet_end.has_value()
+        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
+        : packet_bytes;
 
     if (network->protocol_type == detail::kEtherTypeArp) {
-        if (packet_bytes.size() <= network->payload_offset) {
+        if (bounded_bytes.size() <= network->payload_offset) {
             return {};
         }
 
-        const auto available_length = packet_bytes.size() - network->payload_offset;
+        const auto available_length = bounded_bytes.size() - network->payload_offset;
         if (available_length < 8U) {
-            return copy_payload(packet_bytes, network->payload_offset, available_length);
+            return copy_payload(bounded_bytes, network->payload_offset, available_length);
         }
 
-        const auto hardware_size = static_cast<std::size_t>(packet_bytes[network->payload_offset + 4U]);
-        const auto protocol_size = static_cast<std::size_t>(packet_bytes[network->payload_offset + 5U]);
+        const auto hardware_size = static_cast<std::size_t>(bounded_bytes[network->payload_offset + 4U]);
+        const auto protocol_size = static_cast<std::size_t>(bounded_bytes[network->payload_offset + 5U]);
         const auto declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
-        return copy_payload(packet_bytes, network->payload_offset, std::min(available_length, declared_length));
+        return copy_payload(bounded_bytes, network->payload_offset, std::min(available_length, declared_length));
     }
 
     return extract_transport_payload(packet_bytes, data_link_type);

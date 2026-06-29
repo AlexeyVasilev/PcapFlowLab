@@ -165,6 +165,16 @@ void run_packet_payload_tests() {
     }
 
     {
+        auto [packet_bytes, data_link_type] = read_first_fixture_packet("parsing/llc_snap/05_llc_snap_arp.pcap");
+        packet_bytes.insert(packet_bytes.end(), {0xdeU, 0xadU, 0xbeU, 0xefU});
+
+        const auto arp_payload = payload_service.extract_packet_details_payload(packet_bytes, data_link_type);
+        PFL_EXPECT(arp_payload.size() == 28U);
+        PFL_EXPECT(arp_payload[0] == 0x00U);
+        PFL_EXPECT(arp_payload[1] == 0x01U);
+    }
+
+    {
         const auto path = write_temp_pcap(
             "pfl_packet_payload_session.pcap",
             make_classic_pcap({{
