@@ -571,10 +571,9 @@ std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const Pac
     if (details.has_snap &&
         !details.snap.header_truncated &&
         details.snap.payload_length > 0U &&
-        (details.snap.oui != std::array<std::uint8_t, 3> {0U, 0U, 0U} ||
-         (details.snap.pid != kEtherTypeArp &&
-          details.snap.pid != kEtherTypeIpv4 &&
-          details.snap.pid != kEtherTypeIpv6))) {
+        (details.snap.pid != kEtherTypeArp &&
+         details.snap.pid != kEtherTypeIpv4 &&
+         details.snap.pid != kEtherTypeIpv6)) {
         return make_payload_layer(
             "snap-payload",
             details.snap.payload_length,

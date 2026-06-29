@@ -2,7 +2,7 @@ Synthetic LLC/SNAP parsing fixtures for regression tests.
 
 This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
 - IEEE 802.3 length-based Ethernet framing followed by LLC;
-- SNAP encapsulation with Ethernet OUI `00:00:00`;
+- SNAP encapsulation with both Ethernet OUI `00:00:00` and non-zero OUI variants;
 - inner IPv4 / IPv6 / ARP payload recovery through LLC/SNAP;
 - VLAN and QinQ before LLC/SNAP as candidate shim-composition cases;
 - unknown SNAP PID handling;
@@ -13,12 +13,12 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 Current committed support in this branch is intentionally narrow:
 - IEEE 802.3 length-based Ethernet framing is distinguished from Ethernet II;
 - LLC/SNAP is recognized only for DSAP `0xaa`, SSAP `0xaa`, Control `0x03`;
-- SNAP continuation is supported only for Ethernet OUI `00:00:00` with PID:
+- SNAP continuation is supported for known PID values regardless of OUI when the bounded payload validates:
   - IPv4 `0x0800`
   - IPv6 `0x86dd`
   - ARP `0x0806`
 - VLAN and QinQ before LLC/SNAP are supported for the same bounded continuation path;
-- unknown SNAP PID, non-zero OUI, and non-SNAP LLC remain conservative no-flow cases with bounded Data/raw preview in selected-packet Summary;
+- unknown SNAP PID and non-SNAP LLC remain conservative no-flow cases with bounded Data/raw preview in selected-packet Summary;
 - malformed LLC/SNAP headers remain best-effort with specific truncation warnings;
 - IEEE 802.3 length bounds are respected for inner parsing, and trailing bytes beyond the declared 802.3 length are ignored.
 
@@ -65,13 +65,13 @@ Notes:
   - DSAP `0xaa`
   - SSAP `0xaa`
   - Control `0x03`
-  - OUI `00:00:00`
+  - OUI `00:00:00` by default, plus selected non-zero OUI coverage
   - PID / protocol id matching an Ethernet-style payload identifier when noted
 
 ## Current support assumptions
 
 Current committed assumptions:
-- plain LLC/SNAP inner IPv4 / IPv6 / ARP recovery is supported for Ethernet OUI `00:00:00`;
+- plain LLC/SNAP inner IPv4 / IPv6 / ARP recovery is supported for known SNAP PID values even when the SNAP OUI is non-zero, as long as the bounded payload validates;
 - VLAN/QinQ before LLC/SNAP are supported for the same bounded continuation path;
 - unknown SNAP PID and non-SNAP LLC stay conservative and must not fabricate IPv4 / IPv6 / ARP;
 - malformed/truncated and length-mismatch cases remain no-flow robustness fixtures;
@@ -132,7 +132,7 @@ Current committed assumptions:
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / non-zero OUI / PID `0x0800` / IPv4-like bytes
-- Current behavior: remains no-flow with reason `Unsupported SNAP OUI`; selected-packet Summary shows LLC/SNAP with the non-zero OUI and bounded Data preview, but does not treat PID `0x0800` as Ethernet IPv4.
+- Current behavior: forms a normal IPv4/UDP flow when the bounded payload validates; selected-packet Summary preserves the actual non-zero OUI while continuing into IPv4 and UDP.
 
 ### 10_llc_non_snap_ipx_like.pcap
 

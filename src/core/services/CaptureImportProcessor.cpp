@@ -302,12 +302,6 @@ struct ImportPrefixDecision {
             return import_prefix_sufficient();
         }
 
-        if (packet_bytes[payload_offset + detail::kLlcHeaderSize] != 0U ||
-            packet_bytes[payload_offset + detail::kLlcHeaderSize + 1U] != 0U ||
-            packet_bytes[payload_offset + detail::kLlcHeaderSize + 2U] != 0U) {
-            return import_prefix_sufficient();
-        }
-
         const auto snap_pid = detail::read_be16(packet_bytes, payload_offset + detail::kLlcHeaderSize + 3U);
         if (!detail::is_supported_snap_pid(snap_pid)) {
             return import_prefix_sufficient();
@@ -580,10 +574,6 @@ std::string classify_unrecognized_packet_reason(
         }
 
         if (llc_snap.has_snap) {
-            if (llc_snap.oui != std::array<std::uint8_t, 3> {0U, 0U, 0U}) {
-                return "Unsupported SNAP OUI";
-            }
-
             if (!detail::is_supported_snap_pid(llc_snap.pid)) {
                 return "Unknown SNAP PID";
             }

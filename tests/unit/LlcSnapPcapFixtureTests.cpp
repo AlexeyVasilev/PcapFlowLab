@@ -326,11 +326,20 @@ void run_llc_snap_pcap_fixture_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap")));
-        PFL_EXPECT(session.list_flows().empty());
-        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
-        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].reason_text == "Unsupported SNAP OUI");
+        PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
+        PFL_EXPECT(rows[0].protocol_text == "UDP");
+        const bool forward_match = rows[0].address_a == "192.0.2.40" &&
+            rows[0].port_a == 53550U &&
+            rows[0].address_b == "198.51.100.40" &&
+            rows[0].port_b == 443U;
+        const bool reverse_match = rows[0].address_a == "198.51.100.40" &&
+            rows[0].port_a == 443U &&
+            rows[0].address_b == "192.0.2.40" &&
+            rows[0].port_b == 53550U;
+        PFL_EXPECT(forward_match || reverse_match);
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
@@ -339,17 +348,23 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(details->ethernet.uses_length_field);
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->has_snap);
-        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_udp);
         PFL_EXPECT(details->snap.pid == 0x0800U);
         const auto non_ethernet_oui = std::array<std::uint8_t, 3> {0x00U, 0x00U, 0xF8U};
         PFL_EXPECT(details->snap.oui == non_ethernet_oui);
+        PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.src_addr) == "192.0.2.40");
+        PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.dst_addr) == "198.51.100.40");
+        PFL_EXPECT(details->udp.src_port == 53550U);
+        PFL_EXPECT(details->udp.dst_port == 443U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "snap-payload"});
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "ipv4", "udp"});
         const auto* snap_layer = find_layer(summary_layers, "snap");
         PFL_EXPECT(snap_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:f8"));
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "PID", "IPv4"));
+        PFL_EXPECT(find_layer(summary_layers, "snap-payload") == nullptr);
     }
 
     {

@@ -325,7 +325,7 @@ inline LlcSnapPayloadView parse_llc_snap_payload(std::span<const std::uint8_t> b
     };
     view.pid = read_be16(bytes, payload_offset + kLlcHeaderSize + 3U);
 
-    if (view.oui == std::array<std::uint8_t, 3> {0U, 0U, 0U} && is_supported_snap_pid(view.pid)) {
+    if (is_supported_snap_pid(view.pid)) {
         view.resolved_supported_protocol = true;
         view.resolved_protocol_type = view.pid;
         view.resolved_payload_offset = payload_offset + kLlcSnapHeaderSize;
