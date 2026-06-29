@@ -492,35 +492,42 @@ std::optional<PacketDetails> decode_packet_details(
 
     if (network_protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network_payload_offset;
-        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
+        if (packet_bytes.size() <= ipv4_offset) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
+        const auto available_ipv4_bytes = packet_bytes.size() - ipv4_offset;
         const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
         if (version != 4U) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         const auto claimed_header_length = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
-        const auto total_length = detail::read_be16(packet_bytes, ipv4_offset + 2U);
-        const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
+        const auto total_length = available_ipv4_bytes >= 4U ? detail::read_be16(packet_bytes, ipv4_offset + 2U) : 0U;
+        const auto flags_fragment = available_ipv4_bytes >= 8U ? detail::read_be16(packet_bytes, ipv4_offset + 6U) : 0U;
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
 
         details.address_family = NetworkAddressFamily::ipv4;
         details.has_ipv4 = true;
         details.ipv4_bounds_from_captured_bytes = total_length == 0U;
         details.ipv4 = IPv4Details {
-            .src_addr = detail::read_be32(packet_bytes, ipv4_offset + 12U),
-            .dst_addr = detail::read_be32(packet_bytes, ipv4_offset + 16U),
+            .available_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(available_ipv4_bytes, 255U)),
+            .src_addr = available_ipv4_bytes >= 16U ? detail::read_be32(packet_bytes, ipv4_offset + 12U) : 0U,
+            .dst_addr = available_ipv4_bytes >= 20U ? detail::read_be32(packet_bytes, ipv4_offset + 16U) : 0U,
             .header_length_bytes = static_cast<std::uint8_t>(claimed_header_length),
-            .differentiated_services_field = packet_bytes[ipv4_offset + 1U],
-            .protocol = packet_bytes[ipv4_offset + 9U],
-            .ttl = packet_bytes[ipv4_offset + 8U],
-            .identification = detail::read_be16(packet_bytes, ipv4_offset + 4U),
+            .differentiated_services_field = static_cast<std::uint8_t>(
+                available_ipv4_bytes >= 2U ? packet_bytes[ipv4_offset + 1U] : 0U),
+            .protocol = static_cast<std::uint8_t>(
+                available_ipv4_bytes >= 10U ? packet_bytes[ipv4_offset + 9U] : 0U),
+            .ttl = static_cast<std::uint8_t>(
+                available_ipv4_bytes >= 9U ? packet_bytes[ipv4_offset + 8U] : 0U),
+            .identification = static_cast<std::uint16_t>(
+                available_ipv4_bytes >= 6U ? detail::read_be16(packet_bytes, ipv4_offset + 4U) : 0U),
             .flags = static_cast<std::uint8_t>((flags_fragment >> 13U) & 0x7U),
             .fragment_offset = static_cast<std::uint16_t>(flags_fragment & 0x1FFFU),
-            .total_length = total_length,
-            .header_checksum = detail::read_be16(packet_bytes, ipv4_offset + 10U),
+            .total_length = static_cast<std::uint16_t>(total_length),
+            .header_checksum = static_cast<std::uint16_t>(
+                available_ipv4_bytes >= 12U ? detail::read_be16(packet_bytes, ipv4_offset + 10U) : 0U),
         };
 
         const auto claimed_options_length = claimed_header_length > detail::kIpv4MinimumHeaderSize
@@ -550,7 +557,7 @@ std::optional<PacketDetails> decode_packet_details(
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
-        if (packet_bytes.size() < ipv4_offset + claimed_header_length) {
+        if (available_ipv4_bytes < detail::kIpv4MinimumHeaderSize || packet_bytes.size() < ipv4_offset + claimed_header_length) {
             details.ipv4.header_truncated = true;
             details.ipv4.options_truncated = claimed_options_length > details.ipv4.options_bytes.size();
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;

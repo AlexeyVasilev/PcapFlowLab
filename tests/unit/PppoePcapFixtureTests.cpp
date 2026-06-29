@@ -513,7 +513,19 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
-        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->ipv4.header_truncated);
+        PFL_EXPECT(details->ipv4.available_header_bytes > 0U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
+        PFL_EXPECT(pppoe_layer != nullptr);
+        const auto* ppp_layer = find_layer(summary_layers, "ppp");
+        PFL_EXPECT(ppp_layer != nullptr);
+        const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Version", "4"));
+        PFL_EXPECT(layer_has_field_label(*ipv4_layer, "Internet Header Length"));
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "IPv4 header is truncated"));
     }
 }
 

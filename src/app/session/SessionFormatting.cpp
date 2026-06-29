@@ -527,6 +527,10 @@ std::optional<PacketSummaryLayer> build_unknown_ppp_payload_layer(const PacketDe
     };
 }
 
+bool ipv4_field_available(const PacketDetails& details, const std::size_t end_offset) noexcept {
+    return details.has_ipv4 && details.ipv4.available_header_bytes >= end_offset;
+}
+
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
     return static_cast<std::uint16_t>(tci & 0x0FFFU);
 }
@@ -2133,36 +2137,67 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     if (details.has_ipv4) {
-        std::vector<PacketSummaryField> ipv4_fields {
-            make_summary_field("Version", "4"),
-            make_summary_field(
-                "Internet Header Length",
-                std::to_string(details.ipv4.header_length_bytes) + " bytes (" +
-                    std::to_string(details.ipv4.header_length_bytes / 4U) + ")"
-            ),
-            make_summary_field("Differentiated Services Field", format_hex_value(details.ipv4.differentiated_services_field, 2)),
-            make_summary_field("Total Length", std::to_string(details.ipv4.total_length) + " bytes"),
-            make_summary_field("Identification", format_hex16_value(details.ipv4.identification)),
-            make_summary_field("Flags", format_hex_value(details.ipv4.flags, 1)),
-            make_summary_field("Fragment Offset", std::to_string(details.ipv4.fragment_offset)),
-            make_summary_field("TTL", std::to_string(details.ipv4.ttl)),
-            make_summary_field("Protocol", format_protocol_summary_value_with_number(details.ipv4.protocol)),
-            make_summary_field("Header Checksum", format_hex16_value(details.ipv4.header_checksum)),
-            make_summary_field("Source Address", format_ipv4_address(details.ipv4.src_addr)),
-            make_summary_field("Destination Address", format_ipv4_address(details.ipv4.dst_addr)),
-        };
+        std::vector<PacketSummaryField> ipv4_fields {};
+        ipv4_fields.push_back(make_summary_field("Version", "4"));
+        ipv4_fields.push_back(make_summary_field(
+            "Internet Header Length",
+            std::to_string(details.ipv4.header_length_bytes) + " bytes (" +
+                std::to_string(details.ipv4.header_length_bytes / 4U) + ")"
+        ));
+        if (ipv4_field_available(details, 2U)) {
+            ipv4_fields.push_back(make_summary_field("Differentiated Services Field", format_hex_value(details.ipv4.differentiated_services_field, 2)));
+        }
+        if (ipv4_field_available(details, 4U)) {
+            ipv4_fields.push_back(make_summary_field("Total Length", std::to_string(details.ipv4.total_length) + " bytes"));
+        }
+        if (ipv4_field_available(details, 6U)) {
+            ipv4_fields.push_back(make_summary_field("Identification", format_hex16_value(details.ipv4.identification)));
+        }
+        if (ipv4_field_available(details, 8U)) {
+            ipv4_fields.push_back(make_summary_field("Flags", format_hex_value(details.ipv4.flags, 1)));
+            ipv4_fields.push_back(make_summary_field("Fragment Offset", std::to_string(details.ipv4.fragment_offset)));
+        }
+        if (ipv4_field_available(details, 9U)) {
+            ipv4_fields.push_back(make_summary_field("TTL", std::to_string(details.ipv4.ttl)));
+        }
+        if (ipv4_field_available(details, 10U)) {
+            ipv4_fields.push_back(make_summary_field("Protocol", format_protocol_summary_value_with_number(details.ipv4.protocol)));
+        }
+        if (ipv4_field_available(details, 12U)) {
+            ipv4_fields.push_back(make_summary_field("Header Checksum", format_hex16_value(details.ipv4.header_checksum)));
+        }
+        if (ipv4_field_available(details, 16U)) {
+            ipv4_fields.push_back(make_summary_field("Source Address", format_ipv4_address(details.ipv4.src_addr)));
+        }
+        if (ipv4_field_available(details, 20U)) {
+            ipv4_fields.push_back(make_summary_field("Destination Address", format_ipv4_address(details.ipv4.dst_addr)));
+        }
         if (packet.is_ip_fragmented) {
             ipv4_fields.push_back(make_summary_field("Fragmentation", "Packet is fragmented"));
+        }
+        if (details.ipv4.header_truncated) {
+            ipv4_fields.push_back(make_summary_field("Warning", "IPv4 header is truncated"));
+        }
+        if (details.ipv4.header_length_bytes > details.ipv4.available_header_bytes) {
+            ipv4_fields.push_back(make_summary_field("Incomplete Header", "Captured IPv4 header bytes are fewer than the IHL"));
+        }
+        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.captured_length) {
+            ipv4_fields.push_back(make_summary_field("Warning", "IPv4 total length exceeds captured packet bytes"));
         }
         std::vector<PacketSummaryLayer> ipv4_children {};
         if (const auto ipv4_options = build_ipv4_options_summary_layer(details); ipv4_options.has_value()) {
             ipv4_children.push_back(*ipv4_options);
         }
+        auto ipv4_title = std::string {"IPv4"};
+        if (ipv4_field_available(details, 16U)) {
+            ipv4_title += ", Src: " + format_ipv4_address(details.ipv4.src_addr);
+            if (ipv4_field_available(details, 20U)) {
+                ipv4_title += ", Dst: " + format_ipv4_address(details.ipv4.dst_addr);
+            }
+        }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ipv4",
-            .title = "IPv4, Src: " +
-                format_ipv4_address(details.ipv4.src_addr) +
-                ", Dst: " + format_ipv4_address(details.ipv4.dst_addr),
+            .title = std::move(ipv4_title),
             .fields = std::move(ipv4_fields),
             .children = std::move(ipv4_children),
             .warning = details.ipv4.invalid_header_length || details.ipv4.total_length_invalid || details.ipv4.header_truncated,
@@ -2485,6 +2520,53 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             builder << '\n'
                     << "Source: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
                     << "Destination: " << format_ipv6_address(details.ipv6.dst_addr);
+        }
+        return builder.str();
+    }
+
+    if (details.has_ipv4 &&
+        (details.ipv4.header_truncated || details.ipv4.invalid_header_length || details.ipv4.total_length_invalid)) {
+        builder << "Protocol: IPv4\n"
+                << '\t' << "Version: 4\n"
+                << '\t' << "Internet Header Length: " << static_cast<unsigned>(details.ipv4.header_length_bytes)
+                << " bytes (" << static_cast<unsigned>(details.ipv4.header_length_bytes / 4U) << ")";
+        if (ipv4_field_available(details, 2U)) {
+            builder << '\n' << '\t' << "Differentiated Services Field: "
+                    << format_hex_value(details.ipv4.differentiated_services_field, 2);
+        }
+        if (ipv4_field_available(details, 4U)) {
+            builder << '\n' << '\t' << "Total Length: " << details.ipv4.total_length << " bytes";
+        }
+        if (ipv4_field_available(details, 6U)) {
+            builder << '\n' << '\t' << "Identification: " << format_hex16_value(details.ipv4.identification);
+        }
+        if (ipv4_field_available(details, 8U)) {
+            builder << '\n' << '\t' << "Flags: " << format_hex_value(details.ipv4.flags, 1)
+                    << '\n' << '\t' << "Fragment Offset: " << details.ipv4.fragment_offset;
+        }
+        if (ipv4_field_available(details, 9U)) {
+            builder << '\n' << '\t' << "TTL: " << static_cast<unsigned>(details.ipv4.ttl);
+        }
+        if (ipv4_field_available(details, 10U)) {
+            builder << '\n' << '\t' << "Protocol: " << format_protocol_summary_value_with_number(details.ipv4.protocol);
+        }
+        if (ipv4_field_available(details, 12U)) {
+            builder << '\n' << '\t' << "Header Checksum: " << format_hex16_value(details.ipv4.header_checksum);
+        }
+        if (ipv4_field_available(details, 16U)) {
+            builder << '\n' << '\t' << "Source Address: " << format_ipv4_address(details.ipv4.src_addr);
+        }
+        if (ipv4_field_available(details, 20U)) {
+            builder << '\n' << '\t' << "Destination Address: " << format_ipv4_address(details.ipv4.dst_addr);
+        }
+        if (details.ipv4.header_truncated) {
+            builder << '\n' << '\t' << "Warning: IPv4 header is truncated.";
+        }
+        if (details.ipv4.header_length_bytes > details.ipv4.available_header_bytes) {
+            builder << '\n' << '\t' << "Warning: Captured IPv4 header bytes are fewer than the IHL.";
+        }
+        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.captured_length) {
+            builder << '\n' << '\t' << "Warning: IPv4 total length exceeds captured packet bytes.";
         }
         return builder.str();
     }

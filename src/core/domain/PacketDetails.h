@@ -103,6 +103,7 @@ struct ArpDetails {
 };
 
 struct IPv4Details {
+    std::uint8_t available_header_bytes {0};
     std::uint32_t src_addr {0};
     std::uint32_t dst_addr {0};
     std::uint8_t header_length_bytes {0};

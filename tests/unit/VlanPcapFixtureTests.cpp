@@ -41,6 +41,25 @@ const session_detail::PacketSummaryLayer* find_layer(
     return nullptr;
 }
 
+bool layer_has_field_label(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+}
+
+bool layer_has_field_containing(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label,
+    const std::string& expected_fragment
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label && field.value.find(expected_fragment) != std::string::npos;
+    });
+}
+
 std::size_t count_layers(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     const std::string& id
@@ -328,12 +347,18 @@ void run_vlan_pcap_fixture_tests() {
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
-        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->ipv4.header_truncated);
+        PFL_EXPECT(details->ipv4.available_header_bytes > 0U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         PFL_EXPECT(find_layer(summary_layers, "warnings") != nullptr);
-        expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "vlan"});
-        PFL_EXPECT(find_layer(summary_layers, "ipv4") == nullptr);
+        expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "vlan", "ipv4"});
+        const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Version", "4"));
+        PFL_EXPECT(layer_has_field_label(*ipv4_layer, "Internet Header Length"));
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "IPv4 header is truncated"));
     }
 }
 
