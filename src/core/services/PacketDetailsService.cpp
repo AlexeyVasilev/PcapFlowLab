@@ -11,6 +11,7 @@ namespace {
 
 constexpr std::size_t kUnknownPppPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kLlcSnapPayloadPreviewMaxBytes = 32U;
+constexpr std::size_t kTrailerPreviewMaxBytes = 32U;
 
 enum class DecodeMode : std::uint8_t {
     strict,
@@ -127,6 +128,16 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
                     packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin + preview_length)
                 );
                 details.llc.payload_preview_truncated = details.llc.payload_length > preview_length;
+            }
+
+            if (llc_snap.payload_end < packet_bytes.size()) {
+                details.ethernet.trailer_length = packet_bytes.size() - llc_snap.payload_end;
+                const auto preview_length = std::min(details.ethernet.trailer_length, kTrailerPreviewMaxBytes);
+                details.ethernet.trailer_preview.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(llc_snap.payload_end),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(llc_snap.payload_end + preview_length)
+                );
+                details.ethernet.trailer_preview_truncated = details.ethernet.trailer_length > preview_length;
             }
 
             if (llc_snap.resolved_supported_protocol) {

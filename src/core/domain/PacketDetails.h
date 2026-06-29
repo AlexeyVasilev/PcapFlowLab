@@ -17,6 +17,9 @@ struct EthernetDetails {
     std::array<std::uint8_t, 6> dst_mac {};
     std::uint16_t ether_type {0};
     bool uses_length_field {false};
+    std::size_t trailer_length {0};
+    std::vector<std::uint8_t> trailer_preview {};
+    bool trailer_preview_truncated {false};
 };
 
 struct LlcDetails {

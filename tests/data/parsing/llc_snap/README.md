@@ -168,7 +168,7 @@ Current committed assumptions:
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length field smaller than captured frame payload
-- Current behavior: trailing bytes beyond the declared IEEE 802.3 length are ignored for inner parsing; the packet remains no-flow with reason `UDP header truncated`, while LLC and partial IPv4 layers show length-boundary warnings.
+- Current behavior: trailing bytes beyond the declared IEEE 802.3 length are ignored for inner parsing and shown conservatively as a Trailer layer (`30 bytes` in this fixture) with bounded raw preview; the packet remains no-flow with reason `UDP header truncated`, while IEEE 802.3 and partial IPv4 layers show length-boundary warnings.
 
 ## Expected generated file list
 

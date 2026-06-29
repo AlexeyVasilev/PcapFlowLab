@@ -520,15 +520,25 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_udp);
         PFL_EXPECT(details->llc.captured_payload_exceeds_declared);
+        PFL_EXPECT(details->ethernet.trailer_length == 30U);
+        PFL_EXPECT(!details->ethernet.trailer_preview.empty());
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
+        PFL_EXPECT(ethernet_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ethernet_layer, "Length", "28 bytes"));
+        PFL_EXPECT(layer_has_field_containing(*ethernet_layer, "Warning", "extend beyond the declared IEEE 802.3 payload length"));
         const auto* llc_layer = find_layer(summary_layers, "llc");
         PFL_EXPECT(llc_layer != nullptr);
         PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
-        PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "extend beyond the declared IEEE 802.3 payload length"));
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
         PFL_EXPECT(ipv4_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "total length exceeds captured packet bytes"));
+        const auto* trailer_layer = find_layer(summary_layers, "trailer");
+        PFL_EXPECT(trailer_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*trailer_layer, "Length", "30 bytes"));
+        PFL_EXPECT(layer_has_field(*trailer_layer, "Raw"));
+        PFL_EXPECT(find_layer(summary_layers, "udp") == nullptr);
     }
 }
 

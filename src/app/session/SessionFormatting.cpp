@@ -597,6 +597,42 @@ std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const Pac
     return std::nullopt;
 }
 
+std::optional<PacketSummaryLayer> build_ieee_802_3_trailer_layer(const PacketDetails& details) {
+    if (!details.has_ethernet || details.ethernet.trailer_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        PacketSummaryField {
+            .label = "Length",
+            .value = std::to_string(details.ethernet.trailer_length) + " bytes",
+        },
+    };
+
+    if (!details.ethernet.trailer_preview.empty()) {
+        fields.push_back(PacketSummaryField {
+            .label = "Raw",
+            .value = format_hex_byte_list(std::span<const std::uint8_t>(
+                details.ethernet.trailer_preview.data(),
+                details.ethernet.trailer_preview.size()
+            )),
+        });
+    }
+
+    if (details.ethernet.trailer_preview_truncated) {
+        fields.push_back(PacketSummaryField {
+            .label = "Preview truncated",
+            .value = "Yes",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "trailer",
+        .title = "Trailer",
+        .fields = std::move(fields),
+    };
+}
+
 bool ipv4_field_available(const PacketDetails& details, const std::size_t end_offset) noexcept {
     return details.has_ipv4 && details.ipv4.available_header_bytes >= end_offset;
 }
@@ -1981,6 +2017,12 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 "Length",
                 std::to_string(details.ethernet.ether_type) + " bytes"
             ));
+            if (details.llc.captured_payload_exceeds_declared) {
+                ethernet_fields.push_back(make_summary_field(
+                    "Warning",
+                    "Captured bytes extend beyond the declared IEEE 802.3 payload length"
+                ));
+            }
         } else {
             ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.ethernet.ether_type)));
         }
@@ -2054,7 +2096,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (details.llc.payload_length_exceeds_captured) {
             llc_fields.push_back(make_summary_field("Warning", "IEEE 802.3 payload length exceeds captured payload bytes"));
         }
-        if (details.llc.captured_payload_exceeds_declared) {
+        if (details.llc.captured_payload_exceeds_declared && !details.ethernet.uses_length_field) {
             llc_fields.push_back(make_summary_field("Warning", "Captured bytes extend beyond the declared IEEE 802.3 payload length"));
         }
 
@@ -2455,6 +2497,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             .warning = details.udp.payload_truncated,
             .marker_text = details.udp.payload_truncated ? std::string {"Warning"} : std::string {},
         });
+    }
+
+    if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
+        append_layer_if_not_empty(layers, *trailer_layer);
     }
 
     if (const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
