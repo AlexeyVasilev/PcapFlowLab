@@ -527,6 +527,76 @@ std::optional<PacketSummaryLayer> build_unknown_ppp_payload_layer(const PacketDe
     };
 }
 
+std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const PacketDetails& details) {
+    const auto make_payload_layer = [](std::string id,
+                                       const std::size_t payload_length,
+                                       const std::vector<std::uint8_t>& payload_preview,
+                                       const bool preview_truncated) -> std::optional<PacketSummaryLayer> {
+        if (payload_length == 0U && payload_preview.empty()) {
+            return std::nullopt;
+        }
+
+        std::vector<PacketSummaryField> fields {
+            PacketSummaryField {
+                .label = "Length",
+                .value = std::to_string(payload_length) + " bytes",
+            },
+        };
+
+        if (!payload_preview.empty()) {
+            auto preview_text = format_hex_byte_list(std::span<const std::uint8_t>(
+                payload_preview.data(),
+                payload_preview.size()
+            ));
+            fields.push_back(PacketSummaryField {
+                .label = "Raw",
+                .value = std::move(preview_text),
+            });
+        }
+        if (preview_truncated) {
+            fields.push_back(PacketSummaryField {
+                .label = "Preview truncated",
+                .value = "Yes",
+            });
+        }
+
+        return PacketSummaryLayer {
+            .id = std::move(id),
+            .title = "Data",
+            .fields = std::move(fields),
+        };
+    };
+
+    if (details.has_snap &&
+        !details.snap.header_truncated &&
+        details.snap.payload_length > 0U &&
+        (details.snap.oui != std::array<std::uint8_t, 3> {0U, 0U, 0U} ||
+         (details.snap.pid != kEtherTypeArp &&
+          details.snap.pid != kEtherTypeIpv4 &&
+          details.snap.pid != kEtherTypeIpv6))) {
+        return make_payload_layer(
+            "snap-payload",
+            details.snap.payload_length,
+            details.snap.payload_preview,
+            details.snap.payload_preview_truncated
+        );
+    }
+
+    if (details.has_llc &&
+        !details.llc.header_truncated &&
+        !details.has_snap &&
+        details.llc.payload_length > 0U) {
+        return make_payload_layer(
+            "llc-payload",
+            details.llc.payload_length,
+            details.llc.payload_preview,
+            details.llc.payload_preview_truncated
+        );
+    }
+
+    return std::nullopt;
+}
+
 bool ipv4_field_available(const PacketDetails& details, const std::size_t end_offset) noexcept {
     return details.has_ipv4 && details.ipv4.available_header_bytes >= end_offset;
 }
@@ -2003,6 +2073,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             .warning = details.snap.header_truncated,
             .marker_text = details.snap.header_truncated ? std::string {"Warning"} : std::string {},
         });
+    }
+
+    if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
+        append_layer_if_not_empty(layers, *payload_layer);
     }
 
     if (details.has_mpls) {

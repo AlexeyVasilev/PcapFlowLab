@@ -27,12 +27,18 @@ struct LlcDetails {
     bool header_truncated {false};
     bool payload_length_exceeds_captured {false};
     bool captured_payload_exceeds_declared {false};
+    std::size_t payload_length {0};
+    std::vector<std::uint8_t> payload_preview {};
+    bool payload_preview_truncated {false};
 };
 
 struct SnapDetails {
     std::array<std::uint8_t, 3> oui {};
     std::uint16_t pid {0};
     bool header_truncated {false};
+    std::size_t payload_length {0};
+    std::vector<std::uint8_t> payload_preview {};
+    bool payload_preview_truncated {false};
 };
 
 struct VlanTagDetails {

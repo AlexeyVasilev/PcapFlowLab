@@ -18,7 +18,9 @@ Current committed support in this branch is intentionally narrow:
   - IPv6 `0x86dd`
   - ARP `0x0806`
 - VLAN and QinQ before LLC/SNAP are supported for the same bounded continuation path;
-- unknown SNAP PID, non-zero OUI, non-SNAP LLC, malformed headers, and length-boundary edge cases remain conservative in this pass.
+- unknown SNAP PID, non-zero OUI, and non-SNAP LLC remain conservative no-flow cases with bounded Data/raw preview in selected-packet Summary;
+- malformed LLC/SNAP headers remain best-effort with specific truncation warnings;
+- IEEE 802.3 length bounds are respected for inner parsing, and trailing bytes beyond the declared 802.3 length are ignored.
 
 ## Local generation
 
@@ -124,37 +126,37 @@ Current committed assumptions:
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / OUI `00:00:00` / unknown PID / Raw
-- Conservative current behavior: safe unknown SNAP fallback only; must not fabricate IPv4 / IPv6 / ARP.
+- Current behavior: remains no-flow with reason `Unknown SNAP PID`; selected-packet Summary shows IEEE 802.3, LLC, SNAP, the unknown PID, and bounded Data preview.
 
 ### 09_llc_snap_nonzero_oui_ipv4_pid.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / non-zero OUI / PID `0x0800` / IPv4-like bytes
-- Conservative current behavior: verify future parser does not blindly treat all PID `0x0800` cases as Ethernet-encapsulated IPv4 when the OUI is not Ethernet encapsulation.
+- Current behavior: remains no-flow with reason `Unsupported SNAP OUI`; selected-packet Summary shows LLC/SNAP with the non-zero OUI and bounded Data preview, but does not treat PID `0x0800` as Ethernet IPv4.
 
 ### 10_llc_non_snap_ipx_like.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / non-SNAP LLC / Raw
-- Conservative current behavior: safe non-SNAP LLC fallback only; should not become an IP flow.
+- Current behavior: remains no-flow with reason `Non-SNAP LLC frame`; selected-packet Summary shows LLC fields plus bounded Data preview.
 
 ### 11_llc_snap_truncated_llc_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length says LLC follows, but LLC header is incomplete
-- Malformed/truncated case: no-crash robustness fixture only.
+- Current behavior: remains no-flow with reason `LLC header truncated`; selected-packet Summary shows IEEE 802.3 plus LLC truncation warning.
 
 ### 12_llc_snap_truncated_snap_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP marker present, but SNAP OUI/PID is incomplete
-- Malformed/truncated case: no-crash robustness fixture only.
+- Current behavior: remains no-flow with reason `SNAP header truncated`; selected-packet Summary shows LLC, partial SNAP presence, and SNAP truncation warning.
 
 ### 13_llc_snap_truncated_inner_ipv4.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / PID IPv4 / partial IPv4 header
-- Conservative current behavior: safe handling after LLC/SNAP shim; future partial IPv4 presentation may reuse existing truncated-IPv4 infrastructure.
+- Current behavior: remains no-flow with reason `IPv4 header truncated`; selected-packet Summary reuses the shared partial IPv4 presentation after LLC/SNAP.
 
 ### 14_llc_snap_length_short_payload.pcap
 
@@ -166,7 +168,7 @@ Current committed assumptions:
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length field smaller than captured frame payload
-- Conservative current behavior: parser should respect the IEEE 802.3 length boundary and stay conservative about trailing bytes beyond the declared length.
+- Current behavior: trailing bytes beyond the declared IEEE 802.3 length are ignored for inner parsing; the packet remains no-flow with reason `UDP header truncated`, while LLC and partial IPv4 layers show length-boundary warnings.
 
 ## Expected generated file list
 

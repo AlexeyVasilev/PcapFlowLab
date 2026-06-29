@@ -10,6 +10,7 @@ namespace pfl {
 namespace {
 
 constexpr std::size_t kUnknownPppPayloadPreviewMaxBytes = 32U;
+constexpr std::size_t kLlcSnapPayloadPreviewMaxBytes = 32U;
 
 enum class DecodeMode : std::uint8_t {
     strict,
@@ -105,6 +106,28 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             details.snap.pid = llc_snap.pid;
             details.snap.header_truncated = llc_snap.snap_header_truncated;
             view.bounded_packet_end = llc_snap.payload_end;
+
+            const auto bounded_payload_end = llc_snap.payload_end;
+            if (details.has_snap && !details.snap.header_truncated) {
+                const auto payload_begin = std::min(view.payload_offset + detail::kLlcSnapHeaderSize, bounded_payload_end);
+                details.snap.payload_length = bounded_payload_end - payload_begin;
+                const auto preview_length = std::min(details.snap.payload_length, kLlcSnapPayloadPreviewMaxBytes);
+                details.snap.payload_preview.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin + preview_length)
+                );
+                details.snap.payload_preview_truncated = details.snap.payload_length > preview_length;
+            } else if (details.has_llc && !details.llc.header_truncated) {
+                const auto payload_begin = std::min(view.payload_offset + detail::kLlcHeaderSize, bounded_payload_end);
+                details.llc.payload_length = bounded_payload_end - payload_begin;
+                const auto preview_length = std::min(details.llc.payload_length, kLlcSnapPayloadPreviewMaxBytes);
+                details.llc.payload_preview.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin + preview_length)
+                );
+                details.llc.payload_preview_truncated = details.llc.payload_length > preview_length;
+            }
+
             if (llc_snap.resolved_supported_protocol) {
                 view.protocol_type = llc_snap.resolved_protocol_type;
                 view.payload_offset = llc_snap.resolved_payload_offset;

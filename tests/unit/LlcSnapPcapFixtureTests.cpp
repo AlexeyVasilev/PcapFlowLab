@@ -65,10 +65,17 @@ void expect_layer_prefix(
     std::initializer_list<const char*> expected_ids
 ) {
     PFL_EXPECT(layers.size() >= expected_ids.size());
-    std::size_t index = 0U;
+    std::size_t search_index = 0U;
     for (const auto* expected_id : expected_ids) {
-        PFL_EXPECT(layers[index].id == expected_id);
-        ++index;
+        const auto found = std::find_if(
+            layers.begin() + static_cast<std::ptrdiff_t>(search_index),
+            layers.end(),
+            [&](const session_detail::PacketSummaryLayer& layer) {
+                return layer.id == expected_id;
+            }
+        );
+        PFL_EXPECT(found != layers.end());
+        search_index = static_cast<std::size_t>(std::distance(layers.begin(), found)) + 1U;
     }
 }
 
@@ -190,40 +197,6 @@ void expect_supported_llc_snap_arp_fixture(const std::filesystem::path& relative
     expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "arp"});
 }
 
-void expect_conservative_unrecognized_fixture(
-    const std::filesystem::path& relative_path,
-    const bool expect_llc,
-    const bool expect_snap
-) {
-    CaptureSession session {};
-    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
-    PFL_EXPECT(session.list_flows().empty());
-    PFL_EXPECT(session.unrecognized_packet_count() == 1U);
-
-    const auto rows = session.list_unrecognized_packets(0U, 30U);
-    PFL_EXPECT(rows.size() == 1U);
-    PFL_EXPECT(rows[0].packet_index == 0U);
-    PFL_EXPECT(!rows[0].reason_text.empty());
-
-    const auto packet = require_packet(session, 0U);
-    const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
-    PFL_EXPECT(details->has_ethernet);
-    PFL_EXPECT(details->ethernet.uses_length_field);
-    PFL_EXPECT(details->has_llc == expect_llc);
-    PFL_EXPECT(details->has_snap == expect_snap);
-
-    const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-    PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
-    PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
-    if (expect_llc) {
-        PFL_EXPECT(find_layer(summary_layers, "llc") != nullptr);
-    }
-    if (expect_snap) {
-        PFL_EXPECT(find_layer(summary_layers, "snap") != nullptr);
-    }
-}
-
 }  // namespace
 
 void run_llc_snap_pcap_fixture_tests() {
@@ -301,11 +274,139 @@ void run_llc_snap_pcap_fixture_tests() {
         "ipv4"
     );
 
-    expect_conservative_unrecognized_fixture("parsing/llc_snap/08_llc_snap_unknown_pid.pcap", true, true);
-    expect_conservative_unrecognized_fixture("parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap", true, true);
-    expect_conservative_unrecognized_fixture("parsing/llc_snap/10_llc_non_snap_ipx_like.pcap", true, false);
-    expect_conservative_unrecognized_fixture("parsing/llc_snap/11_llc_snap_truncated_llc_header.pcap", true, false);
-    expect_conservative_unrecognized_fixture("parsing/llc_snap/12_llc_snap_truncated_snap_header.pcap", true, true);
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/08_llc_snap_unknown_pid.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "Unknown SNAP PID");
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->ethernet.uses_length_field);
+        PFL_EXPECT(details->has_llc);
+        PFL_EXPECT(details->has_snap);
+        PFL_EXPECT(details->snap.pid == 0x88B5U);
+        PFL_EXPECT(details->snap.payload_length > 0U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "snap-payload"});
+        const auto* snap_layer = find_layer(summary_layers, "snap");
+        PFL_EXPECT(snap_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:00"));
+        PFL_EXPECT(layer_has_field_containing(*snap_layer, "PID", "0x88b5"));
+        const auto* data_layer = find_layer(summary_layers, "snap-payload");
+        PFL_EXPECT(data_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*data_layer, "Length", "bytes"));
+        PFL_EXPECT(layer_has_field(*data_layer, "Raw"));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "Unsupported SNAP OUI");
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->ethernet.uses_length_field);
+        PFL_EXPECT(details->has_llc);
+        PFL_EXPECT(details->has_snap);
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->snap.pid == 0x0800U);
+        const auto non_ethernet_oui = std::array<std::uint8_t, 3> {0x00U, 0x00U, 0xF8U};
+        PFL_EXPECT(details->snap.oui == non_ethernet_oui);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "snap-payload"});
+        const auto* snap_layer = find_layer(summary_layers, "snap");
+        PFL_EXPECT(snap_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:f8"));
+        PFL_EXPECT(layer_has_field_containing(*snap_layer, "PID", "IPv4"));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/10_llc_non_snap_ipx_like.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "Non-SNAP LLC frame");
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->ethernet.uses_length_field);
+        PFL_EXPECT(details->has_llc);
+        PFL_EXPECT(!details->has_snap);
+        PFL_EXPECT(details->llc.payload_length > 0U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "llc-payload"});
+        const auto* data_layer = find_layer(summary_layers, "llc-payload");
+        PFL_EXPECT(data_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*data_layer, "Length", "bytes"));
+        PFL_EXPECT(layer_has_field(*data_layer, "Raw"));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/11_llc_snap_truncated_llc_header.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "LLC header truncated");
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_llc);
+        PFL_EXPECT(details->llc.header_truncated);
+        PFL_EXPECT(!details->has_snap);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc"});
+        const auto* llc_layer = find_layer(summary_layers, "llc");
+        PFL_EXPECT(llc_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "LLC header is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/12_llc_snap_truncated_snap_header.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "SNAP header truncated");
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_llc);
+        PFL_EXPECT(details->has_snap);
+        PFL_EXPECT(details->snap.header_truncated);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap"});
+        const auto* snap_layer = find_layer(summary_layers, "snap");
+        PFL_EXPECT(snap_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*snap_layer, "Warning", "SNAP header is truncated"));
+    }
 
     {
         CaptureSession session {};
@@ -325,8 +426,7 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(details->ipv4.header_truncated);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        PFL_EXPECT(find_layer(summary_layers, "warnings") != nullptr);
-        expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "llc", "snap", "ipv4"});
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "ipv4"});
     }
 
     {
@@ -367,17 +467,25 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/15_llc_snap_length_extra_payload.pcap")));
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].reason_text == "UDP header truncated");
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->has_snap);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(!details->has_udp);
         PFL_EXPECT(details->llc.captured_payload_exceeds_declared);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* llc_layer = find_layer(summary_layers, "llc");
         PFL_EXPECT(llc_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "extend beyond the declared IEEE 802.3 payload length"));
+        const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "total length exceeds captured packet bytes"));
     }
 }
 

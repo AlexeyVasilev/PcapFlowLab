@@ -557,13 +557,46 @@ std::string classify_unrecognized_packet_reason(
         }
     }
 
+    const auto effective_packet_end = network->bounded_packet_end.value_or(packet_bytes.size());
+    const auto bounded_packet_bytes = packet_bytes.subspan(0U, std::min(effective_packet_end, packet_bytes.size()));
+
+    if (network->link_layer.is_ieee_802_3) {
+        const auto llc_snap = detail::parse_llc_snap_payload(
+            bounded_packet_bytes,
+            network->link_layer.payload_offset,
+            network->link_layer.declared_payload_length
+        );
+
+        if (llc_snap.llc_header_truncated) {
+            return "LLC header truncated";
+        }
+
+        if (llc_snap.has_llc && !llc_snap.has_snap) {
+            return "Non-SNAP LLC frame";
+        }
+
+        if (llc_snap.snap_header_truncated) {
+            return "SNAP header truncated";
+        }
+
+        if (llc_snap.has_snap) {
+            if (llc_snap.oui != std::array<std::uint8_t, 3> {0U, 0U, 0U}) {
+                return "Unsupported SNAP OUI";
+            }
+
+            if (!detail::is_supported_snap_pid(llc_snap.pid)) {
+                return "Unknown SNAP PID";
+            }
+        }
+    }
+
     if (network->protocol_type == detail::kEtherTypePppoeDiscovery) {
         const auto pppoe_offset = network->payload_offset;
-        if (packet_bytes.size() < pppoe_offset + 6U) {
+        if (bounded_packet_bytes.size() < pppoe_offset + 6U) {
             return "PPPoE Discovery header truncated";
         }
 
-        switch (packet_bytes[pppoe_offset + 1U]) {
+        switch (bounded_packet_bytes[pppoe_offset + 1U]) {
         case 0x09U:
             return "PPPoE Discovery PADI";
         case 0x07U:
@@ -581,15 +614,15 @@ std::string classify_unrecognized_packet_reason(
 
     if (network->protocol_type == detail::kEtherTypePppoeSession) {
         const auto pppoe_offset = network->payload_offset;
-        if (packet_bytes.size() < pppoe_offset + 6U) {
+        if (bounded_packet_bytes.size() < pppoe_offset + 6U) {
             return "PPPoE Session header truncated";
         }
 
-        const auto payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, pppoe_offset + 4U));
+        const auto payload_length = static_cast<std::size_t>(detail::read_be16(bounded_packet_bytes, pppoe_offset + 4U));
         const auto pppoe_payload_offset = pppoe_offset + 6U;
-        const auto pppoe_payload_end = std::min(pppoe_payload_offset + payload_length, packet_bytes.size());
-        const auto available_payload_length = packet_bytes.size() - pppoe_payload_offset;
-        if (pppoe_payload_offset + 2U > pppoe_payload_end || packet_bytes.size() < pppoe_payload_offset + 2U) {
+        const auto pppoe_payload_end = std::min(pppoe_payload_offset + payload_length, bounded_packet_bytes.size());
+        const auto available_payload_length = bounded_packet_bytes.size() - pppoe_payload_offset;
+        if (pppoe_payload_offset + 2U > pppoe_payload_end || bounded_packet_bytes.size() < pppoe_payload_offset + 2U) {
             return "PPP protocol field truncated";
         }
 
@@ -597,7 +630,7 @@ std::string classify_unrecognized_packet_reason(
             return "Unsupported or malformed packet";
         }
 
-        switch (detail::read_be16(packet_bytes, pppoe_payload_offset)) {
+        switch (detail::read_be16(bounded_packet_bytes, pppoe_payload_offset)) {
         case detail::kPppProtocolIpv4:
         case detail::kPppProtocolIpv6:
             return "Unsupported or malformed packet";
@@ -614,14 +647,14 @@ std::string classify_unrecognized_packet_reason(
 
     if (network->protocol_type == detail::kEtherTypeArp) {
         const auto arp_offset = network->payload_offset;
-        if (packet_bytes.size() < arp_offset + 8U) {
+        if (bounded_packet_bytes.size() < arp_offset + 8U) {
             return "ARP header truncated";
         }
 
-        const auto hardware_size = packet_bytes[arp_offset + 4U];
-        const auto protocol_size = packet_bytes[arp_offset + 5U];
+        const auto hardware_size = bounded_packet_bytes[arp_offset + 4U];
+        const auto protocol_size = bounded_packet_bytes[arp_offset + 5U];
         const auto arp_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
-        if (packet_bytes.size() < arp_offset + arp_length) {
+        if (bounded_packet_bytes.size() < arp_offset + arp_length) {
             return "ARP header truncated";
         }
 
@@ -630,19 +663,19 @@ std::string classify_unrecognized_packet_reason(
 
     if (network->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
+        if (bounded_packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
             return network->has_mpls ? "Inner IPv4 header truncated" : "IPv4 header truncated";
         }
 
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return network->has_mpls ? "Inner IPv4 header truncated" : "Unsupported or malformed packet";
         }
 
-        const auto protocol = packet_bytes[ipv4_offset + 9U];
+        const auto protocol = bounded_packet_bytes[ipv4_offset + 9U];
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
         const auto packet_end = ipv4_bounds->packet_end;
-        const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
+        const auto flags_fragment = detail::read_be16(bounded_packet_bytes, ipv4_offset + 6U);
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
         if (is_fragmented) {
             return "Could not extract flow key";
@@ -650,14 +683,14 @@ std::string classify_unrecognized_packet_reason(
 
         if (protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
-                packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+                bounded_packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
                 return network->has_mpls ? "Inner TCP header truncated" : "TCP header truncated";
             }
 
-            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+            const auto tcp_header_length = static_cast<std::size_t>((bounded_packet_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 transport_offset + tcp_header_length > packet_end ||
-                packet_bytes.size() < transport_offset + tcp_header_length) {
+                bounded_packet_bytes.size() < transport_offset + tcp_header_length) {
                 return "Could not extract flow key";
             }
 
@@ -669,23 +702,23 @@ std::string classify_unrecognized_packet_reason(
                 return "UDP header truncated";
             }
 
-            return detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end).has_value()
+            return detail::parse_udp_payload_bounds(bounded_packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end).has_value()
                 ? "Could not extract flow key"
                 : "Unsupported or malformed packet";
         }
 
         if (protocol == detail::kIpProtocolIcmp) {
-            return packet_bytes.size() < transport_offset + 2U
+            return bounded_packet_bytes.size() < transport_offset + 2U
                 ? "Unsupported or malformed packet"
                 : "Could not extract flow key";
         }
 
         if (protocol == detail::kIpProtocolIgmp) {
-            if (transport_offset >= packet_end || transport_offset >= packet_bytes.size()) {
+            if (transport_offset >= packet_end || transport_offset >= bounded_packet_bytes.size()) {
                 return "Missing IGMP payload";
             }
 
-            const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, packet_end);
+            const auto igmp = detail::parse_igmp_header(bounded_packet_bytes, transport_offset, packet_end);
             if (!igmp.has_value() || igmp->available_length < detail::kIgmpMinimumHeaderSize) {
                 return "IGMP header truncated";
             }
@@ -698,21 +731,21 @@ std::string classify_unrecognized_packet_reason(
 
     if (network->protocol_type == detail::kEtherTypeIpv6) {
         const auto ipv6_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        if (bounded_packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return network->has_mpls ? "Inner IPv6 header truncated" : "IPv6 header truncated";
         }
 
-        if (static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U) != 6U) {
+        if (static_cast<std::uint8_t>(bounded_packet_bytes[ipv6_offset] >> 4U) != 6U) {
             return "Unsupported or malformed packet";
         }
 
-        const auto ipv6_payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        const auto ipv6_payload = detail::parse_ipv6_payload(bounded_packet_bytes, ipv6_offset);
         if (!ipv6_payload.has_value()) {
             return network->has_mpls ? "Inner IPv6 header truncated" : "Unsupported or malformed packet";
         }
 
-        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
-        const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, packet_bytes.size());
+        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_packet_bytes, ipv6_offset + 4U));
+        const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_packet_bytes.size());
         if (ipv6_payload->payload_offset > packet_end) {
             return "Could not extract flow key";
         }
@@ -723,15 +756,15 @@ std::string classify_unrecognized_packet_reason(
 
         if (ipv6_payload->next_header == detail::kIpProtocolTcp) {
             if (ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
-                packet_bytes.size() < ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize) {
+                bounded_packet_bytes.size() < ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize) {
                 return network->has_mpls ? "Inner TCP header truncated" : "TCP header truncated";
             }
 
             const auto tcp_header_length =
-                static_cast<std::size_t>((packet_bytes[ipv6_payload->payload_offset + 12U] >> 4U) * 4U);
+                static_cast<std::size_t>((bounded_packet_bytes[ipv6_payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 ipv6_payload->payload_offset + tcp_header_length > packet_end ||
-                packet_bytes.size() < ipv6_payload->payload_offset + tcp_header_length) {
+                bounded_packet_bytes.size() < ipv6_payload->payload_offset + tcp_header_length) {
                 return "Could not extract flow key";
             }
 
@@ -744,16 +777,16 @@ std::string classify_unrecognized_packet_reason(
             }
 
             return detail::parse_udp_payload_bounds(
-                packet_bytes,
-                ipv6_payload->payload_offset,
-                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
-            ).has_value()
+                       bounded_packet_bytes,
+                       ipv6_payload->payload_offset,
+                       ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+                   ).has_value()
                 ? "Could not extract flow key"
                 : "Unsupported or malformed packet";
         }
 
         if (ipv6_payload->next_header == detail::kIpProtocolIcmpV6) {
-            return packet_bytes.size() < ipv6_payload->payload_offset + 2U
+            return bounded_packet_bytes.size() < ipv6_payload->payload_offset + 2U
                 ? "Unsupported or malformed packet"
                 : "Could not extract flow key";
         }
