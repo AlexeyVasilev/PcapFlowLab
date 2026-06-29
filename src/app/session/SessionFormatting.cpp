@@ -2032,7 +2032,6 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)),
             make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)),
             make_summary_field("Control", format_hex_value(details.llc.control, 2)),
-            make_summary_field("Payload Length", std::to_string(details.llc.declared_payload_length) + " bytes"),
         };
         if (details.llc.header_truncated) {
             llc_fields.push_back(make_summary_field("Warning", "LLC header is truncated"));

@@ -168,6 +168,7 @@ void expect_supported_llc_snap_ip_fixture(
     const auto* llc_layer = find_layer(summary_layers, "llc");
     PFL_EXPECT(llc_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*llc_layer, "DSAP", "0xaa"));
+    PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
     const auto* snap_layer = find_layer(summary_layers, "snap");
     PFL_EXPECT(snap_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:00"));
@@ -381,6 +382,7 @@ void run_llc_snap_pcap_fixture_tests() {
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc"});
         const auto* llc_layer = find_layer(summary_layers, "llc");
         PFL_EXPECT(llc_layer != nullptr);
+        PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "LLC header is truncated"));
     }
 
@@ -453,6 +455,7 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* llc_layer = find_layer(summary_layers, "llc");
         PFL_EXPECT(llc_layer != nullptr);
+        PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "exceeds captured payload bytes"));
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
         PFL_EXPECT(ipv4_layer != nullptr);
@@ -482,6 +485,7 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* llc_layer = find_layer(summary_layers, "llc");
         PFL_EXPECT(llc_layer != nullptr);
+        PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "extend beyond the declared IEEE 802.3 payload length"));
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
         PFL_EXPECT(ipv4_layer != nullptr);
