@@ -20,6 +20,7 @@ constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
 constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
+constexpr std::uint16_t kIeee8023LengthCutoff = 0x0600U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
@@ -1996,19 +1997,29 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (details.has_vlan) {
         for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
             const auto& tag = details.vlan_tags[index];
+            auto vlan_fields = std::vector<PacketSummaryField> {
+                make_summary_field("TPID", format_ether_type_value(tag.tpid)),
+                make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+                make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+                make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+            };
+            if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
+                vlan_fields.push_back(make_summary_field(
+                    "Encapsulated Length",
+                    std::to_string(tag.encapsulated_ether_type) + " bytes"
+                ));
+            } else {
+                vlan_fields.push_back(make_summary_field(
+                    "Encapsulated EtherType",
+                    format_ether_type_value(tag.encapsulated_ether_type)
+                ));
+            }
             append_layer_if_not_empty(layers, PacketSummaryLayer {
                 .id = "vlan",
                 .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
                     ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
                     ", ID: " + std::to_string(vlan_identifier(tag.tci)),
-                .fields = {
-                    make_summary_field("TPID", format_ether_type_value(tag.tpid)),
-                    make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
-                    make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
-                    make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
-                    make_summary_field("Tag Control Information", std::to_string(tag.tci)),
-                    make_summary_field("Encapsulated EtherType", format_ether_type_value(tag.encapsulated_ether_type)),
-                },
+                .fields = std::move(vlan_fields),
             });
         }
 

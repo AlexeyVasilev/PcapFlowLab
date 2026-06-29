@@ -136,6 +136,10 @@ void run_vlan_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "ipv4", "tcp"});
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 1U);
+        const auto* vlan_layer = find_layer(summary_layers, "vlan");
+        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_EXPECT(!layer_has_field_label(*vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(layer_has_field_containing(*vlan_layer, "Encapsulated EtherType", "IPv4"));
     }
 
     {
@@ -222,6 +226,14 @@ void run_vlan_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "vlan", "ipv4", "udp"});
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 2U);
+        const auto* outer_vlan_layer = find_layer(summary_layers, "vlan", 0U);
+        const auto* inner_vlan_layer = find_layer(summary_layers, "vlan", 1U);
+        PFL_EXPECT(outer_vlan_layer != nullptr);
+        PFL_EXPECT(inner_vlan_layer != nullptr);
+        PFL_EXPECT(!layer_has_field_label(*outer_vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(!layer_has_field_label(*inner_vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
+        PFL_EXPECT(layer_has_field_containing(*inner_vlan_layer, "Encapsulated EtherType", "IPv4"));
     }
 
     {
@@ -264,6 +276,10 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "ipv4", "udp"});
+        const auto* vlan_layer = find_layer(summary_layers, "vlan");
+        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_EXPECT(!layer_has_field_label(*vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(layer_has_field_containing(*vlan_layer, "Encapsulated EtherType", "IPv4"));
     }
 
     {
@@ -287,6 +303,16 @@ void run_vlan_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "vlan", "vlan", "ipv4", "tcp"});
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 3U);
+        const auto* first_vlan_layer = find_layer(summary_layers, "vlan", 0U);
+        const auto* second_vlan_layer = find_layer(summary_layers, "vlan", 1U);
+        const auto* third_vlan_layer = find_layer(summary_layers, "vlan", 2U);
+        PFL_EXPECT(first_vlan_layer != nullptr);
+        PFL_EXPECT(second_vlan_layer != nullptr);
+        PFL_EXPECT(third_vlan_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*first_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
+        PFL_EXPECT(layer_has_field_containing(*second_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
+        PFL_EXPECT(layer_has_field_containing(*third_vlan_layer, "Encapsulated EtherType", "IPv4"));
+        PFL_EXPECT(!layer_has_field_label(*third_vlan_layer, "Tag Control Information"));
     }
 
     {
@@ -309,6 +335,10 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan"});
+        const auto* vlan_layer = find_layer(summary_layers, "vlan");
+        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_EXPECT(!layer_has_field_label(*vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(layer_has_field_label(*vlan_layer, "Encapsulated EtherType"));
     }
 
     {

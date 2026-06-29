@@ -165,6 +165,23 @@ void expect_supported_llc_snap_ip_fixture(
     } else {
         PFL_EXPECT(layer_has_field(*ethernet_layer, "Type"));
     }
+    if (expected_vlan_count == 1U) {
+        const auto* vlan_layer = find_layer(summary_layers, "vlan", 0U);
+        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_EXPECT(!layer_has_field(*vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(layer_has_field_containing(*vlan_layer, "Encapsulated Length", "65 bytes"));
+        PFL_EXPECT(!layer_has_field(*vlan_layer, "Encapsulated EtherType"));
+    } else if (expected_vlan_count == 2U) {
+        const auto* outer_vlan_layer = find_layer(summary_layers, "vlan", 0U);
+        const auto* inner_vlan_layer = find_layer(summary_layers, "vlan", 1U);
+        PFL_EXPECT(outer_vlan_layer != nullptr);
+        PFL_EXPECT(inner_vlan_layer != nullptr);
+        PFL_EXPECT(!layer_has_field(*outer_vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(!layer_has_field(*inner_vlan_layer, "Tag Control Information"));
+        PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
+        PFL_EXPECT(layer_has_field_containing(*inner_vlan_layer, "Encapsulated Length", "53 bytes"));
+        PFL_EXPECT(!layer_has_field(*inner_vlan_layer, "Encapsulated EtherType"));
+    }
     const auto* llc_layer = find_layer(summary_layers, "llc");
     PFL_EXPECT(llc_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*llc_layer, "DSAP", "0xaa"));
