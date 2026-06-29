@@ -280,6 +280,7 @@ if(BUILD_TESTING)
         tests/unit/MplsPcapFixtureTests.cpp
         tests/unit/PppoePcapFixtureTests.cpp
         tests/unit/VlanPcapFixtureTests.cpp
+        tests/unit/LlcSnapPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp

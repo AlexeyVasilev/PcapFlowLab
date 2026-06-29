@@ -48,6 +48,7 @@ void run_unrecognized_packet_tests();
 void run_mpls_pcap_fixture_tests();
 void run_pppoe_pcap_fixture_tests();
 void run_vlan_pcap_fixture_tests();
+void run_llc_snap_pcap_fixture_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -105,6 +106,7 @@ int main() {
         pfl::tests::run_mpls_pcap_fixture_tests();
         pfl::tests::run_pppoe_pcap_fixture_tests();
         pfl::tests::run_vlan_pcap_fixture_tests();
+        pfl::tests::run_llc_snap_pcap_fixture_tests();
     } catch (const pfl::tests::TestFailure& failure) {
         std::cerr << failure.what() << '\n';
         return 1;

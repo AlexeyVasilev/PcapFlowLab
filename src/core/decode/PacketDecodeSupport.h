@@ -15,6 +15,9 @@ inline constexpr std::size_t kEthernetHeaderSize = 14;
 inline constexpr std::size_t kLinuxSllHeaderSize = 16;
 inline constexpr std::size_t kLinuxSll2HeaderSize = 20;
 inline constexpr std::size_t kVlanHeaderSize = 4;
+inline constexpr std::size_t kLlcHeaderSize = 3;
+inline constexpr std::size_t kSnapHeaderSize = 5;
+inline constexpr std::size_t kLlcSnapHeaderSize = kLlcHeaderSize + kSnapHeaderSize;
 inline constexpr std::size_t kMaxVlanTags = 4;
 inline constexpr std::size_t kMplsLabelSize = 4;
 inline constexpr std::size_t kMaxMplsLabels = 16;
@@ -32,6 +35,10 @@ inline constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 inline constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
 inline constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
+inline constexpr std::uint16_t kIeee8023LengthCutoff = 0x0600U;
+inline constexpr std::uint8_t kLlcSnapDsap = 0xaaU;
+inline constexpr std::uint8_t kLlcSnapSsap = 0xaaU;
+inline constexpr std::uint8_t kLlcUnnumberedInformationControl = 0x03U;
 inline constexpr std::uint8_t kIpProtocolIcmp = 1;
 inline constexpr std::uint8_t kIpProtocolIgmp = 2;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
@@ -63,8 +70,28 @@ struct LinkLayerPayloadView {
     std::size_t payload_offset {0};
     bool is_ethernet {false};
     bool is_linux_cooked {false};
+    bool is_ieee_802_3 {false};
+    std::uint16_t declared_payload_length {0};
     std::uint16_t cooked_packet_type {0};
     std::uint16_t cooked_hardware_type {0};
+};
+
+struct LlcSnapPayloadView {
+    bool has_llc {false};
+    std::uint8_t dsap {0};
+    std::uint8_t ssap {0};
+    std::uint8_t control {0};
+    bool llc_header_truncated {false};
+    bool has_snap {false};
+    std::array<std::uint8_t, 3> oui {};
+    std::uint16_t pid {0};
+    bool snap_header_truncated {false};
+    bool resolved_supported_protocol {false};
+    std::uint16_t resolved_protocol_type {0};
+    std::size_t resolved_payload_offset {0};
+    std::size_t payload_end {0};
+    bool payload_length_exceeds_captured {false};
+    bool captured_payload_exceeds_declared {false};
 };
 
 struct Ipv6PayloadView {
@@ -175,6 +202,10 @@ inline bool is_pppoe_ether_type(const std::uint16_t ether_type) noexcept {
     return ether_type == kEtherTypePppoeDiscovery || ether_type == kEtherTypePppoeSession;
 }
 
+inline bool is_supported_snap_pid(const std::uint16_t pid) noexcept {
+    return pid == kEtherTypeArp || pid == kEtherTypeIpv4 || pid == kEtherTypeIpv6;
+}
+
 inline bool mpls_has_resolved_inner_payload(const MplsParseStatus status) noexcept {
     return status == MplsParseStatus::resolved_inner_ipv4 || status == MplsParseStatus::resolved_inner_ipv6;
 }
@@ -215,6 +246,12 @@ inline std::optional<LinkLayerPayloadView> parse_link_layer_payload(std::span<co
             ++vlan_count;
         }
 
+        if (view.protocol_type < kIeee8023LengthCutoff) {
+            view.is_ieee_802_3 = true;
+            view.declared_payload_length = view.protocol_type;
+            view.protocol_type = 0U;
+        }
+
         return view;
     }
 
@@ -247,6 +284,54 @@ inline std::optional<LinkLayerPayloadView> parse_link_layer_payload(std::span<co
     }
 
     return std::nullopt;
+}
+
+inline LlcSnapPayloadView parse_llc_snap_payload(std::span<const std::uint8_t> bytes,
+                                                 const std::size_t payload_offset,
+                                                 const std::size_t declared_payload_length) {
+    LlcSnapPayloadView view {};
+    const auto available_payload_length = payload_offset < bytes.size() ? (bytes.size() - payload_offset) : 0U;
+    const auto logical_payload_length = std::min(declared_payload_length, available_payload_length);
+    view.payload_end = payload_offset + logical_payload_length;
+    view.payload_length_exceeds_captured = declared_payload_length > available_payload_length;
+    view.captured_payload_exceeds_declared = available_payload_length > declared_payload_length;
+
+    if (logical_payload_length < kLlcHeaderSize) {
+        view.llc_header_truncated = true;
+        return view;
+    }
+
+    view.has_llc = true;
+    view.dsap = bytes[payload_offset];
+    view.ssap = bytes[payload_offset + 1U];
+    view.control = bytes[payload_offset + 2U];
+
+    if (view.dsap != kLlcSnapDsap ||
+        view.ssap != kLlcSnapSsap ||
+        view.control != kLlcUnnumberedInformationControl) {
+        return view;
+    }
+
+    view.has_snap = true;
+    if (logical_payload_length < kLlcSnapHeaderSize) {
+        view.snap_header_truncated = true;
+        return view;
+    }
+
+    view.oui = {
+        bytes[payload_offset + kLlcHeaderSize],
+        bytes[payload_offset + kLlcHeaderSize + 1U],
+        bytes[payload_offset + kLlcHeaderSize + 2U],
+    };
+    view.pid = read_be16(bytes, payload_offset + kLlcHeaderSize + 3U);
+
+    if (view.oui == std::array<std::uint8_t, 3> {0U, 0U, 0U} && is_supported_snap_pid(view.pid)) {
+        view.resolved_supported_protocol = true;
+        view.resolved_protocol_type = view.pid;
+        view.resolved_payload_offset = payload_offset + kLlcSnapHeaderSize;
+    }
+
+    return view;
 }
 
 inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::size_t offset) {
@@ -394,6 +479,19 @@ inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const s
     view.link_layer = *envelope;
     view.protocol_type = envelope->protocol_type;
     view.payload_offset = envelope->payload_offset;
+
+    if (envelope->is_ieee_802_3) {
+        const auto llc_snap = parse_llc_snap_payload(bytes, envelope->payload_offset, envelope->declared_payload_length);
+        view.bounded_packet_end = llc_snap.payload_end;
+        if (!llc_snap.resolved_supported_protocol) {
+            view.protocol_type = 0U;
+            return view;
+        }
+
+        view.protocol_type = llc_snap.resolved_protocol_type;
+        view.payload_offset = llc_snap.resolved_payload_offset;
+        return view;
+    }
 
     if (!is_mpls_ether_type(envelope->protocol_type)) {
         resolve_pppoe_inner_payload(bytes, view);

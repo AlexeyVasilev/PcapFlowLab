@@ -30,6 +30,7 @@ bool is_ppp_control_protocol(const std::uint16_t protocol) noexcept {
 struct LinkLayerView {
     std::uint16_t protocol_type {0};
     std::size_t payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
 };
 
 std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint8_t> packet_bytes,
@@ -40,6 +41,10 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
     details.vlan_tags.reserve(detail::kMaxVlanTags);
     details.vlan_tag_truncated = false;
     details.truncated_vlan_tpid = 0U;
+    details.has_llc = false;
+    details.llc = {};
+    details.has_snap = false;
+    details.snap = {};
 
     if (packet_ref.data_link_type == kLinkTypeEthernet) {
         if (packet_bytes.size() < detail::kEthernetHeaderSize) {
@@ -84,11 +89,35 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
         }
 
         details.has_vlan = !details.vlan_tags.empty();
+        if (view.protocol_type < detail::kIeee8023LengthCutoff) {
+            details.ethernet.uses_length_field = details.vlan_tags.empty();
+            details.llc.declared_payload_length = view.protocol_type;
+            const auto llc_snap = detail::parse_llc_snap_payload(packet_bytes, view.payload_offset, view.protocol_type);
+            details.has_llc = llc_snap.has_llc || llc_snap.llc_header_truncated;
+            details.llc.dsap = llc_snap.dsap;
+            details.llc.ssap = llc_snap.ssap;
+            details.llc.control = llc_snap.control;
+            details.llc.header_truncated = llc_snap.llc_header_truncated;
+            details.llc.payload_length_exceeds_captured = llc_snap.payload_length_exceeds_captured;
+            details.llc.captured_payload_exceeds_declared = llc_snap.captured_payload_exceeds_declared;
+            details.has_snap = llc_snap.has_snap || llc_snap.snap_header_truncated;
+            details.snap.oui = llc_snap.oui;
+            details.snap.pid = llc_snap.pid;
+            details.snap.header_truncated = llc_snap.snap_header_truncated;
+            view.bounded_packet_end = llc_snap.payload_end;
+            if (llc_snap.resolved_supported_protocol) {
+                view.protocol_type = llc_snap.resolved_protocol_type;
+                view.payload_offset = llc_snap.resolved_payload_offset;
+            } else {
+                view.protocol_type = 0U;
+            }
+        }
         return view;
     }
 
     details.has_ethernet = false;
     details.has_vlan = false;
+    details.ethernet.uses_length_field = false;
 
     if (packet_ref.data_link_type == kLinkTypeLinuxSll) {
         if (packet_bytes.size() < detail::kLinuxSllHeaderSize) {
@@ -318,6 +347,9 @@ std::optional<PacketDetails> decode_packet_details(
     auto network_protocol_type = envelope->protocol_type;
     auto network_payload_offset = envelope->payload_offset;
     auto network_packet_bytes = packet_bytes;
+    if (envelope->bounded_packet_end.has_value()) {
+        network_packet_bytes = packet_bytes.first(std::min(*envelope->bounded_packet_end, packet_bytes.size()));
+    }
     if (detail::is_mpls_ether_type(envelope->protocol_type)) {
         const auto mpls = detail::parse_mpls_stack(packet_bytes, envelope->payload_offset);
         details.has_mpls = true;

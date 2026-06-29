@@ -16,6 +16,23 @@ struct EthernetDetails {
     std::array<std::uint8_t, 6> src_mac {};
     std::array<std::uint8_t, 6> dst_mac {};
     std::uint16_t ether_type {0};
+    bool uses_length_field {false};
+};
+
+struct LlcDetails {
+    std::uint8_t dsap {0};
+    std::uint8_t ssap {0};
+    std::uint8_t control {0};
+    std::uint16_t declared_payload_length {0};
+    bool header_truncated {false};
+    bool payload_length_exceeds_captured {false};
+    bool captured_payload_exceeds_declared {false};
+};
+
+struct SnapDetails {
+    std::array<std::uint8_t, 3> oui {};
+    std::uint16_t pid {0};
+    bool header_truncated {false};
 };
 
 struct VlanTagDetails {
@@ -194,6 +211,12 @@ struct PacketDetails {
 
     bool has_linux_cooked {false};
     LinuxCookedDetails linux_cooked {};
+
+    bool has_llc {false};
+    LlcDetails llc {};
+
+    bool has_snap {false};
+    SnapDetails snap {};
 
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};

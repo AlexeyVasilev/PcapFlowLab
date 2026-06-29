@@ -10,9 +10,15 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated LLC/SNAP envelopes;
 - IEEE 802.3 length-boundary mismatch cases.
 
-Parser implementation is intentionally **not** part of this pass.
-This fixture set is being prepared first so we can inspect captures in Wireshark
-and then add conservative tests and parser changes in smaller follow-up passes.
+Current committed support in this branch is intentionally narrow:
+- IEEE 802.3 length-based Ethernet framing is distinguished from Ethernet II;
+- LLC/SNAP is recognized only for DSAP `0xaa`, SSAP `0xaa`, Control `0x03`;
+- SNAP continuation is supported only for Ethernet OUI `00:00:00` with PID:
+  - IPv4 `0x0800`
+  - IPv6 `0x86dd`
+  - ARP `0x0806`
+- VLAN and QinQ before LLC/SNAP are supported for the same bounded continuation path;
+- unknown SNAP PID, non-zero OUI, non-SNAP LLC, malformed headers, and length-boundary edge cases remain conservative in this pass.
 
 ## Local generation
 
@@ -62,14 +68,12 @@ Notes:
 
 ## Current support assumptions
 
-This pass does **not** claim current committed LLC/SNAP parser support.
-
-Conservative current assumptions:
-- plain LLC/SNAP inner IPv4 / IPv6 / ARP recovery is future expected behavior, not claimed current behavior;
-- VLAN/QinQ before LLC/SNAP are candidate composition cases only;
-- unknown SNAP PID and non-SNAP LLC should stay conservative and must not fabricate IPv4 / IPv6 / ARP;
-- malformed/truncated and length-mismatch cases are no-crash robustness fixtures first;
-- future partial IPv4 presentation may be reusable for truncated inner IPv4 after LLC/SNAP, but that is not claimed here.
+Current committed assumptions:
+- plain LLC/SNAP inner IPv4 / IPv6 / ARP recovery is supported for Ethernet OUI `00:00:00`;
+- VLAN/QinQ before LLC/SNAP are supported for the same bounded continuation path;
+- unknown SNAP PID and non-SNAP LLC stay conservative and must not fabricate IPv4 / IPv6 / ARP;
+- malformed/truncated and length-mismatch cases remain no-flow robustness fixtures;
+- truncated inner IPv4 after LLC/SNAP can show partial IPv4 details while still remaining no-flow.
 
 ---
 
@@ -77,44 +81,44 @@ Conservative current assumptions:
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / OUI `00:00:00` / PID IPv4 / IPv4 / TCP / Raw
-- Future expected behavior: recover inner IPv4/TCP through LLC/SNAP and form a normal IPv4/TCP flow.
+- Current behavior: recovers inner IPv4/TCP through LLC/SNAP and forms a normal IPv4/TCP flow.
 
 ### 02_llc_snap_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / PID IPv4 / IPv4 / UDP / Raw
-- Future expected behavior: recover inner IPv4/UDP and form a normal IPv4/UDP flow.
+- Current behavior: recovers inner IPv4/UDP and forms a normal IPv4/UDP flow.
 
 ### 03_llc_snap_ipv6_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / PID IPv6 / IPv6 / TCP / Raw
-- Future expected behavior: recover inner IPv6/TCP and form a normal IPv6/TCP flow.
+- Current behavior: recovers inner IPv6/TCP and forms a normal IPv6/TCP flow.
 
 ### 04_llc_snap_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / PID IPv6 / IPv6 / UDP / Raw
-- Future expected behavior: recover inner IPv6/UDP and form a normal IPv6/UDP flow.
+- Current behavior: recovers inner IPv6/UDP and forms a normal IPv6/UDP flow.
 
 ### 05_llc_snap_arp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length / LLC SNAP / PID ARP / ARP
-- Future expected behavior: ARP should be recognized behind LLC/SNAP.
+- Current behavior: ARP is recognized behind LLC/SNAP.
 
 ### 06_vlan_llc_snap_ipv4_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN `0x8100` / 802.3-length payload / LLC SNAP / IPv4 / TCP
-- Current status: candidate shim-composition case only.
+- Current behavior: outer VLAN envelope remains visible and inner IPv4/TCP is recovered through LLC/SNAP.
 - Generator note: written manually with a VLAN TPID followed by an inner 802.3 length field to keep the wire image deterministic.
 
 ### 07_qinq_llc_snap_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / QinQ `0x88A8` / VLAN `0x8100` / 802.3-length payload / LLC SNAP / IPv4 / UDP
-- Current status: candidate stacked-shim composition case only.
+- Current behavior: outer QinQ/VLAN envelope remains visible and inner IPv4/UDP is recovered through LLC/SNAP.
 
 ### 08_llc_snap_unknown_pid.pcap
 
@@ -156,7 +160,7 @@ Conservative current assumptions:
 
 - Packets: 1
 - Layer chain: Ethernet 802.3 length field larger than captured LLC/SNAP payload
-- Conservative current behavior: snaplen/truncation robustness case; parser should stay inside captured bytes.
+- Current behavior: inner IPv4/UDP is still recovered when enough header bytes are available, but LLC / IPv4 / UDP layers expose truncation warnings and the packet remains bounded by captured bytes.
 
 ### 15_llc_snap_length_extra_payload.pcap
 

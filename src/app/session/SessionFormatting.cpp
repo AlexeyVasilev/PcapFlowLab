@@ -1905,11 +1905,19 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         auto ethernet_fields = std::vector<PacketSummaryField> {
             make_summary_field("Source", format_mac_address(details.ethernet.src_mac)),
             make_summary_field("Destination", format_mac_address(details.ethernet.dst_mac)),
-            make_summary_field("Type", format_ether_type_value(details.ethernet.ether_type)),
         };
+        if (details.ethernet.uses_length_field) {
+            ethernet_fields.push_back(make_summary_field(
+                "Length",
+                std::to_string(details.ethernet.ether_type) + " bytes"
+            ));
+        } else {
+            ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.ethernet.ether_type)));
+        }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ethernet",
-            .title = "Ethernet II, Src: " + format_mac_address(details.ethernet.src_mac) +
+            .title = std::string(details.ethernet.uses_length_field ? "IEEE 802.3" : "Ethernet II") +
+                ", Src: " + format_mac_address(details.ethernet.src_mac) +
                 ", Dst: " + format_mac_address(details.ethernet.dst_mac),
             .fields = std::move(ethernet_fields),
         });
@@ -1947,6 +1955,54 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 .marker_text = "Warning",
             });
         }
+    }
+
+    if (details.has_llc) {
+        std::vector<PacketSummaryField> llc_fields {
+            make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)),
+            make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)),
+            make_summary_field("Control", format_hex_value(details.llc.control, 2)),
+            make_summary_field("Payload Length", std::to_string(details.llc.declared_payload_length) + " bytes"),
+        };
+        if (details.llc.header_truncated) {
+            llc_fields.push_back(make_summary_field("Warning", "LLC header is truncated"));
+        }
+        if (details.llc.payload_length_exceeds_captured) {
+            llc_fields.push_back(make_summary_field("Warning", "IEEE 802.3 payload length exceeds captured payload bytes"));
+        }
+        if (details.llc.captured_payload_exceeds_declared) {
+            llc_fields.push_back(make_summary_field("Warning", "Captured bytes extend beyond the declared IEEE 802.3 payload length"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "llc",
+            .title = "LLC",
+            .fields = std::move(llc_fields),
+            .warning = details.llc.header_truncated,
+            .marker_text = details.llc.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (details.has_snap) {
+        const auto oui_text = format_hex_byte_sequence(
+            std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
+        );
+        std::vector<PacketSummaryField> snap_fields {
+            make_summary_field("OUI", oui_text),
+        };
+        if (!details.snap.header_truncated) {
+            snap_fields.push_back(make_summary_field("PID", format_ether_type_value(details.snap.pid)));
+        } else {
+            snap_fields.push_back(make_summary_field("Warning", "SNAP header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "snap",
+            .title = "SNAP",
+            .fields = std::move(snap_fields),
+            .warning = details.snap.header_truncated,
+            .marker_text = details.snap.header_truncated ? std::string {"Warning"} : std::string {},
+        });
     }
 
     if (details.has_mpls) {

@@ -221,6 +221,12 @@ struct ImportPrefixDecision {
             envelope.payload_offset += detail::kVlanHeaderSize;
             ++vlan_count;
         }
+
+        if (envelope.protocol_type < detail::kIeee8023LengthCutoff) {
+            envelope.is_ieee_802_3 = true;
+            envelope.declared_payload_length = envelope.protocol_type;
+            envelope.protocol_type = 0U;
+        }
     } else if (packet.data_link_type == kLinkTypeLinuxSll) {
         const auto decision =
             require_more_bytes_if_prefix_limited(available_bytes, captured_length, detail::kLinuxSllHeaderSize);
@@ -258,6 +264,60 @@ struct ImportPrefixDecision {
     auto protocol_type = envelope.protocol_type;
     auto payload_offset = envelope.payload_offset;
     std::optional<std::size_t> bounded_packet_end {};
+    if (envelope.is_ieee_802_3) {
+        const auto logical_payload_end = captured_packet_end(
+            payload_offset + envelope.declared_payload_length,
+            captured_length
+        );
+
+        auto decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            logical_payload_end,
+            payload_offset + detail::kLlcHeaderSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (logical_payload_end < payload_offset + detail::kLlcHeaderSize ||
+            available_bytes < payload_offset + detail::kLlcHeaderSize) {
+            return import_prefix_sufficient();
+        }
+
+        if (packet_bytes[payload_offset] != detail::kLlcSnapDsap ||
+            packet_bytes[payload_offset + 1U] != detail::kLlcSnapSsap ||
+            packet_bytes[payload_offset + 2U] != detail::kLlcUnnumberedInformationControl) {
+            return import_prefix_sufficient();
+        }
+
+        decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            logical_payload_end,
+            payload_offset + detail::kLlcSnapHeaderSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (logical_payload_end < payload_offset + detail::kLlcSnapHeaderSize ||
+            available_bytes < payload_offset + detail::kLlcSnapHeaderSize) {
+            return import_prefix_sufficient();
+        }
+
+        if (packet_bytes[payload_offset + detail::kLlcHeaderSize] != 0U ||
+            packet_bytes[payload_offset + detail::kLlcHeaderSize + 1U] != 0U ||
+            packet_bytes[payload_offset + detail::kLlcHeaderSize + 2U] != 0U) {
+            return import_prefix_sufficient();
+        }
+
+        const auto snap_pid = detail::read_be16(packet_bytes, payload_offset + detail::kLlcHeaderSize + 3U);
+        if (!detail::is_supported_snap_pid(snap_pid)) {
+            return import_prefix_sufficient();
+        }
+
+        protocol_type = snap_pid;
+        payload_offset += detail::kLlcSnapHeaderSize;
+        bounded_packet_end = logical_payload_end;
+    }
+
     if (detail::is_mpls_ether_type(protocol_type)) {
         for (std::size_t label_index = 0U; label_index < detail::kMaxMplsLabels; ++label_index) {
             const auto label_decision =
