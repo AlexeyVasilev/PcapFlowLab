@@ -345,7 +345,7 @@ std::string format_ppp_control_code(const std::uint8_t code) {
 std::string format_ppp_control_option_name(const std::uint16_t protocol, const std::uint8_t type) {
     if (protocol == kPppProtocolLcp) {
         switch (type) {
-        case 1U: return "MRU";
+        case 1U: return "Maximum Receive Unit (MRU)";
         case 2U: return "Async Control Character Map";
         case 3U: return "Authentication Protocol";
         case 5U: return "Magic Number";
@@ -356,12 +356,12 @@ std::string format_ppp_control_option_name(const std::uint16_t protocol, const s
     } else if (protocol == kPppProtocolIpcp) {
         switch (type) {
         case 2U: return "IP-Compression-Protocol";
-        case 3U: return "IP-Address";
+        case 3U: return "IP Address";
         default: break;
         }
     } else if (protocol == kPppProtocolIpv6cp) {
         switch (type) {
-        case 1U: return "Interface-Identifier";
+        case 1U: return "Interface Identifier";
         case 2U: return "IPv6-Compression-Protocol";
         default: break;
         }
@@ -1931,7 +1931,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             make_summary_field("Type", std::to_string(details.pppoe.type)),
             make_summary_field("Code", format_pppoe_code(details.pppoe.code)),
             make_summary_field("Session ID", format_hex16_value(details.pppoe.session_id)),
-            make_summary_field("Length", std::to_string(details.pppoe.payload_length) + " bytes"),
+            make_summary_field("Payload Length", std::to_string(details.pppoe.payload_length) + " bytes"),
         };
         if (details.pppoe.is_discovery) {
             for (const auto& tag : details.pppoe.discovery_tags) {
@@ -1955,8 +1955,6 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             }
         } else if (details.pppoe.protocol_field_truncated) {
             pppoe_fields.push_back(make_summary_field("Warning", "PPP protocol field is truncated"));
-        } else if (details.pppoe.ppp_protocol != 0U) {
-            pppoe_fields.push_back(make_summary_field("PPP Protocol", format_ppp_protocol(details.pppoe.ppp_protocol)));
         }
         if (details.pppoe.header_truncated) {
             pppoe_fields.push_back(make_summary_field("Warning", "PPPoE header is truncated"));
@@ -2250,7 +2248,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                 << '\t' << "Type: " << static_cast<unsigned>(details.pppoe.type) << '\n'
                 << '\t' << "Code: " << format_pppoe_code(details.pppoe.code) << '\n'
                 << '\t' << "Session ID: " << format_hex16_value(details.pppoe.session_id) << '\n'
-                << '\t' << "Length: " << details.pppoe.payload_length << " bytes";
+                << '\t' << "Payload Length: " << details.pppoe.payload_length << " bytes";
         if (details.pppoe.is_discovery) {
             for (const auto& tag : details.pppoe.discovery_tags) {
                 if (tag.header_truncated) {
@@ -2274,7 +2272,6 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         } else if (details.pppoe.protocol_field_truncated) {
             builder << '\n' << '\t' << "Warning: PPP protocol field is truncated.";
         } else if (details.pppoe.ppp_protocol != 0U) {
-            builder << '\n' << '\t' << "PPP Protocol: " << format_ppp_protocol(details.pppoe.ppp_protocol);
             if (details.pppoe.control.present) {
                 builder << '\n' << '\t' << "PPP Control Code: " << format_ppp_control_code(details.pppoe.control.code)
                         << '\n' << '\t' << "PPP Control Identifier: " << static_cast<unsigned>(details.pppoe.control.identifier)

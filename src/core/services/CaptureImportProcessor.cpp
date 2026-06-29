@@ -495,6 +495,53 @@ std::string classify_unrecognized_packet_reason(
         }
     }
 
+    if (network->protocol_type == detail::kEtherTypePppoeDiscovery) {
+        const auto pppoe_offset = network->payload_offset;
+        if (packet_bytes.size() < pppoe_offset + 6U) {
+            return "PPPoE Discovery header truncated";
+        }
+
+        switch (packet_bytes[pppoe_offset + 1U]) {
+        case 0x09U:
+            return "PPPoE Discovery PADI";
+        case 0x07U:
+            return "PPPoE Discovery PADO";
+        case 0x19U:
+            return "PPPoE Discovery PADR";
+        case 0x65U:
+            return "PPPoE Discovery PADS";
+        case 0xA7U:
+            return "PPPoE Discovery PADT";
+        default:
+            return "PPPoE Discovery packet";
+        }
+    }
+
+    if (network->protocol_type == detail::kEtherTypePppoeSession) {
+        const auto pppoe_offset = network->payload_offset;
+        if (packet_bytes.size() < pppoe_offset + 6U) {
+            return "PPPoE Session header truncated";
+        }
+
+        const auto payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, pppoe_offset + 4U));
+        const auto pppoe_payload_offset = pppoe_offset + 6U;
+        const auto pppoe_payload_end = std::min(pppoe_payload_offset + payload_length, packet_bytes.size());
+        if (pppoe_payload_offset + 2U > pppoe_payload_end || packet_bytes.size() < pppoe_payload_offset + 2U) {
+            return "PPP protocol field truncated";
+        }
+
+        switch (detail::read_be16(packet_bytes, pppoe_payload_offset)) {
+        case 0xc021U:
+            return "PPP LCP control packet";
+        case 0x8021U:
+            return "PPP IPCP control packet";
+        case 0x8057U:
+            return "PPP IPv6CP control packet";
+        default:
+            break;
+        }
+    }
+
     if (network->protocol_type == detail::kEtherTypeArp) {
         const auto arp_offset = network->payload_offset;
         if (packet_bytes.size() < arp_offset + 8U) {

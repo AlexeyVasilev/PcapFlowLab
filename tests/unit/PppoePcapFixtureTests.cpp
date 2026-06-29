@@ -51,6 +51,15 @@ bool layer_has_field_containing(
     });
 }
 
+bool layer_has_field_label(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+}
+
 UnrecognizedPacketRow expect_single_unrecognized_packet(
     CaptureSession& session,
     const std::filesystem::path& relative_path,
@@ -80,7 +89,11 @@ void expect_pppoe_discovery_unrecognized(
     const std::string& expected_code_fragment,
     const std::vector<std::string>& expected_tag_names = {}
 ) {
-    const auto row = expect_single_unrecognized_packet(session, relative_path);
+    const auto row = expect_single_unrecognized_packet(
+        session,
+        relative_path,
+        "PPPoE Discovery " + expected_code_fragment
+    );
     const auto packet = require_packet(session, row.packet_index);
     const auto details = session.read_packet_details(packet);
     PFL_EXPECT(details.has_value());
@@ -102,7 +115,7 @@ void expect_pppoe_discovery_unrecognized(
     PFL_EXPECT(pppoe_layer->title.find("PPPoE Discovery") != std::string::npos);
     PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Code", expected_code_fragment));
     PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Session ID", "0x"));
-    PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Length", "bytes"));
+    PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Payload Length", "bytes"));
     PFL_EXPECT(find_layer(summary_layers, "ppp") == nullptr);
 
     for (const auto& tag_name : expected_tag_names) {
@@ -123,7 +136,15 @@ void expect_pppoe_control_unrecognized(
     const std::string& expected_code_fragment,
     const std::vector<std::string>& expected_option_names = {}
 ) {
-    const auto row = expect_single_unrecognized_packet(session, relative_path);
+    const auto row = expect_single_unrecognized_packet(
+        session,
+        relative_path,
+        expected_ppp_protocol == 0xc021U
+            ? std::optional<std::string> {"PPP LCP control packet"}
+            : expected_ppp_protocol == 0x8021U
+                ? std::optional<std::string> {"PPP IPCP control packet"}
+                : std::optional<std::string> {"PPP IPv6CP control packet"}
+    );
     const auto packet = require_packet(session, row.packet_index);
     const auto details = session.read_packet_details(packet);
     PFL_EXPECT(details.has_value());
@@ -141,14 +162,16 @@ void expect_pppoe_control_unrecognized(
     const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
     PFL_EXPECT(pppoe_layer != nullptr);
     PFL_EXPECT(pppoe_layer->title.find("PPPoE Session") != std::string::npos);
-    PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "PPP Protocol", expected_ppp_protocol == 0xc021U
+    PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Payload Length", "bytes"));
+    PFL_EXPECT(!layer_has_field_label(*pppoe_layer, "PPP Protocol"));
+
+    const auto* ppp_layer = find_layer(summary_layers, "ppp");
+    PFL_EXPECT(ppp_layer != nullptr);
+    PFL_EXPECT(layer_has_field_containing(*ppp_layer, "Protocol", expected_ppp_protocol == 0xc021U
         ? "LCP"
         : expected_ppp_protocol == 0x8021U
             ? "IPCP"
             : "IPv6CP"));
-
-    const auto* ppp_layer = find_layer(summary_layers, "ppp");
-    PFL_EXPECT(ppp_layer != nullptr);
     PFL_EXPECT(!ppp_layer->children.empty());
     const auto& control_layer = ppp_layer->children.front();
     PFL_EXPECT(control_layer.id == "ppp-control");
@@ -212,19 +235,14 @@ void expect_single_session_flow(
     const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
     PFL_EXPECT(pppoe_layer != nullptr);
     PFL_EXPECT(pppoe_layer->title.find("PPPoE Session") != std::string::npos);
-    PFL_EXPECT(std::any_of(
-        pppoe_layer->fields.begin(),
-        pppoe_layer->fields.end(),
-        [expected_ppp_protocol](const session_detail::PacketSummaryField& field) {
-            return field.label == "PPP Protocol" &&
-                field.value.find(expected_ppp_protocol == 0x0021U ? "IPv4" : "IPv6") != std::string::npos;
-        }
-    ));
+    PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Payload Length", "bytes"));
+    PFL_EXPECT(!layer_has_field_label(*pppoe_layer, "PPP Protocol"));
 
     const auto* ppp_layer = find_layer(summary_layers, "ppp");
     PFL_EXPECT(ppp_layer != nullptr);
     PFL_EXPECT(!ppp_layer->fields.empty());
     PFL_EXPECT(ppp_layer->fields.front().label == "Protocol");
+    PFL_EXPECT(ppp_layer->fields.front().value.find(expected_ppp_protocol == 0x0021U ? "IPv4" : "IPv6") != std::string::npos);
 }
 
 }  // namespace
@@ -285,7 +303,7 @@ void run_pppoe_pcap_fixture_tests() {
             "parsing/pppoe/05_pppoe_session_lcp_config_request.pcap",
             0xc021U,
             "Configure-Request",
-            {"MRU", "Magic Number"}
+            {"Maximum Receive Unit", "Magic Number"}
         );
     }
 
@@ -296,7 +314,7 @@ void run_pppoe_pcap_fixture_tests() {
             "parsing/pppoe/06_pppoe_session_ipcp_config_request.pcap",
             0x8021U,
             "Configure-Request",
-            {"IP-Address"}
+            {"IP Address"}
         );
     }
 
@@ -307,7 +325,7 @@ void run_pppoe_pcap_fixture_tests() {
             "parsing/pppoe/07_pppoe_session_ipv6cp_config_request.pcap",
             0x8057U,
             "Configure-Request",
-            {"Interface-Identifier"}
+            {"Interface Identifier"}
         );
     }
 
@@ -416,7 +434,11 @@ void run_pppoe_pcap_fixture_tests() {
 
     {
         CaptureSession session {};
-        const auto row = expect_single_unrecognized_packet(session, "parsing/pppoe/16_pppoe_truncated_header.pcap");
+        const auto row = expect_single_unrecognized_packet(
+            session,
+            "parsing/pppoe/16_pppoe_truncated_header.pcap",
+            "PPPoE Session header truncated"
+        );
         const auto packet = require_packet(session, row.packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_EXPECT(details.has_value());
@@ -427,7 +449,11 @@ void run_pppoe_pcap_fixture_tests() {
 
     {
         CaptureSession session {};
-        const auto row = expect_single_unrecognized_packet(session, "parsing/pppoe/17_pppoe_truncated_ppp_protocol.pcap");
+        const auto row = expect_single_unrecognized_packet(
+            session,
+            "parsing/pppoe/17_pppoe_truncated_ppp_protocol.pcap",
+            "PPP protocol field truncated"
+        );
         const auto packet = require_packet(session, row.packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_EXPECT(details.has_value());
