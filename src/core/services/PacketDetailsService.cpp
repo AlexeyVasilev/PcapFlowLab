@@ -15,6 +15,15 @@ enum class DecodeMode : std::uint8_t {
 };
 
 constexpr std::uint16_t kPppoeDiscoveryTagEndOfList = 0x0000U;
+constexpr std::uint16_t kPppProtocolLcp = 0xc021U;
+constexpr std::uint16_t kPppProtocolIpcp = 0x8021U;
+constexpr std::uint16_t kPppProtocolIpv6cp = 0x8057U;
+
+bool is_ppp_control_protocol(const std::uint16_t protocol) noexcept {
+    return protocol == kPppProtocolLcp ||
+        protocol == kPppProtocolIpcp ||
+        protocol == kPppProtocolIpv6cp;
+}
 
 struct LinkLayerView {
     std::uint16_t protocol_type {0};
@@ -194,6 +203,94 @@ void parse_pppoe_discovery_tags(
     }
 }
 
+void parse_ppp_control_options(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t options_offset,
+    const std::size_t payload_end,
+    PacketDetails& details
+) {
+    details.pppoe.control.options.clear();
+    details.pppoe.control.option_header_truncated = false;
+    details.pppoe.control.option_value_truncated = false;
+
+    std::size_t cursor = options_offset;
+    while (cursor < payload_end) {
+        if (payload_end - cursor < 2U) {
+            details.pppoe.control.option_header_truncated = true;
+            details.pppoe.control.options.push_back(PppControlOptionDetails {
+                .header_truncated = true,
+            });
+            return;
+        }
+
+        PppControlOptionDetails option {
+            .type = packet_bytes[cursor],
+            .declared_length = packet_bytes[cursor + 1U],
+        };
+        cursor += 2U;
+
+        if (option.declared_length < 2U) {
+            option.value_truncated = true;
+            details.pppoe.control.option_value_truncated = true;
+            details.pppoe.control.options.push_back(option);
+            return;
+        }
+
+        const auto declared_value_length = static_cast<std::size_t>(option.declared_length - 2U);
+        const auto available_value_length = std::min<std::size_t>(declared_value_length, payload_end - cursor);
+        option.value.assign(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(cursor),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(cursor + available_value_length)
+        );
+        option.value_truncated = available_value_length < declared_value_length;
+        if (option.value_truncated) {
+            details.pppoe.control.option_value_truncated = true;
+        }
+        details.pppoe.control.options.push_back(option);
+        cursor += available_value_length;
+
+        if (option.value_truncated) {
+            return;
+        }
+    }
+}
+
+void parse_ppp_control_payload(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t payload_offset,
+    const std::size_t declared_payload_length,
+    const std::size_t available_payload_length,
+    PacketDetails& details
+) {
+    details.pppoe.control = {};
+    details.pppoe.control.present = true;
+
+    if (available_payload_length < 4U || declared_payload_length < 4U) {
+        details.pppoe.control.header_truncated = true;
+        return;
+    }
+
+    details.pppoe.control.code = packet_bytes[payload_offset];
+    details.pppoe.control.identifier = packet_bytes[payload_offset + 1U];
+    details.pppoe.control.length = detail::read_be16(packet_bytes, payload_offset + 2U);
+
+    if (details.pppoe.control.length < 4U) {
+        details.pppoe.control.payload_truncated = true;
+        return;
+    }
+
+    const auto declared_control_end = payload_offset + std::min<std::size_t>(declared_payload_length, details.pppoe.control.length);
+    const auto available_control_end = payload_offset + std::min<std::size_t>(available_payload_length, details.pppoe.control.length);
+    details.pppoe.control.payload_truncated = available_payload_length < details.pppoe.control.length;
+
+    const auto parse_end = std::min(declared_control_end, available_control_end);
+    if (parse_end <= payload_offset + 4U) {
+        return;
+    }
+
+    parse_ppp_control_options(packet_bytes, payload_offset + 4U, parse_end, details);
+}
+
 std::optional<PacketDetails> decode_packet_details(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet_ref,
@@ -281,17 +378,37 @@ std::optional<PacketDetails> decode_packet_details(
 
         if (details.pppoe.version != 1U ||
             details.pppoe.type != 1U ||
-            details.pppoe.code != 0U ||
-            details.pppoe.payload_length_mismatch) {
+            details.pppoe.code != 0U) {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        const auto ppp_payload_offset = payload_offset + detail::kPppProtocolFieldSize;
+        const auto declared_ppp_payload_length =
+            static_cast<std::size_t>(details.pppoe.payload_length - detail::kPppProtocolFieldSize);
+        const auto available_ppp_payload_length =
+            available_payload_length - detail::kPppProtocolFieldSize;
+
+        if (is_ppp_control_protocol(details.pppoe.ppp_protocol)) {
+            parse_ppp_control_payload(
+                packet_bytes,
+                ppp_payload_offset,
+                declared_ppp_payload_length,
+                available_ppp_payload_length,
+                details
+            );
+            return details;
+        }
+
+        if (details.pppoe.payload_length_mismatch) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         if (details.pppoe.ppp_protocol == detail::kPppProtocolIpv4) {
             network_protocol_type = detail::kEtherTypeIpv4;
-            network_payload_offset = payload_offset + detail::kPppProtocolFieldSize;
+            network_payload_offset = ppp_payload_offset;
         } else if (details.pppoe.ppp_protocol == detail::kPppProtocolIpv6) {
             network_protocol_type = detail::kEtherTypeIpv6;
-            network_payload_offset = payload_offset + detail::kPppProtocolFieldSize;
+            network_payload_offset = ppp_payload_offset;
         } else {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }

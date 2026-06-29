@@ -313,6 +313,177 @@ std::string format_pppoe_tag_value(std::span<const std::uint8_t> value) {
     return format_hex_byte_list(value);
 }
 
+std::string format_ppp_control_code(const std::uint8_t code) {
+    switch (code) {
+    case 1U:
+        return "Configure-Request (1)";
+    case 2U:
+        return "Configure-Ack (2)";
+    case 3U:
+        return "Configure-Nak (3)";
+    case 4U:
+        return "Configure-Reject (4)";
+    case 5U:
+        return "Terminate-Request (5)";
+    case 6U:
+        return "Terminate-Ack (6)";
+    case 7U:
+        return "Code-Reject (7)";
+    case 8U:
+        return "Protocol-Reject (8)";
+    case 9U:
+        return "Echo-Request (9)";
+    case 10U:
+        return "Echo-Reply (10)";
+    case 11U:
+        return "Discard-Request (11)";
+    default:
+        return std::to_string(static_cast<unsigned>(code));
+    }
+}
+
+std::string format_ppp_control_option_name(const std::uint16_t protocol, const std::uint8_t type) {
+    if (protocol == kPppProtocolLcp) {
+        switch (type) {
+        case 1U: return "MRU";
+        case 2U: return "Async Control Character Map";
+        case 3U: return "Authentication Protocol";
+        case 5U: return "Magic Number";
+        case 7U: return "Protocol Field Compression";
+        case 8U: return "Address/Control Field Compression";
+        default: break;
+        }
+    } else if (protocol == kPppProtocolIpcp) {
+        switch (type) {
+        case 2U: return "IP-Compression-Protocol";
+        case 3U: return "IP-Address";
+        default: break;
+        }
+    } else if (protocol == kPppProtocolIpv6cp) {
+        switch (type) {
+        case 1U: return "Interface-Identifier";
+        case 2U: return "IPv6-Compression-Protocol";
+        default: break;
+        }
+    }
+
+    return "Option " + std::to_string(static_cast<unsigned>(type));
+}
+
+std::string format_ppp_control_option_value(const std::uint16_t protocol, const std::uint8_t type, std::span<const std::uint8_t> value) {
+    if (value.empty()) {
+        return "empty";
+    }
+
+    if (protocol == kPppProtocolLcp) {
+        if (type == 1U && value.size() == 2U) {
+            const auto mru = static_cast<std::uint16_t>((static_cast<std::uint16_t>(value[0]) << 8U) | value[1]);
+            return std::to_string(mru) + " bytes";
+        }
+        if (type == 2U && value.size() == 4U) {
+            const auto accm = (static_cast<std::uint32_t>(value[0]) << 24U) |
+                (static_cast<std::uint32_t>(value[1]) << 16U) |
+                (static_cast<std::uint32_t>(value[2]) << 8U) |
+                static_cast<std::uint32_t>(value[3]);
+            return format_hex_value(accm, 8);
+        }
+        if (type == 3U && value.size() >= 2U) {
+            const auto auth_protocol =
+                static_cast<std::uint16_t>((static_cast<std::uint16_t>(value[0]) << 8U) | value[1]);
+            if (auth_protocol == 0xc023U) {
+                return "PAP (0xc023)";
+            }
+            if (auth_protocol == 0xc223U) {
+                return "CHAP (0xc223)";
+            }
+            return format_hex16_value(auth_protocol);
+        }
+        if (type == 5U && value.size() == 4U) {
+            const auto magic = (static_cast<std::uint32_t>(value[0]) << 24U) |
+                (static_cast<std::uint32_t>(value[1]) << 16U) |
+                (static_cast<std::uint32_t>(value[2]) << 8U) |
+                static_cast<std::uint32_t>(value[3]);
+            return format_hex_value(magic, 8);
+        }
+    } else if (protocol == kPppProtocolIpcp) {
+        if (type == 3U && value.size() == 4U) {
+            return format_ipv4_address({
+                value[0], value[1], value[2], value[3]
+            });
+        }
+    } else if (protocol == kPppProtocolIpv6cp) {
+        if (type == 1U && value.size() == 8U) {
+            return format_hex_byte_sequence(value);
+        }
+    }
+
+    if (is_printable_ascii(value)) {
+        return std::string(value.begin(), value.end());
+    }
+    return format_hex_byte_list(value);
+}
+
+std::optional<PacketSummaryLayer> build_ppp_control_options_layer(const PacketDetails& details) {
+    if (!details.pppoe.control.present) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryLayer> option_layers {};
+    option_layers.reserve(details.pppoe.control.options.size());
+    for (const auto& option : details.pppoe.control.options) {
+        if (option.header_truncated) {
+            option_layers.push_back(PacketSummaryLayer {
+                .id = "ppp-control-option",
+                .title = "Truncated option header",
+                .warning = true,
+                .marker_text = "Warning",
+            });
+            continue;
+        }
+
+        auto value_text = format_ppp_control_option_value(
+            details.pppoe.ppp_protocol,
+            option.type,
+            std::span<const std::uint8_t>(option.value.data(), option.value.size())
+        );
+        if (option.value_truncated) {
+            value_text += " (truncated)";
+        }
+
+        option_layers.push_back(PacketSummaryLayer {
+            .id = "ppp-control-option",
+            .title = format_ppp_control_option_name(details.pppoe.ppp_protocol, option.type),
+            .fields = {
+                PacketSummaryField {
+                    .label = "Type",
+                    .value = std::to_string(static_cast<unsigned>(option.type)),
+                },
+                PacketSummaryField {
+                    .label = "Length",
+                    .value = std::to_string(static_cast<unsigned>(option.declared_length)) + " bytes",
+                },
+                PacketSummaryField {
+                    .label = "Value",
+                    .value = std::move(value_text),
+                },
+            },
+            .warning = option.value_truncated,
+            .marker_text = option.value_truncated ? "Warning" : std::string {},
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "ppp-control-options",
+        .title = "Options",
+        .children = std::move(option_layers),
+        .expanded_by_default = true,
+        .warning = details.pppoe.control.option_header_truncated || details.pppoe.control.option_value_truncated,
+        .marker_text = (details.pppoe.control.option_header_truncated || details.pppoe.control.option_value_truncated)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
     return static_cast<std::uint16_t>(tci & 0x0FFFU);
 }
@@ -1817,12 +1988,56 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (!details.pppoe.is_discovery &&
             !details.pppoe.protocol_field_truncated &&
             details.pppoe.ppp_protocol != 0U) {
+            std::vector<PacketSummaryLayer> ppp_children {};
+            if (details.pppoe.control.present) {
+                std::vector<PacketSummaryField> control_fields {
+                    make_summary_field("Code", format_ppp_control_code(details.pppoe.control.code)),
+                    make_summary_field("Identifier", std::to_string(static_cast<unsigned>(details.pppoe.control.identifier))),
+                    make_summary_field("Length", std::to_string(details.pppoe.control.length) + " bytes"),
+                };
+                if (details.pppoe.control.header_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control header is truncated"));
+                }
+                if (details.pppoe.control.payload_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control payload is truncated"));
+                }
+                if (details.pppoe.control.option_header_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control option header is truncated"));
+                }
+                if (details.pppoe.control.option_value_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control option value is truncated"));
+                }
+
+                std::vector<PacketSummaryLayer> control_children {};
+                if (const auto options_layer = build_ppp_control_options_layer(details); options_layer.has_value()) {
+                    control_children.push_back(*options_layer);
+                }
+
+                ppp_children.push_back(PacketSummaryLayer {
+                    .id = "ppp-control",
+                    .title = format_ppp_protocol(details.pppoe.ppp_protocol) + ", " + format_ppp_control_code(details.pppoe.control.code),
+                    .fields = std::move(control_fields),
+                    .children = std::move(control_children),
+                    .warning = details.pppoe.control.header_truncated ||
+                        details.pppoe.control.payload_truncated ||
+                        details.pppoe.control.option_header_truncated ||
+                        details.pppoe.control.option_value_truncated,
+                    .marker_text = (details.pppoe.control.header_truncated ||
+                        details.pppoe.control.payload_truncated ||
+                        details.pppoe.control.option_header_truncated ||
+                        details.pppoe.control.option_value_truncated)
+                        ? "Warning"
+                        : std::string {},
+                });
+            }
+
             append_layer_if_not_empty(layers, PacketSummaryLayer {
                 .id = "ppp",
                 .title = "PPP, Protocol: " + format_ppp_protocol(details.pppoe.ppp_protocol),
                 .fields = {
                     make_summary_field("Protocol", format_ppp_protocol(details.pppoe.ppp_protocol)),
                 },
+                .children = std::move(ppp_children),
             });
         }
     }
@@ -2060,6 +2275,43 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             builder << '\n' << '\t' << "Warning: PPP protocol field is truncated.";
         } else if (details.pppoe.ppp_protocol != 0U) {
             builder << '\n' << '\t' << "PPP Protocol: " << format_ppp_protocol(details.pppoe.ppp_protocol);
+            if (details.pppoe.control.present) {
+                builder << '\n' << '\t' << "PPP Control Code: " << format_ppp_control_code(details.pppoe.control.code)
+                        << '\n' << '\t' << "PPP Control Identifier: " << static_cast<unsigned>(details.pppoe.control.identifier)
+                        << '\n' << '\t' << "PPP Control Length: " << details.pppoe.control.length << " bytes";
+
+                for (const auto& option : details.pppoe.control.options) {
+                    if (option.header_truncated) {
+                        builder << '\n' << '\t' << "Warning: PPP control option header is truncated.";
+                        continue;
+                    }
+
+                    auto value_text = format_ppp_control_option_value(
+                        details.pppoe.ppp_protocol,
+                        option.type,
+                        std::span<const std::uint8_t>(option.value.data(), option.value.size())
+                    );
+                    if (option.value_truncated) {
+                        value_text += " (truncated)";
+                    }
+                    builder << '\n' << '\t'
+                            << format_ppp_control_option_name(details.pppoe.ppp_protocol, option.type)
+                            << ": " << value_text;
+                }
+
+                if (details.pppoe.control.header_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control header is truncated.";
+                }
+                if (details.pppoe.control.payload_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control payload is truncated.";
+                }
+                if (details.pppoe.control.option_header_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control option header is truncated.";
+                }
+                if (details.pppoe.control.option_value_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control option value is truncated.";
+                }
+            }
         }
         if (details.pppoe.header_truncated) {
             builder << '\n' << '\t' << "Warning: PPPoE header is truncated.";

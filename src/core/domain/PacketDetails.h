@@ -46,6 +46,26 @@ struct PppoeTagDetails {
     bool value_truncated {false};
 };
 
+struct PppControlOptionDetails {
+    std::uint8_t type {0};
+    std::uint8_t declared_length {0};
+    std::vector<std::uint8_t> value {};
+    bool header_truncated {false};
+    bool value_truncated {false};
+};
+
+struct PppControlDetails {
+    bool present {false};
+    std::uint8_t code {0};
+    std::uint8_t identifier {0};
+    std::uint16_t length {0};
+    bool header_truncated {false};
+    bool payload_truncated {false};
+    bool option_header_truncated {false};
+    bool option_value_truncated {false};
+    std::vector<PppControlOptionDetails> options {};
+};
+
 struct PppoeSessionDetails {
     std::uint8_t version {0};
     std::uint8_t type {0};
@@ -60,6 +80,7 @@ struct PppoeSessionDetails {
     std::vector<PppoeTagDetails> discovery_tags {};
     bool discovery_tag_header_truncated {false};
     bool discovery_tag_value_truncated {false};
+    PppControlDetails control {};
 };
 
 struct ArpDetails {

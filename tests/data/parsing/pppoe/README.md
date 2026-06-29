@@ -14,10 +14,10 @@ The first parser step now supports:
 - PPP IPv4 (`0x0021`) continuation into normal IPv4 flow parsing;
 - PPP IPv6 (`0x0057`) continuation into normal IPv6 flow parsing;
 - VLAN / QinQ before supported PPPoE Session packets;
-- PPPoE Discovery (`0x8863`) header parsing with bounded tag presentation for common Discovery tags.
+- PPPoE Discovery (`0x8863`) header parsing with bounded tag presentation for common Discovery tags;
+- basic PPP control presentation inside PPPoE Session for LCP / IPCP / IPv6CP control headers and bounded option lists.
 
 This directory still includes future and conservative fixtures for:
-- PPP LCP / IPCP / IPv6CP control payloads;
 - unknown PPP protocols inside Session frames;
 - malformed or truncated PPPoE / PPP envelopes;
 - inconsistent PPPoE length-field cases.
@@ -114,19 +114,19 @@ Current conservative assumptions after the first parser step:
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP LCP / Configure-Request
-- Current conservative behavior candidate: safe PPP control-payload inspection only; should not become an IP flow.
+- Current expected behavior: safe no-flow LCP control inspection with PPP control header fields and bounded option presentation.
 
 ### 06_pppoe_session_ipcp_config_request.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPCP / Configure-Request
-- Current conservative behavior candidate: safe IPv4 control-payload inspection only; not a normal IP data flow.
+- Current expected behavior: safe no-flow IPCP control inspection with PPP control header fields and bounded option presentation.
 
 ### 07_pppoe_session_ipv6cp_config_request.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv6CP / Configure-Request
-- Current conservative behavior candidate: safe IPv6 control-payload inspection only; not a normal IP data flow.
+- Current expected behavior: safe no-flow IPv6CP control inspection with PPP control header fields and bounded option presentation.
 
 ### 08_pppoe_discovery_padi.pcap
 

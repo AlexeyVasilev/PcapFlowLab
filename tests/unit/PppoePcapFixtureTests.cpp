@@ -116,6 +116,60 @@ void expect_pppoe_discovery_unrecognized(
     }
 }
 
+void expect_pppoe_control_unrecognized(
+    CaptureSession& session,
+    const std::filesystem::path& relative_path,
+    const std::uint16_t expected_ppp_protocol,
+    const std::string& expected_code_fragment,
+    const std::vector<std::string>& expected_option_names = {}
+) {
+    const auto row = expect_single_unrecognized_packet(session, relative_path);
+    const auto packet = require_packet(session, row.packet_index);
+    const auto details = session.read_packet_details(packet);
+    PFL_EXPECT(details.has_value());
+    PFL_EXPECT(details->has_ethernet);
+    PFL_EXPECT(details->has_pppoe);
+    PFL_EXPECT(!details->pppoe.is_discovery);
+    PFL_EXPECT(details->pppoe.ppp_protocol == expected_ppp_protocol);
+    PFL_EXPECT(details->pppoe.control.present);
+    PFL_EXPECT(!details->has_ipv4);
+    PFL_EXPECT(!details->has_ipv6);
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+    PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
+    PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
+    const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
+    PFL_EXPECT(pppoe_layer != nullptr);
+    PFL_EXPECT(pppoe_layer->title.find("PPPoE Session") != std::string::npos);
+    PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "PPP Protocol", expected_ppp_protocol == 0xc021U
+        ? "LCP"
+        : expected_ppp_protocol == 0x8021U
+            ? "IPCP"
+            : "IPv6CP"));
+
+    const auto* ppp_layer = find_layer(summary_layers, "ppp");
+    PFL_EXPECT(ppp_layer != nullptr);
+    PFL_EXPECT(!ppp_layer->children.empty());
+    const auto& control_layer = ppp_layer->children.front();
+    PFL_EXPECT(control_layer.id == "ppp-control");
+    PFL_EXPECT(layer_has_field_containing(control_layer, "Code", expected_code_fragment));
+    PFL_EXPECT(layer_has_field_containing(control_layer, "Identifier", ""));
+    PFL_EXPECT(layer_has_field_containing(control_layer, "Length", "bytes"));
+    PFL_EXPECT(!control_layer.children.empty());
+    const auto& options_layer = control_layer.children.front();
+    PFL_EXPECT(options_layer.id == "ppp-control-options");
+
+    for (const auto& option_name : expected_option_names) {
+        PFL_EXPECT(std::any_of(
+            options_layer.children.begin(),
+            options_layer.children.end(),
+            [&](const session_detail::PacketSummaryLayer& child) {
+                return child.title.find(option_name) != std::string::npos;
+            }
+        ));
+    }
+}
+
 void expect_single_session_flow(
     CaptureSession& session,
     const std::filesystem::path& relative_path,
@@ -224,19 +278,37 @@ void run_pppoe_pcap_fixture_tests() {
         );
     }
 
-    for (const auto* relative_path : {
-             "parsing/pppoe/05_pppoe_session_lcp_config_request.pcap",
-             "parsing/pppoe/06_pppoe_session_ipcp_config_request.pcap",
-             "parsing/pppoe/07_pppoe_session_ipv6cp_config_request.pcap",
-         }) {
+    {
         CaptureSession session {};
-        const auto row = expect_single_unrecognized_packet(session, relative_path);
-        const auto packet = require_packet(session, row.packet_index);
-        const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
-        PFL_EXPECT(details->has_pppoe);
-        PFL_EXPECT(!details->has_ipv4);
-        PFL_EXPECT(!details->has_ipv6);
+        expect_pppoe_control_unrecognized(
+            session,
+            "parsing/pppoe/05_pppoe_session_lcp_config_request.pcap",
+            0xc021U,
+            "Configure-Request",
+            {"MRU", "Magic Number"}
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_pppoe_control_unrecognized(
+            session,
+            "parsing/pppoe/06_pppoe_session_ipcp_config_request.pcap",
+            0x8021U,
+            "Configure-Request",
+            {"IP-Address"}
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_pppoe_control_unrecognized(
+            session,
+            "parsing/pppoe/07_pppoe_session_ipv6cp_config_request.pcap",
+            0x8057U,
+            "Configure-Request",
+            {"Interface-Identifier"}
+        );
     }
 
     {
