@@ -404,7 +404,6 @@ void run_pppoe_pcap_fixture_tests() {
     }
 
     for (const auto* relative_path : {
-             "parsing/pppoe/15_pppoe_session_unknown_ppp_protocol.pcap",
              "parsing/pppoe/19_pppoe_bad_length_short_payload.pcap",
          }) {
         CaptureSession session {};
@@ -417,6 +416,46 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(!details->has_ipv4);
         PFL_EXPECT(!details->has_ipv6);
         PFL_EXPECT(row.reason_text == "Unsupported or malformed packet");
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_unrecognized_packet(
+            session,
+            "parsing/pppoe/15_pppoe_session_unknown_ppp_protocol.pcap",
+            "Unknown PPP protocol"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_ethernet);
+        PFL_EXPECT(details->has_pppoe);
+        PFL_EXPECT(!details->pppoe.is_discovery);
+        PFL_EXPECT(details->pppoe.ppp_protocol != 0U);
+        PFL_EXPECT(details->pppoe.ppp_protocol != 0x0021U);
+        PFL_EXPECT(details->pppoe.ppp_protocol != 0x0057U);
+        PFL_EXPECT(!details->pppoe.control.present);
+        PFL_EXPECT(details->pppoe.unknown_ppp_payload_length > 0U);
+        PFL_EXPECT(!details->pppoe.unknown_ppp_payload_preview.empty());
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+        PFL_EXPECT(row.reason_text == "Unknown PPP protocol");
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
+        PFL_EXPECT(pppoe_layer != nullptr);
+        const auto* ppp_layer = find_layer(summary_layers, "ppp");
+        PFL_EXPECT(ppp_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ppp_layer, "Protocol", "0x"));
+        PFL_EXPECT(!ppp_layer->children.empty());
+        const auto* payload_layer = find_layer(ppp_layer->children, "ppp-payload");
+        PFL_EXPECT(payload_layer != nullptr);
+        PFL_EXPECT(payload_layer->title == "Data");
+        PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "bytes"));
+        PFL_EXPECT(layer_has_field_label(*payload_layer, "Raw"));
+        if (details->pppoe.unknown_ppp_payload_preview_truncated) {
+            PFL_EXPECT(layer_has_field_containing(*payload_layer, "Preview truncated", "Yes"));
+        }
     }
 
     {

@@ -484,6 +484,49 @@ std::optional<PacketSummaryLayer> build_ppp_control_options_layer(const PacketDe
     };
 }
 
+std::optional<PacketSummaryLayer> build_unknown_ppp_payload_layer(const PacketDetails& details) {
+    if (!details.has_pppoe ||
+        details.pppoe.is_discovery ||
+        details.pppoe.control.present ||
+        details.pppoe.ppp_protocol == 0U ||
+        details.pppoe.ppp_protocol == kPppProtocolIpv4 ||
+        details.pppoe.ppp_protocol == kPppProtocolIpv6 ||
+        details.pppoe.protocol_field_truncated ||
+        details.pppoe.header_truncated) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        PacketSummaryField {
+            .label = "Length",
+            .value = std::to_string(details.pppoe.unknown_ppp_payload_length) + " bytes",
+        },
+    };
+
+    if (!details.pppoe.unknown_ppp_payload_preview.empty()) {
+        auto preview_text = format_hex_byte_list(std::span<const std::uint8_t>(
+            details.pppoe.unknown_ppp_payload_preview.data(),
+            details.pppoe.unknown_ppp_payload_preview.size()
+        ));
+        fields.push_back(PacketSummaryField {
+            .label = "Raw",
+            .value = std::move(preview_text),
+        });
+    }
+    if (details.pppoe.unknown_ppp_payload_preview_truncated) {
+        fields.push_back(PacketSummaryField {
+            .label = "Preview truncated",
+            .value = "Yes",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "ppp-payload",
+        .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
     return static_cast<std::uint16_t>(tci & 0x0FFFU);
 }
@@ -2029,6 +2072,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 });
             }
 
+            if (const auto payload_layer = build_unknown_ppp_payload_layer(details); payload_layer.has_value()) {
+                ppp_children.push_back(*payload_layer);
+            }
+
             append_layer_if_not_empty(layers, PacketSummaryLayer {
                 .id = "ppp",
                 .title = "PPP, Protocol: " + format_ppp_protocol(details.pppoe.ppp_protocol),
@@ -2307,6 +2354,20 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                 }
                 if (details.pppoe.control.option_value_truncated) {
                     builder << '\n' << '\t' << "Warning: PPP control option value is truncated.";
+                }
+            } else if (details.pppoe.ppp_protocol != kPppProtocolIpv4 &&
+                       details.pppoe.ppp_protocol != kPppProtocolIpv6) {
+                builder << '\n' << '\t' << "PPP Protocol: " << format_ppp_protocol(details.pppoe.ppp_protocol)
+                        << '\n' << '\t' << "Data Length: " << details.pppoe.unknown_ppp_payload_length << " bytes";
+                if (!details.pppoe.unknown_ppp_payload_preview.empty()) {
+                    builder << '\n' << '\t' << "Data Raw Preview: "
+                            << format_hex_byte_list(std::span<const std::uint8_t>(
+                                   details.pppoe.unknown_ppp_payload_preview.data(),
+                                   details.pppoe.unknown_ppp_payload_preview.size()
+                               ));
+                }
+                if (details.pppoe.unknown_ppp_payload_preview_truncated) {
+                    builder << '\n' << '\t' << "Raw preview truncated: yes";
                 }
             }
         }

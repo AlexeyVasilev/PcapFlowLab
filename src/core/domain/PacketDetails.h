@@ -81,6 +81,9 @@ struct PppoeSessionDetails {
     bool discovery_tag_header_truncated {false};
     bool discovery_tag_value_truncated {false};
     PppControlDetails control {};
+    std::size_t unknown_ppp_payload_length {0};
+    std::vector<std::uint8_t> unknown_ppp_payload_preview {};
+    bool unknown_ppp_payload_preview_truncated {false};
 };
 
 struct ArpDetails {

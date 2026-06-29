@@ -526,11 +526,19 @@ std::string classify_unrecognized_packet_reason(
         const auto payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, pppoe_offset + 4U));
         const auto pppoe_payload_offset = pppoe_offset + 6U;
         const auto pppoe_payload_end = std::min(pppoe_payload_offset + payload_length, packet_bytes.size());
+        const auto available_payload_length = packet_bytes.size() - pppoe_payload_offset;
         if (pppoe_payload_offset + 2U > pppoe_payload_end || packet_bytes.size() < pppoe_payload_offset + 2U) {
             return "PPP protocol field truncated";
         }
 
+        if (available_payload_length < payload_length) {
+            return "Unsupported or malformed packet";
+        }
+
         switch (detail::read_be16(packet_bytes, pppoe_payload_offset)) {
+        case detail::kPppProtocolIpv4:
+        case detail::kPppProtocolIpv6:
+            return "Unsupported or malformed packet";
         case 0xc021U:
             return "PPP LCP control packet";
         case 0x8021U:
@@ -538,7 +546,7 @@ std::string classify_unrecognized_packet_reason(
         case 0x8057U:
             return "PPP IPv6CP control packet";
         default:
-            break;
+            return "Unknown PPP protocol";
         }
     }
 

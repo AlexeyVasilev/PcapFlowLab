@@ -9,6 +9,8 @@ namespace pfl {
 
 namespace {
 
+constexpr std::size_t kUnknownPppPayloadPreviewMaxBytes = 32U;
+
 enum class DecodeMode : std::uint8_t {
     strict,
     best_effort,
@@ -410,6 +412,16 @@ std::optional<PacketDetails> decode_packet_details(
             network_protocol_type = detail::kEtherTypeIpv6;
             network_payload_offset = ppp_payload_offset;
         } else {
+            const auto bounded_ppp_payload_length = std::min(declared_ppp_payload_length, available_ppp_payload_length);
+            details.pppoe.unknown_ppp_payload_length = bounded_ppp_payload_length;
+            const auto preview_length = std::min(bounded_ppp_payload_length, kUnknownPppPayloadPreviewMaxBytes);
+            if (preview_length > 0U) {
+                details.pppoe.unknown_ppp_payload_preview.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(ppp_payload_offset),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(ppp_payload_offset + preview_length)
+                );
+            }
+            details.pppoe.unknown_ppp_payload_preview_truncated = bounded_ppp_payload_length > preview_length;
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
     }
