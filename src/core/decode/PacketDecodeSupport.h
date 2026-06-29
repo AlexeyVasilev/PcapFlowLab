@@ -78,6 +78,7 @@ struct LinkLayerPayloadView {
 
 struct LlcSnapPayloadView {
     bool has_llc {false};
+    std::uint8_t available_llc_header_bytes {0};
     std::uint8_t dsap {0};
     std::uint8_t ssap {0};
     std::uint8_t control {0};
@@ -295,16 +296,25 @@ inline LlcSnapPayloadView parse_llc_snap_payload(std::span<const std::uint8_t> b
     view.payload_end = payload_offset + logical_payload_length;
     view.payload_length_exceeds_captured = declared_payload_length > available_payload_length;
     view.captured_payload_exceeds_declared = available_payload_length > declared_payload_length;
+    view.available_llc_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(logical_payload_length, kLlcHeaderSize));
+
+    if (view.available_llc_header_bytes >= 1U) {
+        view.dsap = bytes[payload_offset];
+    }
+    if (view.available_llc_header_bytes >= 2U) {
+        view.ssap = bytes[payload_offset + 1U];
+    }
+    if (view.available_llc_header_bytes >= 3U) {
+        view.control = bytes[payload_offset + 2U];
+    }
 
     if (logical_payload_length < kLlcHeaderSize) {
+        view.has_llc = view.available_llc_header_bytes > 0U;
         view.llc_header_truncated = true;
         return view;
     }
 
     view.has_llc = true;
-    view.dsap = bytes[payload_offset];
-    view.ssap = bytes[payload_offset + 1U];
-    view.control = bytes[payload_offset + 2U];
 
     if (view.dsap != kLlcSnapDsap ||
         view.ssap != kLlcSnapSsap ||

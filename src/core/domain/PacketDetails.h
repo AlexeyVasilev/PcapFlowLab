@@ -20,6 +20,7 @@ struct EthernetDetails {
 };
 
 struct LlcDetails {
+    std::uint8_t available_header_bytes {0};
     std::uint8_t dsap {0};
     std::uint8_t ssap {0};
     std::uint8_t control {0};

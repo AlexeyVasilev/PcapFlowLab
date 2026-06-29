@@ -95,6 +95,7 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             details.llc.declared_payload_length = view.protocol_type;
             const auto llc_snap = detail::parse_llc_snap_payload(packet_bytes, view.payload_offset, view.protocol_type);
             details.has_llc = llc_snap.has_llc || llc_snap.llc_header_truncated;
+            details.llc.available_header_bytes = llc_snap.available_llc_header_bytes;
             details.llc.dsap = llc_snap.dsap;
             details.llc.ssap = llc_snap.ssap;
             details.llc.control = llc_snap.control;

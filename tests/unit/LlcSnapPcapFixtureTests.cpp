@@ -408,14 +408,21 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->llc.header_truncated);
+        PFL_EXPECT(details->llc.available_header_bytes == 2U);
+        PFL_EXPECT(details->llc.dsap == 0xaaU);
+        PFL_EXPECT(details->llc.ssap == 0xaaU);
         PFL_EXPECT(!details->has_snap);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc"});
         const auto* llc_layer = find_layer(summary_layers, "llc");
         PFL_EXPECT(llc_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*llc_layer, "DSAP", "0xaa"));
+        PFL_EXPECT(layer_has_field_containing(*llc_layer, "SSAP", "0xaa"));
+        PFL_EXPECT(!layer_has_field(*llc_layer, "Control"));
         PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "LLC header is truncated"));
+        PFL_EXPECT(find_layer(summary_layers, "snap") == nullptr);
     }
 
     {

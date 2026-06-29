@@ -2038,11 +2038,16 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     if (details.has_llc) {
-        std::vector<PacketSummaryField> llc_fields {
-            make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)),
-            make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)),
-            make_summary_field("Control", format_hex_value(details.llc.control, 2)),
-        };
+        std::vector<PacketSummaryField> llc_fields {};
+        if (details.llc.available_header_bytes >= 1U) {
+            llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 2U) {
+            llc_fields.push_back(make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 3U) {
+            llc_fields.push_back(make_summary_field("Control", format_hex_value(details.llc.control, 2)));
+        }
         if (details.llc.header_truncated) {
             llc_fields.push_back(make_summary_field("Warning", "LLC header is truncated"));
         }
