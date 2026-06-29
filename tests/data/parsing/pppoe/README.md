@@ -79,10 +79,10 @@ PPPoE codes used:
 This pass does **not** claim full committed PPPoE parser support.
 
 Current conservative assumptions after the first parser step:
-- PPPoE Session IPv4 / IPv6 data packets are expected to become normal flows when the PPPoE Session header, PPP protocol field, and PPPoE length are all well-formed;
+- PPPoE Session IPv4 / IPv6 data packets are expected to become normal flows when the PPPoE Session header and PPP protocol field are present, with inner parsing bounded by `min(declared PPPoE payload length, captured PPPoE payload bytes)`;
 - PPP LCP / IPCP / IPv6CP session frames should remain safe and inspectable, but not become normal IP flows;
 - PPPoE Discovery packets are still no-flow candidates, but selected-packet details should now preserve PPPoE Discovery header fields and common TLV tags when safely present;
-- malformed/truncated/length-mismatch cases are still no-crash robustness fixtures first.
+- malformed/truncated/length-mismatch cases are still no-crash robustness fixtures first, but tuple extraction may still occur when enough bounded inner header bytes exist.
 
 ---
 
@@ -195,19 +195,19 @@ Current conservative assumptions after the first parser step:
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv4 / partial IPv4 header
-- Current malformed/truncated behavior candidate: safe handling after PPPoE shim; richer partial IPv4 rendering is future IPv4 work.
+- Current malformed/truncated behavior candidate: safe no-flow handling after PPPoE shim with partial IPv4 presentation when header bytes are available.
 
 ### 19_pppoe_bad_length_short_payload.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session with length field larger than captured payload
-- Current malformed/truncated behavior candidate: parser should stay conservative and safe.
+- Current expected behavior: PPPoE warning that declared payload length exceeds captured bytes; inner parsing stays bounded to captured bytes and may still form a normal IPv4/UDP flow if the tuple is available.
 
 ### 20_pppoe_bad_length_extra_payload.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session with length field smaller than captured payload
-- Current malformed/consistency behavior candidate: parser should respect PPPoE length and stay conservative about trailing bytes.
+- Current expected behavior: PPPoE warning that trailing captured bytes exceed the declared PPPoE payload; inner parsing is bounded to the declared payload and may still form a normal IPv4/UDP flow if the tuple is available inside that boundary.
 
 ## Expected generated file list
 

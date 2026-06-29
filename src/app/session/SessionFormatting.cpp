@@ -2006,8 +2006,17 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (details.pppoe.header_truncated) {
             pppoe_fields.push_back(make_summary_field("Warning", "PPPoE header is truncated"));
         }
-        if (details.pppoe.payload_length_mismatch) {
-            pppoe_fields.push_back(make_summary_field("Warning", "PPPoE payload length does not match captured payload bytes"));
+        if (details.pppoe.declared_payload_exceeds_captured) {
+            pppoe_fields.push_back(make_summary_field(
+                "Warning",
+                "PPPoE payload length exceeds captured payload bytes"
+            ));
+        }
+        if (details.pppoe.captured_payload_exceeds_declared) {
+            pppoe_fields.push_back(make_summary_field(
+                "Warning",
+                "PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored"
+            ));
         }
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
@@ -2181,7 +2190,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         if (details.ipv4.header_length_bytes > details.ipv4.available_header_bytes) {
             ipv4_fields.push_back(make_summary_field("Incomplete Header", "Captured IPv4 header bytes are fewer than the IHL"));
         }
-        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.captured_length) {
+        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.ipv4.available_packet_bytes) {
             ipv4_fields.push_back(make_summary_field("Warning", "IPv4 total length exceeds captured packet bytes"));
         }
         std::vector<PacketSummaryLayer> ipv4_children {};
@@ -2279,6 +2288,9 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             make_summary_field("Length", std::to_string(details.udp.length) + " bytes"),
             make_summary_field("Checksum", format_hex16_value(details.udp.checksum)),
         };
+        if (details.udp.payload_truncated) {
+            udp_fields.push_back(make_summary_field("Warning", "UDP length exceeds available packet bytes"));
+        }
         if (options.original_transport_payload_length.has_value()) {
             if (options.transport_payload_length.has_value() &&
                 *options.transport_payload_length != *options.original_transport_payload_length) {
@@ -2296,6 +2308,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 std::to_string(details.udp.src_port) +
                 ", Dst Port: " + std::to_string(details.udp.dst_port),
             .fields = std::move(udp_fields),
+            .warning = details.udp.payload_truncated,
+            .marker_text = details.udp.payload_truncated ? std::string {"Warning"} : std::string {},
         });
     }
 
@@ -2409,8 +2423,12 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         if (details.pppoe.header_truncated) {
             builder << '\n' << '\t' << "Warning: PPPoE header is truncated.";
         }
-        if (details.pppoe.payload_length_mismatch) {
-            builder << '\n' << '\t' << "Warning: PPPoE payload length does not match captured payload bytes.";
+        if (details.pppoe.declared_payload_exceeds_captured) {
+            builder << '\n' << '\t' << "Warning: PPPoE payload length exceeds captured payload bytes.";
+        }
+        if (details.pppoe.captured_payload_exceeds_declared) {
+            builder << '\n' << '\t'
+                    << "Warning: PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored.";
         }
         return builder.str();
     }
@@ -2565,7 +2583,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         if (details.ipv4.header_length_bytes > details.ipv4.available_header_bytes) {
             builder << '\n' << '\t' << "Warning: Captured IPv4 header bytes are fewer than the IHL.";
         }
-        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.captured_length) {
+        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.ipv4.available_packet_bytes) {
             builder << '\n' << '\t' << "Warning: IPv4 total length exceeds captured packet bytes.";
         }
         return builder.str();

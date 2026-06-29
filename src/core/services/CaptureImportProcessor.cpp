@@ -316,16 +316,18 @@ struct ImportPrefixDecision {
         const auto version = static_cast<std::uint8_t>(version_type >> 4U);
         const auto type = static_cast<std::uint8_t>(version_type & 0x0FU);
         const auto code = packet_bytes[payload_offset + 1U];
-        const auto declared_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload_offset + 4U));
         const auto ppp_payload_offset = payload_offset + detail::kPppoeHeaderSize;
+        const auto payload_bounds = detail::parse_pppoe_payload_bounds(packet_bytes, payload_offset);
         if (captured_length < ppp_payload_offset ||
-            (captured_length - ppp_payload_offset) != declared_payload_length ||
+            !payload_bounds.has_value() ||
             version != 1U ||
             type != 1U ||
             code != 0U ||
-            declared_payload_length < detail::kPppProtocolFieldSize) {
+            payload_bounds->logical_length < detail::kPppProtocolFieldSize) {
             return import_prefix_sufficient();
         }
+
+        const auto logical_payload_end = ppp_payload_offset + payload_bounds->logical_length;
 
         decision = require_more_bytes_if_prefix_limited(
             available_bytes,
@@ -343,11 +345,11 @@ struct ImportPrefixDecision {
         if (ppp_protocol == detail::kPppProtocolIpv4) {
             protocol_type = detail::kEtherTypeIpv4;
             payload_offset = ppp_payload_offset + detail::kPppProtocolFieldSize;
-            bounded_packet_end = ppp_payload_offset + declared_payload_length;
+            bounded_packet_end = logical_payload_end;
         } else if (ppp_protocol == detail::kPppProtocolIpv6) {
             protocol_type = detail::kEtherTypeIpv6;
             payload_offset = ppp_payload_offset + detail::kPppProtocolFieldSize;
-            bounded_packet_end = ppp_payload_offset + declared_payload_length;
+            bounded_packet_end = logical_payload_end;
         } else {
             return import_prefix_sufficient();
         }
@@ -772,43 +774,49 @@ void report_open_progress(OpenContext* ctx) {
     if (!network.has_value()) {
         return std::nullopt;
     }
+    const auto bounded_bytes = network->bounded_packet_end.has_value()
+        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
+        : packet_bytes;
 
     if (network->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network->payload_offset;
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return std::nullopt;
         }
 
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
-        const auto packet_end = std::min(
+        auto packet_end = std::min(
             ipv4_bounds->nominal_packet_end,
             static_cast<std::size_t>(packet.captured_length));
+        if (network->bounded_packet_end.has_value()) {
+            packet_end = std::min(packet_end, *network->bounded_packet_end);
+        }
         if (packet_end < transport_offset) {
             return 0U;
         }
 
         if (protocol == ProtocolId::tcp) {
-            if (packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+            if (bounded_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
                 return std::nullopt;
             }
 
             const auto tcp_header_length =
-                static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+                static_cast<std::size_t>((bounded_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 packet_end < transport_offset + tcp_header_length ||
-                packet_bytes.size() < transport_offset + tcp_header_length) {
+                bounded_bytes.size() < transport_offset + tcp_header_length) {
                 return std::nullopt;
             }
 
             return static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
         }
 
-        if (packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
+        if (bounded_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
             return std::nullopt;
         }
 
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
+        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, transport_offset + 4U));
         if (udp_length < detail::kUdpHeaderSize ||
             transport_offset + udp_length > ipv4_bounds->nominal_packet_end) {
             return std::nullopt;
@@ -821,49 +829,52 @@ void report_open_progress(OpenContext* ctx) {
 
     if (network->protocol_type == detail::kEtherTypeIpv6) {
         const auto ipv6_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        if (bounded_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return std::nullopt;
         }
 
-        if (static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U) != 6U) {
+        if (static_cast<std::uint8_t>(bounded_bytes[ipv6_offset] >> 4U) != 6U) {
             return std::nullopt;
         }
 
         const auto ipv6_payload_length =
-            static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
-        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+            static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
+        const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
         if (!payload.has_value()) {
             return std::nullopt;
         }
 
-        const auto packet_end = std::min(
+        auto packet_end = std::min(
             ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length,
             static_cast<std::size_t>(packet.captured_length));
+        if (network->bounded_packet_end.has_value()) {
+            packet_end = std::min(packet_end, *network->bounded_packet_end);
+        }
         if (packet_end < payload->payload_offset) {
             return 0U;
         }
 
         if (protocol == ProtocolId::tcp) {
-            if (packet_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
+            if (bounded_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
                 return std::nullopt;
             }
 
             const auto tcp_header_length =
-                static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+                static_cast<std::size_t>((bounded_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 packet_end < payload->payload_offset + tcp_header_length ||
-                packet_bytes.size() < payload->payload_offset + tcp_header_length) {
+                bounded_bytes.size() < payload->payload_offset + tcp_header_length) {
                 return std::nullopt;
             }
 
             return static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
         }
 
-        if (packet_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
+        if (bounded_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
             return std::nullopt;
         }
 
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
+        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, payload->payload_offset + 4U));
         if (udp_length < detail::kUdpHeaderSize ||
             payload->payload_offset + udp_length > ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length) {
             return std::nullopt;

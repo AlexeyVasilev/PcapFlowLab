@@ -1,5 +1,6 @@
 ﻿#include "core/services/PacketPayloadService.h"
 
+#include <algorithm>
 #include <optional>
 #include <span>
 
@@ -51,20 +52,23 @@ TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::s
     if (!network.has_value()) {
         return {};
     }
+    const auto bounded_bytes = network->bounded_packet_end.has_value()
+        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
+        : packet_bytes;
 
     if (network->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network->payload_offset;
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return {};
         }
 
-        const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
+        const auto flags_fragment = detail::read_be16(bounded_bytes, ipv4_offset + 6U);
         if ((flags_fragment & 0x3FFFU) != 0U) {
             return {};
         }
 
-        const auto protocol = packet_bytes[ipv4_offset + 9U];
+        const auto protocol = bounded_bytes[ipv4_offset + 9U];
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
         const auto nominal_packet_end = ipv4_bounds->nominal_packet_end;
         const auto packet_end = ipv4_bounds->packet_end;
@@ -74,22 +78,22 @@ TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::s
                 return {};
             }
 
-            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+            const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize || transport_offset + tcp_header_length > packet_end) {
                 return {};
             }
 
-            return make_payload_view(packet_bytes, transport_offset + tcp_header_length,
+            return make_payload_view(bounded_bytes, transport_offset + tcp_header_length,
                                      packet_end - (transport_offset + tcp_header_length));
         }
 
         if (protocol == detail::kIpProtocolUdp) {
-            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, nominal_packet_end);
+            const auto udp_payload = detail::parse_udp_payload_bounds(bounded_bytes, transport_offset, nominal_packet_end);
             if (!udp_payload.has_value()) {
                 return {};
             }
 
-            return make_payload_view(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
+            return make_payload_view(bounded_bytes, udp_payload->payload_offset, udp_payload->payload_length);
         }
 
         return {};
@@ -97,20 +101,20 @@ TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::s
 
     if (network->protocol_type == detail::kEtherTypeIpv6) {
         const auto ipv6_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        if (bounded_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return {};
         }
 
-        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U);
+        const auto version = static_cast<std::uint8_t>(bounded_bytes[ipv6_offset] >> 4U);
         if (version != 6U) {
             return {};
         }
 
-        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
+        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
         const auto nominal_packet_end = ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length;
 
-        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
-        const auto packet_end = std::min(nominal_packet_end, packet_bytes.size());
+        const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
+        const auto packet_end = std::min(nominal_packet_end, bounded_bytes.size());
         if (!payload.has_value() || payload->payload_offset > packet_end || payload->has_fragment_header) {
             return {};
         }
@@ -120,22 +124,22 @@ TransportPayloadView PacketPayloadService::extract_transport_payload_view(std::s
                 return {};
             }
 
-            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+            const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize || payload->payload_offset + tcp_header_length > packet_end) {
                 return {};
             }
 
-            return make_payload_view(packet_bytes, payload->payload_offset + tcp_header_length,
+            return make_payload_view(bounded_bytes, payload->payload_offset + tcp_header_length,
                                      packet_end - (payload->payload_offset + tcp_header_length));
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
-            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, payload->payload_offset, nominal_packet_end);
+            const auto udp_payload = detail::parse_udp_payload_bounds(bounded_bytes, payload->payload_offset, nominal_packet_end);
             if (!udp_payload.has_value()) {
                 return {};
             }
 
-            return make_payload_view(packet_bytes, udp_payload->payload_offset, udp_payload->payload_length);
+            return make_payload_view(bounded_bytes, udp_payload->payload_offset, udp_payload->payload_length);
         }
 
         return {};

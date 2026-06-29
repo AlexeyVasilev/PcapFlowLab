@@ -128,14 +128,25 @@ struct NetworkPayloadView {
     LinkLayerPayloadView link_layer {};
     std::uint16_t protocol_type {0};
     std::size_t payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     MplsStackView mpls {};
 };
 
+struct PppoePayloadBounds {
+    std::size_t declared_length {0};
+    std::size_t captured_length {0};
+    std::size_t logical_length {0};
+    bool declared_exceeds_captured {false};
+    bool captured_exceeds_declared {false};
+};
+
 struct PppoeSessionPayloadView {
     std::uint16_t ppp_protocol {0};
     std::size_t payload_offset {0};
+    std::size_t payload_end {0};
+    PppoePayloadBounds bounds {};
 };
 
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
@@ -297,6 +308,28 @@ inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::
     return stack;
 }
 
+inline std::optional<PppoePayloadBounds> parse_pppoe_payload_bounds(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t pppoe_offset
+) {
+    if (bytes.size() < pppoe_offset + kPppoeHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto payload_offset = pppoe_offset + kPppoeHeaderSize;
+    const auto available_payload_length = bytes.size() - payload_offset;
+    const auto declared_payload_length = static_cast<std::size_t>(read_be16(bytes, pppoe_offset + 4U));
+    const auto logical_payload_length = std::min(declared_payload_length, available_payload_length);
+
+    return PppoePayloadBounds {
+        .declared_length = declared_payload_length,
+        .captured_length = available_payload_length,
+        .logical_length = logical_payload_length,
+        .declared_exceeds_captured = declared_payload_length > available_payload_length,
+        .captured_exceeds_declared = available_payload_length > declared_payload_length,
+    };
+}
+
 inline std::optional<PppoeSessionPayloadView> parse_pppoe_session_payload(
     std::span<const std::uint8_t> bytes,
     const std::size_t pppoe_offset
@@ -309,15 +342,14 @@ inline std::optional<PppoeSessionPayloadView> parse_pppoe_session_payload(
     const auto version = static_cast<std::uint8_t>(version_type >> 4U);
     const auto type = static_cast<std::uint8_t>(version_type & 0x0FU);
     const auto code = bytes[pppoe_offset + 1U];
-    const auto payload_length = static_cast<std::size_t>(read_be16(bytes, pppoe_offset + 4U));
     const auto payload_offset = pppoe_offset + kPppoeHeaderSize;
+    const auto bounds = parse_pppoe_payload_bounds(bytes, pppoe_offset);
 
-    if (version != 1U || type != 1U || code != 0U || payload_length < kPppProtocolFieldSize) {
-        return std::nullopt;
-    }
-
-    const auto available_payload_length = bytes.size() - payload_offset;
-    if (available_payload_length != payload_length) {
+    if (!bounds.has_value() ||
+        version != 1U ||
+        type != 1U ||
+        code != 0U ||
+        bounds->logical_length < kPppProtocolFieldSize) {
         return std::nullopt;
     }
 
@@ -328,6 +360,8 @@ inline std::optional<PppoeSessionPayloadView> parse_pppoe_session_payload(
     return PppoeSessionPayloadView {
         .ppp_protocol = read_be16(bytes, payload_offset),
         .payload_offset = payload_offset + kPppProtocolFieldSize,
+        .payload_end = payload_offset + bounds->logical_length,
+        .bounds = *bounds,
     };
 }
 
@@ -340,9 +374,11 @@ inline void resolve_pppoe_inner_payload(std::span<const std::uint8_t> bytes, Net
         if (pppoe->ppp_protocol == kPppProtocolIpv4) {
             view.protocol_type = kEtherTypeIpv4;
             view.payload_offset = pppoe->payload_offset;
+            view.bounded_packet_end = pppoe->payload_end;
         } else if (pppoe->ppp_protocol == kPppProtocolIpv6) {
             view.protocol_type = kEtherTypeIpv6;
             view.payload_offset = pppoe->payload_offset;
+            view.bounded_packet_end = pppoe->payload_end;
         }
     }
 }

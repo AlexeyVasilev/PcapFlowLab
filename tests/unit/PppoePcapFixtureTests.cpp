@@ -407,15 +407,36 @@ void run_pppoe_pcap_fixture_tests() {
              "parsing/pppoe/19_pppoe_bad_length_short_payload.pcap",
          }) {
         CaptureSession session {};
-        const auto row = expect_single_unrecognized_packet(session, relative_path);
-        const auto packet = require_packet(session, 0U);
+        PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
+        PFL_EXPECT(rows[0].protocol_text == "UDP");
+        PFL_EXPECT(rows[0].address_a == "192.0.2.30");
+        PFL_EXPECT(rows[0].address_b == "198.51.100.30");
+        PFL_EXPECT(rows[0].port_a == 53540U);
+        PFL_EXPECT(rows[0].port_b == 443U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const auto packet_rows = session.list_flow_packets(0U);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
-        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_udp);
         PFL_EXPECT(!details->has_ipv6);
-        PFL_EXPECT(row.reason_text == "Unsupported or malformed packet");
+        PFL_EXPECT(details->pppoe.declared_payload_exceeds_captured);
+        PFL_EXPECT(details->pppoe.payload_length_mismatch);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
+        PFL_EXPECT(pppoe_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Warning", "exceeds captured payload bytes"));
+        PFL_EXPECT(find_layer(summary_layers, "ppp") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ipv4") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "udp") != nullptr);
     }
 
     {
@@ -460,15 +481,41 @@ void run_pppoe_pcap_fixture_tests() {
 
     {
         CaptureSession session {};
-        const auto row = expect_single_unrecognized_packet(session, "parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap");
-        const auto packet = require_packet(session, 0U);
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap")));
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
+        PFL_EXPECT(rows[0].protocol_text == "UDP");
+        PFL_EXPECT(rows[0].address_a == "192.0.2.30");
+        PFL_EXPECT(rows[0].address_b == "198.51.100.30");
+        PFL_EXPECT(rows[0].port_a == 53540U);
+        PFL_EXPECT(rows[0].port_b == 443U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const auto packet_rows = session.list_flow_packets(0U);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        PFL_EXPECT(packet_rows[0].payload_length == 3U);
+        const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_udp);
         PFL_EXPECT(!details->has_ipv6);
-        PFL_EXPECT(row.reason_text == "Unsupported or malformed packet");
+        PFL_EXPECT(details->pppoe.captured_payload_exceeds_declared);
+        PFL_EXPECT(details->pppoe.payload_length_mismatch);
+        PFL_EXPECT(details->udp.payload_truncated);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
+        PFL_EXPECT(pppoe_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Warning", "trailing bytes ignored"));
+        const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
+        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "total length exceeds captured packet bytes"));
+        const auto* udp_layer = find_layer(summary_layers, "udp");
+        PFL_EXPECT(udp_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*udp_layer, "Warning", "UDP length exceeds available packet bytes"));
     }
 
     {

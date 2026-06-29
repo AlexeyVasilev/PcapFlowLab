@@ -317,6 +317,7 @@ std::optional<PacketDetails> decode_packet_details(
 
     auto network_protocol_type = envelope->protocol_type;
     auto network_payload_offset = envelope->payload_offset;
+    auto network_packet_bytes = packet_bytes;
     if (detail::is_mpls_ether_type(envelope->protocol_type)) {
         const auto mpls = detail::parse_mpls_stack(packet_bytes, envelope->payload_offset);
         details.has_mpls = true;
@@ -357,21 +358,27 @@ std::optional<PacketDetails> decode_packet_details(
         details.pppoe.payload_length = detail::read_be16(packet_bytes, network_payload_offset + 4U);
 
         const auto payload_offset = network_payload_offset + detail::kPppoeHeaderSize;
-        const auto available_payload_length = packet_bytes.size() - payload_offset;
+        const auto payload_bounds = detail::parse_pppoe_payload_bounds(packet_bytes, network_payload_offset);
+        if (!payload_bounds.has_value()) {
+            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
+        }
+
+        const auto declared_payload_length = payload_bounds->declared_length;
+        const auto available_payload_length = payload_bounds->captured_length;
+        const auto logical_payload_length = payload_bounds->logical_length;
+        const auto logical_payload_end = payload_offset + logical_payload_length;
+        details.pppoe.captured_payload_length = available_payload_length;
+        details.pppoe.declared_payload_exceeds_captured = payload_bounds->declared_exceeds_captured;
+        details.pppoe.captured_payload_exceeds_declared = payload_bounds->captured_exceeds_declared;
         details.pppoe.payload_length_mismatch =
-            available_payload_length < static_cast<std::size_t>(details.pppoe.payload_length);
+            payload_bounds->declared_exceeds_captured || payload_bounds->captured_exceeds_declared;
 
         if (details.pppoe.is_discovery) {
-            if (details.pppoe.payload_length_mismatch) {
-                return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
-            }
-
-            parse_pppoe_discovery_tags(packet_bytes, payload_offset, details.pppoe.payload_length, details);
+            parse_pppoe_discovery_tags(packet_bytes, payload_offset, logical_payload_length, details);
             return details;
         }
 
-        if (available_payload_length < detail::kPppProtocolFieldSize ||
-            details.pppoe.payload_length < detail::kPppProtocolFieldSize) {
+        if (logical_payload_length < detail::kPppProtocolFieldSize) {
             details.pppoe.protocol_field_truncated = true;
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
@@ -385,10 +392,8 @@ std::optional<PacketDetails> decode_packet_details(
         }
 
         const auto ppp_payload_offset = payload_offset + detail::kPppProtocolFieldSize;
-        const auto declared_ppp_payload_length =
-            static_cast<std::size_t>(details.pppoe.payload_length - detail::kPppProtocolFieldSize);
-        const auto available_ppp_payload_length =
-            available_payload_length - detail::kPppProtocolFieldSize;
+        const auto declared_ppp_payload_length = declared_payload_length - detail::kPppProtocolFieldSize;
+        const auto available_ppp_payload_length = logical_payload_length - detail::kPppProtocolFieldSize;
 
         if (is_ppp_control_protocol(details.pppoe.ppp_protocol)) {
             parse_ppp_control_payload(
@@ -401,16 +406,14 @@ std::optional<PacketDetails> decode_packet_details(
             return details;
         }
 
-        if (details.pppoe.payload_length_mismatch) {
-            return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
-        }
-
         if (details.pppoe.ppp_protocol == detail::kPppProtocolIpv4) {
             network_protocol_type = detail::kEtherTypeIpv4;
             network_payload_offset = ppp_payload_offset;
+            network_packet_bytes = packet_bytes.first(logical_payload_end);
         } else if (details.pppoe.ppp_protocol == detail::kPppProtocolIpv6) {
             network_protocol_type = detail::kEtherTypeIpv6;
             network_payload_offset = ppp_payload_offset;
+            network_packet_bytes = packet_bytes.first(logical_payload_end);
         } else {
             const auto bounded_ppp_payload_length = std::min(declared_ppp_payload_length, available_ppp_payload_length);
             details.pppoe.unknown_ppp_payload_length = bounded_ppp_payload_length;
@@ -429,34 +432,34 @@ std::optional<PacketDetails> decode_packet_details(
     if (network_protocol_type == detail::kEtherTypeArp) {
         const auto arp_offset = network_payload_offset;
         details.has_arp = true;
-        if (packet_bytes.size() <= arp_offset) {
+        if (network_packet_bytes.size() <= arp_offset) {
             details.arp.fixed_header_truncated = true;
             return details;
         }
 
-        const auto available_bytes = packet_bytes.size() - arp_offset;
+        const auto available_bytes = network_packet_bytes.size() - arp_offset;
         if (available_bytes < 8U) {
             details.arp.fixed_header_truncated = true;
             if (available_bytes >= 2U) {
-                details.arp.hardware_type = detail::read_be16(packet_bytes, arp_offset);
+                details.arp.hardware_type = detail::read_be16(network_packet_bytes, arp_offset);
             }
             if (available_bytes >= 4U) {
-                details.arp.protocol_type = detail::read_be16(packet_bytes, arp_offset + 2U);
+                details.arp.protocol_type = detail::read_be16(network_packet_bytes, arp_offset + 2U);
             }
             if (available_bytes >= 5U) {
-                details.arp.hardware_size = packet_bytes[arp_offset + 4U];
+                details.arp.hardware_size = network_packet_bytes[arp_offset + 4U];
             }
             if (available_bytes >= 6U) {
-                details.arp.protocol_size = packet_bytes[arp_offset + 5U];
+                details.arp.protocol_size = network_packet_bytes[arp_offset + 5U];
             }
             return details;
         }
 
-        details.arp.hardware_type = detail::read_be16(packet_bytes, arp_offset);
-        details.arp.protocol_type = detail::read_be16(packet_bytes, arp_offset + 2U);
-        details.arp.hardware_size = packet_bytes[arp_offset + 4U];
-        details.arp.protocol_size = packet_bytes[arp_offset + 5U];
-        details.arp.opcode = detail::read_be16(packet_bytes, arp_offset + 6U);
+        details.arp.hardware_type = detail::read_be16(network_packet_bytes, arp_offset);
+        details.arp.protocol_type = detail::read_be16(network_packet_bytes, arp_offset + 2U);
+        details.arp.hardware_size = network_packet_bytes[arp_offset + 4U];
+        details.arp.protocol_size = network_packet_bytes[arp_offset + 5U];
+        details.arp.opcode = detail::read_be16(network_packet_bytes, arp_offset + 6U);
 
         const auto hardware_size = static_cast<std::size_t>(details.arp.hardware_size);
         const auto protocol_size = static_cast<std::size_t>(details.arp.protocol_size);
@@ -464,13 +467,13 @@ std::optional<PacketDetails> decode_packet_details(
         details.arp.address_section_truncated = available_bytes < declared_length;
 
         auto cursor = arp_offset + 8U;
-        details.arp.sender_hardware_address = copy_partial_field(packet_bytes, cursor, hardware_size);
+        details.arp.sender_hardware_address = copy_partial_field(network_packet_bytes, cursor, hardware_size);
         cursor += hardware_size;
-        details.arp.sender_protocol_address = copy_partial_field(packet_bytes, cursor, protocol_size);
+        details.arp.sender_protocol_address = copy_partial_field(network_packet_bytes, cursor, protocol_size);
         cursor += protocol_size;
-        details.arp.target_hardware_address = copy_partial_field(packet_bytes, cursor, hardware_size);
+        details.arp.target_hardware_address = copy_partial_field(network_packet_bytes, cursor, hardware_size);
         cursor += hardware_size;
-        details.arp.target_protocol_address = copy_partial_field(packet_bytes, cursor, protocol_size);
+        details.arp.target_protocol_address = copy_partial_field(network_packet_bytes, cursor, protocol_size);
 
         if (details.arp.protocol_type == detail::kArpProtocolTypeIpv4 && protocol_size == 4U) {
             if (details.arp.sender_protocol_address.size() == 4U) {
@@ -492,19 +495,19 @@ std::optional<PacketDetails> decode_packet_details(
 
     if (network_protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network_payload_offset;
-        if (packet_bytes.size() <= ipv4_offset) {
+        if (network_packet_bytes.size() <= ipv4_offset) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
-        const auto available_ipv4_bytes = packet_bytes.size() - ipv4_offset;
-        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv4_offset] >> 4U);
+        const auto available_ipv4_bytes = network_packet_bytes.size() - ipv4_offset;
+        const auto version = static_cast<std::uint8_t>(network_packet_bytes[ipv4_offset] >> 4U);
         if (version != 4U) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
-        const auto claimed_header_length = static_cast<std::size_t>((packet_bytes[ipv4_offset] & 0x0FU) * 4U);
-        const auto total_length = available_ipv4_bytes >= 4U ? detail::read_be16(packet_bytes, ipv4_offset + 2U) : 0U;
-        const auto flags_fragment = available_ipv4_bytes >= 8U ? detail::read_be16(packet_bytes, ipv4_offset + 6U) : 0U;
+        const auto claimed_header_length = static_cast<std::size_t>((network_packet_bytes[ipv4_offset] & 0x0FU) * 4U);
+        const auto total_length = available_ipv4_bytes >= 4U ? detail::read_be16(network_packet_bytes, ipv4_offset + 2U) : 0U;
+        const auto flags_fragment = available_ipv4_bytes >= 8U ? detail::read_be16(network_packet_bytes, ipv4_offset + 6U) : 0U;
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
 
         details.address_family = NetworkAddressFamily::ipv4;
@@ -512,35 +515,36 @@ std::optional<PacketDetails> decode_packet_details(
         details.ipv4_bounds_from_captured_bytes = total_length == 0U;
         details.ipv4 = IPv4Details {
             .available_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(available_ipv4_bytes, 255U)),
-            .src_addr = available_ipv4_bytes >= 16U ? detail::read_be32(packet_bytes, ipv4_offset + 12U) : 0U,
-            .dst_addr = available_ipv4_bytes >= 20U ? detail::read_be32(packet_bytes, ipv4_offset + 16U) : 0U,
+            .available_packet_bytes = static_cast<std::uint16_t>(std::min<std::size_t>(available_ipv4_bytes, 65535U)),
+            .src_addr = available_ipv4_bytes >= 16U ? detail::read_be32(network_packet_bytes, ipv4_offset + 12U) : 0U,
+            .dst_addr = available_ipv4_bytes >= 20U ? detail::read_be32(network_packet_bytes, ipv4_offset + 16U) : 0U,
             .header_length_bytes = static_cast<std::uint8_t>(claimed_header_length),
             .differentiated_services_field = static_cast<std::uint8_t>(
-                available_ipv4_bytes >= 2U ? packet_bytes[ipv4_offset + 1U] : 0U),
+                available_ipv4_bytes >= 2U ? network_packet_bytes[ipv4_offset + 1U] : 0U),
             .protocol = static_cast<std::uint8_t>(
-                available_ipv4_bytes >= 10U ? packet_bytes[ipv4_offset + 9U] : 0U),
+                available_ipv4_bytes >= 10U ? network_packet_bytes[ipv4_offset + 9U] : 0U),
             .ttl = static_cast<std::uint8_t>(
-                available_ipv4_bytes >= 9U ? packet_bytes[ipv4_offset + 8U] : 0U),
+                available_ipv4_bytes >= 9U ? network_packet_bytes[ipv4_offset + 8U] : 0U),
             .identification = static_cast<std::uint16_t>(
-                available_ipv4_bytes >= 6U ? detail::read_be16(packet_bytes, ipv4_offset + 4U) : 0U),
+                available_ipv4_bytes >= 6U ? detail::read_be16(network_packet_bytes, ipv4_offset + 4U) : 0U),
             .flags = static_cast<std::uint8_t>((flags_fragment >> 13U) & 0x7U),
             .fragment_offset = static_cast<std::uint16_t>(flags_fragment & 0x1FFFU),
             .total_length = static_cast<std::uint16_t>(total_length),
             .header_checksum = static_cast<std::uint16_t>(
-                available_ipv4_bytes >= 12U ? detail::read_be16(packet_bytes, ipv4_offset + 10U) : 0U),
+                available_ipv4_bytes >= 12U ? detail::read_be16(network_packet_bytes, ipv4_offset + 10U) : 0U),
         };
 
         const auto claimed_options_length = claimed_header_length > detail::kIpv4MinimumHeaderSize
             ? (claimed_header_length - detail::kIpv4MinimumHeaderSize)
             : 0U;
-        if (claimed_options_length > 0U && packet_bytes.size() > ipv4_offset + detail::kIpv4MinimumHeaderSize) {
+        if (claimed_options_length > 0U && network_packet_bytes.size() > ipv4_offset + detail::kIpv4MinimumHeaderSize) {
             const auto available_options_length = std::min(
                 claimed_options_length,
-                packet_bytes.size() - (ipv4_offset + detail::kIpv4MinimumHeaderSize)
+                network_packet_bytes.size() - (ipv4_offset + detail::kIpv4MinimumHeaderSize)
             );
             details.ipv4.options_bytes.assign(
-                packet_bytes.begin() + static_cast<std::ptrdiff_t>(ipv4_offset + detail::kIpv4MinimumHeaderSize),
-                packet_bytes.begin() + static_cast<std::ptrdiff_t>(
+                network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ipv4_offset + detail::kIpv4MinimumHeaderSize),
+                network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(
                     ipv4_offset + detail::kIpv4MinimumHeaderSize + available_options_length
                 )
             );
@@ -557,13 +561,13 @@ std::optional<PacketDetails> decode_packet_details(
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
-        if (available_ipv4_bytes < detail::kIpv4MinimumHeaderSize || packet_bytes.size() < ipv4_offset + claimed_header_length) {
+        if (available_ipv4_bytes < detail::kIpv4MinimumHeaderSize || network_packet_bytes.size() < ipv4_offset + claimed_header_length) {
             details.ipv4.header_truncated = true;
             details.ipv4.options_truncated = claimed_options_length > details.ipv4.options_bytes.size();
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(network_packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
@@ -577,69 +581,82 @@ std::optional<PacketDetails> decode_packet_details(
         const auto transport_offset = ipv4_offset + claimed_header_length;
         if (details.ipv4.protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
-                packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+                network_packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
-            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+            const auto tcp_header_length = static_cast<std::size_t>((network_packet_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 transport_offset + tcp_header_length > packet_end ||
-                packet_bytes.size() < transport_offset + tcp_header_length) {
+                network_packet_bytes.size() < transport_offset + tcp_header_length) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_tcp = true;
             details.tcp = TcpDetails {
-                .src_port = detail::read_be16(packet_bytes, transport_offset),
-                .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
-                .seq_number = detail::read_be32(packet_bytes, transport_offset + 4U),
-                .ack_number = detail::read_be32(packet_bytes, transport_offset + 8U),
+                .src_port = detail::read_be16(network_packet_bytes, transport_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, transport_offset + 2U),
+                .seq_number = detail::read_be32(network_packet_bytes, transport_offset + 4U),
+                .ack_number = detail::read_be32(network_packet_bytes, transport_offset + 8U),
                 .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
-                .flags = packet_bytes[transport_offset + 13U],
-                .window = detail::read_be16(packet_bytes, transport_offset + 14U),
-                .checksum = detail::read_be16(packet_bytes, transport_offset + 16U),
-                .urgent_pointer = detail::read_be16(packet_bytes, transport_offset + 18U),
+                .flags = network_packet_bytes[transport_offset + 13U],
+                .window = detail::read_be16(network_packet_bytes, transport_offset + 14U),
+                .checksum = detail::read_be16(network_packet_bytes, transport_offset + 16U),
+                .urgent_pointer = detail::read_be16(network_packet_bytes, transport_offset + 18U),
             };
             if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
                 details.tcp.options_bytes.assign(
-                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + detail::kTcpMinimumHeaderSize),
-                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
+                    network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + detail::kTcpMinimumHeaderSize),
+                    network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
                 );
             }
             return details;
         }
 
         if (details.ipv4.protocol == detail::kIpProtocolUdp) {
-            const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
-            if (!udp_payload.has_value()) {
+            if (transport_offset + detail::kUdpHeaderSize > packet_end ||
+                network_packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                network_packet_bytes,
+                transport_offset,
+                ipv4_bounds->nominal_packet_end
+            );
+            const auto udp_length = detail::read_be16(network_packet_bytes, transport_offset + 4U);
+            const auto declared_udp_payload_length = udp_length >= detail::kUdpHeaderSize
+                ? static_cast<std::size_t>(udp_length - detail::kUdpHeaderSize)
+                : 0U;
+            const bool udp_payload_truncated =
+                !udp_payload.has_value() ||
+                (udp_payload->payload_length < declared_udp_payload_length);
             details.has_udp = true;
             details.udp = UdpDetails {
-                .src_port = detail::read_be16(packet_bytes, transport_offset),
-                .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
-                .length = udp_payload->datagram_length,
-                .checksum = detail::read_be16(packet_bytes, transport_offset + 6U),
+                .src_port = detail::read_be16(network_packet_bytes, transport_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, transport_offset + 2U),
+                .length = udp_length,
+                .checksum = detail::read_be16(network_packet_bytes, transport_offset + 6U),
+                .payload_truncated = udp_payload_truncated,
             };
             return details;
         }
 
         if (details.ipv4.protocol == detail::kIpProtocolIcmp) {
-            if (transport_offset + 2U > packet_end || packet_bytes.size() < transport_offset + 2U) {
+            if (transport_offset + 2U > packet_end || network_packet_bytes.size() < transport_offset + 2U) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_icmp = true;
             details.icmp = IcmpDetails {
-                .type = packet_bytes[transport_offset],
-                .code = packet_bytes[transport_offset + 1U],
+                .type = network_packet_bytes[transport_offset],
+                .code = network_packet_bytes[transport_offset + 1U],
             };
             return details;
         }
 
         if (details.ipv4.protocol == detail::kIpProtocolIgmp) {
-            const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, packet_end);
+            const auto igmp = detail::parse_igmp_header(network_packet_bytes, transport_offset, packet_end);
             if (!igmp.has_value()) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
@@ -668,30 +685,30 @@ std::optional<PacketDetails> decode_packet_details(
 
     if (network_protocol_type == detail::kEtherTypeIpv6) {
         const auto ipv6_offset = network_payload_offset;
-        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        if (network_packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
-        const auto version = static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U);
+        const auto version = static_cast<std::uint8_t>(network_packet_bytes[ipv6_offset] >> 4U);
         if (version != 6U) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         details.address_family = NetworkAddressFamily::ipv6;
         details.has_ipv6 = true;
-        const auto version_traffic_flow = detail::read_be32(packet_bytes, ipv6_offset);
+        const auto version_traffic_flow = detail::read_be32(network_packet_bytes, ipv6_offset);
         details.ipv6.traffic_class = static_cast<std::uint8_t>((version_traffic_flow >> 20U) & 0xFFU);
-        details.ipv6.hop_limit = packet_bytes[ipv6_offset + 7U];
+        details.ipv6.hop_limit = network_packet_bytes[ipv6_offset + 7U];
         details.ipv6.flow_label = version_traffic_flow & 0x000FFFFFU;
-        details.ipv6.payload_length = detail::read_be16(packet_bytes, ipv6_offset + 4U);
+        details.ipv6.payload_length = detail::read_be16(network_packet_bytes, ipv6_offset + 4U);
         for (std::size_t index = 0; index < 16U; ++index) {
-            details.ipv6.src_addr[index] = packet_bytes[ipv6_offset + 8U + index];
-            details.ipv6.dst_addr[index] = packet_bytes[ipv6_offset + 24U + index];
+            details.ipv6.src_addr[index] = network_packet_bytes[ipv6_offset + 8U + index];
+            details.ipv6.dst_addr[index] = network_packet_bytes[ipv6_offset + 24U + index];
         }
 
-        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        const auto payload = detail::parse_ipv6_payload(network_packet_bytes, ipv6_offset);
         const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length),
-                                         packet_bytes.size());
+                                         network_packet_bytes.size());
         if (!payload.has_value() || payload->payload_offset > packet_end) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
@@ -703,67 +720,76 @@ std::optional<PacketDetails> decode_packet_details(
 
         if (payload->next_header == detail::kIpProtocolTcp) {
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
-                packet_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
+                network_packet_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
-            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+            const auto tcp_header_length = static_cast<std::size_t>((network_packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 payload->payload_offset + tcp_header_length > packet_end ||
-                packet_bytes.size() < payload->payload_offset + tcp_header_length) {
+                network_packet_bytes.size() < payload->payload_offset + tcp_header_length) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_tcp = true;
             details.tcp = TcpDetails {
-                .src_port = detail::read_be16(packet_bytes, payload->payload_offset),
-                .dst_port = detail::read_be16(packet_bytes, payload->payload_offset + 2U),
-                .seq_number = detail::read_be32(packet_bytes, payload->payload_offset + 4U),
-                .ack_number = detail::read_be32(packet_bytes, payload->payload_offset + 8U),
+                .src_port = detail::read_be16(network_packet_bytes, payload->payload_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, payload->payload_offset + 2U),
+                .seq_number = detail::read_be32(network_packet_bytes, payload->payload_offset + 4U),
+                .ack_number = detail::read_be32(network_packet_bytes, payload->payload_offset + 8U),
                 .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
-                .flags = packet_bytes[payload->payload_offset + 13U],
-                .window = detail::read_be16(packet_bytes, payload->payload_offset + 14U),
-                .checksum = detail::read_be16(packet_bytes, payload->payload_offset + 16U),
-                .urgent_pointer = detail::read_be16(packet_bytes, payload->payload_offset + 18U),
+                .flags = network_packet_bytes[payload->payload_offset + 13U],
+                .window = detail::read_be16(network_packet_bytes, payload->payload_offset + 14U),
+                .checksum = detail::read_be16(network_packet_bytes, payload->payload_offset + 16U),
+                .urgent_pointer = detail::read_be16(network_packet_bytes, payload->payload_offset + 18U),
             };
             if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
                 details.tcp.options_bytes.assign(
-                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + detail::kTcpMinimumHeaderSize),
-                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + tcp_header_length)
+                    network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + detail::kTcpMinimumHeaderSize),
+                    network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload->payload_offset + tcp_header_length)
                 );
             }
             return details;
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
-            const auto udp_payload = detail::parse_udp_payload_bounds(
-                packet_bytes,
-                payload->payload_offset,
-                ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)
-            );
-            if (!udp_payload.has_value()) {
+            if (payload->payload_offset + detail::kUdpHeaderSize > packet_end ||
+                network_packet_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                network_packet_bytes,
+                payload->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)
+            );
+            const auto udp_length = detail::read_be16(network_packet_bytes, payload->payload_offset + 4U);
+            const auto declared_udp_payload_length = udp_length >= detail::kUdpHeaderSize
+                ? static_cast<std::size_t>(udp_length - detail::kUdpHeaderSize)
+                : 0U;
+            const bool udp_payload_truncated =
+                !udp_payload.has_value() ||
+                (udp_payload->payload_length < declared_udp_payload_length);
             details.has_udp = true;
             details.udp = UdpDetails {
-                .src_port = detail::read_be16(packet_bytes, payload->payload_offset),
-                .dst_port = detail::read_be16(packet_bytes, payload->payload_offset + 2U),
-                .length = udp_payload->datagram_length,
-                .checksum = detail::read_be16(packet_bytes, payload->payload_offset + 6U),
+                .src_port = detail::read_be16(network_packet_bytes, payload->payload_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, payload->payload_offset + 2U),
+                .length = udp_length,
+                .checksum = detail::read_be16(network_packet_bytes, payload->payload_offset + 6U),
+                .payload_truncated = udp_payload_truncated,
             };
             return details;
         }
 
         if (payload->next_header == detail::kIpProtocolIcmpV6) {
-            if (payload->payload_offset + 2U > packet_end || packet_bytes.size() < payload->payload_offset + 2U) {
+            if (payload->payload_offset + 2U > packet_end || network_packet_bytes.size() < payload->payload_offset + 2U) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
             }
 
             details.has_icmpv6 = true;
             details.icmpv6 = IcmpV6Details {
-                .type = packet_bytes[payload->payload_offset],
-                .code = packet_bytes[payload->payload_offset + 1U],
+                .type = network_packet_bytes[payload->payload_offset],
+                .code = network_packet_bytes[payload->payload_offset + 1U],
             };
             return details;
         }

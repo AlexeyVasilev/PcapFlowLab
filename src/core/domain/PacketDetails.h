@@ -77,6 +77,9 @@ struct PppoeSessionDetails {
     bool header_truncated {false};
     bool protocol_field_truncated {false};
     bool payload_length_mismatch {false};
+    bool declared_payload_exceeds_captured {false};
+    bool captured_payload_exceeds_declared {false};
+    std::size_t captured_payload_length {0};
     std::vector<PppoeTagDetails> discovery_tags {};
     bool discovery_tag_header_truncated {false};
     bool discovery_tag_value_truncated {false};
@@ -104,6 +107,7 @@ struct ArpDetails {
 
 struct IPv4Details {
     std::uint8_t available_header_bytes {0};
+    std::uint16_t available_packet_bytes {0};
     std::uint32_t src_addr {0};
     std::uint32_t dst_addr {0};
     std::uint8_t header_length_bytes {0};
@@ -150,6 +154,7 @@ struct UdpDetails {
     std::uint16_t dst_port {0};
     std::uint16_t length {0};
     std::uint16_t checksum {0};
+    bool payload_truncated {false};
 };
 
 struct IcmpDetails {
