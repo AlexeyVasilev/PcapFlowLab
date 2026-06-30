@@ -435,6 +435,20 @@ void run_pbb_pcap_fixture_tests() {
             0x123456U,
             "pbb-ipv4-udp"
         );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->inner_ethernet.uses_length_field);
+        PFL_EXPECT(details->inner_ethernet.ether_type == 48U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
+        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        if (inner_ethernet_layer != nullptr) {
+            PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Length", "48 bytes"));
+        }
     }
 
     {

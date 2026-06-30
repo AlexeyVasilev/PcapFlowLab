@@ -64,8 +64,10 @@ void populate_inner_ethernet_details(
         );
     }
     if (details.inner_ethernet.available_header_bytes >= detail::kEthernetHeaderSize) {
-        details.inner_ethernet.ether_type = inner_ethernet.protocol_type;
         details.inner_ethernet.uses_length_field = inner_ethernet.is_ieee_802_3;
+        details.inner_ethernet.ether_type = details.inner_ethernet.uses_length_field
+            ? inner_ethernet.declared_payload_length
+            : inner_ethernet.protocol_type;
     }
 }
 
@@ -108,6 +110,7 @@ void populate_inner_ethernet_continuation_details(
     }
 
     auto protocol_type = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U);
+    const auto inner_type_or_length = protocol_type;
     auto payload_offset = inner_ethernet_offset + detail::kEthernetHeaderSize;
 
     details.vlan_tags.clear();
@@ -138,6 +141,7 @@ void populate_inner_ethernet_continuation_details(
     }
 
     details.inner_ethernet.uses_length_field = true;
+    details.inner_ethernet.ether_type = inner_type_or_length;
     details.llc.declared_payload_length = protocol_type;
     const auto llc_snap = detail::parse_llc_snap_payload(packet_bytes, payload_offset, protocol_type);
     details.has_llc = llc_snap.has_llc || llc_snap.llc_header_truncated;

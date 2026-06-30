@@ -137,6 +137,7 @@ Still intentionally conservative:
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet 802.3 length / LLC / SNAP / IPv4 / UDP
+- Inner customer Type/Length field: `0x0030` (`48` bytes)
 - Current expected behavior: PBB continuation plus reuse of the existing LLC/SNAP path.
 
 ### 09_pbb_outer_btag_ipv4_udp.pcap
