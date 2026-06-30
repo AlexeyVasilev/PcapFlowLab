@@ -283,6 +283,7 @@ if(BUILD_TESTING)
         tests/unit/VlanPcapFixtureTests.cpp
         tests/unit/LlcSnapPcapFixtureTests.cpp
         tests/unit/PbbPcapFixtureTests.cpp
+        tests/unit/MacsecPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp
