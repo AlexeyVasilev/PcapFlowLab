@@ -122,9 +122,11 @@ void expect_pbb_metadata(
     PFL_EXPECT(details.pbb.dei == expected_dei);
     PFL_EXPECT(details.pbb.uca == expected_uca);
     PFL_EXPECT(details.pbb.isid == expected_isid);
-    PFL_EXPECT(layer_has_field_containing(pbb_layer, "PCP", std::to_string(expected_pcp)));
-    PFL_EXPECT(layer_has_field_containing(pbb_layer, "DEI", expected_dei ? "1" : "0"));
-    PFL_EXPECT(layer_has_field_containing(pbb_layer, "UCA", expected_uca ? "1" : "0"));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "Priority", std::to_string(expected_pcp)));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "Drop Eligible", expected_dei ? "1" : "0"));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "NCA", expected_uca ? "1" : "0"));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "Reserved 1", "0"));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "Reserved 2", "0"));
 
     std::ostringstream isid_builder {};
     isid_builder << "0x" << std::hex << std::nouppercase << std::setw(6) << std::setfill('0') << expected_isid;
@@ -556,11 +558,17 @@ void run_pbb_pcap_fixture_tests() {
         const auto* pbb_layer = find_layer(summary_layers, "pbb");
         PFL_EXPECT(pbb_layer != nullptr);
         if (pbb_layer != nullptr) {
+            PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Priority", "0"));
+            PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Drop Eligible", "0"));
+            PFL_EXPECT(layer_has_field_containing(*pbb_layer, "NCA", "0"));
             PFL_EXPECT(layer_has_field_containing(*pbb_layer, "I-SID", "0x123456"));
             PFL_EXPECT(layer_has_field_containing(*pbb_layer, "I-SID", "1193046"));
         }
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Priority: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Drop Eligible: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("NCA: 0") != std::string::npos);
         PFL_EXPECT(protocol_text.find("I-SID: 0x123456 (1193046)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Inner EtherType:") != std::string::npos);
     }
@@ -585,9 +593,23 @@ void run_pbb_pcap_fixture_tests() {
         if (pbb_layer == nullptr) {
             return;
         }
+        PFL_EXPECT(details->pbb.available_bytes == 2U);
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Priority", "0"));
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Drop Eligible", "1"));
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "NCA", "0"));
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Reserved 1", "0"));
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Reserved 2", "2"));
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Available Bytes", "2 of 4"));
+        PFL_EXPECT(!layer_has_field_containing(*pbb_layer, "I-SID", "0x"));
         PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Warning", "PBB I-TAG is truncated"));
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Priority: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Drop Eligible: 1") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("NCA: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Reserved 1: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Reserved 2: 2") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Available Bytes: 2 of 4") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Warning: PBB I-TAG is truncated.") != std::string::npos);
     }
 
@@ -617,6 +639,9 @@ void run_pbb_pcap_fixture_tests() {
         PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "Inner Ethernet header is truncated"));
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Priority: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Drop Eligible: 0") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("NCA: 0") != std::string::npos);
         PFL_EXPECT(protocol_text.find("I-SID: 0x123456 (1193046)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Warning: Inner Ethernet header is truncated.") != std::string::npos);
     }

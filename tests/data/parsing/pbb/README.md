@@ -11,7 +11,7 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 
 Current repository behavior now supports a bounded first pass of shared PBB / MAC-in-MAC parsing:
 - outer EtherType `0x88e7` I-TAG detection;
-- 4-byte I-TAG metadata presentation (PCP / DEI / UCA / I-SID);
+- 4-byte I-TAG metadata presentation (Priority / Drop Eligible / NCA / reserved bits / I-SID);
 - inner customer Ethernet continuation into IPv4 / IPv6 / ARP;
 - reuse of inner VLAN / QinQ / LLC/SNAP continuation;
 - conservative no-flow handling for unknown inner EtherType and malformed/truncated cases.
@@ -67,10 +67,10 @@ Notes:
   - optional inner VLAN / QinQ / LLC-SNAP;
   - inner IPv4 / IPv6 / ARP / unknown / malformed payload.
 - The 4-byte I-TAG is emitted from explicit bytes using:
-  - PCP: 3 bits
-  - DEI: 1 bit
-  - UCA: 1 bit
-  - reserved: 3 bits
+  - Priority: 3 bits
+  - Drop Eligible: 1 bit
+  - NCA: 1 bit
+  - reserved: 3 bits (`Reserved 1` + `Reserved 2` in UI)
   - I-SID: 24 bits
 - No PBB-TE, OAM/CFM, control-plane, service semantics, or bridge-learning behavior is implied here.
 
@@ -86,6 +86,7 @@ Current shared support covers:
 Still intentionally conservative:
 - unknown inner EtherType remains no-flow with bounded Data preview;
 - truncated I-TAG and truncated inner Ethernet remain no-flow;
+- truncated I-TAG can still expose partial first-byte bit fields when available;
 - conservative no-flow PBB cases can expose basic Protocol-tab text with I-TAG metadata and truncation / inner-header warnings when available;
 - no PBB-TE, OAM/CFM, bridge-learning, or service semantics are implied.
 
@@ -179,8 +180,8 @@ Still intentionally conservative:
 ### 15_pbb_metadata_nondefault_itag.pcap
 
 - Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG with non-default PCP / DEI / UCA / I-SID / inner Ethernet / IPv4 / UDP
-- Current expected behavior: normal IPv4/UDP flow plus visible non-default I-TAG metadata fields such as PCP, DEI, UCA, and I-SID.
+- Layer chain: outer Ethernet / PBB I-TAG with non-default Priority / Drop Eligible / NCA / I-SID / inner Ethernet / IPv4 / UDP
+- Current expected behavior: normal IPv4/UDP flow plus visible non-default I-TAG metadata fields such as Priority, Drop Eligible, NCA, reserved bits, and I-SID.
 
 ## Expected generated file list
 

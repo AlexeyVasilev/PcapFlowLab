@@ -285,6 +285,34 @@ std::string format_pbb_isid(const std::uint32_t isid) {
     return format_hex_value(isid, 6) + " (" + std::to_string(isid) + ")";
 }
 
+PacketSummaryField make_summary_field(std::string label, std::string value);
+
+std::uint8_t pbb_reserved_1(const PbbDetails& pbb) noexcept {
+    return static_cast<std::uint8_t>((pbb.reserved >> 2U) & 0x1U);
+}
+
+std::uint8_t pbb_reserved_2(const PbbDetails& pbb) noexcept {
+    return static_cast<std::uint8_t>(pbb.reserved & 0x3U);
+}
+
+void append_pbb_itag_summary_fields(std::vector<PacketSummaryField>& fields, const PbbDetails& pbb) {
+    if (pbb.available_bytes >= 1U) {
+        fields.push_back(make_summary_field("Priority", std::to_string(pbb.pcp)));
+        fields.push_back(make_summary_field("Drop Eligible", pbb.dei ? "1" : "0"));
+        fields.push_back(make_summary_field("NCA", pbb.uca ? "1" : "0"));
+        fields.push_back(make_summary_field("Reserved 1", std::to_string(pbb_reserved_1(pbb))));
+        fields.push_back(make_summary_field("Reserved 2", std::to_string(pbb_reserved_2(pbb))));
+    }
+    if (pbb.available_bytes >= 4U) {
+        fields.push_back(make_summary_field("I-SID", format_pbb_isid(pbb.isid)));
+    } else if (pbb.available_bytes > 0U) {
+        fields.push_back(make_summary_field(
+            "Available Bytes",
+            std::to_string(static_cast<unsigned>(pbb.available_bytes)) + " of 4"
+        ));
+    }
+}
+
 std::string format_ppp_protocol(const std::uint16_t protocol) {
     switch (protocol) {
     case kPppProtocolIpv4:
@@ -2258,12 +2286,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
     if (details.has_pbb) {
         std::vector<PacketSummaryField> pbb_fields {};
-        if (details.pbb.available_bytes >= 4U) {
-            pbb_fields.push_back(make_summary_field("PCP", std::to_string(details.pbb.pcp)));
-            pbb_fields.push_back(make_summary_field("DEI", details.pbb.dei ? "1" : "0"));
-            pbb_fields.push_back(make_summary_field("UCA", details.pbb.uca ? "1" : "0"));
-            pbb_fields.push_back(make_summary_field("I-SID", format_pbb_isid(details.pbb.isid)));
-        }
+        append_pbb_itag_summary_fields(pbb_fields, details.pbb);
         if (details.pbb.itag_truncated) {
             pbb_fields.push_back(make_summary_field("Warning", "PBB I-TAG is truncated"));
         }
@@ -2836,12 +2859,19 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
 
     if (details.has_pbb && !details.has_arp && !details.has_ipv4 && !details.has_ipv6) {
         builder << "Protocol: PBB I-TAG";
-        if (details.pbb.available_bytes >= 4U) {
+        if (details.pbb.available_bytes >= 1U) {
             builder << '\n'
-                    << '\t' << "PCP: " << static_cast<unsigned>(details.pbb.pcp) << '\n'
-                    << '\t' << "DEI: " << (details.pbb.dei ? "1" : "0") << '\n'
-                    << '\t' << "UCA: " << (details.pbb.uca ? "1" : "0") << '\n'
-                    << '\t' << "I-SID: " << format_pbb_isid(details.pbb.isid);
+                    << '\t' << "Priority: " << static_cast<unsigned>(details.pbb.pcp) << '\n'
+                    << '\t' << "Drop Eligible: " << (details.pbb.dei ? "1" : "0") << '\n'
+                    << '\t' << "NCA: " << (details.pbb.uca ? "1" : "0") << '\n'
+                    << '\t' << "Reserved 1: " << static_cast<unsigned>(pbb_reserved_1(details.pbb)) << '\n'
+                    << '\t' << "Reserved 2: " << static_cast<unsigned>(pbb_reserved_2(details.pbb));
+            if (details.pbb.available_bytes >= 4U) {
+                builder << '\n' << '\t' << "I-SID: " << format_pbb_isid(details.pbb.isid);
+            } else {
+                builder << '\n' << '\t' << "Available Bytes: "
+                        << static_cast<unsigned>(details.pbb.available_bytes) << " of 4";
+            }
         }
         if (details.pbb.itag_truncated) {
             builder << '\n' << '\t' << "Warning: PBB I-TAG is truncated.";

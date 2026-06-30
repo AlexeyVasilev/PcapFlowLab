@@ -489,6 +489,13 @@ inline PbbFrameView parse_pbb_payload(
     ));
 
     if (view.available_itag_bytes < kPbbITagSize) {
+        if (view.available_itag_bytes >= 1U) {
+            const auto first_byte = bytes[pbb_offset];
+            view.pcp = static_cast<std::uint8_t>((first_byte >> 5U) & 0x7U);
+            view.dei = ((first_byte >> 4U) & 0x1U) != 0U;
+            view.uca = ((first_byte >> 3U) & 0x1U) != 0U;
+            view.reserved = static_cast<std::uint8_t>(first_byte & 0x7U);
+        }
         view.status = PbbParseStatus::itag_truncated;
         return view;
     }
