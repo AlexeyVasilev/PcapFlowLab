@@ -53,6 +53,13 @@ bool layer_has_field_containing(
     });
 }
 
+bool layer_title_contains(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& expected_fragment
+) {
+    return layer.title.find(expected_fragment) != std::string::npos;
+}
+
 std::size_t count_layers(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     const std::string& id
@@ -220,6 +227,10 @@ void expect_single_ip_pbb_flow(
 
     const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
     PFL_EXPECT(inner_ethernet_layer != nullptr);
+    if (inner_ethernet_layer != nullptr) {
+        PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:61:01"));
+        PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:61:02"));
+    }
 }
 
 void expect_single_pbb_arp_packet(CaptureSession& session, const std::filesystem::path& relative_path) {
@@ -447,6 +458,9 @@ void run_pbb_pcap_fixture_tests() {
         const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
         PFL_EXPECT(inner_ethernet_layer != nullptr);
         if (inner_ethernet_layer != nullptr) {
+            PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Inner IEEE 802.3"));
+            PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:61:01"));
+            PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:61:02"));
             PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Length", "48 bytes"));
         }
     }
@@ -484,7 +498,14 @@ void run_pbb_pcap_fixture_tests() {
         if (outer_vlan_layer == nullptr) {
             return;
         }
+        PFL_EXPECT(layer_title_contains(*outer_vlan_layer, "802.1ad B-TAG"));
         PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "PBB I-TAG"));
+        const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
+        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        if (inner_ethernet_layer != nullptr) {
+            PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:61:01"));
+            PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:61:02"));
+        }
     }
 
     {
@@ -591,6 +612,8 @@ void run_pbb_pcap_fixture_tests() {
         if (inner_ethernet_layer == nullptr) {
             return;
         }
+        PFL_EXPECT(!layer_title_contains(*inner_ethernet_layer, "Src:"));
+        PFL_EXPECT(!layer_title_contains(*inner_ethernet_layer, "Dst:"));
         PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "Inner Ethernet header is truncated"));
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);

@@ -240,6 +240,28 @@ std::string format_vlan_tpid_name(const std::uint16_t tpid) {
     }
 }
 
+std::string format_vlan_summary_title(const VlanTagDetails& tag) {
+    const auto priority = std::to_string(static_cast<unsigned>((tag.tci >> 13U) & 0x7U));
+    const auto dei = std::to_string(static_cast<unsigned>((tag.tci >> 12U) & 0x1U));
+    const auto id = std::to_string(static_cast<unsigned>(tag.tci & 0x0FFFU));
+
+    if (tag.tpid == kEtherTypeQinq && tag.encapsulated_ether_type == kEtherTypePbb) {
+        return "802.1ad B-TAG, PRI: " + priority + ", DEI: " + dei + ", ID: " + id;
+    }
+
+    return format_vlan_tpid_name(tag.tpid) + ", PRI: " + priority +
+        ", DEI: " + dei + ", ID: " + id;
+}
+
+std::string format_inner_ethernet_title(const InnerEthernetDetails& details) {
+    std::string title = details.uses_length_field ? "Inner IEEE 802.3" : "Inner Ethernet II";
+    if (details.available_header_bytes >= 12U) {
+        title += ", Src: " + format_mac_address(details.src_mac) +
+            ", Dst: " + format_mac_address(details.dst_mac);
+    }
+    return title;
+}
+
 std::string format_pppoe_code(const std::uint8_t code) {
     switch (code) {
     case 0x00U:
@@ -1334,9 +1356,7 @@ void append_vlan_summary_layers(
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "vlan",
-            .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
-                ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
-                ", ID: " + std::to_string(vlan_identifier(tag.tci)),
+            .title = format_vlan_summary_title(tag),
             .fields = std::move(vlan_fields),
         });
     }
@@ -2281,7 +2301,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ethernet-inner",
-            .title = std::string(details.inner_ethernet.uses_length_field ? "Inner IEEE 802.3" : "Inner Ethernet II"),
+            .title = format_inner_ethernet_title(details.inner_ethernet),
             .fields = std::move(inner_ethernet_fields),
             .warning = details.inner_ethernet.header_truncated,
             .marker_text = details.inner_ethernet.header_truncated ? "Warning" : std::string {},

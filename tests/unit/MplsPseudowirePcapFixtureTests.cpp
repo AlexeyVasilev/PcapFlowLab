@@ -61,6 +61,13 @@ bool layer_has_field_label(
     });
 }
 
+bool layer_title_contains(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& expected_fragment
+) {
+    return layer.title.find(expected_fragment) != std::string::npos;
+}
+
 std::size_t count_layers(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     const std::string& id
@@ -187,6 +194,10 @@ void expect_single_ip_flow(
     PFL_EXPECT(count_layers(summary_layers, "mpls") == 2U);
     const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
     PFL_EXPECT(inner_ethernet_layer != nullptr);
+    if (inner_ethernet_layer != nullptr) {
+        PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:51:01"));
+        PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:51:02"));
+    }
     if (expect_control_word) {
         const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
         PFL_EXPECT(control_word_layer != nullptr);
@@ -434,7 +445,11 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
         PFL_EXPECT(inner_ethernet_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "truncated"));
+        if (inner_ethernet_layer != nullptr) {
+            PFL_EXPECT(!layer_title_contains(*inner_ethernet_layer, "Src:"));
+            PFL_EXPECT(!layer_title_contains(*inner_ethernet_layer, "Dst:"));
+            PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "truncated"));
+        }
     }
 
     {
