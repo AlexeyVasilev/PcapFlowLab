@@ -8,6 +8,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
+#include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
 
@@ -158,6 +159,13 @@ void expect_single_ip_flow(
         rows[0].address_b == canonical_address_a &&
         rows[0].port_b == canonical_port_a;
     PFL_EXPECT(forward_match || reverse_match);
+
+    const auto packet_bytes = session.read_packet_data(packet);
+    PacketPayloadService payload_service {};
+    const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    PFL_EXPECT(!transport_payload.empty());
+    PFL_EXPECT(static_cast<std::uint32_t>(transport_payload.size()) == packet.payload_length);
+    PFL_EXPECT(!session.read_packet_payload_hex_dump(packet).empty());
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
     expect_layer_prefix(summary_layers, expected_layer_prefix);
@@ -475,6 +483,8 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         PFL_EXPECT(details.has_value());
         PFL_EXPECT(details->has_inner_ethernet);
         PFL_EXPECT(!details->has_mpls_pseudowire_control_word);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->has_udp);
     }
 }
 
