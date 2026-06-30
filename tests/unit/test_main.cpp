@@ -61,6 +61,7 @@ void run_mpls_pcap_fixture_tests();
 void run_pppoe_pcap_fixture_tests();
 void run_vlan_pcap_fixture_tests();
 void run_llc_snap_pcap_fixture_tests();
+void run_mpls_pseudowire_pcap_fixture_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -144,6 +145,7 @@ int main() {
         {"pppoe_pcap_fixtures", pfl::tests::run_pppoe_pcap_fixture_tests},
         {"vlan_pcap_fixtures", pfl::tests::run_vlan_pcap_fixture_tests},
         {"llc_snap_pcap_fixtures", pfl::tests::run_llc_snap_pcap_fixture_tests},
+        {"mpls_pseudowire_pcap_fixtures", pfl::tests::run_mpls_pseudowire_pcap_fixture_tests},
     };
 
     for (const auto& suite : suites) {
