@@ -2200,14 +2200,20 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     if (details.has_mpls_pseudowire_control_word) {
+        auto control_word_fields = std::vector<PacketSummaryField> {};
+        if (details.mpls_pseudowire_control_word.available_bytes >= 2U) {
+            control_word_fields.push_back(make_summary_field("Flags", format_hex16_value(details.mpls_pseudowire_control_word.flags)));
+        }
+        if (details.mpls_pseudowire_control_word.available_bytes >= 4U) {
+            control_word_fields.push_back(make_summary_field("Sequence", std::to_string(details.mpls_pseudowire_control_word.sequence)));
+        }
+        if (details.mpls_pseudowire_control_word.truncated) {
+            control_word_fields.push_back(make_summary_field("Warning", "MPLS pseudowire control word is truncated"));
+        }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "mpls-pw-control-word",
             .title = "MPLS Pseudowire Control Word",
-            .fields = {
-                make_summary_field("Flags", format_hex16_value(details.mpls_pseudowire_control_word.flags)),
-                make_summary_field("Sequence", std::to_string(details.mpls_pseudowire_control_word.sequence)),
-                make_summary_field("Truncated", details.mpls_pseudowire_control_word.truncated ? "Yes" : "No"),
-            },
+            .fields = std::move(control_word_fields),
             .warning = details.mpls_pseudowire_control_word.truncated,
             .marker_text = details.mpls_pseudowire_control_word.truncated ? "Warning" : std::string {},
         });

@@ -77,6 +77,7 @@ struct InnerEthernetDetails {
 struct MplsPseudowireControlWordDetails {
     bool present {false};
     bool truncated {false};
+    std::uint8_t available_bytes {0};
     std::uint16_t flags {0};
     std::uint16_t sequence {0};
 };

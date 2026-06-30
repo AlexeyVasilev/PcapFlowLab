@@ -164,6 +164,7 @@ struct MplsStackView {
     std::size_t inner_payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
     bool has_pseudowire_control_word {false};
+    std::uint8_t pseudowire_control_word_available_bytes {0};
     std::uint16_t pseudowire_control_flags {0};
     std::uint16_t pseudowire_control_sequence {0};
     bool has_inner_ethernet {false};
@@ -502,6 +503,10 @@ inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::
 
         if (is_plausible_mpls_pseudowire_control_word(bytes, offset) && bytes.size() < offset + 4U) {
             stack.has_pseudowire_control_word = true;
+            stack.pseudowire_control_word_available_bytes = static_cast<std::uint8_t>(bytes.size() - offset);
+            if (stack.pseudowire_control_word_available_bytes >= 2U) {
+                stack.pseudowire_control_flags = read_be16(bytes, offset);
+            }
             stack.status = MplsParseStatus::pseudowire_control_word_truncated;
             return stack;
         }
@@ -509,6 +514,7 @@ inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::
         if (is_plausible_mpls_pseudowire_control_word(bytes, offset)) {
             if (const auto continuation = parse_ethernet_continuation(bytes, offset + 4U); continuation.has_value()) {
                 stack.has_pseudowire_control_word = true;
+                stack.pseudowire_control_word_available_bytes = 4U;
                 stack.pseudowire_control_flags = read_be16(bytes, offset);
                 stack.pseudowire_control_sequence = read_be16(bytes, offset + 2U);
                 stack.has_inner_ethernet = true;
@@ -539,6 +545,7 @@ inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::
 
             if (bytes.size() >= offset + 4U) {
                 stack.has_pseudowire_control_word = true;
+                stack.pseudowire_control_word_available_bytes = 4U;
                 stack.pseudowire_control_flags = read_be16(bytes, offset);
                 stack.pseudowire_control_sequence = read_be16(bytes, offset + 2U);
                 stack.has_inner_ethernet = true;

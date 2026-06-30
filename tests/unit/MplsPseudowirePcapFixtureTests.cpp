@@ -52,6 +52,15 @@ bool layer_has_field_containing(
     });
 }
 
+bool layer_has_field_label(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+}
+
 std::size_t count_layers(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     const std::string& id
@@ -176,6 +185,7 @@ void expect_single_ip_flow(
         const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
         PFL_EXPECT(control_word_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Flags", "0x0000"));
+        PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Truncated"));
     } else {
         PFL_EXPECT(find_layer(summary_layers, "mpls-pw-control-word") == nullptr);
     }
@@ -388,6 +398,15 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->mpls_pseudowire_control_word.truncated);
+        PFL_EXPECT(details->mpls_pseudowire_control_word.available_bytes == 2U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
+        PFL_EXPECT(control_word_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Flags", "0x0000"));
+        PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Sequence"));
+        PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Warning", "MPLS pseudowire control word is truncated"));
+        PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Truncated"));
     }
 
     {
@@ -461,6 +480,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
         PFL_EXPECT(control_word_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Sequence", "4660"));
+        PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Truncated"));
     }
 
     {

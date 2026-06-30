@@ -557,6 +557,7 @@ std::optional<PacketDetails> decode_packet_details(
             details.mpls_pseudowire_control_word = MplsPseudowireControlWordDetails {
                 .present = true,
                 .truncated = mpls.status == detail::MplsParseStatus::pseudowire_control_word_truncated,
+                .available_bytes = mpls.pseudowire_control_word_available_bytes,
                 .flags = mpls.pseudowire_control_flags,
                 .sequence = mpls.pseudowire_control_sequence,
             };
