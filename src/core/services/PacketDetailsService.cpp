@@ -13,6 +13,8 @@ constexpr std::size_t kUnknownPppPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kLlcSnapPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kTrailerPreviewMaxBytes = 32U;
 constexpr std::size_t kUnknownInnerEthernetPayloadPreviewMaxBytes = 32U;
+constexpr std::size_t kMacsecPayloadPreviewMaxBytes = 32U;
+constexpr std::size_t kMacsecIcvPreviewMaxBytes = 32U;
 
 enum class DecodeMode : std::uint8_t {
     strict,
@@ -194,6 +196,8 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
     details.snap = {};
     details.has_pbb = false;
     details.pbb = {};
+    details.has_macsec = false;
+    details.macsec = {};
 
     if (packet_ref.data_link_type == kLinkTypeEthernet) {
         if (packet_bytes.size() < detail::kEthernetHeaderSize) {
@@ -337,6 +341,59 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
                     .protocol_type = 0U,
                     .payload_offset = pbb.inner_payload_offset,
                     .bounded_packet_end = pbb.bounded_packet_end,
+                };
+            }
+            return std::nullopt;
+        }
+
+        if (view.protocol_type == detail::kEtherTypeMacsec) {
+            details.has_macsec = true;
+            details.macsec.present = true;
+            const auto macsec = detail::parse_macsec_payload(packet_bytes, view.payload_offset);
+            details.macsec.available_base_bytes = macsec.available_base_bytes;
+            details.macsec.version = macsec.version;
+            details.macsec.es = macsec.es;
+            details.macsec.sc = macsec.sc;
+            details.macsec.scb = macsec.scb;
+            details.macsec.encrypted = macsec.e;
+            details.macsec.changed = macsec.c;
+            details.macsec.association_number = macsec.an;
+            details.macsec.short_length = macsec.short_length;
+            details.macsec.packet_number_present = macsec.packet_number_present;
+            details.macsec.packet_number = macsec.packet_number;
+            details.macsec.available_sci_bytes = macsec.available_sci_bytes;
+            details.macsec.sci_system_id = macsec.sci_system_id;
+            details.macsec.sci_port_id = macsec.sci_port_id;
+            details.macsec.sectag_truncated = macsec.status == detail::MacsecParseStatus::sectag_truncated;
+            details.macsec.packet_number_truncated = macsec.status == detail::MacsecParseStatus::packet_number_truncated;
+            details.macsec.sci_truncated = macsec.status == detail::MacsecParseStatus::sci_truncated;
+            details.macsec.icv_truncated = macsec.status == detail::MacsecParseStatus::icv_truncated;
+            details.macsec.protected_payload_length = macsec.protected_payload_length;
+            details.macsec.icv_length = macsec.icv_length;
+
+            const auto payload_preview_length = std::min(macsec.protected_payload_length, kMacsecPayloadPreviewMaxBytes);
+            if (payload_preview_length > 0U && macsec.protected_payload_offset < packet_bytes.size()) {
+                details.macsec.protected_payload_preview.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(macsec.protected_payload_offset),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(macsec.protected_payload_offset + payload_preview_length)
+                );
+            }
+            details.macsec.protected_payload_preview_truncated =
+                macsec.protected_payload_length > payload_preview_length;
+
+            const auto icv_preview_length = std::min(macsec.icv_length, kMacsecIcvPreviewMaxBytes);
+            if (icv_preview_length > 0U && macsec.icv_offset < packet_bytes.size()) {
+                details.macsec.icv_preview.assign(
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(macsec.icv_offset),
+                    packet_bytes.begin() + static_cast<std::ptrdiff_t>(macsec.icv_offset + icv_preview_length)
+                );
+            }
+            details.macsec.icv_preview_truncated = macsec.icv_length > icv_preview_length;
+
+            if (mode == DecodeMode::best_effort) {
+                return LinkLayerView {
+                    .protocol_type = 0U,
+                    .payload_offset = macsec.protected_payload_offset,
                 };
             }
             return std::nullopt;
@@ -570,6 +627,8 @@ std::optional<PacketDetails> decode_packet_details(
     const auto has_pbb = details.has_pbb;
     const auto pbb = details.pbb;
     const auto encapsulating_vlan_tags = details.encapsulating_vlan_tags;
+    const auto has_macsec = details.has_macsec;
+    const auto macsec = details.macsec;
     const auto has_inner_ethernet = details.has_inner_ethernet;
     const auto inner_ethernet = details.inner_ethernet;
     const auto has_unknown_inner_ethernet_payload = details.has_unknown_inner_ethernet_payload;
@@ -586,6 +645,8 @@ std::optional<PacketDetails> decode_packet_details(
     details.unknown_inner_ethernet_payload = {};
     details.has_pppoe = false;
     details.pppoe = {};
+    details.has_macsec = false;
+    details.macsec = {};
 
     if (has_pbb) {
         details.has_pbb = true;
@@ -595,6 +656,10 @@ std::optional<PacketDetails> decode_packet_details(
         details.inner_ethernet = inner_ethernet;
         details.has_unknown_inner_ethernet_payload = has_unknown_inner_ethernet_payload;
         details.unknown_inner_ethernet_payload = unknown_inner_ethernet_payload;
+    }
+    if (has_macsec) {
+        details.has_macsec = true;
+        details.macsec = macsec;
     }
 
     auto network_protocol_type = envelope->protocol_type;

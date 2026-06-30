@@ -667,6 +667,23 @@ std::string classify_unrecognized_packet_reason(
         }
     }
 
+    if (network->has_macsec) {
+        switch (network->macsec.status) {
+        case detail::MacsecParseStatus::sectag_truncated:
+            return "MACsec SecTAG truncated";
+        case detail::MacsecParseStatus::packet_number_truncated:
+            return "MACsec packet number truncated";
+        case detail::MacsecParseStatus::sci_truncated:
+            return "MACsec SCI truncated";
+        case detail::MacsecParseStatus::icv_truncated:
+            return "MACsec ICV truncated";
+        case detail::MacsecParseStatus::complete:
+            return "MACsec protected payload not decrypted";
+        default:
+            break;
+        }
+    }
+
     const auto effective_packet_end = network->bounded_packet_end.value_or(packet_bytes.size());
     const auto bounded_packet_bytes = packet_bytes.subspan(0U, std::min(effective_packet_end, packet_bytes.size()));
 

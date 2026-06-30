@@ -1,4 +1,4 @@
-Synthetic MACsec / IEEE 802.1AE parsing fixtures for future regression tests.
+Synthetic MACsec / IEEE 802.1AE parsing fixtures for regression tests.
 
 This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
 - basic Ethernet `0x88e5` MACsec SecTAG presentation;
@@ -10,12 +10,14 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated SecTAG / SCI / payload boundary cases;
 - cleartext-looking protected payload that must not be decoded as IP in this scope.
 
-Parser implementation is intentionally **not** part of this pass.
-These fixtures prepare future MACsec presentation work only.
+Current shared support covers basic MACsec SecTAG presentation only.
 
-Current conservative behavior candidate:
-- until shared MACsec parser support is added, these packets may remain no-flow / unrecognized;
-- protected payload bytes must stay opaque in this scope;
+Current committed behavior:
+- MACsec EtherType `0x88e5` is recognized after outer Ethernet and optional outer VLAN / QinQ;
+- SecTAG metadata is presented conservatively, including TCI/AN bits, Short Length, Packet Number, and optional SCI when available;
+- protected payload bytes remain opaque and are shown only as bounded Data preview;
+- ICV bytes are shown conservatively when enough bytes are present;
+- all fixtures remain no-flow / unrecognized in this pass;
 - no decryption, no ICV validation, and no flow recovery from protected payload are implied here.
 
 ## Local generation
@@ -106,7 +108,7 @@ bits 1..0: AN
 
 ## Current support assumptions
 
-Future intended supported presentation behavior:
+Current supported presentation behavior:
 - MACsec EtherType `0x88e5` recognized;
 - SecTAG metadata shown conservatively:
   - TCI/AN flags
@@ -116,10 +118,11 @@ Future intended supported presentation behavior:
 - protected payload shown as bounded opaque Data;
 - ICV bytes shown conservatively where practical.
 
-Conservative current behavior candidates:
-- all fixtures may currently remain no-flow / unrecognized;
-- outer Ethernet / VLAN envelope may still be the only visible decoded structure until MACsec parser support is added;
-- malformed/truncated cases must remain no-crash robustness fixtures.
+Current no-flow / safety behavior:
+- all fixtures remain no-flow / unrecognized;
+- outer Ethernet / VLAN envelope remains visible;
+- protected payload is never decoded as inner IPv4 / IPv6 / ARP / TCP / UDP;
+- malformed/truncated cases remain best-effort no-crash robustness fixtures.
 
 ## Per-file descriptions
 
@@ -137,7 +140,7 @@ Conservative current behavior candidates:
   - AN `0`
   - SL `0`
   - PN `0x01020304`
-- Future behavior: basic SecTAG presentation without flow recovery.
+- Current behavior: basic SecTAG presentation without flow recovery.
 
 ### 02_macsec_sci_present.pcap
 
@@ -150,7 +153,7 @@ Conservative current behavior candidates:
   - AN `0`
   - PN `0x01020304`
   - SCI `02:00:00:00:71:01:00:01`
-- Future behavior: optional SCI presentation.
+- Current behavior: optional SCI presentation.
 
 ### 03_macsec_an2_nonzero_pn_sci.pcap
 
@@ -162,7 +165,7 @@ Conservative current behavior candidates:
   - C `1`
   - AN `2`
   - PN `0x0a0b0c0d`
-- Future behavior: non-default association number and packet number presentation.
+- Current behavior: non-default association number and packet number presentation.
 
 ### 04_macsec_integrity_only_cleartext_like_payload.pcap
 
@@ -173,7 +176,7 @@ Conservative current behavior candidates:
   - C `0`
   - AN `0`
   - PN `0x01020304`
-- Future behavior: payload must still remain opaque MACsec protected data.
+- Current behavior: payload must still remain opaque MACsec protected data.
 
 ### 05_macsec_short_length_nonzero.pcap
 
@@ -182,19 +185,19 @@ Conservative current behavior candidates:
 - Fields:
   - SL `32`
   - PN `0x01020304`
-- Future behavior: Short Length field presentation.
+- Current behavior: Short Length field presentation.
 
 ### 06_vlan_macsec_sci.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / VLAN / MACsec / SecTAG with SCI / protected payload / ICV
-- Future behavior: outer VLAN remains visible and does not block MACsec metadata presentation.
+- Current behavior: outer VLAN remains visible and does not block MACsec metadata presentation.
 
 ### 07_qinq_macsec_basic.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / QinQ / VLAN / MACsec / SecTAG without SCI / protected payload / ICV
-- Future behavior: stacked VLAN before MACsec remains visible.
+- Current behavior: stacked VLAN before MACsec remains visible.
 
 ### 08_macsec_scb_flag.pcap
 
@@ -204,7 +207,7 @@ Conservative current behavior candidates:
   - SCB `1`
   - E `1`
   - C `1`
-- Future behavior: TCI flag coverage.
+- Current behavior: TCI flag coverage.
 
 ### 09_macsec_es_flag.pcap
 
@@ -214,7 +217,7 @@ Conservative current behavior candidates:
   - ES `1`
   - E `1`
   - C `1`
-- Future behavior: TCI flag coverage.
+- Current behavior: TCI flag coverage.
 
 ### 10_macsec_truncated_base_sectag.pcap
 
@@ -244,13 +247,13 @@ Conservative current behavior candidates:
 
 - Packets: 1
 - Layer chain: outer Ethernet / MACsec / SecTAG / PN `0x00000000` / protected payload / ICV
-- Future behavior: metadata robustness and possible warning candidate.
+- Current behavior: metadata robustness; Packet Number zero is shown conservatively.
 
 ### 15_macsec_protected_payload_ipv4_like_no_decode.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / MACsec / SecTAG / protected payload bytes that look like IPv4/UDP / ICV
-- Future behavior: payload must remain opaque; no fake IPv4/UDP flow may be created in this scope.
+- Current behavior: payload remains opaque; no fake IPv4/UDP flow is created in this scope.
 
 ## Expected generated file list
 

@@ -85,6 +85,34 @@ struct PbbDetails {
     std::uint32_t isid {0};
 };
 
+struct MacsecDetails {
+    bool present {false};
+    bool sectag_truncated {false};
+    bool packet_number_truncated {false};
+    bool sci_truncated {false};
+    bool icv_truncated {false};
+    std::uint8_t available_base_bytes {0};
+    std::uint8_t version {0};
+    bool es {false};
+    bool sc {false};
+    bool scb {false};
+    bool encrypted {false};
+    bool changed {false};
+    std::uint8_t association_number {0};
+    std::uint8_t short_length {0};
+    bool packet_number_present {false};
+    std::uint32_t packet_number {0};
+    std::uint8_t available_sci_bytes {0};
+    std::array<std::uint8_t, 6> sci_system_id {};
+    std::uint16_t sci_port_id {0};
+    std::size_t protected_payload_length {0};
+    std::vector<std::uint8_t> protected_payload_preview {};
+    bool protected_payload_preview_truncated {false};
+    std::size_t icv_length {0};
+    std::vector<std::uint8_t> icv_preview {};
+    bool icv_preview_truncated {false};
+};
+
 struct MplsPseudowireControlWordDetails {
     bool present {false};
     bool truncated {false};
@@ -268,6 +296,8 @@ struct PacketDetails {
     std::vector<MplsLabelDetails> mpls_labels {};
     bool has_pbb {false};
     PbbDetails pbb {};
+    bool has_macsec {false};
+    MacsecDetails macsec {};
     bool has_mpls_pseudowire_control_word {false};
     MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
     bool has_inner_ethernet {false};

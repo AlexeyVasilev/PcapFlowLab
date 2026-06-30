@@ -40,6 +40,25 @@ const session_detail::PacketSummaryLayer* find_layer(
     return nullptr;
 }
 
+bool layer_has_field_containing(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label,
+    const std::string& expected_fragment
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label && field.value.find(expected_fragment) != std::string::npos;
+    });
+}
+
+bool layer_has_field_label(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+}
+
 void expect_layer_prefix(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     std::initializer_list<const char*> expected_ids
@@ -66,36 +85,35 @@ void expect_layer_prefix(
     }
 }
 
-void expect_open_fixture(CaptureSession& session, const std::filesystem::path& relative_path) {
-    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
-}
-
-void expect_conservative_no_flow_macsec_fixture(
+UnrecognizedPacketRow expect_single_macsec_no_flow_packet(
     CaptureSession& session,
-    const std::filesystem::path& relative_path
+    const std::filesystem::path& relative_path,
+    const std::string& expected_reason
 ) {
-    expect_open_fixture(session, relative_path);
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.list_flows().empty());
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
 
     const auto rows = session.list_unrecognized_packets(0U, 30U);
     PFL_EXPECT(rows.size() == 1U);
-    if (!rows.empty()) {
-        PFL_EXPECT(rows[0].row_number == 1U);
-        PFL_EXPECT(rows[0].packet_index == 0U);
-        PFL_EXPECT(!rows[0].reason_text.empty());
-    }
+    PFL_EXPECT(rows[0].row_number == 1U);
+    PFL_EXPECT(rows[0].packet_index == 0U);
+    PFL_EXPECT(rows[0].reason_text == expected_reason);
+    return rows[0];
+}
 
-    const auto packet = require_packet(session, 0U);
+PacketDetails require_macsec_details(
+    CaptureSession& session,
+    const std::uint64_t packet_index
+) {
+    const auto packet = require_packet(session, packet_index);
     const auto details = session.read_packet_details(packet);
     PFL_EXPECT(details.has_value());
     if (!details.has_value()) {
-        return;
+        return {};
     }
-
-    // Current baseline: outer Ethernet/VLAN may be visible, but MACsec itself
-    // is not parsed yet and protected payload must not fabricate higher layers.
     PFL_EXPECT(details->has_ethernet);
+    PFL_EXPECT(details->has_macsec);
     PFL_EXPECT(!details->has_pbb);
     PFL_EXPECT(!details->has_mpls);
     PFL_EXPECT(!details->has_pppoe);
@@ -106,131 +124,328 @@ void expect_conservative_no_flow_macsec_fixture(
     PFL_EXPECT(!details->has_ipv6);
     PFL_EXPECT(!details->has_tcp);
     PFL_EXPECT(!details->has_udp);
+    return *details;
 }
 
-void expect_outer_vlan_envelope_only(
+void expect_macsec_protocol_text_contains(
+    CaptureSession& session,
+    const PacketRef& packet,
+    std::initializer_list<const char*> fragments
+) {
+    const auto text = session.read_packet_protocol_details_text(packet);
+    for (const auto* fragment : fragments) {
+        PFL_EXPECT(text.find(fragment) != std::string::npos);
+    }
+}
+
+void expect_complete_macsec_fixture(
     CaptureSession& session,
     const std::filesystem::path& relative_path,
-    const std::size_t expected_vlan_count
+    std::initializer_list<const char*> expected_layer_prefix,
+    const bool expect_sc,
+    const std::string& expected_packet_number_text
 ) {
-    expect_conservative_no_flow_macsec_fixture(session, relative_path);
+    const auto row = expect_single_macsec_no_flow_packet(
+        session,
+        relative_path,
+        "MACsec protected payload not decrypted"
+    );
+    const auto packet = require_packet(session, row.packet_index);
+    const auto details = require_macsec_details(session, row.packet_index);
+    PFL_EXPECT(details.macsec.present);
+    PFL_EXPECT(!details.macsec.sectag_truncated);
+    PFL_EXPECT(!details.macsec.packet_number_truncated);
+    PFL_EXPECT(!details.macsec.sci_truncated);
+    PFL_EXPECT(!details.macsec.icv_truncated);
+    PFL_EXPECT(details.macsec.packet_number_present);
+    PFL_EXPECT(details.macsec.sc == expect_sc);
+    PFL_EXPECT(details.macsec.protected_payload_length > 0U);
+    PFL_EXPECT(!details.macsec.protected_payload_preview.empty());
+    PFL_EXPECT(details.macsec.icv_length == 16U);
 
-    const auto packet = require_packet(session, 0U);
-    const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
-    if (!details.has_value()) {
-        return;
-    }
+    const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+    expect_layer_prefix(summary_layers, expected_layer_prefix);
+    const auto* macsec_layer = find_layer(summary_layers, "macsec");
+    PFL_EXPECT(macsec_layer != nullptr);
+    PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Packet Number", expected_packet_number_text));
+    const auto* payload_layer = find_layer(summary_layers, "macsec-payload");
+    PFL_EXPECT(payload_layer != nullptr);
+    PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "bytes"));
+    PFL_EXPECT(layer_has_field_label(*payload_layer, "Raw"));
+    const auto* icv_layer = find_layer(summary_layers, "macsec-icv");
+    PFL_EXPECT(icv_layer != nullptr);
+    PFL_EXPECT(layer_has_field_containing(*icv_layer, "Length", "16 bytes"));
 
-    PFL_EXPECT(details->has_vlan);
-    PFL_EXPECT(details->vlan_tags.size() == expected_vlan_count);
-
-    const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-    if (expected_vlan_count == 1U) {
-        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan"});
-    } else {
-        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "vlan"});
-    }
-
-    for (std::size_t index = 0; index < expected_vlan_count; ++index) {
-        const auto* vlan_layer = find_layer(summary_layers, "vlan", index);
-        PFL_EXPECT(vlan_layer != nullptr);
-    }
+    expect_macsec_protocol_text_contains(session, packet, {
+        "Protocol: MACsec / IEEE 802.1AE",
+        "Protected payload is not decrypted.",
+    });
 }
 
 }  // namespace
 
 void run_macsec_pcap_fixture_tests() {
-    // 01-05: future MACsec SecTAG presentation candidates. Current baseline is
-    // conservative no-flow / no protected-payload decode.
     {
         CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/01_macsec_basic_no_sci.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/02_macsec_sci_present.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/03_macsec_an2_nonzero_pn_sci.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(
+        expect_complete_macsec_fixture(
             session,
-            "parsing/macsec/04_macsec_integrity_only_cleartext_like_payload.pcap"
+            "parsing/macsec/01_macsec_basic_no_sci.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
+        );
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.macsec.available_base_bytes == 6U);
+        PFL_EXPECT(details.macsec.version == 0U);
+        PFL_EXPECT(!details.macsec.es);
+        PFL_EXPECT(!details.macsec.sc);
+        PFL_EXPECT(!details.macsec.scb);
+        PFL_EXPECT(details.macsec.encrypted);
+        PFL_EXPECT(details.macsec.changed);
+        PFL_EXPECT(details.macsec.association_number == 0U);
+        PFL_EXPECT(details.macsec.short_length == 0U);
+        PFL_EXPECT(details.macsec.available_sci_bytes == 0U);
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/02_macsec_sci_present.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            true,
+            "0x01020304 (16909060)"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.macsec.available_sci_bytes == 8U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "SCI System ID", "02:00:00:00:71:01"));
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "SCI Port ID", "0x0001"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/03_macsec_an2_nonzero_pn_sci.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            true,
+            "0x0a0b0c0d (168496141)"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.macsec.association_number == 2U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Association Number", "2"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/04_macsec_integrity_only_cleartext_like_payload.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(!details.macsec.encrypted);
+        PFL_EXPECT(!details.macsec.changed);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Encrypted (E)", "0"));
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Changed (C)", "0"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/05_macsec_short_length_nonzero.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.macsec.short_length == 32U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Short Length", "32"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/06_vlan_macsec_sci.pcap",
+            {"frame", "ethernet", "vlan", "macsec", "macsec-payload", "macsec-icv"},
+            true,
+            "0x01020304 (16909060)"
+        );
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.has_vlan);
+        PFL_EXPECT(details.vlan_tags.size() == 1U);
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/07_qinq_macsec_basic.pcap",
+            {"frame", "ethernet", "vlan", "vlan", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
+        );
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.has_vlan);
+        PFL_EXPECT(details.vlan_tags.size() == 2U);
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/08_macsec_scb_flag.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.macsec.scb);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "SCB", "1"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/09_macsec_es_flag.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
+        );
+        const auto packet = require_packet(session, 0U);
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(details.macsec.es);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "ES", "1"));
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_macsec_no_flow_packet(
+            session,
+            "parsing/macsec/10_macsec_truncated_base_sectag.pcap",
+            "MACsec SecTAG truncated"
+        );
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = require_macsec_details(session, row.packet_index);
+        PFL_EXPECT(details.macsec.sectag_truncated);
+        PFL_EXPECT(!details.macsec.packet_number_present);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(!layer_has_field_label(*macsec_layer, "Packet Number"));
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Warning", "SecTAG is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_macsec_no_flow_packet(
+            session,
+            "parsing/macsec/11_macsec_truncated_packet_number.pcap",
+            "MACsec packet number truncated"
+        );
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = require_macsec_details(session, row.packet_index);
+        PFL_EXPECT(details.macsec.packet_number_truncated);
+        PFL_EXPECT(!details.macsec.packet_number_present);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_label(*macsec_layer, "Version"));
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Short Length", "0"));
+        PFL_EXPECT(!layer_has_field_label(*macsec_layer, "Packet Number"));
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Warning", "packet number is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_macsec_no_flow_packet(
+            session,
+            "parsing/macsec/12_macsec_truncated_sci.pcap",
+            "MACsec SCI truncated"
+        );
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = require_macsec_details(session, row.packet_index);
+        PFL_EXPECT(details.macsec.sci_truncated);
+        PFL_EXPECT(details.macsec.packet_number_present);
+        PFL_EXPECT(details.macsec.available_sci_bytes == 5U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Packet Number", "0x01020304"));
+        PFL_EXPECT(!layer_has_field_label(*macsec_layer, "SCI System ID"));
+        PFL_EXPECT(!layer_has_field_label(*macsec_layer, "SCI Port ID"));
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Warning", "SCI is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        const auto row = expect_single_macsec_no_flow_packet(
+            session,
+            "parsing/macsec/13_macsec_missing_icv_or_short_payload.pcap",
+            "MACsec ICV truncated"
+        );
+        const auto packet = require_packet(session, row.packet_index);
+        const auto details = require_macsec_details(session, row.packet_index);
+        PFL_EXPECT(details.macsec.icv_truncated);
+        PFL_EXPECT(details.macsec.icv_length == 0U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
+        const auto* macsec_layer = find_layer(summary_layers, "macsec");
+        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Warning", "ICV is truncated"));
+        PFL_EXPECT(find_layer(summary_layers, "macsec-icv") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        expect_complete_macsec_fixture(
+            session,
+            "parsing/macsec/14_macsec_zero_packet_number.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x00000000 (0)"
         );
     }
 
     {
         CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/05_macsec_short_length_nonzero.pcap");
-    }
-
-    // 06-07: outer VLAN/QinQ envelope should remain visible before unknown 0x88e5.
-    {
-        CaptureSession session {};
-        expect_outer_vlan_envelope_only(session, "parsing/macsec/06_vlan_macsec_sci.pcap", 1U);
-    }
-
-    {
-        CaptureSession session {};
-        expect_outer_vlan_envelope_only(session, "parsing/macsec/07_qinq_macsec_basic.pcap", 2U);
-    }
-
-    // 08-09: more TCI flag future-presentation candidates. Still conservative today.
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/08_macsec_scb_flag.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/09_macsec_es_flag.pcap");
-    }
-
-    // 10-13: malformed/truncated robustness fixtures. No crash, no flow, and
-    // no accidental decode of the protected payload.
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/10_macsec_truncated_base_sectag.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/11_macsec_truncated_packet_number.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/12_macsec_truncated_sci.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(
+        expect_complete_macsec_fixture(
             session,
-            "parsing/macsec/13_macsec_missing_icv_or_short_payload.pcap"
+            "parsing/macsec/15_macsec_protected_payload_ipv4_like_no_decode.pcap",
+            {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
+            false,
+            "0x01020304 (16909060)"
         );
-    }
-
-    // 14-15: metadata robustness and cleartext-looking protected payload that
-    // must still not become fake IPv4/UDP flows.
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(session, "parsing/macsec/14_macsec_zero_packet_number.pcap");
-    }
-
-    {
-        CaptureSession session {};
-        expect_conservative_no_flow_macsec_fixture(
-            session,
-            "parsing/macsec/15_macsec_protected_payload_ipv4_like_no_decode.pcap"
-        );
+        const auto details = require_macsec_details(session, 0U);
+        PFL_EXPECT(!details.has_ipv4);
+        PFL_EXPECT(!details.has_udp);
     }
 }
 

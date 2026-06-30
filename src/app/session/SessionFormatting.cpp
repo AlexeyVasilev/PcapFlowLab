@@ -19,6 +19,7 @@ constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
+constexpr std::uint16_t kEtherTypeMacsec = 0x88E5U;
 constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
 constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
 constexpr std::uint16_t kIeee8023LengthCutoff = 0x0600U;
@@ -194,6 +195,8 @@ std::string format_ether_type_name(const std::uint16_t ether_type) {
         return "MPLS Multicast";
     case kEtherTypePbb:
         return "PBB I-TAG";
+    case kEtherTypeMacsec:
+        return "MACsec";
     case kEtherTypePppoeDiscovery:
         return "PPPoE Discovery";
     case kEtherTypePppoeSession:
@@ -283,6 +286,10 @@ std::string format_pppoe_code(const std::uint8_t code) {
 
 std::string format_pbb_isid(const std::uint32_t isid) {
     return format_hex_value(isid, 6) + " (" + std::to_string(isid) + ")";
+}
+
+std::string format_macsec_packet_number(const std::uint32_t packet_number) {
+    return format_hex_value(packet_number, 8) + " (" + std::to_string(packet_number) + ")";
 }
 
 PacketSummaryField make_summary_field(std::string label, std::string value);
@@ -618,6 +625,62 @@ std::optional<PacketSummaryLayer> build_unknown_inner_ethernet_payload_layer(con
     return PacketSummaryLayer {
         .id = "inner-payload",
         .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<PacketSummaryLayer> build_macsec_protected_payload_layer(const PacketDetails& details) {
+    if (!details.has_macsec || details.macsec.protected_payload_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Length", std::to_string(details.macsec.protected_payload_length) + " bytes"),
+    };
+    if (!details.macsec.protected_payload_preview.empty()) {
+        fields.push_back(make_summary_field(
+            "Raw",
+            format_hex_byte_list(std::span<const std::uint8_t>(
+                details.macsec.protected_payload_preview.data(),
+                details.macsec.protected_payload_preview.size()
+            ))
+        ));
+    }
+    if (details.macsec.protected_payload_preview_truncated) {
+        fields.push_back(make_summary_field("Preview truncated", "Yes"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "macsec-payload",
+        .title = "MACsec Protected Payload",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<PacketSummaryLayer> build_macsec_icv_layer(const PacketDetails& details) {
+    if (!details.has_macsec || details.macsec.icv_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Length", std::to_string(details.macsec.icv_length) + " bytes"),
+    };
+    if (!details.macsec.icv_preview.empty()) {
+        fields.push_back(make_summary_field(
+            "Raw",
+            format_hex_byte_list(std::span<const std::uint8_t>(
+                details.macsec.icv_preview.data(),
+                details.macsec.icv_preview.size()
+            ))
+        ));
+    }
+    if (details.macsec.icv_preview_truncated) {
+        fields.push_back(make_summary_field("Preview truncated", "Yes"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "macsec-icv",
+        .title = "MACsec ICV",
         .fields = std::move(fields),
     };
 }
@@ -2392,6 +2455,75 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_macsec) {
+        std::vector<PacketSummaryField> macsec_fields {};
+        if (details.macsec.available_base_bytes >= 1U) {
+            macsec_fields.push_back(make_summary_field("Version", std::to_string(details.macsec.version)));
+            macsec_fields.push_back(make_summary_field("ES", details.macsec.es ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("SC", details.macsec.sc ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("SCB", details.macsec.scb ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("Encrypted (E)", details.macsec.encrypted ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("Changed (C)", details.macsec.changed ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("Association Number", std::to_string(details.macsec.association_number)));
+        }
+        if (details.macsec.available_base_bytes >= 2U) {
+            macsec_fields.push_back(make_summary_field("Short Length", std::to_string(details.macsec.short_length)));
+        }
+        if (details.macsec.packet_number_present) {
+            macsec_fields.push_back(make_summary_field(
+                "Packet Number",
+                format_macsec_packet_number(details.macsec.packet_number)
+            ));
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 6U) {
+            macsec_fields.push_back(make_summary_field(
+                "SCI System ID",
+                format_mac_address(details.macsec.sci_system_id)
+            ));
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 8U) {
+            macsec_fields.push_back(make_summary_field(
+                "SCI Port ID",
+                format_hex16_value(details.macsec.sci_port_id)
+            ));
+        }
+        if (details.macsec.sectag_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec SecTAG is truncated"));
+        }
+        if (details.macsec.packet_number_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec packet number is truncated"));
+        }
+        if (details.macsec.sci_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec SCI is truncated"));
+        }
+        if (details.macsec.icv_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec ICV is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "macsec",
+            .title = "MACsec SecTAG",
+            .fields = std::move(macsec_fields),
+            .warning = details.macsec.sectag_truncated ||
+                details.macsec.packet_number_truncated ||
+                details.macsec.sci_truncated ||
+                details.macsec.icv_truncated,
+            .marker_text = (details.macsec.sectag_truncated ||
+                details.macsec.packet_number_truncated ||
+                details.macsec.sci_truncated ||
+                details.macsec.icv_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (const auto payload_layer = build_macsec_protected_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
+        }
+        if (const auto icv_layer = build_macsec_icv_layer(details); icv_layer.has_value()) {
+            append_layer_if_not_empty(layers, *icv_layer);
+        }
+    }
+
     if (details.has_pppoe) {
         std::vector<PacketSummaryField> pppoe_fields {
             make_summary_field("Version", std::to_string(details.pppoe.version)),
@@ -2761,6 +2893,50 @@ std::string packet_payload_tab_title(const PacketDetails& details) {
 
 std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details) {
     std::ostringstream builder {};
+
+    if (details.has_macsec) {
+        builder << "Protocol: MACsec / IEEE 802.1AE";
+        if (details.macsec.available_base_bytes >= 1U) {
+            builder << '\n'
+                    << '\t' << "Version: " << static_cast<unsigned>(details.macsec.version) << '\n'
+                    << '\t' << "ES: " << (details.macsec.es ? "1" : "0") << '\n'
+                    << '\t' << "SC: " << (details.macsec.sc ? "1" : "0") << '\n'
+                    << '\t' << "SCB: " << (details.macsec.scb ? "1" : "0") << '\n'
+                    << '\t' << "Encrypted (E): " << (details.macsec.encrypted ? "1" : "0") << '\n'
+                    << '\t' << "Changed (C): " << (details.macsec.changed ? "1" : "0") << '\n'
+                    << '\t' << "Association Number: " << static_cast<unsigned>(details.macsec.association_number);
+        }
+        if (details.macsec.available_base_bytes >= 2U) {
+            builder << '\n' << '\t' << "Short Length: " << static_cast<unsigned>(details.macsec.short_length);
+        }
+        if (details.macsec.packet_number_present) {
+            builder << '\n' << '\t' << "Packet Number: " << format_macsec_packet_number(details.macsec.packet_number);
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 6U) {
+            builder << '\n' << '\t' << "SCI System ID: " << format_mac_address(details.macsec.sci_system_id);
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 8U) {
+            builder << '\n' << '\t' << "SCI Port ID: " << format_hex16_value(details.macsec.sci_port_id);
+        }
+        builder << '\n' << '\t' << "Protected Payload Length: " << details.macsec.protected_payload_length << " bytes";
+        if (details.macsec.icv_length > 0U) {
+            builder << '\n' << '\t' << "ICV Length: " << details.macsec.icv_length << " bytes";
+        }
+        builder << '\n' << '\t' << "Protected payload is not decrypted.";
+        if (details.macsec.sectag_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec SecTAG is truncated.";
+        }
+        if (details.macsec.packet_number_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec packet number is truncated.";
+        }
+        if (details.macsec.sci_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec SCI is truncated.";
+        }
+        if (details.macsec.icv_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec ICV is truncated.";
+        }
+        return builder.str();
+    }
 
     if (details.has_pppoe) {
         builder << "Protocol: " << (details.pppoe.is_discovery ? "PPPoE Discovery" : "PPPoE Session") << '\n'

@@ -33,6 +33,7 @@ inline constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 inline constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
 inline constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
 inline constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
+inline constexpr std::uint16_t kEtherTypeMacsec = 0x88E5U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 inline constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
 inline constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
@@ -61,6 +62,9 @@ inline constexpr std::size_t kIgmpMinimumHeaderSize = 8;
 inline constexpr std::size_t kPppoeHeaderSize = 6U;
 inline constexpr std::size_t kPppProtocolFieldSize = 2U;
 inline constexpr std::size_t kPbbITagSize = 4U;
+inline constexpr std::size_t kMacsecSecTagBaseSize = 6U;
+inline constexpr std::size_t kMacsecSciSize = 8U;
+inline constexpr std::size_t kMacsecDefaultIcvSize = 16U;
 inline constexpr std::uint8_t kIgmpTypeMembershipQuery = 0x11;
 inline constexpr std::uint8_t kIgmpTypeV1MembershipReport = 0x12;
 inline constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16;
@@ -185,6 +189,15 @@ enum class PbbParseStatus : std::uint8_t {
     unknown_payload,
 };
 
+enum class MacsecParseStatus : std::uint8_t {
+    not_present,
+    complete,
+    sectag_truncated,
+    packet_number_truncated,
+    sci_truncated,
+    icv_truncated,
+};
+
 struct PbbFrameView {
     PbbParseStatus status {PbbParseStatus::not_present};
     std::uint8_t available_itag_bytes {0};
@@ -201,6 +214,28 @@ struct PbbFrameView {
     LinkLayerPayloadView inner_ethernet {};
 };
 
+struct MacsecFrameView {
+    MacsecParseStatus status {MacsecParseStatus::not_present};
+    std::uint8_t available_base_bytes {0};
+    std::uint8_t version {0};
+    bool es {false};
+    bool sc {false};
+    bool scb {false};
+    bool e {false};
+    bool c {false};
+    std::uint8_t an {0};
+    std::uint8_t short_length {0};
+    bool packet_number_present {false};
+    std::uint32_t packet_number {0};
+    std::uint8_t available_sci_bytes {0};
+    std::array<std::uint8_t, 6> sci_system_id {};
+    std::uint16_t sci_port_id {0};
+    std::size_t protected_payload_offset {0};
+    std::size_t protected_payload_length {0};
+    std::size_t icv_offset {0};
+    std::size_t icv_length {0};
+};
+
 struct NetworkPayloadView {
     LinkLayerPayloadView link_layer {};
     std::uint16_t protocol_type {0};
@@ -211,6 +246,8 @@ struct NetworkPayloadView {
     MplsStackView mpls {};
     bool has_pbb {false};
     PbbFrameView pbb {};
+    bool has_macsec {false};
+    MacsecFrameView macsec {};
 };
 
 struct PppoePayloadBounds {
@@ -238,6 +275,83 @@ inline std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::s
            (static_cast<std::uint32_t>(bytes[offset + 1]) << 16U) |
            (static_cast<std::uint32_t>(bytes[offset + 2]) << 8U) |
            static_cast<std::uint32_t>(bytes[offset + 3]);
+}
+
+inline MacsecFrameView parse_macsec_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t macsec_offset
+) {
+    MacsecFrameView view {};
+    const auto available_bytes = macsec_offset < bytes.size() ? (bytes.size() - macsec_offset) : 0U;
+    view.available_base_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(available_bytes, kMacsecSecTagBaseSize));
+
+    if (view.available_base_bytes >= 1U) {
+        const auto tci_an = bytes[macsec_offset];
+        view.version = static_cast<std::uint8_t>((tci_an >> 7U) & 0x1U);
+        view.es = ((tci_an >> 6U) & 0x1U) != 0U;
+        view.sc = ((tci_an >> 5U) & 0x1U) != 0U;
+        view.scb = ((tci_an >> 4U) & 0x1U) != 0U;
+        view.e = ((tci_an >> 3U) & 0x1U) != 0U;
+        view.c = ((tci_an >> 2U) & 0x1U) != 0U;
+        view.an = static_cast<std::uint8_t>(tci_an & 0x3U);
+    }
+    if (view.available_base_bytes >= 2U) {
+        view.short_length = bytes[macsec_offset + 1U];
+    }
+
+    if (view.available_base_bytes < 2U) {
+        view.status = MacsecParseStatus::sectag_truncated;
+        return view;
+    }
+    if (view.available_base_bytes < kMacsecSecTagBaseSize) {
+        view.status = MacsecParseStatus::packet_number_truncated;
+        return view;
+    }
+
+    view.packet_number_present = true;
+    view.packet_number = read_be32(bytes, macsec_offset + 2U);
+    auto cursor = macsec_offset + kMacsecSecTagBaseSize;
+
+    if (view.sc) {
+        const auto available_sci = cursor < bytes.size() ? (bytes.size() - cursor) : 0U;
+        view.available_sci_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(available_sci, kMacsecSciSize));
+        if (view.available_sci_bytes < kMacsecSciSize) {
+            if (view.available_sci_bytes >= 6U) {
+                std::copy_n(
+                    bytes.begin() + static_cast<std::ptrdiff_t>(cursor),
+                    6U,
+                    view.sci_system_id.begin()
+                );
+            }
+            if (view.available_sci_bytes >= 8U) {
+                view.sci_port_id = read_be16(bytes, cursor + 6U);
+            }
+            view.status = MacsecParseStatus::sci_truncated;
+            return view;
+        }
+
+        std::copy_n(
+            bytes.begin() + static_cast<std::ptrdiff_t>(cursor),
+            6U,
+            view.sci_system_id.begin()
+        );
+        view.sci_port_id = read_be16(bytes, cursor + 6U);
+        cursor += kMacsecSciSize;
+    }
+
+    view.protected_payload_offset = cursor;
+    const auto remaining_bytes = cursor < bytes.size() ? (bytes.size() - cursor) : 0U;
+    if (remaining_bytes < kMacsecDefaultIcvSize) {
+        view.protected_payload_length = remaining_bytes;
+        view.status = MacsecParseStatus::icv_truncated;
+        return view;
+    }
+
+    view.protected_payload_length = remaining_bytes - kMacsecDefaultIcvSize;
+    view.icv_offset = cursor + view.protected_payload_length;
+    view.icv_length = kMacsecDefaultIcvSize;
+    view.status = MacsecParseStatus::complete;
+    return view;
 }
 
 inline bool is_vlan_ether_type(const std::uint16_t ether_type) noexcept {
@@ -814,6 +928,13 @@ inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const s
             if (view.pbb.bounded_packet_end.has_value()) {
                 view.bounded_packet_end = view.pbb.bounded_packet_end;
             }
+            return view;
+        }
+
+        if (envelope->protocol_type == kEtherTypeMacsec) {
+            view.has_macsec = true;
+            view.macsec = parse_macsec_payload(bytes, envelope->payload_offset);
+            view.protocol_type = 0U;
             return view;
         }
 
