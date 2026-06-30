@@ -12,6 +12,7 @@ namespace {
 constexpr std::size_t kUnknownPppPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kLlcSnapPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kTrailerPreviewMaxBytes = 32U;
+constexpr std::size_t kUnknownInnerEthernetPayloadPreviewMaxBytes = 32U;
 
 enum class DecodeMode : std::uint8_t {
     strict,
@@ -34,6 +35,151 @@ struct LinkLayerView {
     std::size_t payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
 };
+
+void populate_inner_ethernet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const detail::MplsStackView& mpls,
+    PacketDetails& details
+) {
+    if (!mpls.has_inner_ethernet) {
+        return;
+    }
+
+    details.has_inner_ethernet = true;
+    details.inner_ethernet = {};
+    details.inner_ethernet.available_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(
+        detail::kEthernetHeaderSize,
+        (mpls.inner_ethernet_offset < packet_bytes.size()) ? (packet_bytes.size() - mpls.inner_ethernet_offset) : 0U));
+    details.inner_ethernet.header_truncated = details.inner_ethernet.available_header_bytes < detail::kEthernetHeaderSize;
+
+    if (details.inner_ethernet.available_header_bytes >= 6U) {
+        std::copy_n(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(mpls.inner_ethernet_offset),
+            6U,
+            details.inner_ethernet.dst_mac.begin()
+        );
+    }
+    if (details.inner_ethernet.available_header_bytes >= 12U) {
+        std::copy_n(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(mpls.inner_ethernet_offset + 6U),
+            6U,
+            details.inner_ethernet.src_mac.begin()
+        );
+    }
+    if (details.inner_ethernet.available_header_bytes >= detail::kEthernetHeaderSize) {
+        details.inner_ethernet.ether_type = detail::read_be16(packet_bytes, mpls.inner_ethernet_offset + 12U);
+        details.inner_ethernet.uses_length_field = details.inner_ethernet.ether_type < detail::kIeee8023LengthCutoff;
+    }
+}
+
+void populate_unknown_inner_ethernet_payload_preview(
+    std::span<const std::uint8_t> packet_bytes,
+    const detail::MplsStackView& mpls,
+    PacketDetails& details
+) {
+    if (!mpls.has_inner_ethernet) {
+        return;
+    }
+
+    const auto payload_offset = mpls.inner_ethernet.payload_offset;
+    if (payload_offset >= packet_bytes.size()) {
+        return;
+    }
+
+    const auto bounded_end = mpls.bounded_packet_end.value_or(packet_bytes.size());
+    const auto payload_end = std::min(bounded_end, packet_bytes.size());
+    if (payload_end <= payload_offset) {
+        return;
+    }
+
+    details.has_unknown_inner_ethernet_payload = true;
+    details.unknown_inner_ethernet_payload.payload_length = payload_end - payload_offset;
+    const auto preview_length = std::min(details.unknown_inner_ethernet_payload.payload_length,
+                                         kUnknownInnerEthernetPayloadPreviewMaxBytes);
+    details.unknown_inner_ethernet_payload.payload_preview.assign(
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset),
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_offset + preview_length)
+    );
+    details.unknown_inner_ethernet_payload.payload_preview_truncated =
+        details.unknown_inner_ethernet_payload.payload_length > preview_length;
+}
+
+void populate_inner_ethernet_continuation_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const detail::MplsStackView& mpls,
+    PacketDetails& details
+) {
+    if (!mpls.has_inner_ethernet || packet_bytes.size() < mpls.inner_ethernet_offset + detail::kEthernetHeaderSize) {
+        return;
+    }
+
+    auto protocol_type = detail::read_be16(packet_bytes, mpls.inner_ethernet_offset + 12U);
+    auto payload_offset = mpls.inner_ethernet_offset + detail::kEthernetHeaderSize;
+
+    details.vlan_tags.clear();
+    while (detail::is_vlan_ether_type(protocol_type)) {
+        if (details.vlan_tags.size() == detail::kMaxVlanTags ||
+            packet_bytes.size() < payload_offset + detail::kVlanHeaderSize) {
+            break;
+        }
+
+        const VlanTagDetails tag {
+            .tpid = protocol_type,
+            .tci = detail::read_be16(packet_bytes, payload_offset),
+            .encapsulated_ether_type = detail::read_be16(packet_bytes, payload_offset + 2U),
+        };
+        details.vlan_tags.push_back(tag);
+        protocol_type = tag.encapsulated_ether_type;
+        payload_offset += detail::kVlanHeaderSize;
+    }
+    details.has_vlan = !details.vlan_tags.empty();
+
+    details.has_llc = false;
+    details.llc = {};
+    details.has_snap = false;
+    details.snap = {};
+
+    if (protocol_type >= detail::kIeee8023LengthCutoff) {
+        return;
+    }
+
+    details.inner_ethernet.uses_length_field = true;
+    details.llc.declared_payload_length = protocol_type;
+    const auto llc_snap = detail::parse_llc_snap_payload(packet_bytes, payload_offset, protocol_type);
+    details.has_llc = llc_snap.has_llc || llc_snap.llc_header_truncated;
+    details.llc.available_header_bytes = llc_snap.available_llc_header_bytes;
+    details.llc.dsap = llc_snap.dsap;
+    details.llc.ssap = llc_snap.ssap;
+    details.llc.control = llc_snap.control;
+    details.llc.header_truncated = llc_snap.llc_header_truncated;
+    details.llc.payload_length_exceeds_captured = llc_snap.payload_length_exceeds_captured;
+    details.llc.captured_payload_exceeds_declared = llc_snap.captured_payload_exceeds_declared;
+    details.has_snap = llc_snap.has_snap || llc_snap.snap_header_truncated;
+    details.snap.oui = llc_snap.oui;
+    details.snap.pid = llc_snap.pid;
+    details.snap.header_truncated = llc_snap.snap_header_truncated;
+
+    const auto bounded_payload_end = llc_snap.payload_end;
+    if (details.has_snap && !details.snap.header_truncated) {
+        const auto payload_begin = std::min(payload_offset + detail::kLlcSnapHeaderSize, bounded_payload_end);
+        details.snap.payload_length = bounded_payload_end - payload_begin;
+        const auto preview_length = std::min(details.snap.payload_length, kLlcSnapPayloadPreviewMaxBytes);
+        details.snap.payload_preview.assign(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin + preview_length)
+        );
+        details.snap.payload_preview_truncated = details.snap.payload_length > preview_length;
+    } else if (details.has_llc && !details.llc.header_truncated) {
+        const auto payload_begin = std::min(payload_offset + detail::kLlcHeaderSize, bounded_payload_end);
+        details.llc.payload_length = bounded_payload_end - payload_begin;
+        const auto preview_length = std::min(details.llc.payload_length, kLlcSnapPayloadPreviewMaxBytes);
+        details.llc.payload_preview.assign(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(payload_begin + preview_length)
+        );
+        details.llc.payload_preview_truncated = details.llc.payload_length > preview_length;
+    }
+}
 
 std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint8_t> packet_bytes,
                                                        const PacketRef& packet_ref,
@@ -376,6 +522,12 @@ std::optional<PacketDetails> decode_packet_details(
     details.has_mpls = false;
     details.mpls_ether_type = 0U;
     details.mpls_labels.clear();
+    details.has_mpls_pseudowire_control_word = false;
+    details.mpls_pseudowire_control_word = {};
+    details.has_inner_ethernet = false;
+    details.inner_ethernet = {};
+    details.has_unknown_inner_ethernet_payload = false;
+    details.unknown_inner_ethernet_payload = {};
     details.has_pppoe = false;
     details.pppoe = {};
 
@@ -400,12 +552,31 @@ std::optional<PacketDetails> decode_packet_details(
             });
         }
 
+        if (mpls.has_pseudowire_control_word) {
+            details.has_mpls_pseudowire_control_word = true;
+            details.mpls_pseudowire_control_word = MplsPseudowireControlWordDetails {
+                .present = true,
+                .truncated = mpls.status == detail::MplsParseStatus::pseudowire_control_word_truncated,
+                .flags = mpls.pseudowire_control_flags,
+                .sequence = mpls.pseudowire_control_sequence,
+            };
+        }
+
+        populate_inner_ethernet_details(packet_bytes, mpls, details);
+        populate_inner_ethernet_continuation_details(packet_bytes, mpls, details);
+        if (mpls.status == detail::MplsParseStatus::unknown_inner_ether_type) {
+            populate_unknown_inner_ethernet_payload_preview(packet_bytes, mpls, details);
+        }
+
         if (!detail::mpls_has_resolved_inner_payload(mpls.status)) {
             return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
         }
 
         network_protocol_type = mpls.inner_protocol_type;
         network_payload_offset = mpls.inner_payload_offset;
+        if (mpls.bounded_packet_end.has_value()) {
+            network_packet_bytes = packet_bytes.first(std::min(*mpls.bounded_packet_end, packet_bytes.size()));
+        }
     }
 
     if (network_protocol_type == detail::kEtherTypePppoeDiscovery ||

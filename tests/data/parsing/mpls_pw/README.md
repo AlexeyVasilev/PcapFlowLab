@@ -11,8 +11,13 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - control-word metadata coverage such as a non-zero sequence field;
 - ambiguity coverage for no-control-word inner Ethernet payloads.
 
-Parser implementation is intentionally **not** part of this pass.
-This fixture set prepares deterministic wire images first so later parser work and tests can target them safely.
+These fixtures are now exercised by shared MPLS pseudowire regression tests.
+Current committed behavior covers bounded MPLS Ethernet pseudowire continuation into:
+- inner Ethernet II and inner IEEE 802.3;
+- optional 4-byte pseudowire control word presentation;
+- inner VLAN / QinQ;
+- inner LLC / SNAP;
+- inner ARP / IPv4 / IPv6 continuation when the bounded inner payload is valid.
 
 ## Local generation
 
@@ -62,27 +67,24 @@ Notes:
 - Some fixtures include a 4-byte pseudowire control word before the inner Ethernet frame:
   - first 16 bits reserved/flags
   - next 16 bits sequence
-- This pass does **not** claim any current committed MPLS pseudowire parser support.
+- Current committed behavior supports basic MPLS Ethernet pseudowire parsing and presentation.
 
 ## Current support assumptions
 
-Current committed MPLS support in PcapFlowLab is focused on direct MPLS-to-IPv4/IPv6 continuation after the BoS label.
+Current committed MPLS support in PcapFlowLab covers:
+- direct MPLS-to-IPv4/IPv6 continuation after the BoS label;
+- Ethernet pseudowire continuation after the BoS label;
+- optional 4-byte pseudowire control word recognition when the bounded bytes match the pseudowire shape;
+- inner Ethernet continuation through VLAN / QinQ / LLC-SNAP into ARP / IPv4 / IPv6 when supported by existing shared parsers;
+- conservative no-flow handling for malformed/truncated pseudowire payloads and unknown inner EtherTypes.
 
-Conservative assumptions for this fixture set:
-- MPLS pseudowire inner Ethernet continuation is not implemented yet;
-- these captures are expected to stay no-flow or conservative until later parser work lands;
-- malformed/truncated fixtures should remain safe and inspectable;
-- future parser work should reuse already-added VLAN, LLC/SNAP, PPPoE, partial IPv4, and unrecognized-packet presentation paths where applicable.
+## Current conservative limits
 
-## Future supported behavior targets
-
-Future parser work will likely want to support:
-- inner Ethernet continuation after MPLS pseudowire;
-- optional pseudowire control-word recognition;
-- inner VLAN/QinQ continuation;
-- inner LLC/SNAP continuation;
-- conservative fallback for unknown inner EtherType;
-- partial inner Ethernet / partial inner IPv4 presentation where safe.
+The current implementation is intentionally bounded and conservative:
+- it does not attempt generic MPLS pseudowire continuation for arbitrary unknown inner protocols;
+- unknown inner Ethernet EtherTypes remain no-flow with bounded Data presentation;
+- malformed or truncated label/control-word/inner-Ethernet/inner-IPv4 cases remain no-flow;
+- deeper protocol-specific `Protocol` tab rendering is still driven by existing shared analyzers rather than a new MPLS-specific protocol-text system.
 
 ## Fixture list
 
@@ -90,92 +92,92 @@ Future parser work will likely want to support:
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / inner Ethernet / IPv4 / TCP / Raw
-- Future expected behavior: recover inner Ethernet and form a normal IPv4/TCP flow.
+- Current expected behavior: recover inner Ethernet and form a normal IPv4/TCP flow.
 
 ### 02_mpls_pw_eth_ipv4_udp_no_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / inner Ethernet / IPv4 / UDP / Raw
-- Future expected behavior: recover inner Ethernet and form a normal IPv4/UDP flow.
+- Current expected behavior: recover inner Ethernet and form a normal IPv4/UDP flow.
 
 ### 03_mpls_pw_eth_ipv6_tcp_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / pseudowire control word / inner Ethernet / IPv6 / TCP / Raw
-- Future expected behavior: parse the control word and recover an inner IPv6/TCP flow.
+- Current expected behavior: parse the control word and recover an inner IPv6/TCP flow.
 
 ### 04_mpls_pw_eth_ipv6_udp_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / pseudowire control word / inner Ethernet / IPv6 / UDP / Raw
-- Future expected behavior: parse the control word and recover an inner IPv6/UDP flow.
+- Current expected behavior: parse the control word and recover an inner IPv6/UDP flow.
 
 ### 05_mpls_pw_eth_arp_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / pseudowire control word / inner Ethernet / ARP
-- Future expected behavior: ARP recognized behind the MPLS pseudowire.
+- Current expected behavior: ARP recognized behind the MPLS pseudowire.
 
 ### 06_mpls_pw_eth_vlan_ipv4_tcp_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word / inner Ethernet / VLAN / IPv4 / TCP
-- Future expected behavior: inner VLAN does not block IPv4/TCP continuation.
+- Current expected behavior: inner VLAN does not block IPv4/TCP continuation.
 
 ### 07_mpls_pw_eth_qinq_ipv4_udp_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word / inner Ethernet / QinQ / VLAN / IPv4 / UDP
-- Future expected behavior: stacked inner VLAN tags do not block IPv4/UDP continuation.
+- Current expected behavior: stacked inner VLAN tags do not block IPv4/UDP continuation.
 
 ### 08_mpls_pw_eth_llc_snap_ipv4_udp_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word / inner Ethernet 802.3 length / LLC / SNAP / IPv4 / UDP
-- Future expected behavior: inner LLC/SNAP continuation reuses the existing shared LLC/SNAP support.
+- Current expected behavior: inner LLC/SNAP continuation reuses the existing shared LLC/SNAP support.
 
 ### 09_mpls_pw_unknown_inner_ethertype_cw.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word / inner Ethernet / unknown EtherType / Raw
-- Conservative current behavior candidate: must not fabricate IPv4 / IPv6 / ARP.
+- Current expected behavior: no normal flow is formed; parser preserves inner Ethernet and bounded unknown-payload presentation without fabricating IPv4 / IPv6 / ARP.
 
 ### 10_mpls_pw_truncated_label_stack.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS EtherType / incomplete MPLS label entry
-- Conservative current behavior candidate: malformed/truncated MPLS robustness only; no crash.
+- Current expected behavior: malformed/truncated MPLS robustness only; no crash.
 
 ### 11_mpls_pw_truncated_control_word.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / incomplete pseudowire control word
-- Conservative current behavior candidate: malformed/truncated control-word robustness only; no crash.
+- Current expected behavior: malformed/truncated control-word robustness only; no crash.
 
 ### 12_mpls_pw_truncated_inner_ethernet.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word / partial inner Ethernet header
-- Conservative current behavior candidate: no crash; future parser may show partial inner Ethernet.
+- Current expected behavior: no crash; partial inner Ethernet details remain visible conservatively.
 
 ### 13_mpls_pw_truncated_inner_ipv4.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word / inner Ethernet / IPv4 EtherType / partial IPv4 header
-- Future expected behavior: safe no-flow handling that reuses the shared partial IPv4 presentation.
+- Current expected behavior: safe no-flow handling that reuses the shared partial IPv4 presentation.
 
 ### 14_mpls_pw_control_word_with_sequence.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / control word with non-zero sequence / inner Ethernet / IPv4 / UDP
-- Future expected behavior: control-word metadata presentation candidate with non-zero sequence preserved.
+- Current expected behavior: control-word metadata presentation preserves the non-zero sequence value.
 
 ### 15_mpls_pw_ambiguous_no_cw_inner_ethernet.pcap
 
 - Packets: 1
 - Layer chain: Outer Ethernet / MPLS label stack / inner Ethernet / IPv4 / UDP
-- Purpose: the inner Ethernet destination MAC begins with `0x02`, so future parser work must not confuse the pseudowire payload with direct MPLS IPv4/IPv6 nibble-based continuation.
-- Future expected behavior: parser chooses inner Ethernet pseudowire continuation, not direct IPv4/IPv6 guessing.
+- Purpose: the inner Ethernet destination MAC begins with `0x02`, so the parser must not confuse the pseudowire payload with direct MPLS IPv4/IPv6 nibble-based continuation.
+- Current expected behavior: parser chooses inner Ethernet pseudowire continuation, not direct IPv4/IPv6 guessing.
 
 ## Expected generated file list
 

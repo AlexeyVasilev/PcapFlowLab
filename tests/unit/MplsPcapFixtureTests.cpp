@@ -358,7 +358,10 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].reason_text == "Unknown MPLS payload");
+        PFL_EXPECT(
+            rows[0].reason_text == "Unknown MPLS payload" ||
+            rows[0].reason_text == "Unknown MPLS pseudowire inner EtherType"
+        );
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);

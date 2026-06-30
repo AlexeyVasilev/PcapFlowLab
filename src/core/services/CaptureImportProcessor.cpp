@@ -349,7 +349,102 @@ struct ImportPrefixDecision {
                 break;
             }
 
-            return import_prefix_sufficient();
+            std::size_t inner_ethernet_offset = payload_offset;
+            if (detail::is_plausible_mpls_pseudowire_control_word(packet_bytes, payload_offset)) {
+                const auto control_word_decision =
+                    require_more_bytes_if_prefix_limited(available_bytes, captured_length, payload_offset + 4U);
+                if (control_word_decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return control_word_decision;
+                }
+                if (available_bytes < payload_offset + 4U) {
+                    return import_prefix_sufficient();
+                }
+                inner_ethernet_offset += 4U;
+            }
+
+            auto decision = require_more_bytes_if_prefix_limited(
+                available_bytes,
+                captured_length,
+                inner_ethernet_offset + detail::kEthernetHeaderSize);
+            if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                return decision;
+            }
+            if (available_bytes < inner_ethernet_offset + detail::kEthernetHeaderSize) {
+                return import_prefix_sufficient();
+            }
+
+            auto inner_protocol_type = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U);
+            auto inner_payload_offset = inner_ethernet_offset + detail::kEthernetHeaderSize;
+            std::size_t inner_vlan_count = 0U;
+            while (detail::is_vlan_ether_type(inner_protocol_type)) {
+                if (inner_vlan_count == detail::kMaxVlanTags) {
+                    return import_prefix_sufficient();
+                }
+
+                decision = require_more_bytes_if_prefix_limited(
+                    available_bytes,
+                    captured_length,
+                    inner_payload_offset + detail::kVlanHeaderSize);
+                if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return decision;
+                }
+                if (available_bytes < inner_payload_offset + detail::kVlanHeaderSize) {
+                    return import_prefix_sufficient();
+                }
+
+                inner_protocol_type = detail::read_be16(packet_bytes, inner_payload_offset + 2U);
+                inner_payload_offset += detail::kVlanHeaderSize;
+                ++inner_vlan_count;
+            }
+
+            if (inner_protocol_type < detail::kIeee8023LengthCutoff) {
+                const auto declared_length = inner_protocol_type;
+                const auto logical_payload_end = captured_packet_end(inner_payload_offset + declared_length, captured_length);
+
+                decision = require_more_bytes_if_prefix_limited(
+                    available_bytes,
+                    logical_payload_end,
+                    inner_payload_offset + detail::kLlcHeaderSize);
+                if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return decision;
+                }
+                if (logical_payload_end < inner_payload_offset + detail::kLlcHeaderSize ||
+                    available_bytes < inner_payload_offset + detail::kLlcHeaderSize) {
+                    return import_prefix_sufficient();
+                }
+
+                if (packet_bytes[inner_payload_offset] != detail::kLlcSnapDsap ||
+                    packet_bytes[inner_payload_offset + 1U] != detail::kLlcSnapSsap ||
+                    packet_bytes[inner_payload_offset + 2U] != detail::kLlcUnnumberedInformationControl) {
+                    return import_prefix_sufficient();
+                }
+
+                decision = require_more_bytes_if_prefix_limited(
+                    available_bytes,
+                    logical_payload_end,
+                    inner_payload_offset + detail::kLlcSnapHeaderSize);
+                if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return decision;
+                }
+                if (logical_payload_end < inner_payload_offset + detail::kLlcSnapHeaderSize ||
+                    available_bytes < inner_payload_offset + detail::kLlcSnapHeaderSize) {
+                    return import_prefix_sufficient();
+                }
+
+                const auto snap_pid = detail::read_be16(packet_bytes, inner_payload_offset + detail::kLlcHeaderSize + 3U);
+                if (!detail::is_supported_snap_pid(snap_pid)) {
+                    return import_prefix_sufficient();
+                }
+
+                protocol_type = snap_pid;
+                payload_offset = inner_payload_offset + detail::kLlcSnapHeaderSize;
+                bounded_packet_end = logical_payload_end;
+                break;
+            }
+
+            protocol_type = inner_protocol_type;
+            payload_offset = inner_payload_offset;
+            break;
         }
     }
 
@@ -544,6 +639,12 @@ std::string classify_unrecognized_packet_reason(
             return "MPLS bottom-of-stack not found";
         case detail::MplsParseStatus::missing_inner_payload:
             return "Missing MPLS inner payload";
+        case detail::MplsParseStatus::pseudowire_control_word_truncated:
+            return "MPLS pseudowire control word truncated";
+        case detail::MplsParseStatus::inner_ethernet_truncated:
+            return "Inner Ethernet header truncated";
+        case detail::MplsParseStatus::unknown_inner_ether_type:
+            return "Unknown MPLS pseudowire inner EtherType";
         case detail::MplsParseStatus::unknown_payload:
             return "Unknown MPLS payload";
         default:

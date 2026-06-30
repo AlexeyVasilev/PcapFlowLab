@@ -65,6 +65,28 @@ struct MplsLabelDetails {
     std::uint8_t ttl {0};
 };
 
+struct InnerEthernetDetails {
+    std::array<std::uint8_t, 6> src_mac {};
+    std::array<std::uint8_t, 6> dst_mac {};
+    std::uint16_t ether_type {0};
+    bool uses_length_field {false};
+    std::uint8_t available_header_bytes {0};
+    bool header_truncated {false};
+};
+
+struct MplsPseudowireControlWordDetails {
+    bool present {false};
+    bool truncated {false};
+    std::uint16_t flags {0};
+    std::uint16_t sequence {0};
+};
+
+struct MplsPseudowirePayloadDetails {
+    std::size_t payload_length {0};
+    std::vector<std::uint8_t> payload_preview {};
+    bool payload_preview_truncated {false};
+};
+
 struct PppoeTagDetails {
     std::uint16_t type {0};
     std::uint16_t declared_length {0};
@@ -231,6 +253,12 @@ struct PacketDetails {
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     std::vector<MplsLabelDetails> mpls_labels {};
+    bool has_mpls_pseudowire_control_word {false};
+    MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
+    bool has_inner_ethernet {false};
+    InnerEthernetDetails inner_ethernet {};
+    bool has_unknown_inner_ethernet_payload {false};
+    MplsPseudowirePayloadDetails unknown_inner_ethernet_payload {};
 
     bool has_pppoe {false};
     PppoeSessionDetails pppoe {};

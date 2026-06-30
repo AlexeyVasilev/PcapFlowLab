@@ -528,6 +528,43 @@ std::optional<PacketSummaryLayer> build_unknown_ppp_payload_layer(const PacketDe
     };
 }
 
+std::optional<PacketSummaryLayer> build_unknown_inner_ethernet_payload_layer(const PacketDetails& details) {
+    if (!details.has_unknown_inner_ethernet_payload) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        PacketSummaryField {
+            .label = "Length",
+            .value = std::to_string(details.unknown_inner_ethernet_payload.payload_length) + " bytes",
+        },
+    };
+
+    if (!details.unknown_inner_ethernet_payload.payload_preview.empty()) {
+        auto preview_text = format_hex_byte_list(std::span<const std::uint8_t>(
+            details.unknown_inner_ethernet_payload.payload_preview.data(),
+            details.unknown_inner_ethernet_payload.payload_preview.size()
+        ));
+        fields.push_back(PacketSummaryField {
+            .label = "Raw",
+            .value = std::move(preview_text),
+        });
+    }
+
+    if (details.unknown_inner_ethernet_payload.payload_preview_truncated) {
+        fields.push_back(PacketSummaryField {
+            .label = "Preview truncated",
+            .value = "Yes",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "inner-payload",
+        .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
 std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const PacketDetails& details) {
     const auto make_payload_layer = [](std::string id,
                                        const std::size_t payload_length,
@@ -2028,14 +2065,16 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ethernet",
-            .title = std::string(details.ethernet.uses_length_field ? "IEEE 802.3" : "Ethernet II") +
+        .title = std::string(details.ethernet.uses_length_field ? "IEEE 802.3" : "Ethernet II") +
                 ", Src: " + format_mac_address(details.ethernet.src_mac) +
                 ", Dst: " + format_mac_address(details.ethernet.dst_mac),
             .fields = std::move(ethernet_fields),
         });
     }
 
-    if (details.has_vlan) {
+    const bool has_mpls_inner_ethernet = details.has_mpls && details.has_inner_ethernet;
+
+    if (details.has_vlan && !has_mpls_inner_ethernet) {
         for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
             const auto& tag = details.vlan_tags[index];
             auto vlan_fields = std::vector<PacketSummaryField> {
@@ -2079,7 +2118,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
-    if (details.has_llc) {
+    if (details.has_llc && !has_mpls_inner_ethernet) {
         std::vector<PacketSummaryField> llc_fields {};
         if (details.llc.available_header_bytes >= 1U) {
             llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
@@ -2109,7 +2148,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_snap) {
+    if (details.has_snap && !has_mpls_inner_ethernet) {
         const auto oui_text = format_hex_byte_sequence(
             std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
         );
@@ -2131,8 +2170,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
-        append_layer_if_not_empty(layers, *payload_layer);
+    if (!has_mpls_inner_ethernet) {
+        if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
+        }
     }
 
     if (details.has_mpls) {
@@ -2155,6 +2196,138 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                     ", TTL: " + std::to_string(label.ttl),
                 .fields = std::move(mpls_fields),
             });
+        }
+    }
+
+    if (details.has_mpls_pseudowire_control_word) {
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "mpls-pw-control-word",
+            .title = "MPLS Pseudowire Control Word",
+            .fields = {
+                make_summary_field("Flags", format_hex16_value(details.mpls_pseudowire_control_word.flags)),
+                make_summary_field("Sequence", std::to_string(details.mpls_pseudowire_control_word.sequence)),
+                make_summary_field("Truncated", details.mpls_pseudowire_control_word.truncated ? "Yes" : "No"),
+            },
+            .warning = details.mpls_pseudowire_control_word.truncated,
+            .marker_text = details.mpls_pseudowire_control_word.truncated ? "Warning" : std::string {},
+        });
+    }
+
+    if (details.has_inner_ethernet) {
+        auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
+        if (details.inner_ethernet.available_header_bytes >= 6U) {
+            inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.inner_ethernet.dst_mac)));
+        }
+        if (details.inner_ethernet.available_header_bytes >= 12U) {
+            inner_ethernet_fields.push_back(make_summary_field("Source", format_mac_address(details.inner_ethernet.src_mac)));
+        }
+        if (details.inner_ethernet.available_header_bytes >= 14U) {
+            if (details.inner_ethernet.uses_length_field) {
+                inner_ethernet_fields.push_back(make_summary_field(
+                    "Length",
+                    std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                ));
+            } else {
+                inner_ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.inner_ethernet.ether_type)));
+            }
+        }
+        if (details.inner_ethernet.header_truncated) {
+            inner_ethernet_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ethernet-inner",
+            .title = std::string(details.inner_ethernet.uses_length_field ? "Inner IEEE 802.3" : "Inner Ethernet II"),
+            .fields = std::move(inner_ethernet_fields),
+            .warning = details.inner_ethernet.header_truncated,
+            .marker_text = details.inner_ethernet.header_truncated ? "Warning" : std::string {},
+        });
+    }
+
+    if (details.has_vlan && has_mpls_inner_ethernet) {
+        for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
+            const auto& tag = details.vlan_tags[index];
+            auto vlan_fields = std::vector<PacketSummaryField> {
+                make_summary_field("TPID", format_ether_type_value(tag.tpid)),
+                make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+                make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+                make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+            };
+            if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
+                vlan_fields.push_back(make_summary_field(
+                    "Encapsulated Length",
+                    std::to_string(tag.encapsulated_ether_type) + " bytes"
+                ));
+            } else {
+                vlan_fields.push_back(make_summary_field(
+                    "Encapsulated EtherType",
+                    format_ether_type_value(tag.encapsulated_ether_type)
+                ));
+            }
+            append_layer_if_not_empty(layers, PacketSummaryLayer {
+                .id = "vlan",
+                .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
+                    ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
+                    ", ID: " + std::to_string(vlan_identifier(tag.tci)),
+                .fields = std::move(vlan_fields),
+            });
+        }
+    }
+
+    if (details.has_llc && has_mpls_inner_ethernet) {
+        std::vector<PacketSummaryField> llc_fields {};
+        if (details.llc.available_header_bytes >= 1U) {
+            llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 2U) {
+            llc_fields.push_back(make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 3U) {
+            llc_fields.push_back(make_summary_field("Control", format_hex_value(details.llc.control, 2)));
+        }
+        if (details.llc.header_truncated) {
+            llc_fields.push_back(make_summary_field("Warning", "LLC header is truncated"));
+        }
+        if (details.llc.payload_length_exceeds_captured) {
+            llc_fields.push_back(make_summary_field("Warning", "IEEE 802.3 payload length exceeds captured payload bytes"));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "llc",
+            .title = "LLC",
+            .fields = std::move(llc_fields),
+            .warning = details.llc.header_truncated,
+            .marker_text = details.llc.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (details.has_snap && has_mpls_inner_ethernet) {
+        const auto oui_text = format_hex_byte_sequence(
+            std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
+        );
+        std::vector<PacketSummaryField> snap_fields {
+            make_summary_field("OUI", oui_text),
+        };
+        if (!details.snap.header_truncated) {
+            snap_fields.push_back(make_summary_field("PID", format_ether_type_value(details.snap.pid)));
+        } else {
+            snap_fields.push_back(make_summary_field("Warning", "SNAP header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "snap",
+            .title = "SNAP",
+            .fields = std::move(snap_fields),
+            .warning = details.snap.header_truncated,
+            .marker_text = details.snap.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (has_mpls_inner_ethernet) {
+        if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
+        }
+        if (const auto payload_layer = build_unknown_inner_ethernet_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
         }
     }
 

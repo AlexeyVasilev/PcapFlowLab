@@ -138,10 +138,22 @@ enum class MplsParseStatus : std::uint8_t {
     not_present,
     resolved_inner_ipv4,
     resolved_inner_ipv6,
+    resolved_inner_arp,
     label_truncated,
     bottom_of_stack_not_found,
     missing_inner_payload,
+    pseudowire_control_word_truncated,
+    inner_ethernet_truncated,
+    unknown_inner_ether_type,
     unknown_payload,
+};
+
+struct EthernetContinuationView {
+    LinkLayerPayloadView link_layer {};
+    std::optional<std::size_t> bounded_packet_end {};
+    bool resolved_supported_protocol {false};
+    std::uint16_t resolved_protocol_type {0};
+    std::size_t resolved_payload_offset {0};
 };
 
 struct MplsStackView {
@@ -150,6 +162,13 @@ struct MplsStackView {
     MplsParseStatus status {MplsParseStatus::not_present};
     std::uint16_t inner_protocol_type {0};
     std::size_t inner_payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
+    bool has_pseudowire_control_word {false};
+    std::uint16_t pseudowire_control_flags {0};
+    std::uint16_t pseudowire_control_sequence {0};
+    bool has_inner_ethernet {false};
+    std::size_t inner_ethernet_offset {0};
+    LinkLayerPayloadView inner_ethernet {};
 };
 
 struct NetworkPayloadView {
@@ -208,7 +227,9 @@ inline bool is_supported_snap_pid(const std::uint16_t pid) noexcept {
 }
 
 inline bool mpls_has_resolved_inner_payload(const MplsParseStatus status) noexcept {
-    return status == MplsParseStatus::resolved_inner_ipv4 || status == MplsParseStatus::resolved_inner_ipv6;
+    return status == MplsParseStatus::resolved_inner_ipv4 ||
+           status == MplsParseStatus::resolved_inner_ipv6 ||
+           status == MplsParseStatus::resolved_inner_arp;
 }
 
 inline bool is_ipv6_extension_header(const std::uint8_t next_header) noexcept {
@@ -287,6 +308,44 @@ inline std::optional<LinkLayerPayloadView> parse_link_layer_payload(std::span<co
     return std::nullopt;
 }
 
+inline std::optional<LinkLayerPayloadView> parse_ethernet_payload_at(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t ethernet_offset
+) {
+    if (bytes.size() < ethernet_offset + kEthernetHeaderSize) {
+        return std::nullopt;
+    }
+
+    LinkLayerPayloadView view {
+        .protocol_type = read_be16(bytes, ethernet_offset + 12U),
+        .payload_offset = ethernet_offset + kEthernetHeaderSize,
+        .is_ethernet = true,
+    };
+
+    std::size_t vlan_count = 0U;
+    while (is_vlan_ether_type(view.protocol_type)) {
+        if (vlan_count == kMaxVlanTags) {
+            return std::nullopt;
+        }
+
+        if (bytes.size() < view.payload_offset + kVlanHeaderSize) {
+            return std::nullopt;
+        }
+
+        view.protocol_type = read_be16(bytes, view.payload_offset + 2U);
+        view.payload_offset += kVlanHeaderSize;
+        ++vlan_count;
+    }
+
+    if (view.protocol_type < kIeee8023LengthCutoff) {
+        view.is_ieee_802_3 = true;
+        view.declared_payload_length = view.protocol_type;
+        view.protocol_type = 0U;
+    }
+
+    return view;
+}
+
 inline LlcSnapPayloadView parse_llc_snap_payload(std::span<const std::uint8_t> bytes,
                                                  const std::size_t payload_offset,
                                                  const std::size_t declared_payload_length) {
@@ -344,6 +403,52 @@ inline LlcSnapPayloadView parse_llc_snap_payload(std::span<const std::uint8_t> b
     return view;
 }
 
+inline std::optional<EthernetContinuationView> parse_ethernet_continuation(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t ethernet_offset
+) {
+    const auto link_layer = parse_ethernet_payload_at(bytes, ethernet_offset);
+    if (!link_layer.has_value()) {
+        return std::nullopt;
+    }
+
+    EthernetContinuationView view {
+        .link_layer = *link_layer,
+    };
+
+    if (link_layer->is_ieee_802_3) {
+        const auto llc_snap = parse_llc_snap_payload(bytes, link_layer->payload_offset, link_layer->declared_payload_length);
+        view.bounded_packet_end = llc_snap.payload_end;
+        if (llc_snap.resolved_supported_protocol) {
+            view.resolved_supported_protocol = true;
+            view.resolved_protocol_type = llc_snap.resolved_protocol_type;
+            view.resolved_payload_offset = llc_snap.resolved_payload_offset;
+        }
+        return view;
+    }
+
+    if (link_layer->protocol_type == kEtherTypeArp ||
+        link_layer->protocol_type == kEtherTypeIpv4 ||
+        link_layer->protocol_type == kEtherTypeIpv6 ||
+        link_layer->protocol_type == kEtherTypePppoeDiscovery ||
+        link_layer->protocol_type == kEtherTypePppoeSession) {
+        view.resolved_supported_protocol = true;
+        view.resolved_protocol_type = link_layer->protocol_type;
+        view.resolved_payload_offset = link_layer->payload_offset;
+    }
+
+    return view;
+}
+
+inline bool is_plausible_mpls_pseudowire_control_word(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t offset
+) noexcept {
+    return bytes.size() >= offset + 2U &&
+           bytes[offset] == 0U &&
+           bytes[offset + 1U] == 0U;
+}
+
 inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::size_t offset) {
     MplsStackView stack {};
 
@@ -392,6 +497,88 @@ inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::
         if (version_nibble == 6U) {
             stack.inner_protocol_type = kEtherTypeIpv6;
             stack.status = MplsParseStatus::resolved_inner_ipv6;
+            return stack;
+        }
+
+        if (is_plausible_mpls_pseudowire_control_word(bytes, offset) && bytes.size() < offset + 4U) {
+            stack.has_pseudowire_control_word = true;
+            stack.status = MplsParseStatus::pseudowire_control_word_truncated;
+            return stack;
+        }
+
+        if (is_plausible_mpls_pseudowire_control_word(bytes, offset)) {
+            if (const auto continuation = parse_ethernet_continuation(bytes, offset + 4U); continuation.has_value()) {
+                stack.has_pseudowire_control_word = true;
+                stack.pseudowire_control_flags = read_be16(bytes, offset);
+                stack.pseudowire_control_sequence = read_be16(bytes, offset + 2U);
+                stack.has_inner_ethernet = true;
+                stack.inner_ethernet_offset = offset + 4U;
+                stack.inner_ethernet = continuation->link_layer;
+                stack.bounded_packet_end = continuation->bounded_packet_end;
+
+                if (continuation->resolved_supported_protocol) {
+                    stack.inner_protocol_type = continuation->resolved_protocol_type;
+                    stack.inner_payload_offset = continuation->resolved_payload_offset;
+                    if (stack.inner_protocol_type == kEtherTypeIpv4) {
+                        stack.status = MplsParseStatus::resolved_inner_ipv4;
+                    } else if (stack.inner_protocol_type == kEtherTypeIpv6) {
+                        stack.status = MplsParseStatus::resolved_inner_ipv6;
+                    } else if (stack.inner_protocol_type == kEtherTypeArp) {
+                        stack.status = MplsParseStatus::resolved_inner_arp;
+                    } else {
+                        stack.status = MplsParseStatus::unknown_payload;
+                    }
+                } else if (!continuation->link_layer.is_ieee_802_3 &&
+                           continuation->link_layer.protocol_type >= kIeee8023LengthCutoff) {
+                    stack.status = MplsParseStatus::unknown_inner_ether_type;
+                } else {
+                    stack.status = MplsParseStatus::unknown_payload;
+                }
+                return stack;
+            }
+
+            if (bytes.size() >= offset + 4U) {
+                stack.has_pseudowire_control_word = true;
+                stack.pseudowire_control_flags = read_be16(bytes, offset);
+                stack.pseudowire_control_sequence = read_be16(bytes, offset + 2U);
+                stack.has_inner_ethernet = true;
+                stack.inner_ethernet_offset = offset + 4U;
+                stack.status = MplsParseStatus::inner_ethernet_truncated;
+                return stack;
+            }
+        }
+
+        if (const auto continuation = parse_ethernet_continuation(bytes, offset); continuation.has_value()) {
+            stack.has_inner_ethernet = true;
+            stack.inner_ethernet_offset = offset;
+            stack.inner_ethernet = continuation->link_layer;
+            stack.bounded_packet_end = continuation->bounded_packet_end;
+
+            if (continuation->resolved_supported_protocol) {
+                stack.inner_protocol_type = continuation->resolved_protocol_type;
+                stack.inner_payload_offset = continuation->resolved_payload_offset;
+                if (stack.inner_protocol_type == kEtherTypeIpv4) {
+                    stack.status = MplsParseStatus::resolved_inner_ipv4;
+                } else if (stack.inner_protocol_type == kEtherTypeIpv6) {
+                    stack.status = MplsParseStatus::resolved_inner_ipv6;
+                } else if (stack.inner_protocol_type == kEtherTypeArp) {
+                    stack.status = MplsParseStatus::resolved_inner_arp;
+                } else {
+                    stack.status = MplsParseStatus::unknown_payload;
+                }
+            } else if (!continuation->link_layer.is_ieee_802_3 &&
+                       continuation->link_layer.protocol_type >= kIeee8023LengthCutoff) {
+                stack.status = MplsParseStatus::unknown_inner_ether_type;
+            } else {
+                stack.status = MplsParseStatus::unknown_payload;
+            }
+            return stack;
+        }
+
+        if (bytes.size() < offset + kEthernetHeaderSize) {
+            stack.has_inner_ethernet = true;
+            stack.inner_ethernet_offset = offset;
+            stack.status = MplsParseStatus::inner_ethernet_truncated;
             return stack;
         }
 
@@ -515,6 +702,9 @@ inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const s
     if (mpls_has_resolved_inner_payload(view.mpls.status)) {
         view.protocol_type = view.mpls.inner_protocol_type;
         view.payload_offset = view.mpls.inner_payload_offset;
+        if (view.mpls.bounded_packet_end.has_value()) {
+            view.bounded_packet_end = view.mpls.bounded_packet_end;
+        }
     } else {
         view.protocol_type = 0;
         return view;
