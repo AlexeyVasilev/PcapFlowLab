@@ -38,55 +38,49 @@ struct LinkLayerView {
 
 void populate_inner_ethernet_details(
     std::span<const std::uint8_t> packet_bytes,
-    const detail::MplsStackView& mpls,
+    const std::size_t inner_ethernet_offset,
+    const detail::LinkLayerPayloadView& inner_ethernet,
     PacketDetails& details
 ) {
-    if (!mpls.has_inner_ethernet) {
-        return;
-    }
-
     details.has_inner_ethernet = true;
     details.inner_ethernet = {};
     details.inner_ethernet.available_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(
         detail::kEthernetHeaderSize,
-        (mpls.inner_ethernet_offset < packet_bytes.size()) ? (packet_bytes.size() - mpls.inner_ethernet_offset) : 0U));
+        (inner_ethernet_offset < packet_bytes.size()) ? (packet_bytes.size() - inner_ethernet_offset) : 0U));
     details.inner_ethernet.header_truncated = details.inner_ethernet.available_header_bytes < detail::kEthernetHeaderSize;
 
     if (details.inner_ethernet.available_header_bytes >= 6U) {
         std::copy_n(
-            packet_bytes.begin() + static_cast<std::ptrdiff_t>(mpls.inner_ethernet_offset),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(inner_ethernet_offset),
             6U,
             details.inner_ethernet.dst_mac.begin()
         );
     }
     if (details.inner_ethernet.available_header_bytes >= 12U) {
         std::copy_n(
-            packet_bytes.begin() + static_cast<std::ptrdiff_t>(mpls.inner_ethernet_offset + 6U),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(inner_ethernet_offset + 6U),
             6U,
             details.inner_ethernet.src_mac.begin()
         );
     }
     if (details.inner_ethernet.available_header_bytes >= detail::kEthernetHeaderSize) {
-        details.inner_ethernet.ether_type = detail::read_be16(packet_bytes, mpls.inner_ethernet_offset + 12U);
-        details.inner_ethernet.uses_length_field = details.inner_ethernet.ether_type < detail::kIeee8023LengthCutoff;
+        details.inner_ethernet.ether_type = inner_ethernet.protocol_type;
+        details.inner_ethernet.uses_length_field = inner_ethernet.is_ieee_802_3;
     }
 }
 
 void populate_unknown_inner_ethernet_payload_preview(
     std::span<const std::uint8_t> packet_bytes,
-    const detail::MplsStackView& mpls,
+    const detail::LinkLayerPayloadView& inner_ethernet,
+    const std::optional<std::size_t> bounded_packet_end,
     PacketDetails& details
 ) {
-    if (!mpls.has_inner_ethernet) {
-        return;
-    }
-
-    const auto payload_offset = mpls.inner_ethernet.payload_offset;
+    const auto payload_offset = inner_ethernet.payload_offset;
     if (payload_offset >= packet_bytes.size()) {
         return;
     }
 
-    const auto bounded_end = mpls.bounded_packet_end.value_or(packet_bytes.size());
+    const auto bounded_end = bounded_packet_end.value_or(packet_bytes.size());
     const auto payload_end = std::min(bounded_end, packet_bytes.size());
     if (payload_end <= payload_offset) {
         return;
@@ -106,15 +100,15 @@ void populate_unknown_inner_ethernet_payload_preview(
 
 void populate_inner_ethernet_continuation_details(
     std::span<const std::uint8_t> packet_bytes,
-    const detail::MplsStackView& mpls,
+    const std::size_t inner_ethernet_offset,
     PacketDetails& details
 ) {
-    if (!mpls.has_inner_ethernet || packet_bytes.size() < mpls.inner_ethernet_offset + detail::kEthernetHeaderSize) {
+    if (packet_bytes.size() < inner_ethernet_offset + detail::kEthernetHeaderSize) {
         return;
     }
 
-    auto protocol_type = detail::read_be16(packet_bytes, mpls.inner_ethernet_offset + 12U);
-    auto payload_offset = mpls.inner_ethernet_offset + detail::kEthernetHeaderSize;
+    auto protocol_type = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U);
+    auto payload_offset = inner_ethernet_offset + detail::kEthernetHeaderSize;
 
     details.vlan_tags.clear();
     while (detail::is_vlan_ether_type(protocol_type)) {
@@ -187,12 +181,15 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
                                                        const DecodeMode mode) {
     details.vlan_tags.clear();
     details.vlan_tags.reserve(detail::kMaxVlanTags);
+    details.encapsulating_vlan_tags.clear();
     details.vlan_tag_truncated = false;
     details.truncated_vlan_tpid = 0U;
     details.has_llc = false;
     details.llc = {};
     details.has_snap = false;
     details.snap = {};
+    details.has_pbb = false;
+    details.pbb = {};
 
     if (packet_ref.data_link_type == kLinkTypeEthernet) {
         if (packet_bytes.size() < detail::kEthernetHeaderSize) {
@@ -292,6 +289,53 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             } else {
                 view.protocol_type = 0U;
             }
+        }
+
+        if (view.protocol_type == detail::kEtherTypePbb) {
+            details.has_pbb = true;
+            details.pbb.present = true;
+            const auto pbb = detail::parse_pbb_payload(packet_bytes, view.payload_offset);
+            details.pbb.available_bytes = pbb.available_itag_bytes;
+            details.pbb.itag_truncated = pbb.status == detail::PbbParseStatus::itag_truncated;
+            details.pbb.pcp = pbb.pcp;
+            details.pbb.dei = pbb.dei;
+            details.pbb.uca = pbb.uca;
+            details.pbb.reserved = pbb.reserved;
+            details.pbb.isid = pbb.isid;
+
+            if (details.has_vlan) {
+                details.encapsulating_vlan_tags = details.vlan_tags;
+            }
+
+            if (pbb.has_inner_ethernet) {
+                populate_inner_ethernet_details(packet_bytes, pbb.inner_ethernet_offset, pbb.inner_ethernet, details);
+                populate_inner_ethernet_continuation_details(packet_bytes, pbb.inner_ethernet_offset, details);
+                if (pbb.status == detail::PbbParseStatus::unknown_inner_ether_type) {
+                    populate_unknown_inner_ethernet_payload_preview(
+                        packet_bytes,
+                        pbb.inner_ethernet,
+                        pbb.bounded_packet_end,
+                        details
+                    );
+                }
+            }
+
+            if (detail::pbb_has_resolved_inner_payload(pbb.status)) {
+                return LinkLayerView {
+                    .protocol_type = pbb.inner_protocol_type,
+                    .payload_offset = pbb.inner_payload_offset,
+                    .bounded_packet_end = pbb.bounded_packet_end,
+                };
+            }
+
+            if (mode == DecodeMode::best_effort) {
+                return LinkLayerView {
+                    .protocol_type = 0U,
+                    .payload_offset = pbb.inner_payload_offset,
+                    .bounded_packet_end = pbb.bounded_packet_end,
+                };
+            }
+            return std::nullopt;
         }
         return view;
     }
@@ -519,6 +563,14 @@ std::optional<PacketDetails> decode_packet_details(
         return std::nullopt;
     }
 
+    const auto has_pbb = details.has_pbb;
+    const auto pbb = details.pbb;
+    const auto encapsulating_vlan_tags = details.encapsulating_vlan_tags;
+    const auto has_inner_ethernet = details.has_inner_ethernet;
+    const auto inner_ethernet = details.inner_ethernet;
+    const auto has_unknown_inner_ethernet_payload = details.has_unknown_inner_ethernet_payload;
+    const auto unknown_inner_ethernet_payload = details.unknown_inner_ethernet_payload;
+
     details.has_mpls = false;
     details.mpls_ether_type = 0U;
     details.mpls_labels.clear();
@@ -530,6 +582,16 @@ std::optional<PacketDetails> decode_packet_details(
     details.unknown_inner_ethernet_payload = {};
     details.has_pppoe = false;
     details.pppoe = {};
+
+    if (has_pbb) {
+        details.has_pbb = true;
+        details.pbb = pbb;
+        details.encapsulating_vlan_tags = encapsulating_vlan_tags;
+        details.has_inner_ethernet = has_inner_ethernet;
+        details.inner_ethernet = inner_ethernet;
+        details.has_unknown_inner_ethernet_payload = has_unknown_inner_ethernet_payload;
+        details.unknown_inner_ethernet_payload = unknown_inner_ethernet_payload;
+    }
 
     auto network_protocol_type = envelope->protocol_type;
     auto network_payload_offset = envelope->payload_offset;
@@ -563,10 +625,15 @@ std::optional<PacketDetails> decode_packet_details(
             };
         }
 
-        populate_inner_ethernet_details(packet_bytes, mpls, details);
-        populate_inner_ethernet_continuation_details(packet_bytes, mpls, details);
+        populate_inner_ethernet_details(packet_bytes, mpls.inner_ethernet_offset, mpls.inner_ethernet, details);
+        populate_inner_ethernet_continuation_details(packet_bytes, mpls.inner_ethernet_offset, details);
         if (mpls.status == detail::MplsParseStatus::unknown_inner_ether_type) {
-            populate_unknown_inner_ethernet_payload_preview(packet_bytes, mpls, details);
+            populate_unknown_inner_ethernet_payload_preview(
+                packet_bytes,
+                mpls.inner_ethernet,
+                mpls.bounded_packet_end,
+                details
+            );
         }
 
         if (!detail::mpls_has_resolved_inner_payload(mpls.status)) {

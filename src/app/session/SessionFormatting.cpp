@@ -18,6 +18,7 @@ constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
 constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
+constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
 constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
 constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
 constexpr std::uint16_t kIeee8023LengthCutoff = 0x0600U;
@@ -191,6 +192,8 @@ std::string format_ether_type_name(const std::uint16_t ether_type) {
         return "MPLS Unicast";
     case kEtherTypeMplsMulticast:
         return "MPLS Multicast";
+    case kEtherTypePbb:
+        return "PBB I-TAG";
     case kEtherTypePppoeDiscovery:
         return "PPPoE Discovery";
     case kEtherTypePppoeSession:
@@ -1303,6 +1306,38 @@ void append_layer_if_not_empty(std::vector<PacketSummaryLayer>& layers, PacketSu
     }
 }
 
+void append_vlan_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const std::vector<VlanTagDetails>& tags
+) {
+    for (const auto& tag : tags) {
+        auto vlan_fields = std::vector<PacketSummaryField> {
+            make_summary_field("TPID", format_ether_type_value(tag.tpid)),
+            make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+            make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+            make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+        };
+        if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
+            vlan_fields.push_back(make_summary_field(
+                "Encapsulated Length",
+                std::to_string(tag.encapsulated_ether_type) + " bytes"
+            ));
+        } else {
+            vlan_fields.push_back(make_summary_field(
+                "Encapsulated EtherType",
+                format_ether_type_value(tag.encapsulated_ether_type)
+            ));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "vlan",
+            .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
+                ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
+                ", ID: " + std::to_string(vlan_identifier(tag.tci)),
+            .fields = std::move(vlan_fields),
+        });
+    }
+}
+
 void apply_default_summary_layer_expansion(std::vector<PacketSummaryLayer>& layers) {
     if (layers.empty()) {
         return;
@@ -2072,53 +2107,31 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    const bool has_mpls_inner_ethernet = details.has_mpls && details.has_inner_ethernet;
+    const bool has_nested_inner_ethernet = details.has_inner_ethernet && (details.has_mpls || details.has_pbb);
+    const auto& outer_vlan_tags = details.has_pbb ? details.encapsulating_vlan_tags : details.vlan_tags;
+    const bool has_outer_vlans = !outer_vlan_tags.empty();
 
-    if (details.has_vlan && !has_mpls_inner_ethernet) {
-        for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
-            const auto& tag = details.vlan_tags[index];
-            auto vlan_fields = std::vector<PacketSummaryField> {
-                make_summary_field("TPID", format_ether_type_value(tag.tpid)),
-                make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
-                make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
-                make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
-            };
-            if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
-                vlan_fields.push_back(make_summary_field(
-                    "Encapsulated Length",
-                    std::to_string(tag.encapsulated_ether_type) + " bytes"
-                ));
-            } else {
-                vlan_fields.push_back(make_summary_field(
-                    "Encapsulated EtherType",
-                    format_ether_type_value(tag.encapsulated_ether_type)
-                ));
-            }
-            append_layer_if_not_empty(layers, PacketSummaryLayer {
-                .id = "vlan",
-                .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
-                    ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
-                    ", ID: " + std::to_string(vlan_identifier(tag.tci)),
-                .fields = std::move(vlan_fields),
-            });
-        }
-
-        if (details.vlan_tag_truncated) {
-            append_layer_if_not_empty(layers, PacketSummaryLayer {
-                .id = "vlan",
-                .title = format_vlan_tpid_name(details.truncated_vlan_tpid) + " (truncated)",
-                .fields = {
-                    make_summary_field("TPID", format_ether_type_value(details.truncated_vlan_tpid)),
-                    make_summary_field("Warning", "VLAN tag header is truncated"),
-                },
-                .expanded_by_default = true,
-                .warning = true,
-                .marker_text = "Warning",
-            });
-        }
+    if (details.has_pbb && has_outer_vlans) {
+        append_vlan_summary_layers(layers, outer_vlan_tags);
+    } else if (has_outer_vlans && !has_nested_inner_ethernet) {
+        append_vlan_summary_layers(layers, outer_vlan_tags);
     }
 
-    if (details.has_llc && !has_mpls_inner_ethernet) {
+    if (details.vlan_tag_truncated && !has_nested_inner_ethernet) {
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "vlan",
+            .title = format_vlan_tpid_name(details.truncated_vlan_tpid) + " (truncated)",
+            .fields = {
+                make_summary_field("TPID", format_ether_type_value(details.truncated_vlan_tpid)),
+                make_summary_field("Warning", "VLAN tag header is truncated"),
+            },
+            .expanded_by_default = true,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    if (details.has_llc && !has_nested_inner_ethernet) {
         std::vector<PacketSummaryField> llc_fields {};
         if (details.llc.available_header_bytes >= 1U) {
             llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
@@ -2148,7 +2161,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_snap && !has_mpls_inner_ethernet) {
+    if (details.has_snap && !has_nested_inner_ethernet) {
         const auto oui_text = format_hex_byte_sequence(
             std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
         );
@@ -2170,7 +2183,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (!has_mpls_inner_ethernet) {
+    if (!has_nested_inner_ethernet) {
         if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
             append_layer_if_not_empty(layers, *payload_layer);
         }
@@ -2219,6 +2232,27 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
+    if (details.has_pbb) {
+        std::vector<PacketSummaryField> pbb_fields {};
+        if (details.pbb.available_bytes >= 4U) {
+            pbb_fields.push_back(make_summary_field("PCP", std::to_string(details.pbb.pcp)));
+            pbb_fields.push_back(make_summary_field("DEI", details.pbb.dei ? "1" : "0"));
+            pbb_fields.push_back(make_summary_field("UCA", details.pbb.uca ? "1" : "0"));
+            pbb_fields.push_back(make_summary_field("I-SID", format_hex_value(details.pbb.isid, 6)));
+        }
+        if (details.pbb.itag_truncated) {
+            pbb_fields.push_back(make_summary_field("Warning", "PBB I-TAG is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "pbb",
+            .title = "PBB I-TAG",
+            .fields = std::move(pbb_fields),
+            .warning = details.pbb.itag_truncated,
+            .marker_text = details.pbb.itag_truncated ? "Warning" : std::string {},
+        });
+    }
+
     if (details.has_inner_ethernet) {
         auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
         if (details.inner_ethernet.available_header_bytes >= 6U) {
@@ -2250,37 +2284,11 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_vlan && has_mpls_inner_ethernet) {
-        for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
-            const auto& tag = details.vlan_tags[index];
-            auto vlan_fields = std::vector<PacketSummaryField> {
-                make_summary_field("TPID", format_ether_type_value(tag.tpid)),
-                make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
-                make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
-                make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
-            };
-            if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
-                vlan_fields.push_back(make_summary_field(
-                    "Encapsulated Length",
-                    std::to_string(tag.encapsulated_ether_type) + " bytes"
-                ));
-            } else {
-                vlan_fields.push_back(make_summary_field(
-                    "Encapsulated EtherType",
-                    format_ether_type_value(tag.encapsulated_ether_type)
-                ));
-            }
-            append_layer_if_not_empty(layers, PacketSummaryLayer {
-                .id = "vlan",
-                .title = format_vlan_tpid_name(tag.tpid) + ", PRI: " + std::to_string(vlan_priority(tag.tci)) +
-                    ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
-                    ", ID: " + std::to_string(vlan_identifier(tag.tci)),
-                .fields = std::move(vlan_fields),
-            });
-        }
+    if (details.has_vlan && has_nested_inner_ethernet) {
+        append_vlan_summary_layers(layers, details.vlan_tags);
     }
 
-    if (details.has_llc && has_mpls_inner_ethernet) {
+    if (details.has_llc && has_nested_inner_ethernet) {
         std::vector<PacketSummaryField> llc_fields {};
         if (details.llc.available_header_bytes >= 1U) {
             llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
@@ -2306,7 +2314,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_snap && has_mpls_inner_ethernet) {
+    if (details.has_snap && has_nested_inner_ethernet) {
         const auto oui_text = format_hex_byte_sequence(
             std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
         );
@@ -2328,7 +2336,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (has_mpls_inner_ethernet) {
+    if (has_nested_inner_ethernet) {
         if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
             append_layer_if_not_empty(layers, *payload_layer);
         }

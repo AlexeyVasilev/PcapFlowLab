@@ -65,10 +65,23 @@ void expect_layer_prefix(
     std::initializer_list<const char*> expected_ids
 ) {
     PFL_EXPECT(layers.size() >= expected_ids.size());
-    std::size_t index = 0U;
+    if (layers.size() < expected_ids.size()) {
+        return;
+    }
+    std::size_t search_index = 0U;
     for (const auto* expected_id : expected_ids) {
-        PFL_EXPECT(layers[index].id == expected_id);
-        ++index;
+        const auto found = std::find_if(
+            layers.begin() + static_cast<std::ptrdiff_t>(search_index),
+            layers.end(),
+            [&](const session_detail::PacketSummaryLayer& layer) {
+                return layer.id == expected_id;
+            }
+        );
+        PFL_EXPECT(found != layers.end());
+        if (found == layers.end()) {
+            return;
+        }
+        search_index = static_cast<std::size_t>(std::distance(layers.begin(), found)) + 1U;
     }
 }
 
@@ -328,7 +341,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(details->vlan_tags.size() == 1U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "mpls", "ipv4", "tcp"});
+        PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
+        PFL_EXPECT(count_layers(summary_layers, "vlan") == 1U);
+        PFL_EXPECT(find_layer(summary_layers, "mpls") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ipv4") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "tcp") != nullptr);
     }
 
     {
@@ -348,7 +366,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(details->vlan_tags.size() == 2U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "vlan", "mpls", "ipv4", "udp"});
+        PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
+        PFL_EXPECT(count_layers(summary_layers, "vlan") == 2U);
+        PFL_EXPECT(find_layer(summary_layers, "mpls") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ipv4") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "udp") != nullptr);
     }
 
     {

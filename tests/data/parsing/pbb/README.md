@@ -9,8 +9,12 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated I-TAG / inner Ethernet / inner IPv4 cases;
 - non-default I-TAG metadata presentation candidates.
 
-Parser implementation is intentionally **not** part of this pass.
-These fixtures are being prepared first so later parser work can target stable deterministic captures.
+Current repository behavior now supports a bounded first pass of shared PBB / MAC-in-MAC parsing:
+- outer EtherType `0x88e7` I-TAG detection;
+- 4-byte I-TAG metadata presentation (PCP / DEI / UCA / I-SID);
+- inner customer Ethernet continuation into IPv4 / IPv6 / ARP;
+- reuse of inner VLAN / QinQ / LLC/SNAP continuation;
+- conservative no-flow handling for unknown inner EtherType and malformed/truncated cases.
 
 ## Local generation
 
@@ -72,18 +76,17 @@ Notes:
 
 ## Current support assumptions
 
-Current repository docs do not claim shared PBB / MAC-in-MAC parser support yet.
+Current shared support covers:
+- normal inner IPv4 / IPv6 TCP/UDP flow extraction behind PBB;
+- ARP recognition behind PBB without fabricating a transport flow;
+- outer B-TAG preservation before the I-TAG;
+- inner VLAN / QinQ / LLC/SNAP continuation after the I-TAG;
+- conservative partial presentation for truncated inner IPv4 headers.
 
-Conservative expectation for the current codebase before parser work lands:
-- these fixtures may remain no-flow / unrecognized;
-- outer Ethernet may still be visible in selected-packet details;
-- richer I-TAG / inner Ethernet / inner IPv4 continuation is future parser work;
-- malformed and truncated cases must remain no-crash robustness fixtures.
-
-Future parser work should aim to reuse existing shared continuation paths where appropriate:
-- inner VLAN / QinQ;
-- inner LLC/SNAP;
-- partial inner IPv4 presentation for truncated cases.
+Still intentionally conservative:
+- unknown inner EtherType remains no-flow with bounded Data preview;
+- truncated I-TAG and truncated inner Ethernet remain no-flow;
+- no PBB-TE, OAM/CFM, bridge-learning, or service semantics are implied.
 
 ---
 
@@ -91,106 +94,91 @@ Future parser work should aim to reuse existing shared continuation paths where 
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv4 / TCP / Raw
-- Future expected behavior: parse the I-TAG, recover inner Ethernet, and form a normal IPv4/TCP flow.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: normal IPv4/TCP flow through MAC-in-MAC.
 
 ### 02_pbb_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv4 / UDP / Raw
-- Future expected behavior: normal IPv4/UDP flow through MAC-in-MAC.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: normal IPv4/UDP flow through MAC-in-MAC.
 
 ### 03_pbb_ipv6_tcp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv6 / TCP / Raw
-- Future expected behavior: normal IPv6/TCP flow through MAC-in-MAC.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: normal IPv6/TCP flow through MAC-in-MAC.
 
 ### 04_pbb_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv6 / UDP / Raw
-- Future expected behavior: normal IPv6/UDP flow through MAC-in-MAC.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: normal IPv6/UDP flow through MAC-in-MAC.
 
 ### 05_pbb_arp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / ARP
-- Future expected behavior: ARP recognized behind PBB without fabricating a transport flow.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: ARP recognized behind PBB without fabricating a transport flow.
 
 ### 06_pbb_inner_vlan_ipv4_tcp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / inner VLAN / IPv4 / TCP
-- Future expected behavior: PBB continuation plus reuse of existing inner VLAN support.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: PBB continuation plus reuse of existing inner VLAN support.
 
 ### 07_pbb_inner_qinq_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / inner QinQ / inner VLAN / IPv4 / UDP
-- Future expected behavior: PBB continuation plus reuse of stacked customer VLAN support.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: PBB continuation plus reuse of stacked customer VLAN support.
 
 ### 08_pbb_inner_llc_snap_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet 802.3 length / LLC / SNAP / IPv4 / UDP
-- Future expected behavior: PBB continuation plus reuse of the existing LLC/SNAP path.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: PBB continuation plus reuse of the existing LLC/SNAP path.
 
 ### 09_pbb_outer_btag_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / outer provider VLAN B-TAG / PBB I-TAG / inner Ethernet / IPv4 / UDP
-- Future expected behavior: provider VLAN before PBB I-TAG remains visible and does not block inner IPv4/UDP continuation.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: provider VLAN before PBB I-TAG remains visible and does not block inner IPv4/UDP continuation.
 
 ### 10_pbb_outer_btag_inner_vlan_ipv4_tcp.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / outer provider VLAN B-TAG / PBB I-TAG / inner Ethernet / inner VLAN / IPv4 / TCP
-- Future expected behavior: outer provider VLAN plus inner customer VLAN composition through PBB.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: outer provider VLAN plus inner customer VLAN composition through PBB.
 
 ### 11_pbb_unknown_inner_ethertype.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / unknown EtherType / Raw
-- Future expected behavior: conservative fallback only; parser must not fabricate IPv4 / IPv6 / ARP.
-- Current conservative behavior candidate: no-flow / unrecognized.
+- Current expected behavior: conservative fallback only; parser must not fabricate IPv4 / IPv6 / ARP.
 
 ### 12_pbb_truncated_itag.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB EtherType `0x88e7` / incomplete I-TAG
-- Future expected behavior: malformed/truncated I-TAG robustness only; no crash.
-- Current conservative behavior candidate: no-flow / unrecognized.
+- Current expected behavior: malformed/truncated I-TAG robustness only; no crash.
 
 ### 13_pbb_truncated_inner_ethernet.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / partial inner Ethernet header
-- Future expected behavior: no crash; later parser work may show partial inner Ethernet details.
-- Current conservative behavior candidate: no-flow / unrecognized.
+- Current expected behavior: no crash with conservative partial inner Ethernet presentation.
 
 ### 14_pbb_truncated_inner_ipv4.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv4 EtherType / partial IPv4 header
-- Future expected behavior: no-flow with shared partial IPv4 presentation reused after the PBB shim.
-- Current conservative behavior candidate: no-flow / unrecognized until both PBB continuation and partial-inner presentation are wired together.
+- Current expected behavior: no-flow with shared partial IPv4 presentation reused after the PBB shim.
 
 ### 15_pbb_metadata_nondefault_itag.pcap
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG with non-default PCP / DEI / UCA / I-SID / inner Ethernet / IPv4 / UDP
-- Future expected behavior: presentation of I-TAG metadata fields such as PCP, DEI, UCA, and I-SID.
-- Current conservative behavior candidate: likely no-flow until PBB continuation is implemented.
+- Current expected behavior: normal IPv4/UDP flow plus visible non-default I-TAG metadata fields such as PCP, DEI, UCA, and I-SID.
 
 ## Expected generated file list
 

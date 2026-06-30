@@ -74,6 +74,17 @@ struct InnerEthernetDetails {
     bool header_truncated {false};
 };
 
+struct PbbDetails {
+    bool present {false};
+    bool itag_truncated {false};
+    std::uint8_t available_bytes {0};
+    std::uint8_t pcp {0};
+    bool dei {false};
+    bool uca {false};
+    std::uint8_t reserved {0};
+    std::uint32_t isid {0};
+};
+
 struct MplsPseudowireControlWordDetails {
     bool present {false};
     bool truncated {false};
@@ -239,6 +250,7 @@ struct PacketDetails {
 
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
+    std::vector<VlanTagDetails> encapsulating_vlan_tags {};
     bool vlan_tag_truncated {false};
     std::uint16_t truncated_vlan_tpid {0};
 
@@ -254,6 +266,8 @@ struct PacketDetails {
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     std::vector<MplsLabelDetails> mpls_labels {};
+    bool has_pbb {false};
+    PbbDetails pbb {};
     bool has_mpls_pseudowire_control_word {false};
     MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
     bool has_inner_ethernet {false};

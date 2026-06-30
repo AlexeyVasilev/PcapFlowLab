@@ -1,11 +1,14 @@
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
 #include <initializer_list>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
 
 namespace pfl::tests {
@@ -40,13 +43,23 @@ const session_detail::PacketSummaryLayer* find_layer(
     return nullptr;
 }
 
-bool layer_has_field_label(
+bool layer_has_field_containing(
     const session_detail::PacketSummaryLayer& layer,
-    const std::string& label
+    const std::string& label,
+    const std::string& expected_fragment
 ) {
     return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
-        return field.label == label;
+        return field.label == label && field.value.find(expected_fragment) != std::string::npos;
     });
+}
+
+std::size_t count_layers(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    return static_cast<std::size_t>(std::count_if(layers.begin(), layers.end(), [&](const session_detail::PacketSummaryLayer& layer) {
+        return layer.id == id;
+    }));
 }
 
 void expect_layer_prefix(
@@ -54,99 +67,472 @@ void expect_layer_prefix(
     std::initializer_list<const char*> expected_ids
 ) {
     PFL_EXPECT(layers.size() >= expected_ids.size());
-    std::size_t index = 0U;
+    if (layers.size() < expected_ids.size()) {
+        return;
+    }
+    std::size_t search_index = 0U;
     for (const auto* expected_id : expected_ids) {
-        PFL_EXPECT(layers[index].id == expected_id);
-        ++index;
+        const auto found = std::find_if(
+            layers.begin() + static_cast<std::ptrdiff_t>(search_index),
+            layers.end(),
+            [&](const session_detail::PacketSummaryLayer& layer) {
+                return layer.id == expected_id;
+            }
+        );
+        PFL_EXPECT(found != layers.end());
+        if (found == layers.end()) {
+            return;
+        }
+        search_index = static_cast<std::size_t>(std::distance(layers.begin(), found)) + 1U;
     }
 }
 
-void expect_open_and_basic_open_state(CaptureSession& session, const std::filesystem::path& relative_path) {
-    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
-    PFL_EXPECT(session.summary().packet_count == 0U);
-    PFL_EXPECT(session.summary().flow_count == 0U);
+void expect_pbb_metadata(
+    const PacketDetails& details,
+    const session_detail::PacketSummaryLayer& pbb_layer,
+    const std::uint8_t expected_pcp,
+    const bool expected_dei,
+    const bool expected_uca,
+    const std::uint32_t expected_isid
+) {
+    PFL_EXPECT(details.has_pbb);
+    PFL_EXPECT(details.pbb.present);
+    PFL_EXPECT(!details.pbb.itag_truncated);
+    PFL_EXPECT(details.pbb.available_bytes == 4U);
+    PFL_EXPECT(details.pbb.pcp == expected_pcp);
+    PFL_EXPECT(details.pbb.dei == expected_dei);
+    PFL_EXPECT(details.pbb.uca == expected_uca);
+    PFL_EXPECT(details.pbb.isid == expected_isid);
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "PCP", std::to_string(expected_pcp)));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "DEI", expected_dei ? "1" : "0"));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "UCA", expected_uca ? "1" : "0"));
+
+    std::ostringstream isid_builder {};
+    isid_builder << "0x" << std::hex << std::nouppercase << std::setw(6) << std::setfill('0') << expected_isid;
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "I-SID", isid_builder.str()));
 }
 
-void expect_current_conservative_pbb_no_flow(
+void expect_single_ip_pbb_flow(
+    CaptureSession& session,
     const std::filesystem::path& relative_path,
-    const std::size_t expected_outer_vlan_count = 0U
+    const FlowAddressFamily expected_family,
+    const std::string& expected_protocol,
+    const std::string& expected_address_a,
+    const std::uint16_t expected_port_a,
+    const std::string& expected_address_b,
+    const std::uint16_t expected_port_b,
+    std::initializer_list<const char*> expected_layer_prefix,
+    const std::size_t expected_outer_vlan_count = 0U,
+    const std::size_t expected_inner_vlan_count = 0U,
+    const bool expect_snap = false,
+    const std::uint8_t expected_pcp = 0U,
+    const bool expected_dei = false,
+    const bool expected_uca = false,
+    const std::uint32_t expected_isid = 0x123456U
 ) {
-    CaptureSession session {};
-    expect_open_and_basic_open_state(session, relative_path);
-
-    PFL_EXPECT(session.list_flows().empty());
-    PFL_EXPECT(session.unrecognized_packet_count() == 1U);
-
-    const auto rows = session.list_unrecognized_packets(0U, 30U);
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    PFL_EXPECT(session.summary().packet_count == 1U);
+    const auto rows = session.list_flows();
     PFL_EXPECT(rows.size() == 1U);
-    PFL_EXPECT(rows[0].row_number == 1U);
-    PFL_EXPECT(rows[0].packet_index == 0U);
-    PFL_EXPECT(rows[0].reason_text == "Unsupported or malformed packet");
+    PFL_EXPECT(rows[0].family == expected_family);
+    PFL_EXPECT(rows[0].protocol_text == expected_protocol);
+    PFL_EXPECT(rows[0].packet_count == 1U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
     PFL_EXPECT(details.has_value());
     PFL_EXPECT(details->has_ethernet);
-    PFL_EXPECT(!details->has_ipv4);
-    PFL_EXPECT(!details->has_ipv6);
-    PFL_EXPECT(!details->has_arp);
-    PFL_EXPECT(details->has_vlan == (expected_outer_vlan_count > 0U));
-    PFL_EXPECT(details->vlan_tags.size() == expected_outer_vlan_count);
+    PFL_EXPECT(details->has_pbb);
+    PFL_EXPECT(details->has_inner_ethernet);
+    PFL_EXPECT(!details->inner_ethernet.header_truncated);
+    PFL_EXPECT(details->encapsulating_vlan_tags.size() == expected_outer_vlan_count);
+    PFL_EXPECT(details->vlan_tags.size() == expected_inner_vlan_count);
+    PFL_EXPECT(details->has_snap == expect_snap);
+
+    if (expected_family == FlowAddressFamily::ipv4) {
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+        PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.src_addr) == expected_address_a);
+        PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.dst_addr) == expected_address_b);
+    } else {
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->has_ipv6);
+        PFL_EXPECT(session_detail::format_ipv6_address(details->ipv6.src_addr) == expected_address_a);
+        PFL_EXPECT(session_detail::format_ipv6_address(details->ipv6.dst_addr) == expected_address_b);
+    }
+
+    if (expected_protocol == "TCP") {
+        PFL_EXPECT(details->has_tcp);
+        PFL_EXPECT(!details->has_udp);
+        PFL_EXPECT(details->tcp.src_port == expected_port_a);
+        PFL_EXPECT(details->tcp.dst_port == expected_port_b);
+    } else {
+        PFL_EXPECT(!details->has_tcp);
+        PFL_EXPECT(details->has_udp);
+        PFL_EXPECT(details->udp.src_port == expected_port_a);
+        PFL_EXPECT(details->udp.dst_port == expected_port_b);
+    }
+
+    const bool forward_match =
+        rows[0].address_a == expected_address_a &&
+        rows[0].port_a == expected_port_a &&
+        rows[0].address_b == expected_address_b &&
+        rows[0].port_b == expected_port_b;
+    const bool reverse_match =
+        rows[0].address_a == expected_address_b &&
+        rows[0].port_a == expected_port_b &&
+        rows[0].address_b == expected_address_a &&
+        rows[0].port_b == expected_port_a;
+    PFL_EXPECT(forward_match || reverse_match);
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-    if (expected_outer_vlan_count == 0U) {
-        expect_layer_prefix(summary_layers, {"frame", "ethernet"});
-    } else {
-        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan"});
-    }
+    expect_layer_prefix(summary_layers, expected_layer_prefix);
+    PFL_EXPECT(count_layers(summary_layers, "vlan") == expected_outer_vlan_count + expected_inner_vlan_count);
 
-    const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
-    PFL_EXPECT(ethernet_layer != nullptr);
-    PFL_EXPECT(layer_has_field_label(*ethernet_layer, "Type"));
-
-    if (expected_outer_vlan_count > 0U) {
-        const auto* vlan_layer = find_layer(summary_layers, "vlan");
-        PFL_EXPECT(vlan_layer != nullptr);
-        PFL_EXPECT(layer_has_field_label(*vlan_layer, "Encapsulated EtherType"));
+    const auto* pbb_layer = find_layer(summary_layers, "pbb");
+    PFL_EXPECT(pbb_layer != nullptr);
+    if (pbb_layer == nullptr) {
+        return;
     }
+    expect_pbb_metadata(*details, *pbb_layer, expected_pcp, expected_dei, expected_uca, expected_isid);
+
+    const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
+    PFL_EXPECT(inner_ethernet_layer != nullptr);
+}
+
+void expect_single_pbb_arp_packet(CaptureSession& session, const std::filesystem::path& relative_path) {
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    PFL_EXPECT(session.summary().packet_count == 1U);
+    PFL_EXPECT(session.summary().flow_count == 1U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto rows = session.list_flows();
+    PFL_EXPECT(rows.size() == 1U);
+    PFL_EXPECT(rows[0].packet_count == 1U);
+
+    const auto packet = require_packet(session, 0U);
+    const auto details = session.read_packet_details(packet);
+    PFL_EXPECT(details.has_value());
+    PFL_EXPECT(details->has_pbb);
+    PFL_EXPECT(details->has_inner_ethernet);
+    PFL_EXPECT(details->has_arp);
+    PFL_EXPECT(!details->has_tcp);
+    PFL_EXPECT(!details->has_udp);
+    PFL_EXPECT(details->encapsulating_vlan_tags.empty());
+    PFL_EXPECT(details->vlan_tags.empty());
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+    expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner", "arp"});
+    const auto* pbb_layer = find_layer(summary_layers, "pbb");
+    PFL_EXPECT(pbb_layer != nullptr);
+    if (pbb_layer == nullptr) {
+        return;
+    }
+    expect_pbb_metadata(*details, *pbb_layer, 0U, false, false, 0x123456U);
+}
+
+void expect_single_unrecognized_pbb_packet(
+    CaptureSession& session,
+    const std::filesystem::path& relative_path,
+    const std::string& expected_reason
+) {
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    PFL_EXPECT(session.list_flows().empty());
+    PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+    const auto rows = session.list_unrecognized_packets(0U, 30U);
+    PFL_EXPECT(rows.size() == 1U);
+    PFL_EXPECT(rows[0].row_number == 1U);
+    PFL_EXPECT(rows[0].packet_index == 0U);
+    PFL_EXPECT(rows[0].reason_text == expected_reason);
 }
 
 }  // namespace
 
 void run_pbb_pcap_fixture_tests() {
-    // Future-flow MAC-in-MAC candidates. Current conservative baseline is no-flow
-    // until 0x88e7 / I-TAG / inner Ethernet continuation support is implemented.
-    expect_current_conservative_pbb_no_flow("parsing/pbb/01_pbb_ipv4_tcp.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/02_pbb_ipv4_udp.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/03_pbb_ipv6_tcp.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/04_pbb_ipv6_udp.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/05_pbb_arp.pcap");
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/01_pbb_ipv4_tcp.pcap",
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "192.0.2.60",
+            49190U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "tcp"}
+        );
+    }
 
-    // Future composition candidates. For now they still remain conservative because
-    // there is no shared PBB continuation into the inner Ethernet envelope yet.
-    expect_current_conservative_pbb_no_flow("parsing/pbb/06_pbb_inner_vlan_ipv4_tcp.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/07_pbb_inner_qinq_ipv4_udp.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/08_pbb_inner_llc_snap_ipv4_udp.pcap");
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/02_pbb_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"}
+        );
+    }
 
-    // Outer provider VLAN before 0x88e7 is preserved by existing VLAN support even
-    // though the inner PBB payload still remains no-flow today.
-    expect_current_conservative_pbb_no_flow("parsing/pbb/09_pbb_outer_btag_ipv4_udp.pcap", 1U);
-    expect_current_conservative_pbb_no_flow("parsing/pbb/10_pbb_outer_btag_inner_vlan_ipv4_tcp.pcap", 1U);
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/03_pbb_ipv6_tcp.pcap",
+            FlowAddressFamily::ipv6,
+            "TCP",
+            "2001:0db8:0060:0000:0000:0000:0000:0010",
+            49190U,
+            "2001:0db8:0060:0000:0000:0000:0000:0020",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv6", "tcp"}
+        );
+    }
 
-    // Unknown inner EtherType remains conservative, but current parser still stops
-    // before any inner PBB continuation, so the stable externally visible behavior
-    // matches the generic 0x88e7 no-flow baseline.
-    expect_current_conservative_pbb_no_flow("parsing/pbb/11_pbb_unknown_inner_ethertype.pcap");
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/04_pbb_ipv6_udp.pcap",
+            FlowAddressFamily::ipv6,
+            "UDP",
+            "2001:0db8:0060:0000:0000:0000:0000:0010",
+            53570U,
+            "2001:0db8:0060:0000:0000:0000:0000:0020",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv6", "udp"}
+        );
+    }
 
-    // Malformed/truncated PBB cases are currently safe no-flow robustness fixtures.
-    // No richer I-TAG or inner-header truncation reporting is required yet.
-    expect_current_conservative_pbb_no_flow("parsing/pbb/12_pbb_truncated_itag.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/13_pbb_truncated_inner_ethernet.pcap");
-    expect_current_conservative_pbb_no_flow("parsing/pbb/14_pbb_truncated_inner_ipv4.pcap");
+    {
+        CaptureSession session {};
+        expect_single_pbb_arp_packet(session, "parsing/pbb/05_pbb_arp.pcap");
+    }
 
-    // Non-default I-TAG metadata is a future presentation candidate. Current
-    // conservative behavior still stops at outer Ethernet only.
-    expect_current_conservative_pbb_no_flow("parsing/pbb/15_pbb_metadata_nondefault_itag.pcap");
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/06_pbb_inner_vlan_ipv4_tcp.pcap",
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "192.0.2.60",
+            49190U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "vlan", "ipv4", "tcp"},
+            0U,
+            1U
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/07_pbb_inner_qinq_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "vlan", "vlan", "ipv4", "udp"},
+            0U,
+            2U
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/08_pbb_inner_llc_snap_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "llc", "snap", "ipv4", "udp"},
+            0U,
+            0U,
+            true
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/09_pbb_outer_btag_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "vlan", "pbb", "ethernet-inner", "ipv4", "udp"},
+            1U,
+            0U
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->encapsulating_vlan_tags.size() == 1U);
+        PFL_EXPECT(details->vlan_tags.empty());
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* outer_vlan_layer = find_layer(summary_layers, "vlan");
+        PFL_EXPECT(outer_vlan_layer != nullptr);
+        if (outer_vlan_layer == nullptr) {
+            return;
+        }
+        PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "PBB I-TAG"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/10_pbb_outer_btag_inner_vlan_ipv4_tcp.pcap",
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "192.0.2.60",
+            49190U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "vlan", "pbb", "ethernet-inner", "vlan", "ipv4", "tcp"},
+            1U,
+            1U
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->encapsulating_vlan_tags.size() == 1U);
+        PFL_EXPECT(details->vlan_tags.size() == 1U);
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/11_pbb_unknown_inner_ethertype.pcap",
+            "Unknown PBB inner EtherType"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->has_unknown_inner_ethernet_payload);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner", "inner-payload"});
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/12_pbb_truncated_itag.pcap",
+            "PBB I-TAG truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->pbb.itag_truncated);
+        PFL_EXPECT(!details->has_inner_ethernet);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        const auto* pbb_layer = find_layer(summary_layers, "pbb");
+        PFL_EXPECT(pbb_layer != nullptr);
+        if (pbb_layer == nullptr) {
+            return;
+        }
+        PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Warning", "PBB I-TAG is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/13_pbb_truncated_inner_ethernet.pcap",
+            "Inner Ethernet header truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->inner_ethernet.header_truncated);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner"});
+        const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
+        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        if (inner_ethernet_layer == nullptr) {
+            return;
+        }
+        PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "Inner Ethernet header is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/14_pbb_truncated_inner_ipv4.pcap",
+            "IPv4 header truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_EXPECT(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->ipv4.header_truncated);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "pbb", "ethernet-inner", "ipv4"});
+        const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
+        PFL_EXPECT(ipv4_layer != nullptr);
+        if (ipv4_layer == nullptr) {
+            return;
+        }
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Version", "4"));
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Internet Header Length", "20 bytes"));
+        PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "IPv4 header is truncated"));
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/15_pbb_metadata_nondefault_itag.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"},
+            0U,
+            0U,
+            false,
+            5U,
+            true,
+            true,
+            0x654321U
+        );
+    }
 }
 
 }  // namespace pfl::tests

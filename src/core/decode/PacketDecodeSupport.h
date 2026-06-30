@@ -32,6 +32,7 @@ inline constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 inline constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
 inline constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
 inline constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
+inline constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
 inline constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
 inline constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
 inline constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
@@ -59,6 +60,7 @@ inline constexpr std::size_t kUdpHeaderSize = 8;
 inline constexpr std::size_t kIgmpMinimumHeaderSize = 8;
 inline constexpr std::size_t kPppoeHeaderSize = 6U;
 inline constexpr std::size_t kPppProtocolFieldSize = 2U;
+inline constexpr std::size_t kPbbITagSize = 4U;
 inline constexpr std::uint8_t kIgmpTypeMembershipQuery = 0x11;
 inline constexpr std::uint8_t kIgmpTypeV1MembershipReport = 0x12;
 inline constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16;
@@ -172,6 +174,33 @@ struct MplsStackView {
     LinkLayerPayloadView inner_ethernet {};
 };
 
+enum class PbbParseStatus : std::uint8_t {
+    not_present,
+    resolved_inner_ipv4,
+    resolved_inner_ipv6,
+    resolved_inner_arp,
+    itag_truncated,
+    inner_ethernet_truncated,
+    unknown_inner_ether_type,
+    unknown_payload,
+};
+
+struct PbbFrameView {
+    PbbParseStatus status {PbbParseStatus::not_present};
+    std::uint8_t available_itag_bytes {0};
+    std::uint8_t pcp {0};
+    bool dei {false};
+    bool uca {false};
+    std::uint8_t reserved {0};
+    std::uint32_t isid {0};
+    std::uint16_t inner_protocol_type {0};
+    std::size_t inner_payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
+    bool has_inner_ethernet {false};
+    std::size_t inner_ethernet_offset {0};
+    LinkLayerPayloadView inner_ethernet {};
+};
+
 struct NetworkPayloadView {
     LinkLayerPayloadView link_layer {};
     std::uint16_t protocol_type {0};
@@ -180,6 +209,8 @@ struct NetworkPayloadView {
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     MplsStackView mpls {};
+    bool has_pbb {false};
+    PbbFrameView pbb {};
 };
 
 struct PppoePayloadBounds {
@@ -221,6 +252,12 @@ inline bool is_mpls_ether_type(const std::uint16_t ether_type) noexcept {
 
 inline bool is_pppoe_ether_type(const std::uint16_t ether_type) noexcept {
     return ether_type == kEtherTypePppoeDiscovery || ether_type == kEtherTypePppoeSession;
+}
+
+inline bool pbb_has_resolved_inner_payload(const PbbParseStatus status) noexcept {
+    return status == PbbParseStatus::resolved_inner_ipv4 ||
+           status == PbbParseStatus::resolved_inner_ipv6 ||
+           status == PbbParseStatus::resolved_inner_arp;
 }
 
 inline bool is_supported_snap_pid(const std::uint16_t pid) noexcept {
@@ -438,6 +475,62 @@ inline std::optional<EthernetContinuationView> parse_ethernet_continuation(
         view.resolved_payload_offset = link_layer->payload_offset;
     }
 
+    return view;
+}
+
+inline PbbFrameView parse_pbb_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t pbb_offset
+) {
+    PbbFrameView view {};
+    view.available_itag_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(
+        kPbbITagSize,
+        pbb_offset < bytes.size() ? (bytes.size() - pbb_offset) : 0U
+    ));
+
+    if (view.available_itag_bytes < kPbbITagSize) {
+        view.status = PbbParseStatus::itag_truncated;
+        return view;
+    }
+
+    const auto itag = read_be32(bytes, pbb_offset);
+    view.pcp = static_cast<std::uint8_t>((itag >> 29U) & 0x7U);
+    view.dei = ((itag >> 28U) & 0x1U) != 0U;
+    view.uca = ((itag >> 27U) & 0x1U) != 0U;
+    view.reserved = static_cast<std::uint8_t>((itag >> 24U) & 0x7U);
+    view.isid = itag & 0x00FFFFFFU;
+
+    const auto inner_ethernet_offset = pbb_offset + kPbbITagSize;
+    if (const auto continuation = parse_ethernet_continuation(bytes, inner_ethernet_offset); continuation.has_value()) {
+        view.has_inner_ethernet = true;
+        view.inner_ethernet_offset = inner_ethernet_offset;
+        view.inner_ethernet = continuation->link_layer;
+        view.bounded_packet_end = continuation->bounded_packet_end;
+
+        if (continuation->resolved_supported_protocol) {
+            view.inner_protocol_type = continuation->resolved_protocol_type;
+            view.inner_payload_offset = continuation->resolved_payload_offset;
+            if (view.inner_protocol_type == kEtherTypeIpv4) {
+                view.status = PbbParseStatus::resolved_inner_ipv4;
+            } else if (view.inner_protocol_type == kEtherTypeIpv6) {
+                view.status = PbbParseStatus::resolved_inner_ipv6;
+            } else if (view.inner_protocol_type == kEtherTypeArp) {
+                view.status = PbbParseStatus::resolved_inner_arp;
+            } else {
+                view.status = PbbParseStatus::unknown_payload;
+            }
+        } else if (!continuation->link_layer.is_ieee_802_3 &&
+                   continuation->link_layer.protocol_type >= kIeee8023LengthCutoff) {
+            view.status = PbbParseStatus::unknown_inner_ether_type;
+        } else {
+            view.status = PbbParseStatus::unknown_payload;
+        }
+        return view;
+    }
+
+    view.has_inner_ethernet = true;
+    view.inner_ethernet_offset = inner_ethernet_offset;
+    view.status = PbbParseStatus::inner_ethernet_truncated;
     return view;
 }
 
@@ -698,6 +791,25 @@ inline std::optional<NetworkPayloadView> parse_network_payload(std::span<const s
     }
 
     if (!is_mpls_ether_type(envelope->protocol_type)) {
+        if (envelope->protocol_type == kEtherTypePbb) {
+            view.has_pbb = true;
+            view.pbb = parse_pbb_payload(bytes, envelope->payload_offset);
+            if (pbb_has_resolved_inner_payload(view.pbb.status)) {
+                view.protocol_type = view.pbb.inner_protocol_type;
+                view.payload_offset = view.pbb.inner_payload_offset;
+                if (view.pbb.bounded_packet_end.has_value()) {
+                    view.bounded_packet_end = view.pbb.bounded_packet_end;
+                }
+                return view;
+            }
+
+            view.protocol_type = 0U;
+            if (view.pbb.bounded_packet_end.has_value()) {
+                view.bounded_packet_end = view.pbb.bounded_packet_end;
+            }
+            return view;
+        }
+
         resolve_pppoe_inner_payload(bytes, view);
         return view;
     }

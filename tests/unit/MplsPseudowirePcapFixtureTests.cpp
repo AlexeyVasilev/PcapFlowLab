@@ -75,6 +75,9 @@ void expect_layer_prefix(
     std::initializer_list<const char*> expected_ids
 ) {
     PFL_EXPECT(layers.size() >= expected_ids.size());
+    if (layers.size() < expected_ids.size()) {
+        return;
+    }
     std::size_t search_index = 0U;
     for (const auto* expected_id : expected_ids) {
         const auto found = std::find_if(
@@ -85,6 +88,9 @@ void expect_layer_prefix(
             }
         );
         PFL_EXPECT(found != layers.end());
+        if (found == layers.end()) {
+            return;
+        }
         search_index = static_cast<std::size_t>(std::distance(layers.begin(), found)) + 1U;
     }
 }

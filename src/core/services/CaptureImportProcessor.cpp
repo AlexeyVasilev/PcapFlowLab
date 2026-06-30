@@ -652,6 +652,21 @@ std::string classify_unrecognized_packet_reason(
         }
     }
 
+    if (network->has_pbb) {
+        switch (network->pbb.status) {
+        case detail::PbbParseStatus::itag_truncated:
+            return "PBB I-TAG truncated";
+        case detail::PbbParseStatus::inner_ethernet_truncated:
+            return "Inner Ethernet header truncated";
+        case detail::PbbParseStatus::unknown_inner_ether_type:
+            return "Unknown PBB inner EtherType";
+        case detail::PbbParseStatus::unknown_payload:
+            return "Unsupported or malformed packet";
+        default:
+            break;
+        }
+    }
+
     const auto effective_packet_end = network->bounded_packet_end.value_or(packet_bytes.size());
     const auto bounded_packet_bytes = packet_bytes.subspan(0U, std::min(effective_packet_end, packet_bytes.size()));
 
