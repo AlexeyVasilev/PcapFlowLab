@@ -2810,6 +2810,35 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         return builder.str();
     }
 
+    if (details.has_pbb && !details.has_arp && !details.has_ipv4 && !details.has_ipv6) {
+        builder << "Protocol: PBB I-TAG";
+        if (details.pbb.available_bytes >= 4U) {
+            builder << '\n'
+                    << '\t' << "PCP: " << static_cast<unsigned>(details.pbb.pcp) << '\n'
+                    << '\t' << "DEI: " << (details.pbb.dei ? "1" : "0") << '\n'
+                    << '\t' << "UCA: " << (details.pbb.uca ? "1" : "0") << '\n'
+                    << '\t' << "I-SID: " << format_hex_value(details.pbb.isid, 6);
+        }
+        if (details.pbb.itag_truncated) {
+            builder << '\n' << '\t' << "Warning: PBB I-TAG is truncated.";
+        }
+        if (details.has_inner_ethernet) {
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+            if (details.inner_ethernet.header_truncated) {
+                builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+            }
+        }
+        return builder.str();
+    }
+
     if (details.has_igmp) {
         builder << "Protocol: " << infer_igmp_version_text(details.igmp);
         if (details.igmp.type == kIgmpTypeMembershipQuery ||

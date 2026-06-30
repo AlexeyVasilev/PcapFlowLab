@@ -86,6 +86,7 @@ Current shared support covers:
 Still intentionally conservative:
 - unknown inner EtherType remains no-flow with bounded Data preview;
 - truncated I-TAG and truncated inner Ethernet remain no-flow;
+- conservative no-flow PBB cases can expose basic Protocol-tab text with I-TAG metadata and truncation / inner-header warnings when available;
 - no PBB-TE, OAM/CFM, bridge-learning, or service semantics are implied.
 
 ---

@@ -62,6 +62,18 @@ std::size_t count_layers(
     }));
 }
 
+std::string ascii_to_hex_fragment(const std::string& text) {
+    std::ostringstream builder {};
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (index > 0U) {
+            builder << ' ';
+        }
+        builder << std::hex << std::nouppercase << std::setw(2) << std::setfill('0')
+                << static_cast<unsigned>(static_cast<unsigned char>(text[index]));
+    }
+    return builder.str();
+}
+
 void expect_layer_prefix(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     std::initializer_list<const char*> expected_ids
@@ -128,7 +140,8 @@ void expect_single_ip_pbb_flow(
     const std::uint8_t expected_pcp = 0U,
     const bool expected_dei = false,
     const bool expected_uca = false,
-    const std::uint32_t expected_isid = 0x123456U
+    const std::uint32_t expected_isid = 0x123456U,
+    const std::string& expected_transport_payload = {}
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.summary().packet_count == 1U);
@@ -185,6 +198,12 @@ void expect_single_ip_pbb_flow(
         rows[0].address_b == expected_address_a &&
         rows[0].port_b == expected_port_a;
     PFL_EXPECT(forward_match || reverse_match);
+
+    if (!expected_transport_payload.empty()) {
+        PFL_EXPECT(packet.payload_length == expected_transport_payload.size());
+        const auto payload_dump = session.read_packet_payload_hex_dump(packet);
+        PFL_EXPECT(payload_dump.find(ascii_to_hex_fragment(expected_transport_payload)) != std::string::npos);
+    }
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
     expect_layer_prefix(summary_layers, expected_layer_prefix);
@@ -261,7 +280,15 @@ void run_pbb_pcap_fixture_tests() {
             49190U,
             "198.51.100.60",
             443U,
-            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "tcp"}
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "tcp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-tcp"
         );
     }
 
@@ -276,7 +303,15 @@ void run_pbb_pcap_fixture_tests() {
             53570U,
             "198.51.100.60",
             443U,
-            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"}
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-udp"
         );
     }
 
@@ -291,7 +326,15 @@ void run_pbb_pcap_fixture_tests() {
             49190U,
             "2001:0db8:0060:0000:0000:0000:0000:0020",
             443U,
-            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv6", "tcp"}
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv6", "tcp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv6-tcp"
         );
     }
 
@@ -306,7 +349,15 @@ void run_pbb_pcap_fixture_tests() {
             53570U,
             "2001:0db8:0060:0000:0000:0000:0000:0020",
             443U,
-            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv6", "udp"}
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv6", "udp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv6-udp"
         );
     }
 
@@ -328,7 +379,13 @@ void run_pbb_pcap_fixture_tests() {
             443U,
             {"frame", "ethernet", "pbb", "ethernet-inner", "vlan", "ipv4", "tcp"},
             0U,
-            1U
+            1U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-tcp"
         );
     }
 
@@ -345,7 +402,13 @@ void run_pbb_pcap_fixture_tests() {
             443U,
             {"frame", "ethernet", "pbb", "ethernet-inner", "vlan", "vlan", "ipv4", "udp"},
             0U,
-            2U
+            2U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-udp"
         );
     }
 
@@ -363,7 +426,12 @@ void run_pbb_pcap_fixture_tests() {
             {"frame", "ethernet", "pbb", "ethernet-inner", "llc", "snap", "ipv4", "udp"},
             0U,
             0U,
-            true
+            true,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-udp"
         );
     }
 
@@ -380,7 +448,13 @@ void run_pbb_pcap_fixture_tests() {
             443U,
             {"frame", "ethernet", "vlan", "pbb", "ethernet-inner", "ipv4", "udp"},
             1U,
-            0U
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-udp"
         );
 
         const auto packet = require_packet(session, 0U);
@@ -410,7 +484,13 @@ void run_pbb_pcap_fixture_tests() {
             443U,
             {"frame", "ethernet", "vlan", "pbb", "ethernet-inner", "vlan", "ipv4", "tcp"},
             1U,
-            1U
+            1U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "pbb-ipv4-tcp"
         );
 
         const auto packet = require_packet(session, 0U);
@@ -436,6 +516,9 @@ void run_pbb_pcap_fixture_tests() {
         PFL_EXPECT(details->has_unknown_inner_ethernet_payload);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner", "inner-payload"});
+        const auto protocol_text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Inner EtherType:") != std::string::npos);
     }
 
     {
@@ -459,6 +542,9 @@ void run_pbb_pcap_fixture_tests() {
             return;
         }
         PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Warning", "PBB I-TAG is truncated"));
+        const auto protocol_text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Warning: PBB I-TAG is truncated.") != std::string::npos);
     }
 
     {
@@ -483,6 +569,9 @@ void run_pbb_pcap_fixture_tests() {
             return;
         }
         PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "Inner Ethernet header is truncated"));
+        const auto protocol_text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Warning: Inner Ethernet header is truncated.") != std::string::npos);
     }
 
     {
@@ -530,7 +619,8 @@ void run_pbb_pcap_fixture_tests() {
             5U,
             true,
             true,
-            0x654321U
+            0x654321U,
+            "pbb-ipv4-udp"
         );
     }
 }
