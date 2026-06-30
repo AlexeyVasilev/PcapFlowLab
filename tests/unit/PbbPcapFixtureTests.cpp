@@ -121,7 +121,9 @@ void expect_pbb_metadata(
 
     std::ostringstream isid_builder {};
     isid_builder << "0x" << std::hex << std::nouppercase << std::setw(6) << std::setfill('0') << expected_isid;
-    PFL_EXPECT(layer_has_field_containing(pbb_layer, "I-SID", isid_builder.str()));
+    const auto expected_hex = isid_builder.str();
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "I-SID", expected_hex));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "I-SID", std::to_string(expected_isid)));
 }
 
 void expect_single_ip_pbb_flow(
@@ -516,8 +518,15 @@ void run_pbb_pcap_fixture_tests() {
         PFL_EXPECT(details->has_unknown_inner_ethernet_payload);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner", "inner-payload"});
+        const auto* pbb_layer = find_layer(summary_layers, "pbb");
+        PFL_EXPECT(pbb_layer != nullptr);
+        if (pbb_layer != nullptr) {
+            PFL_EXPECT(layer_has_field_containing(*pbb_layer, "I-SID", "0x123456"));
+            PFL_EXPECT(layer_has_field_containing(*pbb_layer, "I-SID", "1193046"));
+        }
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("I-SID: 0x123456 (1193046)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Inner EtherType:") != std::string::npos);
     }
 
@@ -571,6 +580,7 @@ void run_pbb_pcap_fixture_tests() {
         PFL_EXPECT(layer_has_field_containing(*inner_ethernet_layer, "Warning", "Inner Ethernet header is truncated"));
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(protocol_text.find("Protocol: PBB I-TAG") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("I-SID: 0x123456 (1193046)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Warning: Inner Ethernet header is truncated.") != std::string::npos);
     }
 

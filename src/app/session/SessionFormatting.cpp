@@ -259,6 +259,10 @@ std::string format_pppoe_code(const std::uint8_t code) {
     }
 }
 
+std::string format_pbb_isid(const std::uint32_t isid) {
+    return format_hex_value(isid, 6) + " (" + std::to_string(isid) + ")";
+}
+
 std::string format_ppp_protocol(const std::uint16_t protocol) {
     switch (protocol) {
     case kPppProtocolIpv4:
@@ -2238,7 +2242,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             pbb_fields.push_back(make_summary_field("PCP", std::to_string(details.pbb.pcp)));
             pbb_fields.push_back(make_summary_field("DEI", details.pbb.dei ? "1" : "0"));
             pbb_fields.push_back(make_summary_field("UCA", details.pbb.uca ? "1" : "0"));
-            pbb_fields.push_back(make_summary_field("I-SID", format_hex_value(details.pbb.isid, 6)));
+            pbb_fields.push_back(make_summary_field("I-SID", format_pbb_isid(details.pbb.isid)));
         }
         if (details.pbb.itag_truncated) {
             pbb_fields.push_back(make_summary_field("Warning", "PBB I-TAG is truncated"));
@@ -2817,7 +2821,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                     << '\t' << "PCP: " << static_cast<unsigned>(details.pbb.pcp) << '\n'
                     << '\t' << "DEI: " << (details.pbb.dei ? "1" : "0") << '\n'
                     << '\t' << "UCA: " << (details.pbb.uca ? "1" : "0") << '\n'
-                    << '\t' << "I-SID: " << format_hex_value(details.pbb.isid, 6);
+                    << '\t' << "I-SID: " << format_pbb_isid(details.pbb.isid);
         }
         if (details.pbb.itag_truncated) {
             builder << '\n' << '\t' << "Warning: PBB I-TAG is truncated.";
