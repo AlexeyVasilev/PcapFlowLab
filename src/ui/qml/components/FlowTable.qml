@@ -22,9 +22,8 @@ Frame {
     readonly property int familyColumnWidth: 74
     readonly property int protocolColumnWidth: 86
     readonly property int protocolHintColumnWidth: 98
-    readonly property int serviceColumnWidth: 220
-    readonly property int addressColumnWidth: 180
-    readonly property int portColumnWidth: 78
+    readonly property int serviceColumnWidth: 200
+    readonly property int endpointColumnWidth: 220
     readonly property int fragColumnWidth: 56
     readonly property int packetsColumnWidth: 86
     readonly property int bytesColumnWidth: 92
@@ -78,6 +77,24 @@ Frame {
         }
 
         return hasFragmentedPackets ? "#8a6a12" : "#0f172a"
+    }
+
+    function formatEndpoint(address, port) {
+        const trimmedAddress = address ? String(address).trim() : ""
+        const numericPort = Number(port)
+        const hasPort = Number.isFinite(numericPort) && numericPort > 0
+
+        if (trimmedAddress.length === 0) {
+            return ""
+        }
+
+        const displayAddress = trimmedAddress.indexOf(":") >= 0
+            ? "[" + trimmedAddress + "]"
+            : trimmedAddress
+
+        return hasPort
+            ? displayAddress + "  :  " + numericPort
+            : displayAddress
     }
 
     background: Rectangle {
@@ -171,10 +188,8 @@ Frame {
             Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: root.protocolColumnWidth; onClicked: root.sortRequested(2) }
             Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: root.protocolHintColumnWidth; onClicked: root.sortRequested(3) }
             Button { text: "Service" + root.sortIndicator(4); Layout.fillWidth: true; Layout.preferredWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
-            Button { text: "Address A" + root.sortIndicator(6); Layout.fillWidth: true; Layout.preferredWidth: root.addressColumnWidth; onClicked: root.sortRequested(6) }
-            Button { text: "Port A" + root.sortIndicator(7); Layout.preferredWidth: root.portColumnWidth; onClicked: root.sortRequested(7) }
-            Button { text: "Address B" + root.sortIndicator(8); Layout.fillWidth: true; Layout.preferredWidth: root.addressColumnWidth; onClicked: root.sortRequested(8) }
-            Button { text: "Port B" + root.sortIndicator(9); Layout.preferredWidth: root.portColumnWidth; onClicked: root.sortRequested(9) }
+            Button { text: "Endpoint A" + root.sortIndicator(6); Layout.fillWidth: true; Layout.preferredWidth: root.endpointColumnWidth; onClicked: root.sortRequested(6) }
+            Button { text: "Endpoint B" + root.sortIndicator(8); Layout.fillWidth: true; Layout.preferredWidth: root.endpointColumnWidth; onClicked: root.sortRequested(8) }
             Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
             Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
             Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
@@ -223,6 +238,8 @@ Frame {
                     required property string bytes
 
                     readonly property bool selected: index === flowListView.currentIndex
+                    readonly property string endpointAText: root.formatEndpoint(addressA, portA)
+                    readonly property string endpointBText: root.formatEndpoint(addressB, portB)
 
                     onFlowCheckedChanged: {
                         if (selectionCheckBox.checked !== flowChecked) {
@@ -322,61 +339,51 @@ Frame {
 
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredWidth: root.addressColumnWidth
-                            implicitHeight: addressALabel.implicitHeight
+                            Layout.preferredWidth: root.endpointColumnWidth
+                            implicitHeight: endpointALabel.implicitHeight
 
                             Label {
-                                id: addressALabel
+                                id: endpointALabel
                                 anchors.fill: parent
-                                text: addressA
+                                text: endpointAText
+                                font.family: "Consolas"
                                 elide: Text.ElideMiddle
                                 verticalAlignment: Text.AlignVCenter
                             }
 
                             MouseArea {
-                                id: addressAHoverArea
+                                id: endpointAHoverArea
                                 anchors.fill: parent
                                 acceptedButtons: Qt.NoButton
                                 hoverEnabled: true
                             }
 
-                            ToolTip.visible: addressAHoverArea.containsMouse && addressALabel.truncated
-                            ToolTip.text: addressALabel.text
-                        }
-                        Text {
-                            text: portA
-                            Layout.preferredWidth: root.portColumnWidth
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
+                            ToolTip.visible: endpointAHoverArea.containsMouse && endpointALabel.truncated
+                            ToolTip.text: endpointALabel.text
                         }
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredWidth: root.addressColumnWidth
-                            implicitHeight: addressBLabel.implicitHeight
+                            Layout.preferredWidth: root.endpointColumnWidth
+                            implicitHeight: endpointBLabel.implicitHeight
 
                             Label {
-                                id: addressBLabel
+                                id: endpointBLabel
                                 anchors.fill: parent
-                                text: addressB
+                                text: endpointBText
+                                font.family: "Consolas"
                                 elide: Text.ElideMiddle
                                 verticalAlignment: Text.AlignVCenter
                             }
 
                             MouseArea {
-                                id: addressBHoverArea
+                                id: endpointBHoverArea
                                 anchors.fill: parent
                                 acceptedButtons: Qt.NoButton
                                 hoverEnabled: true
                             }
 
-                            ToolTip.visible: addressBHoverArea.containsMouse && addressBLabel.truncated
-                            ToolTip.text: addressBLabel.text
-                        }
-                        Text {
-                            text: portB
-                            Layout.preferredWidth: root.portColumnWidth
-                            horizontalAlignment: Text.AlignLeft
-                            verticalAlignment: Text.AlignVCenter
+                            ToolTip.visible: endpointBHoverArea.containsMouse && endpointBLabel.truncated
+                            ToolTip.text: endpointBLabel.text
                         }
                         Rectangle {
                             Layout.preferredWidth: root.fragColumnWidth

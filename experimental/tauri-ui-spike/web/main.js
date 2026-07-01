@@ -576,6 +576,24 @@
     return state.packets.some((packet) => packetMarkerText(packet).length > 0);
   }
 
+  function formatEndpoint(address, port) {
+    const trimmedAddress = String(address || "").trim();
+    const numericPort = Number(port);
+    const hasPort = Number.isFinite(numericPort) && numericPort > 0;
+
+    if (!trimmedAddress) {
+      return "";
+    }
+
+    const displayAddress = trimmedAddress.includes(":")
+      ? `[${trimmedAddress}]`
+      : trimmedAddress;
+
+    return hasPort
+      ? `${displayAddress}  :  ${numericPort}`
+      : displayAddress;
+  }
+
   function unrecognizedPacketCount() {
     return Number(state.overview?.unrecognized_packet_count || 0);
   }
@@ -1125,9 +1143,9 @@
       case "frag":
         return Number(flow?.fragmented_packet_count ?? 0);
       case "endpoint_a":
-        return String(flow?.endpoint_a || `${flow?.address_a || ""}:${flow?.port_a ?? ""}`);
+        return formatEndpoint(flow?.address_a, flow?.port_a) || String(flow?.endpoint_a || "");
       case "endpoint_b":
-        return String(flow?.endpoint_b || `${flow?.address_b || ""}:${flow?.port_b ?? ""}`);
+        return formatEndpoint(flow?.address_b, flow?.port_b) || String(flow?.endpoint_b || "");
       case "packets":
         return Number(flow?.packet_count ?? 0);
       case "bytes":
@@ -2415,8 +2433,8 @@
             <td>${escapeHtml(formatProtocolHint(flow))}</td>
             <td>${escapeHtml(flow.service_hint)}</td>
             <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
-            <td>${escapeHtml(flow.address_a)}:${flow.port_a}</td>
-            <td>${escapeHtml(flow.address_b)}:${flow.port_b}</td>
+            <td class="flow-endpoint-cell">${escapeHtml(formatEndpoint(flow.address_a, flow.port_a))}</td>
+            <td class="flow-endpoint-cell">${escapeHtml(formatEndpoint(flow.address_b, flow.port_b))}</td>
             <td>${formatPlainInteger(flow.packet_count)}</td>
             <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>
@@ -3571,7 +3589,7 @@
       renderRow: (flow) => {
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const hintOrProtocol = formatProtocolHint(flow) || flow.protocol_text || "-";
-        const endpointSummary = `${flow.address_a}:${flow.port_a} <-> ${flow.address_b}:${flow.port_b}`;
+        const endpointSummary = `${formatEndpoint(flow.address_a, flow.port_a)} <-> ${formatEndpoint(flow.address_b, flow.port_b)}`;
         const titleText = flow.service_hint
           ? `${flow.service_hint}\n${endpointSummary}`
           : endpointSummary;

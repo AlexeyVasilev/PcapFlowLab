@@ -1142,6 +1142,11 @@ select:disabled {
   background: var(--selected);
 }
 
+.flow-endpoint-cell {
+  font-family: "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+}
+
 .data-table tbody tr.packet-row.is-warning {
   background: #fff8e7;
 }
