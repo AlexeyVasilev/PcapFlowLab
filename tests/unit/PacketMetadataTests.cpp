@@ -11,6 +11,27 @@
 
 namespace pfl::tests {
 
+namespace {
+
+std::vector<std::uint8_t> make_pppoe_session_packet(
+    const std::uint16_t ppp_protocol,
+    const std::vector<std::uint8_t>& payload
+) {
+    std::vector<std::uint8_t> bytes {
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
+        0x88, 0x64,
+        0x11, 0x00,
+        0x00, 0x01,
+    };
+    append_be16(bytes, static_cast<std::uint16_t>(2U + payload.size()));
+    append_be16(bytes, ppp_protocol);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+}  // namespace
+
 void run_packet_metadata_tests() {
     const auto tcp_packet = make_ethernet_ipv4_tcp_packet_with_payload(
         ipv4(10, 0, 0, 1),
@@ -27,6 +48,9 @@ void run_packet_metadata_tests() {
         53,
         7
     );
+    const auto ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+    const auto ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02});
+    const auto ipv6_udp_packet = make_ethernet_ipv6_udp_with_hop_by_hop_packet(ipv6_src, ipv6_dst, 5353, 53);
 
     {
         const auto path = write_temp_pcap(
@@ -38,23 +62,23 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(session.open_capture(path));
 
         const auto tcp_ref = session.find_packet(0);
-        PFL_EXPECT(tcp_ref.has_value());
+        PFL_REQUIRE(tcp_ref.has_value());
         PFL_EXPECT(tcp_ref->payload_length == 5);
         PFL_EXPECT(tcp_ref->tcp_flags == 0x12);
 
         const auto udp_ref = session.find_packet(1);
-        PFL_EXPECT(udp_ref.has_value());
+        PFL_REQUIRE(udp_ref.has_value());
         PFL_EXPECT(udp_ref->payload_length == 7);
         PFL_EXPECT(udp_ref->tcp_flags == 0);
 
         const auto rows = session.list_flow_packets(0);
-        PFL_EXPECT(!rows.empty());
+        PFL_REQUIRE(!rows.empty());
         PFL_EXPECT(rows.front().payload_length == 5);
         PFL_EXPECT(rows.front().tcp_flags_text == "ACK|SYN");
 
         auto enriched_rows = rows;
         session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
-        PFL_EXPECT(!enriched_rows.empty());
+        PFL_REQUIRE(!enriched_rows.empty());
         PFL_EXPECT(enriched_rows.front().payload_length == 5);
     }
 
@@ -74,12 +98,12 @@ void run_packet_metadata_tests() {
         PFL_EXPECT(loaded_session.load_index(index_path));
 
         const auto tcp_ref = loaded_session.find_packet(0);
-        PFL_EXPECT(tcp_ref.has_value());
+        PFL_REQUIRE(tcp_ref.has_value());
         PFL_EXPECT(tcp_ref->payload_length == 5);
         PFL_EXPECT(tcp_ref->tcp_flags == 0x12);
 
         const auto udp_ref = loaded_session.find_packet(1);
-        PFL_EXPECT(udp_ref.has_value());
+        PFL_REQUIRE(udp_ref.has_value());
         PFL_EXPECT(udp_ref->payload_length == 7);
         PFL_EXPECT(udp_ref->tcp_flags == 0);
     }
@@ -108,9 +132,9 @@ void run_packet_metadata_tests() {
             .dst_port = 443,
             .protocol = ProtocolId::tcp,
         }));
-        PFL_EXPECT(connection != nullptr);
+        PFL_REQUIRE(connection != nullptr);
         PFL_EXPECT(connection->has_flow_a);
-        PFL_EXPECT(!connection->flow_a.packets.empty());
+        PFL_REQUIRE(!connection->flow_a.packets.empty());
         PFL_EXPECT(connection->flow_a.packets.front().payload_length == 5);
         PFL_EXPECT(connection->flow_a.packets.front().tcp_flags == 0x12);
     }
@@ -122,14 +146,14 @@ void run_packet_metadata_tests() {
         ));
 
         const auto rows = session.list_flow_packets(0);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows.front().captured_length == 74U);
         PFL_EXPECT(rows.front().original_length == 332U);
         PFL_EXPECT(rows.front().payload_length == 32U);
 
         auto enriched_rows = rows;
         session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
-        PFL_EXPECT(enriched_rows.size() == 1U);
+        PFL_REQUIRE(enriched_rows.size() == 1U);
         PFL_EXPECT(enriched_rows.front().payload_length == 290U);
     }
 
@@ -165,6 +189,45 @@ void run_packet_metadata_tests() {
             .bytes = malformed_udp,
         };
         PFL_EXPECT(!decoder.decode_ethernet(raw_udp).has_value());
+
+        const auto bounded_udp = make_pppoe_session_packet(0x0021U, strip_ethernet_header(malformed_udp));
+        const RawPcapPacket raw_bounded_udp {
+            .packet_index = 2,
+            .ts_sec = 1,
+            .ts_usec = 0,
+            .captured_length = static_cast<std::uint32_t>(bounded_udp.size()),
+            .original_length = static_cast<std::uint32_t>(bounded_udp.size()),
+            .data_offset = 120,
+            .bytes = bounded_udp,
+        };
+        PFL_EXPECT(!decoder.decode_ethernet(raw_bounded_udp).has_value());
+
+        auto malformed_ipv6_udp = ipv6_udp_packet;
+        malformed_ipv6_udp[66] = 0x00;
+        malformed_ipv6_udp[67] = 0x06;
+
+        const RawPcapPacket raw_ipv6_udp {
+            .packet_index = 3,
+            .ts_sec = 1,
+            .ts_usec = 0,
+            .captured_length = static_cast<std::uint32_t>(malformed_ipv6_udp.size()),
+            .original_length = static_cast<std::uint32_t>(malformed_ipv6_udp.size()),
+            .data_offset = 160,
+            .bytes = malformed_ipv6_udp,
+        };
+        PFL_EXPECT(!decoder.decode_ethernet(raw_ipv6_udp).has_value());
+
+        const auto bounded_ipv6_udp = make_pppoe_session_packet(0x0057U, strip_ethernet_header(malformed_ipv6_udp));
+        const RawPcapPacket raw_bounded_ipv6_udp {
+            .packet_index = 4,
+            .ts_sec = 1,
+            .ts_usec = 0,
+            .captured_length = static_cast<std::uint32_t>(bounded_ipv6_udp.size()),
+            .original_length = static_cast<std::uint32_t>(bounded_ipv6_udp.size()),
+            .data_offset = 200,
+            .bytes = bounded_ipv6_udp,
+        };
+        PFL_EXPECT(!decoder.decode_ethernet(raw_bounded_ipv6_udp).has_value());
     }
 }
 

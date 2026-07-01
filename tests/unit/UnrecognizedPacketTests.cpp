@@ -50,7 +50,7 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
 
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].row_number == 1U);
         PFL_EXPECT(rows[0].packet_index == 0U);
         PFL_EXPECT(rows[0].captured_length > 0U);
@@ -58,10 +58,10 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(rows[0].reason_text == "TCP header truncated");
 
         const auto packet = session.find_packet(rows[0].packet_index);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
 
         const auto details = session.read_packet_details(*packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_tcp);
@@ -76,16 +76,16 @@ void run_unrecognized_packet_tests() {
         const auto* frame_layer = find_layer(summary_layers, "frame");
         const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(frame_layer != nullptr);
-        PFL_EXPECT(ethernet_layer != nullptr);
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(ethernet_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(!frame_layer->title.empty());
         PFL_EXPECT(!ethernet_layer->title.empty());
         PFL_EXPECT(!ipv4_layer->title.empty());
         const auto* frame_number_in_file = find_field(*frame_layer, "Packet number in file");
-        PFL_EXPECT(frame_number_in_file != nullptr);
+        PFL_REQUIRE(frame_number_in_file != nullptr);
         PFL_EXPECT(frame_number_in_file->value == "1");
-        PFL_EXPECT(find_field(*ipv4_layer, "Source Address") != nullptr);
+        PFL_REQUIRE(find_field(*ipv4_layer, "Source Address") != nullptr);
 
         const auto raw_dump = session.read_packet_hex_dump(*packet);
         PFL_EXPECT(!raw_dump.empty());
@@ -103,7 +103,7 @@ void run_unrecognized_packet_tests() {
         const auto packets = adapter.get_unrecognized_packets(0U, 30U);
         PFL_EXPECT(packets.has_capture);
         PFL_EXPECT(packets.total_count == 1U);
-        PFL_EXPECT(packets.packets.size() == 1U);
+        PFL_REQUIRE(packets.packets.size() == 1U);
         PFL_EXPECT(packets.packets[0].row_number == 1U);
         PFL_EXPECT(packets.packets[0].reason_text == "TCP header truncated");
 
@@ -118,16 +118,16 @@ void run_unrecognized_packet_tests() {
         const auto* frame_layer = find_layer(details.summary_layers, "frame");
         const auto* ethernet_layer = find_layer(details.summary_layers, "ethernet");
         const auto* ipv4_layer = find_layer(details.summary_layers, "ipv4");
-        PFL_EXPECT(frame_layer != nullptr);
-        PFL_EXPECT(ethernet_layer != nullptr);
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(ethernet_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(!frame_layer->title.empty());
         PFL_EXPECT(!ethernet_layer->title.empty());
         PFL_EXPECT(!ipv4_layer->title.empty());
         const auto* frame_number_in_file = find_field(*frame_layer, "Packet number in file");
-        PFL_EXPECT(frame_number_in_file != nullptr);
+        PFL_REQUIRE(frame_number_in_file != nullptr);
         PFL_EXPECT(frame_number_in_file->value == "1");
-        PFL_EXPECT(find_field(*ipv4_layer, "Source Address") != nullptr);
+        PFL_REQUIRE(find_field(*ipv4_layer, "Source Address") != nullptr);
         PFL_EXPECT(find_layer(details.summary_layers, "tcp") == nullptr);
     }
 

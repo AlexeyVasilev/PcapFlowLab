@@ -87,7 +87,7 @@ void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
     PFL_EXPECT(!deep_rows.empty());
 
     const auto deep_quic_flow_index = find_flow_index_with_protocol_hint(deep_rows, "quic");
-    PFL_EXPECT(deep_quic_flow_index.has_value());
+    PFL_REQUIRE(deep_quic_flow_index.has_value());
 
     const auto& deep_quic_row = deep_rows[*deep_quic_flow_index];
     const auto deep_sni = deep_quic_row.service_hint.empty()
@@ -95,7 +95,7 @@ void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
         : std::optional<std::string> {deep_quic_row.service_hint};
 
     if (expectation.expected_sni.has_value()) {
-        PFL_EXPECT(deep_sni.has_value());
+        PFL_REQUIRE(deep_sni.has_value());
         PFL_EXPECT(*deep_sni == *expectation.expected_sni);
     } else {
         PFL_EXPECT(!deep_sni.has_value());
@@ -107,11 +107,11 @@ void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
     PFL_EXPECT(!fast_rows.empty());
 
     const auto fast_quic_flow_index = find_flow_index_with_protocol_hint(fast_rows, "quic");
-    PFL_EXPECT(fast_quic_flow_index.has_value());
+    PFL_REQUIRE(fast_quic_flow_index.has_value());
 
     const auto fast_sni = fast_session.derive_quic_service_hint_for_flow(*fast_quic_flow_index);
     if (expectation.expected_sni.has_value()) {
-        PFL_EXPECT(fast_sni.has_value());
+        PFL_REQUIRE(fast_sni.has_value());
         PFL_EXPECT(*fast_sni == *expectation.expected_sni);
     } else {
         PFL_EXPECT(!fast_sni.has_value());
@@ -128,10 +128,10 @@ void expect_flow_row_accessor_matches_list_flows(const std::filesystem::path& re
     PFL_EXPECT(!rows.empty());
 
     const auto quic_flow_index = find_flow_index_with_protocol_hint(rows, "quic");
-    PFL_EXPECT(quic_flow_index.has_value());
+    PFL_REQUIRE(quic_flow_index.has_value());
 
     const auto row = session.flow_row(*quic_flow_index);
-    PFL_EXPECT(row.has_value());
+    PFL_REQUIRE(row.has_value());
     PFL_EXPECT(row->index == rows[*quic_flow_index].index);
     PFL_EXPECT(row->protocol_hint == rows[*quic_flow_index].protocol_hint);
     PFL_EXPECT(row->service_hint == rows[*quic_flow_index].service_hint);
@@ -158,7 +158,7 @@ void expect_frontend_adapter_quic_service_hint_refresh(
 
     const auto selection = adapter.select_flow(flow_it->flow_index);
     PFL_EXPECT(selection.selected);
-    PFL_EXPECT(selection.updated_flow.has_value());
+    PFL_REQUIRE(selection.updated_flow.has_value());
     PFL_EXPECT(selection.updated_flow->flow_index == flow_it->flow_index);
     PFL_EXPECT(selection.updated_flow->service_hint == expected_sni);
 }

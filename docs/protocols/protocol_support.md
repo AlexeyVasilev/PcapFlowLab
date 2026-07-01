@@ -116,9 +116,13 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | Protocol | Recognition | Flow key / grouping | Service hint | Packet Summary layer | Protocol details | Payload tab | Stream items | Tests / fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | PCAP / Frame metadata | Supported | N/A | N/A | Supported | Not supported | Not supported | N/A | Supported | Frame layer shows packet index in file, selected-flow packet index when available, timestamp, captured length, original length, and truncation warnings. |
-| Ethernet | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | Ethernet II appears in layered Summary with source/destination MAC addresses and decoded EtherType text. |
-| 802.1Q VLAN | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | VLAN tags appear in layered Summary; multiple tags are represented individually. |
-| MPLS | Partial | Partial | Not supported | Supported | Not supported | Partial | Partial | Supported | Ethernet MPLS unicast/multicast and VLAN-before-MPLS are recognized. Each label becomes its own Summary layer with label / TC / BoS / TTL. Inner IPv4/IPv6 is inferred from the first nibble after the BoS label, and normal TCP/UDP flows group by the inner 5-tuple only. Unknown or malformed MPLS payloads remain in the unrecognized-packet list with conservative reason text. |
+| Ethernet | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | Ethernet II and IEEE 802.3 length-based framing both appear in layered Summary with source/destination MAC addresses plus either EtherType or declared payload length. |
+| IEEE 802.3 LLC/SNAP | Partial | Partial | Not supported | Supported | Not supported | Not supported | N/A | Supported | Shared decode distinguishes IEEE 802.3 length framing from Ethernet II, recognizes LLC/SNAP only for DSAP `0xaa`, SSAP `0xaa`, Control `0x03`, and continues through known SNAP PID values for IPv4, IPv6, and ARP when the bounded payload validates, including non-zero OUI cases. Direct and VLAN/QinQ-wrapped cases are supported. Unknown PID and non-SNAP LLC remain conservative with specific no-flow reason text and bounded Data/raw preview. Malformed LLC/SNAP headers and IEEE 802.3 length-boundary mismatches are handled best-effort, and trailing bytes beyond the declared 802.3 length are ignored for inner parsing. |
+| 802.1Q VLAN | Supported | N/A | Not supported | Supported | Not supported | Not supported | N/A | Supported | Single-tag `0x8100`, `0x88A8` QinQ-style outer tags, and legacy `0x9100` VLAN-like tags are supported in shared decode and layered Summary. VLAN stack depth is bounded to 4 tags. Unknown or truncated inner VLAN payloads remain conservative and can stay in the unrecognized-packet list while still preserving partial Ethernet/VLAN envelope details. |
+| MACsec / IEEE 802.1AE | Partial | Not supported | Not supported | Supported | Partial | Not supported | N/A | Supported | Shared decode recognizes EtherType `0x88e5` directly after Ethernet or outer VLAN/QinQ, parses basic SecTAG metadata (Version/ES/SC/SCB/E/C/AN, Short Length, Packet Number, optional SCI), and keeps protected payload opaque. Selected-packet layered Summary can show `MACsec SecTAG`, bounded `MACsec Protected Payload`, and `MACsec ICV` when enough bytes are present; for complete `E=0` / `C=0` secured-data cases, the first two secured-data bytes may also be surfaced as `Plain EtherType` metadata while the remaining bytes stay opaque. Selected-packet `Protocol` can show best-effort MACsec text for no-flow packets. No decryption, no ICV validation, no MKA/SAK or control-plane support, and no flow recovery from protected payload are implemented, so all current MACsec fixtures remain no-flow packets with specific truncation/decryption reason text. |
+| IEEE 802.1ah PBB / MAC-in-MAC | Partial | Partial | Not supported | Supported | Not supported | Not supported | N/A | Supported | Shared decode recognizes EtherType `0x88e7`, parses the 4-byte I-TAG (Priority/Drop Eligible/NCA/Reserved 1/Reserved 2/I-SID), and continues into inner customer Ethernet. Inner IPv4/IPv6 TCP/UDP can form normal flows, ARP can be recognized behind PBB, and inner VLAN/QinQ/LLC-SNAP composition is supported. Outer B-TAG before PBB is preserved in layered Summary. Unknown inner EtherType and malformed/truncated I-TAG or inner headers remain conservative no-flow packets with explicit reason text and bounded Data/partial-header presentation; truncated I-TAG packets can still expose partial first-byte bit fields and basic PBB protocol-detail text for manual inspection. No PBB-TE, OAM/CFM, control-plane, or bridge-learning semantics are implemented. |
+| MPLS | Partial | Partial | Not supported | Supported | Not supported | Partial | Partial | Supported | Ethernet MPLS unicast/multicast and VLAN-before-MPLS are recognized. Each label becomes its own Summary layer with label / TC / BoS / TTL. After the BoS label, shared decode now supports direct IPv4/IPv6 continuation plus basic Ethernet pseudowire continuation with optional 4-byte control word, including inner Ethernet, inner VLAN/QinQ, inner IEEE 802.3 LLC/SNAP, and inner ARP/IPv4/IPv6 continuation when the bounded inner payload is valid. Unknown or malformed MPLS payloads remain in the unrecognized-packet list with conservative reason text such as truncated control word, truncated inner Ethernet, unknown inner EtherType, or truncated inner IPv4. |
+| PPPoE Session + PPP IPv4/IPv6 + PPP control basics + basic PPPoE Discovery | Partial | Partial | Not supported | Supported | Partial | Partial | Partial | Supported | Current PPPoE support covers PPPoE Session (`0x8864`) data frames with `code = 0x00`, bounding inner parsing to `min(declared PPPoE payload length, captured PPPoE payload bytes)`, and continuing through PPP IPv4 (`0x0021`) and PPP IPv6 (`0x0057`) into normal IPv4/IPv6/TCP/UDP parsing when enough bounded inner header bytes are available. Selected-packet layered Summary preserves PPPoE Session and PPP protocol layers, basic PPP control presentation for LCP/IPCP/IPv6CP Configure-style packets, and basic PPPoE Discovery (`0x8863`) header/tag presentation for PADI/PADO/PADR/PADS/PADT. Discovery and PPP control packets remain no-flow. Unknown PPP protocols remain conservative, while PPPoE length-mismatch packets may still form normal flows if their bounded inner tuple is available. |
 | ARP | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Supported | Strongest non-IP shared parsing path today. Supports Ethernet/IPv4 ARP well, variable `hlen` / `plen`, truncated warnings, and one-packet-per-item stream rows. Request/reply packets are not grouped into a higher-level conversation item. |
 | IPv4 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv4 facts appear in layered Summary, including conservative selected-packet header fields such as IHL, DS field, identification, flags, fragment offset, TTL, protocol, checksum, and addresses. When IPv4 options are present, Summary can append a nested `IPv4 Options (N bytes)` child with wire-order option entries for EOL, NOP, RR, Timestamp, LSRR, SSRR, Router Alert, and unknown valid options, plus malformed/truncation warnings when parsing must stop conservatively. There is no standalone IPv4 `Protocol` tab renderer today. |
 | IPv6 | Supported | Supported | Not supported | Supported | Not supported | Not supported | N/A | Supported | IPv6 facts appear in layered Summary, including conservative selected-packet header fields such as traffic class, flow label, payload length, next header, hop limit, and addresses. There is no standalone IPv6 `Protocol` tab renderer today. |
@@ -245,6 +249,17 @@ Selected-flow Stream currently supports only a subset of protocol-aware timeline
 
 ## Current Test And Fixture Coverage
 
+## Current Non-Goals For This Branch
+
+The L2/L3 shim work in this branch intentionally does not claim support for:
+
+- QUIC false-positive cleanup beyond the bounded shim changes already implemented;
+- IP-in-IP, GRE, VXLAN, GENEVE, GTP-U, ESP/AH, or L2TP;
+- MACsec decryption, ICV validation, MKA/SAK handling, or inner flow recovery;
+- PBB-TE, OAM/CFM, PBB control-plane behavior, or bridge-learning semantics;
+- PPPoE session-negotiation or control-plane semantics beyond conservative Discovery / PPP-control presentation;
+- MPLS LDP, BGP-labeled services, OAM, or MPLS-TP control-plane semantics.
+
 ### Parsing fixture directories
 
 Current parsing fixture directories under `tests/data/parsing/` include:
@@ -259,6 +274,16 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - request/response and multi-message / partial-response coverage.
 - `mpls`
   - single-label and multi-label stacks, MPLS multicast EtherType, special labels, VLAN/QinQ before MPLS, unknown inner payloads, and snaplen-truncated inner IPv4/TCP cases.
+- `mpls_pw`
+  - deterministic MPLS Ethernet pseudowire fixtures, including inner Ethernet IPv4/IPv6/ARP candidates, pseudowire control-word cases, inner VLAN/QinQ and LLC/SNAP composition, and malformed/truncated pseudowire cases. Current committed behavior supports bounded pseudowire inner Ethernet continuation with optional control-word presentation and normal inner ARP/IPv4/IPv6 continuation when the bounded inner payload is valid, while malformed or unsupported pseudowire payloads remain conservative no-flow packets.
+- `pppoe`
+  - deterministic PPPoE Session, PPP control, PPPoE Discovery, VLAN/QinQ-before-PPPoE, unknown PPP protocol, and malformed/truncated/length-mismatch fixtures. The current parser supports normal PPPoE Session IPv4/IPv6 data continuation with bounded PPPoE payload semantics, basic PPP control header/option presentation for no-flow LCP/IPCP/IPv6CP packets, and basic PPPoE Discovery header/tag presentation for no-flow Discovery packets. Unknown PPP protocols remain conservative, while length-mismatch fixtures can still produce normal flows when enough bounded inner header bytes are available.
+- `pbb`
+  - deterministic IEEE 802.1ah PBB / MAC-in-MAC fixtures, including basic inner IPv4/IPv6/ARP continuation, outer B-TAG composition, inner VLAN/QinQ/LLC-SNAP composition, unknown inner EtherType, non-default I-TAG metadata, and malformed/truncated I-TAG / inner-header cases. Current committed behavior supports bounded I-TAG parsing plus inner customer Ethernet continuation into IPv4/IPv6/ARP and shared inner VLAN/QinQ/LLC-SNAP handling, while unknown or malformed inner payloads remain conservative no-flow packets.
+- `macsec`
+  - deterministic IEEE 802.1AE MACsec fixtures, including basic SecTAG metadata, optional SCI, outer VLAN/QinQ-before-MACsec composition, TCI flag coverage, zero Packet Number, and malformed/truncated SecTAG / SCI / ICV-boundary cases. Current committed behavior recognizes MACsec and presents conservative SecTAG/SCI/protected-payload/ICV details for selected packets, while keeping protected payload opaque and all fixtures as no-flow packets with specific reason text.
+- `llc_snap`
+  - deterministic IEEE 802.3 length / LLC / SNAP fixtures, including direct IPv4/IPv6/ARP continuation, VLAN/QinQ-before-LLC/SNAP composition, unknown PID/non-SNAP fallback, and malformed/truncated/length-boundary cases. Current shared support is intentionally narrow: known SNAP PID values for IPv4/IPv6/ARP continue into normal decode when the bounded payload validates, including non-zero OUI cases, while unknown PID and non-SNAP LLC remain conservative with bounded payload preview, malformed headers surface explicit truncation warnings, and declared 802.3 length bounds limit inner parsing.
 - `quic`
   - QUIC Initial, constricted captures, IPv6 variants, and analysis-oriented fixtures.
 - `tcp`
@@ -267,6 +292,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - TLS 1.2 / 1.3, constricted captures, and IPv6 variants.
 - `udp`
   - generic UDP payload, truncation, and checksum-oriented fixtures.
+- `vlan`
+  - single-tag 802.1Q, current two-tag QinQ, VLAN-tagged ARP, unknown inner EtherType, and malformed/truncated VLAN fixtures.
 
 ### Unit-test areas worth checking when protocol support changes
 
@@ -279,6 +306,13 @@ Current protocol behavior is primarily exercised in:
 - `tests/unit/PacketProtocolDetailsTests.cpp`
 - `tests/unit/StreamQueryTests.cpp`
 - `tests/unit/ArpPcapFixtureTests.cpp`
+- `tests/unit/IgmpPcapFixtureTests.cpp`
+- `tests/unit/VlanPcapFixtureTests.cpp`
+- `tests/unit/PppoePcapFixtureTests.cpp`
+- `tests/unit/LlcSnapPcapFixtureTests.cpp`
+- `tests/unit/MplsPseudowirePcapFixtureTests.cpp`
+- `tests/unit/PbbPcapFixtureTests.cpp`
+- `tests/unit/MacsecPcapFixtureTests.cpp`
 - `tests/unit/FragmentationTests.cpp`
 - `tests/unit/MalformedPacketHandlingTests.cpp`
 

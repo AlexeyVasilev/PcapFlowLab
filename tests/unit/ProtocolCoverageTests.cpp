@@ -28,7 +28,7 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(session.state().ipv4_connections.size() == 1);
 
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1);
+        PFL_REQUIRE(rows.size() == 1);
         PFL_EXPECT(std::holds_alternative<ConnectionKeyV4>(rows[0].key));
         const auto arp_key = std::get<ConnectionKeyV4>(rows[0].key);
         PFL_EXPECT(arp_key.protocol == ProtocolId::arp);
@@ -36,9 +36,9 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(arp_key.second.addr == ipv4(192, 168, 1, 10));
 
         const auto request_packet = session.find_packet(0);
-        PFL_EXPECT(request_packet.has_value());
+        PFL_REQUIRE(request_packet.has_value());
         const auto details = session.read_packet_details(*request_packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.opcode == 1);
         const std::array<std::uint8_t, 4> expected_sender_ipv4 {192, 168, 1, 10};
@@ -47,9 +47,9 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(details->arp.target_ipv4 == expected_target_ipv4);
 
         const auto reply_packet = session.find_packet(1);
-        PFL_EXPECT(reply_packet.has_value());
+        PFL_REQUIRE(reply_packet.has_value());
         const auto reply_details = session.read_packet_details(*reply_packet);
-        PFL_EXPECT(reply_details.has_value());
+        PFL_REQUIRE(reply_details.has_value());
         PFL_EXPECT(reply_details->has_arp);
         PFL_EXPECT(reply_details->arp.opcode == 2);
     }
@@ -62,14 +62,14 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(session.summary().flow_count == 1);
 
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1);
+        PFL_REQUIRE(rows.size() == 1);
         const auto icmp_key = std::get<ConnectionKeyV4>(rows[0].key);
         PFL_EXPECT(icmp_key.protocol == ProtocolId::icmp);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         const auto details = session.read_packet_details(*packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->has_icmp);
         PFL_EXPECT(details->icmp.type == 8);
@@ -85,15 +85,15 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(session.state().ipv6_connections.size() == 1);
 
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1);
+        PFL_REQUIRE(rows.size() == 1);
         PFL_EXPECT(std::holds_alternative<ConnectionKeyV6>(rows[0].key));
         const auto key = std::get<ConnectionKeyV6>(rows[0].key);
         PFL_EXPECT(key.protocol == ProtocolId::icmpv6);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         const auto details = session.read_packet_details(*packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv6);
         PFL_EXPECT(details->ipv6.next_header == 58);
         PFL_EXPECT(details->has_icmpv6);
@@ -109,9 +109,9 @@ void run_protocol_coverage_tests() {
         PFL_EXPECT(session.summary().flow_count == 1);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         const auto details = session.read_packet_details(*packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv6);
         PFL_EXPECT(details->ipv6.next_header == 17);
         PFL_EXPECT(details->has_udp);

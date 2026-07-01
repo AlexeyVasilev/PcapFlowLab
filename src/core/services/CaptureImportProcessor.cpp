@@ -221,6 +221,12 @@ struct ImportPrefixDecision {
             envelope.payload_offset += detail::kVlanHeaderSize;
             ++vlan_count;
         }
+
+        if (envelope.protocol_type < detail::kIeee8023LengthCutoff) {
+            envelope.is_ieee_802_3 = true;
+            envelope.declared_payload_length = envelope.protocol_type;
+            envelope.protocol_type = 0U;
+        }
     } else if (packet.data_link_type == kLinkTypeLinuxSll) {
         const auto decision =
             require_more_bytes_if_prefix_limited(available_bytes, captured_length, detail::kLinuxSllHeaderSize);
@@ -257,6 +263,55 @@ struct ImportPrefixDecision {
 
     auto protocol_type = envelope.protocol_type;
     auto payload_offset = envelope.payload_offset;
+    std::optional<std::size_t> bounded_packet_end {};
+    if (envelope.is_ieee_802_3) {
+        const auto logical_payload_end = captured_packet_end(
+            payload_offset + envelope.declared_payload_length,
+            captured_length
+        );
+
+        auto decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            logical_payload_end,
+            payload_offset + detail::kLlcHeaderSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (logical_payload_end < payload_offset + detail::kLlcHeaderSize ||
+            available_bytes < payload_offset + detail::kLlcHeaderSize) {
+            return import_prefix_sufficient();
+        }
+
+        if (packet_bytes[payload_offset] != detail::kLlcSnapDsap ||
+            packet_bytes[payload_offset + 1U] != detail::kLlcSnapSsap ||
+            packet_bytes[payload_offset + 2U] != detail::kLlcUnnumberedInformationControl) {
+            return import_prefix_sufficient();
+        }
+
+        decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            logical_payload_end,
+            payload_offset + detail::kLlcSnapHeaderSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (logical_payload_end < payload_offset + detail::kLlcSnapHeaderSize ||
+            available_bytes < payload_offset + detail::kLlcSnapHeaderSize) {
+            return import_prefix_sufficient();
+        }
+
+        const auto snap_pid = detail::read_be16(packet_bytes, payload_offset + detail::kLlcHeaderSize + 3U);
+        if (!detail::is_supported_snap_pid(snap_pid)) {
+            return import_prefix_sufficient();
+        }
+
+        protocol_type = snap_pid;
+        payload_offset += detail::kLlcSnapHeaderSize;
+        bounded_packet_end = logical_payload_end;
+    }
+
     if (detail::is_mpls_ether_type(protocol_type)) {
         for (std::size_t label_index = 0U; label_index < detail::kMaxMplsLabels; ++label_index) {
             const auto label_decision =
@@ -294,6 +349,157 @@ struct ImportPrefixDecision {
                 break;
             }
 
+            std::size_t inner_ethernet_offset = payload_offset;
+            if (detail::is_plausible_mpls_pseudowire_control_word(packet_bytes, payload_offset)) {
+                const auto control_word_decision =
+                    require_more_bytes_if_prefix_limited(available_bytes, captured_length, payload_offset + 4U);
+                if (control_word_decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return control_word_decision;
+                }
+                if (available_bytes < payload_offset + 4U) {
+                    return import_prefix_sufficient();
+                }
+                inner_ethernet_offset += 4U;
+            }
+
+            auto decision = require_more_bytes_if_prefix_limited(
+                available_bytes,
+                captured_length,
+                inner_ethernet_offset + detail::kEthernetHeaderSize);
+            if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                return decision;
+            }
+            if (available_bytes < inner_ethernet_offset + detail::kEthernetHeaderSize) {
+                return import_prefix_sufficient();
+            }
+
+            auto inner_protocol_type = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U);
+            auto inner_payload_offset = inner_ethernet_offset + detail::kEthernetHeaderSize;
+            std::size_t inner_vlan_count = 0U;
+            while (detail::is_vlan_ether_type(inner_protocol_type)) {
+                if (inner_vlan_count == detail::kMaxVlanTags) {
+                    return import_prefix_sufficient();
+                }
+
+                decision = require_more_bytes_if_prefix_limited(
+                    available_bytes,
+                    captured_length,
+                    inner_payload_offset + detail::kVlanHeaderSize);
+                if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return decision;
+                }
+                if (available_bytes < inner_payload_offset + detail::kVlanHeaderSize) {
+                    return import_prefix_sufficient();
+                }
+
+                inner_protocol_type = detail::read_be16(packet_bytes, inner_payload_offset + 2U);
+                inner_payload_offset += detail::kVlanHeaderSize;
+                ++inner_vlan_count;
+            }
+
+            if (inner_protocol_type < detail::kIeee8023LengthCutoff) {
+                const auto declared_length = inner_protocol_type;
+                const auto logical_payload_end = captured_packet_end(inner_payload_offset + declared_length, captured_length);
+
+                decision = require_more_bytes_if_prefix_limited(
+                    available_bytes,
+                    logical_payload_end,
+                    inner_payload_offset + detail::kLlcHeaderSize);
+                if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return decision;
+                }
+                if (logical_payload_end < inner_payload_offset + detail::kLlcHeaderSize ||
+                    available_bytes < inner_payload_offset + detail::kLlcHeaderSize) {
+                    return import_prefix_sufficient();
+                }
+
+                if (packet_bytes[inner_payload_offset] != detail::kLlcSnapDsap ||
+                    packet_bytes[inner_payload_offset + 1U] != detail::kLlcSnapSsap ||
+                    packet_bytes[inner_payload_offset + 2U] != detail::kLlcUnnumberedInformationControl) {
+                    return import_prefix_sufficient();
+                }
+
+                decision = require_more_bytes_if_prefix_limited(
+                    available_bytes,
+                    logical_payload_end,
+                    inner_payload_offset + detail::kLlcSnapHeaderSize);
+                if (decision.kind == ImportPrefixDecisionKind::need_more) {
+                    return decision;
+                }
+                if (logical_payload_end < inner_payload_offset + detail::kLlcSnapHeaderSize ||
+                    available_bytes < inner_payload_offset + detail::kLlcSnapHeaderSize) {
+                    return import_prefix_sufficient();
+                }
+
+                const auto snap_pid = detail::read_be16(packet_bytes, inner_payload_offset + detail::kLlcHeaderSize + 3U);
+                if (!detail::is_supported_snap_pid(snap_pid)) {
+                    return import_prefix_sufficient();
+                }
+
+                protocol_type = snap_pid;
+                payload_offset = inner_payload_offset + detail::kLlcSnapHeaderSize;
+                bounded_packet_end = logical_payload_end;
+                break;
+            }
+
+            protocol_type = inner_protocol_type;
+            payload_offset = inner_payload_offset;
+            break;
+        }
+    }
+
+    if (protocol_type == detail::kEtherTypePppoeSession) {
+        auto decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            captured_length,
+            payload_offset + detail::kPppoeHeaderSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (available_bytes < payload_offset + detail::kPppoeHeaderSize) {
+            return import_prefix_sufficient();
+        }
+
+        const auto version_type = packet_bytes[payload_offset];
+        const auto version = static_cast<std::uint8_t>(version_type >> 4U);
+        const auto type = static_cast<std::uint8_t>(version_type & 0x0FU);
+        const auto code = packet_bytes[payload_offset + 1U];
+        const auto ppp_payload_offset = payload_offset + detail::kPppoeHeaderSize;
+        const auto payload_bounds = detail::parse_pppoe_payload_bounds(packet_bytes, payload_offset);
+        if (captured_length < ppp_payload_offset ||
+            !payload_bounds.has_value() ||
+            version != 1U ||
+            type != 1U ||
+            code != 0U ||
+            payload_bounds->logical_length < detail::kPppProtocolFieldSize) {
+            return import_prefix_sufficient();
+        }
+
+        const auto logical_payload_end = ppp_payload_offset + payload_bounds->logical_length;
+
+        decision = require_more_bytes_if_prefix_limited(
+            available_bytes,
+            captured_length,
+            ppp_payload_offset + detail::kPppProtocolFieldSize
+        );
+        if (decision.kind == ImportPrefixDecisionKind::need_more) {
+            return decision;
+        }
+        if (available_bytes < ppp_payload_offset + detail::kPppProtocolFieldSize) {
+            return import_prefix_sufficient();
+        }
+
+        const auto ppp_protocol = detail::read_be16(packet_bytes, ppp_payload_offset);
+        if (ppp_protocol == detail::kPppProtocolIpv4) {
+            protocol_type = detail::kEtherTypeIpv4;
+            payload_offset = ppp_payload_offset + detail::kPppProtocolFieldSize;
+            bounded_packet_end = logical_payload_end;
+        } else if (ppp_protocol == detail::kPppProtocolIpv6) {
+            protocol_type = detail::kEtherTypeIpv6;
+            payload_offset = ppp_payload_offset + detail::kPppProtocolFieldSize;
+            bounded_packet_end = logical_payload_end;
+        } else {
             return import_prefix_sufficient();
         }
     }
@@ -344,7 +550,10 @@ struct ImportPrefixDecision {
         const auto total_length = detail::read_be16(packet_bytes, payload_offset + 2U);
         const auto nominal_packet_end =
             (total_length == 0U) ? captured_length : payload_offset + static_cast<std::size_t>(total_length);
-        const auto packet_captured_end = captured_packet_end(nominal_packet_end, captured_length);
+        auto packet_captured_end = captured_packet_end(nominal_packet_end, captured_length);
+        if (bounded_packet_end.has_value()) {
+            packet_captured_end = std::min(packet_captured_end, *bounded_packet_end);
+        }
         if (packet_captured_end < payload_offset + ihl) {
             return import_prefix_sufficient();
         }
@@ -430,6 +639,12 @@ std::string classify_unrecognized_packet_reason(
             return "MPLS bottom-of-stack not found";
         case detail::MplsParseStatus::missing_inner_payload:
             return "Missing MPLS inner payload";
+        case detail::MplsParseStatus::pseudowire_control_word_truncated:
+            return "MPLS pseudowire control word truncated";
+        case detail::MplsParseStatus::inner_ethernet_truncated:
+            return "Inner Ethernet header truncated";
+        case detail::MplsParseStatus::unknown_inner_ether_type:
+            return "Unknown MPLS pseudowire inner EtherType";
         case detail::MplsParseStatus::unknown_payload:
             return "Unknown MPLS payload";
         default:
@@ -437,16 +652,132 @@ std::string classify_unrecognized_packet_reason(
         }
     }
 
+    if (network->has_pbb) {
+        switch (network->pbb.status) {
+        case detail::PbbParseStatus::itag_truncated:
+            return "PBB I-TAG truncated";
+        case detail::PbbParseStatus::inner_ethernet_truncated:
+            return "Inner Ethernet header truncated";
+        case detail::PbbParseStatus::unknown_inner_ether_type:
+            return "Unknown PBB inner EtherType";
+        case detail::PbbParseStatus::unknown_payload:
+            return "Unsupported or malformed packet";
+        default:
+            break;
+        }
+    }
+
+    if (network->has_macsec) {
+        switch (network->macsec.status) {
+        case detail::MacsecParseStatus::sectag_truncated:
+            return "MACsec SecTAG truncated";
+        case detail::MacsecParseStatus::packet_number_truncated:
+            return "MACsec packet number truncated";
+        case detail::MacsecParseStatus::sci_truncated:
+            return "MACsec SCI truncated";
+        case detail::MacsecParseStatus::icv_truncated:
+            return "MACsec ICV truncated";
+        case detail::MacsecParseStatus::complete:
+            return "MACsec protected payload not decrypted";
+        default:
+            break;
+        }
+    }
+
+    const auto effective_packet_end = network->bounded_packet_end.value_or(packet_bytes.size());
+    const auto bounded_packet_bytes = packet_bytes.subspan(0U, std::min(effective_packet_end, packet_bytes.size()));
+
+    if (network->link_layer.is_ieee_802_3) {
+        const auto llc_snap = detail::parse_llc_snap_payload(
+            bounded_packet_bytes,
+            network->link_layer.payload_offset,
+            network->link_layer.declared_payload_length
+        );
+
+        if (llc_snap.llc_header_truncated) {
+            return "LLC header truncated";
+        }
+
+        if (llc_snap.has_llc && !llc_snap.has_snap) {
+            return "Non-SNAP LLC frame";
+        }
+
+        if (llc_snap.snap_header_truncated) {
+            return "SNAP header truncated";
+        }
+
+        if (llc_snap.has_snap) {
+            if (!detail::is_supported_snap_pid(llc_snap.pid)) {
+                return "Unknown SNAP PID";
+            }
+        }
+    }
+
+    if (network->protocol_type == detail::kEtherTypePppoeDiscovery) {
+        const auto pppoe_offset = network->payload_offset;
+        if (bounded_packet_bytes.size() < pppoe_offset + 6U) {
+            return "PPPoE Discovery header truncated";
+        }
+
+        switch (bounded_packet_bytes[pppoe_offset + 1U]) {
+        case 0x09U:
+            return "PPPoE Discovery PADI";
+        case 0x07U:
+            return "PPPoE Discovery PADO";
+        case 0x19U:
+            return "PPPoE Discovery PADR";
+        case 0x65U:
+            return "PPPoE Discovery PADS";
+        case 0xA7U:
+            return "PPPoE Discovery PADT";
+        default:
+            return "PPPoE Discovery packet";
+        }
+    }
+
+    if (network->protocol_type == detail::kEtherTypePppoeSession) {
+        const auto pppoe_offset = network->payload_offset;
+        if (bounded_packet_bytes.size() < pppoe_offset + 6U) {
+            return "PPPoE Session header truncated";
+        }
+
+        const auto payload_length = static_cast<std::size_t>(detail::read_be16(bounded_packet_bytes, pppoe_offset + 4U));
+        const auto pppoe_payload_offset = pppoe_offset + 6U;
+        const auto pppoe_payload_end = std::min(pppoe_payload_offset + payload_length, bounded_packet_bytes.size());
+        const auto available_payload_length = bounded_packet_bytes.size() - pppoe_payload_offset;
+        if (pppoe_payload_offset + 2U > pppoe_payload_end || bounded_packet_bytes.size() < pppoe_payload_offset + 2U) {
+            return "PPP protocol field truncated";
+        }
+
+        if (available_payload_length < payload_length) {
+            return "Unsupported or malformed packet";
+        }
+
+        switch (detail::read_be16(bounded_packet_bytes, pppoe_payload_offset)) {
+        case detail::kPppProtocolIpv4:
+        case detail::kPppProtocolIpv6:
+            return "Unsupported or malformed packet";
+        case 0xc021U:
+            return "PPP LCP control packet";
+        case 0x8021U:
+            return "PPP IPCP control packet";
+        case 0x8057U:
+            return "PPP IPv6CP control packet";
+        default:
+            return "Unknown PPP protocol";
+        }
+    }
+
     if (network->protocol_type == detail::kEtherTypeArp) {
         const auto arp_offset = network->payload_offset;
-        if (packet_bytes.size() < arp_offset + 8U) {
+        if (bounded_packet_bytes.size() < arp_offset + 8U) {
             return "ARP header truncated";
         }
 
-        const auto hardware_size = packet_bytes[arp_offset + 4U];
-        const auto protocol_size = packet_bytes[arp_offset + 5U];
+        const auto hardware_size = bounded_packet_bytes[arp_offset + 4U];
+        const auto protocol_size = bounded_packet_bytes[arp_offset + 5U];
         const auto arp_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
-        if (packet_bytes.size() < arp_offset + arp_length) {
+        if (bounded_packet_bytes.size() < arp_offset + arp_length) {
             return "ARP header truncated";
         }
 
@@ -455,19 +786,19 @@ std::string classify_unrecognized_packet_reason(
 
     if (network->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
+        if (bounded_packet_bytes.size() < ipv4_offset + detail::kIpv4MinimumHeaderSize) {
             return network->has_mpls ? "Inner IPv4 header truncated" : "IPv4 header truncated";
         }
 
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_packet_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return network->has_mpls ? "Inner IPv4 header truncated" : "Unsupported or malformed packet";
         }
 
-        const auto protocol = packet_bytes[ipv4_offset + 9U];
+        const auto protocol = bounded_packet_bytes[ipv4_offset + 9U];
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
         const auto packet_end = ipv4_bounds->packet_end;
-        const auto flags_fragment = detail::read_be16(packet_bytes, ipv4_offset + 6U);
+        const auto flags_fragment = detail::read_be16(bounded_packet_bytes, ipv4_offset + 6U);
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
         if (is_fragmented) {
             return "Could not extract flow key";
@@ -475,14 +806,14 @@ std::string classify_unrecognized_packet_reason(
 
         if (protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
-                packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+                bounded_packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
                 return network->has_mpls ? "Inner TCP header truncated" : "TCP header truncated";
             }
 
-            const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+            const auto tcp_header_length = static_cast<std::size_t>((bounded_packet_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 transport_offset + tcp_header_length > packet_end ||
-                packet_bytes.size() < transport_offset + tcp_header_length) {
+                bounded_packet_bytes.size() < transport_offset + tcp_header_length) {
                 return "Could not extract flow key";
             }
 
@@ -494,23 +825,23 @@ std::string classify_unrecognized_packet_reason(
                 return "UDP header truncated";
             }
 
-            return detail::parse_udp_payload_bounds(packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end).has_value()
+            return detail::parse_udp_payload_bounds(bounded_packet_bytes, transport_offset, ipv4_bounds->nominal_packet_end).has_value()
                 ? "Could not extract flow key"
                 : "Unsupported or malformed packet";
         }
 
         if (protocol == detail::kIpProtocolIcmp) {
-            return packet_bytes.size() < transport_offset + 2U
+            return bounded_packet_bytes.size() < transport_offset + 2U
                 ? "Unsupported or malformed packet"
                 : "Could not extract flow key";
         }
 
         if (protocol == detail::kIpProtocolIgmp) {
-            if (transport_offset >= packet_end || transport_offset >= packet_bytes.size()) {
+            if (transport_offset >= packet_end || transport_offset >= bounded_packet_bytes.size()) {
                 return "Missing IGMP payload";
             }
 
-            const auto igmp = detail::parse_igmp_header(packet_bytes, transport_offset, packet_end);
+            const auto igmp = detail::parse_igmp_header(bounded_packet_bytes, transport_offset, packet_end);
             if (!igmp.has_value() || igmp->available_length < detail::kIgmpMinimumHeaderSize) {
                 return "IGMP header truncated";
             }
@@ -523,21 +854,21 @@ std::string classify_unrecognized_packet_reason(
 
     if (network->protocol_type == detail::kEtherTypeIpv6) {
         const auto ipv6_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        if (bounded_packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return network->has_mpls ? "Inner IPv6 header truncated" : "IPv6 header truncated";
         }
 
-        if (static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U) != 6U) {
+        if (static_cast<std::uint8_t>(bounded_packet_bytes[ipv6_offset] >> 4U) != 6U) {
             return "Unsupported or malformed packet";
         }
 
-        const auto ipv6_payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+        const auto ipv6_payload = detail::parse_ipv6_payload(bounded_packet_bytes, ipv6_offset);
         if (!ipv6_payload.has_value()) {
             return network->has_mpls ? "Inner IPv6 header truncated" : "Unsupported or malformed packet";
         }
 
-        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
-        const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, packet_bytes.size());
+        const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_packet_bytes, ipv6_offset + 4U));
+        const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_packet_bytes.size());
         if (ipv6_payload->payload_offset > packet_end) {
             return "Could not extract flow key";
         }
@@ -548,15 +879,15 @@ std::string classify_unrecognized_packet_reason(
 
         if (ipv6_payload->next_header == detail::kIpProtocolTcp) {
             if (ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
-                packet_bytes.size() < ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize) {
+                bounded_packet_bytes.size() < ipv6_payload->payload_offset + detail::kTcpMinimumHeaderSize) {
                 return network->has_mpls ? "Inner TCP header truncated" : "TCP header truncated";
             }
 
             const auto tcp_header_length =
-                static_cast<std::size_t>((packet_bytes[ipv6_payload->payload_offset + 12U] >> 4U) * 4U);
+                static_cast<std::size_t>((bounded_packet_bytes[ipv6_payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 ipv6_payload->payload_offset + tcp_header_length > packet_end ||
-                packet_bytes.size() < ipv6_payload->payload_offset + tcp_header_length) {
+                bounded_packet_bytes.size() < ipv6_payload->payload_offset + tcp_header_length) {
                 return "Could not extract flow key";
             }
 
@@ -569,16 +900,16 @@ std::string classify_unrecognized_packet_reason(
             }
 
             return detail::parse_udp_payload_bounds(
-                packet_bytes,
-                ipv6_payload->payload_offset,
-                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
-            ).has_value()
+                       bounded_packet_bytes,
+                       ipv6_payload->payload_offset,
+                       ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+                   ).has_value()
                 ? "Could not extract flow key"
                 : "Unsupported or malformed packet";
         }
 
         if (ipv6_payload->next_header == detail::kIpProtocolIcmpV6) {
-            return packet_bytes.size() < ipv6_payload->payload_offset + 2U
+            return bounded_packet_bytes.size() < ipv6_payload->payload_offset + 2U
                 ? "Unsupported or malformed packet"
                 : "Could not extract flow key";
         }
@@ -659,43 +990,49 @@ void report_open_progress(OpenContext* ctx) {
     if (!network.has_value()) {
         return std::nullopt;
     }
+    const auto bounded_bytes = network->bounded_packet_end.has_value()
+        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
+        : packet_bytes;
 
     if (network->protocol_type == detail::kEtherTypeIpv4) {
         const auto ipv4_offset = network->payload_offset;
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, ipv4_offset);
+        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, ipv4_offset);
         if (!ipv4_bounds.has_value()) {
             return std::nullopt;
         }
 
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
-        const auto packet_end = std::min(
+        auto packet_end = std::min(
             ipv4_bounds->nominal_packet_end,
             static_cast<std::size_t>(packet.captured_length));
+        if (network->bounded_packet_end.has_value()) {
+            packet_end = std::min(packet_end, *network->bounded_packet_end);
+        }
         if (packet_end < transport_offset) {
             return 0U;
         }
 
         if (protocol == ProtocolId::tcp) {
-            if (packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+            if (bounded_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
                 return std::nullopt;
             }
 
             const auto tcp_header_length =
-                static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+                static_cast<std::size_t>((bounded_bytes[transport_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 packet_end < transport_offset + tcp_header_length ||
-                packet_bytes.size() < transport_offset + tcp_header_length) {
+                bounded_bytes.size() < transport_offset + tcp_header_length) {
                 return std::nullopt;
             }
 
             return static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
         }
 
-        if (packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
+        if (bounded_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
             return std::nullopt;
         }
 
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, transport_offset + 4U));
+        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, transport_offset + 4U));
         if (udp_length < detail::kUdpHeaderSize ||
             transport_offset + udp_length > ipv4_bounds->nominal_packet_end) {
             return std::nullopt;
@@ -708,49 +1045,52 @@ void report_open_progress(OpenContext* ctx) {
 
     if (network->protocol_type == detail::kEtherTypeIpv6) {
         const auto ipv6_offset = network->payload_offset;
-        if (packet_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        if (bounded_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
             return std::nullopt;
         }
 
-        if (static_cast<std::uint8_t>(packet_bytes[ipv6_offset] >> 4U) != 6U) {
+        if (static_cast<std::uint8_t>(bounded_bytes[ipv6_offset] >> 4U) != 6U) {
             return std::nullopt;
         }
 
         const auto ipv6_payload_length =
-            static_cast<std::size_t>(detail::read_be16(packet_bytes, ipv6_offset + 4U));
-        const auto payload = detail::parse_ipv6_payload(packet_bytes, ipv6_offset);
+            static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
+        const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
         if (!payload.has_value()) {
             return std::nullopt;
         }
 
-        const auto packet_end = std::min(
+        auto packet_end = std::min(
             ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length,
             static_cast<std::size_t>(packet.captured_length));
+        if (network->bounded_packet_end.has_value()) {
+            packet_end = std::min(packet_end, *network->bounded_packet_end);
+        }
         if (packet_end < payload->payload_offset) {
             return 0U;
         }
 
         if (protocol == ProtocolId::tcp) {
-            if (packet_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
+            if (bounded_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
                 return std::nullopt;
             }
 
             const auto tcp_header_length =
-                static_cast<std::size_t>((packet_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+                static_cast<std::size_t>((bounded_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
             if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
                 packet_end < payload->payload_offset + tcp_header_length ||
-                packet_bytes.size() < payload->payload_offset + tcp_header_length) {
+                bounded_bytes.size() < payload->payload_offset + tcp_header_length) {
                 return std::nullopt;
             }
 
             return static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
         }
 
-        if (packet_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
+        if (bounded_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
             return std::nullopt;
         }
 
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(packet_bytes, payload->payload_offset + 4U));
+        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, payload->payload_offset + 4U));
         if (udp_length < detail::kUdpHeaderSize ||
             payload->payload_offset + udp_length > ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length) {
             return std::nullopt;

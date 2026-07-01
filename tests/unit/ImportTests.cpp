@@ -26,7 +26,7 @@ void run_import_tests() {
         PFL_EXPECT(reader.data_link_type() == 1);
 
         const auto packet = reader.read_next();
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->packet_index == 0);
         PFL_EXPECT(packet->ts_sec == 1);
         PFL_EXPECT(packet->ts_usec == 100);
@@ -46,7 +46,7 @@ void run_import_tests() {
         PFL_EXPECT(reader.open(path));
 
         auto first_packet = reader.read_next_prefix(16U);
-        PFL_EXPECT(first_packet.has_value());
+        PFL_REQUIRE(first_packet.has_value());
         PFL_EXPECT(first_packet->packet_index == 0U);
         PFL_EXPECT(first_packet->captured_length == tcp_packet.size());
         PFL_EXPECT(first_packet->original_length == tcp_packet.size());
@@ -66,7 +66,7 @@ void run_import_tests() {
         PFL_EXPECT(reader.open(path));
 
         auto first_packet = reader.read_next_prefix(16U);
-        PFL_EXPECT(first_packet.has_value());
+        PFL_REQUIRE(first_packet.has_value());
         PFL_EXPECT(reader.materialize_packet_bytes(*first_packet));
         PFL_EXPECT(first_packet->bytes == tcp_packet);
         PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
@@ -74,7 +74,7 @@ void run_import_tests() {
         PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
 
         auto second_packet = reader.read_next_prefix(8U);
-        PFL_EXPECT(second_packet.has_value());
+        PFL_REQUIRE(second_packet.has_value());
         PFL_EXPECT(second_packet->packet_index == 1U);
         PFL_EXPECT(second_packet->captured_length == udp_packet.size());
         PFL_EXPECT(second_packet->original_length == udp_packet.size());
@@ -94,13 +94,13 @@ void run_import_tests() {
         PFL_EXPECT(reader.open(path));
 
         auto first_packet = reader.read_next_prefix(16U);
-        PFL_EXPECT(first_packet.has_value());
+        PFL_REQUIRE(first_packet.has_value());
         PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + 16U);
         PFL_EXPECT(reader.finish_prefix_packet(*first_packet));
         PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
 
         auto second_packet = reader.read_next_prefix(8U);
-        PFL_EXPECT(second_packet.has_value());
+        PFL_REQUIRE(second_packet.has_value());
         PFL_EXPECT(second_packet->packet_index == 1U);
         PFL_EXPECT(second_packet->bytes.size() == 8U);
         PFL_EXPECT(reader.finish_prefix_packet(*second_packet));
@@ -116,14 +116,14 @@ void run_import_tests() {
         PFL_EXPECT(reader.open(path));
 
         auto first_packet = reader.read_next_import_packet(16U, kMinCapturedLengthForStagedImportBytes);
-        PFL_EXPECT(first_packet.has_value());
+        PFL_REQUIRE(first_packet.has_value());
         PFL_EXPECT(first_packet->packet_index == 0U);
         PFL_EXPECT(first_packet->bytes == tcp_packet);
         PFL_EXPECT(first_packet->bytes.size() == first_packet->captured_length);
         PFL_EXPECT(reader.next_input_offset() == first_packet->data_offset + first_packet->captured_length);
 
         auto second_packet = reader.read_next_import_packet(8U, kMinCapturedLengthForStagedImportBytes);
-        PFL_EXPECT(second_packet.has_value());
+        PFL_REQUIRE(second_packet.has_value());
         PFL_EXPECT(second_packet->packet_index == 1U);
         PFL_EXPECT(second_packet->bytes == udp_packet);
         PFL_EXPECT(second_packet->bytes.size() == second_packet->captured_length);
@@ -173,7 +173,7 @@ void run_import_tests() {
         PFL_EXPECT(reader.open(path));
 
         auto first_packet = reader.read_next_import_packet(192U, kMinCapturedLengthForStagedImportBytes);
-        PFL_EXPECT(first_packet.has_value());
+        PFL_REQUIRE(first_packet.has_value());
         PFL_EXPECT(first_packet->packet_index == 0U);
         PFL_EXPECT(first_packet->captured_length == large_tcp_packet.size());
         PFL_EXPECT(first_packet->bytes.size() == 192U);
@@ -259,7 +259,7 @@ void run_import_tests() {
         };
 
         const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_EXPECT(decoded.ipv4.has_value());
+        PFL_REQUIRE(decoded.ipv4.has_value());
         PFL_EXPECT(!decoded.ipv6.has_value());
         PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 1));
         PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 2));
@@ -285,7 +285,7 @@ void run_import_tests() {
         };
 
         const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_EXPECT(decoded.ipv4.has_value());
+        PFL_REQUIRE(decoded.ipv4.has_value());
         PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 3));
         PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 4));
         PFL_EXPECT(decoded.ipv4->flow_key.src_port == 5353);
@@ -313,7 +313,7 @@ void run_import_tests() {
         };
 
         const auto decoded = decoder.decode_ethernet(raw_packet);
-        PFL_EXPECT(decoded.ipv4.has_value());
+        PFL_REQUIRE(decoded.ipv4.has_value());
         PFL_EXPECT(decoded.ipv4->flow_key.src_addr == ipv4(10, 0, 0, 5));
         PFL_EXPECT(decoded.ipv4->flow_key.dst_addr == ipv4(10, 0, 0, 6));
         PFL_EXPECT(decoded.ipv4->flow_key.src_port == 53530);
@@ -382,7 +382,7 @@ void run_import_tests() {
         PFL_EXPECT(flow_packets.back().payload_length == 512U);
 
         const auto packet = session.find_packet(10U);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->payload_length == 512U);
     }
 
@@ -435,7 +435,7 @@ void run_import_tests() {
         PFL_EXPECT(session.summary().flow_count == 1U);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->captured_length == captured_udp_packet.size());
         PFL_EXPECT(packet->original_length == full_udp_packet.size());
         PFL_EXPECT(packet->payload_length == 4U);
@@ -450,7 +450,7 @@ void run_import_tests() {
         PFL_EXPECT(session.summary().flow_count == 1U);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->captured_length == 74U);
         PFL_EXPECT(packet->original_length == 332U);
         PFL_EXPECT(packet->payload_length == 32U);
@@ -469,7 +469,7 @@ void run_import_tests() {
         PFL_EXPECT(session.summary().flow_count == 1U);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->captured_length == 60U);
         PFL_EXPECT(packet->original_length == 60U);
 
@@ -488,7 +488,7 @@ void run_import_tests() {
         PFL_EXPECT(session.summary().flow_count == 1U);
 
         const auto packet = session.find_packet(0);
-        PFL_EXPECT(packet.has_value());
+        PFL_REQUIRE(packet.has_value());
         PFL_EXPECT(packet->captured_length == 60U);
         PFL_EXPECT(packet->original_length == 142U);
 
@@ -519,7 +519,7 @@ void run_import_tests() {
             .protocol = ProtocolId::tcp,
         });
         const auto* connection = session.state().ipv4_connections.find(key);
-        PFL_EXPECT(connection != nullptr);
+        PFL_REQUIRE(connection != nullptr);
         PFL_EXPECT(connection->has_flow_a);
         PFL_EXPECT(connection->has_flow_b);
         PFL_EXPECT(connection->flow_a.packet_count == 1);

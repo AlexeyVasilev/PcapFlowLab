@@ -63,11 +63,11 @@ void run_fragmentation_tests() {
     const auto packet2 = session.find_packet(2);
     const auto packet3 = session.find_packet(3);
     const auto packet4 = session.find_packet(4);
-    PFL_EXPECT(packet0.has_value());
-    PFL_EXPECT(packet1.has_value());
-    PFL_EXPECT(packet2.has_value());
-    PFL_EXPECT(packet3.has_value());
-    PFL_EXPECT(packet4.has_value());
+    PFL_REQUIRE(packet0.has_value());
+    PFL_REQUIRE(packet1.has_value());
+    PFL_REQUIRE(packet2.has_value());
+    PFL_REQUIRE(packet3.has_value());
+    PFL_REQUIRE(packet4.has_value());
 
     PFL_EXPECT(packet0->is_ip_fragmented);
     PFL_EXPECT(packet1->is_ip_fragmented);
@@ -76,32 +76,32 @@ void run_fragmentation_tests() {
     PFL_EXPECT(!packet4->is_ip_fragmented);
 
     const auto details0 = session.read_packet_details(*packet0);
-    PFL_EXPECT(details0.has_value());
+    PFL_REQUIRE(details0.has_value());
     PFL_EXPECT(details0->has_ipv4);
     PFL_EXPECT(!details0->has_tcp);
     PFL_EXPECT(!details0->has_udp);
     PFL_EXPECT(!details0->has_icmp);
 
     const auto details1 = session.read_packet_details(*packet1);
-    PFL_EXPECT(details1.has_value());
+    PFL_REQUIRE(details1.has_value());
     PFL_EXPECT(details1->has_ipv4);
     PFL_EXPECT(!details1->has_tcp);
     PFL_EXPECT(!details1->has_udp);
 
     const auto details2 = session.read_packet_details(*packet2);
-    PFL_EXPECT(details2.has_value());
+    PFL_REQUIRE(details2.has_value());
     PFL_EXPECT(details2->has_ipv6);
     PFL_EXPECT(!details2->has_icmpv6);
     PFL_EXPECT(!details2->has_udp);
     PFL_EXPECT(!details2->has_tcp);
 
     const auto details3 = session.read_packet_details(*packet3);
-    PFL_EXPECT(details3.has_value());
+    PFL_REQUIRE(details3.has_value());
     PFL_EXPECT(details3->has_tcp);
     PFL_EXPECT(!details3->has_ipv6);
 
     const auto details4 = session.read_packet_details(*packet4);
-    PFL_EXPECT(details4.has_value());
+    PFL_REQUIRE(details4.has_value());
     PFL_EXPECT(details4->has_ipv6);
     PFL_EXPECT(details4->has_udp);
 
@@ -134,8 +134,8 @@ void run_fragmentation_tests() {
     PFL_EXPECT(fragmentation_count(loaded_rows) == 3U);
     const auto loaded_packet0 = loaded_session.find_packet(0);
     const auto loaded_packet2 = loaded_session.find_packet(2);
-    PFL_EXPECT(loaded_packet0.has_value());
-    PFL_EXPECT(loaded_packet2.has_value());
+    PFL_REQUIRE(loaded_packet0.has_value());
+    PFL_REQUIRE(loaded_packet2.has_value());
     PFL_EXPECT(loaded_packet0->is_ip_fragmented);
     PFL_EXPECT(loaded_packet2->is_ip_fragmented);
 
@@ -173,7 +173,7 @@ void run_fragmentation_tests() {
     PFL_EXPECT(checkpoint_fragment_count == 3U);
 
     const auto mf_flow_packets = session.list_flow_packets(0);
-    PFL_EXPECT(!mf_flow_packets.empty());
+    PFL_REQUIRE(!mf_flow_packets.empty());
     PFL_EXPECT(mf_flow_packets.front().row_number == 1U);
 }
 

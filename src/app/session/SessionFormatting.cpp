@@ -15,10 +15,30 @@ constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
 constexpr std::uint16_t kEtherTypeVlan = 0x8100U;
 constexpr std::uint16_t kEtherTypeQinq = 0x88A8U;
+constexpr std::uint16_t kEtherTypeLegacyVlan = 0x9100U;
 constexpr std::uint16_t kEtherTypeMplsUnicast = 0x8847U;
 constexpr std::uint16_t kEtherTypeMplsMulticast = 0x8848U;
+constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
+constexpr std::uint16_t kEtherTypeMacsec = 0x88E5U;
+constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
+constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
+constexpr std::uint16_t kIeee8023LengthCutoff = 0x0600U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
+constexpr std::uint16_t kPppProtocolIpv4 = 0x0021U;
+constexpr std::uint16_t kPppProtocolIpv6 = 0x0057U;
+constexpr std::uint16_t kPppProtocolLcp = 0xc021U;
+constexpr std::uint16_t kPppProtocolIpcp = 0x8021U;
+constexpr std::uint16_t kPppProtocolIpv6cp = 0x8057U;
+constexpr std::uint16_t kPppoeDiscoveryTagEndOfList = 0x0000U;
+constexpr std::uint16_t kPppoeDiscoveryTagServiceName = 0x0101U;
+constexpr std::uint16_t kPppoeDiscoveryTagAcName = 0x0102U;
+constexpr std::uint16_t kPppoeDiscoveryTagHostUniq = 0x0103U;
+constexpr std::uint16_t kPppoeDiscoveryTagAcCookie = 0x0104U;
+constexpr std::uint16_t kPppoeDiscoveryTagRelaySessionId = 0x0110U;
+constexpr std::uint16_t kPppoeDiscoveryTagServiceNameError = 0x0201U;
+constexpr std::uint16_t kPppoeDiscoveryTagAcSystemError = 0x0202U;
+constexpr std::uint16_t kPppoeDiscoveryTagGenericError = 0x0203U;
 constexpr std::uint16_t kArpOpcodeRequest = 1U;
 constexpr std::uint16_t kArpOpcodeReply = 2U;
 constexpr std::uint8_t kIpProtocolIgmp = 2U;
@@ -167,10 +187,20 @@ std::string format_ether_type_name(const std::uint16_t ether_type) {
         return "802.1Q VLAN";
     case kEtherTypeQinq:
         return "802.1ad QinQ";
+    case kEtherTypeLegacyVlan:
+        return "Legacy VLAN";
     case kEtherTypeMplsUnicast:
         return "MPLS Unicast";
     case kEtherTypeMplsMulticast:
         return "MPLS Multicast";
+    case kEtherTypePbb:
+        return "PBB I-TAG";
+    case kEtherTypeMacsec:
+        return "MACsec";
+    case kEtherTypePppoeDiscovery:
+        return "PPPoE Discovery";
+    case kEtherTypePppoeSession:
+        return "PPPoE Session";
     default:
         return {};
     }
@@ -198,6 +228,609 @@ std::string format_ether_type_value(const std::uint16_t ether_type) {
     }
 
     return name + " (" + format_hex16_value(ether_type) + ")";
+}
+
+std::string format_vlan_tpid_name(const std::uint16_t tpid) {
+    switch (tpid) {
+    case kEtherTypeVlan:
+        return "802.1Q Virtual LAN";
+    case kEtherTypeQinq:
+        return "802.1ad QinQ";
+    case kEtherTypeLegacyVlan:
+        return "Legacy VLAN (0x9100)";
+    default:
+        return "VLAN";
+    }
+}
+
+std::string format_vlan_summary_title(const VlanTagDetails& tag) {
+    const auto priority = std::to_string(static_cast<unsigned>((tag.tci >> 13U) & 0x7U));
+    const auto dei = std::to_string(static_cast<unsigned>((tag.tci >> 12U) & 0x1U));
+    const auto id = std::to_string(static_cast<unsigned>(tag.tci & 0x0FFFU));
+
+    if (tag.tpid == kEtherTypeQinq && tag.encapsulated_ether_type == kEtherTypePbb) {
+        return "802.1ad B-TAG, PRI: " + priority + ", DEI: " + dei + ", ID: " + id;
+    }
+
+    return format_vlan_tpid_name(tag.tpid) + ", PRI: " + priority +
+        ", DEI: " + dei + ", ID: " + id;
+}
+
+std::string format_inner_ethernet_title(const InnerEthernetDetails& details) {
+    std::string title = details.uses_length_field ? "Inner IEEE 802.3" : "Inner Ethernet II";
+    if (details.available_header_bytes >= 12U) {
+        title += ", Src: " + format_mac_address(details.src_mac) +
+            ", Dst: " + format_mac_address(details.dst_mac);
+    }
+    return title;
+}
+
+std::string format_pppoe_code(const std::uint8_t code) {
+    switch (code) {
+    case 0x00U:
+        return "Session Data (0x00)";
+    case 0x09U:
+        return "PADI (0x09)";
+    case 0x07U:
+        return "PADO (0x07)";
+    case 0x19U:
+        return "PADR (0x19)";
+    case 0x65U:
+        return "PADS (0x65)";
+    case 0xA7U:
+        return "PADT (0xa7)";
+    default:
+        return format_hex_value(code, 2);
+    }
+}
+
+std::string format_pbb_isid(const std::uint32_t isid) {
+    return format_hex_value(isid, 6) + " (" + std::to_string(isid) + ")";
+}
+
+std::string format_macsec_packet_number(const std::uint32_t packet_number) {
+    return format_hex_value(packet_number, 8) + " (" + std::to_string(packet_number) + ")";
+}
+
+bool has_plaintext_macsec_ether_type(const PacketDetails& details) noexcept {
+    return details.has_macsec &&
+        !details.macsec.encrypted &&
+        !details.macsec.changed &&
+        !details.macsec.sectag_truncated &&
+        !details.macsec.packet_number_truncated &&
+        !details.macsec.sci_truncated &&
+        !details.macsec.icv_truncated &&
+        details.macsec.protected_payload_length >= 2U &&
+        details.macsec.protected_payload_preview.size() >= 2U;
+}
+
+std::uint16_t macsec_plaintext_ether_type(const PacketDetails& details) noexcept {
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(details.macsec.protected_payload_preview[0]) << 8U) |
+        static_cast<std::uint16_t>(details.macsec.protected_payload_preview[1]));
+}
+
+PacketSummaryField make_summary_field(std::string label, std::string value);
+
+std::uint8_t pbb_reserved_1(const PbbDetails& pbb) noexcept {
+    return static_cast<std::uint8_t>((pbb.reserved >> 2U) & 0x1U);
+}
+
+std::uint8_t pbb_reserved_2(const PbbDetails& pbb) noexcept {
+    return static_cast<std::uint8_t>(pbb.reserved & 0x3U);
+}
+
+void append_pbb_itag_summary_fields(std::vector<PacketSummaryField>& fields, const PbbDetails& pbb) {
+    if (pbb.available_bytes >= 1U) {
+        fields.push_back(make_summary_field("Priority", std::to_string(pbb.pcp)));
+        fields.push_back(make_summary_field("Drop Eligible", pbb.dei ? "1" : "0"));
+        fields.push_back(make_summary_field("NCA", pbb.nca ? "1" : "0"));
+        fields.push_back(make_summary_field("Reserved 1", std::to_string(pbb_reserved_1(pbb))));
+        fields.push_back(make_summary_field("Reserved 2", std::to_string(pbb_reserved_2(pbb))));
+    }
+    if (pbb.available_bytes >= 4U) {
+        fields.push_back(make_summary_field("I-SID", format_pbb_isid(pbb.isid)));
+    } else if (pbb.available_bytes > 0U) {
+        fields.push_back(make_summary_field(
+            "Available Bytes",
+            std::to_string(static_cast<unsigned>(pbb.available_bytes)) + " of 4"
+        ));
+    }
+}
+
+std::string format_ppp_protocol(const std::uint16_t protocol) {
+    switch (protocol) {
+    case kPppProtocolIpv4:
+        return "IPv4 (0x0021)";
+    case kPppProtocolIpv6:
+        return "IPv6 (0x0057)";
+    case kPppProtocolLcp:
+        return "LCP (0xc021)";
+    case kPppProtocolIpcp:
+        return "IPCP (0x8021)";
+    case kPppProtocolIpv6cp:
+        return "IPv6CP (0x8057)";
+    default:
+        return format_hex16_value(protocol);
+    }
+}
+
+std::string format_pppoe_tag_type(const std::uint16_t tag_type) {
+    switch (tag_type) {
+    case kPppoeDiscoveryTagEndOfList:
+        return "End-Of-List (0x0000)";
+    case kPppoeDiscoveryTagServiceName:
+        return "Service-Name (0x0101)";
+    case kPppoeDiscoveryTagAcName:
+        return "AC-Name (0x0102)";
+    case kPppoeDiscoveryTagHostUniq:
+        return "Host-Uniq (0x0103)";
+    case kPppoeDiscoveryTagAcCookie:
+        return "AC-Cookie (0x0104)";
+    case kPppoeDiscoveryTagRelaySessionId:
+        return "Relay-Session-Id (0x0110)";
+    case kPppoeDiscoveryTagServiceNameError:
+        return "Service-Name-Error (0x0201)";
+    case kPppoeDiscoveryTagAcSystemError:
+        return "AC-System-Error (0x0202)";
+    case kPppoeDiscoveryTagGenericError:
+        return "Generic-Error (0x0203)";
+    default:
+        return format_hex16_value(tag_type);
+    }
+}
+
+bool is_printable_ascii(std::span<const std::uint8_t> bytes) noexcept {
+    return std::all_of(bytes.begin(), bytes.end(), [](const auto byte) {
+        return byte >= 0x20U && byte <= 0x7eU;
+    });
+}
+
+std::string format_pppoe_tag_value(std::span<const std::uint8_t> value) {
+    if (value.empty()) {
+        return "empty";
+    }
+    if (is_printable_ascii(value)) {
+        return std::string(value.begin(), value.end());
+    }
+    return format_hex_byte_list(value);
+}
+
+std::string format_ppp_control_code(const std::uint8_t code) {
+    switch (code) {
+    case 1U:
+        return "Configure-Request (1)";
+    case 2U:
+        return "Configure-Ack (2)";
+    case 3U:
+        return "Configure-Nak (3)";
+    case 4U:
+        return "Configure-Reject (4)";
+    case 5U:
+        return "Terminate-Request (5)";
+    case 6U:
+        return "Terminate-Ack (6)";
+    case 7U:
+        return "Code-Reject (7)";
+    case 8U:
+        return "Protocol-Reject (8)";
+    case 9U:
+        return "Echo-Request (9)";
+    case 10U:
+        return "Echo-Reply (10)";
+    case 11U:
+        return "Discard-Request (11)";
+    default:
+        return std::to_string(static_cast<unsigned>(code));
+    }
+}
+
+std::string format_ppp_control_option_name(const std::uint16_t protocol, const std::uint8_t type) {
+    if (protocol == kPppProtocolLcp) {
+        switch (type) {
+        case 1U: return "Maximum Receive Unit (MRU)";
+        case 2U: return "Async Control Character Map";
+        case 3U: return "Authentication Protocol";
+        case 5U: return "Magic Number";
+        case 7U: return "Protocol Field Compression";
+        case 8U: return "Address/Control Field Compression";
+        default: break;
+        }
+    } else if (protocol == kPppProtocolIpcp) {
+        switch (type) {
+        case 2U: return "IP-Compression-Protocol";
+        case 3U: return "IP Address";
+        default: break;
+        }
+    } else if (protocol == kPppProtocolIpv6cp) {
+        switch (type) {
+        case 1U: return "Interface Identifier";
+        case 2U: return "IPv6-Compression-Protocol";
+        default: break;
+        }
+    }
+
+    return "Option " + std::to_string(static_cast<unsigned>(type));
+}
+
+std::string format_ppp_control_option_value(const std::uint16_t protocol, const std::uint8_t type, std::span<const std::uint8_t> value) {
+    if (value.empty()) {
+        return "empty";
+    }
+
+    if (protocol == kPppProtocolLcp) {
+        if (type == 1U && value.size() == 2U) {
+            const auto mru = static_cast<std::uint16_t>((static_cast<std::uint16_t>(value[0]) << 8U) | value[1]);
+            return std::to_string(mru) + " bytes";
+        }
+        if (type == 2U && value.size() == 4U) {
+            const auto accm = (static_cast<std::uint32_t>(value[0]) << 24U) |
+                (static_cast<std::uint32_t>(value[1]) << 16U) |
+                (static_cast<std::uint32_t>(value[2]) << 8U) |
+                static_cast<std::uint32_t>(value[3]);
+            return format_hex_value(accm, 8);
+        }
+        if (type == 3U && value.size() >= 2U) {
+            const auto auth_protocol =
+                static_cast<std::uint16_t>((static_cast<std::uint16_t>(value[0]) << 8U) | value[1]);
+            if (auth_protocol == 0xc023U) {
+                return "PAP (0xc023)";
+            }
+            if (auth_protocol == 0xc223U) {
+                return "CHAP (0xc223)";
+            }
+            return format_hex16_value(auth_protocol);
+        }
+        if (type == 5U && value.size() == 4U) {
+            const auto magic = (static_cast<std::uint32_t>(value[0]) << 24U) |
+                (static_cast<std::uint32_t>(value[1]) << 16U) |
+                (static_cast<std::uint32_t>(value[2]) << 8U) |
+                static_cast<std::uint32_t>(value[3]);
+            return format_hex_value(magic, 8);
+        }
+    } else if (protocol == kPppProtocolIpcp) {
+        if (type == 3U && value.size() == 4U) {
+            return format_ipv4_address({
+                value[0], value[1], value[2], value[3]
+            });
+        }
+    } else if (protocol == kPppProtocolIpv6cp) {
+        if (type == 1U && value.size() == 8U) {
+            return format_hex_byte_sequence(value);
+        }
+    }
+
+    if (is_printable_ascii(value)) {
+        return std::string(value.begin(), value.end());
+    }
+    return format_hex_byte_list(value);
+}
+
+std::optional<PacketSummaryLayer> build_ppp_control_options_layer(const PacketDetails& details) {
+    if (!details.pppoe.control.present) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryLayer> option_layers {};
+    option_layers.reserve(details.pppoe.control.options.size());
+    for (const auto& option : details.pppoe.control.options) {
+        if (option.header_truncated) {
+            option_layers.push_back(PacketSummaryLayer {
+                .id = "ppp-control-option",
+                .title = "Truncated option header",
+                .warning = true,
+                .marker_text = "Warning",
+            });
+            continue;
+        }
+
+        auto value_text = format_ppp_control_option_value(
+            details.pppoe.ppp_protocol,
+            option.type,
+            std::span<const std::uint8_t>(option.value.data(), option.value.size())
+        );
+        if (option.value_truncated) {
+            value_text += " (truncated)";
+        }
+
+        option_layers.push_back(PacketSummaryLayer {
+            .id = "ppp-control-option",
+            .title = format_ppp_control_option_name(details.pppoe.ppp_protocol, option.type),
+            .fields = {
+                PacketSummaryField {
+                    .label = "Type",
+                    .value = std::to_string(static_cast<unsigned>(option.type)),
+                },
+                PacketSummaryField {
+                    .label = "Length",
+                    .value = std::to_string(static_cast<unsigned>(option.declared_length)) + " bytes",
+                },
+                PacketSummaryField {
+                    .label = "Value",
+                    .value = std::move(value_text),
+                },
+            },
+            .warning = option.value_truncated,
+            .marker_text = option.value_truncated ? "Warning" : std::string {},
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "ppp-control-options",
+        .title = "Options",
+        .children = std::move(option_layers),
+        .expanded_by_default = true,
+        .warning = details.pppoe.control.option_header_truncated || details.pppoe.control.option_value_truncated,
+        .marker_text = (details.pppoe.control.option_header_truncated || details.pppoe.control.option_value_truncated)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
+std::optional<PacketSummaryLayer> build_unknown_ppp_payload_layer(const PacketDetails& details) {
+    if (!details.has_pppoe ||
+        details.pppoe.is_discovery ||
+        details.pppoe.control.present ||
+        details.pppoe.ppp_protocol == 0U ||
+        details.pppoe.ppp_protocol == kPppProtocolIpv4 ||
+        details.pppoe.ppp_protocol == kPppProtocolIpv6 ||
+        details.pppoe.protocol_field_truncated ||
+        details.pppoe.header_truncated) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        PacketSummaryField {
+            .label = "Length",
+            .value = std::to_string(details.pppoe.unknown_ppp_payload_length) + " bytes",
+        },
+    };
+
+    if (!details.pppoe.unknown_ppp_payload_preview.empty()) {
+        auto preview_text = format_hex_byte_list(std::span<const std::uint8_t>(
+            details.pppoe.unknown_ppp_payload_preview.data(),
+            details.pppoe.unknown_ppp_payload_preview.size()
+        ));
+        fields.push_back(PacketSummaryField {
+            .label = "Raw",
+            .value = std::move(preview_text),
+        });
+    }
+    if (details.pppoe.unknown_ppp_payload_preview_truncated) {
+        fields.push_back(PacketSummaryField {
+            .label = "Preview truncated",
+            .value = "Yes",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "ppp-payload",
+        .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<PacketSummaryLayer> build_unknown_inner_ethernet_payload_layer(const PacketDetails& details) {
+    if (!details.has_unknown_inner_ethernet_payload) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        PacketSummaryField {
+            .label = "Length",
+            .value = std::to_string(details.unknown_inner_ethernet_payload.payload_length) + " bytes",
+        },
+    };
+
+    if (!details.unknown_inner_ethernet_payload.payload_preview.empty()) {
+        auto preview_text = format_hex_byte_list(std::span<const std::uint8_t>(
+            details.unknown_inner_ethernet_payload.payload_preview.data(),
+            details.unknown_inner_ethernet_payload.payload_preview.size()
+        ));
+        fields.push_back(PacketSummaryField {
+            .label = "Raw",
+            .value = std::move(preview_text),
+        });
+    }
+
+    if (details.unknown_inner_ethernet_payload.payload_preview_truncated) {
+        fields.push_back(PacketSummaryField {
+            .label = "Preview truncated",
+            .value = "Yes",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "inner-payload",
+        .title = "Data",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<PacketSummaryLayer> build_macsec_protected_payload_layer(const PacketDetails& details) {
+    if (!details.has_macsec || details.macsec.protected_payload_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Length", std::to_string(details.macsec.protected_payload_length) + " bytes"),
+    };
+
+    std::size_t preview_offset = 0U;
+    if (has_plaintext_macsec_ether_type(details)) {
+        fields.push_back(make_summary_field(
+            "Plain EtherType",
+            format_ether_type_value(macsec_plaintext_ether_type(details))
+        ));
+        fields.push_back(make_summary_field(
+            "Data Length",
+            std::to_string(details.macsec.protected_payload_length - 2U) + " bytes"
+        ));
+        preview_offset = 2U;
+    }
+
+    if (details.macsec.protected_payload_preview.size() > preview_offset) {
+        fields.push_back(make_summary_field(
+            "Raw",
+            format_hex_byte_list(std::span<const std::uint8_t>(
+                details.macsec.protected_payload_preview.data() + static_cast<std::ptrdiff_t>(preview_offset),
+                details.macsec.protected_payload_preview.size() - preview_offset
+            ))
+        ));
+    }
+
+    const auto preview_payload_length = details.macsec.protected_payload_preview.size() > preview_offset
+        ? (details.macsec.protected_payload_preview.size() - preview_offset)
+        : 0U;
+    const auto total_payload_length = details.macsec.protected_payload_length > preview_offset
+        ? (details.macsec.protected_payload_length - preview_offset)
+        : 0U;
+    if (details.macsec.protected_payload_preview_truncated || total_payload_length > preview_payload_length) {
+        fields.push_back(make_summary_field("Preview truncated", "Yes"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "macsec-payload",
+        .title = "MACsec Protected Payload",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<PacketSummaryLayer> build_macsec_icv_layer(const PacketDetails& details) {
+    if (!details.has_macsec || details.macsec.icv_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Length", std::to_string(details.macsec.icv_length) + " bytes"),
+    };
+    if (!details.macsec.icv_preview.empty()) {
+        fields.push_back(make_summary_field(
+            "Raw",
+            format_hex_byte_list(std::span<const std::uint8_t>(
+                details.macsec.icv_preview.data(),
+                details.macsec.icv_preview.size()
+            ))
+        ));
+    }
+    if (details.macsec.icv_preview_truncated) {
+        fields.push_back(make_summary_field("Preview truncated", "Yes"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "macsec-icv",
+        .title = "MACsec ICV",
+        .fields = std::move(fields),
+    };
+}
+
+std::optional<PacketSummaryLayer> build_unknown_llc_snap_payload_layer(const PacketDetails& details) {
+    const auto make_payload_layer = [](std::string id,
+                                       const std::size_t payload_length,
+                                       const std::vector<std::uint8_t>& payload_preview,
+                                       const bool preview_truncated) -> std::optional<PacketSummaryLayer> {
+        if (payload_length == 0U && payload_preview.empty()) {
+            return std::nullopt;
+        }
+
+        std::vector<PacketSummaryField> fields {
+            PacketSummaryField {
+                .label = "Length",
+                .value = std::to_string(payload_length) + " bytes",
+            },
+        };
+
+        if (!payload_preview.empty()) {
+            auto preview_text = format_hex_byte_list(std::span<const std::uint8_t>(
+                payload_preview.data(),
+                payload_preview.size()
+            ));
+            fields.push_back(PacketSummaryField {
+                .label = "Raw",
+                .value = std::move(preview_text),
+            });
+        }
+        if (preview_truncated) {
+            fields.push_back(PacketSummaryField {
+                .label = "Preview truncated",
+                .value = "Yes",
+            });
+        }
+
+        return PacketSummaryLayer {
+            .id = std::move(id),
+            .title = "Data",
+            .fields = std::move(fields),
+        };
+    };
+
+    if (details.has_snap &&
+        !details.snap.header_truncated &&
+        details.snap.payload_length > 0U &&
+        (details.snap.pid != kEtherTypeArp &&
+         details.snap.pid != kEtherTypeIpv4 &&
+         details.snap.pid != kEtherTypeIpv6)) {
+        return make_payload_layer(
+            "snap-payload",
+            details.snap.payload_length,
+            details.snap.payload_preview,
+            details.snap.payload_preview_truncated
+        );
+    }
+
+    if (details.has_llc &&
+        !details.llc.header_truncated &&
+        !details.has_snap &&
+        details.llc.payload_length > 0U) {
+        return make_payload_layer(
+            "llc-payload",
+            details.llc.payload_length,
+            details.llc.payload_preview,
+            details.llc.payload_preview_truncated
+        );
+    }
+
+    return std::nullopt;
+}
+
+std::optional<PacketSummaryLayer> build_ieee_802_3_trailer_layer(const PacketDetails& details) {
+    if (!details.has_ethernet || details.ethernet.trailer_length == 0U) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> fields {
+        PacketSummaryField {
+            .label = "Length",
+            .value = std::to_string(details.ethernet.trailer_length) + " bytes",
+        },
+    };
+
+    if (!details.ethernet.trailer_preview.empty()) {
+        fields.push_back(PacketSummaryField {
+            .label = "Raw",
+            .value = format_hex_byte_list(std::span<const std::uint8_t>(
+                details.ethernet.trailer_preview.data(),
+                details.ethernet.trailer_preview.size()
+            )),
+        });
+    }
+
+    if (details.ethernet.trailer_preview_truncated) {
+        fields.push_back(PacketSummaryField {
+            .label = "Preview truncated",
+            .value = "Yes",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "trailer",
+        .title = "Trailer",
+        .fields = std::move(fields),
+    };
+}
+
+bool ipv4_field_available(const PacketDetails& details, const std::size_t end_offset) noexcept {
+    return details.has_ipv4 && details.ipv4.available_header_bytes >= end_offset;
 }
 
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
@@ -829,6 +1462,36 @@ void append_layer_if_not_empty(std::vector<PacketSummaryLayer>& layers, PacketSu
     }
 }
 
+void append_vlan_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const std::vector<VlanTagDetails>& tags
+) {
+    for (const auto& tag : tags) {
+        auto vlan_fields = std::vector<PacketSummaryField> {
+            make_summary_field("TPID", format_ether_type_value(tag.tpid)),
+            make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+            make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+            make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+        };
+        if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
+            vlan_fields.push_back(make_summary_field(
+                "Encapsulated Length",
+                std::to_string(tag.encapsulated_ether_type) + " bytes"
+            ));
+        } else {
+            vlan_fields.push_back(make_summary_field(
+                "Encapsulated EtherType",
+                format_ether_type_value(tag.encapsulated_ether_type)
+            ));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "vlan",
+            .title = format_vlan_summary_title(tag),
+            .fields = std::move(vlan_fields),
+        });
+    }
+}
+
 void apply_default_summary_layer_expansion(std::vector<PacketSummaryLayer>& layers) {
     if (layers.empty()) {
         return;
@@ -1044,6 +1707,7 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     if (protocol_details_text.empty() ||
         protocol_details_text == kNoProtocolDetailsMessage ||
         protocol_details_text == kUnavailableProtocolDetailsMessage ||
+        details.has_pppoe ||
         details.has_arp ||
         details.has_igmp) {
         return std::nullopt;
@@ -1520,6 +2184,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (details.has_ipv4 && details.ipv4.options_truncated) {
         warning_fields.push_back(make_summary_field({}, "IPv4 options truncated"));
     }
+    if (details.vlan_tag_truncated) {
+        warning_fields.push_back(make_summary_field({}, "VLAN tag header is truncated"));
+        warning_fields.push_back(make_summary_field("VLAN TPID", format_ether_type_value(details.truncated_vlan_tpid)));
+    }
     if (!options.source_capture_accessible) {
         warning_fields.push_back(make_summary_field({}, "Byte-backed packet details are unavailable because the original source capture cannot be read."));
     }
@@ -1569,32 +2237,109 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         auto ethernet_fields = std::vector<PacketSummaryField> {
             make_summary_field("Source", format_mac_address(details.ethernet.src_mac)),
             make_summary_field("Destination", format_mac_address(details.ethernet.dst_mac)),
-            make_summary_field("Type", format_ether_type_value(details.ethernet.ether_type)),
         };
+        if (details.ethernet.uses_length_field) {
+            ethernet_fields.push_back(make_summary_field(
+                "Length",
+                std::to_string(details.ethernet.ether_type) + " bytes"
+            ));
+            if (details.llc.captured_payload_exceeds_declared) {
+                ethernet_fields.push_back(make_summary_field(
+                    "Warning",
+                    "Captured bytes extend beyond the declared IEEE 802.3 payload length"
+                ));
+            }
+        } else {
+            ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.ethernet.ether_type)));
+        }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ethernet",
-            .title = "Ethernet II, Src: " + format_mac_address(details.ethernet.src_mac) +
+        .title = std::string(details.ethernet.uses_length_field ? "IEEE 802.3" : "Ethernet II") +
+                ", Src: " + format_mac_address(details.ethernet.src_mac) +
                 ", Dst: " + format_mac_address(details.ethernet.dst_mac),
             .fields = std::move(ethernet_fields),
         });
     }
 
-    if (details.has_vlan) {
-        for (std::size_t index = 0; index < details.vlan_tags.size(); ++index) {
-            const auto& tag = details.vlan_tags[index];
-            append_layer_if_not_empty(layers, PacketSummaryLayer {
-                .id = "vlan",
-                .title = "802.1Q Virtual LAN, PRI: " + std::to_string(vlan_priority(tag.tci)) +
-                    ", DEI: " + std::to_string(vlan_drop_eligible_indicator(tag.tci)) +
-                    ", ID: " + std::to_string(vlan_identifier(tag.tci)),
-                .fields = {
-                    make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
-                    make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
-                    make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
-                    make_summary_field("Tag Control Information", std::to_string(tag.tci)),
-                    make_summary_field("Encapsulated EtherType", format_ether_type_value(tag.encapsulated_ether_type)),
-                },
-            });
+    const bool has_nested_inner_ethernet = details.has_inner_ethernet && (details.has_mpls || details.has_pbb);
+    const auto& outer_vlan_tags = details.has_pbb ? details.encapsulating_vlan_tags : details.vlan_tags;
+    const bool has_outer_vlans = !outer_vlan_tags.empty();
+
+    if (details.has_pbb && has_outer_vlans) {
+        append_vlan_summary_layers(layers, outer_vlan_tags);
+    } else if (has_outer_vlans && !has_nested_inner_ethernet) {
+        append_vlan_summary_layers(layers, outer_vlan_tags);
+    }
+
+    if (details.vlan_tag_truncated && !has_nested_inner_ethernet) {
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "vlan",
+            .title = format_vlan_tpid_name(details.truncated_vlan_tpid) + " (truncated)",
+            .fields = {
+                make_summary_field("TPID", format_ether_type_value(details.truncated_vlan_tpid)),
+                make_summary_field("Warning", "VLAN tag header is truncated"),
+            },
+            .expanded_by_default = true,
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    if (details.has_llc && !has_nested_inner_ethernet) {
+        std::vector<PacketSummaryField> llc_fields {};
+        if (details.llc.available_header_bytes >= 1U) {
+            llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 2U) {
+            llc_fields.push_back(make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 3U) {
+            llc_fields.push_back(make_summary_field("Control", format_hex_value(details.llc.control, 2)));
+        }
+        if (details.llc.header_truncated) {
+            llc_fields.push_back(make_summary_field("Warning", "LLC header is truncated"));
+        }
+        if (details.llc.payload_length_exceeds_captured) {
+            llc_fields.push_back(make_summary_field("Warning", "IEEE 802.3 payload length exceeds captured payload bytes"));
+        }
+        if (details.llc.captured_payload_exceeds_declared && !details.ethernet.uses_length_field) {
+            llc_fields.push_back(make_summary_field("Warning", "Captured bytes extend beyond the declared IEEE 802.3 payload length"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "llc",
+            .title = "LLC",
+            .fields = std::move(llc_fields),
+            .warning = details.llc.header_truncated,
+            .marker_text = details.llc.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (details.has_snap && !has_nested_inner_ethernet) {
+        const auto oui_text = format_hex_byte_sequence(
+            std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
+        );
+        std::vector<PacketSummaryField> snap_fields {
+            make_summary_field("OUI", oui_text),
+        };
+        if (!details.snap.header_truncated) {
+            snap_fields.push_back(make_summary_field("PID", format_ether_type_value(details.snap.pid)));
+        } else {
+            snap_fields.push_back(make_summary_field("Warning", "SNAP header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "snap",
+            .title = "SNAP",
+            .fields = std::move(snap_fields),
+            .warning = details.snap.header_truncated,
+            .marker_text = details.snap.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (!has_nested_inner_ethernet) {
+        if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
         }
     }
 
@@ -1617,6 +2362,331 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                     ", BoS: " + std::string(label.bottom_of_stack ? "1" : "0") +
                     ", TTL: " + std::to_string(label.ttl),
                 .fields = std::move(mpls_fields),
+            });
+        }
+    }
+
+    if (details.has_mpls_pseudowire_control_word) {
+        auto control_word_fields = std::vector<PacketSummaryField> {};
+        if (details.mpls_pseudowire_control_word.available_bytes >= 2U) {
+            control_word_fields.push_back(make_summary_field("Flags", format_hex16_value(details.mpls_pseudowire_control_word.flags)));
+        }
+        if (details.mpls_pseudowire_control_word.available_bytes >= 4U) {
+            control_word_fields.push_back(make_summary_field("Sequence", std::to_string(details.mpls_pseudowire_control_word.sequence)));
+        }
+        if (details.mpls_pseudowire_control_word.truncated) {
+            control_word_fields.push_back(make_summary_field("Warning", "MPLS pseudowire control word is truncated"));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "mpls-pw-control-word",
+            .title = "MPLS Pseudowire Control Word",
+            .fields = std::move(control_word_fields),
+            .warning = details.mpls_pseudowire_control_word.truncated,
+            .marker_text = details.mpls_pseudowire_control_word.truncated ? "Warning" : std::string {},
+        });
+    }
+
+    if (details.has_pbb) {
+        std::vector<PacketSummaryField> pbb_fields {};
+        append_pbb_itag_summary_fields(pbb_fields, details.pbb);
+        if (details.pbb.itag_truncated) {
+            pbb_fields.push_back(make_summary_field("Warning", "PBB I-TAG is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "pbb",
+            .title = "PBB I-TAG",
+            .fields = std::move(pbb_fields),
+            .warning = details.pbb.itag_truncated,
+            .marker_text = details.pbb.itag_truncated ? "Warning" : std::string {},
+        });
+    }
+
+    if (details.has_inner_ethernet) {
+        auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
+        if (details.inner_ethernet.available_header_bytes >= 6U) {
+            inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.inner_ethernet.dst_mac)));
+        }
+        if (details.inner_ethernet.available_header_bytes >= 12U) {
+            inner_ethernet_fields.push_back(make_summary_field("Source", format_mac_address(details.inner_ethernet.src_mac)));
+        }
+        if (details.inner_ethernet.available_header_bytes >= 14U) {
+            if (details.inner_ethernet.uses_length_field) {
+                inner_ethernet_fields.push_back(make_summary_field(
+                    "Length",
+                    std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                ));
+            } else {
+                inner_ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.inner_ethernet.ether_type)));
+            }
+        }
+        if (details.inner_ethernet.header_truncated) {
+            inner_ethernet_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ethernet-inner",
+            .title = format_inner_ethernet_title(details.inner_ethernet),
+            .fields = std::move(inner_ethernet_fields),
+            .warning = details.inner_ethernet.header_truncated,
+            .marker_text = details.inner_ethernet.header_truncated ? "Warning" : std::string {},
+        });
+    }
+
+    if (details.has_vlan && has_nested_inner_ethernet) {
+        append_vlan_summary_layers(layers, details.vlan_tags);
+    }
+
+    if (details.has_llc && has_nested_inner_ethernet) {
+        std::vector<PacketSummaryField> llc_fields {};
+        if (details.llc.available_header_bytes >= 1U) {
+            llc_fields.push_back(make_summary_field("DSAP", format_hex_value(details.llc.dsap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 2U) {
+            llc_fields.push_back(make_summary_field("SSAP", format_hex_value(details.llc.ssap, 2)));
+        }
+        if (details.llc.available_header_bytes >= 3U) {
+            llc_fields.push_back(make_summary_field("Control", format_hex_value(details.llc.control, 2)));
+        }
+        if (details.llc.header_truncated) {
+            llc_fields.push_back(make_summary_field("Warning", "LLC header is truncated"));
+        }
+        if (details.llc.payload_length_exceeds_captured) {
+            llc_fields.push_back(make_summary_field("Warning", "IEEE 802.3 payload length exceeds captured payload bytes"));
+        }
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "llc",
+            .title = "LLC",
+            .fields = std::move(llc_fields),
+            .warning = details.llc.header_truncated,
+            .marker_text = details.llc.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (details.has_snap && has_nested_inner_ethernet) {
+        const auto oui_text = format_hex_byte_sequence(
+            std::span<const std::uint8_t>(details.snap.oui.data(), details.snap.oui.size())
+        );
+        std::vector<PacketSummaryField> snap_fields {
+            make_summary_field("OUI", oui_text),
+        };
+        if (!details.snap.header_truncated) {
+            snap_fields.push_back(make_summary_field("PID", format_ether_type_value(details.snap.pid)));
+        } else {
+            snap_fields.push_back(make_summary_field("Warning", "SNAP header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "snap",
+            .title = "SNAP",
+            .fields = std::move(snap_fields),
+            .warning = details.snap.header_truncated,
+            .marker_text = details.snap.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (has_nested_inner_ethernet) {
+        if (const auto payload_layer = build_unknown_llc_snap_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
+        }
+        if (const auto payload_layer = build_unknown_inner_ethernet_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
+        }
+    }
+
+    if (details.has_macsec) {
+        std::vector<PacketSummaryField> macsec_fields {};
+        if (details.macsec.available_base_bytes >= 1U) {
+            macsec_fields.push_back(make_summary_field("Version", std::to_string(details.macsec.version)));
+            macsec_fields.push_back(make_summary_field("ES", details.macsec.es ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("SC", details.macsec.sc ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("SCB", details.macsec.scb ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("Encrypted (E)", details.macsec.encrypted ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("Changed (C)", details.macsec.changed ? "1" : "0"));
+            macsec_fields.push_back(make_summary_field("Association Number", std::to_string(details.macsec.association_number)));
+        }
+        if (details.macsec.available_base_bytes >= 2U) {
+            macsec_fields.push_back(make_summary_field("Short Length", std::to_string(details.macsec.short_length)));
+        }
+        if (details.macsec.packet_number_present) {
+            macsec_fields.push_back(make_summary_field(
+                "Packet Number",
+                format_macsec_packet_number(details.macsec.packet_number)
+            ));
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 6U) {
+            macsec_fields.push_back(make_summary_field(
+                "SCI System ID",
+                format_mac_address(details.macsec.sci_system_id)
+            ));
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 8U) {
+            macsec_fields.push_back(make_summary_field(
+                "SCI Port ID",
+                format_hex16_value(details.macsec.sci_port_id)
+            ));
+        }
+        if (details.macsec.sectag_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec SecTAG is truncated"));
+        }
+        if (details.macsec.packet_number_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec packet number is truncated"));
+        }
+        if (details.macsec.sci_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec SCI is truncated"));
+        }
+        if (details.macsec.icv_truncated) {
+            macsec_fields.push_back(make_summary_field("Warning", "MACsec ICV is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "macsec",
+            .title = "MACsec SecTAG",
+            .fields = std::move(macsec_fields),
+            .warning = details.macsec.sectag_truncated ||
+                details.macsec.packet_number_truncated ||
+                details.macsec.sci_truncated ||
+                details.macsec.icv_truncated,
+            .marker_text = (details.macsec.sectag_truncated ||
+                details.macsec.packet_number_truncated ||
+                details.macsec.sci_truncated ||
+                details.macsec.icv_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (const auto payload_layer = build_macsec_protected_payload_layer(details); payload_layer.has_value()) {
+            append_layer_if_not_empty(layers, *payload_layer);
+        }
+        if (const auto icv_layer = build_macsec_icv_layer(details); icv_layer.has_value()) {
+            append_layer_if_not_empty(layers, *icv_layer);
+        }
+    }
+
+    if (details.has_pppoe) {
+        std::vector<PacketSummaryField> pppoe_fields {
+            make_summary_field("Version", std::to_string(details.pppoe.version)),
+            make_summary_field("Type", std::to_string(details.pppoe.type)),
+            make_summary_field("Code", format_pppoe_code(details.pppoe.code)),
+            make_summary_field("Session ID", format_hex16_value(details.pppoe.session_id)),
+            make_summary_field("Payload Length", std::to_string(details.pppoe.payload_length) + " bytes"),
+        };
+        if (details.pppoe.is_discovery) {
+            for (const auto& tag : details.pppoe.discovery_tags) {
+                if (tag.header_truncated) {
+                    pppoe_fields.push_back(make_summary_field("Warning", "PPPoE Discovery tag header is truncated"));
+                    continue;
+                }
+                auto value_text = format_pppoe_tag_value(
+                    std::span<const std::uint8_t>(tag.value.data(), tag.value.size())
+                );
+                if (tag.value_truncated) {
+                    value_text += " (truncated)";
+                }
+                pppoe_fields.push_back(make_summary_field(format_pppoe_tag_type(tag.type), std::move(value_text)));
+            }
+            if (details.pppoe.discovery_tag_header_truncated) {
+                pppoe_fields.push_back(make_summary_field("Warning", "PPPoE Discovery tag header is truncated"));
+            }
+            if (details.pppoe.discovery_tag_value_truncated) {
+                pppoe_fields.push_back(make_summary_field("Warning", "PPPoE Discovery tag value is truncated"));
+            }
+        } else if (details.pppoe.protocol_field_truncated) {
+            pppoe_fields.push_back(make_summary_field("Warning", "PPP protocol field is truncated"));
+        }
+        if (details.pppoe.header_truncated) {
+            pppoe_fields.push_back(make_summary_field("Warning", "PPPoE header is truncated"));
+        }
+        if (details.pppoe.declared_payload_exceeds_captured) {
+            pppoe_fields.push_back(make_summary_field(
+                "Warning",
+                "PPPoE payload length exceeds captured payload bytes"
+            ));
+        }
+        if (details.pppoe.captured_payload_exceeds_declared) {
+            pppoe_fields.push_back(make_summary_field(
+                "Warning",
+                "PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored"
+            ));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "pppoe",
+            .title = (details.pppoe.is_discovery
+                ? "PPPoE Discovery, Code: " + format_pppoe_code(details.pppoe.code)
+                : "PPPoE Session, Session ID: " + format_hex16_value(details.pppoe.session_id)),
+            .fields = std::move(pppoe_fields),
+            .warning = details.pppoe.header_truncated ||
+                details.pppoe.protocol_field_truncated ||
+                details.pppoe.payload_length_mismatch ||
+                details.pppoe.discovery_tag_header_truncated ||
+                details.pppoe.discovery_tag_value_truncated,
+            .marker_text = (details.pppoe.header_truncated ||
+                details.pppoe.protocol_field_truncated ||
+                details.pppoe.payload_length_mismatch ||
+                details.pppoe.discovery_tag_header_truncated ||
+                details.pppoe.discovery_tag_value_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (!details.pppoe.is_discovery &&
+            !details.pppoe.protocol_field_truncated &&
+            details.pppoe.ppp_protocol != 0U) {
+            std::vector<PacketSummaryLayer> ppp_children {};
+            if (details.pppoe.control.present) {
+                std::vector<PacketSummaryField> control_fields {
+                    make_summary_field("Code", format_ppp_control_code(details.pppoe.control.code)),
+                    make_summary_field("Identifier", std::to_string(static_cast<unsigned>(details.pppoe.control.identifier))),
+                    make_summary_field("Length", std::to_string(details.pppoe.control.length) + " bytes"),
+                };
+                if (details.pppoe.control.header_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control header is truncated"));
+                }
+                if (details.pppoe.control.payload_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control payload is truncated"));
+                }
+                if (details.pppoe.control.option_header_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control option header is truncated"));
+                }
+                if (details.pppoe.control.option_value_truncated) {
+                    control_fields.push_back(make_summary_field("Warning", "PPP control option value is truncated"));
+                }
+
+                std::vector<PacketSummaryLayer> control_children {};
+                if (const auto options_layer = build_ppp_control_options_layer(details); options_layer.has_value()) {
+                    control_children.push_back(*options_layer);
+                }
+
+                ppp_children.push_back(PacketSummaryLayer {
+                    .id = "ppp-control",
+                    .title = format_ppp_protocol(details.pppoe.ppp_protocol) + ", " + format_ppp_control_code(details.pppoe.control.code),
+                    .fields = std::move(control_fields),
+                    .children = std::move(control_children),
+                    .warning = details.pppoe.control.header_truncated ||
+                        details.pppoe.control.payload_truncated ||
+                        details.pppoe.control.option_header_truncated ||
+                        details.pppoe.control.option_value_truncated,
+                    .marker_text = (details.pppoe.control.header_truncated ||
+                        details.pppoe.control.payload_truncated ||
+                        details.pppoe.control.option_header_truncated ||
+                        details.pppoe.control.option_value_truncated)
+                        ? "Warning"
+                        : std::string {},
+                });
+            }
+
+            if (const auto payload_layer = build_unknown_ppp_payload_layer(details); payload_layer.has_value()) {
+                ppp_children.push_back(*payload_layer);
+            }
+
+            append_layer_if_not_empty(layers, PacketSummaryLayer {
+                .id = "ppp",
+                .title = "PPP, Protocol: " + format_ppp_protocol(details.pppoe.ppp_protocol),
+                .fields = {
+                    make_summary_field("Protocol", format_ppp_protocol(details.pppoe.ppp_protocol)),
+                },
+                .children = std::move(ppp_children),
             });
         }
     }
@@ -1667,36 +2737,67 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     if (details.has_ipv4) {
-        std::vector<PacketSummaryField> ipv4_fields {
-            make_summary_field("Version", "4"),
-            make_summary_field(
-                "Internet Header Length",
-                std::to_string(details.ipv4.header_length_bytes) + " bytes (" +
-                    std::to_string(details.ipv4.header_length_bytes / 4U) + ")"
-            ),
-            make_summary_field("Differentiated Services Field", format_hex_value(details.ipv4.differentiated_services_field, 2)),
-            make_summary_field("Total Length", std::to_string(details.ipv4.total_length) + " bytes"),
-            make_summary_field("Identification", format_hex16_value(details.ipv4.identification)),
-            make_summary_field("Flags", format_hex_value(details.ipv4.flags, 1)),
-            make_summary_field("Fragment Offset", std::to_string(details.ipv4.fragment_offset)),
-            make_summary_field("TTL", std::to_string(details.ipv4.ttl)),
-            make_summary_field("Protocol", format_protocol_summary_value_with_number(details.ipv4.protocol)),
-            make_summary_field("Header Checksum", format_hex16_value(details.ipv4.header_checksum)),
-            make_summary_field("Source Address", format_ipv4_address(details.ipv4.src_addr)),
-            make_summary_field("Destination Address", format_ipv4_address(details.ipv4.dst_addr)),
-        };
+        std::vector<PacketSummaryField> ipv4_fields {};
+        ipv4_fields.push_back(make_summary_field("Version", "4"));
+        ipv4_fields.push_back(make_summary_field(
+            "Internet Header Length",
+            std::to_string(details.ipv4.header_length_bytes) + " bytes (" +
+                std::to_string(details.ipv4.header_length_bytes / 4U) + ")"
+        ));
+        if (ipv4_field_available(details, 2U)) {
+            ipv4_fields.push_back(make_summary_field("Differentiated Services Field", format_hex_value(details.ipv4.differentiated_services_field, 2)));
+        }
+        if (ipv4_field_available(details, 4U)) {
+            ipv4_fields.push_back(make_summary_field("Total Length", std::to_string(details.ipv4.total_length) + " bytes"));
+        }
+        if (ipv4_field_available(details, 6U)) {
+            ipv4_fields.push_back(make_summary_field("Identification", format_hex16_value(details.ipv4.identification)));
+        }
+        if (ipv4_field_available(details, 8U)) {
+            ipv4_fields.push_back(make_summary_field("Flags", format_hex_value(details.ipv4.flags, 1)));
+            ipv4_fields.push_back(make_summary_field("Fragment Offset", std::to_string(details.ipv4.fragment_offset)));
+        }
+        if (ipv4_field_available(details, 9U)) {
+            ipv4_fields.push_back(make_summary_field("TTL", std::to_string(details.ipv4.ttl)));
+        }
+        if (ipv4_field_available(details, 10U)) {
+            ipv4_fields.push_back(make_summary_field("Protocol", format_protocol_summary_value_with_number(details.ipv4.protocol)));
+        }
+        if (ipv4_field_available(details, 12U)) {
+            ipv4_fields.push_back(make_summary_field("Header Checksum", format_hex16_value(details.ipv4.header_checksum)));
+        }
+        if (ipv4_field_available(details, 16U)) {
+            ipv4_fields.push_back(make_summary_field("Source Address", format_ipv4_address(details.ipv4.src_addr)));
+        }
+        if (ipv4_field_available(details, 20U)) {
+            ipv4_fields.push_back(make_summary_field("Destination Address", format_ipv4_address(details.ipv4.dst_addr)));
+        }
         if (packet.is_ip_fragmented) {
             ipv4_fields.push_back(make_summary_field("Fragmentation", "Packet is fragmented"));
+        }
+        if (details.ipv4.header_truncated) {
+            ipv4_fields.push_back(make_summary_field("Warning", "IPv4 header is truncated"));
+        }
+        if (details.ipv4.header_length_bytes > details.ipv4.available_header_bytes) {
+            ipv4_fields.push_back(make_summary_field("Incomplete Header", "Captured IPv4 header bytes are fewer than the IHL"));
+        }
+        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.ipv4.available_packet_bytes) {
+            ipv4_fields.push_back(make_summary_field("Warning", "IPv4 total length exceeds captured packet bytes"));
         }
         std::vector<PacketSummaryLayer> ipv4_children {};
         if (const auto ipv4_options = build_ipv4_options_summary_layer(details); ipv4_options.has_value()) {
             ipv4_children.push_back(*ipv4_options);
         }
+        auto ipv4_title = std::string {"IPv4"};
+        if (ipv4_field_available(details, 16U)) {
+            ipv4_title += ", Src: " + format_ipv4_address(details.ipv4.src_addr);
+            if (ipv4_field_available(details, 20U)) {
+                ipv4_title += ", Dst: " + format_ipv4_address(details.ipv4.dst_addr);
+            }
+        }
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ipv4",
-            .title = "IPv4, Src: " +
-                format_ipv4_address(details.ipv4.src_addr) +
-                ", Dst: " + format_ipv4_address(details.ipv4.dst_addr),
+            .title = std::move(ipv4_title),
             .fields = std::move(ipv4_fields),
             .children = std::move(ipv4_children),
             .warning = details.ipv4.invalid_header_length || details.ipv4.total_length_invalid || details.ipv4.header_truncated,
@@ -1778,6 +2879,9 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             make_summary_field("Length", std::to_string(details.udp.length) + " bytes"),
             make_summary_field("Checksum", format_hex16_value(details.udp.checksum)),
         };
+        if (details.udp.payload_truncated) {
+            udp_fields.push_back(make_summary_field("Warning", "UDP length exceeds available packet bytes"));
+        }
         if (options.original_transport_payload_length.has_value()) {
             if (options.transport_payload_length.has_value() &&
                 *options.transport_payload_length != *options.original_transport_payload_length) {
@@ -1795,7 +2899,13 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 std::to_string(details.udp.src_port) +
                 ", Dst Port: " + std::to_string(details.udp.dst_port),
             .fields = std::move(udp_fields),
+            .warning = details.udp.payload_truncated,
+            .marker_text = details.udp.payload_truncated ? std::string {"Warning"} : std::string {},
         });
+    }
+
+    if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
+        append_layer_if_not_empty(layers, *trailer_layer);
     }
 
     if (const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
@@ -1822,6 +2932,186 @@ std::string packet_payload_tab_title(const PacketDetails& details) {
 
 std::optional<std::string> build_basic_protocol_details_text(const PacketDetails& details) {
     std::ostringstream builder {};
+
+    if (details.has_macsec) {
+        builder << "Protocol: MACsec / IEEE 802.1AE";
+        if (details.macsec.available_base_bytes >= 1U) {
+            builder << '\n'
+                    << '\t' << "Version: " << static_cast<unsigned>(details.macsec.version) << '\n'
+                    << '\t' << "ES: " << (details.macsec.es ? "1" : "0") << '\n'
+                    << '\t' << "SC: " << (details.macsec.sc ? "1" : "0") << '\n'
+                    << '\t' << "SCB: " << (details.macsec.scb ? "1" : "0") << '\n'
+                    << '\t' << "Encrypted (E): " << (details.macsec.encrypted ? "1" : "0") << '\n'
+                    << '\t' << "Changed (C): " << (details.macsec.changed ? "1" : "0") << '\n'
+                    << '\t' << "Association Number: " << static_cast<unsigned>(details.macsec.association_number);
+        }
+        if (details.macsec.available_base_bytes >= 2U) {
+            builder << '\n' << '\t' << "Short Length: " << static_cast<unsigned>(details.macsec.short_length);
+        }
+        if (details.macsec.packet_number_present) {
+            builder << '\n' << '\t' << "Packet Number: " << format_macsec_packet_number(details.macsec.packet_number);
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 6U) {
+            builder << '\n' << '\t' << "SCI System ID: " << format_mac_address(details.macsec.sci_system_id);
+        }
+        if (details.macsec.sc && details.macsec.available_sci_bytes >= 8U) {
+            builder << '\n' << '\t' << "SCI Port ID: " << format_hex16_value(details.macsec.sci_port_id);
+        }
+        builder << '\n' << '\t' << "Protected Payload Length: " << details.macsec.protected_payload_length << " bytes";
+        if (has_plaintext_macsec_ether_type(details)) {
+            builder << '\n' << '\t' << "Plain EtherType: "
+                    << format_ether_type_value(macsec_plaintext_ether_type(details))
+                    << '\n' << '\t' << "Data Length: " << (details.macsec.protected_payload_length - 2U) << " bytes";
+        }
+        if (details.macsec.icv_length > 0U) {
+            builder << '\n' << '\t' << "ICV Length: " << details.macsec.icv_length << " bytes";
+        }
+        builder << '\n' << '\t' << "Protected payload is not decrypted.";
+        if (details.macsec.sectag_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec SecTAG is truncated.";
+        }
+        if (details.macsec.packet_number_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec packet number is truncated.";
+        }
+        if (details.macsec.sci_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec SCI is truncated.";
+        }
+        if (details.macsec.icv_truncated) {
+            builder << '\n' << '\t' << "Warning: MACsec ICV is truncated.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_pppoe) {
+        builder << "Protocol: " << (details.pppoe.is_discovery ? "PPPoE Discovery" : "PPPoE Session") << '\n'
+                << '\t' << "Version: " << static_cast<unsigned>(details.pppoe.version) << '\n'
+                << '\t' << "Type: " << static_cast<unsigned>(details.pppoe.type) << '\n'
+                << '\t' << "Code: " << format_pppoe_code(details.pppoe.code) << '\n'
+                << '\t' << "Session ID: " << format_hex16_value(details.pppoe.session_id) << '\n'
+                << '\t' << "Payload Length: " << details.pppoe.payload_length << " bytes";
+        if (details.pppoe.is_discovery) {
+            for (const auto& tag : details.pppoe.discovery_tags) {
+                if (tag.header_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPPoE Discovery tag header is truncated.";
+                    continue;
+                }
+                auto value_text = format_pppoe_tag_value(
+                    std::span<const std::uint8_t>(tag.value.data(), tag.value.size())
+                );
+                if (tag.value_truncated) {
+                    value_text += " (truncated)";
+                }
+                builder << '\n' << '\t' << format_pppoe_tag_type(tag.type) << ": " << value_text;
+            }
+            if (details.pppoe.discovery_tag_header_truncated) {
+                builder << '\n' << '\t' << "Warning: PPPoE Discovery tag header is truncated.";
+            }
+            if (details.pppoe.discovery_tag_value_truncated) {
+                builder << '\n' << '\t' << "Warning: PPPoE Discovery tag value is truncated.";
+            }
+        } else if (details.pppoe.protocol_field_truncated) {
+            builder << '\n' << '\t' << "Warning: PPP protocol field is truncated.";
+        } else if (details.pppoe.ppp_protocol != 0U) {
+            if (details.pppoe.control.present) {
+                builder << '\n' << '\t' << "PPP Control Code: " << format_ppp_control_code(details.pppoe.control.code)
+                        << '\n' << '\t' << "PPP Control Identifier: " << static_cast<unsigned>(details.pppoe.control.identifier)
+                        << '\n' << '\t' << "PPP Control Length: " << details.pppoe.control.length << " bytes";
+
+                for (const auto& option : details.pppoe.control.options) {
+                    if (option.header_truncated) {
+                        builder << '\n' << '\t' << "Warning: PPP control option header is truncated.";
+                        continue;
+                    }
+
+                    auto value_text = format_ppp_control_option_value(
+                        details.pppoe.ppp_protocol,
+                        option.type,
+                        std::span<const std::uint8_t>(option.value.data(), option.value.size())
+                    );
+                    if (option.value_truncated) {
+                        value_text += " (truncated)";
+                    }
+                    builder << '\n' << '\t'
+                            << format_ppp_control_option_name(details.pppoe.ppp_protocol, option.type)
+                            << ": " << value_text;
+                }
+
+                if (details.pppoe.control.header_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control header is truncated.";
+                }
+                if (details.pppoe.control.payload_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control payload is truncated.";
+                }
+                if (details.pppoe.control.option_header_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control option header is truncated.";
+                }
+                if (details.pppoe.control.option_value_truncated) {
+                    builder << '\n' << '\t' << "Warning: PPP control option value is truncated.";
+                }
+            } else if (details.pppoe.ppp_protocol != kPppProtocolIpv4 &&
+                       details.pppoe.ppp_protocol != kPppProtocolIpv6) {
+                builder << '\n' << '\t' << "PPP Protocol: " << format_ppp_protocol(details.pppoe.ppp_protocol)
+                        << '\n' << '\t' << "Data Length: " << details.pppoe.unknown_ppp_payload_length << " bytes";
+                if (!details.pppoe.unknown_ppp_payload_preview.empty()) {
+                    builder << '\n' << '\t' << "Data Raw Preview: "
+                            << format_hex_byte_list(std::span<const std::uint8_t>(
+                                   details.pppoe.unknown_ppp_payload_preview.data(),
+                                   details.pppoe.unknown_ppp_payload_preview.size()
+                               ));
+                }
+                if (details.pppoe.unknown_ppp_payload_preview_truncated) {
+                    builder << '\n' << '\t' << "Raw preview truncated: yes";
+                }
+            }
+        }
+        if (details.pppoe.header_truncated) {
+            builder << '\n' << '\t' << "Warning: PPPoE header is truncated.";
+        }
+        if (details.pppoe.declared_payload_exceeds_captured) {
+            builder << '\n' << '\t' << "Warning: PPPoE payload length exceeds captured payload bytes.";
+        }
+        if (details.pppoe.captured_payload_exceeds_declared) {
+            builder << '\n' << '\t'
+                    << "Warning: PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_pbb && !details.has_arp && !details.has_ipv4 && !details.has_ipv6) {
+        builder << "Protocol: PBB I-TAG";
+        if (details.pbb.available_bytes >= 1U) {
+            builder << '\n'
+                    << '\t' << "Priority: " << static_cast<unsigned>(details.pbb.pcp) << '\n'
+                    << '\t' << "Drop Eligible: " << (details.pbb.dei ? "1" : "0") << '\n'
+                    << '\t' << "NCA: " << (details.pbb.nca ? "1" : "0") << '\n'
+                    << '\t' << "Reserved 1: " << static_cast<unsigned>(pbb_reserved_1(details.pbb)) << '\n'
+                    << '\t' << "Reserved 2: " << static_cast<unsigned>(pbb_reserved_2(details.pbb));
+            if (details.pbb.available_bytes >= 4U) {
+                builder << '\n' << '\t' << "I-SID: " << format_pbb_isid(details.pbb.isid);
+            } else {
+                builder << '\n' << '\t' << "Available Bytes: "
+                        << static_cast<unsigned>(details.pbb.available_bytes) << " of 4";
+            }
+        }
+        if (details.pbb.itag_truncated) {
+            builder << '\n' << '\t' << "Warning: PBB I-TAG is truncated.";
+        }
+        if (details.has_inner_ethernet) {
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+            if (details.inner_ethernet.header_truncated) {
+                builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+            }
+        }
+        return builder.str();
+    }
 
     if (details.has_igmp) {
         builder << "Protocol: " << infer_igmp_version_text(details.igmp);
@@ -1928,6 +3218,53 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             builder << '\n'
                     << "Source: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
                     << "Destination: " << format_ipv6_address(details.ipv6.dst_addr);
+        }
+        return builder.str();
+    }
+
+    if (details.has_ipv4 &&
+        (details.ipv4.header_truncated || details.ipv4.invalid_header_length || details.ipv4.total_length_invalid)) {
+        builder << "Protocol: IPv4\n"
+                << '\t' << "Version: 4\n"
+                << '\t' << "Internet Header Length: " << static_cast<unsigned>(details.ipv4.header_length_bytes)
+                << " bytes (" << static_cast<unsigned>(details.ipv4.header_length_bytes / 4U) << ")";
+        if (ipv4_field_available(details, 2U)) {
+            builder << '\n' << '\t' << "Differentiated Services Field: "
+                    << format_hex_value(details.ipv4.differentiated_services_field, 2);
+        }
+        if (ipv4_field_available(details, 4U)) {
+            builder << '\n' << '\t' << "Total Length: " << details.ipv4.total_length << " bytes";
+        }
+        if (ipv4_field_available(details, 6U)) {
+            builder << '\n' << '\t' << "Identification: " << format_hex16_value(details.ipv4.identification);
+        }
+        if (ipv4_field_available(details, 8U)) {
+            builder << '\n' << '\t' << "Flags: " << format_hex_value(details.ipv4.flags, 1)
+                    << '\n' << '\t' << "Fragment Offset: " << details.ipv4.fragment_offset;
+        }
+        if (ipv4_field_available(details, 9U)) {
+            builder << '\n' << '\t' << "TTL: " << static_cast<unsigned>(details.ipv4.ttl);
+        }
+        if (ipv4_field_available(details, 10U)) {
+            builder << '\n' << '\t' << "Protocol: " << format_protocol_summary_value_with_number(details.ipv4.protocol);
+        }
+        if (ipv4_field_available(details, 12U)) {
+            builder << '\n' << '\t' << "Header Checksum: " << format_hex16_value(details.ipv4.header_checksum);
+        }
+        if (ipv4_field_available(details, 16U)) {
+            builder << '\n' << '\t' << "Source Address: " << format_ipv4_address(details.ipv4.src_addr);
+        }
+        if (ipv4_field_available(details, 20U)) {
+            builder << '\n' << '\t' << "Destination Address: " << format_ipv4_address(details.ipv4.dst_addr);
+        }
+        if (details.ipv4.header_truncated) {
+            builder << '\n' << '\t' << "Warning: IPv4 header is truncated.";
+        }
+        if (details.ipv4.header_length_bytes > details.ipv4.available_header_bytes) {
+            builder << '\n' << '\t' << "Warning: Captured IPv4 header bytes are fewer than the IHL.";
+        }
+        if (ipv4_field_available(details, 4U) && details.ipv4.total_length > details.ipv4.available_packet_bytes) {
+            builder << '\n' << '\t' << "Warning: IPv4 total length exceeds captured packet bytes.";
         }
         return builder.str();
     }
