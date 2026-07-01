@@ -793,7 +793,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             currentIndex: mainController.currentTabIndex < 3 ? mainController.currentTabIndex : 0
             onCurrentIndexChanged: mainController.currentTabIndex = currentIndex
-            spacing: 6
+            spacing: 4
 
             background: Rectangle {
                 color: "transparent"
@@ -801,7 +801,7 @@ ApplicationWindow {
 
             TabButton {
                 text: "Flows"
-                implicitHeight: 36
+                implicitHeight: 32
 
                 contentItem: Label {
                     text: parent.text
@@ -825,7 +825,7 @@ ApplicationWindow {
 
             TabButton {
                 text: "Analysis"
-                implicitHeight: 36
+                implicitHeight: 32
 
                 contentItem: Label {
                     text: parent.text
@@ -849,7 +849,7 @@ ApplicationWindow {
 
             TabButton {
                 text: "Statistics"
-                implicitHeight: 36
+                implicitHeight: 32
 
                 contentItem: Label {
                     text: parent.text

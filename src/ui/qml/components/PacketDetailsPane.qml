@@ -634,7 +634,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 6
+        spacing: 4
 
         Label {
             text: root.detailsTitle()
@@ -708,7 +708,7 @@ Frame {
             id: packetTabs
             Layout.fillWidth: true
             visible: !root.isStreamItemDetails()
-            spacing: 6
+            spacing: 4
 
             background: Rectangle {
                 color: "transparent"
@@ -716,7 +716,7 @@ Frame {
 
             TabButton {
                 text: "Summary"
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
@@ -740,7 +740,7 @@ Frame {
 
             TabButton {
                 text: "Raw"
-                implicitHeight: 30
+                implicitHeight: 28
 
                 contentItem: Label {
                     text: parent.text
@@ -764,7 +764,7 @@ Frame {
 
             TabButton {
                 text: root.payloadTabTitle()
-                implicitHeight: 30
+                implicitHeight: 28
 
                 contentItem: Label {
                     text: parent.text
@@ -788,7 +788,7 @@ Frame {
 
             TabButton {
                 text: "Protocol"
-                implicitHeight: 30
+                implicitHeight: 28
 
                 contentItem: Label {
                     text: parent.text
@@ -815,7 +815,7 @@ Frame {
             id: streamTabs
             Layout.fillWidth: true
             visible: root.isStreamItemDetails()
-            spacing: 6
+            spacing: 4
 
             background: Rectangle {
                 color: "transparent"
@@ -823,7 +823,7 @@ Frame {
 
             TabButton {
                 text: "Summary"
-                implicitHeight: 30
+                implicitHeight: 28
 
                 contentItem: Label {
                     text: parent.text
@@ -847,7 +847,7 @@ Frame {
 
             TabButton {
                 text: root.payloadTabTitle()
-                implicitHeight: 30
+                implicitHeight: 28
 
                 contentItem: Label {
                     text: parent.text
@@ -871,7 +871,7 @@ Frame {
 
             TabButton {
                 text: "Protocol"
-                implicitHeight: 30
+                implicitHeight: 28
 
                 contentItem: Label {
                     text: parent.text
@@ -912,7 +912,7 @@ Frame {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 6
+                    spacing: 4
 
                     Rectangle {
                         Layout.fillWidth: true
@@ -1011,7 +1011,7 @@ Frame {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 6
 
                     Rectangle {
                         Layout.fillWidth: true

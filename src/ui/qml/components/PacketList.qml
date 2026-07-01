@@ -14,6 +14,7 @@ Frame {
     property var loadedPacketRowCount: 0
     property var totalPacketRowCount: 0
     property bool canLoadMorePackets: false
+    property bool showToolbar: true
     readonly property bool showMarkerColumn: !!root.packetModel && root.packetModel.hasVisibleMarkers
     readonly property bool unrecognizedMode: !!root.packetModel && root.packetModel.unrecognizedMode
     readonly property string forwardDirection: "A\u2192B"
@@ -168,7 +169,7 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: root.packetsLoading || root.totalPacketRowCount > 0
+            visible: root.showToolbar && (root.packetsLoading || root.totalPacketRowCount > 0)
             spacing: 8
 
             Label {

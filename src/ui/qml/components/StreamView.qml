@@ -16,6 +16,7 @@ Frame {
     property int streamPacketWindowCount: 0
     property bool streamPacketWindowPartial: false
     property bool canLoadMoreStreamItems: false
+    property bool showToolbar: true
     readonly property string forwardDirection: "A\u2192B"
     readonly property string reverseDirection: "B\u2192A"
 
@@ -71,11 +72,11 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: (!root.sourceCaptureAvailable && root.flowSelected)
+            visible: root.showToolbar && ((!root.sourceCaptureAvailable && root.flowSelected)
                 || root.streamLoading
                 || root.loadedStreamItemCount > 0
                 || root.totalStreamItemCount > 0
-                || root.streamPacketWindowPartial
+                || root.streamPacketWindowPartial)
             spacing: 6
 
             ColumnLayout {
