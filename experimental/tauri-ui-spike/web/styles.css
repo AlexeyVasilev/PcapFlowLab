@@ -629,8 +629,8 @@ body.is-resizing-vertical {
 
 .tab-button {
   min-width: 140px;
-  min-height: 34px;
-  padding: 7px 16px 8px;
+  min-height: 30px;
+  padding: 5px 14px 6px;
   border: 1px solid var(--border);
   border-bottom: none;
   border-radius: 10px 10px 0 0;
@@ -765,6 +765,14 @@ body.is-resizing-vertical {
   flex-direction: column;
   gap: 4px;
   padding-right: 2px;
+}
+
+.packet-details-panel .details-scroll {
+  gap: 2px;
+}
+
+.packet-details-panel .details-scroll > .status-text:empty {
+  display: none;
 }
 
 .panel-heading {
@@ -975,20 +983,43 @@ select:disabled {
   flex-wrap: wrap;
 }
 
+.flow-view-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 4px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.flow-view-status-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-bottom: 5px;
+}
+
+.flow-view-status {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .subtabbar {
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  margin-bottom: 4px;
+  margin-bottom: -1px;
   flex: 0 0 auto;
-  padding: 0 2px;
-  border-bottom: 1px solid var(--border);
+  padding: 0;
+  border-bottom: none;
 }
 
 .subtab-button {
   min-width: 96px;
-  min-height: 30px;
-  padding: 6px 14px 7px;
+  min-height: 28px;
+  padding: 5px 12px 6px;
   border: 1px solid var(--border);
   border-bottom: none;
   border-radius: 10px 10px 0 0;
@@ -1053,6 +1084,15 @@ select:disabled {
 
 .inspector-tab:hover:not(.active) {
   background: var(--surface-muted);
+}
+
+#packetInspectorView .inspector-tabbar {
+  margin-bottom: 2px;
+}
+
+#packetInspectorView .inspector-tab {
+  min-height: 26px;
+  padding: 4px 11px 5px;
 }
 
 .table-wrap {
@@ -1909,7 +1949,7 @@ select:disabled {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-height: 0;
 }
 

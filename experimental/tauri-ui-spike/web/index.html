@@ -169,13 +169,13 @@
 
             <section class="flows-bottom">
               <section class="panel packets-panel">
-                <div class="subtabbar" aria-label="Selected flow views">
-                  <button type="button" class="subtab-button active" data-flow-view-tab="packets">Packets</button>
-                  <button type="button" class="subtab-button" data-flow-view-tab="stream">Stream</button>
-                </div>
-                <div class="panel-heading panel-heading-compact">
-                  <div class="panel-heading-copy">
-                    <p id="packetMeta" class="panel-subtitle panel-subtitle-inline">Select a flow to load packets.</p>
+                <div class="flow-view-toolbar">
+                  <div class="subtabbar" aria-label="Selected flow views">
+                    <button type="button" class="subtab-button active" data-flow-view-tab="packets">Packets</button>
+                    <button type="button" class="subtab-button" data-flow-view-tab="stream">Stream</button>
+                  </div>
+                  <div class="panel-heading-copy flow-view-status-wrap">
+                    <p id="packetMeta" class="panel-subtitle panel-subtitle-inline flow-view-status">Select a flow to load packets.</p>
                   </div>
                   <div class="pager-controls">
                     <button id="packetLoadMoreButton" type="button" class="secondary-button">Load More</button>
