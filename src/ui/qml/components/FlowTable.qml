@@ -430,7 +430,9 @@ Frame {
                                             hoverEnabled: true
                                         }
 
-                                        ToolTip.visible: endpointAHoverArea.containsMouse && endpointAText.length > 0
+                                        ToolTip.visible: endpointAHoverArea.containsMouse
+                                            && endpointAText.length > 0
+                                            && endpointALabel.implicitWidth > endpointALabel.width + 1
                                         ToolTip.text: endpointAText
                                     }
                                     Item {
@@ -456,7 +458,9 @@ Frame {
                                             hoverEnabled: true
                                         }
 
-                                        ToolTip.visible: endpointBHoverArea.containsMouse && endpointBText.length > 0
+                                        ToolTip.visible: endpointBHoverArea.containsMouse
+                                            && endpointBText.length > 0
+                                            && endpointBLabel.implicitWidth > endpointBLabel.width + 1
                                         ToolTip.text: endpointBText
                                     }
                                     Rectangle {

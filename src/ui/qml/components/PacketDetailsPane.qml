@@ -446,7 +446,7 @@ Frame {
         font.family: monospace ? "Consolas" : ""
         font.pixelSize: 12
         font.bold: bold
-        cursorVisible: activeFocus
+        cursorVisible: false
     }
 
     component SummaryFieldRow: Item {
