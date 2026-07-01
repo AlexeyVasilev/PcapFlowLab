@@ -20,7 +20,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -118,7 +118,7 @@ void expect_single_ip_flow(
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].family == expected_family);
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == 1U);
@@ -126,7 +126,7 @@ void expect_single_ip_flow(
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->has_mpls);
     PFL_EXPECT(details->mpls_labels.size() == 2U);
@@ -193,14 +193,14 @@ void expect_single_ip_flow(
     expect_layer_prefix(summary_layers, expected_layer_prefix);
     PFL_EXPECT(count_layers(summary_layers, "mpls") == 2U);
     const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
-    PFL_EXPECT(inner_ethernet_layer != nullptr);
+    PFL_REQUIRE(inner_ethernet_layer != nullptr);
     if (inner_ethernet_layer != nullptr) {
         PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:51:01"));
         PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:51:02"));
     }
     if (expect_control_word) {
         const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
-        PFL_EXPECT(control_word_layer != nullptr);
+        PFL_REQUIRE(control_word_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Flags", "0x0000"));
         PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Truncated"));
     } else {
@@ -217,7 +217,7 @@ void expect_single_unrecognized_mpls_pw_packet(
     PFL_EXPECT(session.list_flows().empty());
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
     const auto rows = session.list_unrecognized_packets(0U, 30U);
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].reason_text == expected_reason);
 }
 
@@ -292,14 +292,14 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls_pw/05_mpls_pw_eth_arp_cw.pcap")));
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].protocol_text == "ARP");
         PFL_EXPECT(rows[0].packet_count == 1U);
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->has_inner_ethernet);
@@ -373,7 +373,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->has_inner_ethernet);
@@ -396,7 +396,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.empty());
     }
@@ -411,7 +411,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->mpls_pseudowire_control_word.truncated);
@@ -419,7 +419,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
-        PFL_EXPECT(control_word_layer != nullptr);
+        PFL_REQUIRE(control_word_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Flags", "0x0000"));
         PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Sequence"));
         PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Warning", "MPLS pseudowire control word is truncated"));
@@ -436,7 +436,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->has_inner_ethernet);
@@ -444,7 +444,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
-        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        PFL_REQUIRE(inner_ethernet_layer != nullptr);
         if (inner_ethernet_layer != nullptr) {
             PFL_EXPECT(!layer_title_contains(*inner_ethernet_layer, "Src:"));
             PFL_EXPECT(!layer_title_contains(*inner_ethernet_layer, "Dst:"));
@@ -458,7 +458,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(
             rows[0].reason_text == "Inner IPv4 header truncated" ||
             rows[0].reason_text == "IPv4 header truncated"
@@ -466,7 +466,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->has_inner_ethernet);
@@ -495,11 +495,11 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->mpls_pseudowire_control_word.sequence == 0x1234U);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* control_word_layer = find_layer(summary_layers, "mpls-pw-control-word");
-        PFL_EXPECT(control_word_layer != nullptr);
+        PFL_REQUIRE(control_word_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*control_word_layer, "Sequence", "4660"));
         PFL_EXPECT(!layer_has_field_label(*control_word_layer, "Truncated"));
     }
@@ -521,7 +521,7 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_inner_ethernet);
         PFL_EXPECT(!details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->has_ipv4);

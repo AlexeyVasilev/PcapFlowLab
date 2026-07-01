@@ -27,6 +27,9 @@ void run_packet_metadata_tests() {
         53,
         7
     );
+    const auto ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01});
+    const auto ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02});
+    const auto ipv6_udp_packet = make_ethernet_ipv6_udp_with_hop_by_hop_packet(ipv6_src, ipv6_dst, 5353, 53);
 
     {
         const auto path = write_temp_pcap(
@@ -165,6 +168,21 @@ void run_packet_metadata_tests() {
             .bytes = malformed_udp,
         };
         PFL_EXPECT(!decoder.decode_ethernet(raw_udp).has_value());
+
+        auto malformed_ipv6_udp = ipv6_udp_packet;
+        malformed_ipv6_udp[66] = 0x00;
+        malformed_ipv6_udp[67] = 0x06;
+
+        const RawPcapPacket raw_ipv6_udp {
+            .packet_index = 2,
+            .ts_sec = 1,
+            .ts_usec = 0,
+            .captured_length = static_cast<std::uint32_t>(malformed_ipv6_udp.size()),
+            .original_length = static_cast<std::uint32_t>(malformed_ipv6_udp.size()),
+            .data_offset = 120,
+            .bytes = malformed_ipv6_udp,
+        };
+        PFL_EXPECT(!decoder.decode_ethernet(raw_ipv6_udp).has_value());
     }
 }
 

@@ -75,6 +75,16 @@ void expect(bool condition, const char* expression, const char* file, int line) 
     record_failure_message(builder.str());
 }
 
+void require(bool condition, const char* expression, const char* file, int line) {
+    if (condition) {
+        return;
+    }
+
+    std::ostringstream builder {};
+    builder << file << ':' << line << " requirement failed: " << expression;
+    throw TestFailure(builder.str());
+}
+
 void record_failure_message(std::string message) {
     failure_storage().push_back(RecordedTestFailure {
         .message = std::move(message),
@@ -156,9 +166,7 @@ int main() {
         try {
             suite.run();
         } catch (const pfl::tests::TestFailure& failure) {
-            pfl::tests::record_failure_message(
-                std::string {"suite "} + std::string {suite.name} + " aborted: " + failure.what()
-            );
+            pfl::tests::record_failure_message(failure.what());
         } catch (const std::exception& exception) {
             pfl::tests::record_failure_message(
                 std::string {"suite "} + std::string {suite.name} + " threw unexpected exception: " + exception.what()

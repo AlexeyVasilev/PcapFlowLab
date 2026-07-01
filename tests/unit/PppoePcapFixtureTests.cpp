@@ -19,7 +19,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -71,7 +71,7 @@ UnrecognizedPacketRow expect_single_unrecognized_packet(
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
 
     const auto rows = session.list_unrecognized_packets(0U, 30U);
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].row_number == 1U);
     PFL_EXPECT(rows[0].packet_index == 0U);
     PFL_EXPECT(!rows[0].reason_text.empty());
@@ -96,7 +96,7 @@ void expect_pppoe_discovery_unrecognized(
     );
     const auto packet = require_packet(session, row.packet_index);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->has_pppoe);
     PFL_EXPECT(details->pppoe.is_discovery);
@@ -111,7 +111,7 @@ void expect_pppoe_discovery_unrecognized(
     PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
     PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
     const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-    PFL_EXPECT(pppoe_layer != nullptr);
+    PFL_REQUIRE(pppoe_layer != nullptr);
     PFL_EXPECT(pppoe_layer->title.find("PPPoE Discovery") != std::string::npos);
     PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Code", expected_code_fragment));
     PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Session ID", "0x"));
@@ -147,7 +147,7 @@ void expect_pppoe_control_unrecognized(
     );
     const auto packet = require_packet(session, row.packet_index);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->has_pppoe);
     PFL_EXPECT(!details->pppoe.is_discovery);
@@ -160,13 +160,13 @@ void expect_pppoe_control_unrecognized(
     PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
     PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
     const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-    PFL_EXPECT(pppoe_layer != nullptr);
+    PFL_REQUIRE(pppoe_layer != nullptr);
     PFL_EXPECT(pppoe_layer->title.find("PPPoE Session") != std::string::npos);
     PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Payload Length", "bytes"));
     PFL_EXPECT(!layer_has_field_label(*pppoe_layer, "PPP Protocol"));
 
     const auto* ppp_layer = find_layer(summary_layers, "ppp");
-    PFL_EXPECT(ppp_layer != nullptr);
+    PFL_REQUIRE(ppp_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*ppp_layer, "Protocol", expected_ppp_protocol == 0xc021U
         ? "LCP"
         : expected_ppp_protocol == 0x8021U
@@ -204,7 +204,7 @@ void expect_single_session_flow(
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].family == expected_family);
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == 1U);
@@ -212,7 +212,7 @@ void expect_single_session_flow(
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->has_pppoe);
     PFL_EXPECT(details->pppoe.version == 1U);
@@ -225,7 +225,7 @@ void expect_single_session_flow(
     PFL_EXPECT(details->vlan_tags.size() == expected_vlan_count);
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-    PFL_EXPECT(summary_layers.size() >= expected_layer_prefix.size());
+    PFL_REQUIRE(summary_layers.size() >= expected_layer_prefix.size());
     std::size_t index = 0U;
     for (const auto* expected_id : expected_layer_prefix) {
         PFL_EXPECT(summary_layers[index].id == expected_id);
@@ -233,13 +233,13 @@ void expect_single_session_flow(
     }
 
     const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-    PFL_EXPECT(pppoe_layer != nullptr);
+    PFL_REQUIRE(pppoe_layer != nullptr);
     PFL_EXPECT(pppoe_layer->title.find("PPPoE Session") != std::string::npos);
     PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Payload Length", "bytes"));
     PFL_EXPECT(!layer_has_field_label(*pppoe_layer, "PPP Protocol"));
 
     const auto* ppp_layer = find_layer(summary_layers, "ppp");
-    PFL_EXPECT(ppp_layer != nullptr);
+    PFL_REQUIRE(ppp_layer != nullptr);
     PFL_EXPECT(!ppp_layer->fields.empty());
     PFL_EXPECT(ppp_layer->fields.front().label == "Protocol");
     PFL_EXPECT(ppp_layer->fields.front().value.find(expected_ppp_protocol == 0x0021U ? "IPv4" : "IPv6") != std::string::npos);
@@ -409,7 +409,7 @@ void run_pppoe_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
         PFL_EXPECT(rows[0].protocol_text == "UDP");
         PFL_EXPECT(rows[0].address_a == "192.0.2.30");
@@ -419,10 +419,10 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
         const auto packet_rows = session.list_flow_packets(0U);
-        PFL_EXPECT(packet_rows.size() == 1U);
+        PFL_REQUIRE(packet_rows.size() == 1U);
         const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(details->has_ipv4);
@@ -432,7 +432,7 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(details->pppoe.payload_length_mismatch);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-        PFL_EXPECT(pppoe_layer != nullptr);
+        PFL_REQUIRE(pppoe_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Warning", "exceeds captured payload bytes"));
         PFL_EXPECT(find_layer(summary_layers, "ppp") != nullptr);
         PFL_EXPECT(find_layer(summary_layers, "ipv4") != nullptr);
@@ -448,7 +448,7 @@ void run_pppoe_pcap_fixture_tests() {
         );
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(!details->pppoe.is_discovery);
@@ -464,13 +464,13 @@ void run_pppoe_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-        PFL_EXPECT(pppoe_layer != nullptr);
+        PFL_REQUIRE(pppoe_layer != nullptr);
         const auto* ppp_layer = find_layer(summary_layers, "ppp");
-        PFL_EXPECT(ppp_layer != nullptr);
+        PFL_REQUIRE(ppp_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ppp_layer, "Protocol", "0x"));
         PFL_EXPECT(!ppp_layer->children.empty());
         const auto* payload_layer = find_layer(ppp_layer->children, "ppp-payload");
-        PFL_EXPECT(payload_layer != nullptr);
+        PFL_REQUIRE(payload_layer != nullptr);
         PFL_EXPECT(payload_layer->title == "Data");
         PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "bytes"));
         PFL_EXPECT(layer_has_field_label(*payload_layer, "Raw"));
@@ -483,7 +483,7 @@ void run_pppoe_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap")));
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
         PFL_EXPECT(rows[0].protocol_text == "UDP");
         PFL_EXPECT(rows[0].address_a == "192.0.2.30");
@@ -493,11 +493,11 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
         const auto packet_rows = session.list_flow_packets(0U);
-        PFL_EXPECT(packet_rows.size() == 1U);
+        PFL_REQUIRE(packet_rows.size() == 1U);
         PFL_EXPECT(packet_rows[0].payload_length == 3U);
         const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(details->has_ipv4);
@@ -508,13 +508,13 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(details->udp.payload_truncated);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-        PFL_EXPECT(pppoe_layer != nullptr);
+        PFL_REQUIRE(pppoe_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*pppoe_layer, "Warning", "trailing bytes ignored"));
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "total length exceeds captured packet bytes"));
         const auto* udp_layer = find_layer(summary_layers, "udp");
-        PFL_EXPECT(udp_layer != nullptr);
+        PFL_REQUIRE(udp_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*udp_layer, "Warning", "UDP length exceeds available packet bytes"));
     }
 
@@ -527,7 +527,7 @@ void run_pppoe_pcap_fixture_tests() {
         );
         const auto packet = require_packet(session, row.packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(details->pppoe.header_truncated);
@@ -542,7 +542,7 @@ void run_pppoe_pcap_fixture_tests() {
         );
         const auto packet = require_packet(session, row.packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(details->pppoe.protocol_field_truncated);
@@ -557,7 +557,7 @@ void run_pppoe_pcap_fixture_tests() {
         );
         const auto packet = require_packet(session, row.packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
         PFL_EXPECT(details->has_ipv4);
@@ -565,11 +565,11 @@ void run_pppoe_pcap_fixture_tests() {
         PFL_EXPECT(details->ipv4.available_header_bytes > 0U);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
-        PFL_EXPECT(pppoe_layer != nullptr);
+        PFL_REQUIRE(pppoe_layer != nullptr);
         const auto* ppp_layer = find_layer(summary_layers, "ppp");
-        PFL_EXPECT(ppp_layer != nullptr);
+        PFL_REQUIRE(ppp_layer != nullptr);
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Version", "4"));
         PFL_EXPECT(layer_has_field_label(*ipv4_layer, "Internet Header Length"));
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "IPv4 header is truncated"));

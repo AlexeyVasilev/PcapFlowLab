@@ -21,7 +21,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -157,7 +157,7 @@ void expect_single_ip_pbb_flow(
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.summary().packet_count == 1U);
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].family == expected_family);
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == 1U);
@@ -165,7 +165,7 @@ void expect_single_ip_pbb_flow(
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->has_pbb);
     PFL_EXPECT(details->has_inner_ethernet);
@@ -221,14 +221,14 @@ void expect_single_ip_pbb_flow(
     PFL_EXPECT(count_layers(summary_layers, "vlan") == expected_outer_vlan_count + expected_inner_vlan_count);
 
     const auto* pbb_layer = find_layer(summary_layers, "pbb");
-    PFL_EXPECT(pbb_layer != nullptr);
+    PFL_REQUIRE(pbb_layer != nullptr);
     if (pbb_layer == nullptr) {
         return;
     }
     expect_pbb_metadata(*details, *pbb_layer, expected_pcp, expected_dei, expected_uca, expected_isid);
 
     const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
-    PFL_EXPECT(inner_ethernet_layer != nullptr);
+    PFL_REQUIRE(inner_ethernet_layer != nullptr);
     if (inner_ethernet_layer != nullptr) {
         PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:61:01"));
         PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:61:02"));
@@ -242,12 +242,12 @@ void expect_single_pbb_arp_packet(CaptureSession& session, const std::filesystem
     PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].packet_count == 1U);
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_pbb);
     PFL_EXPECT(details->has_inner_ethernet);
     PFL_EXPECT(details->has_arp);
@@ -259,7 +259,7 @@ void expect_single_pbb_arp_packet(CaptureSession& session, const std::filesystem
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
     expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner", "arp"});
     const auto* pbb_layer = find_layer(summary_layers, "pbb");
-    PFL_EXPECT(pbb_layer != nullptr);
+    PFL_REQUIRE(pbb_layer != nullptr);
     if (pbb_layer == nullptr) {
         return;
     }
@@ -275,7 +275,7 @@ void expect_single_unrecognized_pbb_packet(
     PFL_EXPECT(session.list_flows().empty());
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
     const auto rows = session.list_unrecognized_packets(0U, 30U);
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].row_number == 1U);
     PFL_EXPECT(rows[0].packet_index == 0U);
     PFL_EXPECT(rows[0].reason_text == expected_reason);
@@ -451,14 +451,14 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_inner_ethernet);
         PFL_EXPECT(details->inner_ethernet.uses_length_field);
         PFL_EXPECT(details->inner_ethernet.ether_type == 48U);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
-        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        PFL_REQUIRE(inner_ethernet_layer != nullptr);
         if (inner_ethernet_layer != nullptr) {
             PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Inner IEEE 802.3"));
             PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:61:01"));
@@ -491,19 +491,19 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->encapsulating_vlan_tags.size() == 1U);
         PFL_EXPECT(details->vlan_tags.empty());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* outer_vlan_layer = find_layer(summary_layers, "vlan");
-        PFL_EXPECT(outer_vlan_layer != nullptr);
+        PFL_REQUIRE(outer_vlan_layer != nullptr);
         if (outer_vlan_layer == nullptr) {
             return;
         }
         PFL_EXPECT(layer_title_contains(*outer_vlan_layer, "802.1ad B-TAG"));
         PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "PBB I-TAG"));
         const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
-        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        PFL_REQUIRE(inner_ethernet_layer != nullptr);
         if (inner_ethernet_layer != nullptr) {
             PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Src: 02:00:00:00:61:01"));
             PFL_EXPECT(layer_title_contains(*inner_ethernet_layer, "Dst: 02:00:00:00:61:02"));
@@ -534,7 +534,7 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->encapsulating_vlan_tags.size() == 1U);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
     }
@@ -549,14 +549,14 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_pbb);
         PFL_EXPECT(details->has_inner_ethernet);
         PFL_EXPECT(details->has_unknown_inner_ethernet_payload);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner", "inner-payload"});
         const auto* pbb_layer = find_layer(summary_layers, "pbb");
-        PFL_EXPECT(pbb_layer != nullptr);
+        PFL_REQUIRE(pbb_layer != nullptr);
         if (pbb_layer != nullptr) {
             PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Priority", "0"));
             PFL_EXPECT(layer_has_field_containing(*pbb_layer, "Drop Eligible", "0"));
@@ -583,13 +583,13 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_pbb);
         PFL_EXPECT(details->pbb.itag_truncated);
         PFL_EXPECT(!details->has_inner_ethernet);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* pbb_layer = find_layer(summary_layers, "pbb");
-        PFL_EXPECT(pbb_layer != nullptr);
+        PFL_REQUIRE(pbb_layer != nullptr);
         if (pbb_layer == nullptr) {
             return;
         }
@@ -623,14 +623,14 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_pbb);
         PFL_EXPECT(details->has_inner_ethernet);
         PFL_EXPECT(details->inner_ethernet.header_truncated);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner"});
         const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
-        PFL_EXPECT(inner_ethernet_layer != nullptr);
+        PFL_REQUIRE(inner_ethernet_layer != nullptr);
         if (inner_ethernet_layer == nullptr) {
             return;
         }
@@ -656,7 +656,7 @@ void run_pbb_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_pbb);
         PFL_EXPECT(details->has_inner_ethernet);
         PFL_EXPECT(details->has_ipv4);
@@ -664,7 +664,7 @@ void run_pbb_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "pbb", "ethernet-inner", "ipv4"});
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         if (ipv4_layer == nullptr) {
             return;
         }

@@ -18,7 +18,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -95,7 +95,7 @@ UnrecognizedPacketRow expect_single_macsec_no_flow_packet(
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
 
     const auto rows = session.list_unrecognized_packets(0U, 30U);
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].row_number == 1U);
     PFL_EXPECT(rows[0].packet_index == 0U);
     PFL_EXPECT(rows[0].reason_text == expected_reason);
@@ -108,7 +108,7 @@ PacketDetails require_macsec_details(
 ) {
     const auto packet = require_packet(session, packet_index);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     if (!details.has_value()) {
         return {};
     }
@@ -167,15 +167,15 @@ void expect_complete_macsec_fixture(
     const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
     expect_layer_prefix(summary_layers, expected_layer_prefix);
     const auto* macsec_layer = find_layer(summary_layers, "macsec");
-    PFL_EXPECT(macsec_layer != nullptr);
+    PFL_REQUIRE(macsec_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Packet Number", expected_packet_number_text));
     const auto* payload_layer = find_layer(summary_layers, "macsec-payload");
-    PFL_EXPECT(payload_layer != nullptr);
+    PFL_REQUIRE(payload_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "bytes"));
     PFL_EXPECT(layer_has_field_label(*payload_layer, "Raw"));
     PFL_EXPECT(layer_has_field_label(*payload_layer, "Plain EtherType") == expect_plain_ether_type);
     const auto* icv_layer = find_layer(summary_layers, "macsec-icv");
-    PFL_EXPECT(icv_layer != nullptr);
+    PFL_REQUIRE(icv_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*icv_layer, "Length", "16 bytes"));
 
     expect_macsec_protocol_text_contains(session, packet, {
@@ -225,7 +225,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.available_sci_bytes == 8U);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "SCI System ID", "02:00:00:00:71:01"));
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "SCI Port ID", "0x0001"));
     }
@@ -244,7 +244,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.association_number == 2U);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Association Number", "2"));
     }
 
@@ -264,11 +264,11 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(!details.macsec.changed);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Encrypted (E)", "0"));
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Changed (C)", "0"));
         const auto* payload_layer = find_layer(summary_layers, "macsec-payload");
-        PFL_EXPECT(payload_layer != nullptr);
+        PFL_REQUIRE(payload_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*payload_layer, "Plain EtherType", "0x4500"));
         PFL_EXPECT(layer_has_field_containing(*payload_layer, "Data Length", "33 bytes"));
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
@@ -290,7 +290,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.short_length == 32U);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Short Length", "32"));
     }
 
@@ -336,7 +336,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.scb);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "SCB", "1"));
     }
 
@@ -354,7 +354,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.es);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "ES", "1"));
     }
 
@@ -371,7 +371,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(!details.macsec.packet_number_present);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(!layer_has_field_label(*macsec_layer, "Packet Number"));
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Warning", "SecTAG is truncated"));
     }
@@ -389,7 +389,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(!details.macsec.packet_number_present);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_label(*macsec_layer, "Version"));
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Short Length", "0"));
         PFL_EXPECT(!layer_has_field_label(*macsec_layer, "Packet Number"));
@@ -410,7 +410,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.available_sci_bytes == 5U);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Packet Number", "0x01020304"));
         PFL_EXPECT(!layer_has_field_label(*macsec_layer, "SCI System ID"));
         PFL_EXPECT(!layer_has_field_label(*macsec_layer, "SCI Port ID"));
@@ -430,7 +430,7 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(details.macsec.icv_length == 0U);
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* macsec_layer = find_layer(summary_layers, "macsec");
-        PFL_EXPECT(macsec_layer != nullptr);
+        PFL_REQUIRE(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Warning", "ICV is truncated"));
         PFL_EXPECT(find_layer(summary_layers, "macsec-icv") == nullptr);
     }

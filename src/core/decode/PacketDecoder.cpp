@@ -324,6 +324,9 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 udp_payload.has_value()) {
                 packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
             } else {
+                if (!network->bounded_packet_end.has_value()) {
+                    return {};
+                }
                 const auto payload_offset = payload->payload_offset + detail::kUdpHeaderSize;
                 packet_ref.payload_length = static_cast<std::uint32_t>(
                     packet_end > payload_offset ? (packet_end - payload_offset) : 0U);

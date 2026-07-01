@@ -19,7 +19,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -103,7 +103,7 @@ void expect_single_flow(
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].family == expected_family);
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == expected_packet_count);
@@ -119,7 +119,7 @@ void expect_single_unrecognized_packet(
     PFL_EXPECT(session.list_flows().empty());
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
     const auto rows = session.list_unrecognized_packets(0U, 30U);
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].row_number == 1U);
     PFL_EXPECT(rows[0].packet_index == 0U);
     PFL_EXPECT(rows[0].reason_text == expected_reason);
@@ -140,7 +140,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
         PFL_EXPECT(details->has_ipv4);
@@ -150,7 +150,7 @@ void run_vlan_pcap_fixture_tests() {
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "ipv4", "tcp"});
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 1U);
         const auto* vlan_layer = find_layer(summary_layers, "vlan");
-        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_REQUIRE(vlan_layer != nullptr);
         PFL_EXPECT(!layer_has_field_label(*vlan_layer, "Tag Control Information"));
         PFL_EXPECT(layer_has_field_containing(*vlan_layer, "Encapsulated EtherType", "IPv4"));
     }
@@ -167,7 +167,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
         PFL_EXPECT(details->has_ipv4);
@@ -189,7 +189,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
         PFL_EXPECT(details->has_ipv6);
@@ -205,11 +205,11 @@ void run_vlan_pcap_fixture_tests() {
         PFL_EXPECT(session.summary().flow_count == 1U);
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
         PFL_EXPECT(details->has_arp);
@@ -230,7 +230,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 2U);
         PFL_EXPECT(details->has_ipv4);
@@ -241,8 +241,8 @@ void run_vlan_pcap_fixture_tests() {
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 2U);
         const auto* outer_vlan_layer = find_layer(summary_layers, "vlan", 0U);
         const auto* inner_vlan_layer = find_layer(summary_layers, "vlan", 1U);
-        PFL_EXPECT(outer_vlan_layer != nullptr);
-        PFL_EXPECT(inner_vlan_layer != nullptr);
+        PFL_REQUIRE(outer_vlan_layer != nullptr);
+        PFL_REQUIRE(inner_vlan_layer != nullptr);
         PFL_EXPECT(!layer_has_field_label(*outer_vlan_layer, "Tag Control Information"));
         PFL_EXPECT(!layer_has_field_label(*inner_vlan_layer, "Tag Control Information"));
         PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
@@ -255,11 +255,11 @@ void run_vlan_pcap_fixture_tests() {
         PFL_EXPECT(session.summary().flow_count == 1U);
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 2U);
         PFL_EXPECT(details->has_arp);
@@ -280,7 +280,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
         PFL_EXPECT(details->vlan_tags[0].tpid == 0x9100U);
@@ -290,7 +290,7 @@ void run_vlan_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "ipv4", "udp"});
         const auto* vlan_layer = find_layer(summary_layers, "vlan");
-        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_REQUIRE(vlan_layer != nullptr);
         PFL_EXPECT(!layer_has_field_label(*vlan_layer, "Tag Control Information"));
         PFL_EXPECT(layer_has_field_containing(*vlan_layer, "Encapsulated EtherType", "IPv4"));
     }
@@ -307,7 +307,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 3U);
         PFL_EXPECT(details->has_ipv4);
@@ -319,9 +319,9 @@ void run_vlan_pcap_fixture_tests() {
         const auto* first_vlan_layer = find_layer(summary_layers, "vlan", 0U);
         const auto* second_vlan_layer = find_layer(summary_layers, "vlan", 1U);
         const auto* third_vlan_layer = find_layer(summary_layers, "vlan", 2U);
-        PFL_EXPECT(first_vlan_layer != nullptr);
-        PFL_EXPECT(second_vlan_layer != nullptr);
-        PFL_EXPECT(third_vlan_layer != nullptr);
+        PFL_REQUIRE(first_vlan_layer != nullptr);
+        PFL_REQUIRE(second_vlan_layer != nullptr);
+        PFL_REQUIRE(third_vlan_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*first_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
         PFL_EXPECT(layer_has_field_containing(*second_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
         PFL_EXPECT(layer_has_field_containing(*third_vlan_layer, "Encapsulated EtherType", "IPv4"));
@@ -338,7 +338,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
@@ -349,7 +349,7 @@ void run_vlan_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan"});
         const auto* vlan_layer = find_layer(summary_layers, "vlan");
-        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_REQUIRE(vlan_layer != nullptr);
         PFL_EXPECT(!layer_has_field_label(*vlan_layer, "Tag Control Information"));
         PFL_EXPECT(layer_has_field_label(*vlan_layer, "Encapsulated EtherType"));
     }
@@ -364,7 +364,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.empty());
@@ -386,7 +386,7 @@ void run_vlan_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
@@ -398,7 +398,7 @@ void run_vlan_pcap_fixture_tests() {
         PFL_EXPECT(find_layer(summary_layers, "warnings") != nullptr);
         expect_layer_prefix(summary_layers, {"warnings", "frame", "ethernet", "vlan", "ipv4"});
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Version", "4"));
         PFL_EXPECT(layer_has_field_label(*ipv4_layer, "Internet Header Length"));
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "IPv4 header is truncated"));

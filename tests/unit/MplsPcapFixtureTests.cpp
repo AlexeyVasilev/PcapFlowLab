@@ -19,7 +19,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -94,7 +94,7 @@ void expect_single_flow(
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].family == expected_family);
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == expected_packet_count);
@@ -107,7 +107,7 @@ void expect_mpls_label_field(
     const std::string& expected_value
 ) {
     const auto* field = find_field(layer, label);
-    PFL_EXPECT(field != nullptr);
+    PFL_REQUIRE(field != nullptr);
     PFL_EXPECT(field->value == expected_value);
 }
 
@@ -126,7 +126,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.size() == 1U);
         PFL_EXPECT(details->mpls_labels[0].label == 100U);
@@ -138,7 +138,7 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(count_layers(summary_layers, "mpls") == 1U);
 
         const auto* mpls_layer = find_layer(summary_layers, "mpls");
-        PFL_EXPECT(mpls_layer != nullptr);
+        PFL_REQUIRE(mpls_layer != nullptr);
         PFL_EXPECT(mpls_layer->title.find("MPLS Label") != std::string::npos);
         expect_mpls_label_field(*mpls_layer, "Label", "100");
         expect_mpls_label_field(*mpls_layer, "Traffic Class", "0");
@@ -158,7 +158,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->has_udp);
@@ -179,7 +179,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_ipv6);
         PFL_EXPECT(details->has_tcp);
@@ -200,7 +200,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_ipv6);
         PFL_EXPECT(details->has_udp);
@@ -221,7 +221,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.size() == 3U);
         PFL_EXPECT(details->mpls_labels[0].label == 100U);
@@ -234,9 +234,9 @@ void run_mpls_pcap_fixture_tests() {
         const auto* first_label = find_layer(summary_layers, "mpls", 0U);
         const auto* second_label = find_layer(summary_layers, "mpls", 1U);
         const auto* third_label = find_layer(summary_layers, "mpls", 2U);
-        PFL_EXPECT(first_label != nullptr);
-        PFL_EXPECT(second_label != nullptr);
-        PFL_EXPECT(third_label != nullptr);
+        PFL_REQUIRE(first_label != nullptr);
+        PFL_REQUIRE(second_label != nullptr);
+        PFL_REQUIRE(third_label != nullptr);
         expect_mpls_label_field(*first_label, "Label", "100");
         expect_mpls_label_field(*second_label, "Label", "200");
         expect_mpls_label_field(*third_label, "Label", "300");
@@ -254,12 +254,12 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
-        PFL_EXPECT(ethernet_layer != nullptr);
+        PFL_REQUIRE(ethernet_layer != nullptr);
         const auto* type_field = find_field(*ethernet_layer, "Type");
-        PFL_EXPECT(type_field != nullptr);
+        PFL_REQUIRE(type_field != nullptr);
         PFL_EXPECT(type_field->value == "MPLS Multicast (0x8848)");
     }
 
@@ -275,10 +275,10 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* mpls_layer = find_layer(summary_layers, "mpls");
-        PFL_EXPECT(mpls_layer != nullptr);
+        PFL_REQUIRE(mpls_layer != nullptr);
         expect_mpls_label_field(*mpls_layer, "Label", "0");
         expect_mpls_label_field(*mpls_layer, "Label Name", "IPv4 Explicit NULL");
     }
@@ -295,10 +295,10 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* mpls_layer = find_layer(summary_layers, "mpls");
-        PFL_EXPECT(mpls_layer != nullptr);
+        PFL_REQUIRE(mpls_layer != nullptr);
         expect_mpls_label_field(*mpls_layer, "Label", "2");
         expect_mpls_label_field(*mpls_layer, "Label Name", "IPv6 Explicit NULL");
     }
@@ -315,11 +315,11 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         PFL_EXPECT(count_layers(summary_layers, "mpls") == 2U);
         const auto* first_mpls_layer = find_layer(summary_layers, "mpls", 0U);
-        PFL_EXPECT(first_mpls_layer != nullptr);
+        PFL_REQUIRE(first_mpls_layer != nullptr);
         expect_mpls_label_field(*first_mpls_layer, "Label", "1");
         expect_mpls_label_field(*first_mpls_layer, "Label Name", "Router Alert");
     }
@@ -336,7 +336,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
 
@@ -361,7 +361,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 2U);
 
@@ -380,7 +380,7 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(
             rows[0].reason_text == "Unknown MPLS payload" ||
             rows[0].reason_text == "Unknown MPLS pseudowire inner EtherType"
@@ -388,7 +388,7 @@ void run_mpls_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(!details->has_ipv4);
         PFL_EXPECT(!details->has_ipv6);
@@ -403,12 +403,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "Missing MPLS inner payload");
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.size() == 1U);
     }
@@ -419,12 +419,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "MPLS label header truncated");
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.empty());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
@@ -438,12 +438,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "MPLS bottom-of-stack not found");
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.size() == 2U);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
@@ -456,12 +456,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "MPLS label header truncated");
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->mpls_labels.size() == 1U);
         PFL_EXPECT(details->mpls_labels[0].label == 800U);
@@ -476,12 +476,12 @@ void run_mpls_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "Inner TCP header truncated");
 
         const auto packet = require_packet(session, rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_mpls);
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_tcp);
@@ -497,7 +497,7 @@ void run_mpls_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls/22_mpls_two_packets_same_ipv4_tcp_flow.pcap")));
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].packet_count == 2U);
         PFL_EXPECT(rows[0].protocol_text == "TCP");
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
@@ -507,7 +507,7 @@ void run_mpls_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap")));
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].packet_count == 2U);
         PFL_EXPECT(rows[0].protocol_text == "TCP");
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
@@ -516,8 +516,8 @@ void run_mpls_pcap_fixture_tests() {
         const auto second_packet = require_packet(session, 1U);
         const auto first_details = session.read_packet_details(first_packet);
         const auto second_details = session.read_packet_details(second_packet);
-        PFL_EXPECT(first_details.has_value());
-        PFL_EXPECT(second_details.has_value());
+        PFL_REQUIRE(first_details.has_value());
+        PFL_REQUIRE(second_details.has_value());
         PFL_EXPECT(first_details->has_mpls);
         PFL_EXPECT(second_details->has_mpls);
         PFL_EXPECT(first_details->mpls_labels.size() == 1U);

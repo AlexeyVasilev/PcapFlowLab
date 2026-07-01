@@ -1,3 +1,4 @@
+#include <array>
 #include <algorithm>
 #include <filesystem>
 #include <initializer_list>
@@ -19,7 +20,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -93,7 +94,7 @@ void expect_single_supported_flow(
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].family == expected_family);
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == 1U);
@@ -121,7 +122,7 @@ void expect_supported_llc_snap_ip_fixture(
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->ethernet.uses_length_field == (expected_vlan_count == 0U));
     PFL_EXPECT(details->has_llc);
@@ -165,7 +166,7 @@ void expect_supported_llc_snap_ip_fixture(
     }
 
     const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
-    PFL_EXPECT(ethernet_layer != nullptr);
+    PFL_REQUIRE(ethernet_layer != nullptr);
     if (expected_vlan_count == 0U) {
         PFL_EXPECT(layer_has_field_containing(*ethernet_layer, "Length", "bytes"));
     } else {
@@ -173,15 +174,15 @@ void expect_supported_llc_snap_ip_fixture(
     }
     if (expected_vlan_count == 1U) {
         const auto* vlan_layer = find_layer(summary_layers, "vlan", 0U);
-        PFL_EXPECT(vlan_layer != nullptr);
+        PFL_REQUIRE(vlan_layer != nullptr);
         PFL_EXPECT(!layer_has_field(*vlan_layer, "Tag Control Information"));
         PFL_EXPECT(layer_has_field_containing(*vlan_layer, "Encapsulated Length", "65 bytes"));
         PFL_EXPECT(!layer_has_field(*vlan_layer, "Encapsulated EtherType"));
     } else if (expected_vlan_count == 2U) {
         const auto* outer_vlan_layer = find_layer(summary_layers, "vlan", 0U);
         const auto* inner_vlan_layer = find_layer(summary_layers, "vlan", 1U);
-        PFL_EXPECT(outer_vlan_layer != nullptr);
-        PFL_EXPECT(inner_vlan_layer != nullptr);
+        PFL_REQUIRE(outer_vlan_layer != nullptr);
+        PFL_REQUIRE(inner_vlan_layer != nullptr);
         PFL_EXPECT(!layer_has_field(*outer_vlan_layer, "Tag Control Information"));
         PFL_EXPECT(!layer_has_field(*inner_vlan_layer, "Tag Control Information"));
         PFL_EXPECT(layer_has_field_containing(*outer_vlan_layer, "Encapsulated EtherType", "802.1Q VLAN"));
@@ -189,11 +190,11 @@ void expect_supported_llc_snap_ip_fixture(
         PFL_EXPECT(!layer_has_field(*inner_vlan_layer, "Encapsulated EtherType"));
     }
     const auto* llc_layer = find_layer(summary_layers, "llc");
-    PFL_EXPECT(llc_layer != nullptr);
+    PFL_REQUIRE(llc_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*llc_layer, "DSAP", "0xaa"));
     PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
     const auto* snap_layer = find_layer(summary_layers, "snap");
-    PFL_EXPECT(snap_layer != nullptr);
+    PFL_REQUIRE(snap_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:00"));
 }
 
@@ -203,12 +204,12 @@ void expect_supported_llc_snap_arp_fixture(const std::filesystem::path& relative
     PFL_EXPECT(session.summary().flow_count == 1U);
     PFL_EXPECT(session.unrecognized_packet_count() == 0U);
     const auto rows = session.list_flows();
-    PFL_EXPECT(rows.size() == 1U);
+    PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].protocol_text == "ARP");
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     PFL_EXPECT(details->has_ethernet);
     PFL_EXPECT(details->ethernet.uses_length_field);
     PFL_EXPECT(details->has_llc);
@@ -304,12 +305,12 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "Unknown SNAP PID");
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->ethernet.uses_length_field);
         PFL_EXPECT(details->has_llc);
@@ -320,11 +321,11 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "snap-payload"});
         const auto* snap_layer = find_layer(summary_layers, "snap");
-        PFL_EXPECT(snap_layer != nullptr);
+        PFL_REQUIRE(snap_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:00"));
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "PID", "0x88b5"));
         const auto* data_layer = find_layer(summary_layers, "snap-payload");
-        PFL_EXPECT(data_layer != nullptr);
+        PFL_REQUIRE(data_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*data_layer, "Length", "bytes"));
         PFL_EXPECT(layer_has_field(*data_layer, "Raw"));
     }
@@ -334,7 +335,7 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap")));
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
         PFL_EXPECT(rows[0].protocol_text == "UDP");
         const bool forward_match = rows[0].address_a == "192.0.2.40" &&
@@ -349,7 +350,7 @@ void run_llc_snap_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->ethernet.uses_length_field);
         PFL_EXPECT(details->has_llc);
@@ -367,7 +368,7 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap", "ipv4", "udp"});
         const auto* snap_layer = find_layer(summary_layers, "snap");
-        PFL_EXPECT(snap_layer != nullptr);
+        PFL_REQUIRE(snap_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "OUI", "00:00:f8"));
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "PID", "IPv4"));
         PFL_EXPECT(find_layer(summary_layers, "snap-payload") == nullptr);
@@ -379,12 +380,12 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "Non-SNAP LLC frame");
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->ethernet.uses_length_field);
         PFL_EXPECT(details->has_llc);
@@ -394,7 +395,7 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "llc-payload"});
         const auto* data_layer = find_layer(summary_layers, "llc-payload");
-        PFL_EXPECT(data_layer != nullptr);
+        PFL_REQUIRE(data_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*data_layer, "Length", "bytes"));
         PFL_EXPECT(layer_has_field(*data_layer, "Raw"));
     }
@@ -405,12 +406,12 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "LLC header truncated");
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->llc.header_truncated);
@@ -422,7 +423,7 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc"});
         const auto* llc_layer = find_layer(summary_layers, "llc");
-        PFL_EXPECT(llc_layer != nullptr);
+        PFL_REQUIRE(llc_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "DSAP", "0xaa"));
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "SSAP", "0xaa"));
         PFL_EXPECT(!layer_has_field(*llc_layer, "Control"));
@@ -437,12 +438,12 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "SNAP header truncated");
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->has_snap);
@@ -451,7 +452,7 @@ void run_llc_snap_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         expect_layer_prefix(summary_layers, {"frame", "ethernet", "llc", "snap"});
         const auto* snap_layer = find_layer(summary_layers, "snap");
-        PFL_EXPECT(snap_layer != nullptr);
+        PFL_REQUIRE(snap_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*snap_layer, "Warning", "SNAP header is truncated"));
     }
 
@@ -461,12 +462,12 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "IPv4 header truncated");
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->has_snap);
         PFL_EXPECT(details->has_ipv4);
@@ -480,16 +481,16 @@ void run_llc_snap_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/llc_snap/14_llc_snap_length_short_payload.pcap")));
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
         PFL_EXPECT(rows[0].protocol_text == "UDP");
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
         const auto packet_rows = session.list_flow_packets(0U);
-        PFL_EXPECT(packet_rows.size() == 1U);
+        PFL_REQUIRE(packet_rows.size() == 1U);
         const auto packet = require_packet(session, packet_rows[0].packet_index);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->has_snap);
         PFL_EXPECT(details->has_ipv4);
@@ -499,14 +500,14 @@ void run_llc_snap_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* llc_layer = find_layer(summary_layers, "llc");
-        PFL_EXPECT(llc_layer != nullptr);
+        PFL_REQUIRE(llc_layer != nullptr);
         PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
         PFL_EXPECT(layer_has_field_containing(*llc_layer, "Warning", "exceeds captured payload bytes"));
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "total length exceeds captured packet bytes"));
         const auto* udp_layer = find_layer(summary_layers, "udp");
-        PFL_EXPECT(udp_layer != nullptr);
+        PFL_REQUIRE(udp_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*udp_layer, "Warning", "UDP length exceeds available packet bytes"));
     }
 
@@ -516,11 +517,11 @@ void run_llc_snap_pcap_fixture_tests() {
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         const auto rows = session.list_unrecognized_packets(0U, 30U);
-        PFL_EXPECT(rows.size() == 1U);
+        PFL_REQUIRE(rows.size() == 1U);
         PFL_EXPECT(rows[0].reason_text == "UDP header truncated");
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_llc);
         PFL_EXPECT(details->has_snap);
         PFL_EXPECT(details->has_ipv4);
@@ -531,17 +532,17 @@ void run_llc_snap_pcap_fixture_tests() {
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* ethernet_layer = find_layer(summary_layers, "ethernet");
-        PFL_EXPECT(ethernet_layer != nullptr);
+        PFL_REQUIRE(ethernet_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ethernet_layer, "Length", "28 bytes"));
         PFL_EXPECT(layer_has_field_containing(*ethernet_layer, "Warning", "extend beyond the declared IEEE 802.3 payload length"));
         const auto* llc_layer = find_layer(summary_layers, "llc");
-        PFL_EXPECT(llc_layer != nullptr);
+        PFL_REQUIRE(llc_layer != nullptr);
         PFL_EXPECT(!layer_has_field(*llc_layer, "Payload Length"));
         const auto* ipv4_layer = find_layer(summary_layers, "ipv4");
-        PFL_EXPECT(ipv4_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*ipv4_layer, "Warning", "total length exceeds captured packet bytes"));
         const auto* trailer_layer = find_layer(summary_layers, "trailer");
-        PFL_EXPECT(trailer_layer != nullptr);
+        PFL_REQUIRE(trailer_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*trailer_layer, "Length", "30 bytes"));
         PFL_EXPECT(layer_has_field(*trailer_layer, "Raw"));
         PFL_EXPECT(find_layer(summary_layers, "udp") == nullptr);
