@@ -164,19 +164,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
-
-        Label {
-            text: root.titleText
-            font.pixelSize: 18
-            font.bold: true
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: "#e2e8f0"
-        }
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
@@ -203,7 +191,7 @@ Frame {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 10
+            spacing: 8
 
             Label {
                 text: "#"
@@ -293,7 +281,7 @@ Frame {
                     readonly property bool selected: index === packetListView.currentIndex
 
                     width: packetListView.width
-                    height: 34
+                    height: 30
                     color: root.rowBackgroundColor(index, capturedLength, originalLength, selected)
 
                     RowLayout {
@@ -311,7 +299,7 @@ Frame {
 
                         Rectangle {
                             Layout.preferredWidth: 68
-                            implicitHeight: 24
+                            implicitHeight: 20
                             radius: 4
                             color: root.directionBackgroundColor(directionText, selected)
                             border.width: color === "transparent" ? 0 : 1
@@ -338,7 +326,7 @@ Frame {
 
                         Rectangle {
                             Layout.preferredWidth: 72
-                            implicitHeight: 24
+                            implicitHeight: 20
                             radius: 4
                             color: root.capturedBackgroundColor(isIpFragmented, selected)
                             border.width: color === "transparent" ? 0 : 1
@@ -363,7 +351,7 @@ Frame {
 
                         Rectangle {
                             Layout.fillWidth: true
-                            implicitHeight: 24
+                            implicitHeight: 20
                             radius: 4
                             color: root.unrecognizedMode
                                 ? "transparent"
@@ -398,7 +386,7 @@ Frame {
 
                         Rectangle {
                             Layout.preferredWidth: 168
-                            implicitHeight: 24
+                            implicitHeight: 20
                             visible: root.showMarkerColumn
                             radius: 4
                             color: suspectedTcpRetransmission && !selected ? "#fff1cc" : "transparent"

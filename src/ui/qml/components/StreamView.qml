@@ -67,19 +67,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
-
-        Label {
-            text: "Stream"
-            font.pixelSize: 18
-            font.bold: true
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: "#e2e8f0"
-        }
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
@@ -143,9 +131,9 @@ Frame {
             ListView {
                 id: streamListView
                 anchors.fill: parent
-                anchors.margins: 8
+                anchors.margins: 6
                 clip: true
-                spacing: 8
+                spacing: 6
                 model: root.streamModel
 
                 ScrollBar.vertical: ScrollBar {
@@ -174,8 +162,8 @@ Frame {
                         id: bubble
                         x: forward ? 0 : parent.width - width
                         width: Math.min(streamListView.width * 0.84, 420)
-                        implicitHeight: metadataContainer.y + metadataContainer.implicitHeight + 10
-                        radius: 10
+                        implicitHeight: metadataContainer.y + metadataContainer.implicitHeight + 8
+                        radius: 9
                         color: root.bubbleColor(directionText, selected)
                         border.color: root.bubbleBorderColor(directionText, selected)
                         border.width: selected ? 2 : 1
@@ -185,8 +173,8 @@ Frame {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.margins: 9
-                            spacing: 8
+                            anchors.margins: 8
+                            spacing: 7
 
                             Item {
                                 Layout.fillWidth: true
@@ -197,7 +185,7 @@ Frame {
                                     anchors.fill: parent
                                     text: label
                                     font.bold: true
-                                    font.pixelSize: 13
+                                    font.pixelSize: 12
                                     color: "#0f172a"
                                     elide: Text.ElideRight
                                     verticalAlignment: Text.AlignVCenter
@@ -227,9 +215,9 @@ Frame {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: topRow.bottom
-                            anchors.leftMargin: 9
-                            anchors.rightMargin: 9
-                            anchors.topMargin: 4
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            anchors.topMargin: 3
                             implicitHeight: Math.max(metadataTextItem.implicitHeight, constrictedBadge.visible ? constrictedBadge.implicitHeight : 0)
 
                             Label {
@@ -242,7 +230,7 @@ Frame {
                                 color: "#475569"
                                 elide: Text.ElideRight
                                 verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                             }
 
                             MouseArea {

@@ -447,8 +447,8 @@ Frame {
             id: rowLayout
             anchors.fill: parent
             columns: fullWidth ? 1 : 2
-            columnSpacing: 8
-            rowSpacing: 2
+            columnSpacing: 6
+            rowSpacing: 1
 
             Label {
                 visible: !fullWidth
@@ -502,13 +502,13 @@ Frame {
         color: "#fbfcfe"
         border.color: warningState ? "#f4c97d" : "#dbe4ee"
         radius: 8
-        implicitHeight: layerColumn.implicitHeight + 16
+        implicitHeight: layerColumn.implicitHeight + 12
 
         ColumnLayout {
             id: layerColumn
             anchors.fill: parent
-            anchors.margins: 8
-            spacing: 6
+            anchors.margins: 6
+            spacing: 4
 
             RowLayout {
                 Layout.fillWidth: true
@@ -527,8 +527,8 @@ Frame {
                         )
                     }
                     padding: 0
-                    implicitWidth: 18
-                    implicitHeight: 18
+                    implicitWidth: 16
+                    implicitHeight: 16
 
                     contentItem: Label {
                         text: parent.text
@@ -546,7 +546,7 @@ Frame {
                 Label {
                     Layout.fillWidth: true
                     text: summaryLayerCard.titleText
-                    font.pixelSize: 13
+                    font.pixelSize: 12
                     font.bold: false
                     color: "#0f172a"
                 }
@@ -573,7 +573,7 @@ Frame {
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: summaryLayerCard.expanded
-                spacing: 5
+                spacing: 4
 
                 Repeater {
                     model: summaryLayerCard.fieldRows
@@ -656,7 +656,7 @@ Frame {
                     Label {
                         Layout.fillWidth: true
                         text: root.headerPrimaryText()
-                        font.pixelSize: 15
+                        font.pixelSize: 14
                         font.bold: true
                         color: "#0f172a"
                         elide: Text.ElideRight
@@ -709,7 +709,7 @@ Frame {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -727,13 +727,13 @@ Frame {
 
             TabButton {
                 text: "Raw"
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -751,13 +751,13 @@ Frame {
 
             TabButton {
                 text: root.payloadTabTitle()
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -775,13 +775,13 @@ Frame {
 
             TabButton {
                 text: "Protocol"
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -810,13 +810,13 @@ Frame {
 
             TabButton {
                 text: "Summary"
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -834,13 +834,13 @@ Frame {
 
             TabButton {
                 text: root.payloadTabTitle()
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -858,13 +858,13 @@ Frame {
 
             TabButton {
                 text: "Protocol"
-                implicitHeight: 34
+                implicitHeight: 30
 
                 contentItem: Label {
                     text: parent.text
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.bold: parent.checked
                     color: parent.checked ? "#0f172a" : "#64748b"
                 }
@@ -899,7 +899,7 @@ Frame {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 6
 
                     Rectangle {
                         Layout.fillWidth: true
@@ -907,14 +907,14 @@ Frame {
                         color: "#fff6d6"
                         border.color: "#e7d38d"
                         radius: 6
-                        implicitHeight: warningLabel.implicitHeight + 16
+                        implicitHeight: warningLabel.implicitHeight + 12
 
                         Text {
                             id: warningLabel
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.margins: 7
+                            anchors.margins: 6
                             wrapMode: Text.Wrap
                             color: "#7a5d10"
                             text: packetSummaryPane.warningText.length > 0
@@ -933,7 +933,7 @@ Frame {
 
                         ColumnLayout {
                             width: parent.width
-                            spacing: 8
+                            spacing: 6
 
                             Repeater {
                                 model: packetSummaryPane.layers
@@ -1006,14 +1006,14 @@ Frame {
                         color: "#fff6d6"
                         border.color: "#e7d38d"
                         radius: 6
-                        implicitHeight: streamWarningLabel.implicitHeight + 16
+                        implicitHeight: streamWarningLabel.implicitHeight + 12
 
                         Text {
                             id: streamWarningLabel
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.margins: 7
+                            anchors.margins: 6
                             wrapMode: Text.Wrap
                             color: "#7a5d10"
                             text: parent.parent.parent.warningText.length > 0

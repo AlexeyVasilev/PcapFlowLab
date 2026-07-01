@@ -236,7 +236,6 @@
     packetMarkerHeader: document.getElementById("packetMarkerHeader"),
     packetLoadMoreButton: document.getElementById("packetLoadMoreButton"),
     streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
-    flowViewTitle: document.getElementById("flowViewTitle"),
     streamTableBody: document.getElementById("streamTableBody"),
     packetDetailsTitle: document.getElementById("packetDetailsTitle"),
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
@@ -1995,10 +1994,6 @@
     for (const panel of elements.flowViewPanels) {
       panel.classList.toggle("active", panel.dataset.flowViewPanel === state.flowViewTab);
     }
-
-    elements.flowViewTitle.textContent = state.flowViewTab === "stream"
-      ? "Stream"
-      : (state.unrecognizedPacketsSelected ? "Unrecognized Packets" : "Selected-Flow Packets");
 
     const showingPackets = state.flowViewTab === "packets";
     if (elements.flowViewTabStreamButton) {

@@ -103,7 +103,7 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 6
 
                     TabBar {
                         id: flowDetailTabs
@@ -124,7 +124,7 @@ Item {
 
                         TabButton {
                             text: "Packets"
-                            implicitHeight: 34
+                            implicitHeight: 30
 
                             contentItem: Label {
                                 text: parent.text
@@ -148,7 +148,7 @@ Item {
 
                         TabButton {
                             text: "Stream"
-                            implicitHeight: 34
+                            implicitHeight: 30
                             enabled: !root.unrecognizedPacketsSelected
 
                             contentItem: Label {

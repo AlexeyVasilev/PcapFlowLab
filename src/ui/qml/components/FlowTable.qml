@@ -14,9 +14,9 @@ Frame {
     property int unrecognizedPacketCount: 0
     property int sortColumn: 0
     property bool sortAscending: true
-    readonly property int tableRowSpacing: 8
-    readonly property int tableContentLeftMargin: 8
-    readonly property int tableContentRightMargin: 8
+    readonly property int tableRowSpacing: 6
+    readonly property int tableContentLeftMargin: 6
+    readonly property int tableContentRightMargin: 6
     readonly property int selectionColumnWidth: 42
     readonly property int indexColumnWidth: 64
     readonly property int familyColumnWidth: 74
@@ -96,13 +96,7 @@ Frame {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: 8
-
-        Label {
-            text: "Flows"
-            font.pixelSize: 18
-            font.bold: true
-        }
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
@@ -163,12 +157,6 @@ Frame {
                     filterField.text = root.filterText
                 }
             }
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            height: 1
-            color: "#e2e8f0"
         }
 
         RowLayout {
@@ -243,7 +231,7 @@ Frame {
                     }
 
                     width: flowListView.width
-                    height: 36
+                    height: 32
                     color: selected
                         ? "#dbeafe"
                         : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
@@ -392,7 +380,7 @@ Frame {
                         }
                         Rectangle {
                             Layout.preferredWidth: root.fragColumnWidth
-                            implicitHeight: 24
+                            implicitHeight: 20
                             radius: 4
                             color: root.fragBackgroundColor(hasFragmentedPackets, selected)
                             border.width: color === "transparent" ? 0 : 1
@@ -451,7 +439,7 @@ Frame {
             border.color: root.unrecognizedPacketsSelected ? "#93c5fd" : "#d8dee9"
             border.width: 1
             radius: 6
-            implicitHeight: 46
+            implicitHeight: 40
 
             RowLayout {
                 anchors.fill: parent
