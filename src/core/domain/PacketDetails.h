@@ -80,7 +80,7 @@ struct PbbDetails {
     std::uint8_t available_bytes {0};
     std::uint8_t pcp {0};
     bool dei {false};
-    bool uca {false};
+    bool nca {false};
     std::uint8_t reserved {0};
     std::uint32_t isid {0};
 };

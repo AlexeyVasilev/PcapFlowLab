@@ -307,7 +307,7 @@ std::optional<LinkLayerView> parse_link_layer_envelope(std::span<const std::uint
             details.pbb.itag_truncated = pbb.status == detail::PbbParseStatus::itag_truncated;
             details.pbb.pcp = pbb.pcp;
             details.pbb.dei = pbb.dei;
-            details.pbb.uca = pbb.uca;
+            details.pbb.nca = pbb.nca;
             details.pbb.reserved = pbb.reserved;
             details.pbb.isid = pbb.isid;
 

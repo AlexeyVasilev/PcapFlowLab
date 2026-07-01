@@ -178,8 +178,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 udp_payload.has_value()) {
                 packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
             } else {
-                // Allow tuple extraction from malformed/truncated UDP only when a higher-level
-                // shim (currently PPPoE) has already bounded the visible packet bytes.
+                // Allow best-effort tuple extraction only when a higher-level bounded shim
+                // has already constrained the visible packet bytes.
                 if (!network->bounded_packet_end.has_value()) {
                     return {};
                 }

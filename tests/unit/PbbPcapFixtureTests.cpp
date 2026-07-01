@@ -111,7 +111,7 @@ void expect_pbb_metadata(
     const session_detail::PacketSummaryLayer& pbb_layer,
     const std::uint8_t expected_pcp,
     const bool expected_dei,
-    const bool expected_uca,
+    const bool expected_nca,
     const std::uint32_t expected_isid
 ) {
     PFL_EXPECT(details.has_pbb);
@@ -120,11 +120,11 @@ void expect_pbb_metadata(
     PFL_EXPECT(details.pbb.available_bytes == 4U);
     PFL_EXPECT(details.pbb.pcp == expected_pcp);
     PFL_EXPECT(details.pbb.dei == expected_dei);
-    PFL_EXPECT(details.pbb.uca == expected_uca);
+    PFL_EXPECT(details.pbb.nca == expected_nca);
     PFL_EXPECT(details.pbb.isid == expected_isid);
     PFL_EXPECT(layer_has_field_containing(pbb_layer, "Priority", std::to_string(expected_pcp)));
     PFL_EXPECT(layer_has_field_containing(pbb_layer, "Drop Eligible", expected_dei ? "1" : "0"));
-    PFL_EXPECT(layer_has_field_containing(pbb_layer, "NCA", expected_uca ? "1" : "0"));
+    PFL_EXPECT(layer_has_field_containing(pbb_layer, "NCA", expected_nca ? "1" : "0"));
     PFL_EXPECT(layer_has_field_containing(pbb_layer, "Reserved 1", "0"));
     PFL_EXPECT(layer_has_field_containing(pbb_layer, "Reserved 2", "0"));
 
@@ -150,7 +150,7 @@ void expect_single_ip_pbb_flow(
     const bool expect_snap = false,
     const std::uint8_t expected_pcp = 0U,
     const bool expected_dei = false,
-    const bool expected_uca = false,
+    const bool expected_nca = false,
     const std::uint32_t expected_isid = 0x123456U,
     const std::string& expected_transport_payload = {}
 ) {
@@ -225,7 +225,7 @@ void expect_single_ip_pbb_flow(
     if (pbb_layer == nullptr) {
         return;
     }
-    expect_pbb_metadata(*details, *pbb_layer, expected_pcp, expected_dei, expected_uca, expected_isid);
+    expect_pbb_metadata(*details, *pbb_layer, expected_pcp, expected_dei, expected_nca, expected_isid);
 
     const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
     PFL_REQUIRE(inner_ethernet_layer != nullptr);

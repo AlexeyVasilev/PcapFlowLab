@@ -203,7 +203,7 @@ struct PbbFrameView {
     std::uint8_t available_itag_bytes {0};
     std::uint8_t pcp {0};
     bool dei {false};
-    bool uca {false};
+    bool nca {false};
     std::uint8_t reserved {0};
     std::uint32_t isid {0};
     std::uint16_t inner_protocol_type {0};
@@ -607,7 +607,7 @@ inline PbbFrameView parse_pbb_payload(
             const auto first_byte = bytes[pbb_offset];
             view.pcp = static_cast<std::uint8_t>((first_byte >> 5U) & 0x7U);
             view.dei = ((first_byte >> 4U) & 0x1U) != 0U;
-            view.uca = ((first_byte >> 3U) & 0x1U) != 0U;
+            view.nca = ((first_byte >> 3U) & 0x1U) != 0U;
             view.reserved = static_cast<std::uint8_t>(first_byte & 0x7U);
         }
         view.status = PbbParseStatus::itag_truncated;
@@ -617,7 +617,7 @@ inline PbbFrameView parse_pbb_payload(
     const auto itag = read_be32(bytes, pbb_offset);
     view.pcp = static_cast<std::uint8_t>((itag >> 29U) & 0x7U);
     view.dei = ((itag >> 28U) & 0x1U) != 0U;
-    view.uca = ((itag >> 27U) & 0x1U) != 0U;
+    view.nca = ((itag >> 27U) & 0x1U) != 0U;
     view.reserved = static_cast<std::uint8_t>((itag >> 24U) & 0x7U);
     view.isid = itag & 0x00FFFFFFU;
 

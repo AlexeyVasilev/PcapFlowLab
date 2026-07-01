@@ -324,7 +324,7 @@ void append_pbb_itag_summary_fields(std::vector<PacketSummaryField>& fields, con
     if (pbb.available_bytes >= 1U) {
         fields.push_back(make_summary_field("Priority", std::to_string(pbb.pcp)));
         fields.push_back(make_summary_field("Drop Eligible", pbb.dei ? "1" : "0"));
-        fields.push_back(make_summary_field("NCA", pbb.uca ? "1" : "0"));
+        fields.push_back(make_summary_field("NCA", pbb.nca ? "1" : "0"));
         fields.push_back(make_summary_field("Reserved 1", std::to_string(pbb_reserved_1(pbb))));
         fields.push_back(make_summary_field("Reserved 2", std::to_string(pbb_reserved_2(pbb))));
     }
@@ -3083,7 +3083,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             builder << '\n'
                     << '\t' << "Priority: " << static_cast<unsigned>(details.pbb.pcp) << '\n'
                     << '\t' << "Drop Eligible: " << (details.pbb.dei ? "1" : "0") << '\n'
-                    << '\t' << "NCA: " << (details.pbb.uca ? "1" : "0") << '\n'
+                    << '\t' << "NCA: " << (details.pbb.nca ? "1" : "0") << '\n'
                     << '\t' << "Reserved 1: " << static_cast<unsigned>(pbb_reserved_1(details.pbb)) << '\n'
                     << '\t' << "Reserved 2: " << static_cast<unsigned>(pbb_reserved_2(details.pbb));
             if (details.pbb.available_bytes >= 4U) {
