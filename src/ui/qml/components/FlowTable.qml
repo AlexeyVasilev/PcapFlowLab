@@ -114,24 +114,6 @@ Frame {
             : displayAddress
     }
 
-    function endpointHasPort(port) {
-        const numericPort = Number(port)
-        return Number.isFinite(numericPort) && numericPort > 0
-    }
-
-    function endpointDisplayAddress(address, port) {
-        const trimmedAddress = address ? String(address).trim() : ""
-        if (trimmedAddress.length === 0) {
-            return ""
-        }
-
-        if (root.endpointHasPort(port) && trimmedAddress.indexOf(":") >= 0) {
-            return "[" + trimmedAddress + "]"
-        }
-
-        return trimmedAddress
-    }
-
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -217,24 +199,28 @@ Frame {
             }
         }
 
-        Flickable {
-            id: flowTableScroller
+        Item {
+            id: flowTableViewport
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            contentWidth: flowTableContent.width
-            contentHeight: flowTableContent.height
-            boundsBehavior: Flickable.StopAtBounds
+            
+            Flickable {
+                id: flowTableScroller
+                anchors.fill: parent
+                clip: true
+                contentWidth: root.flowTableContentWidth
+                contentHeight: 1
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
 
-            ScrollBar.horizontal: ScrollBar {
-                id: flowTableHorizontalScrollBar
-                policy: flowTableScroller.contentWidth > flowTableScroller.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                ScrollBar.horizontal: ScrollBar {
+                    id: flowTableHorizontalScrollBar
+                    policy: flowTableScroller.contentWidth > flowTableScroller.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
             }
 
             Item {
-                id: flowTableContent
-                width: Math.max(flowTableScroller.width, root.flowTableContentWidth)
-                height: flowHeaderContainer.height + flowBodyContainer.height
+                anchors.fill: parent
 
                 Item {
                     id: flowHeaderContainer
@@ -242,24 +228,30 @@ Frame {
                     height: flowHeaderRow.implicitHeight
                     clip: true
 
-                    RowLayout {
-                        id: flowHeaderRow
-                        anchors.fill: parent
-                        anchors.leftMargin: root.tableContentLeftMargin
-                        anchors.rightMargin: root.tableContentRightMargin + flowListView.rightGutter
-                        spacing: root.tableRowSpacing
+                    Item {
+                        x: -flowTableScroller.contentX
+                        width: root.flowTableContentWidth
+                        height: parent.height
 
-                        Label { text: "Sel"; Layout.preferredWidth: root.selectionColumnWidth; horizontalAlignment: Text.AlignHCenter }
-                        Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: root.indexColumnWidth; onClicked: root.sortRequested(0) }
-                        Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: root.familyColumnWidth; onClicked: root.sortRequested(1) }
-                        Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: root.protocolColumnWidth; onClicked: root.sortRequested(2) }
-                        Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: root.protocolHintColumnWidth; onClicked: root.sortRequested(3) }
-                        Button { text: "Service" + root.sortIndicator(4); Layout.preferredWidth: root.serviceColumnWidth; Layout.minimumWidth: root.serviceColumnWidth; Layout.maximumWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
-                        Button { text: "Endpoint A" + root.sortIndicator(6); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(6) }
-                        Button { text: "Endpoint B" + root.sortIndicator(8); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(8) }
-                        Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
-                        Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
-                        Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
+                        RowLayout {
+                            id: flowHeaderRow
+                            anchors.fill: parent
+                            anchors.leftMargin: root.tableContentLeftMargin
+                            anchors.rightMargin: root.tableContentRightMargin + flowListView.rightGutter
+                            spacing: root.tableRowSpacing
+
+                            Label { text: "Sel"; Layout.preferredWidth: root.selectionColumnWidth; horizontalAlignment: Text.AlignHCenter }
+                            Button { text: "Index" + root.sortIndicator(0); Layout.preferredWidth: root.indexColumnWidth; onClicked: root.sortRequested(0) }
+                            Button { text: "Family" + root.sortIndicator(1); Layout.preferredWidth: root.familyColumnWidth; onClicked: root.sortRequested(1) }
+                            Button { text: "Protocol" + root.sortIndicator(2); Layout.preferredWidth: root.protocolColumnWidth; onClicked: root.sortRequested(2) }
+                            Button { text: "Proto Hint" + root.sortIndicator(3); Layout.preferredWidth: root.protocolHintColumnWidth; onClicked: root.sortRequested(3) }
+                            Button { text: "Service" + root.sortIndicator(4); Layout.preferredWidth: root.serviceColumnWidth; Layout.minimumWidth: root.serviceColumnWidth; Layout.maximumWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
+                            Button { text: "Endpoint A" + root.sortIndicator(6); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(6) }
+                            Button { text: "Endpoint B" + root.sortIndicator(8); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(8) }
+                            Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
+                            Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
+                            Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
+                        }
                     }
                 }
 
@@ -267,7 +259,7 @@ Frame {
                     id: flowBodyContainer
                     y: flowHeaderContainer.height
                     width: parent.width
-                    height: Math.max(0, flowTableScroller.height - flowHeaderContainer.height - (flowTableHorizontalScrollBar.visible ? flowTableHorizontalScrollBar.height : 0))
+                    height: Math.max(0, parent.height - flowHeaderContainer.height - (flowTableHorizontalScrollBar.visible ? flowTableHorizontalScrollBar.height : 0))
                     color: "#f8fafc"
                     border.color: "#e2e8f0"
                     radius: 6
@@ -324,171 +316,178 @@ Frame {
                                 ? "#dbeafe"
                                 : (index % 2 === 0 ? "#ffffff" : "#f8fafc")
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: root.tableContentLeftMargin
-                                anchors.rightMargin: root.tableContentRightMargin + flowListView.rightGutter
-                                spacing: root.tableRowSpacing
+                            Item {
+                                x: -flowTableScroller.contentX
+                                width: root.flowTableContentWidth
+                                height: parent.height
 
-                                Item {
-                                    Layout.preferredWidth: root.selectionColumnWidth
-                                    Layout.fillHeight: true
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: root.tableContentLeftMargin
+                                    anchors.rightMargin: root.tableContentRightMargin + flowListView.rightGutter
+                                    spacing: root.tableRowSpacing
 
-                                    CheckBox {
-                                        id: selectionCheckBox
-                                        anchors.centerIn: parent
-                                        checked: flowChecked
-                                        onToggled: function() {
-                                            if (root.flowModel && checked !== flowChecked) {
-                                                root.flowModel.setFlowChecked(flowIndex, checked)
+                                    Item {
+                                        Layout.preferredWidth: root.selectionColumnWidth
+                                        Layout.fillHeight: true
+
+                                        CheckBox {
+                                            id: selectionCheckBox
+                                            anchors.centerIn: parent
+                                            checked: flowChecked
+                                            onToggled: function() {
+                                                if (root.flowModel && checked !== flowChecked) {
+                                                    root.flowModel.setFlowChecked(flowIndex, checked)
+                                                }
                                             }
                                         }
                                     }
-                                }
-
-                                Text {
-                                    text: flowIndex + 1
-                                    Layout.preferredWidth: root.indexColumnWidth
-                                    horizontalAlignment: Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                Text {
-                                    text: family
-                                    Layout.preferredWidth: root.familyColumnWidth
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                Text {
-                                    text: protocol
-                                    Layout.preferredWidth: root.protocolColumnWidth
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                Item {
-                                    Layout.preferredWidth: root.protocolHintColumnWidth
-                                    implicitHeight: protocolHintLabel.implicitHeight
-                                    clip: true
-
-                                    Label {
-                                        id: protocolHintLabel
-                                        anchors.fill: parent
-                                        text: protocolHint
-                                        elide: Text.ElideRight
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-
-                                    MouseArea {
-                                        id: protocolHintHoverArea
-                                        anchors.fill: parent
-                                        acceptedButtons: Qt.NoButton
-                                        hoverEnabled: true
-                                    }
-
-                                    ToolTip.visible: protocolHintHoverArea.containsMouse && protocolHintLabel.truncated
-                                    ToolTip.text: protocolHintLabel.text
-                                }
-                                Item {
-                                    Layout.preferredWidth: root.serviceColumnWidth
-                                    Layout.minimumWidth: root.serviceColumnWidth
-                                    Layout.maximumWidth: root.serviceColumnWidth
-                                    implicitHeight: serviceHintLabel.implicitHeight
-                                    clip: true
-
-                                    Label {
-                                        id: serviceHintLabel
-                                        anchors.fill: parent
-                                        text: serviceHint
-                                        elide: Text.ElideRight
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-
-                                    MouseArea {
-                                        id: serviceHintHoverArea
-                                        anchors.fill: parent
-                                        acceptedButtons: Qt.NoButton
-                                        hoverEnabled: true
-                                    }
-
-                                    ToolTip.visible: serviceHintHoverArea.containsMouse && serviceHintLabel.truncated
-                                    ToolTip.text: serviceHintLabel.text
-                                }
-
-                                Item {
-                                    Layout.preferredWidth: root.endpointColumnWidth
-                                    Layout.minimumWidth: root.endpointColumnWidth
-                                    Layout.maximumWidth: root.endpointColumnWidth
-                                    implicitHeight: endpointALabel.implicitHeight
-                                    clip: true
-
-                                    Label {
-                                        id: endpointALabel
-                                        anchors.fill: parent
-                                        text: endpointAText
-                                        font.family: "Consolas"
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-
-                                    MouseArea {
-                                        id: endpointAHoverArea
-                                        anchors.fill: parent
-                                        acceptedButtons: Qt.NoButton
-                                        hoverEnabled: true
-                                    }
-
-                                    ToolTip.visible: endpointAHoverArea.containsMouse && endpointAText.length > 0
-                                    ToolTip.text: endpointAText
-                                }
-                                Item {
-                                    Layout.preferredWidth: root.endpointColumnWidth
-                                    Layout.minimumWidth: root.endpointColumnWidth
-                                    Layout.maximumWidth: root.endpointColumnWidth
-                                    implicitHeight: endpointBLabel.implicitHeight
-                                    clip: true
-
-                                    Label {
-                                        id: endpointBLabel
-                                        anchors.fill: parent
-                                        text: endpointBText
-                                        font.family: "Consolas"
-                                        verticalAlignment: Text.AlignVCenter
-                                    }
-
-                                    MouseArea {
-                                        id: endpointBHoverArea
-                                        anchors.fill: parent
-                                        acceptedButtons: Qt.NoButton
-                                        hoverEnabled: true
-                                    }
-
-                                    ToolTip.visible: endpointBHoverArea.containsMouse && endpointBText.length > 0
-                                    ToolTip.text: endpointBText
-                                }
-                                Rectangle {
-                                    Layout.preferredWidth: root.fragColumnWidth
-                                    implicitHeight: 20
-                                    radius: 4
-                                    color: root.fragBackgroundColor(hasFragmentedPackets, selected)
-                                    border.width: color === "transparent" ? 0 : 1
-                                    border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
 
                                     Text {
-                                        anchors.centerIn: parent
-                                        width: parent.width
-                                        horizontalAlignment: Text.AlignHCenter
+                                        text: flowIndex + 1
+                                        Layout.preferredWidth: root.indexColumnWidth
+                                        horizontalAlignment: Text.AlignRight
                                         verticalAlignment: Text.AlignVCenter
-                                        text: fragmentedPacketCount
-                                        color: root.fragTextColor(hasFragmentedPackets, selected)
                                     }
-                                }
-                                Text {
-                                    text: packets
-                                    Layout.preferredWidth: root.packetsColumnWidth
-                                    horizontalAlignment: Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                Text {
-                                    text: bytes
-                                    Layout.preferredWidth: root.bytesColumnWidth
-                                    horizontalAlignment: Text.AlignRight
-                                    verticalAlignment: Text.AlignVCenter
+                                    Text {
+                                        text: family
+                                        Layout.preferredWidth: root.familyColumnWidth
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    Text {
+                                        text: protocol
+                                        Layout.preferredWidth: root.protocolColumnWidth
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    Item {
+                                        Layout.preferredWidth: root.protocolHintColumnWidth
+                                        implicitHeight: protocolHintLabel.implicitHeight
+                                        clip: true
+
+                                        Label {
+                                            id: protocolHintLabel
+                                            anchors.fill: parent
+                                            text: protocolHint
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        MouseArea {
+                                            id: protocolHintHoverArea
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                        }
+
+                                        ToolTip.visible: protocolHintHoverArea.containsMouse && protocolHintLabel.truncated
+                                        ToolTip.text: protocolHintLabel.text
+                                    }
+                                    Item {
+                                        Layout.preferredWidth: root.serviceColumnWidth
+                                        Layout.minimumWidth: root.serviceColumnWidth
+                                        Layout.maximumWidth: root.serviceColumnWidth
+                                        implicitHeight: serviceHintLabel.implicitHeight
+                                        clip: true
+
+                                        Label {
+                                            id: serviceHintLabel
+                                            anchors.fill: parent
+                                            text: serviceHint
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        MouseArea {
+                                            id: serviceHintHoverArea
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                        }
+
+                                        ToolTip.visible: serviceHintHoverArea.containsMouse && serviceHintLabel.truncated
+                                        ToolTip.text: serviceHintLabel.text
+                                    }
+                                    Item {
+                                        Layout.preferredWidth: root.endpointColumnWidth
+                                        Layout.minimumWidth: root.endpointColumnWidth
+                                        Layout.maximumWidth: root.endpointColumnWidth
+                                        implicitHeight: endpointALabel.implicitHeight
+                                        clip: true
+
+                                        Label {
+                                            id: endpointALabel
+                                            anchors.fill: parent
+                                            text: endpointAText
+                                            font.family: "Consolas"
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        MouseArea {
+                                            id: endpointAHoverArea
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                        }
+
+                                        ToolTip.visible: endpointAHoverArea.containsMouse && endpointAText.length > 0
+                                        ToolTip.text: endpointAText
+                                    }
+                                    Item {
+                                        Layout.preferredWidth: root.endpointColumnWidth
+                                        Layout.minimumWidth: root.endpointColumnWidth
+                                        Layout.maximumWidth: root.endpointColumnWidth
+                                        implicitHeight: endpointBLabel.implicitHeight
+                                        clip: true
+
+                                        Label {
+                                            id: endpointBLabel
+                                            anchors.fill: parent
+                                            text: endpointBText
+                                            font.family: "Consolas"
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        MouseArea {
+                                            id: endpointBHoverArea
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                        }
+
+                                        ToolTip.visible: endpointBHoverArea.containsMouse && endpointBText.length > 0
+                                        ToolTip.text: endpointBText
+                                    }
+                                    Rectangle {
+                                        Layout.preferredWidth: root.fragColumnWidth
+                                        implicitHeight: 20
+                                        radius: 4
+                                        color: root.fragBackgroundColor(hasFragmentedPackets, selected)
+                                        border.width: color === "transparent" ? 0 : 1
+                                        border.color: color === "transparent" ? "transparent" : Qt.darker(color, 1.08)
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            width: parent.width
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                            text: fragmentedPacketCount
+                                            color: root.fragTextColor(hasFragmentedPackets, selected)
+                                        }
+                                    }
+                                    Text {
+                                        text: packets
+                                        Layout.preferredWidth: root.packetsColumnWidth
+                                        horizontalAlignment: Text.AlignRight
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    Text {
+                                        text: bytes
+                                        Layout.preferredWidth: root.bytesColumnWidth
+                                        horizontalAlignment: Text.AlignRight
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
                                 }
                             }
 
