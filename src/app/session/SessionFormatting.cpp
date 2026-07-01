@@ -292,6 +292,24 @@ std::string format_macsec_packet_number(const std::uint32_t packet_number) {
     return format_hex_value(packet_number, 8) + " (" + std::to_string(packet_number) + ")";
 }
 
+bool has_plaintext_macsec_ether_type(const PacketDetails& details) noexcept {
+    return details.has_macsec &&
+        !details.macsec.encrypted &&
+        !details.macsec.changed &&
+        !details.macsec.sectag_truncated &&
+        !details.macsec.packet_number_truncated &&
+        !details.macsec.sci_truncated &&
+        !details.macsec.icv_truncated &&
+        details.macsec.protected_payload_length >= 2U &&
+        details.macsec.protected_payload_preview.size() >= 2U;
+}
+
+std::uint16_t macsec_plaintext_ether_type(const PacketDetails& details) noexcept {
+    return static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(details.macsec.protected_payload_preview[0]) << 8U) |
+        static_cast<std::uint16_t>(details.macsec.protected_payload_preview[1]));
+}
+
 PacketSummaryField make_summary_field(std::string label, std::string value);
 
 std::uint8_t pbb_reserved_1(const PbbDetails& pbb) noexcept {
@@ -637,16 +655,37 @@ std::optional<PacketSummaryLayer> build_macsec_protected_payload_layer(const Pac
     std::vector<PacketSummaryField> fields {
         make_summary_field("Length", std::to_string(details.macsec.protected_payload_length) + " bytes"),
     };
-    if (!details.macsec.protected_payload_preview.empty()) {
+
+    std::size_t preview_offset = 0U;
+    if (has_plaintext_macsec_ether_type(details)) {
+        fields.push_back(make_summary_field(
+            "Plain EtherType",
+            format_ether_type_value(macsec_plaintext_ether_type(details))
+        ));
+        fields.push_back(make_summary_field(
+            "Data Length",
+            std::to_string(details.macsec.protected_payload_length - 2U) + " bytes"
+        ));
+        preview_offset = 2U;
+    }
+
+    if (details.macsec.protected_payload_preview.size() > preview_offset) {
         fields.push_back(make_summary_field(
             "Raw",
             format_hex_byte_list(std::span<const std::uint8_t>(
-                details.macsec.protected_payload_preview.data(),
-                details.macsec.protected_payload_preview.size()
+                details.macsec.protected_payload_preview.data() + static_cast<std::ptrdiff_t>(preview_offset),
+                details.macsec.protected_payload_preview.size() - preview_offset
             ))
         ));
     }
-    if (details.macsec.protected_payload_preview_truncated) {
+
+    const auto preview_payload_length = details.macsec.protected_payload_preview.size() > preview_offset
+        ? (details.macsec.protected_payload_preview.size() - preview_offset)
+        : 0U;
+    const auto total_payload_length = details.macsec.protected_payload_length > preview_offset
+        ? (details.macsec.protected_payload_length - preview_offset)
+        : 0U;
+    if (details.macsec.protected_payload_preview_truncated || total_payload_length > preview_payload_length) {
         fields.push_back(make_summary_field("Preview truncated", "Yes"));
     }
 
@@ -2919,6 +2958,11 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             builder << '\n' << '\t' << "SCI Port ID: " << format_hex16_value(details.macsec.sci_port_id);
         }
         builder << '\n' << '\t' << "Protected Payload Length: " << details.macsec.protected_payload_length << " bytes";
+        if (has_plaintext_macsec_ether_type(details)) {
+            builder << '\n' << '\t' << "Plain EtherType: "
+                    << format_ether_type_value(macsec_plaintext_ether_type(details))
+                    << '\n' << '\t' << "Data Length: " << (details.macsec.protected_payload_length - 2U) << " bytes";
+        }
         if (details.macsec.icv_length > 0U) {
             builder << '\n' << '\t' << "ICV Length: " << details.macsec.icv_length << " bytes";
         }

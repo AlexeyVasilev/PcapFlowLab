@@ -117,6 +117,7 @@ Current supported presentation behavior:
   - optional SCI
 - protected payload shown as bounded opaque Data;
 - ICV bytes shown conservatively where practical.
+- for complete `E=0` / `C=0` frames, the first two secured-data bytes may also be surfaced as plaintext EtherType metadata while the remaining secured data stays opaque and no inner flow is recovered.
 
 Current no-flow / safety behavior:
 - all fixtures remain no-flow / unrecognized;
@@ -176,7 +177,9 @@ Current no-flow / safety behavior:
   - C `0`
   - AN `0`
   - PN `0x01020304`
+  - first secured-data bytes `45 00`
 - Current behavior: payload must still remain opaque MACsec protected data.
+  The app may surface `0x4500` as plaintext EtherType metadata for manual inspection, but it must not decode inner IPv4/UDP or create a normal flow.
 
 ### 05_macsec_short_length_nonzero.pcap
 

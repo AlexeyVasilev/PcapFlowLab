@@ -143,7 +143,8 @@ void expect_complete_macsec_fixture(
     const std::filesystem::path& relative_path,
     std::initializer_list<const char*> expected_layer_prefix,
     const bool expect_sc,
-    const std::string& expected_packet_number_text
+    const std::string& expected_packet_number_text,
+    const bool expect_plain_ether_type = false
 ) {
     const auto row = expect_single_macsec_no_flow_packet(
         session,
@@ -172,6 +173,7 @@ void expect_complete_macsec_fixture(
     PFL_EXPECT(payload_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "bytes"));
     PFL_EXPECT(layer_has_field_label(*payload_layer, "Raw"));
+    PFL_EXPECT(layer_has_field_label(*payload_layer, "Plain EtherType") == expect_plain_ether_type);
     const auto* icv_layer = find_layer(summary_layers, "macsec-icv");
     PFL_EXPECT(icv_layer != nullptr);
     PFL_EXPECT(layer_has_field_containing(*icv_layer, "Length", "16 bytes"));
@@ -180,6 +182,8 @@ void expect_complete_macsec_fixture(
         "Protocol: MACsec / IEEE 802.1AE",
         "Protected payload is not decrypted.",
     });
+    const auto protocol_text = session.read_packet_protocol_details_text(packet);
+    PFL_EXPECT((protocol_text.find("Plain EtherType:") != std::string::npos) == expect_plain_ether_type);
 }
 
 }  // namespace
@@ -251,7 +255,8 @@ void run_macsec_pcap_fixture_tests() {
             "parsing/macsec/04_macsec_integrity_only_cleartext_like_payload.pcap",
             {"frame", "ethernet", "macsec", "macsec-payload", "macsec-icv"},
             false,
-            "0x01020304 (16909060)"
+            "0x01020304 (16909060)",
+            true
         );
         const auto packet = require_packet(session, 0U);
         const auto details = require_macsec_details(session, 0U);
@@ -262,6 +267,13 @@ void run_macsec_pcap_fixture_tests() {
         PFL_EXPECT(macsec_layer != nullptr);
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Encrypted (E)", "0"));
         PFL_EXPECT(layer_has_field_containing(*macsec_layer, "Changed (C)", "0"));
+        const auto* payload_layer = find_layer(summary_layers, "macsec-payload");
+        PFL_EXPECT(payload_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*payload_layer, "Plain EtherType", "0x4500"));
+        PFL_EXPECT(layer_has_field_containing(*payload_layer, "Data Length", "33 bytes"));
+        const auto protocol_text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(protocol_text.find("Plain EtherType: 0x4500") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Data Length: 33 bytes") != std::string::npos);
     }
 
     {
