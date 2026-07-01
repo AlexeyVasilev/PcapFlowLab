@@ -37,7 +37,7 @@ python tests/data/parsing/llc_snap/generate_llc_snap_pcaps.py --output-dir tests
 ```
 
 Notes:
-- The generator is committed because this LLC/SNAP fixture set is still being introduced incrementally.
+- The generator is committed and the generated fixtures are exercised by the LLC/SNAP regression tests.
 - Review generated `.pcap` files locally before committing them.
 - The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values.
 - Scapy is used for stable inner IPv4 / IPv6 / TCP / UDP / ARP payloads.

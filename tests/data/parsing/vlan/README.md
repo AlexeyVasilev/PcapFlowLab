@@ -24,7 +24,7 @@ python tests/data/parsing/vlan/generate_vlan_pcaps.py --output-dir tests/data/pa
 ```
 
 Notes:
-- The generator is committed because this VLAN fixture set is still being introduced incrementally.
+- The generator is committed and the generated fixtures are exercised by the VLAN regression tests.
 - Review generated `.pcap` files locally before committing them.
 - The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values.
 - Stacked `0x88A8`, legacy `0x9100`, and malformed/truncated VLAN cases are written from explicit bytes to stay stable across Scapy versions.

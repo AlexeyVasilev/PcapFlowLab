@@ -7,11 +7,11 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - optional inner customer VLAN / QinQ / LLC-SNAP composition;
 - unknown inner EtherType fallback;
 - malformed or truncated I-TAG / inner Ethernet / inner IPv4 cases;
-- non-default I-TAG metadata presentation candidates.
+- non-default I-TAG metadata presentation coverage.
 
 Current repository behavior now supports a bounded first pass of shared PBB / MAC-in-MAC parsing:
 - outer EtherType `0x88e7` I-TAG detection;
-- 4-byte I-TAG metadata presentation (Priority / Drop Eligible / NCA / reserved bits / I-SID);
+- 4-byte I-TAG metadata presentation (Priority / Drop Eligible / NCA / Reserved 1 / Reserved 2 / I-SID);
 - inner customer Ethernet continuation into IPv4 / IPv6 / ARP;
 - reuse of inner VLAN / QinQ / LLC/SNAP continuation;
 - conservative no-flow handling for unknown inner EtherType and malformed/truncated cases.
@@ -181,7 +181,7 @@ Still intentionally conservative:
 
 - Packets: 1
 - Layer chain: outer Ethernet / PBB I-TAG with non-default Priority / Drop Eligible / NCA / I-SID / inner Ethernet / IPv4 / UDP
-- Current expected behavior: normal IPv4/UDP flow plus visible non-default I-TAG metadata fields such as Priority, Drop Eligible, NCA, reserved bits, and I-SID.
+- Current expected behavior: normal IPv4/UDP flow plus visible non-default I-TAG metadata fields such as Priority, Drop Eligible, NCA, Reserved 1, Reserved 2, and I-SID.
 
 ## Expected generated file list
 

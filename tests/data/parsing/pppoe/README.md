@@ -37,7 +37,7 @@ python tests/data/parsing/pppoe/generate_pppoe_pcaps.py --output-dir tests/data/
 ```
 
 Notes:
-- The generator is committed because this PPPoE fixture set is still being introduced incrementally.
+- The generator is committed and the generated fixtures are exercised by the PPPoE regression tests.
 - Review generated `.pcap` files locally before committing them.
 - The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values.
 - IPv4 / IPv6 / TCP / UDP payloads come from Scapy, while PPPoE / PPP / discovery / malformed envelopes are assembled from explicit bytes to stay stable across Scapy versions.
@@ -76,12 +76,10 @@ PPPoE codes used:
 
 ## Current support assumptions
 
-This pass does **not** claim full committed PPPoE parser support.
-
-Current conservative assumptions after the first parser step:
+Current committed PPPoE support is intentionally bounded:
 - PPPoE Session IPv4 / IPv6 data packets are expected to become normal flows when the PPPoE Session header and PPP protocol field are present, with inner parsing bounded by `min(declared PPPoE payload length, captured PPPoE payload bytes)`;
 - PPP LCP / IPCP / IPv6CP session frames should remain safe and inspectable, but not become normal IP flows;
-- PPPoE Discovery packets are still no-flow candidates, but selected-packet details should now preserve PPPoE Discovery header fields and common TLV tags when safely present;
+- PPPoE Discovery packets are still no-flow packets, but selected-packet details should now preserve PPPoE Discovery header fields and common TLV tags when safely present;
 - malformed/truncated/length-mismatch cases are still no-crash robustness fixtures first, but tuple extraction may still occur when enough bounded inner header bytes exist.
 
 ---
@@ -177,25 +175,25 @@ Current conservative assumptions after the first parser step:
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / unknown PPP protocol / Raw
-- Current conservative behavior candidate: safe fallback only; should not fabricate IPv4/IPv6 payload parsing.
+- Current expected behavior: remains no-flow with `Unknown PPP protocol`; selected-packet details should preserve PPPoE Session, PPP protocol value, and bounded unknown-payload Data presentation without fabricating IPv4/IPv6 parsing.
 
 ### 16_pppoe_truncated_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet indicates PPPoE Session EtherType, but PPPoE header is incomplete
-- Current malformed/truncated behavior candidate: no-crash robustness only.
+- Current expected behavior: malformed/truncated no-crash robustness only.
 
 ### 17_pppoe_truncated_ppp_protocol.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session header present, but PPP protocol field is incomplete
-- Current malformed/truncated behavior candidate: safe partial PPPoE handling only.
+- Current expected behavior: safe partial PPPoE handling only.
 
 ### 18_pppoe_truncated_inner_ipv4.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / PPPoE Session / PPP IPv4 / partial IPv4 header
-- Current malformed/truncated behavior candidate: safe no-flow handling after PPPoE shim with partial IPv4 presentation when header bytes are available.
+- Current expected behavior: safe no-flow handling after PPPoE shim with partial IPv4 presentation when header bytes are available.
 
 ### 19_pppoe_bad_length_short_payload.pcap
 

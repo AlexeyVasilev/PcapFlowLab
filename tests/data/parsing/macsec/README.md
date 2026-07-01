@@ -10,7 +10,7 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated SecTAG / SCI / payload boundary cases;
 - cleartext-looking protected payload that must not be decoded as IP in this scope.
 
-Current shared support covers basic MACsec SecTAG presentation only.
+Current shared support covers presentation-only MACsec handling.
 
 Current committed behavior:
 - MACsec EtherType `0x88e5` is recognized after outer Ethernet and optional outer VLAN / QinQ;
@@ -117,7 +117,7 @@ Current supported presentation behavior:
   - optional SCI
 - protected payload shown as bounded opaque Data;
 - ICV bytes shown conservatively where practical.
-- for complete `E=0` / `C=0` frames, the first two secured-data bytes may also be surfaced as plaintext EtherType metadata while the remaining secured data stays opaque and no inner flow is recovered.
+- for complete `E=0` / `C=0` frames, the first two secured-data bytes may also be surfaced as `Plain EtherType` metadata while the remaining secured data stays opaque and no inner flow is recovered.
 
 Current no-flow / safety behavior:
 - all fixtures remain no-flow / unrecognized;
