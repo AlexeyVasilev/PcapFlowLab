@@ -422,6 +422,19 @@ body.is-resizing-vertical {
 
 #openFileButton {
   padding-inline: 14px;
+  border: 1px solid #b9d7c2;
+  border-left: 4px solid #5ec47a;
+  background: #ffffff;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+#openFileButton:hover:not(:disabled) {
+  background: #f3fbf5;
+}
+
+#openFileButton:active:not(:disabled) {
+  background: #e6f6ea;
 }
 
 #openMode {
