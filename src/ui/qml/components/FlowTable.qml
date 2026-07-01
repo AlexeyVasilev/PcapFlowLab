@@ -266,7 +266,7 @@ Frame {
 
                     ListView {
                         id: flowListView
-                        readonly property int rightGutter: flowScrollBar.visible ? flowScrollBar.width + 10 : 0
+                        readonly property int rightGutter: Math.max(flowScrollBar.implicitWidth, 12) + 10
 
                         anchors.fill: parent
                         anchors.margins: 1
