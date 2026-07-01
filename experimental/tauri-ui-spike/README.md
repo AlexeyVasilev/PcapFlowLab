@@ -130,6 +130,14 @@ Implemented slice:
 - The Flows table also keeps a separate checked-flow selection state for future batch workflows without changing the active selected flow.
 - The flow table shows a user-facing 1-based flow number while keeping stable `flow_index` internally.
 - The flow table surfaces address family and fragmentation state from the shared flow DTO.
+- The visible flow table uses compact `Endpoint A` / `Endpoint B` columns rather than separate address/port columns.
+- Endpoint formatting follows the current shared UI rules:
+  - IPv4 with port: `address : port`
+  - IPv4 without port: `address`
+  - IPv6 with port: `[address] : port`
+  - IPv6 without port: `address`
+  - missing/zero/invalid port: address only
+- Endpoint address/port are treated as key identifiers and should stay visible in the row rather than relying on tooltip-only display.
 - When one or more flow checkboxes are active, the Flows workspace shows a compact bottom status bar with the checked-flow count.
 - Opening a new path clears stale overview, flows, packets, stream, analysis, and prior errors before the next backend call.
 - Open controls are disabled while an open is in flight.
@@ -137,12 +145,13 @@ Implemented slice:
 - Partial/truncated opens now surface a dedicated warning banner instead of only relying on generic shell status text.
 - Clicking a flow row loads that flow's packets and resets the bounded packet list to its initial batch.
 - Flow selection now updates loading state immediately and ignores stale packet/stream/analysis responses from older selections.
-- The lower-left Flows workspace has `Packets` and `Stream` tabs.
+- The lower-left Flows workspace keeps `Packets` and `Stream` as tabs, but they now sit in one compact toolbar row together with packet-count status and `Load More`.
 - The initial selected-flow packet batch is intentionally small and bounded for responsiveness.
 - If the current filter hides the selected flow, the shell clears visible flow/packet/stream/details state to avoid stale UI.
 - Clicking a packet row loads packet details and full available Raw/Payload byte text for the selected packet when byte-backed inspection is available.
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of looking like standalone buttons.
 - The selected-packet inspector consumes shared packet-details DTO fields for the panel title, protocol-specific payload tab title, and explicit no-payload state.
+- The top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button.
 - The Stream tab keeps stream reconstruction bounded to the selected flow plus the current packet/item budgets.
 - Stream items are rendered as directional cards rather than a table and now drive a richer Selected Stream Item Details view with a compact header plus `Summary / Payload / Protocol` tabs.
 - Selecting a stream item does not yet navigate to packet details or source packets.

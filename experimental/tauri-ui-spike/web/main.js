@@ -12,7 +12,7 @@
   const streamItemBatchSize = 15;
   const initialStreamPacketBudget = 30;
   const streamPacketBatchSize = 30;
-  const flowVirtualRowHeight = 36;
+  const flowVirtualRowHeight = 32;
   const analysisFlowVirtualRowHeight = 44;
   const flowVirtualOverscanRows = 12;
   const analysisFlowVirtualOverscanRows = 10;
@@ -236,7 +236,6 @@
     packetMarkerHeader: document.getElementById("packetMarkerHeader"),
     packetLoadMoreButton: document.getElementById("packetLoadMoreButton"),
     streamLoadMoreButton: document.getElementById("streamLoadMoreButton"),
-    flowViewTitle: document.getElementById("flowViewTitle"),
     streamTableBody: document.getElementById("streamTableBody"),
     packetDetailsTitle: document.getElementById("packetDetailsTitle"),
     packetDetailsMeta: document.getElementById("packetDetailsMeta"),
@@ -575,6 +574,59 @@
       return false;
     }
     return state.packets.some((packet) => packetMarkerText(packet).length > 0);
+  }
+
+  function formatEndpoint(address, port) {
+    const trimmedAddress = String(address || "").trim();
+    const numericPort = Number(port);
+    const hasPort = Number.isFinite(numericPort) && numericPort > 0;
+
+    if (!trimmedAddress) {
+      return "";
+    }
+
+    const displayAddress = hasPort && trimmedAddress.includes(":")
+      ? `[${trimmedAddress}]`
+      : trimmedAddress;
+
+    return hasPort
+      ? `${displayAddress} : ${numericPort}`
+      : displayAddress;
+  }
+
+  function formatEndpointParts(address, port) {
+    const trimmedAddress = String(address || "").trim();
+    const numericPort = Number(port);
+    const hasPort = Number.isFinite(numericPort) && numericPort > 0;
+
+    if (!trimmedAddress) {
+      return {
+        address: "",
+        hasPort: false,
+        port: "",
+      };
+    }
+
+    const displayAddress = hasPort && trimmedAddress.includes(":")
+      ? `[${trimmedAddress}]`
+      : trimmedAddress;
+
+    return {
+      address: displayAddress,
+      hasPort,
+      port: hasPort ? String(numericPort) : "",
+    };
+  }
+
+  function renderEndpointCell(address, port) {
+    const parts = formatEndpointParts(address, port);
+    return `
+      <span class="endpoint-cell-inner">
+        <span class="endpoint-address" title="${escapeHtml(parts.address)}">${escapeHtml(parts.address)}</span>
+        <span class="endpoint-separator${parts.hasPort ? "" : " is-hidden"}">:</span>
+        <span class="endpoint-port${parts.hasPort ? "" : " is-hidden"}">${escapeHtml(parts.port)}</span>
+      </span>
+    `;
   }
 
   function unrecognizedPacketCount() {
@@ -1126,9 +1178,9 @@
       case "frag":
         return Number(flow?.fragmented_packet_count ?? 0);
       case "endpoint_a":
-        return String(flow?.endpoint_a || `${flow?.address_a || ""}:${flow?.port_a ?? ""}`);
+        return formatEndpoint(flow?.address_a, flow?.port_a) || String(flow?.endpoint_a || "");
       case "endpoint_b":
-        return String(flow?.endpoint_b || `${flow?.address_b || ""}:${flow?.port_b ?? ""}`);
+        return formatEndpoint(flow?.address_b, flow?.port_b) || String(flow?.endpoint_b || "");
       case "packets":
         return Number(flow?.packet_count ?? 0);
       case "bytes":
@@ -1996,10 +2048,6 @@
       panel.classList.toggle("active", panel.dataset.flowViewPanel === state.flowViewTab);
     }
 
-    elements.flowViewTitle.textContent = state.flowViewTab === "stream"
-      ? "Stream"
-      : (state.unrecognizedPacketsSelected ? "Unrecognized Packets" : "Selected-Flow Packets");
-
     const showingPackets = state.flowViewTab === "packets";
     if (elements.flowViewTabStreamButton) {
       elements.flowViewTabStreamButton.disabled = state.unrecognizedPacketsSelected;
@@ -2420,8 +2468,8 @@
             <td>${escapeHtml(formatProtocolHint(flow))}</td>
             <td>${escapeHtml(flow.service_hint)}</td>
             <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
-            <td>${escapeHtml(flow.address_a)}:${flow.port_a}</td>
-            <td>${escapeHtml(flow.address_b)}:${flow.port_b}</td>
+            <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_a, flow.port_a)}</td>
+            <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_b, flow.port_b)}</td>
             <td>${formatPlainInteger(flow.packet_count)}</td>
             <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>
@@ -3576,7 +3624,7 @@
       renderRow: (flow) => {
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const hintOrProtocol = formatProtocolHint(flow) || flow.protocol_text || "-";
-        const endpointSummary = `${flow.address_a}:${flow.port_a} <-> ${flow.address_b}:${flow.port_b}`;
+        const endpointSummary = `${formatEndpoint(flow.address_a, flow.port_a)} <-> ${formatEndpoint(flow.address_b, flow.port_b)}`;
         const titleText = flow.service_hint
           ? `${flow.service_hint}\n${endpointSummary}`
           : endpointSummary;
