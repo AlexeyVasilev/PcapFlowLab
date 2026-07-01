@@ -39,11 +39,11 @@ void run_vlan_tests() {
         PFL_EXPECT(connection->flow_a.packet_count == 1);
 
         const auto details = session.read_packet_details(connection->flow_a.packets.front());
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->ethernet.ether_type == 0x8100);
         PFL_EXPECT(details->has_vlan);
-        PFL_EXPECT(details->vlan_tags.size() == 1);
+        PFL_REQUIRE(details->vlan_tags.size() == 1);
         PFL_EXPECT(details->vlan_tags[0].tpid == 0x8100);
         PFL_EXPECT(details->vlan_tags[0].tci == 100);
         PFL_EXPECT(details->vlan_tags[0].encapsulated_ether_type == 0x0800);
@@ -84,11 +84,11 @@ void run_vlan_tests() {
         PFL_EXPECT(connection->has_flow_a);
 
         const auto details = session.read_packet_details(connection->flow_a.packets.front());
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->ethernet.ether_type == 0x88A8);
         PFL_EXPECT(details->has_vlan);
-        PFL_EXPECT(details->vlan_tags.size() == 2);
+        PFL_REQUIRE(details->vlan_tags.size() == 2);
         PFL_EXPECT(details->vlan_tags[0].tpid == 0x88A8);
         PFL_EXPECT(details->vlan_tags[0].tci == 200);
         PFL_EXPECT(details->vlan_tags[0].encapsulated_ether_type == 0x8100);
@@ -131,7 +131,7 @@ void run_vlan_tests() {
         };
         PFL_EXPECT(!service.decode(malformed_vlan_packet, packet_ref).has_value());
         const auto best_effort = service.decode_best_effort(malformed_vlan_packet, packet_ref);
-        PFL_EXPECT(best_effort.has_value());
+        PFL_REQUIRE(best_effort.has_value());
         PFL_EXPECT(best_effort->has_ethernet);
         PFL_EXPECT(best_effort->has_vlan);
         PFL_EXPECT(best_effort->vlan_tags.empty());
