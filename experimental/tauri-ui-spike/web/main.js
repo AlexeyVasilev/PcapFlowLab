@@ -12,7 +12,7 @@
   const streamItemBatchSize = 15;
   const initialStreamPacketBudget = 30;
   const streamPacketBatchSize = 30;
-  const flowVirtualRowHeight = 36;
+  const flowVirtualRowHeight = 32;
   const analysisFlowVirtualRowHeight = 44;
   const flowVirtualOverscanRows = 12;
   const analysisFlowVirtualOverscanRows = 10;
@@ -592,6 +592,41 @@
     return hasPort
       ? `${displayAddress}  :  ${numericPort}`
       : displayAddress;
+  }
+
+  function formatEndpointParts(address, port) {
+    const trimmedAddress = String(address || "").trim();
+    const numericPort = Number(port);
+    const hasPort = Number.isFinite(numericPort) && numericPort > 0;
+
+    if (!trimmedAddress) {
+      return {
+        address: "",
+        hasPort: false,
+        port: "",
+      };
+    }
+
+    const displayAddress = hasPort && trimmedAddress.includes(":")
+      ? `[${trimmedAddress}]`
+      : trimmedAddress;
+
+    return {
+      address: displayAddress,
+      hasPort,
+      port: hasPort ? String(numericPort) : "",
+    };
+  }
+
+  function renderEndpointCell(address, port) {
+    const parts = formatEndpointParts(address, port);
+    return `
+      <span class="endpoint-cell-inner">
+        <span class="endpoint-address" title="${escapeHtml(parts.address)}">${escapeHtml(parts.address)}</span>
+        <span class="endpoint-separator${parts.hasPort ? "" : " is-hidden"}">:</span>
+        <span class="endpoint-port${parts.hasPort ? "" : " is-hidden"}">${escapeHtml(parts.port)}</span>
+      </span>
+    `;
   }
 
   function unrecognizedPacketCount() {
@@ -2433,8 +2468,8 @@
             <td>${escapeHtml(formatProtocolHint(flow))}</td>
             <td>${escapeHtml(flow.service_hint)}</td>
             <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
-            <td class="flow-endpoint-cell">${escapeHtml(formatEndpoint(flow.address_a, flow.port_a))}</td>
-            <td class="flow-endpoint-cell">${escapeHtml(formatEndpoint(flow.address_b, flow.port_b))}</td>
+            <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_a, flow.port_a)}</td>
+            <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_b, flow.port_b)}</td>
             <td>${formatPlainInteger(flow.packet_count)}</td>
             <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>

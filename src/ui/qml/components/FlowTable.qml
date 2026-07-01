@@ -24,6 +24,9 @@ Frame {
     readonly property int protocolHintColumnWidth: 98
     readonly property int serviceColumnWidth: 200
     readonly property int endpointColumnWidth: 220
+    readonly property int endpointAddressSlotWidth: 136
+    readonly property int endpointPortWidth: 44
+    readonly property int endpointSeparatorWidth: 10
     readonly property int fragColumnWidth: 56
     readonly property int packetsColumnWidth: 86
     readonly property int bytesColumnWidth: 92
@@ -95,6 +98,24 @@ Frame {
         return hasPort
             ? displayAddress + "  :  " + numericPort
             : displayAddress
+    }
+
+    function endpointHasPort(port) {
+        const numericPort = Number(port)
+        return Number.isFinite(numericPort) && numericPort > 0
+    }
+
+    function endpointDisplayAddress(address, port) {
+        const trimmedAddress = address ? String(address).trim() : ""
+        if (trimmedAddress.length === 0) {
+            return ""
+        }
+
+        if (root.endpointHasPort(port) && trimmedAddress.indexOf(":") >= 0) {
+            return "[" + trimmedAddress + "]"
+        }
+
+        return trimmedAddress
     }
 
     background: Rectangle {
@@ -238,6 +259,10 @@ Frame {
                     required property string bytes
 
                     readonly property bool selected: index === flowListView.currentIndex
+                    readonly property bool endpointAHasPort: root.endpointHasPort(portA)
+                    readonly property bool endpointBHasPort: root.endpointHasPort(portB)
+                    readonly property string endpointAAddressText: root.endpointDisplayAddress(addressA, portA)
+                    readonly property string endpointBAddressText: root.endpointDisplayAddress(addressB, portB)
                     readonly property string endpointAText: root.formatEndpoint(addressA, portA)
                     readonly property string endpointBText: root.formatEndpoint(addressB, portB)
 
@@ -340,15 +365,40 @@ Frame {
                         Item {
                             Layout.fillWidth: true
                             Layout.preferredWidth: root.endpointColumnWidth
-                            implicitHeight: endpointALabel.implicitHeight
+                            implicitHeight: endpointARow.implicitHeight
 
-                            Label {
-                                id: endpointALabel
-                                anchors.fill: parent
-                                text: endpointAText
-                                font.family: "Consolas"
-                                elide: Text.ElideMiddle
-                                verticalAlignment: Text.AlignVCenter
+                            RowLayout {
+                                id: endpointARow
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 0
+
+                                Label {
+                                    id: endpointALabel
+                                    Layout.preferredWidth: root.endpointAddressSlotWidth
+                                    text: endpointAAddressText
+                                    font.family: "Consolas"
+                                    elide: Text.ElideMiddle
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+
+                                Label {
+                                    visible: endpointAHasPort
+                                    Layout.preferredWidth: root.endpointSeparatorWidth
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: ":"
+                                    font.family: "Consolas"
+                                    color: "#64748b"
+                                }
+
+                                Label {
+                                    visible: endpointAHasPort
+                                    Layout.preferredWidth: root.endpointPortWidth
+                                    horizontalAlignment: Text.AlignRight
+                                    text: portA
+                                    font.family: "Consolas"
+                                    color: "#0f172a"
+                                }
                             }
 
                             MouseArea {
@@ -359,20 +409,45 @@ Frame {
                             }
 
                             ToolTip.visible: endpointAHoverArea.containsMouse && endpointALabel.truncated
-                            ToolTip.text: endpointALabel.text
+                            ToolTip.text: endpointAText
                         }
                         Item {
                             Layout.fillWidth: true
                             Layout.preferredWidth: root.endpointColumnWidth
-                            implicitHeight: endpointBLabel.implicitHeight
+                            implicitHeight: endpointBRow.implicitHeight
 
-                            Label {
-                                id: endpointBLabel
-                                anchors.fill: parent
-                                text: endpointBText
-                                font.family: "Consolas"
-                                elide: Text.ElideMiddle
-                                verticalAlignment: Text.AlignVCenter
+                            RowLayout {
+                                id: endpointBRow
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 0
+
+                                Label {
+                                    id: endpointBLabel
+                                    Layout.preferredWidth: root.endpointAddressSlotWidth
+                                    text: endpointBAddressText
+                                    font.family: "Consolas"
+                                    elide: Text.ElideMiddle
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+
+                                Label {
+                                    visible: endpointBHasPort
+                                    Layout.preferredWidth: root.endpointSeparatorWidth
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: ":"
+                                    font.family: "Consolas"
+                                    color: "#64748b"
+                                }
+
+                                Label {
+                                    visible: endpointBHasPort
+                                    Layout.preferredWidth: root.endpointPortWidth
+                                    horizontalAlignment: Text.AlignRight
+                                    text: portB
+                                    font.family: "Consolas"
+                                    color: "#0f172a"
+                                }
                             }
 
                             MouseArea {
@@ -383,7 +458,7 @@ Frame {
                             }
 
                             ToolTip.visible: endpointBHoverArea.containsMouse && endpointBLabel.truncated
-                            ToolTip.text: endpointBLabel.text
+                            ToolTip.text: endpointBText
                         }
                         Rectangle {
                             Layout.preferredWidth: root.fragColumnWidth

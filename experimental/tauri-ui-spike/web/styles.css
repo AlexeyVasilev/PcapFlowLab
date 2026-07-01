@@ -1142,9 +1142,42 @@ select:disabled {
   background: var(--selected);
 }
 
+.flow-table-wrap .data-table th,
+.flow-table-wrap .data-table td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  line-height: 1.15;
+}
+
 .flow-endpoint-cell {
   font-family: "Cascadia Mono", Consolas, monospace;
   white-space: nowrap;
+}
+
+.endpoint-cell-inner {
+  display: inline-grid;
+  grid-template-columns: minmax(0, 16ch) 1ch 5ch;
+  align-items: center;
+  column-gap: 0.35rem;
+  justify-content: start;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.endpoint-address {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.endpoint-separator {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.endpoint-port {
+  text-align: right;
 }
 
 .data-table tbody tr.packet-row.is-warning {
@@ -1247,7 +1280,7 @@ select:disabled {
 }
 
 .flow-table-wrap .data-table tbody tr.flow-row td {
-  height: 36px;
+  height: 32px;
   vertical-align: middle;
   white-space: nowrap;
 }
