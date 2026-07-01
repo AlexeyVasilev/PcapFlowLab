@@ -32,7 +32,7 @@ PacketRef make_packet_ref(const RawPcapPacket& packet) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -40,7 +40,7 @@ RawPcapPacket require_raw_fixture_packet(const std::filesystem::path& relative_p
     PcapReader reader {};
     PFL_EXPECT(reader.open(fixture_path(relative_path)));
     const auto packet = reader.read_next();
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     PFL_EXPECT(!reader.read_next().has_value());
     return *packet;
 }
@@ -123,7 +123,7 @@ void run_igmp_pcap_fixture_tests() {
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->has_igmp);
 
@@ -135,16 +135,16 @@ void run_igmp_pcap_fixture_tests() {
         const auto layers = build_summary_layers(*details, packet, protocol_text);
         const auto* ipv4_layer = find_layer(layers, "ipv4");
         const auto* igmp_layer = find_layer(layers, "igmp");
-        PFL_EXPECT(ipv4_layer != nullptr);
-        PFL_EXPECT(igmp_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
+        PFL_REQUIRE(igmp_layer != nullptr);
         PFL_EXPECT(igmp_layer->title == "IGMPv1, Membership Report 224.0.0.251");
 
         const auto* type_field = find_field(*igmp_layer, "Type");
         const auto* checksum_field = find_field(*igmp_layer, "Checksum");
         const auto* group_field = find_field(*igmp_layer, "Group Address");
-        PFL_EXPECT(type_field != nullptr);
-        PFL_EXPECT(checksum_field != nullptr);
-        PFL_EXPECT(group_field != nullptr);
+        PFL_REQUIRE(type_field != nullptr);
+        PFL_REQUIRE(checksum_field != nullptr);
+        PFL_REQUIRE(group_field != nullptr);
         PFL_EXPECT(type_field->value == "Membership Report (0x12)");
         PFL_EXPECT(!checksum_field->value.empty());
         PFL_EXPECT(group_field->value == "224.0.0.251");
@@ -219,7 +219,7 @@ void run_igmp_pcap_fixture_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/igmp/09_igmpv2_report_with_router_alert.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->has_igmp);
 
@@ -235,7 +235,7 @@ void run_igmp_pcap_fixture_tests() {
         PFL_EXPECT(layers[3].id == "igmp");
         PFL_EXPECT(layers[3].title.find("IGMPv2, Membership Report 224.0.0.251") != std::string::npos);
         const auto* type_field = find_field(layers[3], "Type");
-        PFL_EXPECT(type_field != nullptr);
+        PFL_REQUIRE(type_field != nullptr);
         PFL_EXPECT(type_field->value.find("Membership Report") != std::string::npos);
     }
 
@@ -244,7 +244,7 @@ void run_igmp_pcap_fixture_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/igmp/10_igmpv2_general_query_with_router_alert.pcap")));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_igmp);
 
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
@@ -252,10 +252,10 @@ void run_igmp_pcap_fixture_tests() {
 
         const auto layers = build_summary_layers(*details, packet, protocol_text);
         const auto* igmp_layer = find_layer(layers, "igmp");
-        PFL_EXPECT(igmp_layer != nullptr);
+        PFL_REQUIRE(igmp_layer != nullptr);
         PFL_EXPECT(igmp_layer->title.find("General Query") != std::string::npos);
         const auto* destination_field = find_field(*igmp_layer, "Destination");
-        PFL_EXPECT(destination_field != nullptr);
+        PFL_REQUIRE(destination_field != nullptr);
         PFL_EXPECT(destination_field->value == "224.0.0.1");
     }
 
@@ -290,12 +290,12 @@ void run_igmp_pcap_fixture_tests() {
         PFL_EXPECT(protocol_text.find("Detailed IGMPv3 group-record parsing is deferred.") != std::string::npos);
 
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto layers = build_summary_layers(*details, packet, protocol_text);
         const auto* igmp_layer = find_layer(layers, "igmp");
-        PFL_EXPECT(igmp_layer != nullptr);
+        PFL_REQUIRE(igmp_layer != nullptr);
         const auto* record_count_field = find_field(*igmp_layer, "Group Record Count");
-        PFL_EXPECT(record_count_field != nullptr);
+        PFL_REQUIRE(record_count_field != nullptr);
         PFL_EXPECT(record_count_field->value == "0");
     }
 
@@ -312,13 +312,13 @@ void run_igmp_pcap_fixture_tests() {
 
         const auto packet = require_raw_fixture_packet("parsing/igmp/13_igmp_truncated_header.pcap");
         const auto details = decode_fixture_packet_details_best_effort(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->has_igmp);
         PFL_EXPECT(details->igmp.header_truncated);
 
         const auto protocol_text = session_detail::build_basic_protocol_details_text(*details);
-        PFL_EXPECT(protocol_text.has_value());
+        PFL_REQUIRE(protocol_text.has_value());
         PFL_EXPECT(protocol_text->find("Warning: IGMP header is truncated.") != std::string::npos);
     }
 
@@ -337,15 +337,15 @@ void run_igmp_pcap_fixture_tests() {
         PFL_EXPECT(packet.captured_length < packet.original_length);
 
         const auto details = decode_fixture_packet_details_best_effort(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_igmp);
         PFL_EXPECT(details->igmp.header_truncated);
 
         const auto protocol_text = session_detail::build_basic_protocol_details_text(*details);
-        PFL_EXPECT(protocol_text.has_value());
+        PFL_REQUIRE(protocol_text.has_value());
         const auto layers = build_summary_layers(*details, make_packet_ref(packet), *protocol_text);
         const auto* igmp_layer = find_layer(layers, "igmp");
-        PFL_EXPECT(igmp_layer != nullptr);
+        PFL_REQUIRE(igmp_layer != nullptr);
         PFL_EXPECT(igmp_layer->warning);
     }
 
@@ -364,11 +364,11 @@ void run_igmp_pcap_fixture_tests() {
         PFL_EXPECT(protocol_text.find("Checksum: 0x") != std::string::npos);
 
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto layers = build_summary_layers(*details, packet, protocol_text);
         const auto* igmp_layer = find_layer(layers, "igmp");
-        PFL_EXPECT(igmp_layer != nullptr);
-        PFL_EXPECT(find_field(*igmp_layer, "Checksum") != nullptr);
+        PFL_REQUIRE(igmp_layer != nullptr);
+        PFL_REQUIRE(find_field(*igmp_layer, "Checksum") != nullptr);
     }
 
     {
@@ -384,7 +384,7 @@ void run_igmp_pcap_fixture_tests() {
 
         const auto packet = require_raw_fixture_packet("parsing/igmp/16_ipv4_protocol_igmp_no_payload.pcap");
         const auto details = decode_fixture_packet_details_best_effort(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(!details->has_igmp);
     }

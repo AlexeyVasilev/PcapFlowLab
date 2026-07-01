@@ -1,4 +1,4 @@
-Synthetic IEEE 802.1ah PBB / MAC-in-MAC parsing fixtures for future regression tests.
+Synthetic IEEE 802.1ah PBB / MAC-in-MAC parsing fixtures for regression tests.
 
 This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
 - basic outer backbone Ethernet plus PBB I-TAG framing;

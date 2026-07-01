@@ -92,13 +92,13 @@ void run_query_tests() {
     PFL_EXPECT(rows[1].total_bytes == udp_packet.size());
 
     const auto first_flow_packets = session.flow_packets(0);
-    PFL_EXPECT(first_flow_packets.has_value());
+    PFL_REQUIRE(first_flow_packets.has_value());
     PFL_EXPECT(first_flow_packets->size() == 1);
     PFL_EXPECT(first_flow_packets->front().packet_index == 0);
     PFL_EXPECT(first_flow_packets->front().captured_length == tcp_packet.size());
 
     const auto second_flow_packets = session.flow_packets(1);
-    PFL_EXPECT(second_flow_packets.has_value());
+    PFL_REQUIRE(second_flow_packets.has_value());
     PFL_EXPECT(second_flow_packets->size() == 1);
     PFL_EXPECT(second_flow_packets->front().packet_index == 1);
     PFL_EXPECT(second_flow_packets->front().captured_length == udp_packet.size());
@@ -119,7 +119,7 @@ void run_query_tests() {
     PFL_EXPECT(session.list_flow_packets(99).empty());
 
     const auto packet = session.find_packet(1);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     PFL_EXPECT(packet->packet_index == 1);
     PFL_EXPECT(packet->captured_length == udp_packet.size());
     PFL_EXPECT(packet->byte_offset == 40 + tcp_packet.size() + 16);
@@ -249,8 +249,8 @@ void run_query_tests() {
         }
     }
 
-    PFL_EXPECT(http_row != nullptr);
-    PFL_EXPECT(dns_row != nullptr);
+    PFL_REQUIRE(http_row != nullptr);
+    PFL_REQUIRE(dns_row != nullptr);
     PFL_EXPECT(http_row->service_hint == "hint.example");
     PFL_EXPECT(
         (http_row->address_a == "192.168.1.10" && http_row->port_a == 51515) ||
@@ -346,7 +346,7 @@ void run_query_tests() {
 
     cache_session.prepare_selected_flow_packet_cache(0, 2U);
     auto cache_info = cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(cache_info.has_value());
+    PFL_REQUIRE(cache_info.has_value());
     PFL_EXPECT(cache_info->flow_index == 0U);
     PFL_EXPECT(cache_info->cached_packet_window_count == 2U);
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 2U);
@@ -354,13 +354,13 @@ void run_query_tests() {
     PFL_EXPECT(!cache_info->limit_reached);
     PFL_EXPECT(cache_info->window_fully_cached);
     const auto first_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 1U);
-    PFL_EXPECT(first_selected_flow_packet.has_value());
+    PFL_REQUIRE(first_selected_flow_packet.has_value());
     PFL_EXPECT(first_selected_flow_packet->packet_index == 0U);
     const auto second_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 2U);
-    PFL_EXPECT(second_selected_flow_packet.has_value());
+    PFL_REQUIRE(second_selected_flow_packet.has_value());
     PFL_EXPECT(second_selected_flow_packet->packet_index == 2U);
     const auto third_selected_flow_packet = cache_session.selected_flow_packet_at(0U, 3U);
-    PFL_EXPECT(third_selected_flow_packet.has_value());
+    PFL_REQUIRE(third_selected_flow_packet.has_value());
     PFL_EXPECT(third_selected_flow_packet->packet_index == 3U);
     PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 0U) == std::optional<std::uint64_t> {1U});
     PFL_EXPECT(cache_session.selected_flow_packet_number(0U, 2U) == std::optional<std::uint64_t> {2U});
@@ -372,7 +372,7 @@ void run_query_tests() {
     PFL_EXPECT(!cache_session.selected_flow_packet_at(0U, 5U).has_value());
 
     const auto cached_flow_packets = cache_session.flow_packets(0);
-    PFL_EXPECT(cached_flow_packets.has_value());
+    PFL_REQUIRE(cached_flow_packets.has_value());
     PFL_EXPECT(cached_flow_packets->size() == 4U);
     PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[0]) == cache_packet_one);
     PFL_EXPECT(cache_session.read_packet_data((*cached_flow_packets)[1]) == cache_packet_two);
@@ -388,7 +388,7 @@ void run_query_tests() {
 
     cache_session.prepare_selected_flow_packet_cache(0, 4U);
     cache_info = cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(cache_info.has_value());
+    PFL_REQUIRE(cache_info.has_value());
     PFL_EXPECT(cache_info->flow_index == 0U);
     PFL_EXPECT(cache_info->cached_packet_window_count == 4U);
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 4U);
@@ -406,20 +406,20 @@ void run_query_tests() {
 
     cache_session.prepare_selected_flow_packet_cache(1, 1U);
     cache_info = cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(cache_info.has_value());
+    PFL_REQUIRE(cache_info.has_value());
     PFL_EXPECT(cache_info->flow_index == 1U);
     PFL_EXPECT(cache_info->cached_packet_window_count == 1U);
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 1U);
     PFL_EXPECT(cache_info->total_cached_bytes == 3U);
     PFL_EXPECT(cache_info->window_fully_cached);
     const auto cached_udp_flow_packets = cache_session.flow_packets(1);
-    PFL_EXPECT(cached_udp_flow_packets.has_value());
+    PFL_REQUIRE(cached_udp_flow_packets.has_value());
     PFL_EXPECT(cached_udp_flow_packets->size() == 1U);
     PFL_EXPECT(cache_session.read_packet_data((*cached_udp_flow_packets)[0]) == cache_packet_dns);
 
     cache_session.prepare_selected_flow_packet_cache(0, 2U);
     cache_info = cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(cache_info.has_value());
+    PFL_REQUIRE(cache_info.has_value());
     PFL_EXPECT(cache_info->flow_index == 0U);
     PFL_EXPECT(cache_info->cached_packet_window_count == 2U);
     PFL_EXPECT(cache_info->cached_packet_contribution_count == 2U);
@@ -429,7 +429,7 @@ void run_query_tests() {
     PFL_EXPECT(tcp_contribution_cache_session.open_capture(cache_path));
     PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 2U).empty());
     auto tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_REQUIRE(tcp_contribution_cache_info.has_value());
     PFL_EXPECT(tcp_contribution_cache_info->flow_index == 0U);
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 2U);
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 2U);
@@ -437,7 +437,7 @@ void run_query_tests() {
 
     PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 2U).empty());
     tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_REQUIRE(tcp_contribution_cache_info.has_value());
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 2U);
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 2U);
     PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 6U);
@@ -447,7 +447,7 @@ void run_query_tests() {
 
     PFL_EXPECT(tcp_contribution_cache_session.suspected_tcp_retransmission_packet_indices(0U, 4U).empty());
     tcp_contribution_cache_info = tcp_contribution_cache_session.selected_flow_packet_cache_info();
-    PFL_EXPECT(tcp_contribution_cache_info.has_value());
+    PFL_REQUIRE(tcp_contribution_cache_info.has_value());
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_window_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->cached_packet_contribution_count == 4U);
     PFL_EXPECT(tcp_contribution_cache_info->total_cached_bytes == 15U);

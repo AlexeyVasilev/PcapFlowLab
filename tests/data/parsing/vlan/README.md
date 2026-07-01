@@ -133,7 +133,7 @@ Current audited parser behavior:
 - Packets: 1
 - Layer chain: Ethernet / VLAN / partial IPv4
 - VLAN TPID: `0x8100`
-- Expected behavior: capture truncation remains visible; parser stays safe after VLAN and may produce partial or unrecognized behavior depending on current implementation. Richer partial IPv4 presentation is future IPv4 parser work.
+- Expected behavior: capture truncation remains visible; parser stays safe after VLAN and shows best-effort partial IPv4 details/warnings when enough inner IPv4 bytes are available. No fabricated flow tuple is created when the inner headers are incomplete.
 
 ## Expected generated file list
 

@@ -24,7 +24,7 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
-    PFL_EXPECT(packet.has_value());
+    PFL_REQUIRE(packet.has_value());
     return *packet;
 }
 
@@ -73,7 +73,7 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
     PFL_EXPECT(session.open_capture(fixture_path(relative_fixture_path), CaptureImportOptions {.mode = ImportMode::fast}));
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
-    PFL_EXPECT(details.has_value());
+    PFL_REQUIRE(details.has_value());
     return session_detail::build_packet_summary_layers(*details, packet, {
         .source_capture_accessible = true,
         .transport_payload_length = packet.payload_length,
@@ -134,7 +134,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(tcp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->ethernet.dst_mac == (std::array<std::uint8_t, 6> {0x00U, 0x11U, 0x22U, 0x33U, 0x44U, 0x55U}));
         PFL_EXPECT(details->ethernet.src_mac == (std::array<std::uint8_t, 6> {0x66U, 0x77U, 0x88U, 0x99U, 0xaaU, 0xbbU}));
@@ -161,11 +161,11 @@ void run_packet_details_tests() {
             .original_transport_payload_length = 0U,
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
-        PFL_EXPECT(!summary_layers.empty());
+        PFL_REQUIRE(!summary_layers.empty());
         PFL_EXPECT(summary_layers.front().id == "frame");
         PFL_EXPECT(summary_layers.front().title == "Frame: Packet 4 in Flow, Packet 8 in file");
         PFL_EXPECT(!summary_layers.front().expanded_by_default);
-        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_REQUIRE(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[1].id == "ethernet");
         PFL_EXPECT(!summary_layers[1].expanded_by_default);
         PFL_EXPECT(summary_layers[2].id == "ipv4");
@@ -183,10 +183,10 @@ void run_packet_details_tests() {
         const auto* ethernet_layer = find_summary_layer(summary_layers, "ethernet");
         const auto* ipv4_layer = find_summary_layer(summary_layers, "ipv4");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(frame_layer != nullptr);
-        PFL_EXPECT(ethernet_layer != nullptr);
-        PFL_EXPECT(ipv4_layer != nullptr);
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(ethernet_layer != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* frame_in_flow_field = find_summary_field(*frame_layer, "Packet number in flow");
         const auto* frame_in_file_field = find_summary_field(*frame_layer, "Packet number in file");
         const auto* frame_captured_length_field = find_summary_field(*frame_layer, "Captured Length");
@@ -214,32 +214,32 @@ void run_packet_details_tests() {
         const auto* tcp_checksum_field = find_summary_field(*tcp_layer, "Checksum");
         const auto* tcp_urgent_pointer_field = find_summary_field(*tcp_layer, "Urgent Pointer");
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(frame_in_flow_field != nullptr);
-        PFL_EXPECT(frame_in_file_field != nullptr);
-        PFL_EXPECT(frame_captured_length_field != nullptr);
-        PFL_EXPECT(frame_original_length_field != nullptr);
-        PFL_EXPECT(ethernet_source_field != nullptr);
-        PFL_EXPECT(ethernet_destination_field != nullptr);
-        PFL_EXPECT(ethernet_type_field != nullptr);
-        PFL_EXPECT(ipv4_ihl_field != nullptr);
-        PFL_EXPECT(ipv4_ds_field != nullptr);
-        PFL_EXPECT(ipv4_total_length_field != nullptr);
-        PFL_EXPECT(ipv4_identification_field != nullptr);
-        PFL_EXPECT(ipv4_flags_field != nullptr);
-        PFL_EXPECT(ipv4_fragment_offset_field != nullptr);
-        PFL_EXPECT(ipv4_protocol_field != nullptr);
-        PFL_EXPECT(ipv4_checksum_field != nullptr);
-        PFL_EXPECT(ipv4_src_field != nullptr);
-        PFL_EXPECT(ipv4_dst_field != nullptr);
-        PFL_EXPECT(tcp_source_port_field != nullptr);
-        PFL_EXPECT(tcp_destination_port_field != nullptr);
-        PFL_EXPECT(tcp_sequence_field != nullptr);
-        PFL_EXPECT(tcp_acknowledgment_field != nullptr);
-        PFL_EXPECT(tcp_header_length_field != nullptr);
-        PFL_EXPECT(tcp_flags_field != nullptr);
-        PFL_EXPECT(tcp_window_field != nullptr);
-        PFL_EXPECT(tcp_checksum_field != nullptr);
-        PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
+        PFL_REQUIRE(frame_in_flow_field != nullptr);
+        PFL_REQUIRE(frame_in_file_field != nullptr);
+        PFL_REQUIRE(frame_captured_length_field != nullptr);
+        PFL_REQUIRE(frame_original_length_field != nullptr);
+        PFL_REQUIRE(ethernet_source_field != nullptr);
+        PFL_REQUIRE(ethernet_destination_field != nullptr);
+        PFL_REQUIRE(ethernet_type_field != nullptr);
+        PFL_REQUIRE(ipv4_ihl_field != nullptr);
+        PFL_REQUIRE(ipv4_ds_field != nullptr);
+        PFL_REQUIRE(ipv4_total_length_field != nullptr);
+        PFL_REQUIRE(ipv4_identification_field != nullptr);
+        PFL_REQUIRE(ipv4_flags_field != nullptr);
+        PFL_REQUIRE(ipv4_fragment_offset_field != nullptr);
+        PFL_REQUIRE(ipv4_protocol_field != nullptr);
+        PFL_REQUIRE(ipv4_checksum_field != nullptr);
+        PFL_REQUIRE(ipv4_src_field != nullptr);
+        PFL_REQUIRE(ipv4_dst_field != nullptr);
+        PFL_REQUIRE(tcp_source_port_field != nullptr);
+        PFL_REQUIRE(tcp_destination_port_field != nullptr);
+        PFL_REQUIRE(tcp_sequence_field != nullptr);
+        PFL_REQUIRE(tcp_acknowledgment_field != nullptr);
+        PFL_REQUIRE(tcp_header_length_field != nullptr);
+        PFL_REQUIRE(tcp_flags_field != nullptr);
+        PFL_REQUIRE(tcp_window_field != nullptr);
+        PFL_REQUIRE(tcp_checksum_field != nullptr);
+        PFL_REQUIRE(tcp_urgent_pointer_field != nullptr);
         PFL_EXPECT(tcp_options_layer == nullptr);
         PFL_EXPECT(frame_in_flow_field->value == "4");
         PFL_EXPECT(frame_in_file_field->value == "8");
@@ -279,7 +279,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(udp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->ipv4.protocol == 17);
         PFL_EXPECT(details->has_udp);
@@ -293,7 +293,7 @@ void run_packet_details_tests() {
             .original_transport_payload_length = 0U,
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
-        PFL_EXPECT(summary_layers.size() >= 4U);
+        PFL_REQUIRE(summary_layers.size() >= 4U);
         PFL_EXPECT(summary_layers[0].id == "frame");
         PFL_EXPECT(summary_layers[0].title == "Frame: Packet 9 in file");
         PFL_EXPECT(!summary_layers[0].expanded_by_default);
@@ -306,17 +306,17 @@ void run_packet_details_tests() {
         PFL_EXPECT(summary_layers[3].title == "UDP, Src Port: 5353, Dst Port: 53");
         PFL_EXPECT(summary_layers.size() == 4U);
         const auto* udp_layer = find_summary_layer(summary_layers, "udp");
-        PFL_EXPECT(udp_layer != nullptr);
+        PFL_REQUIRE(udp_layer != nullptr);
         const auto* udp_source_port_field = find_summary_field(*udp_layer, "Source Port");
         const auto* udp_destination_port_field = find_summary_field(*udp_layer, "Destination Port");
         const auto* udp_length_field = find_summary_field(*udp_layer, "Length");
         const auto* udp_checksum_field = find_summary_field(*udp_layer, "Checksum");
         const auto* udp_payload_length_field = find_summary_field(*udp_layer, "Payload Length");
-        PFL_EXPECT(udp_source_port_field != nullptr);
-        PFL_EXPECT(udp_destination_port_field != nullptr);
-        PFL_EXPECT(udp_length_field != nullptr);
-        PFL_EXPECT(udp_checksum_field != nullptr);
-        PFL_EXPECT(udp_payload_length_field != nullptr);
+        PFL_REQUIRE(udp_source_port_field != nullptr);
+        PFL_REQUIRE(udp_destination_port_field != nullptr);
+        PFL_REQUIRE(udp_length_field != nullptr);
+        PFL_REQUIRE(udp_checksum_field != nullptr);
+        PFL_REQUIRE(udp_payload_length_field != nullptr);
         PFL_EXPECT(udp_source_port_field->value == "5353");
         PFL_EXPECT(udp_destination_port_field->value == "53");
         PFL_EXPECT(udp_length_field->value == "8 bytes");
@@ -336,7 +336,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(syn_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_tcp);
         PFL_EXPECT(details->tcp.src_port == 41580U);
         PFL_EXPECT(details->tcp.dst_port == 443U);
@@ -355,7 +355,7 @@ void run_packet_details_tests() {
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         PFL_EXPECT(tcp_layer->title == "TCP, Src Port: 41580, Dst Port: 443");
         PFL_EXPECT(tcp_layer->title.find("Seq:") == std::string::npos);
         PFL_EXPECT(tcp_layer->title.find("Ack:") == std::string::npos);
@@ -368,14 +368,14 @@ void run_packet_details_tests() {
         const auto* tcp_checksum_field = find_summary_field(*tcp_layer, "Checksum");
         const auto* tcp_urgent_pointer_field = find_summary_field(*tcp_layer, "Urgent Pointer");
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_sequence_field != nullptr);
-        PFL_EXPECT(tcp_acknowledgment_field != nullptr);
-        PFL_EXPECT(tcp_header_length_field != nullptr);
-        PFL_EXPECT(tcp_flags_field != nullptr);
-        PFL_EXPECT(tcp_window_field != nullptr);
-        PFL_EXPECT(tcp_checksum_field != nullptr);
-        PFL_EXPECT(tcp_urgent_pointer_field != nullptr);
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_sequence_field != nullptr);
+        PFL_REQUIRE(tcp_acknowledgment_field != nullptr);
+        PFL_REQUIRE(tcp_header_length_field != nullptr);
+        PFL_REQUIRE(tcp_flags_field != nullptr);
+        PFL_REQUIRE(tcp_window_field != nullptr);
+        PFL_REQUIRE(tcp_checksum_field != nullptr);
+        PFL_REQUIRE(tcp_urgent_pointer_field != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         PFL_EXPECT(tcp_sequence_field->value == "1455851779");
         PFL_EXPECT(tcp_acknowledgment_field->value == "0");
         PFL_EXPECT(tcp_header_length_field->value == "32 bytes (8)");
@@ -390,18 +390,18 @@ void run_packet_details_tests() {
         const auto* tcp_nop_option1 = find_summary_child(*tcp_options_layer, "tcp_option_nop", 1U);
         const auto* tcp_sack_permitted_option = find_summary_child(*tcp_options_layer, "tcp_option_sack_permitted");
         const auto* tcp_window_scale_option = find_summary_child(*tcp_options_layer, "tcp_option_window_scale");
-        PFL_EXPECT(tcp_options_raw_field != nullptr);
+        PFL_REQUIRE(tcp_options_raw_field != nullptr);
         PFL_EXPECT(tcp_options_raw_field->value ==
             "0x02, 0x04, 0x05, 0xb4, 0x01, 0x01, 0x04, 0x02, 0x01, 0x03, 0x03, 0x07");
-        PFL_EXPECT(tcp_mss_option != nullptr);
-        PFL_EXPECT(tcp_nop_option0 != nullptr);
-        PFL_EXPECT(tcp_nop_option1 != nullptr);
-        PFL_EXPECT(tcp_sack_permitted_option != nullptr);
-        PFL_EXPECT(tcp_window_scale_option != nullptr);
+        PFL_REQUIRE(tcp_mss_option != nullptr);
+        PFL_REQUIRE(tcp_nop_option0 != nullptr);
+        PFL_REQUIRE(tcp_nop_option1 != nullptr);
+        PFL_REQUIRE(tcp_sack_permitted_option != nullptr);
+        PFL_REQUIRE(tcp_window_scale_option != nullptr);
         const auto* tcp_mss_value_field = find_summary_field(*tcp_mss_option, "MSS");
         const auto* tcp_window_scale_field = find_summary_field(*tcp_window_scale_option, "Shift Count");
-        PFL_EXPECT(tcp_mss_value_field != nullptr);
-        PFL_EXPECT(tcp_window_scale_field != nullptr);
+        PFL_REQUIRE(tcp_mss_value_field != nullptr);
+        PFL_REQUIRE(tcp_window_scale_field != nullptr);
         PFL_EXPECT(tcp_mss_value_field->value == "1460 bytes");
         PFL_EXPECT(tcp_window_scale_field->value == "7");
     }
@@ -409,80 +409,80 @@ void run_packet_details_tests() {
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/03_tcp_syn_mss.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         PFL_EXPECT(tcp_options_layer->title == "TCP Options (4 bytes)");
         const auto* tcp_mss_option = find_summary_child(*tcp_options_layer, "tcp_option_mss");
-        PFL_EXPECT(tcp_mss_option != nullptr);
+        PFL_REQUIRE(tcp_mss_option != nullptr);
         const auto* tcp_mss_value = find_summary_field(*tcp_mss_option, "MSS");
-        PFL_EXPECT(tcp_mss_value != nullptr);
+        PFL_REQUIRE(tcp_mss_value != nullptr);
         PFL_EXPECT(tcp_mss_value->value == "1460 bytes");
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/04_tcp_syn_mss_window_scale_sack_timestamp.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_mss") != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_sack_permitted") != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_timestamp") != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_window_scale") != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_nop", 0U) != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_options_layer, "tcp_option_mss") != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_options_layer, "tcp_option_sack_permitted") != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_options_layer, "tcp_option_timestamp") != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_options_layer, "tcp_option_window_scale") != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_options_layer, "tcp_option_nop", 0U) != nullptr);
         const auto* timestamp_option = find_summary_child(*tcp_options_layer, "tcp_option_timestamp");
-        PFL_EXPECT(timestamp_option != nullptr);
-        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp value") != nullptr);
-        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp echo reply") != nullptr);
+        PFL_REQUIRE(timestamp_option != nullptr);
+        PFL_REQUIRE(find_summary_field(*timestamp_option, "Timestamp value") != nullptr);
+        PFL_REQUIRE(find_summary_field(*timestamp_option, "Timestamp echo reply") != nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/07_tcp_ack_sack_blocks.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         const auto* sack_option = find_summary_child(*tcp_options_layer, "tcp_option_sack");
-        PFL_EXPECT(sack_option != nullptr);
-        PFL_EXPECT(find_summary_field(*sack_option, "Block 1 Left Edge") != nullptr);
-        PFL_EXPECT(find_summary_field(*sack_option, "Block 1 Right Edge") != nullptr);
-        PFL_EXPECT(find_summary_field(*sack_option, "Block 2 Left Edge") != nullptr);
-        PFL_EXPECT(find_summary_field(*sack_option, "Block 2 Right Edge") != nullptr);
+        PFL_REQUIRE(sack_option != nullptr);
+        PFL_REQUIRE(find_summary_field(*sack_option, "Block 1 Left Edge") != nullptr);
+        PFL_REQUIRE(find_summary_field(*sack_option, "Block 1 Right Edge") != nullptr);
+        PFL_REQUIRE(find_summary_field(*sack_option, "Block 2 Left Edge") != nullptr);
+        PFL_REQUIRE(find_summary_field(*sack_option, "Block 2 Right Edge") != nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/08_tcp_ack_timestamp_only.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         const auto* timestamp_option = find_summary_child(*tcp_options_layer, "tcp_option_timestamp");
-        PFL_EXPECT(timestamp_option != nullptr);
-        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp value") != nullptr);
-        PFL_EXPECT(find_summary_field(*timestamp_option, "Timestamp echo reply") != nullptr);
+        PFL_REQUIRE(timestamp_option != nullptr);
+        PFL_REQUIRE(find_summary_field(*timestamp_option, "Timestamp value") != nullptr);
+        PFL_REQUIRE(find_summary_field(*timestamp_option, "Timestamp echo reply") != nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/09_tcp_syn_unknown_valid_option.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         const auto* unknown_option = find_summary_child(*tcp_options_layer, "tcp_option_unknown");
-        PFL_EXPECT(unknown_option != nullptr);
-        PFL_EXPECT(find_summary_field(*unknown_option, "Kind") != nullptr);
-        PFL_EXPECT(find_summary_field(*unknown_option, "Raw") != nullptr);
+        PFL_REQUIRE(unknown_option != nullptr);
+        PFL_REQUIRE(find_summary_field(*unknown_option, "Kind") != nullptr);
+        PFL_REQUIRE(find_summary_field(*unknown_option, "Raw") != nullptr);
     }
 
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/13_tcp_option_length_zero_malformed.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         const auto* malformed_option = find_summary_child(*tcp_options_layer, "tcp_option_malformed");
-        PFL_EXPECT(malformed_option != nullptr);
+        PFL_REQUIRE(malformed_option != nullptr);
         PFL_EXPECT(malformed_option->warning);
         PFL_EXPECT(malformed_option->title.find("invalid length 0") != std::string::npos);
     }
@@ -490,11 +490,11 @@ void run_packet_details_tests() {
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/16_tcp_option_truncated_timestamp_malformed.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
         const auto* malformed_option = find_summary_child(*tcp_options_layer, "tcp_option_malformed");
-        PFL_EXPECT(malformed_option != nullptr);
+        PFL_REQUIRE(malformed_option != nullptr);
         PFL_EXPECT(malformed_option->warning);
         PFL_EXPECT(malformed_option->title == "Malformed Timestamp Option");
     }
@@ -502,12 +502,12 @@ void run_packet_details_tests() {
     {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/17_tcp_option_eol_then_nonzero_padding.pcap");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_options_layer = find_summary_child(*tcp_layer, "tcp_options");
-        PFL_EXPECT(tcp_options_layer != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_options_layer, "tcp_option_eol") != nullptr);
+        PFL_REQUIRE(tcp_options_layer != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_options_layer, "tcp_option_eol") != nullptr);
         const auto* malformed_option = find_summary_child(*tcp_options_layer, "tcp_option_malformed");
-        PFL_EXPECT(malformed_option != nullptr);
+        PFL_REQUIRE(malformed_option != nullptr);
         PFL_EXPECT(malformed_option->title == "Non-zero padding after EOL");
     }
 
@@ -515,10 +515,10 @@ void run_packet_details_tests() {
         const auto summary_layers = build_fixture_summary_layers("parsing/tcp_options/20_tcp_syn_ipv4_options_and_tcp_options.pcap");
         const auto* ipv4_layer = find_summary_layer(summary_layers, "ipv4");
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(ipv4_layer != nullptr);
-        PFL_EXPECT(tcp_layer != nullptr);
-        PFL_EXPECT(find_summary_field(*ipv4_layer, "Internet Header Length") != nullptr);
-        PFL_EXPECT(find_summary_child(*tcp_layer, "tcp_options") != nullptr);
+        PFL_REQUIRE(ipv4_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
+        PFL_REQUIRE(find_summary_field(*ipv4_layer, "Internet Header Length") != nullptr);
+        PFL_REQUIRE(find_summary_child(*tcp_layer, "tcp_options") != nullptr);
     }
 
     {
@@ -526,7 +526,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .transport_payload_length = packet.payload_length,
             .original_transport_payload_length = packet.payload_length,
@@ -545,7 +545,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto protocol_text = session.derive_quic_protocol_text_for_packet(0U, packet.packet_index)
             .value_or(session.read_packet_protocol_details_text(packet));
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
@@ -564,7 +564,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .transport_payload_length = packet.payload_length,
             .original_transport_payload_length = packet.payload_length,
@@ -583,7 +583,7 @@ void run_packet_details_tests() {
         PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .transport_payload_length = packet.payload_length,
             .original_transport_payload_length = packet.payload_length,
@@ -610,7 +610,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(captured_udp_with_payload, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->ipv4.protocol == 17);
         PFL_EXPECT(details->has_udp);
@@ -624,13 +624,13 @@ void run_packet_details_tests() {
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* udp_layer = find_summary_layer(summary_layers, "udp");
-        PFL_EXPECT(udp_layer != nullptr);
+        PFL_REQUIRE(udp_layer != nullptr);
         const auto* udp_payload_length_field = find_summary_field(*udp_layer, "Payload Length");
         const auto* udp_captured_payload_length_field = find_summary_field(*udp_layer, "Captured Payload Length");
         const auto* udp_original_payload_length_field = find_summary_field(*udp_layer, "Original Payload Length");
         PFL_EXPECT(udp_payload_length_field == nullptr);
-        PFL_EXPECT(udp_captured_payload_length_field != nullptr);
-        PFL_EXPECT(udp_original_payload_length_field != nullptr);
+        PFL_REQUIRE(udp_captured_payload_length_field != nullptr);
+        PFL_REQUIRE(udp_original_payload_length_field != nullptr);
         PFL_EXPECT(udp_captured_payload_length_field->value == "4 bytes");
         PFL_EXPECT(udp_original_payload_length_field->value == "7 bytes");
     }
@@ -650,7 +650,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(captured_tcp_with_payload, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_tcp);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
@@ -659,13 +659,13 @@ void run_packet_details_tests() {
             .protocol_details_text = "No protocol-specific details available for this packet.",
         });
         const auto* tcp_layer = find_summary_layer(summary_layers, "tcp");
-        PFL_EXPECT(tcp_layer != nullptr);
+        PFL_REQUIRE(tcp_layer != nullptr);
         const auto* tcp_payload_length_field = find_summary_field(*tcp_layer, "Payload Length");
         const auto* tcp_captured_payload_length_field = find_summary_field(*tcp_layer, "Captured Payload Length");
         const auto* tcp_original_payload_length_field = find_summary_field(*tcp_layer, "Original Payload Length");
         PFL_EXPECT(tcp_payload_length_field == nullptr);
-        PFL_EXPECT(tcp_captured_payload_length_field != nullptr);
-        PFL_EXPECT(tcp_original_payload_length_field != nullptr);
+        PFL_REQUIRE(tcp_captured_payload_length_field != nullptr);
+        PFL_REQUIRE(tcp_original_payload_length_field != nullptr);
         PFL_EXPECT(tcp_captured_payload_length_field->value == "4 bytes");
         PFL_EXPECT(tcp_original_payload_length_field->value == "7 bytes");
     }
@@ -681,7 +681,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.hardware_type == 1U);
         PFL_EXPECT(details->arp.protocol_type == 0x0800U);
@@ -736,7 +736,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(padded_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.sender_hardware_address.size() == 6U);
         PFL_EXPECT(details->arp.target_hardware_address.size() == 6U);
@@ -757,7 +757,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(vlan_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->has_vlan);
         const std::array<std::uint8_t, 4> expected_vlan_sender_ipv4 {10U, 10U, 12U, 3U};
@@ -784,7 +784,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(truncated_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(!details->arp.fixed_header_truncated);
         PFL_EXPECT(details->arp.address_section_truncated);
@@ -820,7 +820,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(short_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.fixed_header_truncated);
     }
@@ -836,7 +836,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(icmp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_icmp);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet_ref, {
             .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
@@ -860,7 +860,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(icmpv6_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_icmpv6);
         PFL_EXPECT(details->ipv6.traffic_class == 0U);
         PFL_EXPECT(details->ipv6.flow_label == 0U);
@@ -872,15 +872,15 @@ void run_packet_details_tests() {
         PFL_EXPECT(summary_layers.back().id == "icmpv6");
         PFL_EXPECT(summary_layers[summary_layers.size() - 2U].title.find("IPv6, Src:") != std::string::npos);
         const auto* ipv6_layer = find_summary_layer(summary_layers, "ipv6");
-        PFL_EXPECT(ipv6_layer != nullptr);
+        PFL_REQUIRE(ipv6_layer != nullptr);
         const auto* ipv6_traffic_class_field = find_summary_field(*ipv6_layer, "Traffic Class");
         const auto* ipv6_flow_label_field = find_summary_field(*ipv6_layer, "Flow Label");
         const auto* ipv6_payload_length_field = find_summary_field(*ipv6_layer, "Payload Length");
         const auto* ipv6_next_header_field = find_summary_field(*ipv6_layer, "Next Header");
-        PFL_EXPECT(ipv6_traffic_class_field != nullptr);
-        PFL_EXPECT(ipv6_flow_label_field != nullptr);
-        PFL_EXPECT(ipv6_payload_length_field != nullptr);
-        PFL_EXPECT(ipv6_next_header_field != nullptr);
+        PFL_REQUIRE(ipv6_traffic_class_field != nullptr);
+        PFL_REQUIRE(ipv6_flow_label_field != nullptr);
+        PFL_REQUIRE(ipv6_payload_length_field != nullptr);
+        PFL_REQUIRE(ipv6_next_header_field != nullptr);
         PFL_EXPECT(ipv6_traffic_class_field->value == "0x00");
         PFL_EXPECT(ipv6_flow_label_field->value == "0x0");
         PFL_EXPECT(ipv6_payload_length_field->value == "16 bytes");
@@ -907,7 +907,7 @@ void run_packet_details_tests() {
         };
 
         const auto details = service.decode(custom_arp_packet, packet_ref);
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_arp);
         PFL_EXPECT(details->arp.hardware_type == 7U);
         PFL_EXPECT(details->arp.protocol_type == 0x1234U);
@@ -934,10 +934,10 @@ void run_packet_details_tests() {
             .protocol = ProtocolId::tcp,
         });
         const auto* connection = session.state().ipv4_connections.find(key);
-        PFL_EXPECT(connection != nullptr);
+        PFL_REQUIRE(connection != nullptr);
 
         const auto details = session.read_packet_details(connection->flow_a.packets.front());
-        PFL_EXPECT(details.has_value());
+        PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->packet_index == 0);
         PFL_EXPECT(details->has_tcp);
         PFL_EXPECT(details->tcp.dst_port == 443);
