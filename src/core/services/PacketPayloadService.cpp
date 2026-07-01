@@ -1,4 +1,4 @@
-﻿#include "core/services/PacketPayloadService.h"
+#include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
 #include <optional>

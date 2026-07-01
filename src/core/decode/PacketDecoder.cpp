@@ -162,6 +162,11 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 return {};
             }
 
+            const auto udp_length = detail::read_be16(bounded_bytes, transport_offset + 4U);
+            if (udp_length < detail::kUdpHeaderSize) {
+                return {};
+            }
+
             auto flow_key = flow_base;
             flow_key.src_port = detail::read_be16(bounded_bytes, transport_offset);
             flow_key.dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U);
@@ -308,6 +313,11 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         if (payload->next_header == detail::kIpProtocolUdp) {
             if (payload->payload_offset + detail::kUdpHeaderSize > packet_end ||
                 bounded_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
+                return {};
+            }
+
+            const auto udp_length = detail::read_be16(bounded_bytes, payload->payload_offset + 4U);
+            if (udp_length < detail::kUdpHeaderSize) {
                 return {};
             }
 
