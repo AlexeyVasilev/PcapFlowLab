@@ -35,6 +35,14 @@ Item {
     readonly property bool selectedFlowWorkspaceLoading: root.selectedFlowIndex >= 0 && (root.packetsLoading || root.streamLoading)
     readonly property bool packetsTabSelected: flowDetailTabs.currentIndex === 0
 
+    function lowerToolbarStatusColor() {
+        if (!root.packetsTabSelected && !root.sourceCaptureAvailable && root.selectedFlowIndex >= 0) {
+            return "#8a6a12"
+        }
+
+        return "#6b7280"
+    }
+
     function lowerToolbarStatusText() {
         if (root.packetsTabSelected) {
             if (root.packetsLoading) {
@@ -220,7 +228,7 @@ Item {
                         Label {
                             Layout.fillWidth: true
                             text: root.lowerToolbarStatusText()
-                            color: "#6b7280"
+                            color: root.lowerToolbarStatusColor()
                             elide: Text.ElideRight
                             verticalAlignment: Text.AlignVCenter
                             font.pixelSize: 12

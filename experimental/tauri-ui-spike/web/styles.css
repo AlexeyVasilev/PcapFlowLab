@@ -1209,18 +1209,13 @@ select:disabled {
 
 .endpoint-cell-inner {
   display: inline-grid;
-  grid-template-columns: minmax(0, 16ch) 1ch 5ch;
+  grid-template-columns: max-content 1ch 5ch;
   align-items: center;
   column-gap: 0.35rem;
   justify-content: start;
-  max-width: 100%;
-  min-width: 0;
 }
 
 .endpoint-address {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

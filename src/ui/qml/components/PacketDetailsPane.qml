@@ -438,6 +438,7 @@ Frame {
         property int textWrapMode: TextEdit.NoWrap
 
         readOnly: true
+        activeFocusOnTab: false
         selectByMouse: true
         textFormat: TextEdit.PlainText
         wrapMode: textWrapMode

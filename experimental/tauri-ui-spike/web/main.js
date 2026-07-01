@@ -585,12 +585,12 @@
       return "";
     }
 
-    const displayAddress = trimmedAddress.includes(":")
+    const displayAddress = hasPort && trimmedAddress.includes(":")
       ? `[${trimmedAddress}]`
       : trimmedAddress;
 
     return hasPort
-      ? `${displayAddress}  :  ${numericPort}`
+      ? `${displayAddress} : ${numericPort}`
       : displayAddress;
   }
 
