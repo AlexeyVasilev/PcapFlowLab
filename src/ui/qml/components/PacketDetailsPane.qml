@@ -431,6 +431,23 @@ Frame {
         }
     }
 
+    component SelectableText: TextEdit {
+        property color textColor: "#0f172a"
+        property bool monospace: false
+        property bool bold: false
+        property int textWrapMode: TextEdit.NoWrap
+
+        readOnly: true
+        selectByMouse: true
+        textFormat: TextEdit.PlainText
+        wrapMode: textWrapMode
+        color: textColor
+        font.family: monospace ? "Consolas" : ""
+        font.pixelSize: 12
+        font.bold: bold
+        cursorVisible: activeFocus
+    }
+
     component SummaryFieldRow: Item {
         required property var modelData
         readonly property string labelText: modelData && modelData["label"] !== undefined && modelData["label"] !== null
@@ -450,20 +467,17 @@ Frame {
             columnSpacing: 6
             rowSpacing: 1
 
-            Label {
+            SelectableText {
                 visible: !fullWidth
                 text: fullWidth ? "" : labelText
-                color: "#64748b"
-                font.pixelSize: 12
+                textColor: "#64748b"
             }
 
-            Label {
+            SelectableText {
                 Layout.fillWidth: true
                 text: valueText
-                color: "#0f172a"
-                font.pixelSize: 12
-                font.bold: false
-                wrapMode: Text.Wrap
+                textColor: "#0f172a"
+                textWrapMode: TextEdit.Wrap
             }
         }
     }
@@ -543,12 +557,11 @@ Frame {
                     }
                 }
 
-                Label {
+                SelectableText {
                     Layout.fillWidth: true
                     text: summaryLayerCard.titleText
-                    font.pixelSize: 12
-                    font.bold: false
-                    color: "#0f172a"
+                    textColor: "#0f172a"
+                    clip: true
                 }
 
                 Rectangle {
@@ -909,14 +922,14 @@ Frame {
                         radius: 6
                         implicitHeight: warningLabel.implicitHeight + 12
 
-                        Text {
+                        SelectableText {
                             id: warningLabel
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
                             anchors.margins: 6
-                            wrapMode: Text.Wrap
-                            color: "#7a5d10"
+                            textColor: "#7a5d10"
+                            textWrapMode: TextEdit.Wrap
                             text: packetSummaryPane.warningText.length > 0
                                 ? "Warnings\n" + packetSummaryPane.warningText
                                 : ""
@@ -1008,14 +1021,14 @@ Frame {
                         radius: 6
                         implicitHeight: streamWarningLabel.implicitHeight + 12
 
-                        Text {
+                        SelectableText {
                             id: streamWarningLabel
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
                             anchors.margins: 6
-                            wrapMode: Text.Wrap
-                            color: "#7a5d10"
+                            textColor: "#7a5d10"
+                            textWrapMode: TextEdit.Wrap
                             text: parent.parent.parent.warningText.length > 0
                                 ? "Warnings\n" + parent.parent.parent.warningText
                                 : ""
