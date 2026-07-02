@@ -18,6 +18,7 @@ Frame {
     readonly property int tableContentLeftMargin: 6
     readonly property int tableContentRightMargin: 6
     readonly property int selectionColumnWidth: 42
+    readonly property int rowClickLeftMargin: root.tableContentLeftMargin + root.selectionColumnWidth + root.tableRowSpacing - 2
     readonly property int indexColumnWidth: 64
     readonly property int familyColumnWidth: 74
     readonly property int protocolColumnWidth: 86
@@ -540,7 +541,7 @@ Frame {
                                 anchors.bottom: parent.bottom
                                 anchors.left: parent.left
                                 anchors.right: parent.right
-                                anchors.leftMargin: 52
+                                anchors.leftMargin: root.rowClickLeftMargin
                                 hoverEnabled: true
                                 onClicked: {
                                     flowListView.currentIndex = index

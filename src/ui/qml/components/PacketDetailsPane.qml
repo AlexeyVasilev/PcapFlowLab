@@ -436,12 +436,14 @@ Frame {
         property bool monospace: false
         property bool bold: false
         property int textWrapMode: TextEdit.NoWrap
+        property bool clipOverflow: textWrapMode === TextEdit.NoWrap
 
         readOnly: true
         activeFocusOnTab: false
         selectByMouse: true
         textFormat: TextEdit.PlainText
         wrapMode: textWrapMode
+        clip: clipOverflow
         color: textColor
         font.family: monospace ? "Consolas" : ""
         font.pixelSize: 12
