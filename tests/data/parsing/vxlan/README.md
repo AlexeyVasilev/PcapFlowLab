@@ -18,6 +18,11 @@ Current branch intent:
 - VXLAN VNI is presentation metadata for now, not part of flow identity;
 - malformed VXLAN cases should remain conservative and should not fabricate inner flow tuples.
 
+Current implemented status:
+- valid UDP/4789 VXLAN carrying inner Ethernet plus IPv4/IPv6 plus TCP/UDP now uses the inner tuple for flow grouping;
+- valid inner Ethernet plus VLAN plus IPv4 plus TCP continuation is also expected to work through the existing inner Ethernet/VLAN path;
+- VNI is still not part of flow identity, so identical inner tuples from different VNIs may still merge.
+
 ## Local generation
 
 Run from the repository root after installing Scapy locally:

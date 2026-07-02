@@ -58,6 +58,7 @@ inline constexpr std::size_t kIpv6HeaderSize = 40;
 inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
+inline constexpr std::size_t kVxlanHeaderSize = 8U;
 inline constexpr std::size_t kIgmpMinimumHeaderSize = 8;
 inline constexpr std::size_t kPppoeHeaderSize = 6U;
 inline constexpr std::size_t kPppProtocolFieldSize = 2U;
@@ -70,6 +71,8 @@ inline constexpr std::uint8_t kIgmpTypeV1MembershipReport = 0x12;
 inline constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16;
 inline constexpr std::uint8_t kIgmpTypeLeaveGroup = 0x17;
 inline constexpr std::uint8_t kIgmpTypeV3MembershipReport = 0x22;
+inline constexpr std::uint16_t kUdpPortVxlan = 4789U;
+inline constexpr std::uint8_t kVxlanFlagI = 0x08U;
 
 struct LinkLayerPayloadView {
     std::uint16_t protocol_type {0};
@@ -157,6 +160,19 @@ enum class MplsParseStatus : std::uint8_t {
 struct EthernetContinuationView {
     LinkLayerPayloadView link_layer {};
     std::optional<std::size_t> bounded_packet_end {};
+    bool resolved_supported_protocol {false};
+    std::uint16_t resolved_protocol_type {0};
+    std::size_t resolved_payload_offset {0};
+};
+
+struct VxlanPayloadView {
+    std::uint32_t vni {0};
+    std::size_t inner_payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
+    bool has_inner_ethernet {false};
+    bool inner_ethernet_truncated {false};
+    std::size_t inner_ethernet_offset {0};
+    LinkLayerPayloadView inner_ethernet {};
     bool resolved_supported_protocol {false};
     std::uint16_t resolved_protocol_type {0};
     std::size_t resolved_payload_offset {0};
@@ -587,6 +603,62 @@ inline std::optional<EthernetContinuationView> parse_ethernet_continuation(
         view.resolved_supported_protocol = true;
         view.resolved_protocol_type = link_layer->protocol_type;
         view.resolved_payload_offset = link_layer->payload_offset;
+    }
+
+    return view;
+}
+
+inline std::optional<VxlanPayloadView> parse_vxlan_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t vxlan_offset,
+    const std::size_t vxlan_payload_end
+) {
+    if (vxlan_offset + kVxlanHeaderSize > vxlan_payload_end ||
+        bytes.size() < vxlan_offset + kVxlanHeaderSize) {
+        return std::nullopt;
+    }
+
+    if (bytes[vxlan_offset] != kVxlanFlagI ||
+        bytes[vxlan_offset + 1U] != 0U ||
+        bytes[vxlan_offset + 2U] != 0U ||
+        bytes[vxlan_offset + 3U] != 0U ||
+        bytes[vxlan_offset + 7U] != 0U) {
+        return std::nullopt;
+    }
+
+    VxlanPayloadView view {};
+    view.vni = ((static_cast<std::uint32_t>(bytes[vxlan_offset + 4U]) << 16U) |
+                (static_cast<std::uint32_t>(bytes[vxlan_offset + 5U]) << 8U) |
+                static_cast<std::uint32_t>(bytes[vxlan_offset + 6U]));
+    view.inner_payload_offset = vxlan_offset + kVxlanHeaderSize;
+    view.bounded_packet_end = vxlan_payload_end;
+    view.inner_ethernet_offset = view.inner_payload_offset;
+
+    if (vxlan_payload_end <= view.inner_payload_offset) {
+        view.inner_ethernet_truncated = true;
+        return view;
+    }
+
+    const auto inner_payload_length = vxlan_payload_end - view.inner_payload_offset;
+    if (inner_payload_length < kEthernetHeaderSize) {
+        view.has_inner_ethernet = true;
+        view.inner_ethernet_truncated = true;
+        return view;
+    }
+
+    const auto inner_bytes = bytes.subspan(view.inner_payload_offset, inner_payload_length);
+    if (const auto continuation = parse_ethernet_continuation(inner_bytes, 0U); continuation.has_value()) {
+        view.has_inner_ethernet = true;
+        view.inner_ethernet = continuation->link_layer;
+        if (continuation->bounded_packet_end.has_value()) {
+            view.bounded_packet_end = view.inner_payload_offset + *continuation->bounded_packet_end;
+        }
+        if (continuation->resolved_supported_protocol) {
+            view.resolved_supported_protocol = true;
+            view.resolved_protocol_type = continuation->resolved_protocol_type;
+            view.resolved_payload_offset = view.inner_payload_offset + continuation->resolved_payload_offset;
+        }
+        return view;
     }
 
     return view;

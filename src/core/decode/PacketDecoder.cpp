@@ -26,6 +26,227 @@ PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragment
     };
 }
 
+std::optional<DecodedPacket> decode_ipv4_transport_payload(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t ipv4_offset,
+    const std::optional<std::size_t> bounded_packet_end,
+    const RawPcapPacket& packet
+) {
+    const auto bounded_bytes = bounded_packet_end.has_value()
+        ? packet_bytes.first(std::min(*bounded_packet_end, packet_bytes.size()))
+        : packet_bytes;
+    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, ipv4_offset);
+    if (!ipv4_bounds.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto flags_fragment = detail::read_be16(bounded_bytes, ipv4_offset + 6U);
+    if ((flags_fragment & 0x3FFFU) != 0U) {
+        return std::nullopt;
+    }
+
+    const auto protocol = bounded_bytes[ipv4_offset + 9U];
+    const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
+    const auto packet_end = ipv4_bounds->packet_end;
+
+    if (protocol == detail::kIpProtocolTcp) {
+        if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+            bounded_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[transport_offset + 12U] >> 4U) * 4U);
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            transport_offset + tcp_header_length > packet_end ||
+            bounded_bytes.size() < transport_offset + tcp_header_length) {
+            return std::nullopt;
+        }
+
+        FlowKeyV4 flow_key {
+            .src_addr = detail::read_be32(bounded_bytes, ipv4_offset + 12U),
+            .dst_addr = detail::read_be32(bounded_bytes, ipv4_offset + 16U),
+            .src_port = detail::read_be16(bounded_bytes, transport_offset),
+            .dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U),
+            .protocol = ProtocolId::tcp,
+        };
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
+        packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
+
+        return DecodedPacket {
+            .ipv4 = IngestedPacketV4 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+        };
+    }
+
+    if (protocol == detail::kIpProtocolUdp) {
+        if (transport_offset + detail::kUdpHeaderSize > packet_end ||
+            bounded_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto udp_payload =
+            detail::parse_udp_payload_bounds(bounded_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
+        if (!udp_payload.has_value()) {
+            return std::nullopt;
+        }
+
+        FlowKeyV4 flow_key {
+            .src_addr = detail::read_be32(bounded_bytes, ipv4_offset + 12U),
+            .dst_addr = detail::read_be32(bounded_bytes, ipv4_offset + 16U),
+            .src_port = detail::read_be16(bounded_bytes, transport_offset),
+            .dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U),
+            .protocol = ProtocolId::udp,
+        };
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+
+        return DecodedPacket {
+            .ipv4 = IngestedPacketV4 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+        };
+    }
+
+    return std::nullopt;
+}
+
+std::optional<DecodedPacket> decode_ipv6_transport_payload(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t ipv6_offset,
+    const std::optional<std::size_t> bounded_packet_end,
+    const RawPcapPacket& packet
+) {
+    const auto bounded_bytes = bounded_packet_end.has_value()
+        ? packet_bytes.first(std::min(*bounded_packet_end, packet_bytes.size()))
+        : packet_bytes;
+    if (bounded_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto version = static_cast<std::uint8_t>(bounded_bytes[ipv6_offset] >> 4U);
+    if (version != 6U) {
+        return std::nullopt;
+    }
+
+    const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
+    const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_bytes.size());
+
+    const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
+    if (!payload.has_value() || payload->payload_offset > packet_end || payload->has_fragment_header) {
+        return std::nullopt;
+    }
+
+    FlowKeyV6 flow_key {};
+    for (std::size_t index = 0; index < 16U; ++index) {
+        flow_key.src_addr[index] = bounded_bytes[ipv6_offset + 8U + index];
+        flow_key.dst_addr[index] = bounded_bytes[ipv6_offset + 24U + index];
+    }
+
+    if (payload->next_header == detail::kIpProtocolTcp) {
+        if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+            bounded_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto tcp_header_length = static_cast<std::size_t>((bounded_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            payload->payload_offset + tcp_header_length > packet_end ||
+            bounded_bytes.size() < payload->payload_offset + tcp_header_length) {
+            return std::nullopt;
+        }
+
+        flow_key.src_port = detail::read_be16(bounded_bytes, payload->payload_offset);
+        flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
+        flow_key.protocol = ProtocolId::tcp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
+        packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
+
+        return DecodedPacket {
+            .ipv6 = IngestedPacketV6 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+        };
+    }
+
+    if (payload->next_header == detail::kIpProtocolUdp) {
+        if (payload->payload_offset + detail::kUdpHeaderSize > packet_end ||
+            bounded_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto udp_payload = detail::parse_udp_payload_bounds(
+            bounded_bytes,
+            payload->payload_offset,
+            ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+        );
+        if (!udp_payload.has_value()) {
+            return std::nullopt;
+        }
+
+        flow_key.src_port = detail::read_be16(bounded_bytes, payload->payload_offset);
+        flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
+        flow_key.protocol = ProtocolId::udp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+
+        return DecodedPacket {
+            .ipv6 = IngestedPacketV6 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+        };
+    }
+
+    return std::nullopt;
+}
+
+std::optional<DecodedPacket> decode_supported_ip_transport_payload(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint16_t protocol_type,
+    const std::size_t payload_offset,
+    const std::optional<std::size_t> bounded_packet_end,
+    const RawPcapPacket& packet
+) {
+    if (protocol_type == detail::kEtherTypeIpv4) {
+        return decode_ipv4_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet);
+    }
+    if (protocol_type == detail::kEtherTypeIpv6) {
+        return decode_ipv6_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet);
+    }
+    return std::nullopt;
+}
+
+std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t udp_payload_offset,
+    const std::size_t udp_payload_length,
+    const RawPcapPacket& packet
+) {
+    const auto udp_payload_end = udp_payload_offset + udp_payload_length;
+    const auto vxlan = detail::parse_vxlan_payload(packet_bytes, udp_payload_offset, udp_payload_end);
+    if (!vxlan.has_value() || !vxlan->resolved_supported_protocol) {
+        return std::nullopt;
+    }
+
+    return decode_supported_ip_transport_payload(
+        packet_bytes,
+        vxlan->resolved_protocol_type,
+        vxlan->resolved_payload_offset,
+        vxlan->bounded_packet_end,
+        packet
+    );
+}
+
 }  // namespace
 
 DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const noexcept {
@@ -171,6 +392,22 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.src_port = detail::read_be16(bounded_bytes, transport_offset);
             flow_key.dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U);
             flow_key.protocol = ProtocolId::udp;
+
+            if (flow_key.dst_port == detail::kUdpPortVxlan) {
+                if (const auto udp_payload =
+                        detail::parse_udp_payload_bounds(bounded_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
+                    udp_payload.has_value()) {
+                    if (const auto vxlan_packet = try_decode_vxlan_inner_packet(
+                            bounded_bytes,
+                            udp_payload->payload_offset,
+                            udp_payload->payload_length,
+                            packet
+                        );
+                        vxlan_packet.has_value()) {
+                        return *vxlan_packet;
+                    }
+                }
+            }
 
             auto packet_ref = make_packet_ref(packet);
             if (const auto udp_payload =
@@ -324,6 +561,25 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.src_port = detail::read_be16(bounded_bytes, payload->payload_offset);
             flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
             flow_key.protocol = ProtocolId::udp;
+
+            if (flow_key.dst_port == detail::kUdpPortVxlan) {
+                if (const auto udp_payload = detail::parse_udp_payload_bounds(
+                        bounded_bytes,
+                        payload->payload_offset,
+                        ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+                    );
+                    udp_payload.has_value()) {
+                    if (const auto vxlan_packet = try_decode_vxlan_inner_packet(
+                            bounded_bytes,
+                            udp_payload->payload_offset,
+                            udp_payload->payload_length,
+                            packet
+                        );
+                        vxlan_packet.has_value()) {
+                        return *vxlan_packet;
+                    }
+                }
+            }
 
             auto packet_ref = make_packet_ref(packet);
             if (const auto udp_payload = detail::parse_udp_payload_bounds(

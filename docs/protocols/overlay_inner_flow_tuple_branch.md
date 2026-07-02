@@ -256,6 +256,27 @@ After each protocol is implemented, update:
    - TEID presentation
    - likely more edge cases around extension headers and message types
 
+## Current implementation status
+
+Implemented in this branch so far:
+
+- VXLAN effective inner tuple extraction for valid UDP/4789 traffic carrying:
+  - inner Ethernet -> IPv4 -> TCP/UDP
+  - inner Ethernet -> IPv6 -> TCP/UDP
+  - inner Ethernet -> VLAN -> IPv4 -> TCP when the existing inner Ethernet continuation resolves the VLAN path
+- outer IPv4 and outer IPv6 VXLAN carrier paths both switch flow grouping to the decoded inner tuple
+- basic VXLAN header validation is enforced:
+  - UDP destination port must be `4789`
+  - payload must include the fixed 8-byte VXLAN header
+  - the VXLAN I flag must be set
+  - reserved header bytes must be zero
+
+Still intentionally not solved:
+
+- VNI is not part of flow identity
+- invalid/truncated/unsupported VXLAN payloads fall back to existing outer behavior instead of fabricating an inner flow
+- VXLAN Packet Details / Summary metadata is still a follow-up step
+
 ## Risks and unknowns
 
 - inner-tuple-only grouping can merge traffic from distinct tunnel namespaces;
