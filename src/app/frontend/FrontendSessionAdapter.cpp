@@ -2103,8 +2103,11 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
         return result;
     }
 
-    if (!session_.export_smart_unrecognized_packets_to_pcap(*retention, output_path)) {
-        result.error_text = "Failed to smart-export unrecognized packets.";
+    std::string error_text {};
+    if (!session_.export_smart_unrecognized_packets_to_pcap(*retention, output_path, SmartSingleFileExportOptions {}, &error_text)) {
+        result.error_text = error_text.empty()
+            ? "Failed to smart-export unrecognized packets."
+            : error_text;
         return result;
     }
 

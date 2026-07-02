@@ -370,22 +370,53 @@ std::vector<int> FlowListModel::visibleFlowIndices() const {
 }
 
 std::vector<int> FlowListModel::hiddenFlowIndices() const {
-    std::vector<int> visibleFlowIndexSet {};
-    visibleFlowIndexSet.reserve(visible_items_.size());
+    int maxVisibleFlowIndex = -1;
+    std::vector<int> negativeVisibleFlowIndices {};
+    negativeVisibleFlowIndices.reserve(visible_items_.size());
     for (const auto& item : visible_items_) {
-        visibleFlowIndexSet.push_back(item.flow_index);
+        if (item.flow_index < 0) {
+            negativeVisibleFlowIndices.push_back(item.flow_index);
+            continue;
+        }
+        maxVisibleFlowIndex = std::max(maxVisibleFlowIndex, item.flow_index);
     }
-    std::sort(visibleFlowIndexSet.begin(), visibleFlowIndexSet.end());
-    visibleFlowIndexSet.erase(
-        std::unique(visibleFlowIndexSet.begin(), visibleFlowIndexSet.end()),
-        visibleFlowIndexSet.end()
+    std::sort(negativeVisibleFlowIndices.begin(), negativeVisibleFlowIndices.end());
+    negativeVisibleFlowIndices.erase(
+        std::unique(negativeVisibleFlowIndices.begin(), negativeVisibleFlowIndices.end()),
+        negativeVisibleFlowIndices.end()
     );
+
+    int maxAllFlowIndex = -1;
+    for (const auto& item : all_items_) {
+        if (item.flow_index >= 0) {
+            maxAllFlowIndex = std::max(maxAllFlowIndex, item.flow_index);
+        }
+    }
+
+    const auto maxFlowIndex = std::max(maxVisibleFlowIndex, maxAllFlowIndex);
+    std::vector<unsigned char> visibleMask {};
+    if (maxFlowIndex >= 0) {
+        visibleMask.resize(static_cast<std::size_t>(maxFlowIndex) + 1U, 0U);
+    }
+    for (const auto& item : visible_items_) {
+        if (item.flow_index >= 0) {
+            visibleMask[static_cast<std::size_t>(item.flow_index)] = 1U;
+        }
+    }
 
     std::vector<int> flowIndices {};
     flowIndices.reserve(all_items_.size());
 
     for (const auto& item : all_items_) {
-        if (!std::binary_search(visibleFlowIndexSet.begin(), visibleFlowIndexSet.end(), item.flow_index)) {
+        const bool isVisible = item.flow_index >= 0
+            ? static_cast<std::size_t>(item.flow_index) < visibleMask.size() &&
+                visibleMask[static_cast<std::size_t>(item.flow_index)] != 0U
+            : std::binary_search(
+                negativeVisibleFlowIndices.begin(),
+                negativeVisibleFlowIndices.end(),
+                item.flow_index
+            );
+        if (!isVisible) {
             flowIndices.push_back(item.flow_index);
         }
     }
