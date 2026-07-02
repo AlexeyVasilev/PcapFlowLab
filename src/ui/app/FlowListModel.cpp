@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <map>
-#include <set>
 
 namespace pfl {
 
@@ -371,16 +370,22 @@ std::vector<int> FlowListModel::visibleFlowIndices() const {
 }
 
 std::vector<int> FlowListModel::hiddenFlowIndices() const {
-    std::set<int> visibleFlowIndexSet {};
+    std::vector<int> visibleFlowIndexSet {};
+    visibleFlowIndexSet.reserve(visible_items_.size());
     for (const auto& item : visible_items_) {
-        visibleFlowIndexSet.insert(item.flow_index);
+        visibleFlowIndexSet.push_back(item.flow_index);
     }
+    std::sort(visibleFlowIndexSet.begin(), visibleFlowIndexSet.end());
+    visibleFlowIndexSet.erase(
+        std::unique(visibleFlowIndexSet.begin(), visibleFlowIndexSet.end()),
+        visibleFlowIndexSet.end()
+    );
 
     std::vector<int> flowIndices {};
     flowIndices.reserve(all_items_.size());
 
     for (const auto& item : all_items_) {
-        if (!visibleFlowIndexSet.contains(item.flow_index)) {
+        if (!std::binary_search(visibleFlowIndexSet.begin(), visibleFlowIndexSet.end(), item.flow_index)) {
             flowIndices.push_back(item.flow_index);
         }
     }
