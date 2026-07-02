@@ -27,6 +27,18 @@ std::vector<RawPcapPacket> read_all_packets(const std::filesystem::path& path) {
     return packets;
 }
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+RawPcapPacket read_first_packet(const std::filesystem::path& path) {
+    PcapReader reader {};
+    PFL_EXPECT(reader.open(path));
+    const auto packet = reader.read_next();
+    PFL_REQUIRE(packet.has_value());
+    return *packet;
+}
+
 std::vector<std::filesystem::path> list_exported_pcaps(const std::filesystem::path& directory) {
     std::vector<std::filesystem::path> paths {};
     if (!std::filesystem::exists(directory)) {
@@ -274,6 +286,91 @@ void run_export_tests() {
         PFL_EXPECT(exported_packets[1].bytes == packet_2);
         PFL_EXPECT(exported_packets[0].original_length == 100U);
         PFL_EXPECT(exported_packets[1].original_length == 100U);
+    }
+
+    {
+        const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_unrecognized_packet_list_source.pcap",
+            make_classic_pcap_with_captured_lengths({
+                {.ts_usec = 100U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 200U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 300U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_packet_list_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        PFL_EXPECT(session.unrecognized_packet_count() == 3U);
+        const auto rows = session.list_unrecognized_packets();
+        PFL_REQUIRE(rows.size() == 3U);
+
+        SmartPacketListExportRequest request {};
+        request.retention.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.retention.first_n_packets = 2U;
+        for (const auto& row : rows) {
+            request.packet_indices.push_back(static_cast<std::size_t>(row.packet_index));
+        }
+
+        PFL_EXPECT(session.export_smart_packets_to_pcap(request, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+        PFL_EXPECT(exported_packets[0].bytes == malformed_packet.bytes);
+        PFL_EXPECT(exported_packets[1].bytes == malformed_packet.bytes);
+    }
+
+    {
+        const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_unrecognized_source.pcap",
+            make_classic_pcap_with_captured_lengths({
+                {.ts_usec = 100U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 200U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 300U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        PFL_EXPECT(session.unrecognized_packet_count() == 3U);
+
+        const SmartPacketRetentionOptions options {
+            .base_mode = SmartFlowExportBaseMode::first_m_original_bytes,
+            .first_m_original_bytes = 150U,
+        };
+        PFL_EXPECT(session.export_smart_unrecognized_packets_to_pcap(options, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+    }
+
+    {
+        const auto source_path = fixture_path("parsing/tcp_options/01_tcp_syn_no_options.pcap");
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_empty_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const SmartPacketRetentionOptions options {
+            .base_mode = SmartFlowExportBaseMode::all_packets,
+        };
+        PFL_EXPECT(!session.export_smart_unrecognized_packets_to_pcap(options, output_path));
+
+        SmartPacketListExportRequest invalid_request {};
+        invalid_request.packet_indices.push_back(999999U);
+        invalid_request.retention = options;
+        PFL_EXPECT(!session.export_smart_packets_to_pcap(invalid_request, output_path));
     }
 
     {
