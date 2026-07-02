@@ -325,6 +325,56 @@ void run_export_tests() {
     }
 
     {
+        const auto packet_1 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 31, 0, 1), ipv4(172, 31, 0, 2), 34001, 34002, std::vector<std::uint8_t>{0x11});
+        const auto packet_2 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 31, 0, 1), ipv4(172, 31, 0, 2), 34001, 34002, std::vector<std::uint8_t>{0x22});
+        const auto packet_3 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 31, 0, 1), ipv4(172, 31, 0, 2), 34001, 34002, std::vector<std::uint8_t>{0x33});
+        const auto packet_4 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 31, 0, 1), ipv4(172, 31, 0, 2), 34001, 34002, std::vector<std::uint8_t>{0x44});
+        const auto packet_5 = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(172, 31, 0, 1), ipv4(172, 31, 0, 2), 34001, 34002, std::vector<std::uint8_t>{0x55});
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_packet_list_normalized_source.pcap",
+            make_classic_pcap({
+                {100, packet_1},
+                {200, packet_2},
+                {300, packet_3},
+                {400, packet_4},
+                {500, packet_5},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_packet_list_normalized_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+
+        SmartPacketListExportRequest request {};
+        request.retention.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        request.retention.first_n_packets = 2U;
+        request.retention.include_last_packet = true;
+        request.retention.include_every_kth_packet_after_base = true;
+        request.retention.every_kth_packet = 2U;
+        request.packet_indices = {4U, 2U, 2U, 3U, 0U, 1U};
+
+        PFL_EXPECT(session.export_smart_packets_to_pcap(request, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 4U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+        PFL_EXPECT(exported_packets[2].ts_usec == 400U);
+        PFL_EXPECT(exported_packets[3].ts_usec == 500U);
+        PFL_EXPECT(exported_packets[0].bytes == packet_1);
+        PFL_EXPECT(exported_packets[1].bytes == packet_2);
+        PFL_EXPECT(exported_packets[2].bytes == packet_4);
+        PFL_EXPECT(exported_packets[3].bytes == packet_5);
+    }
+
+    {
         const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
         const auto source_path = write_temp_pcap(
             "pfl_smart_export_unrecognized_source.pcap",

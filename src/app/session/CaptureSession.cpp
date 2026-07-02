@@ -3796,9 +3796,19 @@ bool CaptureSession::export_smart_packets_to_pcap(
         return false;
     }
 
+    auto normalized_packet_indices = request.packet_indices;
+    std::sort(normalized_packet_indices.begin(), normalized_packet_indices.end());
+    normalized_packet_indices.erase(
+        std::unique(normalized_packet_indices.begin(), normalized_packet_indices.end()),
+        normalized_packet_indices.end()
+    );
+    if (normalized_packet_indices.empty()) {
+        return false;
+    }
+
     std::vector<PacketRef> packets {};
-    packets.reserve(request.packet_indices.size());
-    for (const auto packet_index : request.packet_indices) {
+    packets.reserve(normalized_packet_indices.size());
+    for (const auto packet_index : normalized_packet_indices) {
         const auto packet = find_packet(static_cast<std::uint64_t>(packet_index));
         if (!packet.has_value()) {
             return false;
