@@ -113,9 +113,18 @@ The `Flows` tab now supports:
 - separate checked-flow selection state for batch-oriented workflows
 - user-facing 1-based flow numbering while keeping stable backend `flow_index`
 - address family and fragmentation state from shared flow DTOs
+- compact visible `Endpoint A` / `Endpoint B` columns in the flow table instead of separate address/port columns
+- endpoint formatting aligned with Qt:
+  - IPv4 with port: `address : port`
+  - IPv4 without port: `address`
+  - IPv6 with port: `[address] : port`
+  - IPv6 without port: `address`
+  - missing/zero/invalid port: address only
+- endpoint address/port are treated as key identifiers and should stay visible in the table rather than relying on tooltip-only display
 - conservative shared Wireshark display filter text plus copy
 - selected-flow packet loading over the existing backend `offset / limit` API with bounded append-only `Load More`
 - the initial selected-flow packet batch is intentionally small and bounded for responsiveness
+- the lower selected-flow `Packets` / `Stream` controls, packet-count status, and `Load More` action now sit in one compact toolbar-style row
 - packet list columns now align more closely with Qt:
   - `#`
   - `Direction`
@@ -132,6 +141,7 @@ The `Flows` tab now supports:
   - `Payload`
   - `Protocol`
 - the `Summary` tab now follows Qt more closely with a compact text-style packet summary block instead of metadata cards
+- the top-shell `Open Capture...` action now uses a lighter desktop-style treatment closer to the Qt shell instead of a heavy filled primary button
 - Raw/Payload tabs now show the full available selected-packet byte text on demand rather than a preview-only display
 - Packet Details and Stream Item Details mode selectors now use compact tab styling instead of button styling
 - byte-backed packet details can recover after a valid source-capture attach

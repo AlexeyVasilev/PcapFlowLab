@@ -267,10 +267,8 @@ Each flow row should expose at least the following user-facing fields:
 - protocol;
 - protocol hint;
 - service;
-- address A;
-- port A;
-- address B;
-- port B;
+- endpoint A;
+- endpoint B;
 - fragmentation indicator;
 - packet count;
 - byte count.
@@ -279,6 +277,14 @@ Each flow row should expose at least the following user-facing fields:
 
 - Flow index is displayed as a 1-based row identifier tied to the session flow index.
 - Address family is shown as `IPv4` or `IPv6`.
+- The visible flow table now uses compact `Endpoint A` / `Endpoint B` columns rather than separate address/port columns.
+- Endpoint formatting rules are:
+  - IPv4 with port: `address : port`;
+  - IPv4 without port: `address`;
+  - IPv6 with port: `[address] : port`;
+  - IPv6 without port: `address`;
+  - missing/zero/invalid port: address only.
+- Endpoint address/port are treated as key identifiers and should remain fully visible through adequate column width and horizontal scrolling rather than endpoint overlap as the normal display path.
 - Protocol hint is presentation-formatted:
   - `possible_tls` -> `Possible TLS`;
   - `possible_quic` -> `Possible QUIC`;
@@ -423,6 +429,7 @@ Shared expectations:
   - all packets loaded;
   - load more available.
 - load-more is tied to the selected flow only.
+- frontends may present the lower selected-flow `Packets` / `Stream` controls as one compact toolbar-style row as long as packet/stream switching, packet-count status, and `Load More` remain visible and consistent.
 
 ### Selected packet behavior
 
@@ -491,6 +498,7 @@ Qt currently uses formatted summary text rather than a purely structured field g
 Current direction note:
 
 - packet details Summary now has a first shared structured decoded-layer list for selected-packet/on-demand rendering;
+- Qt Summary text inside the structured inspector is selectable/copyable via read-only text controls; this is presentation-only and does not change packet/session semantics;
 - the current narrow layer model covers already-decoded facts such as Frame, Ethernet, VLAN, MPLS, ARP, IGMP, IPv4, IPv6, TCP, and UDP;
 - the Frame layer should show packet index in file and, when selected-flow context is available, packet index within the selected flow;
 - the Ethernet layer should expose source/destination MAC addresses and decoded EtherType text;

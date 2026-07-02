@@ -108,11 +108,10 @@
 
         <section id="tabPanelFlows" class="tab-panel active" data-tab-panel="flows">
           <div id="flowsLayout" class="flows-layout">
-            <section class="panel flows-panel">
-              <div class="panel-heading">
-                <div>
-                  <h2>Flows</h2>
-                  <p id="flowMeta" class="panel-subtitle">No capture loaded.</p>
+            <section class="panel flows-panel" aria-label="Flows">
+              <div class="panel-heading panel-heading-compact">
+                <div class="panel-heading-copy">
+                  <p id="flowMeta" class="panel-subtitle panel-subtitle-inline">No capture loaded.</p>
                 </div>
               </div>
               <div class="flows-tools">
@@ -169,15 +168,14 @@
             ></div>
 
             <section class="flows-bottom">
-              <section class="panel packets-panel">
-                <div class="subtabbar" aria-label="Selected flow views">
-                  <button type="button" class="subtab-button active" data-flow-view-tab="packets">Packets</button>
-                  <button type="button" class="subtab-button" data-flow-view-tab="stream">Stream</button>
-                </div>
-                <div class="panel-heading">
-                  <div>
-                    <h2 id="flowViewTitle">Selected-Flow Packets</h2>
-                    <p id="packetMeta" class="panel-subtitle">Select a flow to load packets.</p>
+              <section class="panel packets-panel" aria-label="Selected flow packets and stream">
+                <div class="flow-view-toolbar">
+                  <div class="subtabbar" aria-label="Selected flow views">
+                    <button type="button" class="subtab-button active" data-flow-view-tab="packets">Packets</button>
+                    <button type="button" class="subtab-button" data-flow-view-tab="stream">Stream</button>
+                  </div>
+                  <div class="panel-heading-copy flow-view-status-wrap">
+                    <p id="packetMeta" class="panel-subtitle panel-subtitle-inline flow-view-status">Select a flow to load packets.</p>
                   </div>
                   <div class="pager-controls">
                     <button id="packetLoadMoreButton" type="button" class="secondary-button">Load More</button>

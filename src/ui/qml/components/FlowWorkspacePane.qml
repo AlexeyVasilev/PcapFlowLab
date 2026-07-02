@@ -33,6 +33,53 @@ Item {
     property var selectedPacketIndex: 0
     property var selectedStreamItemIndex: 0
     readonly property bool selectedFlowWorkspaceLoading: root.selectedFlowIndex >= 0 && (root.packetsLoading || root.streamLoading)
+    readonly property bool packetsTabSelected: flowDetailTabs.currentIndex === 0
+
+    function lowerToolbarStatusColor() {
+        if (!root.packetsTabSelected && !root.sourceCaptureAvailable && root.selectedFlowIndex >= 0) {
+            return "#8a6a12"
+        }
+
+        return "#6b7280"
+    }
+
+    function lowerToolbarStatusText() {
+        if (root.packetsTabSelected) {
+            if (root.packetsLoading) {
+                return "Loading packet list..."
+            }
+            if (root.totalPacketRowCount > 0) {
+                return root.packetsPartiallyLoaded
+                    ? "Showing %1 of %2 packets".arg(root.loadedPacketRowCount).arg(root.totalPacketRowCount)
+                    : "Showing all %1 packets".arg(root.totalPacketRowCount)
+            }
+            return root.unrecognizedPacketsSelected
+                ? "Select the unrecognized packets list to inspect packets"
+                : "Select a flow to inspect packets"
+        }
+
+        if (!root.sourceCaptureAvailable && root.selectedFlowIndex >= 0) {
+            return "Source capture unavailable. Reattach the original capture file to inspect stream items."
+        }
+        if (root.streamLoading) {
+            return "Building stream view..."
+        }
+        if (root.streamPartiallyLoaded) {
+            return root.totalStreamItemCount > 0
+                ? "Showing %1 of %2 stream items".arg(root.loadedStreamItemCount).arg(root.totalStreamItemCount)
+                : "Showing first %1 stream items".arg(root.loadedStreamItemCount)
+        }
+        if (root.totalStreamItemCount > 0 || root.loadedStreamItemCount > 0) {
+            let text = "Showing all %1 stream items".arg(root.totalStreamItemCount > 0 ? root.totalStreamItemCount : root.loadedStreamItemCount)
+            if (root.streamPacketWindowPartial && !root.streamLoading) {
+                text += " Built from the first %1 packets.".arg(root.streamPacketWindowCount)
+            } else if (root.canLoadMoreStreamItems && !root.streamLoading) {
+                text += " Load more packets to extend the stream view."
+            }
+            return text
+        }
+        return "Select a flow to inspect stream items"
+    }
 
     signal flowSelected(int flowIndex)
     signal unrecognizedPacketsRequested()
@@ -103,71 +150,102 @@ Item {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 4
 
-                    TabBar {
-                        id: flowDetailTabs
+                    RowLayout {
                         Layout.fillWidth: true
-                        onCurrentIndexChanged: root.flowDetailsTabChanged(currentIndex)
-                        spacing: 6
+                        spacing: 8
 
-                        onVisibleChanged: {
-                            if (visible && root.unrecognizedPacketsSelected && currentIndex !== 0) {
-                                currentIndex = 0
-                                root.flowDetailsTabChanged(0)
-                            }
-                        }
+                        TabBar {
+                            id: flowDetailTabs
+                            Layout.preferredWidth: implicitWidth
+                            onCurrentIndexChanged: root.flowDetailsTabChanged(currentIndex)
+                            spacing: 4
 
-                        background: Rectangle {
-                            color: "transparent"
-                        }
-
-                        TabButton {
-                            text: "Packets"
-                            implicitHeight: 34
-
-                            contentItem: Label {
-                                text: parent.text
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: 12
-                                font.bold: parent.checked
-                                color: parent.checked ? "#0f172a" : "#64748b"
+                            onVisibleChanged: {
+                                if (visible && root.unrecognizedPacketsSelected && currentIndex !== 0) {
+                                    currentIndex = 0
+                                    root.flowDetailsTabChanged(0)
+                                }
                             }
 
                             background: Rectangle {
-                                radius: 6
-                                color: parent.checked
-                                    ? "#ffffff"
-                                    : parent.hovered
-                                        ? "#f8fafc"
-                                        : "#f1f5f9"
-                                border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                                color: "transparent"
+                            }
+
+                            TabButton {
+                                text: "Packets"
+                                implicitHeight: 28
+                                implicitWidth: 108
+
+                                contentItem: Label {
+                                    text: parent.text
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    font.bold: parent.checked
+                                    color: parent.checked ? "#0f172a" : "#64748b"
+                                }
+
+                                background: Rectangle {
+                                    radius: 6
+                                    color: parent.checked
+                                        ? "#ffffff"
+                                        : parent.hovered
+                                            ? "#f8fafc"
+                                            : "#f1f5f9"
+                                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                                }
+                            }
+
+                            TabButton {
+                                text: "Stream"
+                                implicitHeight: 28
+                                implicitWidth: 108
+                                enabled: !root.unrecognizedPacketsSelected
+
+                                contentItem: Label {
+                                    text: parent.text
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    font.pixelSize: 12
+                                    font.bold: parent.checked
+                                    color: parent.checked ? "#0f172a" : "#64748b"
+                                }
+
+                                background: Rectangle {
+                                    radius: 6
+                                    color: parent.checked
+                                        ? "#ffffff"
+                                        : parent.hovered
+                                            ? "#f8fafc"
+                                            : "#f1f5f9"
+                                    border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                                }
                             }
                         }
 
-                        TabButton {
-                            text: "Stream"
-                            implicitHeight: 34
-                            enabled: !root.unrecognizedPacketsSelected
+                        Label {
+                            Layout.fillWidth: true
+                            text: root.lowerToolbarStatusText()
+                            color: root.lowerToolbarStatusColor()
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
+                            font.pixelSize: 12
+                        }
 
-                            contentItem: Label {
-                                text: parent.text
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                font.pixelSize: 12
-                                font.bold: parent.checked
-                                color: parent.checked ? "#0f172a" : "#64748b"
-                            }
-
-                            background: Rectangle {
-                                radius: 6
-                                color: parent.checked
-                                    ? "#ffffff"
-                                    : parent.hovered
-                                        ? "#f8fafc"
-                                        : "#f1f5f9"
-                                border.color: parent.checked ? "#cbd5e1" : "#e2e8f0"
+                        Button {
+                            text: "Load more"
+                            visible: root.packetsTabSelected ? root.canLoadMorePackets : root.canLoadMoreStreamItems
+                            enabled: root.packetsTabSelected
+                                ? (root.canLoadMorePackets && !root.packetsLoading)
+                                : (root.canLoadMoreStreamItems && !root.streamLoading)
+                            onClicked: {
+                                if (root.packetsTabSelected) {
+                                    root.loadMorePacketsRequested()
+                                } else {
+                                    root.loadMoreStreamItemsRequested()
+                                }
                             }
                         }
                     }
@@ -178,7 +256,6 @@ Item {
                         currentIndex: flowDetailTabs.currentIndex
 
                         PacketList {
-                            titleText: root.unrecognizedPacketsSelected ? "Unrecognized Packets" : "Packets"
                             emptyText: root.unrecognizedPacketsSelected
                                 ? "Select the unrecognized packets list to inspect packets"
                                 : "Select a flow to inspect packets"
@@ -189,6 +266,7 @@ Item {
                             loadedPacketRowCount: root.loadedPacketRowCount
                             totalPacketRowCount: root.totalPacketRowCount
                             canLoadMorePackets: root.canLoadMorePackets
+                            showToolbar: false
                             onPacketSelected: function(packetIndex) {
                                 root.packetSelected(packetIndex)
                             }
@@ -209,6 +287,7 @@ Item {
                             streamPacketWindowCount: root.streamPacketWindowCount
                             streamPacketWindowPartial: root.streamPacketWindowPartial
                             canLoadMoreStreamItems: root.canLoadMoreStreamItems
+                            showToolbar: false
                             onStreamItemSelected: function(streamItemIndex) {
                                 root.streamItemSelected(streamItemIndex)
                             }
