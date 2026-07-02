@@ -290,6 +290,7 @@ ApplicationWindow {
         chooseDestinationFolderCallback: function() { return mainController.chooseSmartExportDestinationFolder() }
         currentFilterAvailable: mainController.flowFilterText.trim().length > 0
         hasCurrentFlowSelection: mainController.selectedFlowIndex >= 0
+        hasUnrecognizedPackets: mainController.unrecognizedPacketCount > 0
         onExportRequested: function(outputMode, flowScopeMode, baseSelectionMode, packetCountText, originalBytesText, destinationFolderText, bufferBudgetPresetText, includeLastPacket, includeEveryKthPacket, everyKText) {
             mainController.browseSmartExportFlows(
                 outputMode,

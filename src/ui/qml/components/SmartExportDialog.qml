@@ -21,6 +21,7 @@ Dialog {
     property var chooseDestinationFolderCallback: null
     property bool currentFilterAvailable: false
     property bool hasCurrentFlowSelection: false
+    property bool hasUnrecognizedPackets: false
     modal: true
     focus: true
     title: "Smart Export"
@@ -33,7 +34,8 @@ Dialog {
         : unselectedFlowsRadio.checked ? 2
         : allFlowsRadio.checked ? 3
         : matchingCurrentFilterRadio.checked ? 4
-        : 5
+        : notMatchingCurrentFilterRadio.checked ? 5
+        : 6
     property int baseSelectionMode: allPacketsRadio.checked ? 0 : firstNPacketsRadio.checked ? 1 : 2
     readonly property bool extrasEnabled: !allPacketsRadio.checked
     readonly property bool perFlowOutputMode: separateFilePerFlowRadio.checked
@@ -49,8 +51,12 @@ Dialog {
     }
 
     function ensureValidFlowScopeSelection() {
-        if (root.currentFilterAvailable ||
-            (!matchingCurrentFilterRadio.checked && !notMatchingCurrentFilterRadio.checked)) {
+        const filterSelectionInvalid = !root.currentFilterAvailable
+            && (matchingCurrentFilterRadio.checked || notMatchingCurrentFilterRadio.checked)
+        const unrecognizedSelectionInvalid = !root.hasUnrecognizedPackets
+            && unrecognizedPacketsRadio.checked
+
+        if (!filterSelectionInvalid && !unrecognizedSelectionInvalid) {
             return
         }
 
@@ -61,10 +67,18 @@ Dialog {
         }
     }
 
+    function ensureValidOutputMode() {
+        if (unrecognizedPacketsRadio.checked && separateFilePerFlowRadio.checked) {
+            singleOutputFileRadio.checked = true
+        }
+    }
+
     onCurrentFilterAvailableChanged: ensureValidFlowScopeSelection()
+    onHasUnrecognizedPacketsChanged: ensureValidFlowScopeSelection()
     onVisibleChanged: {
         if (visible) {
             ensureValidFlowScopeSelection()
+            ensureValidOutputMode()
         }
     }
 
@@ -151,14 +165,16 @@ Dialog {
                             enabled: root.currentFilterAvailable
                         }
 
-                        Item {
-                            Layout.fillWidth: true
-                            implicitHeight: currentFlowRadio.implicitHeight
-                        }
-
-                        Item {
-                            Layout.fillWidth: true
-                            implicitHeight: currentFlowRadio.implicitHeight
+                        RadioButton {
+                            id: unrecognizedPacketsRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Unrecognized packets"
+                            enabled: root.hasUnrecognizedPackets
+                            onCheckedChanged: {
+                                if (checked) {
+                                    root.ensureValidOutputMode()
+                                }
+                            }
                         }
                     }
                 }
@@ -296,6 +312,7 @@ Dialog {
                     RadioButton {
                         id: separateFilePerFlowRadio
                         text: "Separate file per flow"
+                        enabled: !unrecognizedPacketsRadio.checked
                     }
 
                     RowLayout {

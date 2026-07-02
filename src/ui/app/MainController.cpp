@@ -42,6 +42,7 @@ constexpr int kSmartExportFlowScopeUnselectedFlows = 2;
 constexpr int kSmartExportFlowScopeAllFlows = 3;
 constexpr int kSmartExportFlowScopeMatchingCurrentFilter = 4;
 constexpr int kSmartExportFlowScopeNotMatchingCurrentFilter = 5;
+constexpr int kSmartExportFlowScopeUnrecognizedPackets = 6;
 constexpr int kSmartExportOutputModeSingleFile = 0;
 constexpr int kSmartExportOutputModeSeparateFilePerFlow = 1;
 constexpr int kSmartExportBaseModeAllPackets = 0;
@@ -3417,6 +3418,49 @@ bool MainController::exportSmartFlows(
         return false;
     }
 
+    SmartPacketRetentionOptions retention {};
+    switch (baseSelectionMode) {
+    case kSmartExportBaseModeAllPackets:
+        retention.base_mode = SmartFlowExportBaseMode::all_packets;
+        break;
+    case kSmartExportBaseModeFirstNPackets: {
+        const auto value = parse_positive_u64(packetCountText);
+        if (!value.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive packet count for smart export."), true);
+            return false;
+        }
+        retention.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        retention.first_n_packets = *value;
+        break;
+    }
+    case kSmartExportBaseModeFirstMOriginalBytes: {
+        const auto value = parse_positive_u64(originalBytesText);
+        if (!value.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive original-byte limit for smart export."), true);
+            return false;
+        }
+        retention.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
+        retention.first_m_original_bytes = *value;
+        break;
+    }
+    default:
+        setStatusText(QStringLiteral("Invalid smart export base selection."), true);
+        return false;
+    }
+
+    if (retention.base_mode != SmartFlowExportBaseMode::all_packets) {
+        retention.include_last_packet = includeLastPacket;
+        retention.include_every_kth_packet_after_base = includeEveryKthPacket;
+        if (includeEveryKthPacket) {
+            const auto value = parse_positive_u64(everyKText);
+            if (!value.has_value()) {
+                setStatusText(QStringLiteral("Enter a positive K value for sparse smart export retention."), true);
+                return false;
+            }
+            retention.every_kth_packet = *value;
+        }
+    }
+
     std::vector<int> flow_indices {};
     QString empty_selection_message {};
     switch (flowScopeMode) {
@@ -3453,14 +3497,38 @@ bool MainController::exportSmartFlows(
         flow_indices = flow_model_.hiddenFlowIndices();
         empty_selection_message = QStringLiteral("No flows remain outside the current filter for smart export.");
         break;
+    case kSmartExportFlowScopeUnrecognizedPackets:
+        if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
+            setStatusText(QStringLiteral("Unrecognized packets can only be smart-exported to a single output file."), true);
+            return false;
+        }
+        if (session_.unrecognized_packet_count() == 0U) {
+            setStatusText(QStringLiteral("No unrecognized packets available for smart export."), true);
+            return false;
+        }
+        break;
     default:
         setStatusText(QStringLiteral("Invalid smart export flow selection."), true);
         return false;
     }
 
-    if (flow_indices.empty()) {
+    if (flowScopeMode != kSmartExportFlowScopeUnrecognizedPackets && flow_indices.empty()) {
         setStatusText(empty_selection_message, true);
         return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+
+    if (flowScopeMode == kSmartExportFlowScopeUnrecognizedPackets) {
+        const bool exported = session_.export_smart_unrecognized_packets_to_pcap(retention, filesystemPath);
+        if (!exported) {
+            setStatusText(QStringLiteral("Failed to smart-export unrecognized packets."), true);
+            return false;
+        }
+
+        setStatusText(QStringLiteral("Smart export completed successfully."));
+        return true;
     }
 
     SmartFlowExportRequest request {};
@@ -3472,51 +3540,13 @@ bool MainController::exportSmartFlows(
         }
         request.flow_indices.push_back(static_cast<std::size_t>(flow_index));
     }
+    request.base_mode = retention.base_mode;
+    request.first_n_packets = retention.first_n_packets;
+    request.first_m_original_bytes = retention.first_m_original_bytes;
+    request.include_last_packet = retention.include_last_packet;
+    request.include_every_kth_packet_after_base = retention.include_every_kth_packet_after_base;
+    request.every_kth_packet = retention.every_kth_packet;
 
-    switch (baseSelectionMode) {
-    case kSmartExportBaseModeAllPackets:
-        request.base_mode = SmartFlowExportBaseMode::all_packets;
-        break;
-    case kSmartExportBaseModeFirstNPackets: {
-        const auto value = parse_positive_u64(packetCountText);
-        if (!value.has_value()) {
-            setStatusText(QStringLiteral("Enter a positive packet count for smart export."), true);
-            return false;
-        }
-        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
-        request.first_n_packets = *value;
-        break;
-    }
-    case kSmartExportBaseModeFirstMOriginalBytes: {
-        const auto value = parse_positive_u64(originalBytesText);
-        if (!value.has_value()) {
-            setStatusText(QStringLiteral("Enter a positive original-byte limit for smart export."), true);
-            return false;
-        }
-        request.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
-        request.first_m_original_bytes = *value;
-        break;
-    }
-    default:
-        setStatusText(QStringLiteral("Invalid smart export base selection."), true);
-        return false;
-    }
-
-    if (request.base_mode != SmartFlowExportBaseMode::all_packets) {
-        request.include_last_packet = includeLastPacket;
-        request.include_every_kth_packet_after_base = includeEveryKthPacket;
-        if (includeEveryKthPacket) {
-            const auto value = parse_positive_u64(everyKText);
-            if (!value.has_value()) {
-                setStatusText(QStringLiteral("Enter a positive K value for sparse smart export retention."), true);
-                return false;
-            }
-            request.every_kth_packet = *value;
-        }
-    }
-
-    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    setLastDirectoryFromPath(filesystemPath);
     if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
         const auto buffer_budget_mb = parse_positive_u64(bufferBudgetPresetText);
         if (!buffer_budget_mb.has_value()) {
@@ -3660,6 +3690,12 @@ bool MainController::browseSmartExportFlows(
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
+    if (flowScopeMode == kSmartExportFlowScopeUnrecognizedPackets &&
+        outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
+        setStatusText(QStringLiteral("Unrecognized packets can only be smart-exported to a single output file."), true);
+        return false;
+    }
+
     const QString path = outputMode == kSmartExportOutputModeSeparateFilePerFlow
         ? destinationFolderText.trimmed()
         : chooseSaveFile(false);
