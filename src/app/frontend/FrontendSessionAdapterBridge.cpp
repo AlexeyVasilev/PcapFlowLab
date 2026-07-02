@@ -1050,6 +1050,39 @@ char* pfl_frontend_session_adapter_export_smart_flows_json(
     return make_c_string(smart_export_result_json(handle->adapter.export_smart_flows(path, indices, options)));
 }
 
+char* pfl_frontend_session_adapter_export_smart_unrecognized_packets_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8,
+    const std::uint8_t base_mode,
+    const std::uint64_t first_n_packets,
+    const std::uint64_t first_m_original_bytes,
+    const std::uint8_t include_last_packet,
+    const std::uint8_t include_every_kth_packet_after_base,
+    const std::uint64_t every_kth_packet
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const auto path = path_from_utf8(path_utf8);
+    const auto options = pfl::FrontendSmartExportOptions {
+        .output_mode = pfl::FrontendSmartExportOutputMode::single_file,
+        .base_mode = base_mode == 1U
+            ? pfl::FrontendSmartExportBaseMode::first_n_packets
+            : (base_mode == 2U
+                ? pfl::FrontendSmartExportBaseMode::first_m_original_bytes
+                : pfl::FrontendSmartExportBaseMode::all_packets),
+        .first_n_packets = first_n_packets,
+        .first_m_original_bytes = first_m_original_bytes,
+        .include_last_packet = include_last_packet != 0U,
+        .include_every_kth_packet_after_base = include_every_kth_packet_after_base != 0U,
+        .every_kth_packet = every_kth_packet,
+        .per_flow_buffer_budget_bytes = 0U,
+    };
+
+    return make_c_string(smart_export_result_json(handle->adapter.export_smart_unrecognized_packets(path, options)));
+}
+
 char* pfl_frontend_session_adapter_get_overview_json(PflFrontendSessionAdapterHandle* handle) {
     if (handle == nullptr) {
         return make_c_string(overview_json(unavailable_overview()));

@@ -765,6 +765,32 @@ fn export_smart_flows(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+#[allow(clippy::too_many_arguments)]
+fn export_smart_unrecognized_packets(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+    base_mode: u8,
+    first_n_packets: u64,
+    first_m_original_bytes: u64,
+    include_last_packet: bool,
+    include_every_kth_packet_after_base: bool,
+    every_kth_packet: u64,
+) -> Result<SmartExportResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_smart_unrecognized_packets(
+        &path,
+        base_mode,
+        first_n_packets,
+        first_m_original_bytes,
+        include_last_packet,
+        include_every_kth_packet_after_base,
+        every_kth_packet,
+    )
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn exit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
@@ -809,6 +835,7 @@ pub fn run() {
             export_current_flow,
             export_selected_flows,
             export_smart_flows,
+            export_smart_unrecognized_packets,
             exit_app,
             get_overview,
             get_settings,
