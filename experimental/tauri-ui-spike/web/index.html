@@ -694,12 +694,16 @@
 
           <div class="smart-export-sections">
           <section class="smart-export-section">
-            <h3>Flows to export</h3>
-            <div class="smart-export-option-stack">
+            <h3>Export target</h3>
+            <div class="smart-export-target-grid">
               <label class="smart-export-radio-row"><input id="smartExportScopeCurrent" type="radio" name="smartExportScope" value="current" checked /> Current flow</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeMatchingFilter" type="radio" name="smartExportScope" value="matching_filter" /> Matching current filter</label>
               <label class="smart-export-radio-row"><input id="smartExportScopeSelected" type="radio" name="smartExportScope" value="selected" /> Selected flows</label>
+              <label class="smart-export-radio-row"><input id="smartExportScopeNotMatchingFilter" type="radio" name="smartExportScope" value="not_matching_filter" /> Not matching current filter</label>
               <label class="smart-export-radio-row"><input id="smartExportScopeUnselected" type="radio" name="smartExportScope" value="unselected" /> Unselected flows</label>
+              <div></div>
               <label class="smart-export-radio-row"><input id="smartExportScopeAll" type="radio" name="smartExportScope" value="all" /> All flows</label>
+              <div></div>
             </div>
           </section>
 

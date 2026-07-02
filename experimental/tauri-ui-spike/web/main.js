@@ -159,7 +159,9 @@
     smartExportRunButton: document.getElementById("smartExportRunButton"),
     smartExportStatusText: document.getElementById("smartExportStatusText"),
     smartExportScopeCurrent: document.getElementById("smartExportScopeCurrent"),
+    smartExportScopeMatchingFilter: document.getElementById("smartExportScopeMatchingFilter"),
     smartExportScopeSelected: document.getElementById("smartExportScopeSelected"),
+    smartExportScopeNotMatchingFilter: document.getElementById("smartExportScopeNotMatchingFilter"),
     smartExportScopeUnselected: document.getElementById("smartExportScopeUnselected"),
     smartExportScopeAll: document.getElementById("smartExportScopeAll"),
     smartExportBaseAllPackets: document.getElementById("smartExportBaseAllPackets"),
@@ -1319,8 +1321,14 @@
   }
 
   function selectedSmartExportFlowScope() {
+    if (elements.smartExportScopeMatchingFilter?.checked) {
+      return "matching_filter";
+    }
     if (elements.smartExportScopeSelected?.checked) {
       return "selected";
+    }
+    if (elements.smartExportScopeNotMatchingFilter?.checked) {
+      return "not_matching_filter";
     }
     if (elements.smartExportScopeUnselected?.checked) {
       return "unselected";
@@ -1329,6 +1337,10 @@
       return "all";
     }
     return "current";
+  }
+
+  function smartExportFilterTargetEnabled() {
+    return state.flowFilterText.trim().length > 0;
   }
 
   function selectedSmartExportBaseMode() {
@@ -1367,8 +1379,15 @@
     switch (scope) {
       case "current":
         return state.selectedFlowIndex != null ? [state.selectedFlowIndex] : [];
+      case "matching_filter":
+        return getVisibleFlows().map((flow) => flow.flow_index);
       case "selected":
         return Array.from(state.checkedFlowIndices).sort((left, right) => left - right);
+      case "not_matching_filter": {
+        const matchingFlowIndexSet = new Set(filteredFlows().map((flow) => flow.flow_index));
+        return getSortedFlows(state.flows.filter((flow) => !matchingFlowIndexSet.has(flow.flow_index)))
+          .map((flow) => flow.flow_index);
+      }
       case "unselected":
         return getUncheckedFlowIndices();
       case "all":
@@ -1697,6 +1716,24 @@
     const extrasEnabled = smartExportExtrasEnabled();
     const perFlowMode = selectedSmartExportOutputMode() === "separate_files";
     const dialogDisabled = state.smartExportInProgress;
+    const filterTargetEnabled = smartExportFilterTargetEnabled();
+
+    if (elements.smartExportScopeMatchingFilter) {
+      elements.smartExportScopeMatchingFilter.disabled = dialogDisabled || !filterTargetEnabled;
+    }
+    if (elements.smartExportScopeNotMatchingFilter) {
+      elements.smartExportScopeNotMatchingFilter.disabled = dialogDisabled || !filterTargetEnabled;
+    }
+    if (
+      !filterTargetEnabled
+      && (elements.smartExportScopeMatchingFilter?.checked || elements.smartExportScopeNotMatchingFilter?.checked)
+    ) {
+      if (state.selectedFlowIndex != null && !dialogDisabled) {
+        elements.smartExportScopeCurrent.checked = true;
+      } else if (!dialogDisabled) {
+        elements.smartExportScopeAll.checked = true;
+      }
+    }
 
     if (!extrasEnabled) {
       elements.smartExportIncludeLastPacket.checked = false;
@@ -5092,11 +5129,15 @@
     if (flowIndices.length === 0) {
       const emptySelectionMessage = flowScope === "current"
         ? "No current flow selected for smart export."
-        : (flowScope === "selected"
-          ? "No selected flows for smart export."
-          : (flowScope === "unselected"
-            ? "No unselected flows for smart export."
-            : "No flows available for smart export."));
+        : (flowScope === "matching_filter"
+          ? "No flows match the current filter for smart export."
+          : (flowScope === "selected"
+            ? "No selected flows for smart export."
+            : (flowScope === "not_matching_filter"
+              ? "No flows remain outside the current filter for smart export."
+              : (flowScope === "unselected"
+                ? "No unselected flows for smart export."
+                : "No flows available for smart export."))));
       setSmartExportStatus(emptySelectionMessage, "error");
       render();
       return;
@@ -5367,7 +5408,9 @@
   });
   for (const control of [
     elements.smartExportScopeCurrent,
+    elements.smartExportScopeMatchingFilter,
     elements.smartExportScopeSelected,
+    elements.smartExportScopeNotMatchingFilter,
     elements.smartExportScopeUnselected,
     elements.smartExportScopeAll,
     elements.smartExportBaseAllPackets,

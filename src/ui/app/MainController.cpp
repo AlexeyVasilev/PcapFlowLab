@@ -40,6 +40,8 @@ constexpr int kSmartExportFlowScopeCurrentFlow = 0;
 constexpr int kSmartExportFlowScopeSelectedFlows = 1;
 constexpr int kSmartExportFlowScopeUnselectedFlows = 2;
 constexpr int kSmartExportFlowScopeAllFlows = 3;
+constexpr int kSmartExportFlowScopeMatchingCurrentFilter = 4;
+constexpr int kSmartExportFlowScopeNotMatchingCurrentFilter = 5;
 constexpr int kSmartExportOutputModeSingleFile = 0;
 constexpr int kSmartExportOutputModeSeparateFilePerFlow = 1;
 constexpr int kSmartExportBaseModeAllPackets = 0;
@@ -3443,6 +3445,14 @@ bool MainController::exportSmartFlows(
         empty_selection_message = QStringLiteral("No flows available for smart export.");
         break;
     }
+    case kSmartExportFlowScopeMatchingCurrentFilter:
+        flow_indices = flow_model_.visibleFlowIndices();
+        empty_selection_message = QStringLiteral("No flows match the current filter for smart export.");
+        break;
+    case kSmartExportFlowScopeNotMatchingCurrentFilter:
+        flow_indices = flow_model_.hiddenFlowIndices();
+        empty_selection_message = QStringLiteral("No flows remain outside the current filter for smart export.");
+        break;
     default:
         setStatusText(QStringLiteral("Invalid smart export flow selection."), true);
         return false;

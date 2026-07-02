@@ -71,6 +71,8 @@ public:
     [[nodiscard]] bool sortAscending() const noexcept;
     [[nodiscard]] bool containsFlowIndex(int flowIndex) const noexcept;
     [[nodiscard]] int totalFlowCount() const noexcept;
+    [[nodiscard]] std::vector<int> visibleFlowIndices() const;
+    [[nodiscard]] std::vector<int> hiddenFlowIndices() const;
     [[nodiscard]] std::vector<int> checkedFlowIndices() const;
     [[nodiscard]] std::vector<int> uncheckedFlowIndices() const;
 

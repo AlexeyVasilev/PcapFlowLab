@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 
 namespace pfl {
 
@@ -356,6 +357,35 @@ bool FlowListModel::containsFlowIndex(const int flowIndex) const noexcept {
 
 int FlowListModel::totalFlowCount() const noexcept {
     return static_cast<int>(all_items_.size());
+}
+
+std::vector<int> FlowListModel::visibleFlowIndices() const {
+    std::vector<int> flowIndices {};
+    flowIndices.reserve(visible_items_.size());
+
+    for (const auto& item : visible_items_) {
+        flowIndices.push_back(item.flow_index);
+    }
+
+    return flowIndices;
+}
+
+std::vector<int> FlowListModel::hiddenFlowIndices() const {
+    std::set<int> visibleFlowIndexSet {};
+    for (const auto& item : visible_items_) {
+        visibleFlowIndexSet.insert(item.flow_index);
+    }
+
+    std::vector<int> flowIndices {};
+    flowIndices.reserve(all_items_.size());
+
+    for (const auto& item : all_items_) {
+        if (!visibleFlowIndexSet.contains(item.flow_index)) {
+            flowIndices.push_back(item.flow_index);
+        }
+    }
+
+    return flowIndices;
 }
 
 std::vector<int> FlowListModel::checkedFlowIndices() const {
