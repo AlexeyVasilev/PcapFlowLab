@@ -354,6 +354,42 @@ void run_export_tests() {
     }
 
     {
+        const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_unrecognized_sparse_source.pcap",
+            make_classic_pcap_with_captured_lengths({
+                {.ts_usec = 100U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 200U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 300U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 400U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 500U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_sparse_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        PFL_EXPECT(session.unrecognized_packet_count() == 5U);
+
+        const SmartPacketRetentionOptions options {
+            .base_mode = SmartFlowExportBaseMode::first_n_packets,
+            .first_n_packets = 2U,
+            .include_last_packet = true,
+            .include_every_kth_packet_after_base = true,
+            .every_kth_packet = 2U,
+        };
+        PFL_EXPECT(session.export_smart_unrecognized_packets_to_pcap(options, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 4U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+        PFL_EXPECT(exported_packets[2].ts_usec == 400U);
+        PFL_EXPECT(exported_packets[3].ts_usec == 500U);
+    }
+
+    {
         const auto source_path = fixture_path("parsing/tcp_options/01_tcp_syn_no_options.pcap");
         const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_empty_output.pcap";
         std::filesystem::remove(output_path);
