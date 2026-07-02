@@ -4931,20 +4931,20 @@ void MainController::completeSmartExport(
     cleanupSmartExportThread();
     setSmartExportState(false, 0U, 0U, {});
 
+    if (exported) {
+        setStatusText(successText);
+        return;
+    }
+
     if (cancelled || had_cancel_request) {
         setStatusText(QStringLiteral("Smart export cancelled."));
         return;
     }
 
-    if (!exported) {
-        const auto message = errorText.isEmpty()
-            ? defaultFailureText
-            : errorText;
-        setStatusText(message, true);
-        return;
-    }
-
-    setStatusText(successText);
+    const auto message = errorText.isEmpty()
+        ? defaultFailureText
+        : errorText;
+    setStatusText(message, true);
 }
 
 void MainController::cancelSmartExport() {

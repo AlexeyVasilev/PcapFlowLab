@@ -3752,10 +3752,23 @@ bool CaptureSession::export_smart_flows_to_pcap(
             return false;
         }
 
-        const auto selected_packets = collect_selected_smart_export_packets(*packets, retention);
-        for (const auto& packet : selected_packets) {
+        if (!visit_smart_export_flow_packets(*packets, retention, [&](const PacketRef& packet, const bool selected) {
+            if (!selected) {
+                return true;
+            }
+
             if (!mark_packet_for_smart_export(packet_selection, packet)) {
                 marking_ok = false;
+                return false;
+            }
+            marked_any_packet = true;
+            return true;
+        })) {
+            if (!marking_ok) {
+                if (out_error_text != nullptr) {
+                    *out_error_text = "Smart export packet selection exceeded internal limits.";
+                }
+                return false;
             }
         }
         if (!marking_ok) {
@@ -3763,13 +3776,6 @@ bool CaptureSession::export_smart_flows_to_pcap(
                 *out_error_text = "Smart export packet selection exceeded internal limits.";
             }
             return false;
-        }
-    }
-
-    for (const auto selected : packet_selection) {
-        if (selected != 0U) {
-            marked_any_packet = true;
-            break;
         }
     }
 
