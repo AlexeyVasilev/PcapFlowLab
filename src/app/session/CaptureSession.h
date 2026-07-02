@@ -17,6 +17,7 @@
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/FlowExportService.h"
 #include "core/services/FlowAnalysisService.h"
 
 struct OpenContext;
@@ -72,6 +73,10 @@ struct SmartPerFlowExportOptions {
     SmartPerFlowExportProgressCallback progress_callback {};
     std::function<bool()> cancel_requested {};
 };
+
+using SmartSingleFileExportProgress = MarkedPacketExportProgress;
+using SmartSingleFileExportProgressCallback = MarkedPacketExportProgressCallback;
+using SmartSingleFileExportOptions = MarkedPacketExportOptions;
 
 struct SelectedFlowPacketCacheInfo {
     std::size_t flow_index {0};
@@ -184,6 +189,12 @@ public:
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
+    bool export_smart_flows_to_pcap(
+        const SmartFlowExportRequest& request,
+        const std::filesystem::path& output_path,
+        const SmartSingleFileExportOptions& options,
+        std::string* out_error_text
+    ) const;
     bool export_smart_packets_to_pcap(
         const SmartPacketListExportRequest& request,
         const std::filesystem::path& output_path
@@ -191,6 +202,12 @@ public:
     bool export_smart_unrecognized_packets_to_pcap(
         const SmartPacketRetentionOptions& options,
         const std::filesystem::path& output_path
+    ) const;
+    bool export_smart_unrecognized_packets_to_pcap(
+        const SmartPacketRetentionOptions& options,
+        const std::filesystem::path& output_path,
+        const SmartSingleFileExportOptions& export_options,
+        std::string* out_error_text
     ) const;
     bool export_smart_flows_to_folder(const SmartFlowExportRequest& request, const std::filesystem::path& output_directory) const;
     bool export_smart_flows_to_folder(

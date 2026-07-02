@@ -356,6 +356,34 @@ void run_export_tests() {
     {
         const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
         const auto source_path = write_temp_pcap(
+            "pfl_smart_export_unrecognized_only_source.pcap",
+            make_classic_pcap_with_captured_lengths({
+                {.ts_usec = 100U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+                {.ts_usec = 200U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
+            })
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_only_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        PFL_EXPECT(session.summary().packet_count == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 2U);
+
+        const SmartPacketRetentionOptions options {
+            .base_mode = SmartFlowExportBaseMode::all_packets,
+        };
+        PFL_EXPECT(session.export_smart_unrecognized_packets_to_pcap(options, output_path));
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 2U);
+        PFL_EXPECT(exported_packets[0].ts_usec == 100U);
+        PFL_EXPECT(exported_packets[1].ts_usec == 200U);
+    }
+
+    {
+        const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
+        const auto source_path = write_temp_pcap(
             "pfl_smart_export_unrecognized_sparse_source.pcap",
             make_classic_pcap_with_captured_lengths({
                 {.ts_usec = 100U, .captured_bytes = malformed_packet.bytes, .original_length = 100U},
@@ -407,6 +435,109 @@ void run_export_tests() {
         invalid_request.packet_indices.push_back(999999U);
         invalid_request.retention = options;
         PFL_EXPECT(!session.export_smart_packets_to_pcap(invalid_request, output_path));
+    }
+
+    {
+        std::vector<ClassicPcapCapturedRecord> packets {};
+        packets.reserve(1500);
+        for (std::uint32_t packet_index = 0; packet_index < 1500U; ++packet_index) {
+            packets.push_back(ClassicPcapCapturedRecord {
+                .ts_usec = 100U + packet_index,
+                .captured_bytes = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+                    ipv4(10, 70, 0, 1), ipv4(10, 70, 0, 2), 37001, 37002, std::vector<std::uint8_t>{static_cast<std::uint8_t>(packet_index & 0xFFU)}
+                ),
+                .original_length = 200U,
+            });
+        }
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_single_file_progress_source.pcap",
+            make_classic_pcap_with_captured_lengths(packets)
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_single_file_progress_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+
+        SmartFlowExportRequest request {};
+        request.flow_indices.push_back(rows.front().index);
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+
+        std::uint64_t progress_updates = 0U;
+        bool saw_final_progress = false;
+        const SmartSingleFileExportOptions export_options {
+            .progress_callback = [&](const SmartSingleFileExportProgress& progress) {
+                ++progress_updates;
+                if (progress.packets_processed == 1500U &&
+                    progress.total_packets_to_scan == 1500U &&
+                    progress.exported_packets_written == 1500U &&
+                    progress.total_selected_packets == 1500U) {
+                    saw_final_progress = true;
+                }
+            },
+        };
+
+        std::string error_text {};
+        PFL_EXPECT(session.export_smart_flows_to_pcap(request, output_path, export_options, &error_text));
+        PFL_EXPECT(error_text.empty());
+        PFL_EXPECT(progress_updates >= 1U);
+        PFL_EXPECT(saw_final_progress);
+
+        const auto exported_packets = read_all_packets(output_path);
+        PFL_EXPECT(exported_packets.size() == 1500U);
+    }
+
+    {
+        const auto malformed_packet = read_first_packet(fixture_path("parsing/tcp_options/19_tcp_syn_tcp_header_snaplen_truncated.pcap"));
+        std::vector<ClassicPcapCapturedRecord> packets {};
+        packets.reserve(1500);
+        for (std::uint32_t packet_index = 0; packet_index < 1500U; ++packet_index) {
+            packets.push_back(ClassicPcapCapturedRecord {
+                .ts_usec = 100U + packet_index,
+                .captured_bytes = malformed_packet.bytes,
+                .original_length = 200U,
+            });
+        }
+
+        const auto source_path = write_temp_pcap(
+            "pfl_smart_export_unrecognized_single_file_cancel_source.pcap",
+            make_classic_pcap_with_captured_lengths(packets)
+        );
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_smart_export_unrecognized_single_file_cancel_output.pcap";
+        std::filesystem::remove(output_path);
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(source_path));
+        PFL_EXPECT(session.unrecognized_packet_count() == 1500U);
+
+        const SmartPacketRetentionOptions options {
+            .base_mode = SmartFlowExportBaseMode::all_packets,
+        };
+
+        std::atomic_bool cancel_requested {false};
+        std::uint64_t progress_updates = 0U;
+        const SmartSingleFileExportOptions export_options {
+            .progress_callback = [&](const SmartSingleFileExportProgress& progress) {
+                if (progress.packets_processed >= 1000U) {
+                    ++progress_updates;
+                    cancel_requested.store(true);
+                }
+            },
+            .cancel_requested = [&]() {
+                return cancel_requested.load();
+            },
+        };
+
+        std::string error_text {};
+        PFL_EXPECT(!session.export_smart_unrecognized_packets_to_pcap(options, output_path, export_options, &error_text));
+        PFL_EXPECT(error_text == "Smart export cancelled by user.");
+        PFL_EXPECT(progress_updates >= 1U);
+        if (std::filesystem::exists(output_path)) {
+            PFL_EXPECT(!read_all_packets(output_path).empty());
+        }
     }
 
     {

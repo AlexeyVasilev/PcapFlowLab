@@ -3707,16 +3707,35 @@ bool CaptureSession::export_smart_flows_to_pcap(
     const SmartFlowExportRequest& request,
     const std::filesystem::path& output_path
 ) const {
+    std::string error_text {};
+    return export_smart_flows_to_pcap(request, output_path, SmartSingleFileExportOptions {}, &error_text);
+}
+
+bool CaptureSession::export_smart_flows_to_pcap(
+    const SmartFlowExportRequest& request,
+    const std::filesystem::path& output_path,
+    const SmartSingleFileExportOptions& options,
+    std::string* out_error_text
+) const {
     if (!has_source_capture() || request.flow_indices.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No source capture or no flows were selected for smart export.";
+        }
         return false;
     }
 
-    const auto options = retention_options(request);
-    if (!validate_smart_packet_retention_options(options)) {
+    const auto retention = retention_options(request);
+    if (!validate_smart_packet_retention_options(retention)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Invalid smart export retention options.";
+        }
         return false;
     }
 
     if (summary().packet_count == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets were selected for smart export.";
+        }
         return false;
     }
 
@@ -3727,16 +3746,22 @@ bool CaptureSession::export_smart_flows_to_pcap(
     for (const auto flow_index : request.flow_indices) {
         const auto packets = flow_packets(flow_index);
         if (!packets.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to load packets for a selected flow during smart export.";
+            }
             return false;
         }
 
-        const auto selected_packets = collect_selected_smart_export_packets(*packets, options);
+        const auto selected_packets = collect_selected_smart_export_packets(*packets, retention);
         for (const auto& packet : selected_packets) {
             if (!mark_packet_for_smart_export(packet_selection, packet)) {
                 marking_ok = false;
             }
         }
         if (!marking_ok) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Smart export packet selection exceeded internal limits.";
+            }
             return false;
         }
     }
@@ -3749,11 +3774,14 @@ bool CaptureSession::export_smart_flows_to_pcap(
     }
 
     if (!marked_any_packet) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets were selected for smart export.";
+        }
         return false;
     }
 
     FlowExportService service {};
-    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path());
+    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path(), options, out_error_text);
 }
 
 bool CaptureSession::export_smart_packets_to_pcap(
@@ -3765,10 +3793,6 @@ bool CaptureSession::export_smart_packets_to_pcap(
     }
 
     if (!validate_smart_packet_retention_options(request.retention)) {
-        return false;
-    }
-
-    if (summary().packet_count == 0U) {
         return false;
     }
 
@@ -3795,32 +3819,50 @@ bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
     const SmartPacketRetentionOptions& options,
     const std::filesystem::path& output_path
 ) const {
+    std::string error_text {};
+    return export_smart_unrecognized_packets_to_pcap(options, output_path, SmartSingleFileExportOptions {}, &error_text);
+}
+
+bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
+    const SmartPacketRetentionOptions& options,
+    const std::filesystem::path& output_path,
+    const SmartSingleFileExportOptions& export_options,
+    std::string* out_error_text
+) const {
     if (!has_source_capture() || state_.unrecognized_packets.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No unrecognized packets available for smart export.";
+        }
         return false;
     }
 
     if (!validate_smart_packet_retention_options(options)) {
-        return false;
-    }
-
-    if (summary().packet_count == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Invalid smart export retention options.";
+        }
         return false;
     }
 
     const auto selected_packets = collect_selected_smart_export_unrecognized_packets(state_.unrecognized_packets, options);
     if (selected_packets.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets were selected for smart export.";
+        }
         return false;
     }
 
     std::vector<std::uint8_t> packet_selection {};
     for (const auto& packet : selected_packets) {
         if (!mark_packet_for_smart_export(packet_selection, packet)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Smart export packet selection exceeded internal limits.";
+            }
             return false;
         }
     }
 
     FlowExportService service {};
-    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path());
+    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path(), export_options, out_error_text);
 }
 
 bool CaptureSession::export_smart_flows_to_folder(
