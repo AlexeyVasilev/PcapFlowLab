@@ -211,20 +211,22 @@ bool export_marked_packets_with_reader(
         return false;
     }
 
+    if (reader.has_error()) {
+        writer.close();
+        set_error_text(out_error_text, reader_failure_text(reader.last_error()));
+        return false;
+    }
+    if (remaining_marked_packets != 0U) {
+        writer.close();
+        set_error_text(out_error_text, "Source scan ended before all selected packets were exported.");
+        return false;
+    }
     if (!writer_open) {
         set_error_text(out_error_text, "No packets were selected for smart export.");
         return false;
     }
 
     writer.close();
-    if (reader.has_error()) {
-        set_error_text(out_error_text, reader_failure_text(reader.last_error()));
-        return false;
-    }
-    if (remaining_marked_packets != 0U) {
-        set_error_text(out_error_text, "Source scan ended before all selected packets were exported.");
-        return false;
-    }
 
     if (options.progress_callback) {
         options.progress_callback(MarkedPacketExportProgress {
