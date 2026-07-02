@@ -114,10 +114,17 @@ Implemented slice:
 - `Flow -> Export Selected Flows` uses checked-flow selection rather than the active selected flow and also requires the original source capture to be readable.
 - `Flow -> Export Unselected Flows` uses the unchecked remainder of the loaded flow list and also requires the original source capture to be readable.
 - `Flow -> Smart Export...` also requires the original source capture to be readable and currently supports:
-  - current / selected / unselected / all scopes
+  - current flow
+  - selected flows
+  - unselected flows
+  - all flows
+  - matching current filter
+  - not matching current filter
+  - unrecognized packets
   - single-file `.pcap` export
   - separate-file-per-flow export to a chosen folder
   - the existing Smart Export retention rules
+  - `Unrecognized packets` as one packet-set target; separate-file-per-flow is unavailable for that target
 - The current shell keeps open mode handling and grouped source-availability warnings in the compact top session area.
 - The top-level tab order now matches Qt: `Flows / Analysis / Statistics`.
 - When byte-backed inspection is unavailable, the shell can locate and attach the original source capture through a native picker.
@@ -197,7 +204,9 @@ Implemented slice:
 - Checked-flow selection exists in the Flows table and now powers `Flow -> Export Selected Flows`.
 - `Flow -> Export Unselected Flows` now exports the inverse of checked-flow selection.
 - Other export workflows are still absent in Tauri.
-- Qt's richer per-flow smart-export progress/cancel UI is still not mirrored in Tauri.
+- Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
+- This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
+- Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.
 - The previous visible typed-path action is no longer shown in the primary toolbar.
 - Attach-source is now available as a compact locate/attach workflow, but broader index workflow parity is still incomplete.
 - Save/open index workflow details are still thinner than Qt and need a smaller parity polish pass.

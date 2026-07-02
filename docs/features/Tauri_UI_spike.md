@@ -280,7 +280,14 @@ Open workflow:
 `Flow -> Smart Export...`:
 
 - reuses the existing smart-export session path and product semantics
-- supports current / selected / unselected / all flow scopes
+- supports:
+  - current flow
+  - selected flows
+  - unselected flows
+  - all flows
+  - matching current filter
+  - not matching current filter
+  - unrecognized packets
 - supports:
   - all packets
   - first N packets
@@ -290,11 +297,15 @@ Open workflow:
 - supports:
   - single output file
   - separate file per flow
+- `Unrecognized packets` is exported as one packet-set target and does not allow separate-file-per-flow mode
 - writes `.pcap` for single-file mode
 - writes one PCAP per flow plus `flows_manifest.csv` for separate-file-per-flow mode
 - requires the original source capture to be readable
 - currently keeps the existing session, selected flow, checked-flow state, packets, stream, statistics, and analysis intact after success, cancel, or failure
-- currently does not mirror Qt's per-flow smart-export progress/cancel UI; it reuses the same session path without the richer Qt progress surface
+- Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still reuses one-shot invoke/session paths without detailed packet-level progress or cancellation
+- Tauri currently shows only busy/status-level Smart Export feedback, and this limitation applies to both flow-based Smart Export and `Unrecognized packets`
+
+Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.
 
 The source-attach workflow:
 
