@@ -550,9 +550,17 @@ private:
         SmartPerFlowExportPhase phase,
         qulonglong packetsProcessed,
         qulonglong totalPackets,
-        qulonglong exportedPacketsWritten
+        qulonglong exportedPacketsWritten,
+        qulonglong totalSelectedPackets = 0U
     );
-    void completeSmartExport(qulonglong jobId, const QString& outputPath, bool exported, bool cancelled, const QString& errorText);
+    void completeSmartExport(
+        qulonglong jobId,
+        const QString& successText,
+        const QString& defaultFailureText,
+        bool exported,
+        bool cancelled,
+        const QString& errorText
+    );
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
     void cleanupSmartExportThread();

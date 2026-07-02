@@ -91,26 +91,70 @@ template <typename Reader>
 bool export_marked_packets_with_reader(
     Reader& reader,
     const std::filesystem::path& output_path,
-    std::span<const std::uint8_t> packet_selection
+    std::span<const std::uint8_t> packet_selection,
+    const MarkedPacketExportOptions& options,
+    std::string* out_error_text
 ) {
     PcapWriter writer {};
     bool writer_open = false;
-    auto remaining_marked_packets = static_cast<std::size_t>(std::count_if(
+    const auto total_selected_packets = static_cast<std::size_t>(std::count_if(
         packet_selection.begin(),
         packet_selection.end(),
         [](const std::uint8_t marker) { return marker != 0U; }
     ));
+    auto remaining_marked_packets = total_selected_packets;
+
+    std::size_t total_packets_to_scan = 0U;
+    for (std::size_t index = packet_selection.size(); index > 0U; --index) {
+        if (packet_selection[index - 1U] != 0U) {
+            total_packets_to_scan = index;
+            break;
+        }
+    }
 
     if (remaining_marked_packets == 0U) {
+        set_error_text(out_error_text, "No packets were selected for smart export.");
+        return false;
+    }
+
+    if (options.progress_callback) {
+        options.progress_callback(MarkedPacketExportProgress {
+            .packets_processed = 0U,
+            .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
+            .exported_packets_written = 0U,
+            .total_selected_packets = static_cast<std::uint64_t>(total_selected_packets),
+        });
+    }
+
+    if (options.cancel_requested && options.cancel_requested()) {
+        set_error_text(out_error_text, "Smart export cancelled by user.");
         return false;
     }
 
     while (const auto raw_packet = reader.read_next()) {
+        const auto processed_packets = raw_packet->packet_index + 1U;
+        if (options.cancel_requested &&
+            ((processed_packets % kCancellationCheckPacketInterval) == 0U) &&
+            options.cancel_requested()) {
+            writer.close();
+            set_error_text(out_error_text, "Smart export cancelled by user.");
+            return false;
+        }
+
         if (raw_packet->packet_index >= packet_selection.size()) {
             break;
         }
 
         if (packet_selection[static_cast<std::size_t>(raw_packet->packet_index)] == 0U) {
+            if (options.progress_callback &&
+                ((processed_packets % kProgressReportPacketInterval) == 0U || processed_packets >= total_packets_to_scan)) {
+                options.progress_callback(MarkedPacketExportProgress {
+                    .packets_processed = processed_packets,
+                    .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
+                    .exported_packets_written = static_cast<std::uint64_t>(total_selected_packets - remaining_marked_packets),
+                    .total_selected_packets = static_cast<std::uint64_t>(total_selected_packets),
+                });
+            }
             continue;
         }
 
@@ -139,16 +183,60 @@ bool export_marked_packets_with_reader(
         --remaining_marked_packets;
         if (remaining_marked_packets == 0U) {
             writer.close();
+            if (options.progress_callback) {
+                options.progress_callback(MarkedPacketExportProgress {
+                    .packets_processed = static_cast<std::uint64_t>(total_packets_to_scan),
+                    .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
+                    .exported_packets_written = static_cast<std::uint64_t>(total_selected_packets),
+                    .total_selected_packets = static_cast<std::uint64_t>(total_selected_packets),
+                });
+            }
             return true;
+        }
+
+        if (options.progress_callback &&
+            ((processed_packets % kProgressReportPacketInterval) == 0U || processed_packets >= total_packets_to_scan)) {
+            options.progress_callback(MarkedPacketExportProgress {
+                .packets_processed = processed_packets,
+                .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
+                .exported_packets_written = static_cast<std::uint64_t>(total_selected_packets - remaining_marked_packets),
+                .total_selected_packets = static_cast<std::uint64_t>(total_selected_packets),
+            });
         }
     }
 
+    if (options.cancel_requested && options.cancel_requested()) {
+        writer.close();
+        set_error_text(out_error_text, "Smart export cancelled by user.");
+        return false;
+    }
+
+    if (reader.has_error()) {
+        writer.close();
+        set_error_text(out_error_text, reader_failure_text(reader.last_error()));
+        return false;
+    }
+    if (remaining_marked_packets != 0U) {
+        writer.close();
+        set_error_text(out_error_text, "Source scan ended before all selected packets were exported.");
+        return false;
+    }
     if (!writer_open) {
+        set_error_text(out_error_text, "No packets were selected for smart export.");
         return false;
     }
 
     writer.close();
-    return remaining_marked_packets == 0U && !reader.has_error();
+
+    if (options.progress_callback) {
+        options.progress_callback(MarkedPacketExportProgress {
+            .packets_processed = static_cast<std::uint64_t>(total_packets_to_scan),
+            .total_packets_to_scan = static_cast<std::uint64_t>(total_packets_to_scan),
+            .exported_packets_written = static_cast<std::uint64_t>(total_selected_packets),
+            .total_selected_packets = static_cast<std::uint64_t>(total_selected_packets),
+        });
+    }
+    return true;
 }
 
 class BufferedPerFlowPcapExporter {
@@ -646,7 +734,18 @@ bool FlowExportService::export_marked_packets_to_pcap(
     std::span<const std::uint8_t> packet_selection,
     const std::filesystem::path& source_capture_path
 ) const {
+    return export_marked_packets_to_pcap(output_path, packet_selection, source_capture_path, MarkedPacketExportOptions {}, nullptr);
+}
+
+bool FlowExportService::export_marked_packets_to_pcap(
+    const std::filesystem::path& output_path,
+    std::span<const std::uint8_t> packet_selection,
+    const std::filesystem::path& source_capture_path,
+    const MarkedPacketExportOptions& options,
+    std::string* out_error_text
+) const {
     if (packet_selection.empty()) {
+        set_error_text(out_error_text, "No packets were selected for smart export.");
         return false;
     }
 
@@ -654,20 +753,23 @@ bool FlowExportService::export_marked_packets_to_pcap(
     case CaptureSourceFormat::classic_pcap: {
         PcapReader reader {};
         if (!reader.open(source_capture_path)) {
+            set_error_text(out_error_text, reader_failure_text(reader.last_error()));
             return false;
         }
 
-        return export_marked_packets_with_reader(reader, output_path, packet_selection);
+        return export_marked_packets_with_reader(reader, output_path, packet_selection, options, out_error_text);
     }
     case CaptureSourceFormat::pcapng: {
         PcapNgReader reader {};
         if (!reader.open(source_capture_path)) {
+            set_error_text(out_error_text, reader_failure_text(reader.last_error()));
             return false;
         }
 
-        return export_marked_packets_with_reader(reader, output_path, packet_selection);
+        return export_marked_packets_with_reader(reader, output_path, packet_selection, options, out_error_text);
     }
     default:
+        set_error_text(out_error_text, "Unsupported source capture format for smart export.");
         return false;
     }
 }

@@ -40,6 +40,9 @@ constexpr int kSmartExportFlowScopeCurrentFlow = 0;
 constexpr int kSmartExportFlowScopeSelectedFlows = 1;
 constexpr int kSmartExportFlowScopeUnselectedFlows = 2;
 constexpr int kSmartExportFlowScopeAllFlows = 3;
+constexpr int kSmartExportFlowScopeMatchingCurrentFilter = 4;
+constexpr int kSmartExportFlowScopeNotMatchingCurrentFilter = 5;
+constexpr int kSmartExportFlowScopeUnrecognizedPackets = 6;
 constexpr int kSmartExportOutputModeSingleFile = 0;
 constexpr int kSmartExportOutputModeSeparateFilePerFlow = 1;
 constexpr int kSmartExportBaseModeAllPackets = 0;
@@ -3415,6 +3418,49 @@ bool MainController::exportSmartFlows(
         return false;
     }
 
+    SmartPacketRetentionOptions retention {};
+    switch (baseSelectionMode) {
+    case kSmartExportBaseModeAllPackets:
+        retention.base_mode = SmartFlowExportBaseMode::all_packets;
+        break;
+    case kSmartExportBaseModeFirstNPackets: {
+        const auto value = parse_positive_u64(packetCountText);
+        if (!value.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive packet count for smart export."), true);
+            return false;
+        }
+        retention.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        retention.first_n_packets = *value;
+        break;
+    }
+    case kSmartExportBaseModeFirstMOriginalBytes: {
+        const auto value = parse_positive_u64(originalBytesText);
+        if (!value.has_value()) {
+            setStatusText(QStringLiteral("Enter a positive original-byte limit for smart export."), true);
+            return false;
+        }
+        retention.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
+        retention.first_m_original_bytes = *value;
+        break;
+    }
+    default:
+        setStatusText(QStringLiteral("Invalid smart export base selection."), true);
+        return false;
+    }
+
+    if (retention.base_mode != SmartFlowExportBaseMode::all_packets) {
+        retention.include_last_packet = includeLastPacket;
+        retention.include_every_kth_packet_after_base = includeEveryKthPacket;
+        if (includeEveryKthPacket) {
+            const auto value = parse_positive_u64(everyKText);
+            if (!value.has_value()) {
+                setStatusText(QStringLiteral("Enter a positive K value for sparse smart export retention."), true);
+                return false;
+            }
+            retention.every_kth_packet = *value;
+        }
+    }
+
     std::vector<int> flow_indices {};
     QString empty_selection_message {};
     switch (flowScopeMode) {
@@ -3443,14 +3489,86 @@ bool MainController::exportSmartFlows(
         empty_selection_message = QStringLiteral("No flows available for smart export.");
         break;
     }
+    case kSmartExportFlowScopeMatchingCurrentFilter:
+        flow_indices = flow_model_.visibleFlowIndices();
+        empty_selection_message = QStringLiteral("No flows match the current filter for smart export.");
+        break;
+    case kSmartExportFlowScopeNotMatchingCurrentFilter:
+        flow_indices = flow_model_.hiddenFlowIndices();
+        empty_selection_message = QStringLiteral("No flows remain outside the current filter for smart export.");
+        break;
+    case kSmartExportFlowScopeUnrecognizedPackets:
+        if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
+            setStatusText(QStringLiteral("Unrecognized packets can only be smart-exported to a single output file."), true);
+            return false;
+        }
+        if (session_.unrecognized_packet_count() == 0U) {
+            setStatusText(QStringLiteral("No unrecognized packets available for smart export."), true);
+            return false;
+        }
+        break;
     default:
         setStatusText(QStringLiteral("Invalid smart export flow selection."), true);
         return false;
     }
 
-    if (flow_indices.empty()) {
+    if (flowScopeMode != kSmartExportFlowScopeUnrecognizedPackets && flow_indices.empty()) {
         setStatusText(empty_selection_message, true);
         return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+
+    if (flowScopeMode == kSmartExportFlowScopeUnrecognizedPackets) {
+        ++active_smart_export_job_id_;
+        const auto job_id = active_smart_export_job_id_;
+        smart_export_cancel_token_ = std::make_shared<std::atomic_bool>(false);
+        smart_export_cancel_requested_ = false;
+
+        const SmartSingleFileExportOptions export_options {
+            .progress_callback = [this, job_id](const SmartSingleFileExportProgress& progress) {
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, job_id, progress]() {
+                        updateSmartExportProgress(
+                            job_id,
+                            SmartPerFlowExportPhase::writing,
+                            static_cast<qulonglong>(progress.packets_processed),
+                            static_cast<qulonglong>(progress.total_packets_to_scan),
+                            static_cast<qulonglong>(progress.exported_packets_written),
+                            static_cast<qulonglong>(progress.total_selected_packets)
+                        );
+                    },
+                    Qt::QueuedConnection
+                );
+            },
+            .cancel_requested = [token = smart_export_cancel_token_]() {
+                return token != nullptr && token->load(std::memory_order_relaxed);
+            },
+        };
+
+        setSmartExportState(true, 0U, 0U, QStringLiteral("Starting smart export..."));
+        setStatusText(QStringLiteral("Smart export started."));
+        smart_export_thread_ = QThread::create([this, job_id, filesystemPath, retention, export_options]() mutable {
+            std::string error_text {};
+            const bool exported = session_.export_smart_unrecognized_packets_to_pcap(retention, filesystemPath, export_options, &error_text);
+            const bool cancelled = error_text == "Smart export cancelled by user.";
+            QMetaObject::invokeMethod(this, [this, job_id, exported, cancelled, error = QString::fromStdString(error_text)]() {
+                completeSmartExport(
+                    job_id,
+                    QStringLiteral("Smart export completed successfully."),
+                    QStringLiteral("Failed to smart-export unrecognized packets."),
+                    exported,
+                    cancelled,
+                    error
+                );
+            }, Qt::QueuedConnection);
+        });
+
+        QObject::connect(smart_export_thread_, &QThread::finished, smart_export_thread_, &QObject::deleteLater);
+        smart_export_thread_->start();
+        return true;
     }
 
     SmartFlowExportRequest request {};
@@ -3462,51 +3580,13 @@ bool MainController::exportSmartFlows(
         }
         request.flow_indices.push_back(static_cast<std::size_t>(flow_index));
     }
+    request.base_mode = retention.base_mode;
+    request.first_n_packets = retention.first_n_packets;
+    request.first_m_original_bytes = retention.first_m_original_bytes;
+    request.include_last_packet = retention.include_last_packet;
+    request.include_every_kth_packet_after_base = retention.include_every_kth_packet_after_base;
+    request.every_kth_packet = retention.every_kth_packet;
 
-    switch (baseSelectionMode) {
-    case kSmartExportBaseModeAllPackets:
-        request.base_mode = SmartFlowExportBaseMode::all_packets;
-        break;
-    case kSmartExportBaseModeFirstNPackets: {
-        const auto value = parse_positive_u64(packetCountText);
-        if (!value.has_value()) {
-            setStatusText(QStringLiteral("Enter a positive packet count for smart export."), true);
-            return false;
-        }
-        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
-        request.first_n_packets = *value;
-        break;
-    }
-    case kSmartExportBaseModeFirstMOriginalBytes: {
-        const auto value = parse_positive_u64(originalBytesText);
-        if (!value.has_value()) {
-            setStatusText(QStringLiteral("Enter a positive original-byte limit for smart export."), true);
-            return false;
-        }
-        request.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
-        request.first_m_original_bytes = *value;
-        break;
-    }
-    default:
-        setStatusText(QStringLiteral("Invalid smart export base selection."), true);
-        return false;
-    }
-
-    if (request.base_mode != SmartFlowExportBaseMode::all_packets) {
-        request.include_last_packet = includeLastPacket;
-        request.include_every_kth_packet_after_base = includeEveryKthPacket;
-        if (includeEveryKthPacket) {
-            const auto value = parse_positive_u64(everyKText);
-            if (!value.has_value()) {
-                setStatusText(QStringLiteral("Enter a positive K value for sparse smart export retention."), true);
-                return false;
-            }
-            request.every_kth_packet = *value;
-        }
-    }
-
-    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    setLastDirectoryFromPath(filesystemPath);
     if (outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
         const auto buffer_budget_mb = parse_positive_u64(bufferBudgetPresetText);
         if (!buffer_budget_mb.has_value()) {
@@ -3563,7 +3643,14 @@ bool MainController::exportSmartFlows(
             const bool exported = session_.export_smart_flows_to_folder(request, filesystemPath, options, &error_text);
             const bool cancelled = error_text == "Smart export cancelled by user.";
             QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, cancelled, error = QString::fromStdString(error_text)]() {
-                completeSmartExport(job_id, trimmedPath, exported, cancelled, error);
+                completeSmartExport(
+                    job_id,
+                    QStringLiteral("Smart per-flow export completed successfully: %1").arg(trimmedPath),
+                    QStringLiteral("Failed to smart-export flows."),
+                    exported,
+                    cancelled,
+                    error
+                );
             }, Qt::QueuedConnection);
         });
 
@@ -3572,13 +3659,53 @@ bool MainController::exportSmartFlows(
         return true;
     }
 
-    const bool exported = session_.export_smart_flows_to_pcap(request, filesystemPath);
-    if (!exported) {
-        setStatusText(QStringLiteral("Failed to smart-export flows."), true);
-        return false;
-    }
+    ++active_smart_export_job_id_;
+    const auto job_id = active_smart_export_job_id_;
+    smart_export_cancel_token_ = std::make_shared<std::atomic_bool>(false);
+    smart_export_cancel_requested_ = false;
 
-    setStatusText(QStringLiteral("Smart export completed successfully."));
+    const SmartSingleFileExportOptions export_options {
+        .progress_callback = [this, job_id](const SmartSingleFileExportProgress& progress) {
+            QMetaObject::invokeMethod(
+                this,
+                [this, job_id, progress]() {
+                    updateSmartExportProgress(
+                        job_id,
+                        SmartPerFlowExportPhase::writing,
+                        static_cast<qulonglong>(progress.packets_processed),
+                        static_cast<qulonglong>(progress.total_packets_to_scan),
+                        static_cast<qulonglong>(progress.exported_packets_written),
+                        static_cast<qulonglong>(progress.total_selected_packets)
+                    );
+                },
+                Qt::QueuedConnection
+            );
+        },
+        .cancel_requested = [token = smart_export_cancel_token_]() {
+            return token != nullptr && token->load(std::memory_order_relaxed);
+        },
+    };
+
+    setSmartExportState(true, 0U, 0U, QStringLiteral("Starting smart export..."));
+    setStatusText(QStringLiteral("Smart export started."));
+    smart_export_thread_ = QThread::create([this, job_id, filesystemPath, request, export_options]() mutable {
+        std::string error_text {};
+        const bool exported = session_.export_smart_flows_to_pcap(request, filesystemPath, export_options, &error_text);
+        const bool cancelled = error_text == "Smart export cancelled by user.";
+        QMetaObject::invokeMethod(this, [this, job_id, exported, cancelled, error = QString::fromStdString(error_text)]() {
+            completeSmartExport(
+                job_id,
+                QStringLiteral("Smart export completed successfully."),
+                QStringLiteral("Failed to smart-export flows."),
+                exported,
+                cancelled,
+                error
+            );
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(smart_export_thread_, &QThread::finished, smart_export_thread_, &QObject::deleteLater);
+    smart_export_thread_->start();
     return true;
 }
 
@@ -3650,6 +3777,12 @@ bool MainController::browseSmartExportFlows(
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
+    if (flowScopeMode == kSmartExportFlowScopeUnrecognizedPackets &&
+        outputMode == kSmartExportOutputModeSeparateFilePerFlow) {
+        setStatusText(QStringLiteral("Unrecognized packets can only be smart-exported to a single output file."), true);
+        return false;
+    }
+
     const QString path = outputMode == kSmartExportOutputModeSeparateFilePerFlow
         ? destinationFolderText.trimmed()
         : chooseSaveFile(false);
@@ -4741,7 +4874,8 @@ void MainController::updateSmartExportProgress(
     const SmartPerFlowExportPhase phase,
     const qulonglong packetsProcessed,
     const qulonglong totalPackets,
-    const qulonglong exportedPacketsWritten
+    const qulonglong exportedPacketsWritten,
+    const qulonglong totalSelectedPackets
 ) {
     if (jobId != active_smart_export_job_id_) {
         return;
@@ -4755,10 +4889,18 @@ void MainController::updateSmartExportProgress(
             .arg(QString::number(packetsProcessed), total_text);
         break;
     case SmartPerFlowExportPhase::writing:
-        progress_text = QStringLiteral("Writing output: %1 / %2 packets.")
-            .arg(QString::number(packetsProcessed), total_text);
-        if (exportedPacketsWritten > 0U) {
-            progress_text += QStringLiteral(" Wrote %1 packets.").arg(QString::number(exportedPacketsWritten));
+        if (totalSelectedPackets > 0U) {
+            progress_text = QStringLiteral("Writing output: scanned %1 / %2 packets; wrote %3 / %4 selected packets.")
+                .arg(QString::number(packetsProcessed),
+                     total_text,
+                     QString::number(exportedPacketsWritten),
+                     QString::number(totalSelectedPackets));
+        } else {
+            progress_text = QStringLiteral("Writing output: %1 / %2 packets.")
+                .arg(QString::number(packetsProcessed), total_text);
+            if (exportedPacketsWritten > 0U) {
+                progress_text += QStringLiteral(" Wrote %1 packets.").arg(QString::number(exportedPacketsWritten));
+            }
         }
         break;
     }
@@ -4772,7 +4914,8 @@ void MainController::updateSmartExportProgress(
 
 void MainController::completeSmartExport(
     const qulonglong jobId,
-    const QString& outputPath,
+    const QString& successText,
+    const QString& defaultFailureText,
     const bool exported,
     const bool cancelled,
     const QString& errorText
@@ -4788,20 +4931,20 @@ void MainController::completeSmartExport(
     cleanupSmartExportThread();
     setSmartExportState(false, 0U, 0U, {});
 
+    if (exported) {
+        setStatusText(successText);
+        return;
+    }
+
     if (cancelled || had_cancel_request) {
         setStatusText(QStringLiteral("Smart export cancelled."));
         return;
     }
 
-    if (!exported) {
-        const auto message = errorText.isEmpty()
-            ? QStringLiteral("Failed to smart-export flows.")
-            : errorText;
-        setStatusText(message, true);
-        return;
-    }
-
-    setStatusText(QStringLiteral("Smart per-flow export completed successfully: %1").arg(outputPath));
+    const auto message = errorText.isEmpty()
+        ? defaultFailureText
+        : errorText;
+    setStatusText(message, true);
 }
 
 void MainController::cancelSmartExport() {

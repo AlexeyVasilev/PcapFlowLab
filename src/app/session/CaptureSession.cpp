@@ -3183,13 +3183,43 @@ namespace {
     return true;
 }
 
+[[nodiscard]] SmartPacketRetentionOptions retention_options(const SmartFlowExportRequest& request) {
+    return SmartPacketRetentionOptions {
+        .base_mode = request.base_mode,
+        .first_n_packets = request.first_n_packets,
+        .first_m_original_bytes = request.first_m_original_bytes,
+        .include_last_packet = request.include_last_packet,
+        .include_every_kth_packet_after_base = request.include_every_kth_packet_after_base,
+        .every_kth_packet = request.every_kth_packet,
+    };
+}
+
+[[nodiscard]] bool validate_smart_packet_retention_options(const SmartPacketRetentionOptions& options) {
+    if (options.base_mode == SmartFlowExportBaseMode::first_n_packets && options.first_n_packets == 0U) {
+        return false;
+    }
+
+    if (options.base_mode == SmartFlowExportBaseMode::first_m_original_bytes &&
+        options.first_m_original_bytes == 0U) {
+        return false;
+    }
+
+    if (options.base_mode != SmartFlowExportBaseMode::all_packets &&
+        options.include_every_kth_packet_after_base &&
+        options.every_kth_packet == 0U) {
+        return false;
+    }
+
+    return true;
+}
+
 template <typename MarkSelectedPacketFn>
 std::size_t visit_smart_export_base_prefix_packets(
     const std::vector<PacketRef>& flow_packets,
-    const SmartFlowExportRequest& request,
+    const SmartPacketRetentionOptions& options,
     MarkSelectedPacketFn&& mark_selected_packet
 ) {
-    switch (request.base_mode) {
+    switch (options.base_mode) {
     case SmartFlowExportBaseMode::all_packets:
         for (const auto& packet : flow_packets) {
             mark_selected_packet(packet);
@@ -3198,7 +3228,7 @@ std::size_t visit_smart_export_base_prefix_packets(
 
     case SmartFlowExportBaseMode::first_n_packets: {
         const auto packet_count = static_cast<std::size_t>(
-            std::min<std::uint64_t>(request.first_n_packets, static_cast<std::uint64_t>(flow_packets.size()))
+            std::min<std::uint64_t>(options.first_n_packets, static_cast<std::uint64_t>(flow_packets.size()))
         );
         for (std::size_t index = 0; index < packet_count; ++index) {
             mark_selected_packet(flow_packets[index]);
@@ -3213,7 +3243,7 @@ std::size_t visit_smart_export_base_prefix_packets(
             mark_selected_packet(packet);
             accumulated_bytes += packet.original_length;
             ++packet_count;
-            if (accumulated_bytes >= request.first_m_original_bytes) {
+            if (accumulated_bytes >= options.first_m_original_bytes) {
                 break;
             }
         }
@@ -3227,20 +3257,20 @@ std::size_t visit_smart_export_base_prefix_packets(
 template <typename MarkSelectedPacketFn>
 void visit_smart_export_additional_packets(
     const std::vector<PacketRef>& flow_packets,
-    const SmartFlowExportRequest& request,
+    const SmartPacketRetentionOptions& options,
     const std::size_t base_prefix_packet_count,
     MarkSelectedPacketFn&& mark_selected_packet
 ) {
-    if (request.base_mode == SmartFlowExportBaseMode::all_packets || flow_packets.empty()) {
+    if (options.base_mode == SmartFlowExportBaseMode::all_packets || flow_packets.empty()) {
         return;
     }
 
-    if (request.include_last_packet) {
+    if (options.include_last_packet) {
         mark_selected_packet(flow_packets.back());
     }
 
-    if (request.include_every_kth_packet_after_base && request.every_kth_packet > 0U) {
-        const auto step = static_cast<std::size_t>(request.every_kth_packet);
+    if (options.include_every_kth_packet_after_base && options.every_kth_packet > 0U) {
+        const auto step = static_cast<std::size_t>(options.every_kth_packet);
         if (base_prefix_packet_count < flow_packets.size()) {
             for (std::size_t after_base_index = step; base_prefix_packet_count + after_base_index - 1U < flow_packets.size(); after_base_index += step) {
                 const auto packet_index = base_prefix_packet_count + after_base_index - 1U;
@@ -3253,14 +3283,14 @@ void visit_smart_export_additional_packets(
 template <typename VisitPacketFn>
 bool visit_smart_export_flow_packets(
     const std::vector<PacketRef>& flow_packets,
-    const SmartFlowExportRequest& request,
+    const SmartPacketRetentionOptions& options,
     VisitPacketFn&& visit_packet
 ) {
     if (flow_packets.empty()) {
         return true;
     }
 
-    if (request.base_mode == SmartFlowExportBaseMode::all_packets) {
+    if (options.base_mode == SmartFlowExportBaseMode::all_packets) {
         for (const auto& packet : flow_packets) {
             if (!visit_packet(packet, true)) {
                 return false;
@@ -3269,17 +3299,17 @@ bool visit_smart_export_flow_packets(
         return true;
     }
 
-    const auto include_every_kth = request.include_every_kth_packet_after_base && request.every_kth_packet > 0U;
-    const auto every_kth_step = static_cast<std::size_t>(request.every_kth_packet);
+    const auto include_every_kth = options.include_every_kth_packet_after_base && options.every_kth_packet > 0U;
+    const auto every_kth_step = static_cast<std::size_t>(options.every_kth_packet);
     const auto packet_count = flow_packets.size();
 
-    if (request.base_mode == SmartFlowExportBaseMode::first_n_packets) {
+    if (options.base_mode == SmartFlowExportBaseMode::first_n_packets) {
         const auto base_prefix_packet_count = static_cast<std::size_t>(
-            std::min<std::uint64_t>(request.first_n_packets, static_cast<std::uint64_t>(packet_count))
+            std::min<std::uint64_t>(options.first_n_packets, static_cast<std::uint64_t>(packet_count))
         );
         for (std::size_t index = 0; index < packet_count; ++index) {
             bool selected = index < base_prefix_packet_count;
-            if (!selected && request.include_last_packet && index + 1U == packet_count) {
+            if (!selected && options.include_last_packet && index + 1U == packet_count) {
                 selected = true;
             }
             if (!selected && include_every_kth && index >= base_prefix_packet_count) {
@@ -3301,12 +3331,12 @@ bool visit_smart_export_flow_packets(
         if (!base_prefix_complete) {
             selected = true;
             accumulated_original_bytes += flow_packets[index].original_length;
-            if (accumulated_original_bytes >= request.first_m_original_bytes) {
+            if (accumulated_original_bytes >= options.first_m_original_bytes) {
                 base_prefix_complete = true;
                 base_prefix_packet_count = index + 1U;
             }
         }
-        if (!selected && request.include_last_packet && index + 1U == packet_count) {
+        if (!selected && options.include_last_packet && index + 1U == packet_count) {
             selected = true;
         }
         if (!selected && include_every_kth && base_prefix_complete && index >= base_prefix_packet_count) {
@@ -3556,6 +3586,87 @@ bool write_smart_per_flow_manifest_csv(
     return true;
 }
 
+[[nodiscard]] std::vector<PacketRef> collect_selected_smart_export_packets(
+    const std::vector<PacketRef>& packets,
+    const SmartPacketRetentionOptions& options
+) {
+    if (packets.empty()) {
+        return {};
+    }
+
+    std::vector<PacketRef> selected_packets {};
+    selected_packets.reserve(packets.size());
+    visit_smart_export_flow_packets(packets, options, [&selected_packets](const PacketRef& packet, const bool selected) {
+        if (selected) {
+            selected_packets.push_back(packet);
+        }
+        return true;
+    });
+    return selected_packets;
+}
+
+[[nodiscard]] std::vector<PacketRef> collect_selected_smart_export_unrecognized_packets(
+    const std::vector<UnrecognizedPacketRecord>& records,
+    const SmartPacketRetentionOptions& options
+) {
+    if (records.empty()) {
+        return {};
+    }
+
+    if (options.base_mode == SmartFlowExportBaseMode::all_packets) {
+        std::vector<PacketRef> selected_packets {};
+        selected_packets.reserve(records.size());
+        for (const auto& record : records) {
+            selected_packets.push_back(record.packet);
+        }
+        return selected_packets;
+    }
+
+    std::vector<std::size_t> selected_indices {};
+    selected_indices.reserve(records.size());
+
+    std::size_t base_prefix_packet_count = 0U;
+    if (options.base_mode == SmartFlowExportBaseMode::first_n_packets) {
+        base_prefix_packet_count = static_cast<std::size_t>(
+            std::min<std::uint64_t>(options.first_n_packets, static_cast<std::uint64_t>(records.size()))
+        );
+        for (std::size_t index = 0; index < base_prefix_packet_count; ++index) {
+            selected_indices.push_back(index);
+        }
+    } else {
+        std::uint64_t accumulated_original_bytes = 0U;
+        for (std::size_t index = 0; index < records.size(); ++index) {
+            selected_indices.push_back(index);
+            accumulated_original_bytes += records[index].packet.original_length;
+            ++base_prefix_packet_count;
+            if (accumulated_original_bytes >= options.first_m_original_bytes) {
+                break;
+            }
+        }
+    }
+
+    if (options.include_last_packet) {
+        selected_indices.push_back(records.size() - 1U);
+    }
+
+    if (options.include_every_kth_packet_after_base && options.every_kth_packet > 0U && base_prefix_packet_count < records.size()) {
+        const auto step = static_cast<std::size_t>(options.every_kth_packet);
+        for (std::size_t after_base_index = step; base_prefix_packet_count + after_base_index - 1U < records.size(); after_base_index += step) {
+            selected_indices.push_back(base_prefix_packet_count + after_base_index - 1U);
+        }
+    }
+
+    std::sort(selected_indices.begin(), selected_indices.end());
+    selected_indices.erase(std::unique(selected_indices.begin(), selected_indices.end()), selected_indices.end());
+
+    std::vector<PacketRef> selected_packets {};
+    selected_packets.reserve(selected_indices.size());
+    for (const auto index : selected_indices) {
+        selected_packets.push_back(records[index].packet);
+    }
+    return selected_packets;
+}
+
 }  // namespace
 
 bool CaptureSession::export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const {
@@ -3596,25 +3707,35 @@ bool CaptureSession::export_smart_flows_to_pcap(
     const SmartFlowExportRequest& request,
     const std::filesystem::path& output_path
 ) const {
+    std::string error_text {};
+    return export_smart_flows_to_pcap(request, output_path, SmartSingleFileExportOptions {}, &error_text);
+}
+
+bool CaptureSession::export_smart_flows_to_pcap(
+    const SmartFlowExportRequest& request,
+    const std::filesystem::path& output_path,
+    const SmartSingleFileExportOptions& options,
+    std::string* out_error_text
+) const {
     if (!has_source_capture() || request.flow_indices.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No source capture or no flows were selected for smart export.";
+        }
         return false;
     }
 
-    if (request.base_mode == SmartFlowExportBaseMode::first_n_packets && request.first_n_packets == 0U) {
-        return false;
-    }
-
-    if (request.base_mode == SmartFlowExportBaseMode::first_m_original_bytes && request.first_m_original_bytes == 0U) {
-        return false;
-    }
-
-    if (request.base_mode != SmartFlowExportBaseMode::all_packets &&
-        request.include_every_kth_packet_after_base &&
-        request.every_kth_packet == 0U) {
+    const auto retention = retention_options(request);
+    if (!validate_smart_packet_retention_options(retention)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Invalid smart export retention options.";
+        }
         return false;
     }
 
     if (summary().packet_count == 0U) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets were selected for smart export.";
+        }
         return false;
     }
 
@@ -3625,37 +3746,139 @@ bool CaptureSession::export_smart_flows_to_pcap(
     for (const auto flow_index : request.flow_indices) {
         const auto packets = flow_packets(flow_index);
         if (!packets.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to load packets for a selected flow during smart export.";
+            }
             return false;
         }
 
-        const auto base_prefix_packet_count = visit_smart_export_base_prefix_packets(*packets, request, [&packet_selection, &marking_ok](const PacketRef& packet) {
-            if (!mark_packet_for_smart_export(packet_selection, packet)) {
-                marking_ok = false;
+        if (!visit_smart_export_flow_packets(*packets, retention, [&](const PacketRef& packet, const bool selected) {
+            if (!selected) {
+                return true;
             }
-        });
-        visit_smart_export_additional_packets(*packets, request, base_prefix_packet_count, [&packet_selection, &marking_ok](const PacketRef& packet) {
-            if (!mark_packet_for_smart_export(packet_selection, packet)) {
-                marking_ok = false;
-            }
-        });
-        if (!marking_ok) {
-            return false;
-        }
-    }
 
-    for (const auto selected : packet_selection) {
-        if (selected != 0U) {
+            if (!mark_packet_for_smart_export(packet_selection, packet)) {
+                marking_ok = false;
+                return false;
+            }
             marked_any_packet = true;
-            break;
+            return true;
+        })) {
+            if (!marking_ok) {
+                if (out_error_text != nullptr) {
+                    *out_error_text = "Smart export packet selection exceeded internal limits.";
+                }
+                return false;
+            }
+        }
+        if (!marking_ok) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Smart export packet selection exceeded internal limits.";
+            }
+            return false;
         }
     }
 
     if (!marked_any_packet) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets were selected for smart export.";
+        }
         return false;
     }
 
     FlowExportService service {};
-    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path());
+    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path(), options, out_error_text);
+}
+
+bool CaptureSession::export_smart_packets_to_pcap(
+    const SmartPacketListExportRequest& request,
+    const std::filesystem::path& output_path
+) const {
+    if (!has_source_capture() || request.packet_indices.empty()) {
+        return false;
+    }
+
+    if (!validate_smart_packet_retention_options(request.retention)) {
+        return false;
+    }
+
+    auto normalized_packet_indices = request.packet_indices;
+    std::sort(normalized_packet_indices.begin(), normalized_packet_indices.end());
+    normalized_packet_indices.erase(
+        std::unique(normalized_packet_indices.begin(), normalized_packet_indices.end()),
+        normalized_packet_indices.end()
+    );
+    if (normalized_packet_indices.empty()) {
+        return false;
+    }
+
+    std::vector<PacketRef> packets {};
+    packets.reserve(normalized_packet_indices.size());
+    for (const auto packet_index : normalized_packet_indices) {
+        const auto packet = find_packet(static_cast<std::uint64_t>(packet_index));
+        if (!packet.has_value()) {
+            return false;
+        }
+        packets.push_back(*packet);
+    }
+
+    const auto selected_packets = collect_selected_smart_export_packets(packets, request.retention);
+    if (selected_packets.empty()) {
+        return false;
+    }
+
+    FlowExportService service {};
+    return service.export_packets_to_pcap(output_path, selected_packets, capture_path());
+}
+
+bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
+    const SmartPacketRetentionOptions& options,
+    const std::filesystem::path& output_path
+) const {
+    std::string error_text {};
+    return export_smart_unrecognized_packets_to_pcap(options, output_path, SmartSingleFileExportOptions {}, &error_text);
+}
+
+bool CaptureSession::export_smart_unrecognized_packets_to_pcap(
+    const SmartPacketRetentionOptions& options,
+    const std::filesystem::path& output_path,
+    const SmartSingleFileExportOptions& export_options,
+    std::string* out_error_text
+) const {
+    if (!has_source_capture() || state_.unrecognized_packets.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No unrecognized packets available for smart export.";
+        }
+        return false;
+    }
+
+    if (!validate_smart_packet_retention_options(options)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Invalid smart export retention options.";
+        }
+        return false;
+    }
+
+    const auto selected_packets = collect_selected_smart_export_unrecognized_packets(state_.unrecognized_packets, options);
+    if (selected_packets.empty()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "No packets were selected for smart export.";
+        }
+        return false;
+    }
+
+    std::vector<std::uint8_t> packet_selection {};
+    for (const auto& packet : selected_packets) {
+        if (!mark_packet_for_smart_export(packet_selection, packet)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Smart export packet selection exceeded internal limits.";
+            }
+            return false;
+        }
+    }
+
+    FlowExportService service {};
+    return service.export_marked_packets_to_pcap(output_path, packet_selection, capture_path(), export_options, out_error_text);
 }
 
 bool CaptureSession::export_smart_flows_to_folder(
@@ -3679,23 +3902,25 @@ bool CaptureSession::export_smart_flows_to_folder(
         return false;
     }
 
-    if (request.base_mode == SmartFlowExportBaseMode::first_n_packets && request.first_n_packets == 0U) {
+    const auto retention = retention_options(request);
+    if (retention.base_mode == SmartFlowExportBaseMode::first_n_packets && retention.first_n_packets == 0U) {
         if (out_error_text != nullptr) {
             *out_error_text = "Per-flow smart export requires a positive packet count.";
         }
         return false;
     }
 
-    if (request.base_mode == SmartFlowExportBaseMode::first_m_original_bytes && request.first_m_original_bytes == 0U) {
+    if (retention.base_mode == SmartFlowExportBaseMode::first_m_original_bytes &&
+        retention.first_m_original_bytes == 0U) {
         if (out_error_text != nullptr) {
             *out_error_text = "Per-flow smart export requires a positive original-byte limit.";
         }
         return false;
     }
 
-    if (request.base_mode != SmartFlowExportBaseMode::all_packets &&
-        request.include_every_kth_packet_after_base &&
-        request.every_kth_packet == 0U) {
+    if (retention.base_mode != SmartFlowExportBaseMode::all_packets &&
+        retention.include_every_kth_packet_after_base &&
+        retention.every_kth_packet == 0U) {
         if (out_error_text != nullptr) {
             *out_error_text = "Per-flow smart export requires a positive K value.";
         }
@@ -3831,7 +4056,7 @@ bool CaptureSession::export_smart_flows_to_folder(
             }
         };
 
-        if (!visit_smart_export_flow_packets(*packets, request, [&](const PacketRef& packet, const bool selected) {
+        if (!visit_smart_export_flow_packets(*packets, retention, [&](const PacketRef& packet, const bool selected) {
             if (selected) {
                 mark_owned_packet(packet);
             }

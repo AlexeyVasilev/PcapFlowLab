@@ -63,6 +63,49 @@ std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
 }
 
+std::optional<SmartPacketRetentionOptions> build_smart_packet_retention_options(
+    const FrontendSmartExportOptions& options,
+    std::string& error_text
+) {
+    SmartPacketRetentionOptions retention {};
+
+    switch (options.base_mode) {
+    case FrontendSmartExportBaseMode::all_packets:
+        retention.base_mode = SmartFlowExportBaseMode::all_packets;
+        break;
+    case FrontendSmartExportBaseMode::first_n_packets:
+        if (options.first_n_packets == 0U) {
+            error_text = "Enter a positive packet count for smart export.";
+            return std::nullopt;
+        }
+        retention.base_mode = SmartFlowExportBaseMode::first_n_packets;
+        retention.first_n_packets = options.first_n_packets;
+        break;
+    case FrontendSmartExportBaseMode::first_m_original_bytes:
+        if (options.first_m_original_bytes == 0U) {
+            error_text = "Enter a positive original-byte limit for smart export.";
+            return std::nullopt;
+        }
+        retention.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
+        retention.first_m_original_bytes = options.first_m_original_bytes;
+        break;
+    }
+
+    if (retention.base_mode != SmartFlowExportBaseMode::all_packets) {
+        retention.include_last_packet = options.include_last_packet;
+        retention.include_every_kth_packet_after_base = options.include_every_kth_packet_after_base;
+        if (retention.include_every_kth_packet_after_base) {
+            if (options.every_kth_packet == 0U) {
+                error_text = "Enter a positive K value for sparse smart export retention.";
+                return std::nullopt;
+            }
+            retention.every_kth_packet = options.every_kth_packet;
+        }
+    }
+
+    return retention;
+}
+
 std::map<std::uint64_t, std::uint64_t> build_bounded_flow_packet_numbers(
     const CaptureSession& session,
     const std::size_t flow_index,
@@ -1979,42 +2022,21 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
         return result;
     }
 
+    std::string retention_error_text {};
+    const auto retention = build_smart_packet_retention_options(options, retention_error_text);
+    if (!retention.has_value()) {
+        result.error_text = retention_error_text;
+        return result;
+    }
+
     SmartFlowExportRequest request {};
     request.flow_indices = flow_indices;
-
-    switch (options.base_mode) {
-    case FrontendSmartExportBaseMode::all_packets:
-        request.base_mode = SmartFlowExportBaseMode::all_packets;
-        break;
-    case FrontendSmartExportBaseMode::first_n_packets:
-        if (options.first_n_packets == 0U) {
-            result.error_text = "Enter a positive packet count for smart export.";
-            return result;
-        }
-        request.base_mode = SmartFlowExportBaseMode::first_n_packets;
-        request.first_n_packets = options.first_n_packets;
-        break;
-    case FrontendSmartExportBaseMode::first_m_original_bytes:
-        if (options.first_m_original_bytes == 0U) {
-            result.error_text = "Enter a positive original-byte limit for smart export.";
-            return result;
-        }
-        request.base_mode = SmartFlowExportBaseMode::first_m_original_bytes;
-        request.first_m_original_bytes = options.first_m_original_bytes;
-        break;
-    }
-
-    if (request.base_mode != SmartFlowExportBaseMode::all_packets) {
-        request.include_last_packet = options.include_last_packet;
-        request.include_every_kth_packet_after_base = options.include_every_kth_packet_after_base;
-        if (request.include_every_kth_packet_after_base) {
-            if (options.every_kth_packet == 0U) {
-                result.error_text = "Enter a positive K value for sparse smart export retention.";
-                return result;
-            }
-            request.every_kth_packet = options.every_kth_packet;
-        }
-    }
+    request.base_mode = retention->base_mode;
+    request.first_n_packets = retention->first_n_packets;
+    request.first_m_original_bytes = retention->first_m_original_bytes;
+    request.include_last_packet = retention->include_last_packet;
+    request.include_every_kth_packet_after_base = retention->include_every_kth_packet_after_base;
+    request.every_kth_packet = retention->every_kth_packet;
 
     if (options.output_mode == FrontendSmartExportOutputMode::separate_file_per_flow) {
         if (options.per_flow_buffer_budget_bytes == 0U) {
@@ -2036,6 +2058,57 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
             result.error_text = "Failed to smart-export flows.";
             return result;
         }
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
+FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_packets(
+    const std::filesystem::path& output_path,
+    const FrontendSmartExportOptions& options
+) const {
+    FrontendSmartExportResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
+        result.error_text = "Original source capture is unavailable. Reattach the capture file to export packets.";
+        return result;
+    }
+
+    if (session_.unrecognized_packet_count() == 0U) {
+        result.error_text = "No unrecognized packets available for smart export.";
+        return result;
+    }
+
+    if (options.output_mode != FrontendSmartExportOutputMode::single_file) {
+        result.error_text = "Unrecognized packets can only be smart-exported to a single output file.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    std::string retention_error_text {};
+    const auto retention = build_smart_packet_retention_options(options, retention_error_text);
+    if (!retention.has_value()) {
+        result.error_text = retention_error_text;
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_smart_unrecognized_packets_to_pcap(*retention, output_path, SmartSingleFileExportOptions {}, &error_text)) {
+        result.error_text = error_text.empty()
+            ? "Failed to smart-export unrecognized packets."
+            : error_text;
+        return result;
     }
 
     result.exported = true;

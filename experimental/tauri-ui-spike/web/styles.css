@@ -314,6 +314,13 @@ body.is-resizing-vertical {
   gap: 8px;
 }
 
+.smart-export-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 20px;
+  align-items: start;
+}
+
 .smart-export-radio-row,
 .smart-export-checkbox-row {
   display: flex;

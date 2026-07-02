@@ -75,6 +75,16 @@ extern "C" {
         every_kth_packet: u64,
         per_flow_buffer_budget_bytes: usize,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_smart_unrecognized_packets_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
+        base_mode: c_uchar,
+        first_n_packets: u64,
+        first_m_original_bytes: u64,
+        include_last_packet: c_uchar,
+        include_every_kth_packet_after_base: c_uchar,
+        every_kth_packet: u64,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_overview_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
@@ -299,6 +309,32 @@ impl CppFrontendSessionAdapter {
                 if include_every_kth_packet_after_base { 1 } else { 0 },
                 every_kth_packet,
                 per_flow_buffer_budget_bytes,
+            )
+        };
+        parse_json_owned::<SmartExportResultDto>(json)
+    }
+
+    pub fn export_smart_unrecognized_packets(
+        &self,
+        path: &str,
+        base_mode: u8,
+        first_n_packets: u64,
+        first_m_original_bytes: u64,
+        include_last_packet: bool,
+        include_every_kth_packet_after_base: bool,
+        every_kth_packet: u64,
+    ) -> Result<SmartExportResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_smart_unrecognized_packets_json(
+                self.handle,
+                path.as_ptr(),
+                base_mode,
+                first_n_packets,
+                first_m_original_bytes,
+                if include_last_packet { 1 } else { 0 },
+                if include_every_kth_packet_after_base { 1 } else { 0 },
+                every_kth_packet,
             )
         };
         parse_json_owned::<SmartExportResultDto>(json)

@@ -38,6 +38,10 @@ public:
         const std::vector<std::size_t>& flow_indices,
         const FrontendSmartExportOptions& options
     ) const;
+    [[nodiscard]] FrontendSmartExportResult export_smart_unrecognized_packets(
+        const std::filesystem::path& output_path,
+        const FrontendSmartExportOptions& options
+    ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] FrontendSelectionResultDto select_flow(std::size_t flow_index);

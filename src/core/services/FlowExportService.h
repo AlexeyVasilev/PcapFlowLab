@@ -36,6 +36,20 @@ struct PerFlowExportOptions {
     std::function<bool()> cancel_requested {};
 };
 
+struct MarkedPacketExportProgress {
+    std::uint64_t packets_processed {0};
+    std::uint64_t total_packets_to_scan {0};
+    std::uint64_t exported_packets_written {0};
+    std::uint64_t total_selected_packets {0};
+};
+
+using MarkedPacketExportProgressCallback = std::function<void(const MarkedPacketExportProgress&)>;
+
+struct MarkedPacketExportOptions {
+    MarkedPacketExportProgressCallback progress_callback {};
+    std::function<bool()> cancel_requested {};
+};
+
 class FlowExportService {
 public:
     bool export_packets_to_pcap(const std::filesystem::path& output_path,
@@ -44,6 +58,11 @@ public:
     bool export_marked_packets_to_pcap(const std::filesystem::path& output_path,
                                        std::span<const std::uint8_t> packet_selection,
                                        const std::filesystem::path& source_capture_path) const;
+    bool export_marked_packets_to_pcap(const std::filesystem::path& output_path,
+                                       std::span<const std::uint8_t> packet_selection,
+                                       const std::filesystem::path& source_capture_path,
+                                       const MarkedPacketExportOptions& options,
+                                       std::string* out_error_text = nullptr) const;
     bool export_owned_packets_to_pcaps(std::span<const PerFlowExportTarget> targets,
                                        std::span<const std::uint32_t> packet_owner,
                                        const std::filesystem::path& source_capture_path,

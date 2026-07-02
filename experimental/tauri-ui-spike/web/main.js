@@ -159,8 +159,11 @@
     smartExportRunButton: document.getElementById("smartExportRunButton"),
     smartExportStatusText: document.getElementById("smartExportStatusText"),
     smartExportScopeCurrent: document.getElementById("smartExportScopeCurrent"),
+    smartExportScopeMatchingFilter: document.getElementById("smartExportScopeMatchingFilter"),
     smartExportScopeSelected: document.getElementById("smartExportScopeSelected"),
+    smartExportScopeNotMatchingFilter: document.getElementById("smartExportScopeNotMatchingFilter"),
     smartExportScopeUnselected: document.getElementById("smartExportScopeUnselected"),
+    smartExportScopeUnrecognized: document.getElementById("smartExportScopeUnrecognized"),
     smartExportScopeAll: document.getElementById("smartExportScopeAll"),
     smartExportBaseAllPackets: document.getElementById("smartExportBaseAllPackets"),
     smartExportBaseFirstNPackets: document.getElementById("smartExportBaseFirstNPackets"),
@@ -1319,16 +1322,33 @@
   }
 
   function selectedSmartExportFlowScope() {
+    if (elements.smartExportScopeMatchingFilter?.checked) {
+      return "matching_filter";
+    }
     if (elements.smartExportScopeSelected?.checked) {
       return "selected";
     }
+    if (elements.smartExportScopeNotMatchingFilter?.checked) {
+      return "not_matching_filter";
+    }
     if (elements.smartExportScopeUnselected?.checked) {
       return "unselected";
+    }
+    if (elements.smartExportScopeUnrecognized?.checked) {
+      return "unrecognized";
     }
     if (elements.smartExportScopeAll?.checked) {
       return "all";
     }
     return "current";
+  }
+
+  function smartExportFilterTargetEnabled() {
+    return state.flowFilterText.trim().length > 0;
+  }
+
+  function smartExportUnrecognizedTargetEnabled() {
+    return unrecognizedPacketCount() > 0;
   }
 
   function selectedSmartExportBaseMode() {
@@ -1367,8 +1387,15 @@
     switch (scope) {
       case "current":
         return state.selectedFlowIndex != null ? [state.selectedFlowIndex] : [];
+      case "matching_filter":
+        return getVisibleFlows().map((flow) => flow.flow_index);
       case "selected":
         return Array.from(state.checkedFlowIndices).sort((left, right) => left - right);
+      case "not_matching_filter": {
+        const matchingFlowIndexSet = new Set(filteredFlows().map((flow) => flow.flow_index));
+        return getSortedFlows(state.flows.filter((flow) => !matchingFlowIndexSet.has(flow.flow_index)))
+          .map((flow) => flow.flow_index);
+      }
       case "unselected":
         return getUncheckedFlowIndices();
       case "all":
@@ -1392,7 +1419,9 @@
     if (
       state.statusText === "Smart export completed successfully."
       || state.statusText === "Failed to smart-export flows."
+      || state.statusText === "Failed to smart-export unrecognized packets."
       || state.statusText.startsWith("Failed to smart-export flows:")
+      || state.statusText.startsWith("Failed to smart-export unrecognized packets:")
     ) {
       setStatus("", "neutral");
     }
@@ -1695,8 +1724,56 @@
 
   function renderSmartExportDialog() {
     const extrasEnabled = smartExportExtrasEnabled();
-    const perFlowMode = selectedSmartExportOutputMode() === "separate_files";
     const dialogDisabled = state.smartExportInProgress;
+    const filterTargetEnabled = smartExportFilterTargetEnabled();
+    const unrecognizedTargetEnabled = smartExportUnrecognizedTargetEnabled();
+
+    if (elements.smartExportScopeUnrecognized) {
+      elements.smartExportScopeUnrecognized.disabled = dialogDisabled || !unrecognizedTargetEnabled;
+    }
+
+    if (elements.smartExportScopeMatchingFilter) {
+      elements.smartExportScopeMatchingFilter.disabled = dialogDisabled || !filterTargetEnabled;
+    }
+    if (elements.smartExportScopeNotMatchingFilter) {
+      elements.smartExportScopeNotMatchingFilter.disabled = dialogDisabled || !filterTargetEnabled;
+    }
+    if (
+      !filterTargetEnabled
+      && (elements.smartExportScopeMatchingFilter?.checked || elements.smartExportScopeNotMatchingFilter?.checked)
+    ) {
+      if (state.selectedFlowIndex != null && !dialogDisabled) {
+        elements.smartExportScopeCurrent.checked = true;
+      } else if (!dialogDisabled) {
+        elements.smartExportScopeAll.checked = true;
+      }
+    }
+    if (
+      !unrecognizedTargetEnabled
+      && elements.smartExportScopeUnrecognized?.checked
+    ) {
+      if (state.selectedFlowIndex != null && !dialogDisabled) {
+        elements.smartExportScopeCurrent.checked = true;
+      } else if (!dialogDisabled) {
+        elements.smartExportScopeAll.checked = true;
+      }
+    }
+
+    if (
+      elements.smartExportScopeUnrecognized?.checked
+      && elements.smartExportOutputSeparateFiles?.checked
+      && !dialogDisabled
+    ) {
+      elements.smartExportOutputSingleFile.checked = true;
+    }
+
+    const perFlowMode = selectedSmartExportOutputMode() === "separate_files";
+    if (elements.smartExportOutputSeparateFiles) {
+      elements.smartExportOutputSeparateFiles.disabled = dialogDisabled || elements.smartExportScopeUnrecognized?.checked;
+    }
+    if (elements.smartExportOutputSingleFile) {
+      elements.smartExportOutputSingleFile.disabled = dialogDisabled;
+    }
 
     if (!extrasEnabled) {
       elements.smartExportIncludeLastPacket.checked = false;
@@ -5088,16 +5165,26 @@
     }
 
     const flowScope = selectedSmartExportFlowScope();
-    const flowIndices = getSmartExportFlowIndices(flowScope);
-    if (flowIndices.length === 0) {
+    const isUnrecognizedScope = flowScope === "unrecognized";
+    const flowIndices = isUnrecognizedScope ? [] : getSmartExportFlowIndices(flowScope);
+    if (!isUnrecognizedScope && flowIndices.length === 0) {
       const emptySelectionMessage = flowScope === "current"
         ? "No current flow selected for smart export."
-        : (flowScope === "selected"
-          ? "No selected flows for smart export."
-          : (flowScope === "unselected"
-            ? "No unselected flows for smart export."
-            : "No flows available for smart export."));
+        : (flowScope === "matching_filter"
+          ? "No flows match the current filter for smart export."
+          : (flowScope === "selected"
+            ? "No selected flows for smart export."
+            : (flowScope === "not_matching_filter"
+              ? "No flows remain outside the current filter for smart export."
+              : (flowScope === "unselected"
+                ? "No unselected flows for smart export."
+                : "No flows available for smart export."))));
       setSmartExportStatus(emptySelectionMessage, "error");
+      render();
+      return;
+    }
+    if (isUnrecognizedScope && !smartExportUnrecognizedTargetEnabled()) {
+      setSmartExportStatus("No unrecognized packets available for smart export.", "error");
       render();
       return;
     }
@@ -5141,7 +5228,12 @@
     }
 
     let outputPath = "";
-    if (outputMode === "separate_files") {
+    if (isUnrecognizedScope && outputMode !== "single_file") {
+      setSmartExportStatus("Unrecognized packets can only be smart-exported to a single output file.", "error");
+      render();
+      return;
+    }
+    if (!isUnrecognizedScope && outputMode === "separate_files") {
       outputPath = String(elements.smartExportDestinationFolder.value || "").trim();
       if (!outputPath) {
         setSmartExportStatus("No destination folder selected for smart export.", "error");
@@ -5167,27 +5259,44 @@
       setStatus("Smart export in progress...", "neutral");
       render();
 
-      const result = await invoke("export_smart_flows", {
-        path: outputPath,
-        flow_indices: flowIndices,
-        output_mode: outputMode === "separate_files" ? 1 : 0,
-        base_mode: baseMode === "first_n_packets" ? 1 : (baseMode === "first_m_original_bytes" ? 2 : 0),
-        first_n_packets: firstNPackets || 0,
-        first_m_original_bytes: firstMOriginalBytes || 0,
-        include_last_packet: extrasEnabled && elements.smartExportIncludeLastPacket.checked,
-        include_every_kth_packet_after_base: extrasEnabled && elements.smartExportIncludeEveryKthPacket.checked,
-        every_kth_packet: everyKthPacket || 0,
-        per_flow_buffer_budget_bytes: (perFlowBufferBudgetMb || 0) * 1024 * 1024,
-      });
+      const result = isUnrecognizedScope
+        ? await invoke("export_smart_unrecognized_packets", {
+          path: outputPath,
+          base_mode: baseMode === "first_n_packets" ? 1 : (baseMode === "first_m_original_bytes" ? 2 : 0),
+          first_n_packets: firstNPackets || 0,
+          first_m_original_bytes: firstMOriginalBytes || 0,
+          include_last_packet: extrasEnabled && elements.smartExportIncludeLastPacket.checked,
+          include_every_kth_packet_after_base: extrasEnabled && elements.smartExportIncludeEveryKthPacket.checked,
+          every_kth_packet: everyKthPacket || 0,
+        })
+        : await invoke("export_smart_flows", {
+          path: outputPath,
+          flow_indices: flowIndices,
+          output_mode: outputMode === "separate_files" ? 1 : 0,
+          base_mode: baseMode === "first_n_packets" ? 1 : (baseMode === "first_m_original_bytes" ? 2 : 0),
+          first_n_packets: firstNPackets || 0,
+          first_m_original_bytes: firstMOriginalBytes || 0,
+          include_last_packet: extrasEnabled && elements.smartExportIncludeLastPacket.checked,
+          include_every_kth_packet_after_base: extrasEnabled && elements.smartExportIncludeEveryKthPacket.checked,
+          every_kth_packet: everyKthPacket || 0,
+          per_flow_buffer_budget_bytes: (perFlowBufferBudgetMb || 0) * 1024 * 1024,
+        });
 
       if (result?.exported) {
         setStatus("Smart export completed successfully.", "success");
       } else {
-        const errorText = result?.error_text || "Failed to smart-export flows.";
+        const errorText = result?.error_text || (isUnrecognizedScope
+          ? "Failed to smart-export unrecognized packets."
+          : "Failed to smart-export flows.");
         setStatus(errorText, "error");
       }
     } catch (error) {
-      setStatus(`Failed to smart-export flows: ${String(error)}`, "error");
+      setStatus(
+        isUnrecognizedScope
+          ? `Failed to smart-export unrecognized packets: ${String(error)}`
+          : `Failed to smart-export flows: ${String(error)}`,
+        "error"
+      );
     } finally {
       state.smartExportInProgress = false;
       render();
@@ -5367,8 +5476,11 @@
   });
   for (const control of [
     elements.smartExportScopeCurrent,
+    elements.smartExportScopeMatchingFilter,
     elements.smartExportScopeSelected,
+    elements.smartExportScopeNotMatchingFilter,
     elements.smartExportScopeUnselected,
+    elements.smartExportScopeUnrecognized,
     elements.smartExportScopeAll,
     elements.smartExportBaseAllPackets,
     elements.smartExportBaseFirstNPackets,

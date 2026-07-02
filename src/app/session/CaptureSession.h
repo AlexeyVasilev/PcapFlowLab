@@ -17,6 +17,7 @@
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
+#include "core/services/FlowExportService.h"
 #include "core/services/FlowAnalysisService.h"
 
 struct OpenContext;
@@ -29,6 +30,15 @@ enum class SmartFlowExportBaseMode : std::uint8_t {
     first_m_original_bytes = 2,
 };
 
+struct SmartPacketRetentionOptions {
+    SmartFlowExportBaseMode base_mode {SmartFlowExportBaseMode::all_packets};
+    std::uint64_t first_n_packets {0};
+    std::uint64_t first_m_original_bytes {0};
+    bool include_last_packet {false};
+    bool include_every_kth_packet_after_base {false};
+    std::uint64_t every_kth_packet {0};
+};
+
 struct SmartFlowExportRequest {
     std::vector<std::size_t> flow_indices {};
     SmartFlowExportBaseMode base_mode {SmartFlowExportBaseMode::all_packets};
@@ -36,7 +46,12 @@ struct SmartFlowExportRequest {
     std::uint64_t first_m_original_bytes {0};
     bool include_last_packet {false};
     bool include_every_kth_packet_after_base {false};
-  std::uint64_t every_kth_packet {0};
+    std::uint64_t every_kth_packet {0};
+};
+
+struct SmartPacketListExportRequest {
+    std::vector<std::size_t> packet_indices {};
+    SmartPacketRetentionOptions retention {};
 };
 
 enum class SmartPerFlowExportPhase {
@@ -58,6 +73,10 @@ struct SmartPerFlowExportOptions {
     SmartPerFlowExportProgressCallback progress_callback {};
     std::function<bool()> cancel_requested {};
 };
+
+using SmartSingleFileExportProgress = MarkedPacketExportProgress;
+using SmartSingleFileExportProgressCallback = MarkedPacketExportProgressCallback;
+using SmartSingleFileExportOptions = MarkedPacketExportOptions;
 
 struct SelectedFlowPacketCacheInfo {
     std::size_t flow_index {0};
@@ -170,6 +189,26 @@ public:
     bool export_flow_to_pcap(std::size_t flow_index, const std::filesystem::path& output_path) const;
     bool export_flows_to_pcap(const std::vector<std::size_t>& flow_indices, const std::filesystem::path& output_path) const;
     bool export_smart_flows_to_pcap(const SmartFlowExportRequest& request, const std::filesystem::path& output_path) const;
+    bool export_smart_flows_to_pcap(
+        const SmartFlowExportRequest& request,
+        const std::filesystem::path& output_path,
+        const SmartSingleFileExportOptions& options,
+        std::string* out_error_text
+    ) const;
+    bool export_smart_packets_to_pcap(
+        const SmartPacketListExportRequest& request,
+        const std::filesystem::path& output_path
+    ) const;
+    bool export_smart_unrecognized_packets_to_pcap(
+        const SmartPacketRetentionOptions& options,
+        const std::filesystem::path& output_path
+    ) const;
+    bool export_smart_unrecognized_packets_to_pcap(
+        const SmartPacketRetentionOptions& options,
+        const std::filesystem::path& output_path,
+        const SmartSingleFileExportOptions& export_options,
+        std::string* out_error_text
+    ) const;
     bool export_smart_flows_to_folder(const SmartFlowExportRequest& request, const std::filesystem::path& output_directory) const;
     bool export_smart_flows_to_folder(
         const SmartFlowExportRequest& request,

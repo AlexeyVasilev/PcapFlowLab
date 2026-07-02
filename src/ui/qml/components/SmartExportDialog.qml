@@ -19,6 +19,9 @@ Dialog {
     )
 
     property var chooseDestinationFolderCallback: null
+    property bool currentFilterAvailable: false
+    property bool hasCurrentFlowSelection: false
+    property bool hasUnrecognizedPackets: false
     modal: true
     focus: true
     title: "Smart Export"
@@ -26,7 +29,13 @@ Dialog {
     standardButtons: Dialog.Ok | Dialog.Cancel
 
     property int outputMode: singleOutputFileRadio.checked ? 0 : 1
-    property int flowScopeMode: currentFlowRadio.checked ? 0 : selectedFlowsRadio.checked ? 1 : unselectedFlowsRadio.checked ? 2 : 3
+    property int flowScopeMode: currentFlowRadio.checked ? 0
+        : selectedFlowsRadio.checked ? 1
+        : unselectedFlowsRadio.checked ? 2
+        : allFlowsRadio.checked ? 3
+        : matchingCurrentFilterRadio.checked ? 4
+        : notMatchingCurrentFilterRadio.checked ? 5
+        : 6
     property int baseSelectionMode: allPacketsRadio.checked ? 0 : firstNPacketsRadio.checked ? 1 : 2
     readonly property bool extrasEnabled: !allPacketsRadio.checked
     readonly property bool perFlowOutputMode: separateFilePerFlowRadio.checked
@@ -36,6 +45,42 @@ Dialog {
         { label: "1024 MB", value: "1024" }
     ]
     readonly property string bufferBudgetPresetText: bufferBudgetPresetModel[bufferBudgetPresetCombo.currentIndex].value
+
+    ButtonGroup {
+        id: exportTargetButtonGroup
+    }
+
+    function ensureValidFlowScopeSelection() {
+        const filterSelectionInvalid = !root.currentFilterAvailable
+            && (matchingCurrentFilterRadio.checked || notMatchingCurrentFilterRadio.checked)
+        const unrecognizedSelectionInvalid = !root.hasUnrecognizedPackets
+            && unrecognizedPacketsRadio.checked
+
+        if (!filterSelectionInvalid && !unrecognizedSelectionInvalid) {
+            return
+        }
+
+        if (root.hasCurrentFlowSelection) {
+            currentFlowRadio.checked = true
+        } else {
+            allFlowsRadio.checked = true
+        }
+    }
+
+    function ensureValidOutputMode() {
+        if (unrecognizedPacketsRadio.checked && separateFilePerFlowRadio.checked) {
+            singleOutputFileRadio.checked = true
+        }
+    }
+
+    onCurrentFilterAvailableChanged: ensureValidFlowScopeSelection()
+    onHasUnrecognizedPacketsChanged: ensureValidFlowScopeSelection()
+    onVisibleChanged: {
+        if (visible) {
+            ensureValidFlowScopeSelection()
+            ensureValidOutputMode()
+        }
+    }
 
     onAccepted: {
         exportRequested(
@@ -66,31 +111,71 @@ Dialog {
 
             GroupBox {
                 Layout.fillWidth: true
-                title: "Flows to export"
+                title: "Export target"
 
-                ColumnLayout {
+                RowLayout {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 24
 
-                    RadioButton {
-                        id: currentFlowRadio
-                        text: "Current flow"
-                        checked: true
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        RadioButton {
+                            id: currentFlowRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Current flow"
+                            checked: true
+                        }
+
+                        RadioButton {
+                            id: selectedFlowsRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Selected flows"
+                        }
+
+                        RadioButton {
+                            id: unselectedFlowsRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Unselected flows"
+                        }
+
+                        RadioButton {
+                            id: allFlowsRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "All flows"
+                        }
                     }
 
-                    RadioButton {
-                        id: selectedFlowsRadio
-                        text: "Selected flows"
-                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
 
-                    RadioButton {
-                        id: unselectedFlowsRadio
-                        text: "Unselected flows"
-                    }
+                        RadioButton {
+                            id: matchingCurrentFilterRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Matching current filter"
+                            enabled: root.currentFilterAvailable
+                        }
 
-                    RadioButton {
-                        id: allFlowsRadio
-                        text: "All flows"
+                        RadioButton {
+                            id: notMatchingCurrentFilterRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Not matching current filter"
+                            enabled: root.currentFilterAvailable
+                        }
+
+                        RadioButton {
+                            id: unrecognizedPacketsRadio
+                            ButtonGroup.group: exportTargetButtonGroup
+                            text: "Unrecognized packets"
+                            enabled: root.hasUnrecognizedPackets
+                            onCheckedChanged: {
+                                if (checked) {
+                                    root.ensureValidOutputMode()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -227,6 +312,7 @@ Dialog {
                     RadioButton {
                         id: separateFilePerFlowRadio
                         text: "Separate file per flow"
+                        enabled: !unrecognizedPacketsRadio.checked
                     }
 
                     RowLayout {
