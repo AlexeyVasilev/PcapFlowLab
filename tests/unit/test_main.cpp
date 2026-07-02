@@ -64,6 +64,7 @@ void run_llc_snap_pcap_fixture_tests();
 void run_mpls_pseudowire_pcap_fixture_tests();
 void run_pbb_pcap_fixture_tests();
 void run_macsec_pcap_fixture_tests();
+void run_vxlan_pcap_fixture_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
     if (condition) {
@@ -160,6 +161,7 @@ int main() {
         {"mpls_pseudowire_pcap_fixtures", pfl::tests::run_mpls_pseudowire_pcap_fixture_tests},
         {"pbb_pcap_fixtures", pfl::tests::run_pbb_pcap_fixture_tests},
         {"macsec_pcap_fixtures", pfl::tests::run_macsec_pcap_fixture_tests},
+        {"vxlan_pcap_fixtures", pfl::tests::run_vxlan_pcap_fixture_tests},
     };
 
     for (const auto& suite : suites) {
