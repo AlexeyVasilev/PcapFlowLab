@@ -114,6 +114,25 @@ Frame {
             : displayAddress
     }
 
+    function maxHorizontalOffset() {
+        return Math.max(0, flowTableScroller.contentWidth - flowTableScroller.width)
+    }
+
+    function scrollHorizontally(delta) {
+        const maxOffset = root.maxHorizontalOffset()
+        if (maxOffset <= 0 || delta === 0) {
+            return false
+        }
+
+        const nextX = Math.max(0, Math.min(flowTableScroller.contentX - delta, maxOffset))
+        if (Math.abs(nextX - flowTableScroller.contentX) < 0.5) {
+            return false
+        }
+
+        flowTableScroller.contentX = nextX
+        return true
+    }
+
     background: Rectangle {
         color: "#ffffff"
         border.color: "#d8dee9"
@@ -203,7 +222,7 @@ Frame {
             id: flowTableViewport
             Layout.fillWidth: true
             Layout.fillHeight: true
-            
+
             Flickable {
                 id: flowTableScroller
                 anchors.fill: parent
@@ -216,6 +235,27 @@ Frame {
                 ScrollBar.horizontal: ScrollBar {
                     id: flowTableHorizontalScrollBar
                     policy: flowTableScroller.contentWidth > flowTableScroller.width ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.NoButton
+
+                onWheel: function(wheel) {
+                    const horizontalDelta = wheel.pixelDelta.x !== 0
+                        ? wheel.pixelDelta.x
+                        : wheel.angleDelta.x !== 0
+                            ? wheel.angleDelta.x / 8
+                            : (wheel.modifiers & Qt.ShiftModifier) && wheel.angleDelta.y !== 0
+                                ? wheel.angleDelta.y / 8
+                                : 0
+
+                    if (horizontalDelta !== 0 && root.scrollHorizontally(horizontalDelta)) {
+                        wheel.accepted = true
+                    } else {
+                        wheel.accepted = false
+                    }
                 }
             }
 

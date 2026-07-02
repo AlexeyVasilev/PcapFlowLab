@@ -558,11 +558,25 @@ Frame {
                     }
                 }
 
-                SelectableText {
+                Item {
                     Layout.fillWidth: true
-                    text: summaryLayerCard.titleText
-                    textColor: "#0f172a"
+                    implicitHeight: titleTextItem.implicitHeight
                     clip: true
+
+                    SelectableText {
+                        id: titleTextItem
+                        anchors.fill: parent
+                        text: summaryLayerCard.titleText
+                        textColor: "#0f172a"
+                        clip: true
+                    }
+
+                    HoverHandler {
+                        id: titleHoverHandler
+                    }
+
+                    ToolTip.visible: titleHoverHandler.hovered && titleTextItem.contentWidth > titleTextItem.width + 1
+                    ToolTip.text: summaryLayerCard.titleText
                 }
 
                 Rectangle {

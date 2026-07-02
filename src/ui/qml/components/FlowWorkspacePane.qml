@@ -256,7 +256,6 @@ Item {
                         currentIndex: flowDetailTabs.currentIndex
 
                         PacketList {
-                            titleText: root.unrecognizedPacketsSelected ? "Unrecognized Packets" : "Packets"
                             emptyText: root.unrecognizedPacketsSelected
                                 ? "Select the unrecognized packets list to inspect packets"
                                 : "Select a flow to inspect packets"
