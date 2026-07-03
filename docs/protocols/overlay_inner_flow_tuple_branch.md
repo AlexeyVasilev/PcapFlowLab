@@ -275,7 +275,11 @@ Still intentionally not solved:
 
 - VNI is not part of flow identity
 - invalid/truncated/unsupported VXLAN payloads fall back to existing outer behavior instead of fabricating an inner flow
-- VXLAN Packet Details / Summary metadata is still a follow-up step
+- VXLAN Packet Details / Summary currently expose lightweight metadata only:
+  - outer IPv4/IPv6 and UDP presentation remains intact
+  - selected-packet Summary / Protocol details now show a VXLAN layer with flags and VNI
+  - inner Ethernet is presented as a nested child layer when the VXLAN payload contains a bounded Ethernet header
+  - inner IPv4/IPv6 and TCP/UDP are not yet duplicated in Packet Details alongside the outer IP/UDP stack
 
 ## Risks and unknowns
 

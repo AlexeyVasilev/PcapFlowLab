@@ -102,6 +102,26 @@ void populate_unknown_inner_ethernet_payload_preview(
         details.unknown_inner_ethernet_payload.payload_length > preview_length;
 }
 
+void populate_vxlan_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t vxlan_offset,
+    const detail::VxlanPayloadView& vxlan,
+    PacketDetails& details
+) {
+    details.has_vxlan = true;
+    details.vxlan = {};
+    details.vxlan.present = true;
+    details.vxlan.flags = packet_bytes[vxlan_offset];
+    details.vxlan.i_flag_set = (details.vxlan.flags & detail::kVxlanFlagI) != 0U;
+    details.vxlan.vni = vxlan.vni;
+    details.vxlan.has_inner_ethernet = vxlan.has_inner_ethernet;
+    details.vxlan.inner_ethernet_truncated = vxlan.inner_ethernet_truncated;
+
+    if (vxlan.has_inner_ethernet) {
+        populate_inner_ethernet_details(packet_bytes, vxlan.inner_ethernet_offset, vxlan.inner_ethernet, details);
+    }
+}
+
 void populate_inner_ethernet_continuation_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t inner_ethernet_offset,
@@ -639,6 +659,8 @@ std::optional<PacketDetails> decode_packet_details(
     details.mpls_labels.clear();
     details.has_mpls_pseudowire_control_word = false;
     details.mpls_pseudowire_control_word = {};
+    details.has_vxlan = false;
+    details.vxlan = {};
     details.has_inner_ethernet = false;
     details.inner_ethernet = {};
     details.has_unknown_inner_ethernet_payload = false;
@@ -1014,6 +1036,18 @@ std::optional<PacketDetails> decode_packet_details(
                 .checksum = detail::read_be16(network_packet_bytes, transport_offset + 6U),
                 .payload_truncated = udp_payload_truncated,
             };
+            if (details.udp.dst_port == detail::kUdpPortVxlan && udp_payload.has_value()) {
+                const auto vxlan_offset = udp_payload->payload_offset;
+                const auto vxlan_payload_end = vxlan_offset + udp_payload->payload_length;
+                if (const auto vxlan = detail::parse_vxlan_payload(
+                        network_packet_bytes,
+                        vxlan_offset,
+                        vxlan_payload_end
+                    );
+                    vxlan.has_value()) {
+                    populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
+                }
+            }
             return details;
         }
 
@@ -1153,6 +1187,18 @@ std::optional<PacketDetails> decode_packet_details(
                 .checksum = detail::read_be16(network_packet_bytes, payload->payload_offset + 6U),
                 .payload_truncated = udp_payload_truncated,
             };
+            if (details.udp.dst_port == detail::kUdpPortVxlan && udp_payload.has_value()) {
+                const auto vxlan_offset = udp_payload->payload_offset;
+                const auto vxlan_payload_end = vxlan_offset + udp_payload->payload_length;
+                if (const auto vxlan = detail::parse_vxlan_payload(
+                        network_packet_bytes,
+                        vxlan_offset,
+                        vxlan_payload_end
+                    );
+                    vxlan.has_value()) {
+                    populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
+                }
+            }
             return details;
         }
 

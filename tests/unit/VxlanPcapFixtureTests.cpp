@@ -5,6 +5,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SessionFormatting.h"
 
 namespace pfl::tests {
 
@@ -57,6 +58,34 @@ const FlowRow* find_flow_by_tuple(
     return nullptr;
 }
 
+const session_detail::PacketSummaryLayer* find_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    for (const auto& layer : layers) {
+        if (layer.id == id) {
+            return &layer;
+        }
+        if (const auto* child = find_layer(layer.children, id); child != nullptr) {
+            return child;
+        }
+    }
+    return nullptr;
+}
+
+bool layer_has_field_containing(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label,
+    const std::string& fragment
+) {
+    for (const auto& field : layer.fields) {
+        if (field.label == label && field.value.find(fragment) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void expect_inner_flow_present(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
@@ -68,7 +97,7 @@ void expect_inner_flow_present(
     const std::uint64_t expected_packet_count
 ) {
     CaptureSession session {};
-    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path)));
 
     const auto rows = session.list_flows();
     const auto* flow = find_flow_by_tuple(rows, family, protocol, address_a, port_a, address_b, port_b);
@@ -90,11 +119,51 @@ void expect_inner_flow_absent(
     const std::uint16_t port_b
 ) {
     CaptureSession session {};
-    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path)));
 
     const auto rows = session.list_flows();
     const auto* flow = find_flow_by_tuple(rows, family, protocol, address_a, port_a, address_b, port_b);
     PFL_EXPECT(flow == nullptr);
+}
+
+void expect_vxlan_packet_details_present(
+    const std::filesystem::path& relative_path,
+    const std::uint64_t packet_index,
+    const std::uint32_t expected_vni
+) {
+    CaptureSession session {};
+    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+
+    const auto packet = session.find_packet(packet_index);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+
+    PFL_EXPECT(details->has_udp);
+    PFL_EXPECT(details->has_vxlan);
+    PFL_EXPECT(details->vxlan.present);
+    PFL_EXPECT(details->vxlan.i_flag_set);
+    PFL_EXPECT(details->vxlan.vni == expected_vni);
+    PFL_EXPECT(details->has_inner_ethernet);
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    const auto* udp_layer = find_layer(summary_layers, "udp");
+    PFL_REQUIRE(udp_layer != nullptr);
+    PFL_EXPECT(layer_has_field_containing(*udp_layer, "Destination Port", "4789"));
+
+    const auto* vxlan_layer = find_layer(summary_layers, "vxlan");
+    PFL_REQUIRE(vxlan_layer != nullptr);
+    PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Flags", "0x08"));
+    PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "I Flag", "Set"));
+    PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "VNI", std::to_string(expected_vni)));
+    PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Inner Payload", "Ethernet"));
+
+    const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
+    PFL_REQUIRE(inner_ethernet_layer != nullptr);
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    PFL_EXPECT(protocol_text.find("Protocol: VXLAN") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("VNI: " + std::to_string(expected_vni)) != std::string::npos);
 }
 
 }  // namespace
@@ -231,7 +300,7 @@ void run_vxlan_pcap_fixture_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/vxlan/16_vxlan_vni_boundary_values.pcap")));
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/16_vxlan_vni_boundary_values.pcap")));
         const auto rows = session.list_flows();
         const auto* first_flow = find_flow_by_tuple(
             rows,
@@ -314,6 +383,45 @@ void run_vxlan_pcap_fixture_tests() {
         "10.40.0.20",
         443U
     );
+
+    expect_vxlan_packet_details_present(
+        "parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap",
+        0U,
+        100U
+    );
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/16_vxlan_vni_boundary_values.pcap")));
+
+        const auto first_packet = session.find_packet(0U);
+        PFL_REQUIRE(first_packet.has_value());
+        const auto first_details = session.read_packet_details(*first_packet);
+        PFL_REQUIRE(first_details.has_value());
+        PFL_EXPECT(first_details->has_vxlan);
+        PFL_EXPECT(first_details->vxlan.vni == 0U);
+
+        const auto second_packet = session.find_packet(1U);
+        PFL_REQUIRE(second_packet.has_value());
+        const auto second_details = session.read_packet_details(*second_packet);
+        PFL_REQUIRE(second_details.has_value());
+        PFL_EXPECT(second_details->has_vxlan);
+        PFL_EXPECT(second_details->vxlan.vni == 16777215U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/15_vxlan_wrong_udp_port_valid_vxlan_payload.pcap")));
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto details = session.read_packet_details(*packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(!details->has_vxlan);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+        PFL_EXPECT(find_layer(summary_layers, "vxlan") == nullptr);
+        const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+        PFL_EXPECT(protocol_text.find("VXLAN") == std::string::npos);
+    }
 }
 
 }  // namespace pfl::tests

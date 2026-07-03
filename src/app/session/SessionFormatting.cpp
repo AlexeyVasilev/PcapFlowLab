@@ -338,6 +338,37 @@ void append_pbb_itag_summary_fields(std::vector<PacketSummaryField>& fields, con
     }
 }
 
+PacketSummaryLayer build_inner_ethernet_summary_layer(const InnerEthernetDetails& details) {
+    auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
+    if (details.available_header_bytes >= 6U) {
+        inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.dst_mac)));
+    }
+    if (details.available_header_bytes >= 12U) {
+        inner_ethernet_fields.push_back(make_summary_field("Source", format_mac_address(details.src_mac)));
+    }
+    if (details.available_header_bytes >= 14U) {
+        if (details.uses_length_field) {
+            inner_ethernet_fields.push_back(make_summary_field(
+                "Length",
+                std::to_string(details.ether_type) + " bytes"
+            ));
+        } else {
+            inner_ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.ether_type)));
+        }
+    }
+    if (details.header_truncated) {
+        inner_ethernet_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "ethernet-inner",
+        .title = format_inner_ethernet_title(details),
+        .fields = std::move(inner_ethernet_fields),
+        .warning = details.header_truncated,
+        .marker_text = details.header_truncated ? "Warning" : std::string {},
+    };
+}
+
 std::string format_ppp_protocol(const std::uint16_t protocol) {
     switch (protocol) {
     case kPppProtocolIpv4:
@@ -2402,35 +2433,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_inner_ethernet) {
-        auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
-        if (details.inner_ethernet.available_header_bytes >= 6U) {
-            inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.inner_ethernet.dst_mac)));
-        }
-        if (details.inner_ethernet.available_header_bytes >= 12U) {
-            inner_ethernet_fields.push_back(make_summary_field("Source", format_mac_address(details.inner_ethernet.src_mac)));
-        }
-        if (details.inner_ethernet.available_header_bytes >= 14U) {
-            if (details.inner_ethernet.uses_length_field) {
-                inner_ethernet_fields.push_back(make_summary_field(
-                    "Length",
-                    std::to_string(details.inner_ethernet.ether_type) + " bytes"
-                ));
-            } else {
-                inner_ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.inner_ethernet.ether_type)));
-            }
-        }
-        if (details.inner_ethernet.header_truncated) {
-            inner_ethernet_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
-        }
-
-        append_layer_if_not_empty(layers, PacketSummaryLayer {
-            .id = "ethernet-inner",
-            .title = format_inner_ethernet_title(details.inner_ethernet),
-            .fields = std::move(inner_ethernet_fields),
-            .warning = details.inner_ethernet.header_truncated,
-            .marker_text = details.inner_ethernet.header_truncated ? "Warning" : std::string {},
-        });
+    if (details.has_inner_ethernet && !details.has_vxlan) {
+        append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
     }
 
     if (details.has_vlan && has_nested_inner_ethernet) {
@@ -2904,6 +2908,47 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
+    if (details.has_vxlan) {
+        std::vector<PacketSummaryField> vxlan_fields {
+            make_summary_field("Flags", format_hex_value(details.vxlan.flags, 2)),
+            make_summary_field("I Flag", details.vxlan.i_flag_set ? "Set" : "Not set"),
+            make_summary_field("VNI", std::to_string(details.vxlan.vni)),
+        };
+        if (details.vxlan.has_inner_ethernet) {
+            vxlan_fields.push_back(make_summary_field("Inner Payload", "Ethernet"));
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    vxlan_fields.push_back(make_summary_field(
+                        "Inner Length",
+                        std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                    ));
+                } else {
+                    vxlan_fields.push_back(make_summary_field(
+                        "Inner EtherType",
+                        format_ether_type_value(details.inner_ethernet.ether_type)
+                    ));
+                }
+            }
+        }
+        if (details.vxlan.inner_ethernet_truncated) {
+            vxlan_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+
+        std::vector<PacketSummaryLayer> vxlan_children {};
+        if (details.has_inner_ethernet) {
+            vxlan_children.push_back(build_inner_ethernet_summary_layer(details.inner_ethernet));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "vxlan",
+            .title = "VXLAN",
+            .fields = std::move(vxlan_fields),
+            .children = std::move(vxlan_children),
+            .warning = details.vxlan.inner_ethernet_truncated,
+            .marker_text = details.vxlan.inner_ethernet_truncated ? "Warning" : std::string {},
+        });
+    }
+
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
         append_layer_if_not_empty(layers, *trailer_layer);
     }
@@ -3073,6 +3118,29 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         if (details.pppoe.captured_payload_exceeds_declared) {
             builder << '\n' << '\t'
                     << "Warning: PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_vxlan) {
+        builder << "Protocol: VXLAN\n"
+                << '\t' << "Flags: " << format_hex_value(details.vxlan.flags, 2) << '\n'
+                << '\t' << "I Flag: " << (details.vxlan.i_flag_set ? "Set" : "Not set") << '\n'
+                << '\t' << "VNI: " << details.vxlan.vni;
+        if (details.vxlan.has_inner_ethernet) {
+            builder << '\n' << '\t' << "Inner Payload: Ethernet";
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+        }
+        if (details.inner_ethernet.header_truncated || details.vxlan.inner_ethernet_truncated) {
+            builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
         }
         return builder.str();
     }

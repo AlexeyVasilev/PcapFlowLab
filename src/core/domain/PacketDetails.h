@@ -127,6 +127,15 @@ struct MplsPseudowirePayloadDetails {
     bool payload_preview_truncated {false};
 };
 
+struct VxlanDetails {
+    bool present {false};
+    std::uint8_t flags {0};
+    bool i_flag_set {false};
+    std::uint32_t vni {0};
+    bool has_inner_ethernet {false};
+    bool inner_ethernet_truncated {false};
+};
+
 struct PppoeTagDetails {
     std::uint16_t type {0};
     std::uint16_t declared_length {0};
@@ -300,6 +309,8 @@ struct PacketDetails {
     MacsecDetails macsec {};
     bool has_mpls_pseudowire_control_word {false};
     MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
+    bool has_vxlan {false};
+    VxlanDetails vxlan {};
     bool has_inner_ethernet {false};
     InnerEthernetDetails inner_ethernet {};
     bool has_unknown_inner_ethernet_payload {false};

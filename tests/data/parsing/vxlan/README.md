@@ -21,6 +21,7 @@ Current branch intent:
 Current implemented status:
 - valid UDP/4789 VXLAN carrying inner Ethernet plus IPv4/IPv6 plus TCP/UDP now uses the inner tuple for flow grouping;
 - valid inner Ethernet plus VLAN plus IPv4 plus TCP continuation is also expected to work through the existing inner Ethernet/VLAN path;
+- selected-packet Summary / Protocol details now expose lightweight VXLAN metadata, including flags, VNI, and bounded inner Ethernet presentation;
 - VNI is still not part of flow identity, so identical inner tuples from different VNIs may still merge.
 
 ## Local generation
