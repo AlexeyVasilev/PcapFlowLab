@@ -38,6 +38,12 @@ struct LinkLayerView {
     std::optional<std::size_t> bounded_packet_end {};
 };
 
+std::optional<PacketDetails> decode_packet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    DecodeMode mode
+);
+
 void populate_inner_ethernet_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t inner_ethernet_offset,
@@ -120,6 +126,70 @@ void populate_vxlan_details(
     if (vxlan.has_inner_ethernet) {
         populate_inner_ethernet_details(packet_bytes, vxlan.inner_ethernet_offset, vxlan.inner_ethernet, details);
     }
+}
+
+std::shared_ptr<VxlanInnerPacketDetails> make_vxlan_inner_packet_details(const PacketDetails& details) {
+    auto inner = std::make_shared<VxlanInnerPacketDetails>();
+    inner->has_vlan = details.has_vlan;
+    inner->vlan_tags = details.vlan_tags;
+    inner->has_llc = details.has_llc;
+    inner->llc = details.llc;
+    inner->has_snap = details.has_snap;
+    inner->snap = details.snap;
+    inner->has_ipv4 = details.has_ipv4;
+    inner->ipv4 = details.ipv4;
+    inner->has_ipv6 = details.has_ipv6;
+    inner->ipv6 = details.ipv6;
+    inner->has_tcp = details.has_tcp;
+    inner->tcp = details.tcp;
+    inner->has_udp = details.has_udp;
+    inner->udp = details.udp;
+    return inner;
+}
+
+void populate_vxlan_inner_packet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    const detail::VxlanPayloadView& vxlan,
+    PacketDetails& details
+) {
+    if (!vxlan.has_inner_ethernet || vxlan.inner_ethernet_truncated) {
+        return;
+    }
+
+    const auto bounded_end = std::min(vxlan.bounded_packet_end.value_or(packet_bytes.size()), packet_bytes.size());
+    if (vxlan.inner_ethernet_offset >= bounded_end) {
+        return;
+    }
+
+    const auto inner_length = bounded_end - vxlan.inner_ethernet_offset;
+    PacketRef inner_packet_ref {
+        .packet_index = packet_ref.packet_index,
+        .data_link_type = kLinkTypeEthernet,
+        .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
+        .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
+        .ts_sec = packet_ref.ts_sec,
+        .ts_usec = packet_ref.ts_usec,
+    };
+
+    const auto inner_bytes = packet_bytes.subspan(vxlan.inner_ethernet_offset, inner_length);
+    const auto decoded_inner = decode_packet_details(inner_bytes, inner_packet_ref, DecodeMode::strict);
+    if (!decoded_inner.has_value()) {
+        return;
+    }
+
+    if (!decoded_inner->has_vlan &&
+        !decoded_inner->has_llc &&
+        !decoded_inner->has_snap &&
+        !decoded_inner->has_ipv4 &&
+        !decoded_inner->has_ipv6 &&
+        !decoded_inner->has_tcp &&
+        !decoded_inner->has_udp) {
+        return;
+    }
+
+    details.vxlan.has_inner_packet = true;
+    details.vxlan.inner_packet = make_vxlan_inner_packet_details(*decoded_inner);
 }
 
 void populate_inner_ethernet_continuation_details(
@@ -1046,6 +1116,7 @@ std::optional<PacketDetails> decode_packet_details(
                     );
                     vxlan.has_value()) {
                     populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
+                    populate_vxlan_inner_packet_details(network_packet_bytes, packet_ref, *vxlan, details);
                 }
             }
             return details;
@@ -1197,6 +1268,7 @@ std::optional<PacketDetails> decode_packet_details(
                     );
                     vxlan.has_value()) {
                     populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
+                    populate_vxlan_inner_packet_details(network_packet_bytes, packet_ref, *vxlan, details);
                 }
             }
             return details;

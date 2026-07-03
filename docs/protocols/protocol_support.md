@@ -254,7 +254,7 @@ Selected-flow Stream currently supports only a subset of protocol-aware timeline
 The L2/L3 shim work in this branch intentionally does not claim support for:
 
 - QUIC false-positive cleanup beyond the bounded shim changes already implemented;
-- IP-in-IP, GRE, VXLAN, GENEVE, GTP-U, ESP/AH, or L2TP;
+- IP-in-IP, GRE, GENEVE, GTP-U, ESP/AH, or L2TP;
 - MACsec decryption, ICV validation, MKA/SAK handling, or inner flow recovery;
 - PBB-TE, OAM/CFM, PBB control-plane behavior, or bridge-learning semantics;
 - PPPoE session-negotiation or control-plane semantics beyond conservative Discovery / PPP-control presentation;

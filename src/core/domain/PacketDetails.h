@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace pfl {
@@ -127,6 +128,8 @@ struct MplsPseudowirePayloadDetails {
     bool payload_preview_truncated {false};
 };
 
+struct VxlanInnerPacketDetails;
+
 struct VxlanDetails {
     bool present {false};
     std::uint8_t flags {0};
@@ -134,6 +137,8 @@ struct VxlanDetails {
     std::uint32_t vni {0};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
+    bool has_inner_packet {false};
+    std::shared_ptr<VxlanInnerPacketDetails> inner_packet {};
 };
 
 struct PppoeTagDetails {
@@ -253,6 +258,23 @@ struct UdpDetails {
     std::uint16_t length {0};
     std::uint16_t checksum {0};
     bool payload_truncated {false};
+};
+
+struct VxlanInnerPacketDetails {
+    bool has_vlan {false};
+    std::vector<VlanTagDetails> vlan_tags {};
+    bool has_llc {false};
+    LlcDetails llc {};
+    bool has_snap {false};
+    SnapDetails snap {};
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
 };
 
 struct IcmpDetails {

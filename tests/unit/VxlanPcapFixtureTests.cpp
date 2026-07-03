@@ -73,6 +73,30 @@ const session_detail::PacketSummaryLayer* find_layer(
     return nullptr;
 }
 
+const session_detail::PacketSummaryLayer* find_top_level_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    for (const auto& layer : layers) {
+        if (layer.id == id) {
+            return &layer;
+        }
+    }
+    return nullptr;
+}
+
+std::size_t find_top_level_layer_index(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    for (std::size_t index = 0U; index < layers.size(); ++index) {
+        if (layers[index].id == id) {
+            return index;
+        }
+    }
+    return layers.size();
+}
+
 bool layer_has_field_containing(
     const session_detail::PacketSummaryLayer& layer,
     const std::string& label,
@@ -129,10 +153,13 @@ void expect_inner_flow_absent(
 void expect_vxlan_packet_details_present(
     const std::filesystem::path& relative_path,
     const std::uint64_t packet_index,
-    const std::uint32_t expected_vni
+    const std::uint32_t expected_vni,
+    const std::string& expected_inner_network_layer_id,
+    const std::string& expected_inner_transport_layer_id,
+    const bool expect_inner_vlan = false
 ) {
     CaptureSession session {};
-    PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path)));
 
     const auto packet = session.find_packet(packet_index);
     PFL_REQUIRE(packet.has_value());
@@ -145,6 +172,7 @@ void expect_vxlan_packet_details_present(
     PFL_EXPECT(details->vxlan.i_flag_set);
     PFL_EXPECT(details->vxlan.vni == expected_vni);
     PFL_EXPECT(details->has_inner_ethernet);
+    PFL_EXPECT(details->vxlan.has_inner_packet);
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
     const auto* udp_layer = find_layer(summary_layers, "udp");
@@ -157,13 +185,44 @@ void expect_vxlan_packet_details_present(
     PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "I Flag", "Set"));
     PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "VNI", std::to_string(expected_vni)));
     PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Inner Payload", "Ethernet"));
+    PFL_EXPECT(vxlan_layer->children.empty());
 
-    const auto* inner_ethernet_layer = find_layer(summary_layers, "ethernet-inner");
+    const auto* inner_ethernet_layer = find_top_level_layer(summary_layers, "ethernet-inner");
     PFL_REQUIRE(inner_ethernet_layer != nullptr);
+    const auto vxlan_index = find_top_level_layer_index(summary_layers, "vxlan");
+    const auto inner_ethernet_index = find_top_level_layer_index(summary_layers, "ethernet-inner");
+    const auto inner_network_index = find_top_level_layer_index(summary_layers, expected_inner_network_layer_id);
+    const auto inner_transport_index = find_top_level_layer_index(summary_layers, expected_inner_transport_layer_id);
+    PFL_REQUIRE(vxlan_index < summary_layers.size());
+    PFL_REQUIRE(inner_ethernet_index < summary_layers.size());
+    PFL_REQUIRE(inner_network_index < summary_layers.size());
+    PFL_REQUIRE(inner_transport_index < summary_layers.size());
+    PFL_EXPECT(vxlan_index < inner_ethernet_index);
+    if (expect_inner_vlan) {
+        const auto inner_vlan_index = find_top_level_layer_index(summary_layers, "vlan-inner");
+        PFL_REQUIRE(inner_vlan_index < summary_layers.size());
+        PFL_EXPECT(inner_ethernet_index < inner_vlan_index);
+        PFL_EXPECT(inner_vlan_index < inner_network_index);
+    } else {
+        PFL_EXPECT(inner_ethernet_index < inner_network_index);
+    }
+    PFL_EXPECT(inner_network_index < inner_transport_index);
 
     const auto protocol_text = session.read_packet_protocol_details_text(*packet);
     PFL_EXPECT(protocol_text.find("Protocol: VXLAN") != std::string::npos);
     PFL_EXPECT(protocol_text.find("VNI: " + std::to_string(expected_vni)) != std::string::npos);
+    const auto expected_transport_text =
+        expected_inner_transport_layer_id == "tcp-inner" ? std::string {"TCP"} :
+        expected_inner_transport_layer_id == "udp-inner" ? std::string {"UDP"} :
+        expected_inner_transport_layer_id;
+    if (expected_inner_network_layer_id == "ipv4-inner") {
+        PFL_EXPECT(protocol_text.find("Inner IPv4: " + expected_transport_text) != std::string::npos);
+    } else if (expected_inner_network_layer_id == "ipv6-inner") {
+        PFL_EXPECT(protocol_text.find("Inner IPv6: " + expected_transport_text) != std::string::npos);
+    }
+    if (expect_inner_vlan) {
+        PFL_EXPECT(protocol_text.find("Inner VLAN: ") != std::string::npos);
+    }
 }
 
 }  // namespace
@@ -387,7 +446,42 @@ void run_vxlan_pcap_fixture_tests() {
     expect_vxlan_packet_details_present(
         "parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap",
         0U,
-        100U
+        100U,
+        "ipv4-inner",
+        "tcp-inner"
+    );
+
+    expect_vxlan_packet_details_present(
+        "parsing/vxlan/02_vxlan_inner_ipv4_udp.pcap",
+        0U,
+        100U,
+        "ipv4-inner",
+        "udp-inner"
+    );
+
+    expect_vxlan_packet_details_present(
+        "parsing/vxlan/03_vxlan_inner_ipv6_tcp.pcap",
+        0U,
+        100U,
+        "ipv6-inner",
+        "tcp-inner"
+    );
+
+    expect_vxlan_packet_details_present(
+        "parsing/vxlan/04_vxlan_inner_ipv6_udp.pcap",
+        0U,
+        100U,
+        "ipv6-inner",
+        "udp-inner"
+    );
+
+    expect_vxlan_packet_details_present(
+        "parsing/vxlan/13_vxlan_inner_vlan_ipv4_tcp.pcap",
+        0U,
+        100U,
+        "ipv4-inner",
+        "tcp-inner",
+        true
     );
 
     {

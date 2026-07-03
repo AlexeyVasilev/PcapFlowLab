@@ -311,6 +311,10 @@ std::uint16_t macsec_plaintext_ether_type(const PacketDetails& details) noexcept
 }
 
 PacketSummaryField make_summary_field(std::string label, std::string value);
+bool ipv4_field_available(const IPv4Details& details, std::size_t end_offset) noexcept;
+std::uint16_t vlan_identifier(std::uint16_t tci) noexcept;
+unsigned vlan_priority(std::uint16_t tci) noexcept;
+unsigned vlan_drop_eligible_indicator(std::uint16_t tci) noexcept;
 
 std::uint8_t pbb_reserved_1(const PbbDetails& pbb) noexcept {
     return static_cast<std::uint8_t>((pbb.reserved >> 2U) & 0x1U);
@@ -367,6 +371,232 @@ PacketSummaryLayer build_inner_ethernet_summary_layer(const InnerEthernetDetails
         .warning = details.header_truncated,
         .marker_text = details.header_truncated ? "Warning" : std::string {},
     };
+}
+
+PacketSummaryLayer build_vlan_summary_layer(const VlanTagDetails& tag) {
+    auto vlan_fields = std::vector<PacketSummaryField> {
+        make_summary_field("TPID", format_ether_type_value(tag.tpid)),
+        make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+        make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+        make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+    };
+    if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
+        vlan_fields.push_back(make_summary_field(
+            "Encapsulated Length",
+            std::to_string(tag.encapsulated_ether_type) + " bytes"
+        ));
+    } else {
+        vlan_fields.push_back(make_summary_field(
+            "Encapsulated EtherType",
+            format_ether_type_value(tag.encapsulated_ether_type)
+        ));
+    }
+
+    return PacketSummaryLayer {
+        .id = "vlan",
+        .title = format_vlan_summary_title(tag),
+        .fields = std::move(vlan_fields),
+    };
+}
+
+PacketSummaryLayer build_ipv4_summary_layer(const IPv4Details& details) {
+    std::vector<PacketSummaryField> ipv4_fields {};
+    ipv4_fields.push_back(make_summary_field("Version", "4"));
+    ipv4_fields.push_back(make_summary_field(
+        "Internet Header Length",
+        std::to_string(details.header_length_bytes) + " bytes (" +
+            std::to_string(details.header_length_bytes / 4U) + ")"
+    ));
+    if (ipv4_field_available(details, 2U)) {
+        ipv4_fields.push_back(make_summary_field("Differentiated Services Field", format_hex_value(details.differentiated_services_field, 2)));
+    }
+    if (ipv4_field_available(details, 4U)) {
+        ipv4_fields.push_back(make_summary_field("Total Length", std::to_string(details.total_length) + " bytes"));
+    }
+    if (ipv4_field_available(details, 6U)) {
+        ipv4_fields.push_back(make_summary_field("Identification", format_hex16_value(details.identification)));
+    }
+    if (ipv4_field_available(details, 8U)) {
+        ipv4_fields.push_back(make_summary_field("Flags", format_hex_value(details.flags, 1)));
+        ipv4_fields.push_back(make_summary_field("Fragment Offset", std::to_string(details.fragment_offset)));
+    }
+    if (ipv4_field_available(details, 9U)) {
+        ipv4_fields.push_back(make_summary_field("TTL", std::to_string(details.ttl)));
+    }
+    if (ipv4_field_available(details, 10U)) {
+        ipv4_fields.push_back(make_summary_field("Protocol", format_protocol_summary_value_with_number(details.protocol)));
+    }
+    if (ipv4_field_available(details, 12U)) {
+        ipv4_fields.push_back(make_summary_field("Header Checksum", format_hex16_value(details.header_checksum)));
+    }
+    if (ipv4_field_available(details, 16U)) {
+        ipv4_fields.push_back(make_summary_field("Source Address", format_ipv4_address(details.src_addr)));
+    }
+    if (ipv4_field_available(details, 20U)) {
+        ipv4_fields.push_back(make_summary_field("Destination Address", format_ipv4_address(details.dst_addr)));
+    }
+    if (details.header_truncated) {
+        ipv4_fields.push_back(make_summary_field("Warning", "IPv4 header is truncated"));
+    }
+    if (details.header_length_bytes > details.available_header_bytes) {
+        ipv4_fields.push_back(make_summary_field("Incomplete Header", "Captured IPv4 header bytes are fewer than the IHL"));
+    }
+    if (ipv4_field_available(details, 4U) && details.total_length > details.available_packet_bytes) {
+        ipv4_fields.push_back(make_summary_field("Warning", "IPv4 total length exceeds captured packet bytes"));
+    }
+
+    auto ipv4_title = std::string {"IPv4"};
+    if (ipv4_field_available(details, 16U)) {
+        ipv4_title += ", Src: " + format_ipv4_address(details.src_addr);
+        if (ipv4_field_available(details, 20U)) {
+            ipv4_title += ", Dst: " + format_ipv4_address(details.dst_addr);
+        }
+    }
+
+    return PacketSummaryLayer {
+        .id = "ipv4",
+        .title = std::move(ipv4_title),
+        .fields = std::move(ipv4_fields),
+        .warning = details.invalid_header_length || details.total_length_invalid || details.header_truncated,
+        .marker_text = (details.invalid_header_length || details.total_length_invalid || details.header_truncated)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
+PacketSummaryLayer build_ipv6_summary_layer(const IPv6Details& details) {
+    return PacketSummaryLayer {
+        .id = "ipv6",
+        .title = "IPv6, Src: " +
+            format_ipv6_address(details.src_addr) +
+            ", Dst: " + format_ipv6_address(details.dst_addr),
+        .fields = {
+            make_summary_field("Version", "6"),
+            make_summary_field("Traffic Class", format_hex_value(details.traffic_class, 2)),
+            make_summary_field("Flow Label", format_hex_value(details.flow_label)),
+            make_summary_field("Payload Length", std::to_string(details.payload_length) + " bytes"),
+            make_summary_field("Next Header", format_protocol_summary_value_with_number(details.next_header)),
+            make_summary_field("Hop Limit", std::to_string(details.hop_limit)),
+            make_summary_field("Source Address", format_ipv6_address(details.src_addr)),
+            make_summary_field("Destination Address", format_ipv6_address(details.dst_addr)),
+        },
+    };
+}
+
+PacketSummaryLayer build_tcp_summary_layer(const TcpDetails& details) {
+    std::vector<PacketSummaryField> tcp_fields {
+        make_summary_field("Source Port", std::to_string(details.src_port)),
+        make_summary_field("Destination Port", std::to_string(details.dst_port)),
+        make_summary_field("Sequence Number (raw)", std::to_string(details.seq_number)),
+        make_summary_field("Acknowledgment Number (raw)", std::to_string(details.ack_number)),
+        make_summary_field(
+            "Header Length",
+            std::to_string(details.header_length_bytes) + " bytes (" +
+                std::to_string(details.header_length_bytes / 4U) + ")"
+        ),
+        make_summary_field("Flags", format_tcp_flags_text(details.flags)),
+        make_summary_field("Window", std::to_string(details.window)),
+        make_summary_field("Checksum", format_hex16_value(details.checksum)),
+        make_summary_field("Urgent Pointer", std::to_string(details.urgent_pointer)),
+    };
+
+    return PacketSummaryLayer {
+        .id = "tcp",
+        .title = "TCP, Src Port: " +
+            std::to_string(details.src_port) +
+            ", Dst Port: " + std::to_string(details.dst_port),
+        .fields = std::move(tcp_fields),
+    };
+}
+
+PacketSummaryLayer build_udp_summary_layer(const UdpDetails& details) {
+    std::vector<PacketSummaryField> udp_fields {
+        make_summary_field("Source Port", std::to_string(details.src_port)),
+        make_summary_field("Destination Port", std::to_string(details.dst_port)),
+        make_summary_field("Length", std::to_string(details.length) + " bytes"),
+        make_summary_field("Checksum", format_hex16_value(details.checksum)),
+    };
+    if (details.payload_truncated) {
+        udp_fields.push_back(make_summary_field("Warning", "UDP length exceeds available packet bytes"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "udp",
+        .title = "UDP, Src Port: " +
+            std::to_string(details.src_port) +
+            ", Dst Port: " + std::to_string(details.dst_port),
+        .fields = std::move(udp_fields),
+        .warning = details.payload_truncated,
+        .marker_text = details.payload_truncated ? std::string {"Warning"} : std::string {},
+    };
+}
+
+PacketSummaryLayer build_inner_vlan_summary_layer(const VlanTagDetails& tag) {
+    auto layer = build_vlan_summary_layer(tag);
+    layer.id = "vlan-inner";
+    layer.title = "Inner VLAN";
+    return layer;
+}
+
+PacketSummaryLayer build_inner_ipv4_summary_layer(const IPv4Details& details) {
+    auto layer = build_ipv4_summary_layer(details);
+    layer.id = "ipv4-inner";
+    layer.title = "Inner IPv4";
+    return layer;
+}
+
+PacketSummaryLayer build_inner_ipv6_summary_layer(const IPv6Details& details) {
+    auto layer = build_ipv6_summary_layer(details);
+    layer.id = "ipv6-inner";
+    layer.title = "Inner IPv6";
+    return layer;
+}
+
+PacketSummaryLayer build_inner_tcp_summary_layer(const TcpDetails& details) {
+    auto layer = build_tcp_summary_layer(details);
+    layer.id = "tcp-inner";
+    layer.title = "Inner TCP";
+    return layer;
+}
+
+PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
+    auto layer = build_udp_summary_layer(details);
+    layer.id = "udp-inner";
+    layer.title = "Inner UDP";
+    return layer;
+}
+
+void append_vxlan_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const PacketDetails& details,
+    const VxlanInnerPacketDetails& inner
+) {
+    if (details.has_inner_ethernet) {
+        layers.push_back(build_inner_ethernet_summary_layer(details.inner_ethernet));
+    }
+
+    for (const auto& tag : inner.vlan_tags) {
+        layers.push_back(build_inner_vlan_summary_layer(tag));
+    }
+
+    if (inner.has_ipv4) {
+        layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+    }
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -862,6 +1092,10 @@ std::optional<PacketSummaryLayer> build_ieee_802_3_trailer_layer(const PacketDet
 
 bool ipv4_field_available(const PacketDetails& details, const std::size_t end_offset) noexcept {
     return details.has_ipv4 && details.ipv4.available_header_bytes >= end_offset;
+}
+
+bool ipv4_field_available(const IPv4Details& details, const std::size_t end_offset) noexcept {
+    return details.available_header_bytes >= end_offset;
 }
 
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
@@ -2934,19 +3168,19 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
             vxlan_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
         }
 
-        std::vector<PacketSummaryLayer> vxlan_children {};
-        if (details.has_inner_ethernet) {
-            vxlan_children.push_back(build_inner_ethernet_summary_layer(details.inner_ethernet));
-        }
-
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "vxlan",
             .title = "VXLAN",
             .fields = std::move(vxlan_fields),
-            .children = std::move(vxlan_children),
             .warning = details.vxlan.inner_ethernet_truncated,
             .marker_text = details.vxlan.inner_ethernet_truncated ? "Warning" : std::string {},
         });
+
+        if (details.vxlan.has_inner_packet && details.vxlan.inner_packet) {
+            append_vxlan_inner_summary_layers(layers, details, *details.vxlan.inner_packet);
+        } else if (details.has_inner_ethernet) {
+            append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
+        }
     }
 
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
@@ -3141,6 +3375,19 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         }
         if (details.inner_ethernet.header_truncated || details.vxlan.inner_ethernet_truncated) {
             builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+        }
+        if (details.vxlan.has_inner_packet && details.vxlan.inner_packet) {
+            const auto& inner = *details.vxlan.inner_packet;
+            if (!inner.vlan_tags.empty()) {
+                builder << '\n' << '\t' << "Inner VLAN: " << vlan_identifier(inner.vlan_tags.front().tci);
+            }
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner IPv4: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner IPv6: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+            }
         }
         return builder.str();
     }

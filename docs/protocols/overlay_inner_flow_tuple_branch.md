@@ -278,8 +278,9 @@ Still intentionally not solved:
 - VXLAN Packet Details / Summary currently expose lightweight metadata only:
   - outer IPv4/IPv6 and UDP presentation remains intact
   - selected-packet Summary / Protocol details now show a VXLAN layer with flags and VNI
-  - inner Ethernet is presented as a nested child layer when the VXLAN payload contains a bounded Ethernet header
-  - inner IPv4/IPv6 and TCP/UDP are not yet duplicated in Packet Details alongside the outer IP/UDP stack
+  - when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available
+  - supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures
+  - outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN and then the sequential inner continuation layers
 
 ## Risks and unknowns
 
