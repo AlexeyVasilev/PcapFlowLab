@@ -25,7 +25,7 @@ Current implemented status:
 - the optional 4-byte sequence / N-PDU / next-extension-header block is bounded-skipped when the E/S/PN flags require it;
 - the deterministic extension-header fixture is bounded-skipped conservatively for tuple extraction;
 - TEID is parsed as metadata for later presentation work, but it is not part of flow identity in this branch yet;
-- selected-packet Summary / Protocol details for GTP-U are still follow-up work after strict tuple extraction.
+- selected-packet Summary / Protocol details for GTP-U are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available.
 
 ## Local generation
 
@@ -83,7 +83,9 @@ Current GTP-U behavior in this branch:
 - inner payload starts directly with IPv4 or IPv6 in the basic supported path; there is no inner Ethernet continuation in this first pass;
 - malformed, unsupported, or truncated GTP-U / inner payload cases remain conservative and do not fabricate normal inner flows;
 - identical inner tuples from different TEIDs are a known limitation in this branch because TEID is not yet part of flow identity;
-- selected-packet Summary / Protocol details for GTP-U remain follow-up work.
+- selected-packet Summary / Protocol details now show a GTP-U layer with TEID / flags / message metadata for both outer IPv4 and outer IPv6 UDP carriers, then sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available;
+- known GTP-U message types and known next-extension-header types are displayed by name when recognized, while extension headers still remain shallow skip-only presentation;
+- malformed, truncated, invalid-version, unsupported-message-type, and unknown-inner-payload GTP-U cases can still surface lenient selected-packet metadata and warnings on UDP/2152 without changing flow grouping.
 
 ## GTP-U fixture encoding notes
 

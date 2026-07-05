@@ -667,6 +667,82 @@ void append_geneve_inner_summary_layers(
     }
 }
 
+void append_gtpu_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const GtpuInnerPacketDetails& inner
+) {
+    if (inner.has_ipv4) {
+        auto layer = build_inner_ipv4_summary_layer(inner.ipv4);
+        if (inner.ipv4_truncated &&
+            std::none_of(layer.fields.begin(), layer.fields.end(), [](const auto& field) {
+                return field.label == "Warning" &&
+                    field.value.find("Inner IPv4 packet is truncated") != std::string::npos;
+            })) {
+            layer.title += ", truncated";
+            layer.fields.push_back(make_summary_field(
+                "Available Bytes",
+                std::to_string(inner.ipv4.available_packet_bytes) + " bytes"
+            ));
+            layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+            layer.warning = true;
+            layer.marker_text = "Warning";
+        }
+        layers.push_back(std::move(layer));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        if (inner.ipv6_truncated) {
+            std::vector<PacketSummaryField> fields {
+                make_summary_field("Version", "6"),
+            };
+            if (inner.ipv6_available_bytes >= 8U) {
+                fields.push_back(make_summary_field("Traffic Class", format_hex_value(inner.ipv6.traffic_class, 2)));
+                fields.push_back(make_summary_field("Flow Label", format_hex_value(inner.ipv6.flow_label)));
+                fields.push_back(make_summary_field("Payload Length", std::to_string(inner.ipv6.payload_length) + " bytes"));
+                fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                fields.push_back(make_summary_field("Hop Limit", std::to_string(inner.ipv6.hop_limit)));
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                fields.push_back(make_summary_field("Source Address", format_ipv6_address(inner.ipv6.src_addr)));
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                fields.push_back(make_summary_field("Destination Address", format_ipv6_address(inner.ipv6.dst_addr)));
+            }
+            fields.push_back(make_summary_field("Warning", "Inner IPv6 packet is truncated"));
+
+            std::string title = "Inner IPv6, truncated";
+            if (inner.ipv6_available_bytes >= 24U) {
+                title = "Inner IPv6, Src: " + format_ipv6_address(inner.ipv6.src_addr);
+                if (inner.ipv6_available_bytes >= 40U) {
+                    title += ", Dst: " + format_ipv6_address(inner.ipv6.dst_addr);
+                }
+                title += ", truncated";
+            }
+
+            layers.push_back(PacketSummaryLayer {
+                .id = "ipv6-inner",
+                .title = std::move(title),
+                .fields = std::move(fields),
+                .warning = true,
+                .marker_text = "Warning",
+            });
+        } else {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+    }
+}
+
 std::string format_geneve_protocol_type(const std::uint16_t protocol_type) {
     switch (protocol_type) {
     case 0x0800U:
@@ -692,6 +768,54 @@ std::string format_geneve_summary_title(const GeneveDetails& geneve) {
         return "Geneve, unsupported protocol type";
     }
     return std::string {"Geneve, VNI: "} + std::to_string(geneve.vni);
+}
+
+std::string format_gtpu_message_type(const std::uint8_t message_type) {
+    switch (message_type) {
+    case 0xFFU:
+        return "T-PDU (0xff)";
+    case 0x01U:
+        return "Echo Request (0x01)";
+    default:
+        return format_hex_value(message_type, 2);
+    }
+}
+
+std::string format_gtpu_extension_header_type(const std::uint8_t extension_header_type) {
+    switch (extension_header_type) {
+    case 0x00U:
+        return "No more extension headers (0x00)";
+    case 0x01U:
+        return "MBMS Support Indication (0x01)";
+    case 0x85U:
+        return "PDU Session Container (0x85)";
+    default:
+        return format_hex_value(extension_header_type, 2);
+    }
+}
+
+std::string format_gtpu_flags_summary(const GtpuDetails& gtpu) {
+    std::ostringstream builder {};
+    builder << format_hex_value(gtpu.flags, 2) << " (Version "
+            << static_cast<unsigned>(gtpu.version) << ", PT "
+            << (gtpu.protocol_type_flag_set ? "set" : "not set") << ")";
+    return builder.str();
+}
+
+std::string format_gtpu_summary_title(const GtpuDetails& gtpu) {
+    if (gtpu.header_truncated || gtpu.optional_header_truncated || gtpu.extension_headers_truncated) {
+        return "GTP-U, malformed";
+    }
+    if (gtpu.invalid_version || !gtpu.protocol_type_flag_set) {
+        return "GTP-U, invalid";
+    }
+    if (gtpu.unsupported_message_type) {
+        return "GTP-U, unsupported message type";
+    }
+    if (gtpu.unknown_inner_payload) {
+        return "GTP-U, unknown inner payload";
+    }
+    return std::string {"GTP-U, TEID: "} + format_hex_value(gtpu.teid, 8);
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -3407,6 +3531,116 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_gtpu) {
+        std::vector<PacketSummaryField> gtpu_fields {};
+        if (details.gtpu.available_header_bytes >= 1U) {
+            gtpu_fields.push_back(make_summary_field("Flags", format_gtpu_flags_summary(details.gtpu)));
+        }
+        if (details.gtpu.available_header_bytes >= 2U) {
+            gtpu_fields.push_back(make_summary_field("Message Type", format_gtpu_message_type(details.gtpu.message_type)));
+        }
+        if (details.gtpu.available_header_bytes >= 4U) {
+            gtpu_fields.push_back(make_summary_field("Length", std::to_string(details.gtpu.length) + " bytes"));
+        }
+        if (details.gtpu.available_header_bytes >= 8U) {
+            gtpu_fields.push_back(make_summary_field("TEID", format_hex_value(details.gtpu.teid, 8)));
+        }
+        if (details.gtpu.sequence_number_flag_set) {
+            gtpu_fields.push_back(make_summary_field("S Flag", "Set"));
+        }
+        if (details.gtpu.npdu_number_flag_set) {
+            gtpu_fields.push_back(make_summary_field("PN Flag", "Set"));
+        }
+        if (details.gtpu.extension_header_flag_set) {
+            gtpu_fields.push_back(make_summary_field("E Flag", "Set"));
+        }
+        if (details.gtpu.sequence_number_present) {
+            gtpu_fields.push_back(make_summary_field(
+                "Sequence Number",
+                format_hex_value(details.gtpu.sequence_number, 4) + " (" + std::to_string(details.gtpu.sequence_number) + ")"
+            ));
+        }
+        if (details.gtpu.npdu_number_present) {
+            gtpu_fields.push_back(make_summary_field(
+                "N-PDU Number",
+                format_hex_value(details.gtpu.npdu_number, 2) + " (" +
+                    std::to_string(static_cast<unsigned>(details.gtpu.npdu_number)) + ")"
+            ));
+        }
+        if (details.gtpu.next_extension_header_type_present) {
+            gtpu_fields.push_back(make_summary_field(
+                "Next Extension Header Type",
+                format_gtpu_extension_header_type(details.gtpu.next_extension_header_type)
+            ));
+        }
+        if (details.gtpu.extension_headers_skipped_bytes > 0U) {
+            gtpu_fields.push_back(make_summary_field(
+                "Extension Headers Skipped",
+                std::to_string(details.gtpu.extension_headers_skipped_bytes) + " bytes"
+            ));
+        }
+        if (details.gtpu.has_inner_packet && details.gtpu.inner_packet) {
+            if (details.gtpu.inner_packet->has_ipv4) {
+                gtpu_fields.push_back(make_summary_field("Inner Payload", "IPv4"));
+            } else if (details.gtpu.inner_packet->has_ipv6) {
+                gtpu_fields.push_back(make_summary_field("Inner Payload", "IPv6"));
+            }
+        } else if (details.gtpu.unknown_inner_payload) {
+            gtpu_fields.push_back(make_summary_field("Inner Payload", "Unknown"));
+        }
+        if (details.gtpu.header_truncated) {
+            gtpu_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.gtpu.available_header_bytes)) + " / 8"
+            ));
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U header is truncated"));
+        }
+        if (details.gtpu.invalid_version) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U version is not supported"));
+        }
+        if (!details.gtpu.protocol_type_flag_set) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U PT flag is not set"));
+        }
+        if (details.gtpu.unsupported_message_type) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U message type is not supported"));
+        }
+        if (details.gtpu.optional_header_truncated) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U optional header is truncated"));
+        }
+        if (details.gtpu.extension_headers_truncated) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U extension header chain is truncated"));
+        }
+        if (details.gtpu.unknown_inner_payload) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U inner payload type is not supported"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "gtpu",
+            .title = format_gtpu_summary_title(details.gtpu),
+            .fields = std::move(gtpu_fields),
+            .warning = details.gtpu.header_truncated ||
+                details.gtpu.invalid_version ||
+                !details.gtpu.protocol_type_flag_set ||
+                details.gtpu.unsupported_message_type ||
+                details.gtpu.optional_header_truncated ||
+                details.gtpu.extension_headers_truncated ||
+                details.gtpu.unknown_inner_payload,
+            .marker_text = (details.gtpu.header_truncated ||
+                    details.gtpu.invalid_version ||
+                    !details.gtpu.protocol_type_flag_set ||
+                    details.gtpu.unsupported_message_type ||
+                    details.gtpu.optional_header_truncated ||
+                    details.gtpu.extension_headers_truncated ||
+                    details.gtpu.unknown_inner_payload)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (details.gtpu.has_inner_packet && details.gtpu.inner_packet) {
+            append_gtpu_inner_summary_layers(layers, *details.gtpu.inner_packet);
+        }
+    }
+
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
         append_layer_if_not_empty(layers, *trailer_layer);
     }
@@ -3711,6 +3945,89 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                 builder << '\n' << '\t' << "Inner IPv6: "
                         << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
             }
+        }
+        return builder.str();
+    }
+
+    if (details.has_gtpu) {
+        builder << "Protocol: GTP-U\n"
+                << '\t' << "Flags: " << format_gtpu_flags_summary(details.gtpu);
+        if (details.gtpu.available_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "Message Type: " << format_gtpu_message_type(details.gtpu.message_type);
+        }
+        if (details.gtpu.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Length: " << details.gtpu.length << " bytes";
+        }
+        if (details.gtpu.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "TEID: " << format_hex_value(details.gtpu.teid, 8);
+        }
+        if (details.gtpu.sequence_number_flag_set) {
+            builder << '\n' << '\t' << "S Flag: Set";
+        }
+        if (details.gtpu.npdu_number_flag_set) {
+            builder << '\n' << '\t' << "PN Flag: Set";
+        }
+        if (details.gtpu.extension_header_flag_set) {
+            builder << '\n' << '\t' << "E Flag: Set";
+        }
+        if (details.gtpu.sequence_number_present) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.gtpu.sequence_number, 4) << " ("
+                    << details.gtpu.sequence_number << ')';
+        }
+        if (details.gtpu.npdu_number_present) {
+            builder << '\n' << '\t' << "N-PDU Number: "
+                    << format_hex_value(details.gtpu.npdu_number, 2) << " ("
+                    << static_cast<unsigned>(details.gtpu.npdu_number) << ')';
+        }
+        if (details.gtpu.next_extension_header_type_present) {
+            builder << '\n' << '\t' << "Next Extension Header Type: "
+                    << format_gtpu_extension_header_type(details.gtpu.next_extension_header_type);
+        }
+        if (details.gtpu.extension_headers_skipped_bytes > 0U) {
+            builder << '\n' << '\t' << "Extension Headers Skipped: "
+                    << details.gtpu.extension_headers_skipped_bytes << " bytes";
+        }
+        if (details.gtpu.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.gtpu.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: GTP-U header is truncated.";
+        }
+        if (details.gtpu.invalid_version) {
+            builder << '\n' << '\t' << "Warning: GTP-U version is not supported.";
+        }
+        if (!details.gtpu.protocol_type_flag_set) {
+            builder << '\n' << '\t' << "Warning: GTP-U PT flag is not set.";
+        }
+        if (details.gtpu.unsupported_message_type) {
+            builder << '\n' << '\t' << "Warning: GTP-U message type is not supported.";
+        }
+        if (details.gtpu.optional_header_truncated) {
+            builder << '\n' << '\t' << "Warning: GTP-U optional header is truncated.";
+        }
+        if (details.gtpu.extension_headers_truncated) {
+            builder << '\n' << '\t' << "Warning: GTP-U extension header chain is truncated.";
+        }
+        if (details.gtpu.has_inner_packet && details.gtpu.inner_packet) {
+            const auto& inner = *details.gtpu.inner_packet;
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner Payload: IPv4"
+                        << '\n' << '\t' << "Inner IPv4: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                if (inner.ipv4_truncated) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner Payload: IPv6"
+                        << '\n' << '\t' << "Inner IPv6: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                if (inner.ipv6_truncated) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv6 packet is truncated.";
+                }
+            }
+        } else if (details.gtpu.unknown_inner_payload) {
+            builder << '\n' << '\t' << "Inner Payload: Unknown"
+                    << '\n' << '\t' << "Warning: GTP-U inner payload type is not supported.";
         }
         return builder.str();
     }

@@ -130,6 +130,7 @@ struct MplsPseudowirePayloadDetails {
 
 struct VxlanInnerPacketDetails;
 struct GeneveInnerPacketDetails;
+struct GtpuInnerPacketDetails;
 
 struct VxlanDetails {
     bool present {false};
@@ -167,6 +168,36 @@ struct GeneveDetails {
     bool inner_ethernet_truncated {false};
     bool has_inner_packet {false};
     std::shared_ptr<GeneveInnerPacketDetails> inner_packet {};
+};
+
+struct GtpuDetails {
+    bool present {false};
+    std::uint8_t flags {0};
+    std::uint8_t version {0};
+    bool protocol_type_flag_set {false};
+    bool extension_header_flag_set {false};
+    bool sequence_number_flag_set {false};
+    bool npdu_number_flag_set {false};
+    std::uint8_t message_type {0};
+    std::uint16_t length {0};
+    std::uint32_t teid {0};
+    std::uint8_t available_header_bytes {0};
+    bool header_truncated {false};
+    bool invalid_version {false};
+    bool unsupported_message_type {false};
+    bool has_optional_fields {false};
+    bool optional_header_truncated {false};
+    bool sequence_number_present {false};
+    std::uint16_t sequence_number {0};
+    bool npdu_number_present {false};
+    std::uint8_t npdu_number {0};
+    bool next_extension_header_type_present {false};
+    std::uint8_t next_extension_header_type {0};
+    bool extension_headers_truncated {false};
+    std::size_t extension_headers_skipped_bytes {0};
+    bool unknown_inner_payload {false};
+    bool has_inner_packet {false};
+    std::shared_ptr<GtpuInnerPacketDetails> inner_packet {};
 };
 
 struct PppoeTagDetails {
@@ -322,6 +353,20 @@ struct GeneveInnerPacketDetails {
     UdpDetails udp {};
 };
 
+struct GtpuInnerPacketDetails {
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool ipv4_truncated {false};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    std::uint16_t ipv6_available_bytes {0};
+    bool ipv6_truncated {false};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+};
+
 struct IcmpDetails {
     std::uint8_t type {0};
     std::uint8_t code {0};
@@ -380,6 +425,8 @@ struct PacketDetails {
     VxlanDetails vxlan {};
     bool has_geneve {false};
     GeneveDetails geneve {};
+    bool has_gtpu {false};
+    GtpuDetails gtpu {};
     bool has_inner_ethernet {false};
     InnerEthernetDetails inner_ethernet {};
     bool has_unknown_inner_ethernet_payload {false};

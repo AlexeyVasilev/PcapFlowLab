@@ -16,7 +16,7 @@ Fixture-preparation status:
 
 - VXLAN fixture generation, parser support, tests, and selected-packet presentation are implemented.
 - Geneve fixture generation, parser support for inner flow-tuple extraction, tests, and deterministic fixture generation are implemented.
-- GTP-U fixture generator, strict inner flow-tuple extraction, deterministic fixtures, and flow fixture tests are implemented; selected-packet presentation is still pending.
+- GTP-U fixture generator, strict inner flow-tuple extraction, deterministic fixtures, flow fixture tests, and selected-packet Summary / Protocol details are implemented.
 
 ## Non-goals
 
@@ -317,7 +317,9 @@ Still intentionally not solved:
 - when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
 - supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures
 - outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN or Geneve and then the sequential inner continuation layers
-- GTP-U selected-packet Summary / Protocol details are still follow-up work; the current parser step changes effective flow tuple extraction only
+- GTP-U selected-packet Summary / Protocol details are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available for both outer IPv4 and outer IPv6 UDP carriers
+- known GTP-U message types and known next-extension-header types may be named in selected-packet presentation, but extension headers are still handled as shallow bounded skip-only metadata rather than deep parsed structures
+- malformed/truncated/unsupported GTP-U selected-packet presentation remains lenient and warning-oriented on UDP/2152 only; it does not change effective flow tuple extraction
 - selected-packet VXLAN details are intentionally more lenient than flow extraction for UDP/4789 payloads, so malformed or invalid VXLAN-like packets can still surface best-effort VXLAN metadata and bounded inner warning layers without producing an inner flow tuple
 - selected-packet Geneve details are intentionally more lenient than flow extraction for UDP/6081 payloads, so malformed or invalid Geneve-like packets can still surface best-effort Geneve metadata and bounded inner warning layers without producing an inner flow tuple
 - when the Geneve base header and option bounds are valid and Protocol Type is Ethernet (`0x6558`), selected-packet details may still show best-effort inner Ethernet / VLAN / IPv4 / IPv6 / TCP / UDP continuation even if the Geneve version is unsupported; strict flow extraction still rejects that packet as a Geneve inner-tuple carrier
