@@ -57,7 +57,6 @@ const FlowRow* find_flow_by_tuple(
     return nullptr;
 }
 
-#if defined(PFL_ENABLE_PENDING_GENEVE_TESTS)
 void expect_inner_flow_present(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
@@ -80,7 +79,6 @@ void expect_inner_flow_present(
 
     PFL_EXPECT(flow->packet_count == expected_packet_count);
 }
-#endif
 
 void expect_inner_flow_absent(
     const std::filesystem::path& relative_path,
@@ -102,11 +100,6 @@ void expect_inner_flow_absent(
 }  // namespace
 
 void run_geneve_pcap_fixture_tests() {
-    // Geneve fixtures are committed before parser support. Keep conservative
-    // negative cases enabled by default, and guard future positive expectations
-    // behind PFL_ENABLE_PENDING_GENEVE_TESTS until tuple extraction exists.
-
-#if defined(PFL_ENABLE_PENDING_GENEVE_TESTS)
     expect_inner_flow_present(
         "parsing/geneve/01_geneve_inner_ipv4_tcp.pcap",
         FlowAddressFamily::ipv4,
@@ -255,7 +248,6 @@ void run_geneve_pcap_fixture_tests() {
         443U,
         1U
     );
-#endif
 
     expect_inner_flow_absent(
         "parsing/geneve/05_geneve_truncated_base_header.pcap",

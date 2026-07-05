@@ -15,7 +15,7 @@ Target protocols:
 Fixture-preparation status:
 
 - VXLAN fixture generation, parser support, tests, and selected-packet presentation are implemented.
-- Geneve fixture preparation has now started with a deterministic Scapy generator and documented fixture plan under `tests/data/parsing/geneve/`.
+- Geneve fixture generation, parser support for inner flow-tuple extraction, tests, and deterministic fixture generation are implemented.
 
 ## Non-goals
 
@@ -269,19 +269,32 @@ Implemented in this branch so far:
   - inner Ethernet -> IPv4 -> TCP/UDP
   - inner Ethernet -> IPv6 -> TCP/UDP
   - inner Ethernet -> VLAN -> IPv4 -> TCP when the existing inner Ethernet continuation resolves the VLAN path
+- Geneve effective inner tuple extraction for valid UDP/6081 traffic carrying:
+  - inner Ethernet -> IPv4 -> TCP/UDP
+  - inner Ethernet -> IPv6 -> TCP/UDP
+  - inner Ethernet -> VLAN -> IPv4 -> TCP when the existing inner Ethernet continuation resolves the VLAN path
 - outer IPv4 and outer IPv6 VXLAN carrier paths both switch flow grouping to the decoded inner tuple
+- outer IPv4 and outer IPv6 Geneve carrier paths both switch flow grouping to the decoded inner tuple
 - basic VXLAN header validation is enforced:
   - UDP destination port must be `4789`
   - payload must include the fixed 8-byte VXLAN header
   - the VXLAN I flag must be set
   - reserved header bytes must be zero
+- basic Geneve header validation is enforced:
+  - UDP destination port must be `6081`
+  - payload must include the fixed 8-byte Geneve base header
+  - Geneve version must be `0`
+  - option length is interpreted in 4-byte units and base header + options must fit in the UDP payload
+  - Protocol Type must be Ethernet `0x6558`
 
 Still intentionally not solved:
 
 - VNI is not part of flow identity
 - invalid/truncated/unsupported VXLAN payloads fall back to existing outer behavior instead of fabricating an inner flow
+- invalid/truncated/unsupported Geneve payloads fall back to existing outer behavior instead of fabricating an inner flow
 - VXLAN Packet Details / Summary currently expose lightweight metadata only:
   - outer IPv4/IPv6 and UDP presentation remains intact
+- Geneve Packet Details / Summary remain follow-up work in this branch
 - selected-packet Summary / Protocol details now show a VXLAN layer with flags, VNI flag state, and VNI
 - when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
 - supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures

@@ -247,6 +247,27 @@ std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
     );
 }
 
+std::optional<DecodedPacket> try_decode_geneve_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t udp_payload_offset,
+    const std::size_t udp_payload_length,
+    const RawPcapPacket& packet
+) {
+    const auto udp_payload_end = udp_payload_offset + udp_payload_length;
+    const auto geneve = detail::parse_geneve_payload(packet_bytes, udp_payload_offset, udp_payload_end);
+    if (!geneve.has_value() || !geneve->resolved_supported_protocol) {
+        return std::nullopt;
+    }
+
+    return decode_supported_ip_transport_payload(
+        packet_bytes,
+        geneve->resolved_protocol_type,
+        geneve->resolved_payload_offset,
+        geneve->bounded_packet_end,
+        packet
+    );
+}
+
 }  // namespace
 
 DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const noexcept {
@@ -393,18 +414,31 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U);
             flow_key.protocol = ProtocolId::udp;
 
-            if (flow_key.dst_port == detail::kUdpPortVxlan) {
+            if (flow_key.dst_port == detail::kUdpPortVxlan ||
+                flow_key.dst_port == detail::kUdpPortGeneve) {
                 if (const auto udp_payload =
                         detail::parse_udp_payload_bounds(bounded_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
                     udp_payload.has_value()) {
-                    if (const auto vxlan_packet = try_decode_vxlan_inner_packet(
-                            bounded_bytes,
-                            udp_payload->payload_offset,
-                            udp_payload->payload_length,
-                            packet
-                        );
-                        vxlan_packet.has_value()) {
-                        return *vxlan_packet;
+                    if (flow_key.dst_port == detail::kUdpPortVxlan) {
+                        if (const auto vxlan_packet = try_decode_vxlan_inner_packet(
+                                bounded_bytes,
+                                udp_payload->payload_offset,
+                                udp_payload->payload_length,
+                                packet
+                            );
+                            vxlan_packet.has_value()) {
+                            return *vxlan_packet;
+                        }
+                    } else if (flow_key.dst_port == detail::kUdpPortGeneve) {
+                        if (const auto geneve_packet = try_decode_geneve_inner_packet(
+                                bounded_bytes,
+                                udp_payload->payload_offset,
+                                udp_payload->payload_length,
+                                packet
+                            );
+                            geneve_packet.has_value()) {
+                            return *geneve_packet;
+                        }
                     }
                 }
             }
@@ -562,21 +596,34 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
             flow_key.protocol = ProtocolId::udp;
 
-            if (flow_key.dst_port == detail::kUdpPortVxlan) {
+            if (flow_key.dst_port == detail::kUdpPortVxlan ||
+                flow_key.dst_port == detail::kUdpPortGeneve) {
                 if (const auto udp_payload = detail::parse_udp_payload_bounds(
                         bounded_bytes,
                         payload->payload_offset,
                         ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
                     );
                     udp_payload.has_value()) {
-                    if (const auto vxlan_packet = try_decode_vxlan_inner_packet(
-                            bounded_bytes,
-                            udp_payload->payload_offset,
-                            udp_payload->payload_length,
-                            packet
-                        );
-                        vxlan_packet.has_value()) {
-                        return *vxlan_packet;
+                    if (flow_key.dst_port == detail::kUdpPortVxlan) {
+                        if (const auto vxlan_packet = try_decode_vxlan_inner_packet(
+                                bounded_bytes,
+                                udp_payload->payload_offset,
+                                udp_payload->payload_length,
+                                packet
+                            );
+                            vxlan_packet.has_value()) {
+                            return *vxlan_packet;
+                        }
+                    } else if (flow_key.dst_port == detail::kUdpPortGeneve) {
+                        if (const auto geneve_packet = try_decode_geneve_inner_packet(
+                                bounded_bytes,
+                                udp_payload->payload_offset,
+                                udp_payload->payload_length,
+                                packet
+                            );
+                            geneve_packet.has_value()) {
+                            return *geneve_packet;
+                        }
                     }
                 }
             }

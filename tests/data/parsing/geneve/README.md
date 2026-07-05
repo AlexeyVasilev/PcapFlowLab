@@ -20,10 +20,11 @@ Current branch intent:
 - malformed Geneve cases should remain conservative and should not fabricate inner flow tuples.
 
 Current implemented status:
-- Geneve fixture preparation has started;
-- generator and README are committed in this step;
-- generated `.pcap` files are intentionally not created in this edit step;
-- parser support and tests are future steps in this workflow.
+- Geneve fixture generator, README, generated `.pcap` files, and flow fixture tests are committed;
+- valid UDP/6081 Geneve carrying Ethernet plus inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
+- Geneve option length is handled in 4-byte units and bounded options are skipped safely for tuple extraction;
+- Geneve VNI is parsed as metadata, but it is not part of flow identity in this branch yet;
+- selected-packet Geneve Summary / Protocol details remain a follow-up step.
 
 ## Local generation
 
@@ -74,13 +75,14 @@ Notes:
 - Default VNI: `100`
 - Alternate VNI for collision case: `200`
 
-## Future support assumptions for this branch
+## Current branch behavior and remaining follow-up
 
-Planned Geneve behavior for later implementation steps:
-- valid Geneve over UDP/6081 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple should eventually create a normal flow keyed by the inner tuple;
-- selected-packet Summary / Protocol details should preserve outer IPv4 / UDP plus Geneve layer metadata, including VNI and bounded option metadata when present;
-- malformed or truncated Geneve / inner payload cases should remain conservative and should not fabricate normal inner flows;
-- identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity.
+Current Geneve behavior in this branch:
+- valid Geneve over UDP/6081 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
+- bounded Geneve options are skipped safely using the option length field in 4-byte units;
+- malformed or truncated Geneve / inner payload cases remain conservative and do not fabricate normal inner flows;
+- identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity;
+- selected-packet Summary / Protocol details for Geneve metadata remain future work.
 
 ---
 
@@ -92,7 +94,7 @@ Planned Geneve behavior for later implementation steps:
 - Geneve VNI: `100`
 - Option length: `0`
 - Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected future behavior: candidate normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
 
 ### 02_geneve_inner_ipv4_udp.pcap
 
@@ -102,7 +104,7 @@ Planned Geneve behavior for later implementation steps:
 - Geneve VNI: `100`
 - Option length: `0`
 - Inner tuple: `10.50.0.10:53650 -> 10.50.0.20:443`
-- Expected future behavior: candidate normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
 
 ### 03_geneve_inner_ipv6_tcp.pcap
 
@@ -112,7 +114,7 @@ Planned Geneve behavior for later implementation steps:
 - Geneve VNI: `100`
 - Option length: `0`
 - Inner tuple: `2001:db8:50::10:49550 -> 2001:db8:50::20:443`
-- Expected future behavior: candidate normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
 
 ### 04_geneve_inner_ipv6_udp.pcap
 
@@ -122,7 +124,7 @@ Planned Geneve behavior for later implementation steps:
 - Geneve VNI: `100`
 - Option length: `0`
 - Inner tuple: `2001:db8:50::10:53650 -> 2001:db8:50::20:443`
-- Expected future behavior: candidate normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
 
 ### 05_geneve_truncated_base_header.pcap
 
@@ -157,7 +159,7 @@ Planned Geneve behavior for later implementation steps:
 - Outer tuple: `203.0.113.50:54007 -> 203.0.113.51:6081`
 - Geneve VNI: `100`
 - Option length: `0`
-- Expected future behavior: Geneve header may be recognized, but no inner flow tuple should be extracted because the inner Ethernet header is incomplete.
+- Expected current behavior: no inner flow tuple is extracted because the inner Ethernet header is incomplete.
 
 ### 09_geneve_truncated_inner_ipv4.pcap
 
@@ -166,7 +168,7 @@ Planned Geneve behavior for later implementation steps:
 - Outer tuple: `203.0.113.50:54008 -> 203.0.113.51:6081`
 - Geneve VNI: `100`
 - Inner Ethernet EtherType: `0x0800`
-- Expected future behavior: no normal flow tuple should be created; later packet-details work may show partial inner IPv4 fields conservatively.
+- Expected current behavior: no normal flow tuple is created; later packet-details work may show partial inner IPv4 fields conservatively.
 
 ### 10_geneve_unsupported_protocol_type.pcap
 
@@ -175,7 +177,7 @@ Planned Geneve behavior for later implementation steps:
 - Outer tuple: `203.0.113.50:54009 -> 203.0.113.51:6081`
 - Geneve VNI: `100`
 - Protocol type: `0x0800` (IPv4 directly, intentionally outside the initial Ethernet-payload Geneve scope)
-- Expected future behavior: no inner Ethernet/IP tuple extraction in the first Geneve pass.
+- Expected current behavior: no inner Ethernet/IP tuple extraction in the first Geneve pass.
 
 ### 11_geneve_inner_ipv4_tcp_bidirectional.pcap
 
@@ -188,7 +190,7 @@ Planned Geneve behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.50.0.10:49550 -> 10.50.0.20:443`
   - packet 2: `10.50.0.20:443 -> 10.50.0.10:49550`
-- Expected future behavior: both packets should belong to one bidirectional inner IPv4/TCP flow after Geneve support is implemented.
+- Expected current behavior: both packets belong to one bidirectional inner IPv4/TCP flow.
 
 ### 12_geneve_same_outer_tuple_different_inner_flows.pcap
 
@@ -199,7 +201,7 @@ Planned Geneve behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.50.0.10:10011 -> 10.50.0.20:443`
   - packet 2: `10.50.0.10:10012 -> 10.50.0.20:443`
-- Expected future behavior: after Geneve support, these should become two distinct inner IPv4/TCP flows based on the inner tuple.
+- Expected current behavior: these become two distinct inner IPv4/TCP flows based on the inner tuple.
 
 ### 13_geneve_inner_vlan_ipv4_tcp.pcap
 
@@ -209,7 +211,7 @@ Planned Geneve behavior for later implementation steps:
 - Geneve VNI: `100`
 - Inner VLAN ID: `150`
 - Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected future behavior: Geneve parsing should recognize Geneve and continue through the existing inner Ethernet/VLAN/IP/TCP path to recover the inner tuple.
+- Expected current behavior: Geneve parsing recognizes Geneve and continues through the existing inner Ethernet/VLAN/IP/TCP path to recover the inner tuple.
 
 ### 14_geneve_outer_ipv6_inner_ipv4_tcp.pcap
 
@@ -218,7 +220,7 @@ Planned Geneve behavior for later implementation steps:
 - Outer tuple: `2001:db8:50:1::1:54014 -> 2001:db8:50:1::2:6081`
 - Geneve VNI: `100`
 - Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected future behavior: outer IPv6 carriage should not prevent Geneve recognition or inner IPv4/TCP tuple extraction.
+- Expected current behavior: outer IPv6 carriage does not prevent Geneve recognition or inner IPv4/TCP tuple extraction.
 
 ### 15_geneve_wrong_udp_port_valid_geneve_payload.pcap
 
@@ -227,7 +229,7 @@ Planned Geneve behavior for later implementation steps:
 - Outer tuple: `203.0.113.50:54015 -> 203.0.113.51:6091`
 - Embedded VNI bytes: `100`
 - Inner tuple if decapsulated hypothetically: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected future behavior: negative control for UDP port gating; do not treat this as Geneve in the basic parser and do not extract an inner Geneve tuple.
+- Expected current behavior: negative control for UDP port gating; do not treat this as Geneve in the basic parser and do not extract an inner Geneve tuple.
 
 ### 16_geneve_vni_boundary_values.pcap
 
@@ -242,7 +244,7 @@ Planned Geneve behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.50.0.10:49550 -> 10.50.0.20:443`
   - packet 2: `10.50.0.11:10011 -> 10.50.0.21:443`
-- Expected future behavior: Geneve metadata extraction should preserve and display VNI boundary values. VNI still remains outside flow identity in this branch.
+- Expected current behavior: valid Geneve packets produce inner flows for both VNI boundary values. VNI still remains outside flow identity in this branch.
 
 ### 17_geneve_with_options_inner_ipv4_tcp.pcap
 
@@ -253,7 +255,7 @@ Planned Geneve behavior for later implementation steps:
 - Option length: `8` bytes
 - Option shape: one deterministic 8-byte option block with a 4-byte Geneve option header and 4 bytes of option data
 - Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected future behavior: parser skips bounded options safely and extracts the inner tuple.
+- Expected current behavior: parser skips bounded options safely and extracts the inner tuple.
 
 ## Expected generated file list
 

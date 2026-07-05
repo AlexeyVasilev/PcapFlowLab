@@ -59,6 +59,7 @@ inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
 inline constexpr std::size_t kVxlanHeaderSize = 8U;
+inline constexpr std::size_t kGeneveHeaderSize = 8U;
 inline constexpr std::size_t kIgmpMinimumHeaderSize = 8;
 inline constexpr std::size_t kPppoeHeaderSize = 6U;
 inline constexpr std::size_t kPppProtocolFieldSize = 2U;
@@ -72,6 +73,8 @@ inline constexpr std::uint8_t kIgmpTypeV2MembershipReport = 0x16;
 inline constexpr std::uint8_t kIgmpTypeLeaveGroup = 0x17;
 inline constexpr std::uint8_t kIgmpTypeV3MembershipReport = 0x22;
 inline constexpr std::uint16_t kUdpPortVxlan = 4789U;
+inline constexpr std::uint16_t kUdpPortGeneve = 6081U;
+inline constexpr std::uint16_t kGeneveProtocolTypeEthernet = 0x6558U;
 inline constexpr std::uint8_t kVxlanFlagI = 0x08U;
 
 struct LinkLayerPayloadView {
@@ -167,6 +170,21 @@ struct EthernetContinuationView {
 
 struct VxlanPayloadView {
     std::uint32_t vni {0};
+    std::size_t inner_payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
+    bool has_inner_ethernet {false};
+    bool inner_ethernet_truncated {false};
+    std::size_t inner_ethernet_offset {0};
+    LinkLayerPayloadView inner_ethernet {};
+    bool resolved_supported_protocol {false};
+    std::uint16_t resolved_protocol_type {0};
+    std::size_t resolved_payload_offset {0};
+};
+
+struct GenevePayloadView {
+    std::uint32_t vni {0};
+    std::uint16_t protocol_type {0};
+    std::size_t option_length_bytes {0};
     std::size_t inner_payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
     bool has_inner_ethernet {false};
@@ -640,6 +658,74 @@ inline std::optional<VxlanPayloadView> parse_vxlan_payload(
     }
 
     const auto inner_payload_length = vxlan_payload_end - view.inner_payload_offset;
+    if (inner_payload_length < kEthernetHeaderSize) {
+        view.has_inner_ethernet = true;
+        view.inner_ethernet_truncated = true;
+        return view;
+    }
+
+    const auto inner_bytes = bytes.subspan(view.inner_payload_offset, inner_payload_length);
+    if (const auto continuation = parse_ethernet_continuation(inner_bytes, 0U); continuation.has_value()) {
+        view.has_inner_ethernet = true;
+        view.inner_ethernet = continuation->link_layer;
+        if (continuation->bounded_packet_end.has_value()) {
+            view.bounded_packet_end = view.inner_payload_offset + *continuation->bounded_packet_end;
+        }
+        if (continuation->resolved_supported_protocol) {
+            view.resolved_supported_protocol = true;
+            view.resolved_protocol_type = continuation->resolved_protocol_type;
+            view.resolved_payload_offset = view.inner_payload_offset + continuation->resolved_payload_offset;
+        }
+        return view;
+    }
+
+    return view;
+}
+
+inline std::optional<GenevePayloadView> parse_geneve_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t geneve_offset,
+    const std::size_t geneve_payload_end
+) {
+    if (geneve_offset + kGeneveHeaderSize > geneve_payload_end ||
+        bytes.size() < geneve_offset + kGeneveHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto first_byte = bytes[geneve_offset];
+    const auto version = static_cast<std::uint8_t>((first_byte >> 6U) & 0x03U);
+    const auto option_length_words = static_cast<std::size_t>(first_byte & 0x3FU);
+    if (version != 0U) {
+        return std::nullopt;
+    }
+
+    const auto option_length_bytes = option_length_words * 4U;
+    const auto header_length = kGeneveHeaderSize + option_length_bytes;
+    if (geneve_offset + header_length > geneve_payload_end ||
+        bytes.size() < geneve_offset + header_length) {
+        return std::nullopt;
+    }
+
+    GenevePayloadView view {};
+    view.protocol_type = read_be16(bytes, geneve_offset + 2U);
+    if (view.protocol_type != kGeneveProtocolTypeEthernet) {
+        return std::nullopt;
+    }
+
+    view.vni = ((static_cast<std::uint32_t>(bytes[geneve_offset + 4U]) << 16U) |
+                (static_cast<std::uint32_t>(bytes[geneve_offset + 5U]) << 8U) |
+                static_cast<std::uint32_t>(bytes[geneve_offset + 6U]));
+    view.option_length_bytes = option_length_bytes;
+    view.inner_payload_offset = geneve_offset + header_length;
+    view.bounded_packet_end = geneve_payload_end;
+    view.inner_ethernet_offset = view.inner_payload_offset;
+
+    if (geneve_payload_end <= view.inner_payload_offset) {
+        view.inner_ethernet_truncated = true;
+        return view;
+    }
+
+    const auto inner_payload_length = geneve_payload_end - view.inner_payload_offset;
     if (inner_payload_length < kEthernetHeaderSize) {
         view.has_inner_ethernet = true;
         view.inner_ethernet_truncated = true;
