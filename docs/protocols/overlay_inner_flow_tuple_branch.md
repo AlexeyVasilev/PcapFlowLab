@@ -16,6 +16,7 @@ Fixture-preparation status:
 
 - VXLAN fixture generation, parser support, tests, and selected-packet presentation are implemented.
 - Geneve fixture generation, parser support for inner flow-tuple extraction, tests, and deterministic fixture generation are implemented.
+- GTP-U fixture generator and deterministic fixture README are prepared; parser support, tests, and selected-packet presentation are still pending.
 
 ## Non-goals
 
