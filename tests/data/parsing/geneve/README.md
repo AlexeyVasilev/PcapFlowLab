@@ -82,7 +82,9 @@ Current Geneve behavior in this branch:
 - bounded Geneve options are skipped safely using the option length field in 4-byte units;
 - malformed or truncated Geneve / inner payload cases remain conservative and do not fabricate normal inner flows;
 - identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity;
-- selected-packet Summary / Protocol details now show Geneve metadata and sequential inner layers for valid fixtures, while malformed/truncated UDP/6081 Geneve-like payloads can still surface presentational warnings without affecting flow keys.
+- selected-packet Summary / Protocol details now show Geneve metadata and sequential inner layers for valid fixtures, while malformed/truncated UDP/6081 Geneve-like payloads can still surface presentational warnings without affecting flow keys;
+- invalid Geneve version packets remain no-flow for strict tuple extraction, but selected-packet details may still show best-effort inner Ethernet/IP/transport continuation when the bounded header, options, and Ethernet protocol type are otherwise usable;
+- unsupported Geneve protocol types are reported distinctly from malformed or invalid-version cases and do not continue into inner Ethernet presentation in this branch.
 
 ---
 
@@ -141,7 +143,7 @@ Current Geneve behavior in this branch:
 - Outer tuple: `203.0.113.50:54005 -> 203.0.113.51:6081`
 - Geneve version: `1`
 - Geneve VNI: `100`
-- Expected future behavior: do not accept the packet as a valid Geneve inner-tuple carrier.
+- Expected current behavior: do not accept the packet as a valid Geneve inner-tuple carrier, but selected-packet details may still show best-effort inner Ethernet / IPv4 / TCP continuation for manual inspection.
 
 ### 07_geneve_options_length_truncated.pcap
 
@@ -177,7 +179,7 @@ Current Geneve behavior in this branch:
 - Outer tuple: `203.0.113.50:54009 -> 203.0.113.51:6081`
 - Geneve VNI: `100`
 - Protocol type: `0x0800` (IPv4 directly, intentionally outside the initial Ethernet-payload Geneve scope)
-- Expected current behavior: no inner Ethernet/IP tuple extraction in the first Geneve pass.
+- Expected current behavior: no inner Ethernet/IP tuple extraction in the first Geneve pass; selected-packet details should report the unsupported protocol type distinctly from malformed or invalid-version Geneve cases.
 
 ### 11_geneve_inner_ipv4_tcp_bidirectional.pcap
 

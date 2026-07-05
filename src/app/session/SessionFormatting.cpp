@@ -668,10 +668,30 @@ void append_geneve_inner_summary_layers(
 }
 
 std::string format_geneve_protocol_type(const std::uint16_t protocol_type) {
-    if (protocol_type == 0x6558U) {
+    switch (protocol_type) {
+    case 0x0800U:
+        return "IPv4 (0x0800)";
+    case 0x86DDU:
+        return "IPv6 (0x86dd)";
+    case 0x6558U:
         return "Ethernet (0x6558)";
+    default:
+        break;
     }
     return format_hex16_value(protocol_type);
+}
+
+std::string format_geneve_summary_title(const GeneveDetails& geneve) {
+    if (geneve.header_truncated || geneve.options_truncated) {
+        return "Geneve, malformed";
+    }
+    if (geneve.invalid_version) {
+        return "Geneve, invalid";
+    }
+    if (!geneve.protocol_type_supported && geneve.available_header_bytes >= 4U) {
+        return "Geneve, unsupported protocol type";
+    }
+    return std::string {"Geneve, VNI: "} + std::to_string(geneve.vni);
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -3364,11 +3384,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "geneve",
-            .title = details.geneve.header_truncated
-                ? std::string {"Geneve, malformed"}
-                : ((details.geneve.invalid_version || details.geneve.options_truncated || !details.geneve.protocol_type_supported)
-                    ? std::string {"Geneve, invalid"}
-                    : std::string {"Geneve, VNI: "} + std::to_string(details.geneve.vni)),
+            .title = format_geneve_summary_title(details.geneve),
             .fields = std::move(geneve_fields),
             .warning = details.geneve.header_truncated ||
                 details.geneve.invalid_version ||

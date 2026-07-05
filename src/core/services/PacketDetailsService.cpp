@@ -432,9 +432,7 @@ void populate_lenient_geneve_details(
     details.geneve.invalid_version = details.geneve.version != 0U;
     const auto header_length = detail::kGeneveHeaderSize + static_cast<std::size_t>(details.geneve.option_length_bytes);
     details.geneve.options_truncated = geneve_offset + header_length > bounded_payload_end;
-    if (details.geneve.invalid_version ||
-        details.geneve.options_truncated ||
-        !details.geneve.protocol_type_supported) {
+    if (details.geneve.options_truncated || !details.geneve.protocol_type_supported) {
         return;
     }
 

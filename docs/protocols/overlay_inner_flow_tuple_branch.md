@@ -302,6 +302,8 @@ Still intentionally not solved:
 - outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN or Geneve and then the sequential inner continuation layers
 - selected-packet VXLAN details are intentionally more lenient than flow extraction for UDP/4789 payloads, so malformed or invalid VXLAN-like packets can still surface best-effort VXLAN metadata and bounded inner warning layers without producing an inner flow tuple
 - selected-packet Geneve details are intentionally more lenient than flow extraction for UDP/6081 payloads, so malformed or invalid Geneve-like packets can still surface best-effort Geneve metadata and bounded inner warning layers without producing an inner flow tuple
+- when the Geneve base header and option bounds are valid and Protocol Type is Ethernet (`0x6558`), selected-packet details may still show best-effort inner Ethernet / VLAN / IPv4 / IPv6 / TCP / UDP continuation even if the Geneve version is unsupported; strict flow extraction still rejects that packet as a Geneve inner-tuple carrier
+- unsupported Geneve protocol types are reported distinctly from malformed or invalid-version Geneve presentation and do not continue into inner Ethernet decoding in this branch
 
 ## Risks and unknowns
 

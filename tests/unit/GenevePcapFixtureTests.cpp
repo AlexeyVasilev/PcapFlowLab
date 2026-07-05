@@ -596,17 +596,17 @@ void run_geneve_pcap_fixture_tests() {
     expect_geneve_warning_packet_details(
         "parsing/geneve/06_geneve_invalid_version.pcap",
         {"Geneve", "invalid"},
-        {"Version: 1", "Warning: Geneve version is not supported."},
+        {"Version: 1", "Warning: Geneve version is not supported.", "Inner IPv4: TCP"},
+        true,
+        true,
         true,
         false,
-        false,
-        false,
-        false
+        true
     );
 
     expect_geneve_warning_packet_details(
         "parsing/geneve/07_geneve_options_length_truncated.pcap",
-        {"Geneve", "invalid"},
+        {"Geneve", "malformed"},
         {"Option Length: 2 words (8 bytes)", "Warning: Geneve options are truncated."},
         true,
         false,
@@ -639,8 +639,8 @@ void run_geneve_pcap_fixture_tests() {
 
     expect_geneve_warning_packet_details(
         "parsing/geneve/10_geneve_unsupported_protocol_type.pcap",
-        {"Geneve", "invalid"},
-        {"Protocol Type: 0x0800", "Warning: Geneve protocol type is not supported."},
+        {"Geneve", "unsupported protocol type"},
+        {"Protocol Type: IPv4 (0x0800)", "Warning: Geneve protocol type is not supported."},
         true,
         false,
         false,
