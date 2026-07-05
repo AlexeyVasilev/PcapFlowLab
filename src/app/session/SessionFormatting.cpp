@@ -534,35 +534,43 @@ PacketSummaryLayer build_udp_summary_layer(const UdpDetails& details) {
 PacketSummaryLayer build_inner_vlan_summary_layer(const VlanTagDetails& tag) {
     auto layer = build_vlan_summary_layer(tag);
     layer.id = "vlan-inner";
-    layer.title = "Inner VLAN";
+    layer.title = "Inner VLAN, ID: " + std::to_string(vlan_identifier(tag.tci));
     return layer;
 }
 
 PacketSummaryLayer build_inner_ipv4_summary_layer(const IPv4Details& details) {
     auto layer = build_ipv4_summary_layer(details);
     layer.id = "ipv4-inner";
-    layer.title = "Inner IPv4";
+    layer.title = "Inner IPv4, Src: " +
+        format_ipv4_address(details.src_addr) +
+        ", Dst: " + format_ipv4_address(details.dst_addr);
     return layer;
 }
 
 PacketSummaryLayer build_inner_ipv6_summary_layer(const IPv6Details& details) {
     auto layer = build_ipv6_summary_layer(details);
     layer.id = "ipv6-inner";
-    layer.title = "Inner IPv6";
+    layer.title = "Inner IPv6, Src: " +
+        format_ipv6_address(details.src_addr) +
+        ", Dst: " + format_ipv6_address(details.dst_addr);
     return layer;
 }
 
 PacketSummaryLayer build_inner_tcp_summary_layer(const TcpDetails& details) {
     auto layer = build_tcp_summary_layer(details);
     layer.id = "tcp-inner";
-    layer.title = "Inner TCP";
+    layer.title = "Inner TCP, Src Port: " +
+        std::to_string(details.src_port) +
+        ", Dst Port: " + std::to_string(details.dst_port);
     return layer;
 }
 
 PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
     auto layer = build_udp_summary_layer(details);
     layer.id = "udp-inner";
-    layer.title = "Inner UDP";
+    layer.title = "Inner UDP, Src Port: " +
+        std::to_string(details.src_port) +
+        ", Dst Port: " + std::to_string(details.dst_port);
     return layer;
 }
 
@@ -3145,7 +3153,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     if (details.has_vxlan) {
         std::vector<PacketSummaryField> vxlan_fields {
             make_summary_field("Flags", format_hex_value(details.vxlan.flags, 2)),
-            make_summary_field("I Flag", details.vxlan.i_flag_set ? "Set" : "Not set"),
+            make_summary_field("VNI Flag", details.vxlan.i_flag_set ? "Set" : "Not set"),
             make_summary_field("VNI", std::to_string(details.vxlan.vni)),
         };
         if (details.vxlan.has_inner_ethernet) {
@@ -3170,7 +3178,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "vxlan",
-            .title = "VXLAN",
+            .title = "VXLAN, VNI: " + std::to_string(details.vxlan.vni),
             .fields = std::move(vxlan_fields),
             .warning = details.vxlan.inner_ethernet_truncated,
             .marker_text = details.vxlan.inner_ethernet_truncated ? "Warning" : std::string {},
@@ -3359,7 +3367,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
     if (details.has_vxlan) {
         builder << "Protocol: VXLAN\n"
                 << '\t' << "Flags: " << format_hex_value(details.vxlan.flags, 2) << '\n'
-                << '\t' << "I Flag: " << (details.vxlan.i_flag_set ? "Set" : "Not set") << '\n'
+                << '\t' << "VNI Flag: " << (details.vxlan.i_flag_set ? "Set" : "Not set") << '\n'
                 << '\t' << "VNI: " << details.vxlan.vni;
         if (details.vxlan.has_inner_ethernet) {
             builder << '\n' << '\t' << "Inner Payload: Ethernet";

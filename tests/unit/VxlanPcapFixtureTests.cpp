@@ -110,6 +110,18 @@ bool layer_has_field_containing(
     return false;
 }
 
+bool title_contains_all(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::initializer_list<std::string> fragments
+) {
+    for (const auto& fragment : fragments) {
+        if (layer.title.find(fragment) == std::string::npos) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void expect_inner_flow_present(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
@@ -156,6 +168,10 @@ void expect_vxlan_packet_details_present(
     const std::uint32_t expected_vni,
     const std::string& expected_inner_network_layer_id,
     const std::string& expected_inner_transport_layer_id,
+    const std::string& expected_inner_source,
+    const std::string& expected_inner_destination,
+    const std::string& expected_inner_source_port,
+    const std::string& expected_inner_destination_port,
     const bool expect_inner_vlan = false
 ) {
     CaptureSession session {};
@@ -181,14 +197,22 @@ void expect_vxlan_packet_details_present(
 
     const auto* vxlan_layer = find_layer(summary_layers, "vxlan");
     PFL_REQUIRE(vxlan_layer != nullptr);
+    PFL_EXPECT(title_contains_all(*vxlan_layer, {"VXLAN", std::to_string(expected_vni)}));
     PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Flags", "0x08"));
-    PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "I Flag", "Set"));
+    PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "VNI Flag", "Set"));
     PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "VNI", std::to_string(expected_vni)));
     PFL_EXPECT(layer_has_field_containing(*vxlan_layer, "Inner Payload", "Ethernet"));
     PFL_EXPECT(vxlan_layer->children.empty());
 
     const auto* inner_ethernet_layer = find_top_level_layer(summary_layers, "ethernet-inner");
     PFL_REQUIRE(inner_ethernet_layer != nullptr);
+    PFL_EXPECT(title_contains_all(*inner_ethernet_layer, {
+        "Inner",
+        "Src:",
+        "Dst:",
+        "02:00:00:00:41:01",
+        "02:00:00:00:41:02",
+    }));
     const auto vxlan_index = find_top_level_layer_index(summary_layers, "vxlan");
     const auto inner_ethernet_index = find_top_level_layer_index(summary_layers, "ethernet-inner");
     const auto inner_network_index = find_top_level_layer_index(summary_layers, expected_inner_network_layer_id);
@@ -199,8 +223,11 @@ void expect_vxlan_packet_details_present(
     PFL_REQUIRE(inner_transport_index < summary_layers.size());
     PFL_EXPECT(vxlan_index < inner_ethernet_index);
     if (expect_inner_vlan) {
+        const auto* inner_vlan_layer = find_top_level_layer(summary_layers, "vlan-inner");
         const auto inner_vlan_index = find_top_level_layer_index(summary_layers, "vlan-inner");
+        PFL_REQUIRE(inner_vlan_layer != nullptr);
         PFL_REQUIRE(inner_vlan_index < summary_layers.size());
+        PFL_EXPECT(title_contains_all(*inner_vlan_layer, {"Inner VLAN", "140"}));
         PFL_EXPECT(inner_ethernet_index < inner_vlan_index);
         PFL_EXPECT(inner_vlan_index < inner_network_index);
     } else {
@@ -208,8 +235,41 @@ void expect_vxlan_packet_details_present(
     }
     PFL_EXPECT(inner_network_index < inner_transport_index);
 
+    const auto* inner_network_layer = find_top_level_layer(summary_layers, expected_inner_network_layer_id);
+    PFL_REQUIRE(inner_network_layer != nullptr);
+    if (expected_inner_network_layer_id == "ipv4-inner") {
+        PFL_EXPECT(title_contains_all(*inner_network_layer, {
+            "Inner IPv4",
+            expected_inner_source,
+            expected_inner_destination,
+        }));
+    } else if (expected_inner_network_layer_id == "ipv6-inner") {
+        PFL_EXPECT(title_contains_all(*inner_network_layer, {
+            "Inner IPv6",
+            expected_inner_source,
+            expected_inner_destination,
+        }));
+    }
+
+    const auto* inner_transport_layer = find_top_level_layer(summary_layers, expected_inner_transport_layer_id);
+    PFL_REQUIRE(inner_transport_layer != nullptr);
+    if (expected_inner_transport_layer_id == "tcp-inner") {
+        PFL_EXPECT(title_contains_all(*inner_transport_layer, {"Inner TCP", "Src Port:", "Dst Port:"}));
+        PFL_EXPECT(title_contains_all(*inner_transport_layer, {
+            expected_inner_source_port,
+            expected_inner_destination_port,
+        }));
+    } else if (expected_inner_transport_layer_id == "udp-inner") {
+        PFL_EXPECT(title_contains_all(*inner_transport_layer, {"Inner UDP", "Src Port:", "Dst Port:"}));
+        PFL_EXPECT(title_contains_all(*inner_transport_layer, {
+            expected_inner_source_port,
+            expected_inner_destination_port,
+        }));
+    }
+
     const auto protocol_text = session.read_packet_protocol_details_text(*packet);
     PFL_EXPECT(protocol_text.find("Protocol: VXLAN") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("VNI Flag: Set") != std::string::npos);
     PFL_EXPECT(protocol_text.find("VNI: " + std::to_string(expected_vni)) != std::string::npos);
     const auto expected_transport_text =
         expected_inner_transport_layer_id == "tcp-inner" ? std::string {"TCP"} :
@@ -448,7 +508,11 @@ void run_vxlan_pcap_fixture_tests() {
         0U,
         100U,
         "ipv4-inner",
-        "tcp-inner"
+        "tcp-inner",
+        "10.40.0.10",
+        "10.40.0.20",
+        "49440",
+        "443"
     );
 
     expect_vxlan_packet_details_present(
@@ -456,7 +520,11 @@ void run_vxlan_pcap_fixture_tests() {
         0U,
         100U,
         "ipv4-inner",
-        "udp-inner"
+        "udp-inner",
+        "10.40.0.10",
+        "10.40.0.20",
+        "53540",
+        "443"
     );
 
     expect_vxlan_packet_details_present(
@@ -464,7 +532,11 @@ void run_vxlan_pcap_fixture_tests() {
         0U,
         100U,
         "ipv6-inner",
-        "tcp-inner"
+        "tcp-inner",
+        "2001:0db8:0040:0000:0000:0000:0000:0010",
+        "2001:0db8:0040:0000:0000:0000:0000:0020",
+        "49440",
+        "443"
     );
 
     expect_vxlan_packet_details_present(
@@ -472,7 +544,11 @@ void run_vxlan_pcap_fixture_tests() {
         0U,
         100U,
         "ipv6-inner",
-        "udp-inner"
+        "udp-inner",
+        "2001:0db8:0040:0000:0000:0000:0000:0010",
+        "2001:0db8:0040:0000:0000:0000:0000:0020",
+        "53540",
+        "443"
     );
 
     expect_vxlan_packet_details_present(
@@ -481,6 +557,10 @@ void run_vxlan_pcap_fixture_tests() {
         100U,
         "ipv4-inner",
         "tcp-inner",
+        "10.40.0.10",
+        "10.40.0.20",
+        "49440",
+        "443",
         true
     );
 

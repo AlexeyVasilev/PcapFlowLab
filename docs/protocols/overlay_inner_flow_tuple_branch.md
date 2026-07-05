@@ -277,8 +277,8 @@ Still intentionally not solved:
 - invalid/truncated/unsupported VXLAN payloads fall back to existing outer behavior instead of fabricating an inner flow
 - VXLAN Packet Details / Summary currently expose lightweight metadata only:
   - outer IPv4/IPv6 and UDP presentation remains intact
-  - selected-packet Summary / Protocol details now show a VXLAN layer with flags and VNI
-  - when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available
+  - selected-packet Summary / Protocol details now show a VXLAN layer with flags, VNI flag state, and VNI
+  - when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
   - supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures
   - outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN and then the sequential inner continuation layers
 
