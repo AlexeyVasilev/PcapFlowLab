@@ -262,6 +262,9 @@ std::string format_inner_ethernet_title(const InnerEthernetDetails& details) {
         title += ", Src: " + format_mac_address(details.src_mac) +
             ", Dst: " + format_mac_address(details.dst_mac);
     }
+    if (details.header_truncated) {
+        title += ", truncated";
+    }
     return title;
 }
 
@@ -344,6 +347,12 @@ void append_pbb_itag_summary_fields(std::vector<PacketSummaryField>& fields, con
 
 PacketSummaryLayer build_inner_ethernet_summary_layer(const InnerEthernetDetails& details) {
     auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
+    if (details.header_truncated) {
+        inner_ethernet_fields.push_back(make_summary_field(
+            "Available Header Bytes",
+            std::to_string(static_cast<unsigned>(details.available_header_bytes)) + " / 14"
+        ));
+    }
     if (details.available_header_bytes >= 6U) {
         inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.dst_mac)));
     }
@@ -541,9 +550,27 @@ PacketSummaryLayer build_inner_vlan_summary_layer(const VlanTagDetails& tag) {
 PacketSummaryLayer build_inner_ipv4_summary_layer(const IPv4Details& details) {
     auto layer = build_ipv4_summary_layer(details);
     layer.id = "ipv4-inner";
-    layer.title = "Inner IPv4, Src: " +
-        format_ipv4_address(details.src_addr) +
-        ", Dst: " + format_ipv4_address(details.dst_addr);
+    const bool truncated =
+        details.header_truncated ||
+        details.header_length_bytes > details.available_header_bytes ||
+        (ipv4_field_available(details, 4U) && details.total_length > details.available_packet_bytes);
+    layer.title = "Inner IPv4";
+    if (details.available_header_bytes >= 16U) {
+        layer.title += ", Src: " + format_ipv4_address(details.src_addr);
+        if (details.available_header_bytes >= 20U) {
+            layer.title += ", Dst: " + format_ipv4_address(details.dst_addr);
+        }
+    }
+    if (truncated) {
+        layer.title += ", truncated";
+        layer.fields.push_back(make_summary_field(
+            "Available Bytes",
+            std::to_string(details.available_packet_bytes) + " bytes"
+        ));
+        layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+        layer.warning = true;
+        layer.marker_text = "Warning";
+    }
     return layer;
 }
 
@@ -3154,8 +3181,25 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         std::vector<PacketSummaryField> vxlan_fields {
             make_summary_field("Flags", format_hex_value(details.vxlan.flags, 2)),
             make_summary_field("VNI Flag", details.vxlan.i_flag_set ? "Set" : "Not set"),
-            make_summary_field("VNI", std::to_string(details.vxlan.vni)),
         };
+        if (details.vxlan.available_header_bytes >= 7U) {
+            vxlan_fields.push_back(make_summary_field("VNI", std::to_string(details.vxlan.vni)));
+        }
+        if (details.vxlan.header_truncated) {
+            vxlan_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.vxlan.available_header_bytes)) + " / 8"
+            ));
+            vxlan_fields.push_back(make_summary_field("Warning", "VXLAN header is truncated"));
+        }
+        if (details.vxlan.invalid_header) {
+            if (!details.vxlan.i_flag_set) {
+                vxlan_fields.push_back(make_summary_field("Warning", "VXLAN VNI flag is not set"));
+            }
+            if (details.vxlan.reserved_bits_non_zero) {
+                vxlan_fields.push_back(make_summary_field("Warning", "VXLAN reserved header bytes are non-zero"));
+            }
+        }
         if (details.vxlan.has_inner_ethernet) {
             vxlan_fields.push_back(make_summary_field("Inner Payload", "Ethernet"));
             if (details.inner_ethernet.available_header_bytes >= 14U) {
@@ -3178,10 +3222,20 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "vxlan",
-            .title = "VXLAN, VNI: " + std::to_string(details.vxlan.vni),
+            .title = details.vxlan.header_truncated
+                ? std::string {"VXLAN, malformed"}
+                : (details.vxlan.invalid_header
+                    ? std::string {"VXLAN, invalid"}
+                    : std::string {"VXLAN, VNI: "} + std::to_string(details.vxlan.vni)),
             .fields = std::move(vxlan_fields),
-            .warning = details.vxlan.inner_ethernet_truncated,
-            .marker_text = details.vxlan.inner_ethernet_truncated ? "Warning" : std::string {},
+            .warning = details.vxlan.header_truncated ||
+                details.vxlan.invalid_header ||
+                details.vxlan.inner_ethernet_truncated,
+            .marker_text = (details.vxlan.header_truncated ||
+                    details.vxlan.invalid_header ||
+                    details.vxlan.inner_ethernet_truncated)
+                ? "Warning"
+                : std::string {},
         });
 
         if (details.vxlan.has_inner_packet && details.vxlan.inner_packet) {
@@ -3367,8 +3421,23 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
     if (details.has_vxlan) {
         builder << "Protocol: VXLAN\n"
                 << '\t' << "Flags: " << format_hex_value(details.vxlan.flags, 2) << '\n'
-                << '\t' << "VNI Flag: " << (details.vxlan.i_flag_set ? "Set" : "Not set") << '\n'
-                << '\t' << "VNI: " << details.vxlan.vni;
+                << '\t' << "VNI Flag: " << (details.vxlan.i_flag_set ? "Set" : "Not set");
+        if (details.vxlan.available_header_bytes >= 7U) {
+            builder << '\n' << '\t' << "VNI: " << details.vxlan.vni;
+        }
+        if (details.vxlan.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.vxlan.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: VXLAN header is truncated.";
+        }
+        if (details.vxlan.invalid_header) {
+            if (!details.vxlan.i_flag_set) {
+                builder << '\n' << '\t' << "Warning: VXLAN VNI flag is not set.";
+            }
+            if (details.vxlan.reserved_bits_non_zero) {
+                builder << '\n' << '\t' << "Warning: VXLAN reserved header bytes are non-zero.";
+            }
+        }
         if (details.vxlan.has_inner_ethernet) {
             builder << '\n' << '\t' << "Inner Payload: Ethernet";
             if (details.inner_ethernet.available_header_bytes >= 14U) {
@@ -3392,6 +3461,11 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             if (inner.has_ipv4) {
                 builder << '\n' << '\t' << "Inner IPv4: "
                         << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                if (inner.ipv4.header_truncated ||
+                    inner.ipv4.header_length_bytes > inner.ipv4.available_header_bytes ||
+                    (ipv4_field_available(inner.ipv4, 4U) && inner.ipv4.total_length > inner.ipv4.available_packet_bytes)) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
             } else if (inner.has_ipv6) {
                 builder << '\n' << '\t' << "Inner IPv6: "
                         << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));

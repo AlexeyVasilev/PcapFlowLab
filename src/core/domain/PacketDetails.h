@@ -134,6 +134,10 @@ struct VxlanDetails {
     bool present {false};
     std::uint8_t flags {0};
     bool i_flag_set {false};
+    std::uint8_t available_header_bytes {0};
+    bool header_truncated {false};
+    bool invalid_header {false};
+    bool reserved_bits_non_zero {false};
     std::uint32_t vni {0};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};

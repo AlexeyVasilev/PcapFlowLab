@@ -285,6 +285,56 @@ void expect_vxlan_packet_details_present(
     }
 }
 
+void expect_vxlan_warning_packet_details(
+    const std::filesystem::path& relative_path,
+    const std::initializer_list<std::string> expected_vxlan_title_fragments,
+    const std::initializer_list<std::string> expected_protocol_fragments,
+    const bool expect_vxlan_layer_warning,
+    const bool expect_inner_ethernet,
+    const bool expect_inner_ipv4,
+    const bool expect_inner_udp,
+    const bool expect_inner_tcp
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path)));
+
+    const auto packet = session.find_packet(0U);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+    PFL_EXPECT(details->has_udp);
+    PFL_EXPECT(details->has_vxlan);
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    const auto* vxlan_layer = find_layer(summary_layers, "vxlan");
+    PFL_REQUIRE(vxlan_layer != nullptr);
+    PFL_EXPECT(title_contains_all(*vxlan_layer, expected_vxlan_title_fragments));
+    PFL_EXPECT(vxlan_layer->warning == expect_vxlan_layer_warning);
+
+    const auto* inner_ethernet_layer = find_top_level_layer(summary_layers, "ethernet-inner");
+    PFL_EXPECT((inner_ethernet_layer != nullptr) == expect_inner_ethernet);
+    if (expect_inner_ethernet && inner_ethernet_layer != nullptr &&
+        relative_path == std::filesystem::path("parsing/vxlan/07_vxlan_truncated_inner_ethernet.pcap")) {
+        PFL_EXPECT(inner_ethernet_layer->title.find("truncated") != std::string::npos);
+    }
+    const auto* inner_ipv4_layer = find_top_level_layer(summary_layers, "ipv4-inner");
+    PFL_EXPECT((inner_ipv4_layer != nullptr) == expect_inner_ipv4);
+    if (expect_inner_ipv4 && inner_ipv4_layer != nullptr &&
+        relative_path == std::filesystem::path("parsing/vxlan/08_vxlan_truncated_inner_ipv4.pcap")) {
+        PFL_EXPECT(inner_ipv4_layer->title.find("truncated") != std::string::npos);
+    }
+    const auto* inner_udp_layer = find_top_level_layer(summary_layers, "udp-inner");
+    PFL_EXPECT((inner_udp_layer != nullptr) == expect_inner_udp);
+    const auto* inner_tcp_layer = find_top_level_layer(summary_layers, "tcp-inner");
+    PFL_EXPECT((inner_tcp_layer != nullptr) == expect_inner_tcp);
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    PFL_EXPECT(protocol_text.find("Protocol: VXLAN") != std::string::npos);
+    for (const auto& fragment : expected_protocol_fragments) {
+        PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
+    }
+}
+
 }  // namespace
 
 void run_vxlan_pcap_fixture_tests() {
@@ -501,6 +551,50 @@ void run_vxlan_pcap_fixture_tests() {
         49440U,
         "10.40.0.20",
         443U
+    );
+
+    expect_vxlan_warning_packet_details(
+        "parsing/vxlan/05_vxlan_truncated_header.pcap",
+        {"VXLAN", "malformed"},
+        {"Available Header Bytes: 6 / 8", "Warning: VXLAN header is truncated."},
+        true,
+        false,
+        false,
+        false,
+        false
+    );
+
+    expect_vxlan_warning_packet_details(
+        "parsing/vxlan/06_vxlan_invalid_flags_or_reserved_bits.pcap",
+        {"VXLAN", "invalid"},
+        {"VNI Flag: Not set", "VNI: 100", "Warning: VXLAN VNI flag is not set.", "Inner IPv4: UDP"},
+        true,
+        true,
+        true,
+        true,
+        false
+    );
+
+    expect_vxlan_warning_packet_details(
+        "parsing/vxlan/07_vxlan_truncated_inner_ethernet.pcap",
+        {"VXLAN", "VNI: 100"},
+        {"Warning: Inner Ethernet header is truncated."},
+        true,
+        true,
+        false,
+        false,
+        false
+    );
+
+    expect_vxlan_warning_packet_details(
+        "parsing/vxlan/08_vxlan_truncated_inner_ipv4.pcap",
+        {"VXLAN", "VNI: 100"},
+        {"Inner IPv4:", "Warning: Inner IPv4 packet is truncated"},
+        false,
+        true,
+        true,
+        false,
+        false
     );
 
     expect_vxlan_packet_details_present(

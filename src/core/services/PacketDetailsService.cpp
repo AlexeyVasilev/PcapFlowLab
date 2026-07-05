@@ -117,6 +117,10 @@ void populate_vxlan_details(
     details.has_vxlan = true;
     details.vxlan = {};
     details.vxlan.present = true;
+    details.vxlan.available_header_bytes = static_cast<std::uint8_t>(detail::kVxlanHeaderSize);
+    details.vxlan.header_truncated = false;
+    details.vxlan.invalid_header = false;
+    details.vxlan.reserved_bits_non_zero = false;
     details.vxlan.flags = packet_bytes[vxlan_offset];
     details.vxlan.i_flag_set = (details.vxlan.flags & detail::kVxlanFlagI) != 0U;
     details.vxlan.vni = vxlan.vni;
@@ -151,7 +155,8 @@ void populate_vxlan_inner_packet_details(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet_ref,
     const detail::VxlanPayloadView& vxlan,
-    PacketDetails& details
+    PacketDetails& details,
+    const DecodeMode inner_mode
 ) {
     if (!vxlan.has_inner_ethernet || vxlan.inner_ethernet_truncated) {
         return;
@@ -173,7 +178,7 @@ void populate_vxlan_inner_packet_details(
     };
 
     const auto inner_bytes = packet_bytes.subspan(vxlan.inner_ethernet_offset, inner_length);
-    const auto decoded_inner = decode_packet_details(inner_bytes, inner_packet_ref, DecodeMode::strict);
+    const auto decoded_inner = decode_packet_details(inner_bytes, inner_packet_ref, inner_mode);
     if (!decoded_inner.has_value()) {
         return;
     }
@@ -190,6 +195,94 @@ void populate_vxlan_inner_packet_details(
 
     details.vxlan.has_inner_packet = true;
     details.vxlan.inner_packet = make_vxlan_inner_packet_details(*decoded_inner);
+}
+
+void populate_lenient_vxlan_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    const std::size_t vxlan_offset,
+    const std::size_t vxlan_payload_end,
+    PacketDetails& details
+) {
+    details.has_vxlan = true;
+    details.vxlan = {};
+    details.vxlan.present = true;
+
+    const auto bounded_payload_end = std::min(vxlan_payload_end, packet_bytes.size());
+    const auto available_header_bytes = vxlan_offset < bounded_payload_end
+        ? std::min<std::size_t>(detail::kVxlanHeaderSize, bounded_payload_end - vxlan_offset)
+        : 0U;
+    details.vxlan.available_header_bytes = static_cast<std::uint8_t>(available_header_bytes);
+    details.vxlan.header_truncated = available_header_bytes < detail::kVxlanHeaderSize;
+
+    if (available_header_bytes >= 1U) {
+        details.vxlan.flags = packet_bytes[vxlan_offset];
+        details.vxlan.i_flag_set = (details.vxlan.flags & detail::kVxlanFlagI) != 0U;
+    }
+    if (available_header_bytes >= 7U) {
+        details.vxlan.vni =
+            (static_cast<std::uint32_t>(packet_bytes[vxlan_offset + 4U]) << 16U) |
+            (static_cast<std::uint32_t>(packet_bytes[vxlan_offset + 5U]) << 8U) |
+            static_cast<std::uint32_t>(packet_bytes[vxlan_offset + 6U]);
+    }
+
+    if (details.vxlan.header_truncated) {
+        return;
+    }
+
+    details.vxlan.reserved_bits_non_zero =
+        packet_bytes[vxlan_offset + 1U] != 0U ||
+        packet_bytes[vxlan_offset + 2U] != 0U ||
+        packet_bytes[vxlan_offset + 3U] != 0U ||
+        packet_bytes[vxlan_offset + 7U] != 0U;
+    details.vxlan.invalid_header = !details.vxlan.i_flag_set || details.vxlan.reserved_bits_non_zero;
+
+    const auto inner_ethernet_offset = vxlan_offset + detail::kVxlanHeaderSize;
+    if (bounded_payload_end <= inner_ethernet_offset) {
+        return;
+    }
+
+    const auto inner_payload_length = bounded_payload_end - inner_ethernet_offset;
+    if (inner_payload_length < detail::kEthernetHeaderSize) {
+        details.vxlan.has_inner_ethernet = true;
+        details.vxlan.inner_ethernet_truncated = true;
+        detail::LinkLayerPayloadView inner_ethernet {};
+        populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
+        return;
+    }
+
+    if (const auto continuation = detail::parse_ethernet_continuation(
+            packet_bytes.subspan(inner_ethernet_offset, inner_payload_length),
+            0U
+        );
+        continuation.has_value()) {
+        detail::VxlanPayloadView vxlan {};
+        vxlan.vni = details.vxlan.vni;
+        vxlan.inner_payload_offset = inner_ethernet_offset;
+        vxlan.bounded_packet_end = inner_ethernet_offset +
+            continuation->bounded_packet_end.value_or(inner_payload_length);
+        vxlan.has_inner_ethernet = true;
+        vxlan.inner_ethernet_truncated = false;
+        vxlan.inner_ethernet_offset = inner_ethernet_offset;
+        vxlan.inner_ethernet = continuation->link_layer;
+        details.vxlan.has_inner_ethernet = true;
+        populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, continuation->link_layer, details);
+        populate_vxlan_inner_packet_details(packet_bytes, packet_ref, vxlan, details, DecodeMode::best_effort);
+        return;
+    }
+
+    details.vxlan.has_inner_ethernet = true;
+    detail::LinkLayerPayloadView inner_ethernet {
+        .protocol_type = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U),
+        .payload_offset = inner_ethernet_offset + detail::kEthernetHeaderSize,
+        .is_ethernet = true,
+        .is_ieee_802_3 = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U) < detail::kIeee8023LengthCutoff,
+        .declared_payload_length = static_cast<std::uint16_t>(
+            detail::read_be16(packet_bytes, inner_ethernet_offset + 12U) < detail::kIeee8023LengthCutoff
+                ? detail::read_be16(packet_bytes, inner_ethernet_offset + 12U)
+                : 0U),
+    };
+    populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
 }
 
 void populate_inner_ethernet_continuation_details(
@@ -1116,7 +1209,21 @@ std::optional<PacketDetails> decode_packet_details(
                     );
                     vxlan.has_value()) {
                     populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
-                    populate_vxlan_inner_packet_details(network_packet_bytes, packet_ref, *vxlan, details);
+                    populate_vxlan_inner_packet_details(
+                        network_packet_bytes,
+                        packet_ref,
+                        *vxlan,
+                        details,
+                        DecodeMode::best_effort
+                    );
+                } else {
+                    populate_lenient_vxlan_details(
+                        network_packet_bytes,
+                        packet_ref,
+                        vxlan_offset,
+                        vxlan_payload_end,
+                        details
+                    );
                 }
             }
             return details;
@@ -1268,7 +1375,21 @@ std::optional<PacketDetails> decode_packet_details(
                     );
                     vxlan.has_value()) {
                     populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
-                    populate_vxlan_inner_packet_details(network_packet_bytes, packet_ref, *vxlan, details);
+                    populate_vxlan_inner_packet_details(
+                        network_packet_bytes,
+                        packet_ref,
+                        *vxlan,
+                        details,
+                        DecodeMode::best_effort
+                    );
+                } else {
+                    populate_lenient_vxlan_details(
+                        network_packet_bytes,
+                        packet_ref,
+                        vxlan_offset,
+                        vxlan_payload_end,
+                        details
+                    );
                 }
             }
             return details;
