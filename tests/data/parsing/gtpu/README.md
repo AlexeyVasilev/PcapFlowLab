@@ -20,9 +20,12 @@ Current branch intent:
 - malformed or unsupported GTP-U cases should remain conservative and should not fabricate inner flow tuples.
 
 Current implemented status:
-- the GTP-U fixture generator and README are committed for fixture-first parser work;
-- generated `.pcap` files are not created in this edit step;
-- parser support, unit tests, and selected-packet presentation are still pending for GTP-U.
+- the GTP-U fixture generator, README, generated `.pcap` files, and flow fixture tests are committed;
+- valid UDP/2152 GTPv1-U T-PDU carrying direct inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
+- the optional 4-byte sequence / N-PDU / next-extension-header block is bounded-skipped when the E/S/PN flags require it;
+- the deterministic extension-header fixture is bounded-skipped conservatively for tuple extraction;
+- TEID is parsed as metadata for later presentation work, but it is not part of flow identity in this branch yet;
+- selected-packet Summary / Protocol details for GTP-U are still follow-up work after strict tuple extraction.
 
 ## Local generation
 
@@ -72,13 +75,15 @@ Notes:
 - T-PDU message type: `0xff`
 - Example unsupported message type fixture value: `0x01` (Echo Request)
 
-## Future support assumptions for this branch
+## Current branch behavior and remaining follow-up
 
-Planned GTP-U behavior for later implementation steps:
-- valid GTPv1-U T-PDU over UDP/2152 with a valid inner IPv4/IPv6 plus TCP/UDP tuple should eventually create a normal flow keyed by the inner tuple;
-- selected-packet Summary / Protocol details should preserve outer IPv4 / IPv6 / UDP plus GTP-U metadata, including TEID and optional-field presence;
-- malformed, unsupported, or truncated GTP-U / inner payload cases should remain conservative and should not fabricate normal inner flows;
-- identical inner tuples from different TEIDs are a known limitation in this branch because TEID is not yet part of flow identity.
+Current GTP-U behavior in this branch:
+- valid GTPv1-U T-PDU over UDP/2152 with a valid direct inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
+- strict tuple extraction requires GTP version `1`, PT set, message type `0xff` T-PDU, bounded base header, bounded optional fields when E/S/PN are set, and a bounded extension-header chain when `E=1`;
+- inner payload starts directly with IPv4 or IPv6 in the basic supported path; there is no inner Ethernet continuation in this first pass;
+- malformed, unsupported, or truncated GTP-U / inner payload cases remain conservative and do not fabricate normal inner flows;
+- identical inner tuples from different TEIDs are a known limitation in this branch because TEID is not yet part of flow identity;
+- selected-packet Summary / Protocol details for GTP-U remain follow-up work.
 
 ## GTP-U fixture encoding notes
 
@@ -110,7 +115,7 @@ Planned GTP-U behavior for later implementation steps:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner tuple: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: one normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
 
 ### 02_gtpu_inner_ipv4_udp.pcap
 
@@ -120,7 +125,7 @@ Planned GTP-U behavior for later implementation steps:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner tuple: `10.60.0.10:53760 -> 10.60.0.20:443`
-- Expected future behavior: one normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
 
 ### 03_gtpu_inner_ipv6_tcp.pcap
 
@@ -130,7 +135,7 @@ Planned GTP-U behavior for later implementation steps:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner tuple: `2001:db8:60::10:49660 -> 2001:db8:60::20:443`
-- Expected future behavior: one normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
 
 ### 04_gtpu_inner_ipv6_udp.pcap
 
@@ -140,7 +145,7 @@ Planned GTP-U behavior for later implementation steps:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner tuple: `2001:db8:60::10:53760 -> 2001:db8:60::20:443`
-- Expected future behavior: one normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
 
 ### 05_gtpu_truncated_base_header.pcap
 
@@ -213,7 +218,7 @@ Planned GTP-U behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.60.0.10:49660 -> 10.60.0.20:443`
   - packet 2: `10.60.0.20:443 -> 10.60.0.10:49660`
-- Expected future behavior: both packets should belong to one bidirectional inner IPv4/TCP flow after GTP-U support is implemented.
+- Expected current behavior: both packets should belong to one bidirectional inner IPv4/TCP flow.
 
 ### 12_gtpu_same_outer_tuple_different_inner_flows.pcap
 
@@ -225,7 +230,7 @@ Planned GTP-U behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.60.0.10:10021 -> 10.60.0.20:443`
   - packet 2: `10.60.0.10:10022 -> 10.60.0.20:443`
-- Expected future behavior: after GTP-U support, these should become two distinct inner IPv4/TCP flows based on the inner tuple.
+- Expected current behavior: these become two distinct inner IPv4/TCP flows based on the inner tuple.
 
 ### 13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap
 
@@ -235,7 +240,7 @@ Planned GTP-U behavior for later implementation steps:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner tuple: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: outer IPv6 carriage should not prevent GTP-U recognition or inner IPv4/TCP tuple extraction.
+- Expected current behavior: outer IPv6 carriage does not prevent GTP-U recognition or inner IPv4/TCP tuple extraction.
 
 ### 14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap
 
@@ -260,7 +265,7 @@ Planned GTP-U behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.60.0.10:49660 -> 10.60.0.20:443`
   - packet 2: `10.60.0.11:10021 -> 10.60.0.21:443`
-- Expected future behavior: TEID metadata extraction should preserve and later display TEID boundary values. TEID still remains outside flow identity in this branch.
+- Expected current behavior: valid GTP-U packets produce inner flows for both TEID boundary values. TEID still remains outside flow identity in this branch.
 
 ### 16_gtpu_with_sequence_inner_ipv4_tcp.pcap
 
@@ -272,7 +277,7 @@ Planned GTP-U behavior for later implementation steps:
 - Optional-field flags: `S=1`, `E=0`, `PN=0`
 - Sequence number: `0x1234`
 - Inner tuple: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: parser should skip the optional 4-byte block correctly and extract the inner IPv4/TCP tuple.
+- Expected current behavior: parser skips the optional 4-byte block correctly and extracts the inner IPv4/TCP tuple.
 
 ### 17_gtpu_with_npdu_inner_ipv4_tcp.pcap
 
@@ -284,7 +289,7 @@ Planned GTP-U behavior for later implementation steps:
 - Optional-field flags: `PN=1`, `E=0`, `S=0`
 - N-PDU number: `0x5a`
 - Inner tuple: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: parser should skip the optional 4-byte block correctly and extract the inner tuple.
+- Expected current behavior: parser skips the optional 4-byte block correctly and extracts the inner tuple.
 
 ### 18_gtpu_with_extension_header_inner_ipv4_tcp.pcap
 
@@ -297,7 +302,7 @@ Planned GTP-U behavior for later implementation steps:
 - Optional-field next extension header type: `0x85`
 - Extension header bytes: `01 de ad 00`
 - Inner tuple: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: parser should skip the bounded extension-header chain and extract the inner tuple.
+- Expected current behavior: parser skips the bounded extension-header chain and extracts the inner tuple.
 
 ### 19_gtpu_truncated_optional_header.pcap
 

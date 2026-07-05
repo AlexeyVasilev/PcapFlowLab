@@ -57,7 +57,7 @@ const FlowRow* find_flow_by_tuple(
     return nullptr;
 }
 
-[[maybe_unused]] void expect_inner_flow_present(
+void expect_inner_flow_present(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
     const std::string& protocol,
@@ -97,11 +97,7 @@ void expect_inner_flow_absent(
     PFL_EXPECT(flow == nullptr);
 }
 
-// GTP-U fixtures are added before parser implementation. Positive inner-tuple
-// expectations stay behind PFL_ENABLE_PENDING_GTPU_TESTS so the default test
-// executable remains green until GTP-U parser support lands.
-#if defined(PFL_ENABLE_PENDING_GTPU_TESTS)
-void run_pending_positive_gtpu_fixture_tests() {
+void run_gtpu_positive_fixture_tests() {
     expect_inner_flow_present(
         "parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap",
         FlowAddressFamily::ipv4,
@@ -280,14 +276,11 @@ void run_pending_positive_gtpu_fixture_tests() {
         // identical inner tuples from different TEIDs may merge into one flow.
     }
 }
-#endif
 
 }  // namespace
 
 void run_gtpu_pcap_fixture_tests() {
-#if defined(PFL_ENABLE_PENDING_GTPU_TESTS)
-    run_pending_positive_gtpu_fixture_tests();
-#endif
+    run_gtpu_positive_fixture_tests();
 
     expect_inner_flow_absent(
         "parsing/gtpu/05_gtpu_truncated_base_header.pcap",
