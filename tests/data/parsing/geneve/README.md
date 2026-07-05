@@ -8,14 +8,14 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - unsupported Geneve protocol types;
 - the known branch limitation where identical inner 5-tuples from different VNIs may still merge;
 - future bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
-- same-outer-tuple cases that should eventually split by the inner tuple instead of the outer UDP carrier tuple;
+- same-outer-tuple cases that split by the inner tuple instead of the outer UDP carrier tuple;
 - recursive continuation from Geneve into an inner VLAN-tagged Ethernet payload;
 - outer IPv6 Geneve carriage, UDP port-gating negative controls, and a valid non-zero option-length Geneve case.
 
 These fixtures are for the `feature/overlay-inner-flow-tuples` branch.
 
 Current branch intent:
-- supported tunnel/overlay parsing should eventually recover an effective inner IPv4/IPv6 plus TCP/UDP tuple;
+- supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
 - Geneve VNI is presentation metadata for now, not part of flow identity;
 - malformed Geneve cases should remain conservative and should not fabricate inner flow tuples.
 
@@ -41,8 +41,8 @@ python tests/data/parsing/geneve/generate_geneve_pcaps.py --output-dir tests/dat
 ```
 
 Notes:
-- The generator is committed, but generated `.pcap` files are not created in this edit step.
-- Review generated `.pcap` files locally before committing them.
+- The generator and generated `.pcap` files are committed in this branch.
+- Regenerate locally only when you intentionally update fixture coverage or encoding.
 - The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port/VNI values.
 - Geneve headers are assembled from explicit bytes to keep the fixed-header and option-layout cases stable across Scapy versions.
 
@@ -134,7 +134,7 @@ Current Geneve behavior in this branch:
 - Layer chain: Ethernet / IPv4 / UDP / partial Geneve
 - Outer tuple: `203.0.113.50:54004 -> 203.0.113.51:6081`
 - Geneve payload length: less than the fixed 8-byte base header
-- Expected future behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
+- Expected current behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
 
 ### 06_geneve_invalid_version.pcap
 
@@ -152,7 +152,7 @@ Current Geneve behavior in this branch:
 - Outer tuple: `203.0.113.50:54006 -> 203.0.113.51:6081`
 - Geneve VNI: `100`
 - Option length: declares `8` bytes of options, but only `4` bytes are present
-- Expected future behavior: no inner tuple extraction.
+- Expected current behavior: no inner tuple extraction.
 
 ### 08_geneve_truncated_inner_ethernet.pcap
 

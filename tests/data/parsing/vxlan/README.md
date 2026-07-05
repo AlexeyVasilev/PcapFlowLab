@@ -7,14 +7,14 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - unsupported inner Ethernet payloads behind a valid VXLAN header;
 - the known branch limitation where identical inner 5-tuples from different VNIs may still merge.
 - future bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
-- same-outer-tuple cases that should eventually split by the inner tuple instead of the outer UDP carrier tuple;
+- same-outer-tuple cases that split by the inner tuple instead of the outer UDP carrier tuple;
 - recursive continuation from VXLAN into an inner VLAN-tagged Ethernet payload;
 - outer IPv6 VXLAN carriage and UDP port-gating negative controls.
 
 These fixtures are for the `feature/overlay-inner-flow-tuples` branch.
 
 Current branch intent:
-- supported tunnel/overlay parsing should eventually recover an effective inner IPv4/IPv6 plus TCP/UDP tuple;
+- supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
 - VXLAN VNI is presentation metadata for now, not part of flow identity;
 - malformed VXLAN cases should remain conservative and should not fabricate inner flow tuples.
 
@@ -40,8 +40,8 @@ python tests/data/parsing/vxlan/generate_vxlan_pcaps.py --output-dir tests/data/
 ```
 
 Notes:
-- The generator is committed, but generated `.pcap` files are not created in this edit step.
-- Review generated `.pcap` files locally before committing them.
+- The generator and generated `.pcap` files are committed in this branch.
+- Regenerate locally only when you intentionally update fixture coverage or encoding.
 - The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values.
 - VXLAN headers are assembled from explicit bytes to keep the fixed-header cases stable across Scapy versions.
 
@@ -73,12 +73,12 @@ Notes:
 - Default VNI: `100`
 - Alternate VNI for collision case: `200`
 
-## Future support assumptions for this branch
+## Current branch behavior summary
 
-Planned VXLAN behavior for later implementation steps:
-- valid VXLAN over UDP/4789 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple should eventually create a normal flow keyed by the inner tuple;
-- selected-packet Summary / Protocol details should preserve outer IPv4 / UDP plus VXLAN layer metadata, including VNI;
-- malformed or truncated VXLAN / inner payload cases should remain conservative and should not fabricate normal inner flows;
+Current VXLAN behavior in this branch:
+- valid VXLAN over UDP/4789 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
+- selected-packet Summary / Protocol details preserve outer IPv4/IPv6 plus UDP, show a VXLAN layer with VNI metadata, and then continue with sequential inner Ethernet/VLAN/IP/TCP/UDP layers when safely available;
+- malformed or truncated VXLAN / inner payload cases remain conservative for strict flow extraction and do not fabricate normal inner flows;
 - identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity.
 
 ---
@@ -90,7 +90,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53000 -> 203.0.113.41:4789`
 - VNI: `100`
 - Inner tuple: `10.40.0.10:49440 -> 10.40.0.20:443`
-- Expected future behavior: candidate normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
 
 ### 02_vxlan_inner_ipv4_udp.pcap
 
@@ -99,7 +99,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53001 -> 203.0.113.41:4789`
 - VNI: `100`
 - Inner tuple: `10.40.0.10:53540 -> 10.40.0.20:443`
-- Expected future behavior: candidate normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
 
 ### 03_vxlan_inner_ipv6_tcp.pcap
 
@@ -108,7 +108,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53002 -> 203.0.113.41:4789`
 - VNI: `100`
 - Inner tuple: `2001:db8:40::10:49440 -> 2001:db8:40::20:443`
-- Expected future behavior: candidate normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
 
 ### 04_vxlan_inner_ipv6_udp.pcap
 
@@ -117,7 +117,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53003 -> 203.0.113.41:4789`
 - VNI: `100`
 - Inner tuple: `2001:db8:40::10:53540 -> 2001:db8:40::20:443`
-- Expected future behavior: candidate normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
+- Expected current behavior: one normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
 
 ### 05_vxlan_truncated_header.pcap
 
@@ -125,7 +125,7 @@ Planned VXLAN behavior for later implementation steps:
 - Layer chain: Ethernet / IPv4 / UDP / partial VXLAN
 - Outer tuple: `203.0.113.40:53004 -> 203.0.113.41:4789`
 - VXLAN payload length: less than the fixed 8-byte VXLAN header
-- Expected future behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
+- Expected current behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
 
 ### 06_vxlan_invalid_flags_or_reserved_bits.pcap
 
@@ -133,7 +133,7 @@ Planned VXLAN behavior for later implementation steps:
 - Layer chain: Ethernet / IPv4 / UDP / malformed VXLAN / inner Ethernet / inner IPv4 / UDP
 - Outer tuple: `203.0.113.40:53005 -> 203.0.113.41:4789`
 - VNI field present but VXLAN flags intentionally invalid for a basic valid frame
-- Expected future behavior: do not accept the packet as a valid VXLAN inner-tuple carrier.
+- Expected current behavior: do not accept the packet as a valid VXLAN inner-tuple carrier.
 
 ### 07_vxlan_truncated_inner_ethernet.pcap
 
@@ -141,7 +141,7 @@ Planned VXLAN behavior for later implementation steps:
 - Layer chain: Ethernet / IPv4 / UDP / VXLAN / partial inner Ethernet
 - Outer tuple: `203.0.113.40:53006 -> 203.0.113.41:4789`
 - VNI: `100`
-- Expected future behavior: VXLAN header may be recognized, but no inner flow tuple should be extracted because the inner Ethernet header is incomplete.
+- Expected current behavior: VXLAN header may be recognized, but no inner flow tuple should be extracted because the inner Ethernet header is incomplete.
 
 ### 08_vxlan_truncated_inner_ipv4.pcap
 
@@ -150,7 +150,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53007 -> 203.0.113.41:4789`
 - VNI: `100`
 - Inner Ethernet EtherType: `0x0800`
-- Expected future behavior: no normal flow tuple should be created; later packet-details work may show partial inner IPv4 fields conservatively.
+- Expected current behavior: no normal flow tuple should be created; packet details may show partial inner IPv4 fields conservatively.
 
 ### 09_vxlan_unsupported_inner_ethertype.pcap
 
@@ -159,7 +159,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53008 -> 203.0.113.41:4789`
 - VNI: `100`
 - Inner Ethernet EtherType: synthetic unsupported value `0x88b5`
-- Expected future behavior: VXLAN may be recognized, but no inner IPv4/IPv6 TCP/UDP tuple should be extracted.
+- Expected current behavior: VXLAN may be recognized, but no inner IPv4/IPv6 TCP/UDP tuple should be extracted.
 
 ### 10_vxlan_same_inner_tuple_different_vni.pcap
 
@@ -172,7 +172,7 @@ Planned VXLAN behavior for later implementation steps:
   - packet 1: `100`
 - packet 2: `200`
 - Inner tuple for both packets: `10.40.0.10:49440 -> 10.40.0.20:443`
-- Expected future behavior: known limitation case; current branch may merge both packets into one flow because VNI is not part of flow identity yet.
+- Expected current behavior: known limitation case; current branch may merge both packets into one flow because VNI is not part of flow identity yet.
 
 ### 11_vxlan_inner_ipv4_tcp_bidirectional.pcap
 
@@ -185,7 +185,7 @@ Planned VXLAN behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.40.0.10:49440 -> 10.40.0.20:443`
   - packet 2: `10.40.0.20:443 -> 10.40.0.10:49440`
-- Expected future behavior: both packets should belong to one bidirectional inner IPv4/TCP flow after VXLAN support is implemented.
+- Expected current behavior: both packets belong to one bidirectional inner IPv4/TCP flow.
 
 ### 12_vxlan_same_outer_tuple_different_inner_flows.pcap
 
@@ -196,8 +196,7 @@ Planned VXLAN behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.40.0.10:10001 -> 10.40.0.20:443`
   - packet 2: `10.40.0.10:10002 -> 10.40.0.20:443`
-- Expected future behavior: after VXLAN support, these should become two distinct inner IPv4/TCP flows based on the inner tuple.
-- Expected current pre-parser behavior: this case is intended to document why future tests should initially fail if traffic still collapses into one outer UDP/4789 flow.
+- Expected current behavior: these become two distinct inner IPv4/TCP flows based on the inner tuple.
 
 ### 13_vxlan_inner_vlan_ipv4_tcp.pcap
 
@@ -207,7 +206,7 @@ Planned VXLAN behavior for later implementation steps:
 - VNI: `100`
 - Inner VLAN ID: `140`
 - Inner tuple: `10.40.0.10:49440 -> 10.40.0.20:443`
-- Expected future behavior: VXLAN parsing should recognize VXLAN and continue through the existing inner Ethernet/VLAN/IP/TCP path to recover the inner tuple.
+- Expected current behavior: VXLAN parsing recognizes VXLAN and continues through the existing inner Ethernet/VLAN/IP/TCP path to recover the inner tuple.
 
 ### 14_vxlan_outer_ipv6_inner_ipv4_tcp.pcap
 
@@ -216,7 +215,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `2001:db8:40:1::1:53015 -> 2001:db8:40:1::2:4789`
 - VNI: `100`
 - Inner tuple: `10.40.0.10:49440 -> 10.40.0.20:443`
-- Expected future behavior: outer IPv6 carriage should not prevent VXLAN recognition or inner IPv4/TCP tuple extraction.
+- Expected current behavior: outer IPv6 carriage does not prevent VXLAN recognition or inner IPv4/TCP tuple extraction.
 
 ### 15_vxlan_wrong_udp_port_valid_vxlan_payload.pcap
 
@@ -225,7 +224,7 @@ Planned VXLAN behavior for later implementation steps:
 - Outer tuple: `203.0.113.40:53016 -> 203.0.113.41:4799`
 - Embedded VNI bytes: `100`
 - Inner tuple if decapsulated hypothetically: `10.40.0.10:49440 -> 10.40.0.20:443`
-- Expected future behavior: negative control for UDP port gating; do not treat this as VXLAN in the basic parser and do not extract an inner VXLAN tuple.
+- Expected current behavior: negative control for UDP port gating; do not treat this as VXLAN in the basic parser and do not extract an inner VXLAN tuple.
 
 ### 16_vxlan_vni_boundary_values.pcap
 
@@ -240,7 +239,7 @@ Planned VXLAN behavior for later implementation steps:
 - Inner tuples:
   - packet 1: `10.40.0.10:49440 -> 10.40.0.20:443`
   - packet 2: `10.40.0.11:10001 -> 10.40.0.21:443`
-- Expected future behavior: VXLAN metadata extraction should preserve and display VNI boundary values. VNI still remains outside flow identity in this branch.
+- Expected current behavior: VXLAN metadata extraction preserves and displays VNI boundary values. VNI still remains outside flow identity in this branch.
 
 ## Expected generated file list
 

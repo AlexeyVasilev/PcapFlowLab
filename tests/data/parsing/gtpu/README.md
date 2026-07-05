@@ -8,14 +8,14 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated inner IPv4 / IPv6 payload after GTP-U;
 - unknown inner payload bytes behind a valid-looking GTP-U T-PDU;
 - the known branch limitation where identical inner 5-tuples from different TEIDs may still merge;
-- future bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
-- same-outer-tuple cases that should eventually split by the inner tuple instead of the outer UDP carrier tuple;
+- bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
+- same-outer-tuple cases that should split by the inner tuple instead of the outer UDP carrier tuple;
 - outer IPv6 GTP-U carriage, UDP port-gating negative controls, TEID boundary values, and bounded optional-field coverage.
 
 These fixtures are for the `feature/overlay-inner-flow-tuples` branch.
 
 Current branch intent:
-- supported tunnel/overlay parsing should eventually recover an effective inner IPv4/IPv6 plus TCP/UDP tuple;
+- supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
 - GTP-U TEID is presentation metadata for now, not part of flow identity;
 - malformed or unsupported GTP-U cases should remain conservative and should not fabricate inner flow tuples.
 
@@ -24,7 +24,7 @@ Current implemented status:
 - valid UDP/2152 GTPv1-U T-PDU carrying direct inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
 - the optional 4-byte sequence / N-PDU / next-extension-header block is bounded-skipped when the E/S/PN flags require it;
 - the deterministic extension-header fixture is bounded-skipped conservatively for tuple extraction;
-- TEID is parsed as metadata for later presentation work, but it is not part of flow identity in this branch yet;
+- TEID is parsed as metadata, but it is not part of flow identity in this branch yet;
 - selected-packet Summary / Protocol details for GTP-U are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available.
 
 ## Local generation
@@ -42,8 +42,8 @@ python tests/data/parsing/gtpu/generate_gtpu_pcaps.py --output-dir tests/data/pa
 ```
 
 Notes:
-- The generator is committed, but generated `.pcap` files are not created in this edit step.
-- Review generated `.pcap` files locally before committing them.
+- The generator and generated `.pcap` files are committed in this branch.
+- Regenerate locally only when you intentionally update fixture coverage or encoding.
 - The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port/TEID values.
 - GTP-U headers are assembled from explicit bytes to keep the base-header and optional-header cases stable across Scapy versions.
 - The extension-header fixture uses one minimal deterministic 4-byte extension-header block for bounded parser coverage; exact semantics are documented below and can be refined if later Wireshark comparison suggests a different extension-header type is preferable.
@@ -155,7 +155,7 @@ Current GTP-U behavior in this branch:
 - Layer chain: Ethernet / IPv4 / UDP / partial GTP-U
 - Outer tuple: `203.0.113.60:55004 -> 203.0.113.61:2152`
 - GTP-U payload length: less than the minimum 8-byte base header
-- Expected future behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
+- Expected current behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
 
 ### 06_gtpu_invalid_version.pcap
 
@@ -166,7 +166,7 @@ Current GTP-U behavior in this branch:
 - Encoded GTP version: `2`
 - TEID: `0x01020304`
 - Inner tuple if decapsulated hypothetically: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: no strict inner tuple extraction; later packet details may show GTP-U warning and bounded best-effort presentation only if safe.
+- Expected current behavior: no strict inner tuple extraction; packet details may still show GTP-U warning and bounded best-effort presentation only if safe.
 
 ### 07_gtpu_unsupported_message_type.pcap
 
@@ -176,7 +176,7 @@ Current GTP-U behavior in this branch:
 - Message type: `0x01` (Echo Request)
 - TEID: `0x01020304`
 - Inner tuple if decapsulated hypothetically: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: no inner user-plane tuple extraction for unsupported non-T-PDU message types.
+- Expected current behavior: no inner user-plane tuple extraction for unsupported non-T-PDU message types.
 
 ### 08_gtpu_truncated_inner_ipv4.pcap
 
@@ -186,7 +186,7 @@ Current GTP-U behavior in this branch:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner payload starts with IPv4 version nibble but is truncated
-- Expected future behavior: no normal inner flow tuple; later details may show partial inner IPv4 warning.
+- Expected current behavior: no normal inner flow tuple; packet details may show partial inner IPv4 warning.
 
 ### 09_gtpu_truncated_inner_ipv6.pcap
 
@@ -196,7 +196,7 @@ Current GTP-U behavior in this branch:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner payload starts with IPv6 version nibble but is truncated
-- Expected future behavior: no normal inner flow tuple.
+- Expected current behavior: no normal inner flow tuple.
 
 ### 10_gtpu_unknown_inner_payload.pcap
 
@@ -206,7 +206,7 @@ Current GTP-U behavior in this branch:
 - Message type: `0xff` (T-PDU)
 - TEID: `0x01020304`
 - Inner payload first nibble is neither IPv4 nor IPv6
-- Expected future behavior: GTP-U may be recognized later, but no inner IP/TCP/UDP tuple should be extracted.
+- Expected current behavior: GTP-U may be recognized in packet details, but no inner IP/TCP/UDP tuple should be extracted.
 
 ### 11_gtpu_inner_ipv4_tcp_bidirectional.pcap
 
@@ -251,7 +251,7 @@ Current GTP-U behavior in this branch:
 - Outer tuple: `203.0.113.60:55014 -> 203.0.113.61:2162`
 - Embedded TEID bytes: `0x01020304`
 - Inner tuple if decapsulated hypothetically: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior: negative control for UDP port gating; do not treat this as GTP-U in the basic parser and do not extract an inner GTP-U tuple.
+- Expected current behavior: negative control for UDP port gating; do not treat this as GTP-U in the basic parser and do not extract an inner GTP-U tuple.
 
 ### 15_gtpu_teid_boundary_values.pcap
 
@@ -313,7 +313,7 @@ Current GTP-U behavior in this branch:
 - Outer tuple: `203.0.113.60:55020 -> 203.0.113.61:2152`
 - Optional-field flags indicate the 4-byte optional block should be present
 - Packet ends before the optional 4-byte block completes
-- Expected future behavior: no inner tuple extraction.
+- Expected current behavior: no inner tuple extraction.
 
 ### 20_gtpu_truncated_extension_header.pcap
 
@@ -322,7 +322,7 @@ Current GTP-U behavior in this branch:
 - Outer tuple: `203.0.113.60:55021 -> 203.0.113.61:2152`
 - Optional-field flags: `E=1`
 - Optional block is present, but the extension header bytes are truncated
-- Expected future behavior: no inner tuple extraction.
+- Expected current behavior: no inner tuple extraction.
 
 ### 21_gtpu_same_inner_tuple_different_teid.pcap
 
@@ -336,7 +336,7 @@ Current GTP-U behavior in this branch:
   - packet 1: `0x01020304`
   - packet 2: `0x11223344`
 - Inner tuple for both packets: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected future behavior for this branch: known limitation case; current branch may merge both packets into one flow because TEID is not part of flow identity yet.
+- Expected current behavior for this branch: known limitation case; current branch may merge both packets into one flow because TEID is not part of flow identity yet.
 
 ## Expected generated file list
 

@@ -309,8 +309,7 @@ Still intentionally not solved:
 - invalid/truncated/unsupported VXLAN payloads fall back to existing outer behavior instead of fabricating an inner flow
 - invalid/truncated/unsupported Geneve payloads fall back to existing outer behavior instead of fabricating an inner flow
 - invalid/truncated/unsupported GTP-U payloads fall back to existing outer behavior instead of fabricating an inner flow
-- VXLAN Packet Details / Summary currently expose lightweight metadata only:
-  - outer IPv4/IPv6 and UDP presentation remains intact
+- VXLAN Packet Details / Summary preserve the outer IPv4/IPv6 and UDP presentation and add overlay metadata plus bounded sequential inner continuation when available
 - selected-packet Summary / Protocol details now show a VXLAN layer with flags, VNI flag state, and VNI
 - selected-packet Summary / Protocol details now also show a Geneve layer with version, option length, protocol type, VNI, and warnings for malformed/truncated UDP/6081 Geneve-like payloads
 - when the Geneve payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
@@ -333,3 +332,51 @@ Still intentionally not solved:
 - hint detection currently assumes the chosen flow key already reflects the effective conversation, so tunnel parsing must happen before ingest;
 - Packet Details can likely reuse current layer patterns, but summary/protocol wording will need care to keep outer and inner layers understandable without becoming noisy;
 - import-time tunnel parsing must remain cheap enough for large captures and should avoid broad packet-byte materialization or deep recursive retries.
+
+## Manual verification checklist
+
+Suggested representative manual checks before review:
+
+- VXLAN
+  - `tests/data/parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap`
+  - `tests/data/parsing/vxlan/13_vxlan_inner_vlan_ipv4_tcp.pcap`
+  - `tests/data/parsing/vxlan/15_vxlan_wrong_udp_port_valid_vxlan_payload.pcap`
+- Geneve
+  - `tests/data/parsing/geneve/01_geneve_inner_ipv4_tcp.pcap`
+  - `tests/data/parsing/geneve/17_geneve_with_options_inner_ipv4_tcp.pcap`
+  - `tests/data/parsing/geneve/10_geneve_unsupported_protocol_type.pcap`
+- GTP-U
+  - `tests/data/parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap`
+  - `tests/data/parsing/gtpu/13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap`
+  - `tests/data/parsing/gtpu/18_gtpu_with_extension_header_inner_ipv4_tcp.pcap`
+  - `tests/data/parsing/gtpu/20_gtpu_truncated_extension_header.pcap`
+
+For each representative case, verify:
+
+- open/import flow grouping matches the documented effective inner tuple rule for valid fixtures;
+- wrong-port, malformed, truncated, and unsupported fixtures do not fabricate normal inner flows;
+- selected-packet Summary keeps the outer carrier layers and then appends the expected overlay metadata and sequential inner continuation layers when supported;
+- selected-packet Protocol details remain warning-oriented and conservative for malformed/unsupported overlay payloads.
+
+## PR-readiness notes
+
+What is supported in this branch:
+
+- strict inner flow-tuple extraction for valid bounded VXLAN, Geneve, and GTP-U fixtures;
+- selected-packet Summary / Protocol details for the same protocols, including lenient malformed/truncated presentation on their standard UDP ports;
+- deterministic fixture generators, generated fixture PCAPs, fixture READMEs, and default-enabled unit suites for all three overlays.
+
+Known limitations intentionally left for future work:
+
+- VNI and TEID are displayed but are not part of flow identity yet;
+- identical inner 5-tuples from different overlay namespaces may still merge;
+- no decapsulated export;
+- no outer-plus-inner dual flow table mode;
+- no deep GTP-U extension-header parsing;
+- no separate generic Data/Payload layer after decoded TCP/UDP.
+
+Suggested local test command:
+
+```powershell
+.\pcap_flow_lab_core_tests.exe
+```
