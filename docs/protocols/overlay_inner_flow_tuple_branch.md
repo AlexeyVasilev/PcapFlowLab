@@ -12,6 +12,11 @@ Target protocols:
 2. Geneve
 3. GTP-U
 
+Fixture-preparation status:
+
+- VXLAN fixture generation, parser support, tests, and selected-packet presentation are implemented.
+- Geneve fixture preparation has now started with a deterministic Scapy generator and documented fixture plan under `tests/data/parsing/geneve/`.
+
 ## Non-goals
 
 This branch does not aim to:
