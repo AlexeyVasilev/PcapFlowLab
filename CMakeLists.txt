@@ -285,6 +285,7 @@ if(BUILD_TESTING)
         tests/unit/PbbPcapFixtureTests.cpp
         tests/unit/MacsecPcapFixtureTests.cpp
         tests/unit/VxlanPcapFixtureTests.cpp
+        tests/unit/GenevePcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp
