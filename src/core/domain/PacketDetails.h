@@ -129,6 +129,7 @@ struct MplsPseudowirePayloadDetails {
 };
 
 struct VxlanInnerPacketDetails;
+struct GeneveInnerPacketDetails;
 
 struct VxlanDetails {
     bool present {false};
@@ -143,6 +144,29 @@ struct VxlanDetails {
     bool inner_ethernet_truncated {false};
     bool has_inner_packet {false};
     std::shared_ptr<VxlanInnerPacketDetails> inner_packet {};
+};
+
+struct GeneveDetails {
+    bool present {false};
+    std::uint8_t version {0};
+    bool oam_flag {false};
+    bool critical_flag {false};
+    std::uint8_t reserved_control_bits {0};
+    std::uint8_t reserved_trailer_byte {0};
+    std::uint8_t available_header_bytes {0};
+    bool header_truncated {false};
+    bool invalid_version {false};
+    bool options_present {false};
+    std::uint8_t option_length_words {0};
+    std::uint16_t option_length_bytes {0};
+    bool options_truncated {false};
+    std::uint16_t protocol_type {0};
+    bool protocol_type_supported {false};
+    std::uint32_t vni {0};
+    bool has_inner_ethernet {false};
+    bool inner_ethernet_truncated {false};
+    bool has_inner_packet {false};
+    std::shared_ptr<GeneveInnerPacketDetails> inner_packet {};
 };
 
 struct PppoeTagDetails {
@@ -281,6 +305,23 @@ struct VxlanInnerPacketDetails {
     UdpDetails udp {};
 };
 
+struct GeneveInnerPacketDetails {
+    bool has_vlan {false};
+    std::vector<VlanTagDetails> vlan_tags {};
+    bool has_llc {false};
+    LlcDetails llc {};
+    bool has_snap {false};
+    SnapDetails snap {};
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+};
+
 struct IcmpDetails {
     std::uint8_t type {0};
     std::uint8_t code {0};
@@ -337,6 +378,8 @@ struct PacketDetails {
     MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
     bool has_vxlan {false};
     VxlanDetails vxlan {};
+    bool has_geneve {false};
+    GeneveDetails geneve {};
     bool has_inner_ethernet {false};
     InnerEthernetDetails inner_ethernet {};
     bool has_unknown_inner_ethernet_payload {false};

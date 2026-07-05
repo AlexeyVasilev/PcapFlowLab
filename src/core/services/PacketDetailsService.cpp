@@ -285,6 +285,209 @@ void populate_lenient_vxlan_details(
     populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
 }
 
+void populate_geneve_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t geneve_offset,
+    const detail::GenevePayloadView& geneve,
+    PacketDetails& details
+) {
+    details.has_geneve = true;
+    details.geneve = {};
+    details.geneve.present = true;
+    details.geneve.available_header_bytes = static_cast<std::uint8_t>(detail::kGeneveHeaderSize);
+    details.geneve.header_truncated = false;
+    details.geneve.version = static_cast<std::uint8_t>((packet_bytes[geneve_offset] >> 6U) & 0x03U);
+    details.geneve.option_length_words = static_cast<std::uint8_t>(packet_bytes[geneve_offset] & 0x3FU);
+    details.geneve.option_length_bytes = static_cast<std::uint16_t>(geneve.option_length_bytes);
+    details.geneve.options_present = geneve.option_length_bytes > 0U;
+    details.geneve.oam_flag = (packet_bytes[geneve_offset + 1U] & 0x80U) != 0U;
+    details.geneve.critical_flag = (packet_bytes[geneve_offset + 1U] & 0x40U) != 0U;
+    details.geneve.reserved_control_bits = static_cast<std::uint8_t>(packet_bytes[geneve_offset + 1U] & 0x3FU);
+    details.geneve.protocol_type = geneve.protocol_type;
+    details.geneve.protocol_type_supported = geneve.protocol_type == detail::kGeneveProtocolTypeEthernet;
+    details.geneve.vni = geneve.vni;
+    details.geneve.reserved_trailer_byte = packet_bytes[geneve_offset + 7U];
+    details.geneve.has_inner_ethernet = geneve.has_inner_ethernet;
+    details.geneve.inner_ethernet_truncated = geneve.inner_ethernet_truncated;
+
+    if (geneve.has_inner_ethernet) {
+        populate_inner_ethernet_details(packet_bytes, geneve.inner_ethernet_offset, geneve.inner_ethernet, details);
+    }
+}
+
+std::shared_ptr<GeneveInnerPacketDetails> make_geneve_inner_packet_details(const PacketDetails& details) {
+    auto inner = std::make_shared<GeneveInnerPacketDetails>();
+    inner->has_vlan = details.has_vlan;
+    inner->vlan_tags = details.vlan_tags;
+    inner->has_llc = details.has_llc;
+    inner->llc = details.llc;
+    inner->has_snap = details.has_snap;
+    inner->snap = details.snap;
+    inner->has_ipv4 = details.has_ipv4;
+    inner->ipv4 = details.ipv4;
+    inner->has_ipv6 = details.has_ipv6;
+    inner->ipv6 = details.ipv6;
+    inner->has_tcp = details.has_tcp;
+    inner->tcp = details.tcp;
+    inner->has_udp = details.has_udp;
+    inner->udp = details.udp;
+    return inner;
+}
+
+void populate_geneve_inner_packet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    const detail::GenevePayloadView& geneve,
+    PacketDetails& details,
+    const DecodeMode inner_mode
+) {
+    if (!geneve.has_inner_ethernet || geneve.inner_ethernet_truncated) {
+        return;
+    }
+
+    const auto bounded_end = std::min(geneve.bounded_packet_end.value_or(packet_bytes.size()), packet_bytes.size());
+    if (geneve.inner_ethernet_offset >= bounded_end) {
+        return;
+    }
+
+    const auto inner_length = bounded_end - geneve.inner_ethernet_offset;
+    PacketRef inner_packet_ref {
+        .packet_index = packet_ref.packet_index,
+        .data_link_type = kLinkTypeEthernet,
+        .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
+        .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
+        .ts_sec = packet_ref.ts_sec,
+        .ts_usec = packet_ref.ts_usec,
+    };
+
+    const auto inner_bytes = packet_bytes.subspan(geneve.inner_ethernet_offset, inner_length);
+    const auto decoded_inner = decode_packet_details(inner_bytes, inner_packet_ref, inner_mode);
+    if (!decoded_inner.has_value()) {
+        return;
+    }
+
+    if (!decoded_inner->has_vlan &&
+        !decoded_inner->has_llc &&
+        !decoded_inner->has_snap &&
+        !decoded_inner->has_ipv4 &&
+        !decoded_inner->has_ipv6 &&
+        !decoded_inner->has_tcp &&
+        !decoded_inner->has_udp) {
+        return;
+    }
+
+    details.geneve.has_inner_packet = true;
+    details.geneve.inner_packet = make_geneve_inner_packet_details(*decoded_inner);
+}
+
+void populate_lenient_geneve_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet_ref,
+    const std::size_t geneve_offset,
+    const std::size_t geneve_payload_end,
+    PacketDetails& details
+) {
+    details.has_geneve = true;
+    details.geneve = {};
+    details.geneve.present = true;
+
+    const auto bounded_payload_end = std::min(geneve_payload_end, packet_bytes.size());
+    const auto available_header_bytes = geneve_offset < bounded_payload_end
+        ? std::min<std::size_t>(detail::kGeneveHeaderSize, bounded_payload_end - geneve_offset)
+        : 0U;
+    details.geneve.available_header_bytes = static_cast<std::uint8_t>(available_header_bytes);
+    details.geneve.header_truncated = available_header_bytes < detail::kGeneveHeaderSize;
+
+    if (available_header_bytes >= 1U) {
+        details.geneve.version = static_cast<std::uint8_t>((packet_bytes[geneve_offset] >> 6U) & 0x03U);
+        details.geneve.option_length_words = static_cast<std::uint8_t>(packet_bytes[geneve_offset] & 0x3FU);
+        details.geneve.option_length_bytes = static_cast<std::uint16_t>(
+            static_cast<std::size_t>(details.geneve.option_length_words) * 4U
+        );
+        details.geneve.options_present = details.geneve.option_length_words != 0U;
+    }
+    if (available_header_bytes >= 2U) {
+        details.geneve.oam_flag = (packet_bytes[geneve_offset + 1U] & 0x80U) != 0U;
+        details.geneve.critical_flag = (packet_bytes[geneve_offset + 1U] & 0x40U) != 0U;
+        details.geneve.reserved_control_bits = static_cast<std::uint8_t>(packet_bytes[geneve_offset + 1U] & 0x3FU);
+    }
+    if (available_header_bytes >= 4U) {
+        details.geneve.protocol_type = detail::read_be16(packet_bytes, geneve_offset + 2U);
+        details.geneve.protocol_type_supported = details.geneve.protocol_type == detail::kGeneveProtocolTypeEthernet;
+    }
+    if (available_header_bytes >= 7U) {
+        details.geneve.vni =
+            (static_cast<std::uint32_t>(packet_bytes[geneve_offset + 4U]) << 16U) |
+            (static_cast<std::uint32_t>(packet_bytes[geneve_offset + 5U]) << 8U) |
+            static_cast<std::uint32_t>(packet_bytes[geneve_offset + 6U]);
+    }
+    if (available_header_bytes >= 8U) {
+        details.geneve.reserved_trailer_byte = packet_bytes[geneve_offset + 7U];
+    }
+
+    if (details.geneve.header_truncated) {
+        return;
+    }
+
+    details.geneve.invalid_version = details.geneve.version != 0U;
+    const auto header_length = detail::kGeneveHeaderSize + static_cast<std::size_t>(details.geneve.option_length_bytes);
+    details.geneve.options_truncated = geneve_offset + header_length > bounded_payload_end;
+    if (details.geneve.invalid_version ||
+        details.geneve.options_truncated ||
+        !details.geneve.protocol_type_supported) {
+        return;
+    }
+
+    const auto inner_ethernet_offset = geneve_offset + header_length;
+    if (bounded_payload_end <= inner_ethernet_offset) {
+        return;
+    }
+
+    const auto inner_payload_length = bounded_payload_end - inner_ethernet_offset;
+    if (inner_payload_length < detail::kEthernetHeaderSize) {
+        details.geneve.has_inner_ethernet = true;
+        details.geneve.inner_ethernet_truncated = true;
+        detail::LinkLayerPayloadView inner_ethernet {};
+        populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
+        return;
+    }
+
+    if (const auto continuation = detail::parse_ethernet_continuation(
+            packet_bytes.subspan(inner_ethernet_offset, inner_payload_length),
+            0U
+        );
+        continuation.has_value()) {
+        detail::GenevePayloadView geneve {};
+        geneve.vni = details.geneve.vni;
+        geneve.protocol_type = details.geneve.protocol_type;
+        geneve.option_length_bytes = details.geneve.option_length_bytes;
+        geneve.inner_payload_offset = inner_ethernet_offset;
+        geneve.bounded_packet_end = inner_ethernet_offset +
+            continuation->bounded_packet_end.value_or(inner_payload_length);
+        geneve.has_inner_ethernet = true;
+        geneve.inner_ethernet_truncated = false;
+        geneve.inner_ethernet_offset = inner_ethernet_offset;
+        geneve.inner_ethernet = continuation->link_layer;
+        details.geneve.has_inner_ethernet = true;
+        populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, continuation->link_layer, details);
+        populate_geneve_inner_packet_details(packet_bytes, packet_ref, geneve, details, DecodeMode::best_effort);
+        return;
+    }
+
+    details.geneve.has_inner_ethernet = true;
+    detail::LinkLayerPayloadView inner_ethernet {
+        .protocol_type = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U),
+        .payload_offset = inner_ethernet_offset + detail::kEthernetHeaderSize,
+        .is_ethernet = true,
+        .is_ieee_802_3 = detail::read_be16(packet_bytes, inner_ethernet_offset + 12U) < detail::kIeee8023LengthCutoff,
+        .declared_payload_length = static_cast<std::uint16_t>(
+            detail::read_be16(packet_bytes, inner_ethernet_offset + 12U) < detail::kIeee8023LengthCutoff
+                ? detail::read_be16(packet_bytes, inner_ethernet_offset + 12U)
+                : 0U),
+    };
+    populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
+}
+
 void populate_inner_ethernet_continuation_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t inner_ethernet_offset,
@@ -824,6 +1027,8 @@ std::optional<PacketDetails> decode_packet_details(
     details.mpls_pseudowire_control_word = {};
     details.has_vxlan = false;
     details.vxlan = {};
+    details.has_geneve = false;
+    details.geneve = {};
     details.has_inner_ethernet = false;
     details.inner_ethernet = {};
     details.has_unknown_inner_ethernet_payload = false;
@@ -1199,31 +1404,59 @@ std::optional<PacketDetails> decode_packet_details(
                 .checksum = detail::read_be16(network_packet_bytes, transport_offset + 6U),
                 .payload_truncated = udp_payload_truncated,
             };
-            if (details.udp.dst_port == detail::kUdpPortVxlan && udp_payload.has_value()) {
-                const auto vxlan_offset = udp_payload->payload_offset;
-                const auto vxlan_payload_end = vxlan_offset + udp_payload->payload_length;
-                if (const auto vxlan = detail::parse_vxlan_payload(
-                        network_packet_bytes,
-                        vxlan_offset,
-                        vxlan_payload_end
-                    );
-                    vxlan.has_value()) {
-                    populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
-                    populate_vxlan_inner_packet_details(
-                        network_packet_bytes,
-                        packet_ref,
-                        *vxlan,
-                        details,
-                        DecodeMode::best_effort
-                    );
-                } else {
-                    populate_lenient_vxlan_details(
-                        network_packet_bytes,
-                        packet_ref,
-                        vxlan_offset,
-                        vxlan_payload_end,
-                        details
-                    );
+            if (udp_payload.has_value()) {
+                if (details.udp.dst_port == detail::kUdpPortVxlan) {
+                    const auto vxlan_offset = udp_payload->payload_offset;
+                    const auto vxlan_payload_end = vxlan_offset + udp_payload->payload_length;
+                    if (const auto vxlan = detail::parse_vxlan_payload(
+                            network_packet_bytes,
+                            vxlan_offset,
+                            vxlan_payload_end
+                        );
+                        vxlan.has_value()) {
+                        populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
+                        populate_vxlan_inner_packet_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            *vxlan,
+                            details,
+                            DecodeMode::best_effort
+                        );
+                    } else {
+                        populate_lenient_vxlan_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            vxlan_offset,
+                            vxlan_payload_end,
+                            details
+                        );
+                    }
+                } else if (details.udp.dst_port == detail::kUdpPortGeneve) {
+                    const auto geneve_offset = udp_payload->payload_offset;
+                    const auto geneve_payload_end = geneve_offset + udp_payload->payload_length;
+                    if (const auto geneve = detail::parse_geneve_payload(
+                            network_packet_bytes,
+                            geneve_offset,
+                            geneve_payload_end
+                        );
+                        geneve.has_value()) {
+                        populate_geneve_details(network_packet_bytes, geneve_offset, *geneve, details);
+                        populate_geneve_inner_packet_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            *geneve,
+                            details,
+                            DecodeMode::best_effort
+                        );
+                    } else {
+                        populate_lenient_geneve_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            geneve_offset,
+                            geneve_payload_end,
+                            details
+                        );
+                    }
                 }
             }
             return details;
@@ -1365,31 +1598,59 @@ std::optional<PacketDetails> decode_packet_details(
                 .checksum = detail::read_be16(network_packet_bytes, payload->payload_offset + 6U),
                 .payload_truncated = udp_payload_truncated,
             };
-            if (details.udp.dst_port == detail::kUdpPortVxlan && udp_payload.has_value()) {
-                const auto vxlan_offset = udp_payload->payload_offset;
-                const auto vxlan_payload_end = vxlan_offset + udp_payload->payload_length;
-                if (const auto vxlan = detail::parse_vxlan_payload(
-                        network_packet_bytes,
-                        vxlan_offset,
-                        vxlan_payload_end
-                    );
-                    vxlan.has_value()) {
-                    populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
-                    populate_vxlan_inner_packet_details(
-                        network_packet_bytes,
-                        packet_ref,
-                        *vxlan,
-                        details,
-                        DecodeMode::best_effort
-                    );
-                } else {
-                    populate_lenient_vxlan_details(
-                        network_packet_bytes,
-                        packet_ref,
-                        vxlan_offset,
-                        vxlan_payload_end,
-                        details
-                    );
+            if (udp_payload.has_value()) {
+                if (details.udp.dst_port == detail::kUdpPortVxlan) {
+                    const auto vxlan_offset = udp_payload->payload_offset;
+                    const auto vxlan_payload_end = vxlan_offset + udp_payload->payload_length;
+                    if (const auto vxlan = detail::parse_vxlan_payload(
+                            network_packet_bytes,
+                            vxlan_offset,
+                            vxlan_payload_end
+                        );
+                        vxlan.has_value()) {
+                        populate_vxlan_details(network_packet_bytes, vxlan_offset, *vxlan, details);
+                        populate_vxlan_inner_packet_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            *vxlan,
+                            details,
+                            DecodeMode::best_effort
+                        );
+                    } else {
+                        populate_lenient_vxlan_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            vxlan_offset,
+                            vxlan_payload_end,
+                            details
+                        );
+                    }
+                } else if (details.udp.dst_port == detail::kUdpPortGeneve) {
+                    const auto geneve_offset = udp_payload->payload_offset;
+                    const auto geneve_payload_end = geneve_offset + udp_payload->payload_length;
+                    if (const auto geneve = detail::parse_geneve_payload(
+                            network_packet_bytes,
+                            geneve_offset,
+                            geneve_payload_end
+                        );
+                        geneve.has_value()) {
+                        populate_geneve_details(network_packet_bytes, geneve_offset, *geneve, details);
+                        populate_geneve_inner_packet_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            *geneve,
+                            details,
+                            DecodeMode::best_effort
+                        );
+                    } else {
+                        populate_lenient_geneve_details(
+                            network_packet_bytes,
+                            packet_ref,
+                            geneve_offset,
+                            geneve_payload_end,
+                            details
+                        );
+                    }
                 }
             }
             return details;

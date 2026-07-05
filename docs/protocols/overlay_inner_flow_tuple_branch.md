@@ -294,12 +294,14 @@ Still intentionally not solved:
 - invalid/truncated/unsupported Geneve payloads fall back to existing outer behavior instead of fabricating an inner flow
 - VXLAN Packet Details / Summary currently expose lightweight metadata only:
   - outer IPv4/IPv6 and UDP presentation remains intact
-- Geneve Packet Details / Summary remain follow-up work in this branch
 - selected-packet Summary / Protocol details now show a VXLAN layer with flags, VNI flag state, and VNI
+- selected-packet Summary / Protocol details now also show a Geneve layer with version, option length, protocol type, VNI, and warnings for malformed/truncated UDP/6081 Geneve-like payloads
+- when the Geneve payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
 - when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
 - supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures
-- outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN and then the sequential inner continuation layers
+- outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN or Geneve and then the sequential inner continuation layers
 - selected-packet VXLAN details are intentionally more lenient than flow extraction for UDP/4789 payloads, so malformed or invalid VXLAN-like packets can still surface best-effort VXLAN metadata and bounded inner warning layers without producing an inner flow tuple
+- selected-packet Geneve details are intentionally more lenient than flow extraction for UDP/6081 payloads, so malformed or invalid Geneve-like packets can still surface best-effort Geneve metadata and bounded inner warning layers without producing an inner flow tuple
 
 ## Risks and unknowns
 

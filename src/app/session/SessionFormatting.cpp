@@ -634,6 +634,46 @@ void append_vxlan_inner_summary_layers(
     }
 }
 
+void append_geneve_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const PacketDetails& details,
+    const GeneveInnerPacketDetails& inner
+) {
+    if (details.has_inner_ethernet) {
+        layers.push_back(build_inner_ethernet_summary_layer(details.inner_ethernet));
+    }
+
+    for (const auto& tag : inner.vlan_tags) {
+        layers.push_back(build_inner_vlan_summary_layer(tag));
+    }
+
+    if (inner.has_ipv4) {
+        layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+    }
+}
+
+std::string format_geneve_protocol_type(const std::uint16_t protocol_type) {
+    if (protocol_type == 0x6558U) {
+        return "Ethernet (0x6558)";
+    }
+    return format_hex16_value(protocol_type);
+}
+
 std::string format_ppp_protocol(const std::uint16_t protocol) {
     switch (protocol) {
     case kPppProtocolIpv4:
@@ -2702,7 +2742,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_inner_ethernet && !details.has_vxlan) {
+    if (details.has_inner_ethernet && !details.has_vxlan && !details.has_geneve) {
         append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
     }
 
@@ -3245,6 +3285,112 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_geneve) {
+        std::vector<PacketSummaryField> geneve_fields {
+            make_summary_field("Version", std::to_string(static_cast<unsigned>(details.geneve.version))),
+            make_summary_field(
+                "Option Length",
+                std::to_string(static_cast<unsigned>(details.geneve.option_length_words)) +
+                    " words (" + std::to_string(details.geneve.option_length_bytes) + " bytes)"
+            ),
+        };
+        if (details.geneve.available_header_bytes >= 2U) {
+            geneve_fields.push_back(make_summary_field("OAM Flag", details.geneve.oam_flag ? "Set" : "Not set"));
+            geneve_fields.push_back(make_summary_field("Critical Flag", details.geneve.critical_flag ? "Set" : "Not set"));
+        }
+        if (details.geneve.available_header_bytes >= 4U) {
+            geneve_fields.push_back(make_summary_field(
+                "Protocol Type",
+                format_geneve_protocol_type(details.geneve.protocol_type)
+            ));
+        }
+        if (details.geneve.available_header_bytes >= 7U) {
+            geneve_fields.push_back(make_summary_field("VNI", std::to_string(details.geneve.vni)));
+        }
+        geneve_fields.push_back(make_summary_field("Options Present", details.geneve.options_present ? "Yes" : "No"));
+        if (details.geneve.options_present) {
+            geneve_fields.push_back(make_summary_field(
+                "Options Skipped",
+                std::to_string(details.geneve.option_length_bytes) + " bytes"
+            ));
+        }
+        if (details.geneve.available_header_bytes >= 8U) {
+            geneve_fields.push_back(make_summary_field(
+                "Reserved Trailer",
+                format_hex_value(details.geneve.reserved_trailer_byte, 2)
+            ));
+        }
+        if (details.geneve.header_truncated) {
+            geneve_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.geneve.available_header_bytes)) + " / 8"
+            ));
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve header is truncated"));
+        }
+        if (details.geneve.invalid_version) {
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve version is not supported"));
+        }
+        if (details.geneve.options_truncated) {
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve options are truncated"));
+        }
+        if (!details.geneve.protocol_type_supported && details.geneve.available_header_bytes >= 4U) {
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve protocol type is not supported"));
+        }
+        if (details.geneve.reserved_control_bits != 0U) {
+            geneve_fields.push_back(make_summary_field(
+                "Reserved Control Bits",
+                format_hex_value(details.geneve.reserved_control_bits, 2)
+            ));
+        }
+        if (details.geneve.has_inner_ethernet) {
+            geneve_fields.push_back(make_summary_field("Inner Payload", "Ethernet"));
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    geneve_fields.push_back(make_summary_field(
+                        "Inner Length",
+                        std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                    ));
+                } else {
+                    geneve_fields.push_back(make_summary_field(
+                        "Inner EtherType",
+                        format_ether_type_value(details.inner_ethernet.ether_type)
+                    ));
+                }
+            }
+        }
+        if (details.geneve.inner_ethernet_truncated) {
+            geneve_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "geneve",
+            .title = details.geneve.header_truncated
+                ? std::string {"Geneve, malformed"}
+                : ((details.geneve.invalid_version || details.geneve.options_truncated || !details.geneve.protocol_type_supported)
+                    ? std::string {"Geneve, invalid"}
+                    : std::string {"Geneve, VNI: "} + std::to_string(details.geneve.vni)),
+            .fields = std::move(geneve_fields),
+            .warning = details.geneve.header_truncated ||
+                details.geneve.invalid_version ||
+                details.geneve.options_truncated ||
+                !details.geneve.protocol_type_supported ||
+                details.geneve.inner_ethernet_truncated,
+            .marker_text = (details.geneve.header_truncated ||
+                    details.geneve.invalid_version ||
+                    details.geneve.options_truncated ||
+                    !details.geneve.protocol_type_supported ||
+                    details.geneve.inner_ethernet_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (details.geneve.has_inner_packet && details.geneve.inner_packet) {
+            append_geneve_inner_summary_layers(layers, details, *details.geneve.inner_packet);
+        } else if (details.has_inner_ethernet) {
+            append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
+        }
+    }
+
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
         append_layer_if_not_empty(layers, *trailer_layer);
     }
@@ -3455,6 +3601,85 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         }
         if (details.vxlan.has_inner_packet && details.vxlan.inner_packet) {
             const auto& inner = *details.vxlan.inner_packet;
+            if (!inner.vlan_tags.empty()) {
+                builder << '\n' << '\t' << "Inner VLAN: " << vlan_identifier(inner.vlan_tags.front().tci);
+            }
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner IPv4: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                if (inner.ipv4.header_truncated ||
+                    inner.ipv4.header_length_bytes > inner.ipv4.available_header_bytes ||
+                    (ipv4_field_available(inner.ipv4, 4U) && inner.ipv4.total_length > inner.ipv4.available_packet_bytes)) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner IPv6: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+            }
+        }
+        return builder.str();
+    }
+
+    if (details.has_geneve) {
+        builder << "Protocol: Geneve\n"
+                << '\t' << "Version: " << static_cast<unsigned>(details.geneve.version) << '\n'
+                << '\t' << "Option Length: "
+                << static_cast<unsigned>(details.geneve.option_length_words) << " words ("
+                << details.geneve.option_length_bytes << " bytes)";
+        if (details.geneve.available_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "OAM Flag: " << (details.geneve.oam_flag ? "Set" : "Not set")
+                    << '\n' << '\t' << "Critical Flag: " << (details.geneve.critical_flag ? "Set" : "Not set");
+        }
+        if (details.geneve.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Protocol Type: "
+                    << format_geneve_protocol_type(details.geneve.protocol_type);
+        }
+        if (details.geneve.available_header_bytes >= 7U) {
+            builder << '\n' << '\t' << "VNI: " << details.geneve.vni;
+        }
+        builder << '\n' << '\t' << "Options Present: " << (details.geneve.options_present ? "Yes" : "No");
+        if (details.geneve.options_present) {
+            builder << '\n' << '\t' << "Options Skipped: " << details.geneve.option_length_bytes << " bytes";
+        }
+        if (details.geneve.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "Reserved Trailer: "
+                    << format_hex_value(details.geneve.reserved_trailer_byte, 2);
+        }
+        if (details.geneve.reserved_control_bits != 0U) {
+            builder << '\n' << '\t' << "Reserved Control Bits: "
+                    << format_hex_value(details.geneve.reserved_control_bits, 2);
+        }
+        if (details.geneve.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.geneve.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: Geneve header is truncated.";
+        }
+        if (details.geneve.invalid_version) {
+            builder << '\n' << '\t' << "Warning: Geneve version is not supported.";
+        }
+        if (details.geneve.options_truncated) {
+            builder << '\n' << '\t' << "Warning: Geneve options are truncated.";
+        }
+        if (!details.geneve.protocol_type_supported && details.geneve.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Warning: Geneve protocol type is not supported.";
+        }
+        if (details.geneve.has_inner_ethernet) {
+            builder << '\n' << '\t' << "Inner Payload: Ethernet";
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+        }
+        if (details.inner_ethernet.header_truncated || details.geneve.inner_ethernet_truncated) {
+            builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+        }
+        if (details.geneve.has_inner_packet && details.geneve.inner_packet) {
+            const auto& inner = *details.geneve.inner_packet;
             if (!inner.vlan_tags.empty()) {
                 builder << '\n' << '\t' << "Inner VLAN: " << vlan_identifier(inner.vlan_tags.front().tci);
             }

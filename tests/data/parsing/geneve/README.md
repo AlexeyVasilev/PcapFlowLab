@@ -24,7 +24,7 @@ Current implemented status:
 - valid UDP/6081 Geneve carrying Ethernet plus inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
 - Geneve option length is handled in 4-byte units and bounded options are skipped safely for tuple extraction;
 - Geneve VNI is parsed as metadata, but it is not part of flow identity in this branch yet;
-- selected-packet Geneve Summary / Protocol details remain a follow-up step.
+- selected-packet Geneve Summary / Protocol details now show a Geneve layer plus sequential inner Ethernet/VLAN/IP/transport layers for valid fixtures, and lenient warnings for malformed/truncated UDP/6081 Geneve-like payloads.
 
 ## Local generation
 
@@ -82,7 +82,7 @@ Current Geneve behavior in this branch:
 - bounded Geneve options are skipped safely using the option length field in 4-byte units;
 - malformed or truncated Geneve / inner payload cases remain conservative and do not fabricate normal inner flows;
 - identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity;
-- selected-packet Summary / Protocol details for Geneve metadata remain future work.
+- selected-packet Summary / Protocol details now show Geneve metadata and sequential inner layers for valid fixtures, while malformed/truncated UDP/6081 Geneve-like payloads can still surface presentational warnings without affecting flow keys.
 
 ---
 
