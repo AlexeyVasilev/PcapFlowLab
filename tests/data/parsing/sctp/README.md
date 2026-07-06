@@ -5,13 +5,13 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - known SCTP PPID recognition cases for selected-packet presentation;
 - non-DATA first-chunk cases such as INIT and SACK;
 - truncated SCTP common-header and DATA-chunk metadata cases;
-- bidirectional SCTP flow grouping by the normal normalized IP + port tuple;
+- bidirectional SCTP flow grouping by the normalized IP + port tuple;
 - SCTP behind already-supported VLAN and MPLS shim paths;
 - SCTP behind already-supported VXLAN, Geneve, and GTP-U overlay inner-IP paths.
 
-These fixtures are for the `feature/sctp-transport-support` branch.
+These fixtures cover SCTP transport support in PcapFlowLab.
 
-Current branch intent:
+Supported behavior covered by these fixtures:
 - add SCTP as a third port-based L4 transport protocol alongside TCP and UDP;
 - extract SCTP source and destination ports during open/import;
 - show SCTP common-header fields in selected-packet details;
@@ -26,7 +26,7 @@ Current implementation status:
 - selected-packet Summary / Protocol details now show overlay metadata plus sequential inner IPv4 / SCTP / DATA PPID presentation for supported VXLAN, Geneve, and GTP-U fixtures;
 - VNI / TEID remain presentation-only and are not yet part of flow identity.
 
-Non-goals for this branch:
+Current non-goals:
 - no SCTP stream reassembly;
 - no deep SCTP upper-layer protocol decoding;
 - no SCTP checksum validation;
@@ -109,7 +109,7 @@ Overlay and shim expectations:
 - Geneve VNI: `132`
 - GTP-U TEID: `0x01020384`
 
-## Known PPID mapping used by this branch
+## Known PPID mapping used by current support
 
 - `1` -> `IUA`
 - `2` -> `M2UA`

@@ -689,6 +689,45 @@ PacketSummaryLayer build_sctp_summary_layer(const SctpDetails& details) {
     };
 }
 
+void append_inner_sctp_protocol_details(
+    std::ostringstream& builder,
+    const SctpDetails& details
+) {
+    if (details.available_common_header_bytes >= 2U) {
+        builder << '\n' << '\t' << "Inner SCTP Source Port: " << details.src_port;
+    }
+    if (details.available_common_header_bytes >= 4U) {
+        builder << '\n' << '\t' << "Inner SCTP Destination Port: " << details.dst_port;
+    }
+    if (details.available_common_header_bytes >= 8U) {
+        builder << '\n' << '\t' << "Inner SCTP Verification Tag: "
+                << format_hex_value(details.verification_tag, 8);
+    }
+    if (details.available_common_header_bytes >= 12U) {
+        builder << '\n' << '\t' << "Inner SCTP Checksum: "
+                << format_hex_value(details.checksum, 8);
+    }
+    if (details.first_chunk_present) {
+        builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
+                << format_sctp_chunk_type_name(details.first_chunk_type);
+    }
+    if (details.data_metadata_present && details.data_metadata_available_bytes >= 12U) {
+        builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(details.ppid);
+        if (const auto display = lookup_sctp_ppid_display(details.ppid); display.has_value()) {
+            builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
+        }
+    }
+    if (details.common_header_truncated) {
+        builder << '\n' << '\t' << "Warning: Inner SCTP common header is truncated.";
+    }
+    if (details.first_chunk_header_truncated) {
+        builder << '\n' << '\t' << "Warning: Inner SCTP first chunk header is truncated.";
+    }
+    if (details.data_metadata_truncated) {
+        builder << '\n' << '\t' << "Warning: Inner SCTP DATA chunk metadata is truncated.";
+    }
+}
+
 std::optional<PacketSummaryLayer> build_sctp_chunk_summary_layer(const SctpDetails& details) {
     if (!details.first_chunk_present) {
         return std::nullopt;
@@ -4242,19 +4281,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                         << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv6.next_header);
             }
             if (inner.has_sctp) {
-                builder << '\n' << '\t' << "Inner SCTP Source Port: " << inner.sctp.src_port
-                        << '\n' << '\t' << "Inner SCTP Destination Port: " << inner.sctp.dst_port
-                        << '\n' << '\t' << "Inner SCTP Verification Tag: " << format_hex_value(inner.sctp.verification_tag, 8);
-                if (inner.sctp.first_chunk_present) {
-                    builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
-                            << format_sctp_chunk_type_name(inner.sctp.first_chunk_type);
-                }
-                if (inner.sctp.data_metadata_present && inner.sctp.data_metadata_available_bytes >= 12U) {
-                    builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(inner.sctp.ppid);
-                    if (const auto display = lookup_sctp_ppid_display(inner.sctp.ppid); display.has_value()) {
-                        builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
-                    }
-                }
+                append_inner_sctp_protocol_details(builder, inner.sctp);
             }
         }
         return builder.str();
@@ -4336,19 +4363,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                         << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv6.next_header);
             }
             if (inner.has_sctp) {
-                builder << '\n' << '\t' << "Inner SCTP Source Port: " << inner.sctp.src_port
-                        << '\n' << '\t' << "Inner SCTP Destination Port: " << inner.sctp.dst_port
-                        << '\n' << '\t' << "Inner SCTP Verification Tag: " << format_hex_value(inner.sctp.verification_tag, 8);
-                if (inner.sctp.first_chunk_present) {
-                    builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
-                            << format_sctp_chunk_type_name(inner.sctp.first_chunk_type);
-                }
-                if (inner.sctp.data_metadata_present && inner.sctp.data_metadata_available_bytes >= 12U) {
-                    builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(inner.sctp.ppid);
-                    if (const auto display = lookup_sctp_ppid_display(inner.sctp.ppid); display.has_value()) {
-                        builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
-                    }
-                }
+                append_inner_sctp_protocol_details(builder, inner.sctp);
             }
         }
         return builder.str();
@@ -4431,19 +4446,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                 }
             }
             if (inner.has_sctp) {
-                builder << '\n' << '\t' << "Inner SCTP Source Port: " << inner.sctp.src_port
-                        << '\n' << '\t' << "Inner SCTP Destination Port: " << inner.sctp.dst_port
-                        << '\n' << '\t' << "Inner SCTP Verification Tag: " << format_hex_value(inner.sctp.verification_tag, 8);
-                if (inner.sctp.first_chunk_present) {
-                    builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
-                            << format_sctp_chunk_type_name(inner.sctp.first_chunk_type);
-                }
-                if (inner.sctp.data_metadata_present && inner.sctp.data_metadata_available_bytes >= 12U) {
-                    builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(inner.sctp.ppid);
-                    if (const auto display = lookup_sctp_ppid_display(inner.sctp.ppid); display.has_value()) {
-                        builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
-                    }
-                }
+                append_inner_sctp_protocol_details(builder, inner.sctp);
             }
         } else if (details.gtpu.unknown_inner_payload) {
             builder << '\n' << '\t' << "Inner Payload: Unknown"
