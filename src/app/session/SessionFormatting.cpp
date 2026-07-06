@@ -262,6 +262,9 @@ std::string format_inner_ethernet_title(const InnerEthernetDetails& details) {
         title += ", Src: " + format_mac_address(details.src_mac) +
             ", Dst: " + format_mac_address(details.dst_mac);
     }
+    if (details.header_truncated) {
+        title += ", truncated";
+    }
     return title;
 }
 
@@ -311,6 +314,10 @@ std::uint16_t macsec_plaintext_ether_type(const PacketDetails& details) noexcept
 }
 
 PacketSummaryField make_summary_field(std::string label, std::string value);
+bool ipv4_field_available(const IPv4Details& details, std::size_t end_offset) noexcept;
+std::uint16_t vlan_identifier(std::uint16_t tci) noexcept;
+unsigned vlan_priority(std::uint16_t tci) noexcept;
+unsigned vlan_drop_eligible_indicator(std::uint16_t tci) noexcept;
 
 std::uint8_t pbb_reserved_1(const PbbDetails& pbb) noexcept {
     return static_cast<std::uint8_t>((pbb.reserved >> 2U) & 0x1U);
@@ -336,6 +343,479 @@ void append_pbb_itag_summary_fields(std::vector<PacketSummaryField>& fields, con
             std::to_string(static_cast<unsigned>(pbb.available_bytes)) + " of 4"
         ));
     }
+}
+
+PacketSummaryLayer build_inner_ethernet_summary_layer(const InnerEthernetDetails& details) {
+    auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
+    if (details.header_truncated) {
+        inner_ethernet_fields.push_back(make_summary_field(
+            "Available Header Bytes",
+            std::to_string(static_cast<unsigned>(details.available_header_bytes)) + " / 14"
+        ));
+    }
+    if (details.available_header_bytes >= 6U) {
+        inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.dst_mac)));
+    }
+    if (details.available_header_bytes >= 12U) {
+        inner_ethernet_fields.push_back(make_summary_field("Source", format_mac_address(details.src_mac)));
+    }
+    if (details.available_header_bytes >= 14U) {
+        if (details.uses_length_field) {
+            inner_ethernet_fields.push_back(make_summary_field(
+                "Length",
+                std::to_string(details.ether_type) + " bytes"
+            ));
+        } else {
+            inner_ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.ether_type)));
+        }
+    }
+    if (details.header_truncated) {
+        inner_ethernet_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "ethernet-inner",
+        .title = format_inner_ethernet_title(details),
+        .fields = std::move(inner_ethernet_fields),
+        .warning = details.header_truncated,
+        .marker_text = details.header_truncated ? "Warning" : std::string {},
+    };
+}
+
+PacketSummaryLayer build_vlan_summary_layer(const VlanTagDetails& tag) {
+    auto vlan_fields = std::vector<PacketSummaryField> {
+        make_summary_field("TPID", format_ether_type_value(tag.tpid)),
+        make_summary_field("Priority", std::to_string(vlan_priority(tag.tci))),
+        make_summary_field("DEI", std::to_string(vlan_drop_eligible_indicator(tag.tci))),
+        make_summary_field("VLAN ID", std::to_string(vlan_identifier(tag.tci))),
+    };
+    if (tag.encapsulated_ether_type < kIeee8023LengthCutoff) {
+        vlan_fields.push_back(make_summary_field(
+            "Encapsulated Length",
+            std::to_string(tag.encapsulated_ether_type) + " bytes"
+        ));
+    } else {
+        vlan_fields.push_back(make_summary_field(
+            "Encapsulated EtherType",
+            format_ether_type_value(tag.encapsulated_ether_type)
+        ));
+    }
+
+    return PacketSummaryLayer {
+        .id = "vlan",
+        .title = format_vlan_summary_title(tag),
+        .fields = std::move(vlan_fields),
+    };
+}
+
+PacketSummaryLayer build_ipv4_summary_layer(const IPv4Details& details) {
+    std::vector<PacketSummaryField> ipv4_fields {};
+    ipv4_fields.push_back(make_summary_field("Version", "4"));
+    ipv4_fields.push_back(make_summary_field(
+        "Internet Header Length",
+        std::to_string(details.header_length_bytes) + " bytes (" +
+            std::to_string(details.header_length_bytes / 4U) + ")"
+    ));
+    if (ipv4_field_available(details, 2U)) {
+        ipv4_fields.push_back(make_summary_field("Differentiated Services Field", format_hex_value(details.differentiated_services_field, 2)));
+    }
+    if (ipv4_field_available(details, 4U)) {
+        ipv4_fields.push_back(make_summary_field("Total Length", std::to_string(details.total_length) + " bytes"));
+    }
+    if (ipv4_field_available(details, 6U)) {
+        ipv4_fields.push_back(make_summary_field("Identification", format_hex16_value(details.identification)));
+    }
+    if (ipv4_field_available(details, 8U)) {
+        ipv4_fields.push_back(make_summary_field("Flags", format_hex_value(details.flags, 1)));
+        ipv4_fields.push_back(make_summary_field("Fragment Offset", std::to_string(details.fragment_offset)));
+    }
+    if (ipv4_field_available(details, 9U)) {
+        ipv4_fields.push_back(make_summary_field("TTL", std::to_string(details.ttl)));
+    }
+    if (ipv4_field_available(details, 10U)) {
+        ipv4_fields.push_back(make_summary_field("Protocol", format_protocol_summary_value_with_number(details.protocol)));
+    }
+    if (ipv4_field_available(details, 12U)) {
+        ipv4_fields.push_back(make_summary_field("Header Checksum", format_hex16_value(details.header_checksum)));
+    }
+    if (ipv4_field_available(details, 16U)) {
+        ipv4_fields.push_back(make_summary_field("Source Address", format_ipv4_address(details.src_addr)));
+    }
+    if (ipv4_field_available(details, 20U)) {
+        ipv4_fields.push_back(make_summary_field("Destination Address", format_ipv4_address(details.dst_addr)));
+    }
+    if (details.header_truncated) {
+        ipv4_fields.push_back(make_summary_field("Warning", "IPv4 header is truncated"));
+    }
+    if (details.header_length_bytes > details.available_header_bytes) {
+        ipv4_fields.push_back(make_summary_field("Incomplete Header", "Captured IPv4 header bytes are fewer than the IHL"));
+    }
+    if (ipv4_field_available(details, 4U) && details.total_length > details.available_packet_bytes) {
+        ipv4_fields.push_back(make_summary_field("Warning", "IPv4 total length exceeds captured packet bytes"));
+    }
+
+    auto ipv4_title = std::string {"IPv4"};
+    if (ipv4_field_available(details, 16U)) {
+        ipv4_title += ", Src: " + format_ipv4_address(details.src_addr);
+        if (ipv4_field_available(details, 20U)) {
+            ipv4_title += ", Dst: " + format_ipv4_address(details.dst_addr);
+        }
+    }
+
+    return PacketSummaryLayer {
+        .id = "ipv4",
+        .title = std::move(ipv4_title),
+        .fields = std::move(ipv4_fields),
+        .warning = details.invalid_header_length || details.total_length_invalid || details.header_truncated,
+        .marker_text = (details.invalid_header_length || details.total_length_invalid || details.header_truncated)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
+PacketSummaryLayer build_ipv6_summary_layer(const IPv6Details& details) {
+    return PacketSummaryLayer {
+        .id = "ipv6",
+        .title = "IPv6, Src: " +
+            format_ipv6_address(details.src_addr) +
+            ", Dst: " + format_ipv6_address(details.dst_addr),
+        .fields = {
+            make_summary_field("Version", "6"),
+            make_summary_field("Traffic Class", format_hex_value(details.traffic_class, 2)),
+            make_summary_field("Flow Label", format_hex_value(details.flow_label)),
+            make_summary_field("Payload Length", std::to_string(details.payload_length) + " bytes"),
+            make_summary_field("Next Header", format_protocol_summary_value_with_number(details.next_header)),
+            make_summary_field("Hop Limit", std::to_string(details.hop_limit)),
+            make_summary_field("Source Address", format_ipv6_address(details.src_addr)),
+            make_summary_field("Destination Address", format_ipv6_address(details.dst_addr)),
+        },
+    };
+}
+
+PacketSummaryLayer build_tcp_summary_layer(const TcpDetails& details) {
+    std::vector<PacketSummaryField> tcp_fields {
+        make_summary_field("Source Port", std::to_string(details.src_port)),
+        make_summary_field("Destination Port", std::to_string(details.dst_port)),
+        make_summary_field("Sequence Number (raw)", std::to_string(details.seq_number)),
+        make_summary_field("Acknowledgment Number (raw)", std::to_string(details.ack_number)),
+        make_summary_field(
+            "Header Length",
+            std::to_string(details.header_length_bytes) + " bytes (" +
+                std::to_string(details.header_length_bytes / 4U) + ")"
+        ),
+        make_summary_field("Flags", format_tcp_flags_text(details.flags)),
+        make_summary_field("Window", std::to_string(details.window)),
+        make_summary_field("Checksum", format_hex16_value(details.checksum)),
+        make_summary_field("Urgent Pointer", std::to_string(details.urgent_pointer)),
+    };
+
+    return PacketSummaryLayer {
+        .id = "tcp",
+        .title = "TCP, Src Port: " +
+            std::to_string(details.src_port) +
+            ", Dst Port: " + std::to_string(details.dst_port),
+        .fields = std::move(tcp_fields),
+    };
+}
+
+PacketSummaryLayer build_udp_summary_layer(const UdpDetails& details) {
+    std::vector<PacketSummaryField> udp_fields {
+        make_summary_field("Source Port", std::to_string(details.src_port)),
+        make_summary_field("Destination Port", std::to_string(details.dst_port)),
+        make_summary_field("Length", std::to_string(details.length) + " bytes"),
+        make_summary_field("Checksum", format_hex16_value(details.checksum)),
+    };
+    if (details.payload_truncated) {
+        udp_fields.push_back(make_summary_field("Warning", "UDP length exceeds available packet bytes"));
+    }
+
+    return PacketSummaryLayer {
+        .id = "udp",
+        .title = "UDP, Src Port: " +
+            std::to_string(details.src_port) +
+            ", Dst Port: " + std::to_string(details.dst_port),
+        .fields = std::move(udp_fields),
+        .warning = details.payload_truncated,
+        .marker_text = details.payload_truncated ? std::string {"Warning"} : std::string {},
+    };
+}
+
+PacketSummaryLayer build_inner_vlan_summary_layer(const VlanTagDetails& tag) {
+    auto layer = build_vlan_summary_layer(tag);
+    layer.id = "vlan-inner";
+    layer.title = "Inner VLAN, ID: " + std::to_string(vlan_identifier(tag.tci));
+    return layer;
+}
+
+PacketSummaryLayer build_inner_ipv4_summary_layer(const IPv4Details& details) {
+    auto layer = build_ipv4_summary_layer(details);
+    layer.id = "ipv4-inner";
+    const bool truncated =
+        details.header_truncated ||
+        details.header_length_bytes > details.available_header_bytes ||
+        (ipv4_field_available(details, 4U) && details.total_length > details.available_packet_bytes);
+    layer.title = "Inner IPv4";
+    if (details.available_header_bytes >= 16U) {
+        layer.title += ", Src: " + format_ipv4_address(details.src_addr);
+        if (details.available_header_bytes >= 20U) {
+            layer.title += ", Dst: " + format_ipv4_address(details.dst_addr);
+        }
+    }
+    if (truncated) {
+        layer.title += ", truncated";
+        layer.fields.push_back(make_summary_field(
+            "Available Bytes",
+            std::to_string(details.available_packet_bytes) + " bytes"
+        ));
+        layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+        layer.warning = true;
+        layer.marker_text = "Warning";
+    }
+    return layer;
+}
+
+PacketSummaryLayer build_inner_ipv6_summary_layer(const IPv6Details& details) {
+    auto layer = build_ipv6_summary_layer(details);
+    layer.id = "ipv6-inner";
+    layer.title = "Inner IPv6, Src: " +
+        format_ipv6_address(details.src_addr) +
+        ", Dst: " + format_ipv6_address(details.dst_addr);
+    return layer;
+}
+
+PacketSummaryLayer build_inner_tcp_summary_layer(const TcpDetails& details) {
+    auto layer = build_tcp_summary_layer(details);
+    layer.id = "tcp-inner";
+    layer.title = "Inner TCP, Src Port: " +
+        std::to_string(details.src_port) +
+        ", Dst Port: " + std::to_string(details.dst_port);
+    return layer;
+}
+
+PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
+    auto layer = build_udp_summary_layer(details);
+    layer.id = "udp-inner";
+    layer.title = "Inner UDP, Src Port: " +
+        std::to_string(details.src_port) +
+        ", Dst Port: " + std::to_string(details.dst_port);
+    return layer;
+}
+
+void append_vxlan_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const PacketDetails& details,
+    const VxlanInnerPacketDetails& inner
+) {
+    if (details.has_inner_ethernet) {
+        layers.push_back(build_inner_ethernet_summary_layer(details.inner_ethernet));
+    }
+
+    for (const auto& tag : inner.vlan_tags) {
+        layers.push_back(build_inner_vlan_summary_layer(tag));
+    }
+
+    if (inner.has_ipv4) {
+        layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+    }
+}
+
+void append_geneve_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const PacketDetails& details,
+    const GeneveInnerPacketDetails& inner
+) {
+    if (details.has_inner_ethernet) {
+        layers.push_back(build_inner_ethernet_summary_layer(details.inner_ethernet));
+    }
+
+    for (const auto& tag : inner.vlan_tags) {
+        layers.push_back(build_inner_vlan_summary_layer(tag));
+    }
+
+    if (inner.has_ipv4) {
+        layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+    }
+}
+
+void append_gtpu_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const GtpuInnerPacketDetails& inner
+) {
+    if (inner.has_ipv4) {
+        auto layer = build_inner_ipv4_summary_layer(inner.ipv4);
+        if (inner.ipv4_truncated &&
+            std::none_of(layer.fields.begin(), layer.fields.end(), [](const auto& field) {
+                return field.label == "Warning" &&
+                    field.value.find("Inner IPv4 packet is truncated") != std::string::npos;
+            })) {
+            layer.title += ", truncated";
+            layer.fields.push_back(make_summary_field(
+                "Available Bytes",
+                std::to_string(inner.ipv4.available_packet_bytes) + " bytes"
+            ));
+            layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+            layer.warning = true;
+            layer.marker_text = "Warning";
+        }
+        layers.push_back(std::move(layer));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        if (inner.ipv6_truncated) {
+            std::vector<PacketSummaryField> fields {
+                make_summary_field("Version", "6"),
+            };
+            if (inner.ipv6_available_bytes >= 8U) {
+                fields.push_back(make_summary_field("Traffic Class", format_hex_value(inner.ipv6.traffic_class, 2)));
+                fields.push_back(make_summary_field("Flow Label", format_hex_value(inner.ipv6.flow_label)));
+                fields.push_back(make_summary_field("Payload Length", std::to_string(inner.ipv6.payload_length) + " bytes"));
+                fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                fields.push_back(make_summary_field("Hop Limit", std::to_string(inner.ipv6.hop_limit)));
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                fields.push_back(make_summary_field("Source Address", format_ipv6_address(inner.ipv6.src_addr)));
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                fields.push_back(make_summary_field("Destination Address", format_ipv6_address(inner.ipv6.dst_addr)));
+            }
+            fields.push_back(make_summary_field("Warning", "Inner IPv6 packet is truncated"));
+
+            std::string title = "Inner IPv6, truncated";
+            if (inner.ipv6_available_bytes >= 24U) {
+                title = "Inner IPv6, Src: " + format_ipv6_address(inner.ipv6.src_addr);
+                if (inner.ipv6_available_bytes >= 40U) {
+                    title += ", Dst: " + format_ipv6_address(inner.ipv6.dst_addr);
+                }
+                title += ", truncated";
+            }
+
+            layers.push_back(PacketSummaryLayer {
+                .id = "ipv6-inner",
+                .title = std::move(title),
+                .fields = std::move(fields),
+                .warning = true,
+                .marker_text = "Warning",
+            });
+        } else {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        }
+    }
+}
+
+std::string format_geneve_protocol_type(const std::uint16_t protocol_type) {
+    switch (protocol_type) {
+    case 0x0800U:
+        return "IPv4 (0x0800)";
+    case 0x86DDU:
+        return "IPv6 (0x86dd)";
+    case 0x6558U:
+        return "Ethernet (0x6558)";
+    default:
+        break;
+    }
+    return format_hex16_value(protocol_type);
+}
+
+std::string format_geneve_summary_title(const GeneveDetails& geneve) {
+    if (geneve.header_truncated || geneve.options_truncated) {
+        return "Geneve, malformed";
+    }
+    if (geneve.invalid_version) {
+        return "Geneve, invalid";
+    }
+    if (!geneve.protocol_type_supported && geneve.available_header_bytes >= 4U) {
+        return "Geneve, unsupported protocol type";
+    }
+    return std::string {"Geneve, VNI: "} + std::to_string(geneve.vni);
+}
+
+std::string format_gtpu_message_type(const std::uint8_t message_type) {
+    switch (message_type) {
+    case 0xFFU:
+        return "T-PDU (0xff)";
+    case 0x01U:
+        return "Echo Request (0x01)";
+    default:
+        return format_hex_value(message_type, 2);
+    }
+}
+
+std::string format_gtpu_extension_header_type(const std::uint8_t extension_header_type) {
+    switch (extension_header_type) {
+    case 0x00U:
+        return "No more extension headers (0x00)";
+    case 0x01U:
+        return "MBMS Support Indication (0x01)";
+    case 0x85U:
+        return "PDU Session Container (0x85)";
+    default:
+        return format_hex_value(extension_header_type, 2);
+    }
+}
+
+std::string format_gtpu_flags_summary(const GtpuDetails& gtpu) {
+    std::ostringstream builder {};
+    builder << format_hex_value(gtpu.flags, 2) << " (Version "
+            << static_cast<unsigned>(gtpu.version) << ", PT "
+            << (gtpu.protocol_type_flag_set ? "set" : "not set") << ")";
+    return builder.str();
+}
+
+std::string format_gtpu_summary_title(const GtpuDetails& gtpu) {
+    if (gtpu.header_truncated || gtpu.optional_header_truncated || gtpu.extension_headers_truncated) {
+        return "GTP-U, malformed";
+    }
+    if (gtpu.invalid_version || !gtpu.protocol_type_flag_set) {
+        return "GTP-U, invalid";
+    }
+    if (gtpu.unsupported_message_type) {
+        return "GTP-U, unsupported message type";
+    }
+    if (gtpu.unknown_inner_payload) {
+        return "GTP-U, unknown inner payload";
+    }
+    return std::string {"GTP-U, TEID: "} + format_hex_value(gtpu.teid, 8);
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -831,6 +1311,10 @@ std::optional<PacketSummaryLayer> build_ieee_802_3_trailer_layer(const PacketDet
 
 bool ipv4_field_available(const PacketDetails& details, const std::size_t end_offset) noexcept {
     return details.has_ipv4 && details.ipv4.available_header_bytes >= end_offset;
+}
+
+bool ipv4_field_available(const IPv4Details& details, const std::size_t end_offset) noexcept {
+    return details.available_header_bytes >= end_offset;
 }
 
 std::uint16_t vlan_identifier(const std::uint16_t tci) noexcept {
@@ -2402,35 +2886,8 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_inner_ethernet) {
-        auto inner_ethernet_fields = std::vector<PacketSummaryField> {};
-        if (details.inner_ethernet.available_header_bytes >= 6U) {
-            inner_ethernet_fields.push_back(make_summary_field("Destination", format_mac_address(details.inner_ethernet.dst_mac)));
-        }
-        if (details.inner_ethernet.available_header_bytes >= 12U) {
-            inner_ethernet_fields.push_back(make_summary_field("Source", format_mac_address(details.inner_ethernet.src_mac)));
-        }
-        if (details.inner_ethernet.available_header_bytes >= 14U) {
-            if (details.inner_ethernet.uses_length_field) {
-                inner_ethernet_fields.push_back(make_summary_field(
-                    "Length",
-                    std::to_string(details.inner_ethernet.ether_type) + " bytes"
-                ));
-            } else {
-                inner_ethernet_fields.push_back(make_summary_field("Type", format_ether_type_value(details.inner_ethernet.ether_type)));
-            }
-        }
-        if (details.inner_ethernet.header_truncated) {
-            inner_ethernet_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
-        }
-
-        append_layer_if_not_empty(layers, PacketSummaryLayer {
-            .id = "ethernet-inner",
-            .title = format_inner_ethernet_title(details.inner_ethernet),
-            .fields = std::move(inner_ethernet_fields),
-            .warning = details.inner_ethernet.header_truncated,
-            .marker_text = details.inner_ethernet.header_truncated ? "Warning" : std::string {},
-        });
+    if (details.has_inner_ethernet && !details.has_vxlan && !details.has_geneve) {
+        append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
     }
 
     if (details.has_vlan && has_nested_inner_ethernet) {
@@ -2904,6 +3361,286 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
+    if (details.has_vxlan) {
+        std::vector<PacketSummaryField> vxlan_fields {
+            make_summary_field("Flags", format_hex_value(details.vxlan.flags, 2)),
+            make_summary_field("VNI Flag", details.vxlan.i_flag_set ? "Set" : "Not set"),
+        };
+        if (details.vxlan.available_header_bytes >= 7U) {
+            vxlan_fields.push_back(make_summary_field("VNI", std::to_string(details.vxlan.vni)));
+        }
+        if (details.vxlan.header_truncated) {
+            vxlan_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.vxlan.available_header_bytes)) + " / 8"
+            ));
+            vxlan_fields.push_back(make_summary_field("Warning", "VXLAN header is truncated"));
+        }
+        if (details.vxlan.invalid_header) {
+            if (!details.vxlan.i_flag_set) {
+                vxlan_fields.push_back(make_summary_field("Warning", "VXLAN VNI flag is not set"));
+            }
+            if (details.vxlan.reserved_bits_non_zero) {
+                vxlan_fields.push_back(make_summary_field("Warning", "VXLAN reserved header bytes are non-zero"));
+            }
+        }
+        if (details.vxlan.has_inner_ethernet) {
+            vxlan_fields.push_back(make_summary_field("Inner Payload", "Ethernet"));
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    vxlan_fields.push_back(make_summary_field(
+                        "Inner Length",
+                        std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                    ));
+                } else {
+                    vxlan_fields.push_back(make_summary_field(
+                        "Inner EtherType",
+                        format_ether_type_value(details.inner_ethernet.ether_type)
+                    ));
+                }
+            }
+        }
+        if (details.vxlan.inner_ethernet_truncated) {
+            vxlan_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "vxlan",
+            .title = details.vxlan.header_truncated
+                ? std::string {"VXLAN, malformed"}
+                : (details.vxlan.invalid_header
+                    ? std::string {"VXLAN, invalid"}
+                    : std::string {"VXLAN, VNI: "} + std::to_string(details.vxlan.vni)),
+            .fields = std::move(vxlan_fields),
+            .warning = details.vxlan.header_truncated ||
+                details.vxlan.invalid_header ||
+                details.vxlan.inner_ethernet_truncated,
+            .marker_text = (details.vxlan.header_truncated ||
+                    details.vxlan.invalid_header ||
+                    details.vxlan.inner_ethernet_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (details.vxlan.has_inner_packet && details.vxlan.inner_packet) {
+            append_vxlan_inner_summary_layers(layers, details, *details.vxlan.inner_packet);
+        } else if (details.has_inner_ethernet) {
+            append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
+        }
+    }
+
+    if (details.has_geneve) {
+        std::vector<PacketSummaryField> geneve_fields {
+            make_summary_field("Version", std::to_string(static_cast<unsigned>(details.geneve.version))),
+            make_summary_field(
+                "Option Length",
+                std::to_string(static_cast<unsigned>(details.geneve.option_length_words)) +
+                    " words (" + std::to_string(details.geneve.option_length_bytes) + " bytes)"
+            ),
+        };
+        if (details.geneve.available_header_bytes >= 2U) {
+            geneve_fields.push_back(make_summary_field("OAM Flag", details.geneve.oam_flag ? "Set" : "Not set"));
+            geneve_fields.push_back(make_summary_field("Critical Flag", details.geneve.critical_flag ? "Set" : "Not set"));
+        }
+        if (details.geneve.available_header_bytes >= 4U) {
+            geneve_fields.push_back(make_summary_field(
+                "Protocol Type",
+                format_geneve_protocol_type(details.geneve.protocol_type)
+            ));
+        }
+        if (details.geneve.available_header_bytes >= 7U) {
+            geneve_fields.push_back(make_summary_field("VNI", std::to_string(details.geneve.vni)));
+        }
+        geneve_fields.push_back(make_summary_field("Options Present", details.geneve.options_present ? "Yes" : "No"));
+        if (details.geneve.options_present) {
+            geneve_fields.push_back(make_summary_field(
+                "Options Skipped",
+                std::to_string(details.geneve.option_length_bytes) + " bytes"
+            ));
+        }
+        if (details.geneve.available_header_bytes >= 8U) {
+            geneve_fields.push_back(make_summary_field(
+                "Reserved Trailer",
+                format_hex_value(details.geneve.reserved_trailer_byte, 2)
+            ));
+        }
+        if (details.geneve.header_truncated) {
+            geneve_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.geneve.available_header_bytes)) + " / 8"
+            ));
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve header is truncated"));
+        }
+        if (details.geneve.invalid_version) {
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve version is not supported"));
+        }
+        if (details.geneve.options_truncated) {
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve options are truncated"));
+        }
+        if (!details.geneve.protocol_type_supported && details.geneve.available_header_bytes >= 4U) {
+            geneve_fields.push_back(make_summary_field("Warning", "Geneve protocol type is not supported"));
+        }
+        if (details.geneve.reserved_control_bits != 0U) {
+            geneve_fields.push_back(make_summary_field(
+                "Reserved Control Bits",
+                format_hex_value(details.geneve.reserved_control_bits, 2)
+            ));
+        }
+        if (details.geneve.has_inner_ethernet) {
+            geneve_fields.push_back(make_summary_field("Inner Payload", "Ethernet"));
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    geneve_fields.push_back(make_summary_field(
+                        "Inner Length",
+                        std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                    ));
+                } else {
+                    geneve_fields.push_back(make_summary_field(
+                        "Inner EtherType",
+                        format_ether_type_value(details.inner_ethernet.ether_type)
+                    ));
+                }
+            }
+        }
+        if (details.geneve.inner_ethernet_truncated) {
+            geneve_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "geneve",
+            .title = format_geneve_summary_title(details.geneve),
+            .fields = std::move(geneve_fields),
+            .warning = details.geneve.header_truncated ||
+                details.geneve.invalid_version ||
+                details.geneve.options_truncated ||
+                !details.geneve.protocol_type_supported ||
+                details.geneve.inner_ethernet_truncated,
+            .marker_text = (details.geneve.header_truncated ||
+                    details.geneve.invalid_version ||
+                    details.geneve.options_truncated ||
+                    !details.geneve.protocol_type_supported ||
+                    details.geneve.inner_ethernet_truncated)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (details.geneve.has_inner_packet && details.geneve.inner_packet) {
+            append_geneve_inner_summary_layers(layers, details, *details.geneve.inner_packet);
+        } else if (details.has_inner_ethernet) {
+            append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
+        }
+    }
+
+    if (details.has_gtpu) {
+        std::vector<PacketSummaryField> gtpu_fields {};
+        if (details.gtpu.available_header_bytes >= 1U) {
+            gtpu_fields.push_back(make_summary_field("Flags", format_gtpu_flags_summary(details.gtpu)));
+        }
+        if (details.gtpu.available_header_bytes >= 2U) {
+            gtpu_fields.push_back(make_summary_field("Message Type", format_gtpu_message_type(details.gtpu.message_type)));
+        }
+        if (details.gtpu.available_header_bytes >= 4U) {
+            gtpu_fields.push_back(make_summary_field("Length", std::to_string(details.gtpu.length) + " bytes"));
+        }
+        if (details.gtpu.available_header_bytes >= 8U) {
+            gtpu_fields.push_back(make_summary_field("TEID", format_hex_value(details.gtpu.teid, 8)));
+        }
+        if (details.gtpu.sequence_number_flag_set) {
+            gtpu_fields.push_back(make_summary_field("S Flag", "Set"));
+        }
+        if (details.gtpu.npdu_number_flag_set) {
+            gtpu_fields.push_back(make_summary_field("PN Flag", "Set"));
+        }
+        if (details.gtpu.extension_header_flag_set) {
+            gtpu_fields.push_back(make_summary_field("E Flag", "Set"));
+        }
+        if (details.gtpu.sequence_number_present) {
+            gtpu_fields.push_back(make_summary_field(
+                "Sequence Number",
+                format_hex_value(details.gtpu.sequence_number, 4) + " (" + std::to_string(details.gtpu.sequence_number) + ")"
+            ));
+        }
+        if (details.gtpu.npdu_number_present) {
+            gtpu_fields.push_back(make_summary_field(
+                "N-PDU Number",
+                format_hex_value(details.gtpu.npdu_number, 2) + " (" +
+                    std::to_string(static_cast<unsigned>(details.gtpu.npdu_number)) + ")"
+            ));
+        }
+        if (details.gtpu.next_extension_header_type_present) {
+            gtpu_fields.push_back(make_summary_field(
+                "Next Extension Header Type",
+                format_gtpu_extension_header_type(details.gtpu.next_extension_header_type)
+            ));
+        }
+        if (details.gtpu.extension_headers_skipped_bytes > 0U) {
+            gtpu_fields.push_back(make_summary_field(
+                "Extension Headers Skipped",
+                std::to_string(details.gtpu.extension_headers_skipped_bytes) + " bytes"
+            ));
+        }
+        if (details.gtpu.has_inner_packet && details.gtpu.inner_packet) {
+            if (details.gtpu.inner_packet->has_ipv4) {
+                gtpu_fields.push_back(make_summary_field("Inner Payload", "IPv4"));
+            } else if (details.gtpu.inner_packet->has_ipv6) {
+                gtpu_fields.push_back(make_summary_field("Inner Payload", "IPv6"));
+            }
+        } else if (details.gtpu.unknown_inner_payload) {
+            gtpu_fields.push_back(make_summary_field("Inner Payload", "Unknown"));
+        }
+        if (details.gtpu.header_truncated) {
+            gtpu_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.gtpu.available_header_bytes)) + " / 8"
+            ));
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U header is truncated"));
+        }
+        if (details.gtpu.invalid_version) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U version is not supported"));
+        }
+        if (!details.gtpu.protocol_type_flag_set) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U PT flag is not set"));
+        }
+        if (details.gtpu.unsupported_message_type) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U message type is not supported"));
+        }
+        if (details.gtpu.optional_header_truncated) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U optional header is truncated"));
+        }
+        if (details.gtpu.extension_headers_truncated) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U extension header chain is truncated"));
+        }
+        if (details.gtpu.unknown_inner_payload) {
+            gtpu_fields.push_back(make_summary_field("Warning", "GTP-U inner payload type is not supported"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "gtpu",
+            .title = format_gtpu_summary_title(details.gtpu),
+            .fields = std::move(gtpu_fields),
+            .warning = details.gtpu.header_truncated ||
+                details.gtpu.invalid_version ||
+                !details.gtpu.protocol_type_flag_set ||
+                details.gtpu.unsupported_message_type ||
+                details.gtpu.optional_header_truncated ||
+                details.gtpu.extension_headers_truncated ||
+                details.gtpu.unknown_inner_payload,
+            .marker_text = (details.gtpu.header_truncated ||
+                    details.gtpu.invalid_version ||
+                    !details.gtpu.protocol_type_flag_set ||
+                    details.gtpu.unsupported_message_type ||
+                    details.gtpu.optional_header_truncated ||
+                    details.gtpu.extension_headers_truncated ||
+                    details.gtpu.unknown_inner_payload)
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (details.gtpu.has_inner_packet && details.gtpu.inner_packet) {
+            append_gtpu_inner_summary_layers(layers, *details.gtpu.inner_packet);
+        }
+    }
+
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
         append_layer_if_not_empty(layers, *trailer_layer);
     }
@@ -3073,6 +3810,224 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         if (details.pppoe.captured_payload_exceeds_declared) {
             builder << '\n' << '\t'
                     << "Warning: PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_vxlan) {
+        builder << "Protocol: VXLAN\n"
+                << '\t' << "Flags: " << format_hex_value(details.vxlan.flags, 2) << '\n'
+                << '\t' << "VNI Flag: " << (details.vxlan.i_flag_set ? "Set" : "Not set");
+        if (details.vxlan.available_header_bytes >= 7U) {
+            builder << '\n' << '\t' << "VNI: " << details.vxlan.vni;
+        }
+        if (details.vxlan.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.vxlan.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: VXLAN header is truncated.";
+        }
+        if (details.vxlan.invalid_header) {
+            if (!details.vxlan.i_flag_set) {
+                builder << '\n' << '\t' << "Warning: VXLAN VNI flag is not set.";
+            }
+            if (details.vxlan.reserved_bits_non_zero) {
+                builder << '\n' << '\t' << "Warning: VXLAN reserved header bytes are non-zero.";
+            }
+        }
+        if (details.vxlan.has_inner_ethernet) {
+            builder << '\n' << '\t' << "Inner Payload: Ethernet";
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+        }
+        if (details.inner_ethernet.header_truncated || details.vxlan.inner_ethernet_truncated) {
+            builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+        }
+        if (details.vxlan.has_inner_packet && details.vxlan.inner_packet) {
+            const auto& inner = *details.vxlan.inner_packet;
+            if (!inner.vlan_tags.empty()) {
+                builder << '\n' << '\t' << "Inner VLAN: " << vlan_identifier(inner.vlan_tags.front().tci);
+            }
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner IPv4: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                if (inner.ipv4.header_truncated ||
+                    inner.ipv4.header_length_bytes > inner.ipv4.available_header_bytes ||
+                    (ipv4_field_available(inner.ipv4, 4U) && inner.ipv4.total_length > inner.ipv4.available_packet_bytes)) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner IPv6: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+            }
+        }
+        return builder.str();
+    }
+
+    if (details.has_geneve) {
+        builder << "Protocol: Geneve\n"
+                << '\t' << "Version: " << static_cast<unsigned>(details.geneve.version) << '\n'
+                << '\t' << "Option Length: "
+                << static_cast<unsigned>(details.geneve.option_length_words) << " words ("
+                << details.geneve.option_length_bytes << " bytes)";
+        if (details.geneve.available_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "OAM Flag: " << (details.geneve.oam_flag ? "Set" : "Not set")
+                    << '\n' << '\t' << "Critical Flag: " << (details.geneve.critical_flag ? "Set" : "Not set");
+        }
+        if (details.geneve.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Protocol Type: "
+                    << format_geneve_protocol_type(details.geneve.protocol_type);
+        }
+        if (details.geneve.available_header_bytes >= 7U) {
+            builder << '\n' << '\t' << "VNI: " << details.geneve.vni;
+        }
+        builder << '\n' << '\t' << "Options Present: " << (details.geneve.options_present ? "Yes" : "No");
+        if (details.geneve.options_present) {
+            builder << '\n' << '\t' << "Options Skipped: " << details.geneve.option_length_bytes << " bytes";
+        }
+        if (details.geneve.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "Reserved Trailer: "
+                    << format_hex_value(details.geneve.reserved_trailer_byte, 2);
+        }
+        if (details.geneve.reserved_control_bits != 0U) {
+            builder << '\n' << '\t' << "Reserved Control Bits: "
+                    << format_hex_value(details.geneve.reserved_control_bits, 2);
+        }
+        if (details.geneve.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.geneve.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: Geneve header is truncated.";
+        }
+        if (details.geneve.invalid_version) {
+            builder << '\n' << '\t' << "Warning: Geneve version is not supported.";
+        }
+        if (details.geneve.options_truncated) {
+            builder << '\n' << '\t' << "Warning: Geneve options are truncated.";
+        }
+        if (!details.geneve.protocol_type_supported && details.geneve.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Warning: Geneve protocol type is not supported.";
+        }
+        if (details.geneve.has_inner_ethernet) {
+            builder << '\n' << '\t' << "Inner Payload: Ethernet";
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+        }
+        if (details.inner_ethernet.header_truncated || details.geneve.inner_ethernet_truncated) {
+            builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+        }
+        if (details.geneve.has_inner_packet && details.geneve.inner_packet) {
+            const auto& inner = *details.geneve.inner_packet;
+            if (!inner.vlan_tags.empty()) {
+                builder << '\n' << '\t' << "Inner VLAN: " << vlan_identifier(inner.vlan_tags.front().tci);
+            }
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner IPv4: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                if (inner.ipv4.header_truncated ||
+                    inner.ipv4.header_length_bytes > inner.ipv4.available_header_bytes ||
+                    (ipv4_field_available(inner.ipv4, 4U) && inner.ipv4.total_length > inner.ipv4.available_packet_bytes)) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner IPv6: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+            }
+        }
+        return builder.str();
+    }
+
+    if (details.has_gtpu) {
+        builder << "Protocol: GTP-U\n"
+                << '\t' << "Flags: " << format_gtpu_flags_summary(details.gtpu);
+        if (details.gtpu.available_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "Message Type: " << format_gtpu_message_type(details.gtpu.message_type);
+        }
+        if (details.gtpu.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Length: " << details.gtpu.length << " bytes";
+        }
+        if (details.gtpu.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "TEID: " << format_hex_value(details.gtpu.teid, 8);
+        }
+        if (details.gtpu.sequence_number_flag_set) {
+            builder << '\n' << '\t' << "S Flag: Set";
+        }
+        if (details.gtpu.npdu_number_flag_set) {
+            builder << '\n' << '\t' << "PN Flag: Set";
+        }
+        if (details.gtpu.extension_header_flag_set) {
+            builder << '\n' << '\t' << "E Flag: Set";
+        }
+        if (details.gtpu.sequence_number_present) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.gtpu.sequence_number, 4) << " ("
+                    << details.gtpu.sequence_number << ')';
+        }
+        if (details.gtpu.npdu_number_present) {
+            builder << '\n' << '\t' << "N-PDU Number: "
+                    << format_hex_value(details.gtpu.npdu_number, 2) << " ("
+                    << static_cast<unsigned>(details.gtpu.npdu_number) << ')';
+        }
+        if (details.gtpu.next_extension_header_type_present) {
+            builder << '\n' << '\t' << "Next Extension Header Type: "
+                    << format_gtpu_extension_header_type(details.gtpu.next_extension_header_type);
+        }
+        if (details.gtpu.extension_headers_skipped_bytes > 0U) {
+            builder << '\n' << '\t' << "Extension Headers Skipped: "
+                    << details.gtpu.extension_headers_skipped_bytes << " bytes";
+        }
+        if (details.gtpu.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.gtpu.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: GTP-U header is truncated.";
+        }
+        if (details.gtpu.invalid_version) {
+            builder << '\n' << '\t' << "Warning: GTP-U version is not supported.";
+        }
+        if (!details.gtpu.protocol_type_flag_set) {
+            builder << '\n' << '\t' << "Warning: GTP-U PT flag is not set.";
+        }
+        if (details.gtpu.unsupported_message_type) {
+            builder << '\n' << '\t' << "Warning: GTP-U message type is not supported.";
+        }
+        if (details.gtpu.optional_header_truncated) {
+            builder << '\n' << '\t' << "Warning: GTP-U optional header is truncated.";
+        }
+        if (details.gtpu.extension_headers_truncated) {
+            builder << '\n' << '\t' << "Warning: GTP-U extension header chain is truncated.";
+        }
+        if (details.gtpu.has_inner_packet && details.gtpu.inner_packet) {
+            const auto& inner = *details.gtpu.inner_packet;
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner Payload: IPv4"
+                        << '\n' << '\t' << "Inner IPv4: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                if (inner.ipv4_truncated) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner Payload: IPv6"
+                        << '\n' << '\t' << "Inner IPv6: "
+                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                if (inner.ipv6_truncated) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv6 packet is truncated.";
+                }
+            }
+        } else if (details.gtpu.unknown_inner_payload) {
+            builder << '\n' << '\t' << "Inner Payload: Unknown"
+                    << '\n' << '\t' << "Warning: GTP-U inner payload type is not supported.";
         }
         return builder.str();
     }
