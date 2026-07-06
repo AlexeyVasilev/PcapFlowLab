@@ -371,6 +371,9 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             case detail::kIpProtocolUdp:
                 flow_base.protocol = ProtocolId::udp;
                 break;
+            case detail::kIpProtocolSctp:
+                flow_base.protocol = ProtocolId::sctp;
+                break;
             case detail::kIpProtocolIcmp:
                 flow_base.protocol = ProtocolId::icmp;
                 break;
@@ -497,6 +500,32 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             };
         }
 
+        if (protocol == detail::kIpProtocolSctp) {
+            const auto sctp = detail::parse_sctp_common_header(
+                bounded_bytes,
+                transport_offset,
+                ipv4_bounds->nominal_packet_end
+            );
+            if (!sctp.has_value()) {
+                return {};
+            }
+
+            auto flow_key = flow_base;
+            flow_key.src_port = sctp->src_port;
+            flow_key.dst_port = sctp->dst_port;
+            flow_key.protocol = ProtocolId::sctp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+
+            return DecodedPacket {
+                .ipv4 = IngestedPacketV4 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
+                },
+            };
+        }
+
         if (protocol == detail::kIpProtocolIcmp) {
             if (bounded_bytes.size() < transport_offset + 2U) {
                 return {};
@@ -566,6 +595,9 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 break;
             case detail::kIpProtocolUdp:
                 flow_key.protocol = ProtocolId::udp;
+                break;
+            case detail::kIpProtocolSctp:
+                flow_key.protocol = ProtocolId::sctp;
                 break;
             case detail::kIpProtocolIcmpV6:
                 flow_key.protocol = ProtocolId::icmpv6;
@@ -680,6 +712,31 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 packet_ref.payload_length = static_cast<std::uint32_t>(
                     packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
             }
+
+            return DecodedPacket {
+                .ipv6 = IngestedPacketV6 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
+                },
+            };
+        }
+
+        if (payload->next_header == detail::kIpProtocolSctp) {
+            const auto sctp = detail::parse_sctp_common_header(
+                bounded_bytes,
+                payload->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+            );
+            if (!sctp.has_value()) {
+                return {};
+            }
+
+            flow_key.src_port = sctp->src_port;
+            flow_key.dst_port = sctp->dst_port;
+            flow_key.protocol = ProtocolId::sctp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
 
             return DecodedPacket {
                 .ipv6 = IngestedPacketV6 {

@@ -163,6 +163,8 @@ QString formatProtocol(const std::uint8_t protocol) {
         return "TCP";
     case ProtocolId::udp:
         return "UDP";
+    case ProtocolId::sctp:
+        return "SCTP";
     case ProtocolId::icmpv6:
         return "ICMPv6";
     default:
@@ -235,7 +237,11 @@ QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const in
 
     const QString port_term = protocol.compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0
         ? QStringLiteral("tcp.port")
-        : (protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0 ? QStringLiteral("udp.port") : QString {});
+        : (protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0
+            ? QStringLiteral("udp.port")
+            : (protocol.compare(QStringLiteral("SCTP"), Qt::CaseInsensitive) == 0
+                ? QStringLiteral("sctp.port")
+                : QString {}));
 
     if (address_term.isEmpty() || port_term.isEmpty() || address_a.isEmpty() || address_b.isEmpty()) {
         return {};

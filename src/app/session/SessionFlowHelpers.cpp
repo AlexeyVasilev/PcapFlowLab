@@ -43,6 +43,8 @@ std::string protocol_text(const ProtocolId protocol) {
         return "TCP";
     case ProtocolId::udp:
         return "UDP";
+    case ProtocolId::sctp:
+        return "SCTP";
     case ProtocolId::icmpv6:
         return "ICMPv6";
     default:

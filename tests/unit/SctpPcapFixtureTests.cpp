@@ -81,9 +81,7 @@ void expect_current_non_sctp_negative_behavior() {
     PFL_EXPECT(session.list_unrecognized_packets().empty());
 }
 
-#if defined(PFL_ENABLE_PENDING_SCTP_TESTS)
-
-void expect_future_sctp_flow_present(
+void expect_sctp_flow_present(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
     const std::string& address_a,
@@ -102,10 +100,11 @@ void expect_future_sctp_flow_present(
         return;
     }
 
+    PFL_EXPECT(rows.size() == 1U);
     PFL_EXPECT(flow->packet_count == expected_packet_count);
 }
 
-void expect_future_sctp_flow_absent(
+void expect_sctp_flow_absent(
     const std::filesystem::path& relative_path,
     const FlowAddressFamily family,
     const std::string& address_a,
@@ -121,12 +120,109 @@ void expect_future_sctp_flow_absent(
     PFL_EXPECT(flow == nullptr);
 }
 
+void run_default_outer_sctp_fixture_expectations() {
+    constexpr std::uint16_t kSctpSourcePort = 49132U;
+    constexpr std::uint16_t kSctpDestinationPort = 36412U;
+
+    expect_sctp_flow_present(
+        "parsing/sctp/01_sctp_ipv4_data_s1ap.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/02_sctp_ipv6_data_s1ap.pcap",
+        FlowAddressFamily::ipv6,
+        "2001:0db8:0132:0000:0000:0000:0000:0010",
+        kSctpSourcePort,
+        "2001:0db8:0132:0000:0000:0000:0000:0020",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/10_sctp_ipv4_init.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/11_sctp_ipv4_sack.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_absent(
+        "parsing/sctp/12_sctp_truncated_common_header.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/13_sctp_truncated_data_chunk_header.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/14_sctp_truncated_data_chunk_ppid.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/15_sctp_ipv4_bidirectional_flow.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        2U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/16_sctp_vlan_ipv4_data_s1ap.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/17_sctp_mpls_ipv4_data_s1ap.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+}
+
+#if defined(PFL_ENABLE_PENDING_SCTP_TESTS)
+
 void run_pending_future_sctp_fixture_expectations() {
     constexpr std::uint16_t kSctpSourcePort = 49132U;
     constexpr std::uint16_t kSctpDestinationPort = 36412U;
 
     const auto expect_ipv4_single_packet = [&](const std::filesystem::path& relative_path) {
-        expect_future_sctp_flow_present(
+        expect_sctp_flow_present(
             relative_path,
             FlowAddressFamily::ipv4,
             "10.132.0.10",
@@ -137,16 +233,6 @@ void run_pending_future_sctp_fixture_expectations() {
         );
     };
 
-    expect_ipv4_single_packet("parsing/sctp/01_sctp_ipv4_data_s1ap.pcap");
-    expect_future_sctp_flow_present(
-        "parsing/sctp/02_sctp_ipv6_data_s1ap.pcap",
-        FlowAddressFamily::ipv6,
-        "2001:db8:132::10",
-        kSctpSourcePort,
-        "2001:db8:132::20",
-        kSctpDestinationPort,
-        1U
-    );
     expect_ipv4_single_packet("parsing/sctp/03_sctp_ipv4_data_m3ua.pcap");
     expect_ipv4_single_packet("parsing/sctp/04_sctp_ipv4_data_dua.pcap");
     expect_ipv4_single_packet("parsing/sctp/05_sctp_ipv4_data_nbap.pcap");
@@ -154,29 +240,6 @@ void run_pending_future_sctp_fixture_expectations() {
     expect_ipv4_single_packet("parsing/sctp/07_sctp_ipv4_data_diameter.pcap");
     expect_ipv4_single_packet("parsing/sctp/08_sctp_ipv4_data_ngap.pcap");
     expect_ipv4_single_packet("parsing/sctp/09_sctp_ipv4_data_unknown_ppid.pcap");
-    expect_ipv4_single_packet("parsing/sctp/10_sctp_ipv4_init.pcap");
-    expect_ipv4_single_packet("parsing/sctp/11_sctp_ipv4_sack.pcap");
-    expect_future_sctp_flow_absent(
-        "parsing/sctp/12_sctp_truncated_common_header.pcap",
-        FlowAddressFamily::ipv4,
-        "10.132.0.10",
-        kSctpSourcePort,
-        "10.132.0.20",
-        kSctpDestinationPort
-    );
-    expect_ipv4_single_packet("parsing/sctp/13_sctp_truncated_data_chunk_header.pcap");
-    expect_ipv4_single_packet("parsing/sctp/14_sctp_truncated_data_chunk_ppid.pcap");
-    expect_future_sctp_flow_present(
-        "parsing/sctp/15_sctp_ipv4_bidirectional_flow.pcap",
-        FlowAddressFamily::ipv4,
-        "10.132.0.10",
-        kSctpSourcePort,
-        "10.132.0.20",
-        kSctpDestinationPort,
-        2U
-    );
-    expect_ipv4_single_packet("parsing/sctp/16_sctp_vlan_ipv4_data_s1ap.pcap");
-    expect_ipv4_single_packet("parsing/sctp/17_sctp_mpls_ipv4_data_s1ap.pcap");
     expect_ipv4_single_packet("parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap");
     expect_ipv4_single_packet("parsing/sctp/19_sctp_geneve_inner_ipv4_data_m3ua.pcap");
     expect_ipv4_single_packet("parsing/sctp/20_sctp_gtpu_inner_ipv4_data_s1ap.pcap");
@@ -191,10 +254,11 @@ void run_pending_future_sctp_fixture_expectations() {
 
 void run_sctp_pcap_fixture_tests() {
     expect_current_non_sctp_negative_behavior();
+    run_default_outer_sctp_fixture_expectations();
 
 #if defined(PFL_ENABLE_PENDING_SCTP_TESTS)
     // SCTP fixtures are committed ahead of transport/parser support.
-    // Enable these expectations during SCTP implementation work only.
+    // Remaining pending expectations cover PPID/presentation-only and overlay-inner SCTP.
     run_pending_future_sctp_fixture_expectations();
 #endif
 }

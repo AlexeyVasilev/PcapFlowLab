@@ -262,6 +262,8 @@ std::string build_wireshark_display_filter(const FlowRow& row) {
         port_term = "tcp.port";
     } else if (row.protocol_text == "UDP") {
         port_term = "udp.port";
+    } else if (row.protocol_text == "SCTP") {
+        port_term = "sctp.port";
     }
 
     if (address_term.empty() || port_term.empty() || row.address_a.empty() || row.address_b.empty()) {

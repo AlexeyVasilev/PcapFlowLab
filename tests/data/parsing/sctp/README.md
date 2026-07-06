@@ -18,6 +18,11 @@ Current branch intent:
 - show bounded first-chunk metadata when available;
 - recognize known DATA-chunk PPID values as presentation metadata only.
 
+Current implementation status:
+- outer IPv4/IPv6 SCTP flow extraction from the 12-byte common header is implemented;
+- VLAN and direct-inner-IP MPLS SCTP regression fixtures are expected to work through the existing shim paths;
+- selected-packet SCTP details, PPID presentation, and overlay-inner SCTP remain pending.
+
 Non-goals for this branch:
 - no SCTP stream reassembly;
 - no deep SCTP upper-layer protocol decoding;
