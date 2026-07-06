@@ -239,6 +239,10 @@ void populate_lenient_vxlan_details(
 
     const auto inner_ethernet_offset = vxlan_offset + detail::kVxlanHeaderSize;
     if (bounded_payload_end <= inner_ethernet_offset) {
+        details.vxlan.has_inner_ethernet = true;
+        details.vxlan.inner_ethernet_truncated = true;
+        detail::LinkLayerPayloadView inner_ethernet {};
+        populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
         return;
     }
 
@@ -438,6 +442,10 @@ void populate_lenient_geneve_details(
 
     const auto inner_ethernet_offset = geneve_offset + header_length;
     if (bounded_payload_end <= inner_ethernet_offset) {
+        details.geneve.has_inner_ethernet = true;
+        details.geneve.inner_ethernet_truncated = true;
+        detail::LinkLayerPayloadView inner_ethernet {};
+        populate_inner_ethernet_details(packet_bytes, inner_ethernet_offset, inner_ethernet, details);
         return;
     }
 

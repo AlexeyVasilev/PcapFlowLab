@@ -681,6 +681,7 @@ inline std::optional<VxlanPayloadView> parse_vxlan_payload(
     view.inner_ethernet_offset = view.inner_payload_offset;
 
     if (vxlan_payload_end <= view.inner_payload_offset) {
+        view.has_inner_ethernet = true;
         view.inner_ethernet_truncated = true;
         return view;
     }
@@ -749,6 +750,7 @@ inline std::optional<GenevePayloadView> parse_geneve_payload(
     view.inner_ethernet_offset = view.inner_payload_offset;
 
     if (geneve_payload_end <= view.inner_payload_offset) {
+        view.has_inner_ethernet = true;
         view.inner_ethernet_truncated = true;
         return view;
     }
