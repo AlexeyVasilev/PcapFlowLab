@@ -132,6 +132,7 @@ This behavior is shared by Qt UI and Tauri UI because both consume the same back
 | ICMPv6 | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | Selected-packet `Protocol` can show basic ICMPv6 text, and layered Summary now appends a dedicated ICMPv6 layer after IPv6. |
 | TCP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes TCP ports, raw sequence / acknowledgment numbers, header length, flags, window, checksum, urgent pointer, payload length, and a nested `TCP Options (N bytes)` subtree when options are present. The first shared on-demand parser handles EOL, NOP, MSS, Window Scale, SACK Permitted, SACK, Timestamps, unknown valid options, and conservative malformed/truncation warnings. Generic selected-packet `Protocol` text is not emitted for plain TCP packets, but higher-level analyzers can consume TCP payload. Stream falls back to generic `TCP Payload` rows when no HTTP/TLS specialization applies. |
 | UDP | Supported | Supported | Not supported | Supported | Partial | Supported | Supported | Supported | Layered Summary exposes UDP ports, length, checksum, and payload length. Generic selected-packet `Protocol` text is not emitted for plain UDP packets, but higher-level analyzers can consume UDP payload. Stream falls back to generic `UDP Payload` rows when no specialization applies. |
+| SCTP | Supported | Supported | Not supported | Supported | Supported | Not supported | Not supported | Supported | IPv4 protocol `132` and IPv6 next-header `132` now form normal SCTP flows keyed by source/destination IP plus SCTP source/destination ports. Selected-packet Summary / Protocol details show the SCTP common header, bounded first-chunk metadata, DATA PPID, and known PPID pseudo-layers for documented PPIDs. VLAN, MPLS direct-inner-IP, and supported VXLAN/Geneve/GTP-U inner-SCTP regression cases reuse the existing shim/overlay tuple paths. SCTP stream/reassembly is intentionally not implemented, SCTP checksum validation is not implemented, PPID recognition is presentation metadata only, and deep ASN.1 / SIGTRAN / Diameter parsing remains out of scope. |
 
 ## Support Matrix: Higher-Level Protocols And Hints
 
@@ -301,6 +302,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - deterministic Geneve fixtures including inner IPv4/IPv6 TCP/UDP continuation, bounded option skipping, VNI boundary values, inner VLAN composition, malformed/truncated headers, wrong-port negatives, unsupported-protocol cases, and selected-packet Geneve presentation coverage.
 - `gtpu`
   - deterministic GTP-U fixtures including direct inner IPv4/IPv6 TCP/UDP continuation, TEID boundary values, optional S/PN/E field coverage, bounded extension-header skip, malformed/truncated headers, wrong-port negatives, and selected-packet GTP-U presentation coverage.
+- `sctp`
+  - deterministic SCTP fixtures including direct IPv4/IPv6 common-header flow extraction, known and unknown DATA PPID presentation, INIT/SACK first-chunk coverage, truncated common-header / DATA-metadata cases, bidirectional grouping, VLAN/MPLS regression coverage, supported VXLAN/Geneve/GTP-U inner-SCTP regression coverage, and non-SCTP false-positive prevention.
 
 ### Unit-test areas worth checking when protocol support changes
 
@@ -320,6 +323,7 @@ Current protocol behavior is primarily exercised in:
 - `tests/unit/MplsPseudowirePcapFixtureTests.cpp`
 - `tests/unit/PbbPcapFixtureTests.cpp`
 - `tests/unit/MacsecPcapFixtureTests.cpp`
+- `tests/unit/SctpPcapFixtureTests.cpp`
 - `tests/unit/FragmentationTests.cpp`
 - `tests/unit/MalformedPacketHandlingTests.cpp`
 

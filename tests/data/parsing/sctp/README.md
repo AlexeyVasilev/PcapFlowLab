@@ -2,7 +2,7 @@ Synthetic SCTP parsing fixtures for regression tests.
 
 This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
 - plain IPv4 and IPv6 SCTP carrying minimal DATA chunks;
-- known SCTP PPID recognition cases for future selected-packet presentation;
+- known SCTP PPID recognition cases for selected-packet presentation;
 - non-DATA first-chunk cases such as INIT and SACK;
 - truncated SCTP common-header and DATA-chunk metadata cases;
 - bidirectional SCTP flow grouping by the normal normalized IP + port tuple;
@@ -133,7 +133,7 @@ Overlay and shim expectations:
 - `62` -> `F1AP`
 - `64` -> `E1AP`
 
-Expected future examples:
+Expected examples:
 - `SCTP DATA, PPID: S1AP (18)`
 - next pseudo-layer: `S1 Application Protocol`
 - `SCTP DATA, PPID: M3UA (3)`
@@ -146,93 +146,93 @@ Expected future examples:
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / S1AP-like payload bytes
 - PPID: `18` / `S1AP`
-- Expected future behavior: normal SCTP IPv4 flow plus SCTP common-header details and DATA metadata with S1AP PPID recognition.
+- Expected behavior: normal SCTP IPv4 flow plus SCTP common-header details and DATA metadata with S1AP PPID recognition.
 
 ### 02_sctp_ipv6_data_s1ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / SCTP / DATA chunk / S1AP-like payload bytes
 - PPID: `18` / `S1AP`
-- Expected future behavior: normal SCTP IPv6 flow plus the same PPID recognition as IPv4.
+- Expected behavior: normal SCTP IPv6 flow plus the same PPID recognition as IPv4.
 
 ### 03_sctp_ipv4_data_m3ua.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / M3UA-like payload bytes
 - PPID: `3` / `M3UA`
-- Expected future behavior: SCTP DATA PPID recognition can show `MTP 3 User Adaptation Layer`.
+- Expected behavior: SCTP DATA PPID recognition can show `MTP 3 User Adaptation Layer`.
 
 ### 04_sctp_ipv4_data_dua.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / DUA-like payload bytes
 - PPID: `10` / `DUA`
-- Expected future behavior: SCTP DATA PPID recognition shows `DUA`.
+- Expected behavior: SCTP DATA PPID recognition shows `DUA`.
 
 ### 05_sctp_ipv4_data_nbap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / NBAP-like payload bytes
 - PPID: `25` / `NBAP`
-- Expected future behavior: SCTP DATA PPID recognition shows `NBAP`.
+- Expected behavior: SCTP DATA PPID recognition shows `NBAP`.
 
 ### 06_sctp_ipv4_data_x2ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / X2AP-like payload bytes
 - PPID: `27` / `X2AP`
-- Expected future behavior: SCTP DATA PPID recognition shows `X2AP`.
+- Expected behavior: SCTP DATA PPID recognition shows `X2AP`.
 
 ### 07_sctp_ipv4_data_diameter.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / Diameter-like payload bytes
 - PPID: `46` / `Diameter`
-- Expected future behavior: SCTP DATA PPID recognition shows `Diameter` without deep AVP parsing.
+- Expected behavior: SCTP DATA PPID recognition shows `Diameter` without deep AVP parsing.
 
 ### 08_sctp_ipv4_data_ngap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / NGAP-like payload bytes
 - PPID: `60` / `NGAP`
-- Expected future behavior: SCTP DATA PPID recognition shows `NGAP`.
+- Expected behavior: SCTP DATA PPID recognition shows `NGAP`.
 
 ### 09_sctp_ipv4_data_unknown_ppid.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / unknown deterministic PPID
 - PPID: `0x12345678`
-- Expected future behavior: normal SCTP flow still works; PPID stays unknown and presentation remains generic SCTP payload.
+- Expected behavior: normal SCTP flow still works; PPID stays unknown and presentation remains generic SCTP payload.
 
 ### 10_sctp_ipv4_init.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / INIT chunk
-- Expected future behavior: common-header parsing works without DATA; first-chunk metadata may later show `INIT`; no PPID pseudo-layer.
+- Expected behavior: common-header parsing works without DATA; first-chunk metadata can show `INIT`; no PPID pseudo-layer.
 
 ### 11_sctp_ipv4_sack.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / SACK chunk
-- Expected future behavior: common-header parsing works for non-DATA chunks too; first-chunk metadata may later show `SACK`; no PPID pseudo-layer.
+- Expected behavior: common-header parsing works for non-DATA chunks too; first-chunk metadata can show `SACK`; no PPID pseudo-layer.
 
 ### 12_sctp_truncated_common_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / truncated SCTP common header
-- Expected future behavior: no normal SCTP flow should be fabricated by strict import decode.
+- Expected behavior: no normal SCTP flow should be fabricated by strict import decode.
 
 ### 13_sctp_truncated_data_chunk_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / full SCTP common header / partial first chunk header
-- Expected future behavior: strict flow extraction can still use the common header, but first-chunk parsing should be truncated and no PPID layer fabricated.
+- Expected behavior: strict flow extraction can still use the common header, but first-chunk parsing should be truncated and no PPID layer fabricated.
 
 ### 14_sctp_truncated_data_chunk_ppid.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / full SCTP common header / DATA chunk header / partial DATA fixed metadata before full PPID
-- Expected future behavior: normal SCTP flow can still exist, but no PPID layer should be fabricated.
+- Expected behavior: normal SCTP flow can still exist, but no PPID layer should be fabricated.
 
 ### 15_sctp_ipv4_bidirectional_flow.pcap
 
@@ -240,21 +240,21 @@ Expected future examples:
 - Layer chain:
   - packet 1: Ethernet / IPv4 / SCTP / DATA chunk
   - packet 2: Ethernet / IPv4 / SCTP / SACK chunk
-- Expected future behavior: one bidirectional SCTP flow with two packets.
+- Expected behavior: one bidirectional SCTP flow with two packets.
 
 ### 16_sctp_vlan_ipv4_data_s1ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / 802.1Q VLAN / IPv4 / SCTP / DATA chunk
 - PPID: `18` / `S1AP`
-- Expected future behavior: SCTP works behind existing VLAN shim support.
+- Expected behavior: SCTP works behind existing VLAN shim support.
 
 ### 17_sctp_mpls_ipv4_data_s1ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / MPLS / IPv4 / SCTP / DATA chunk
 - PPID: `18` / `S1AP`
-- Expected future behavior: SCTP works behind the existing direct-inner-IP MPLS path.
+- Expected behavior: SCTP works behind the existing direct-inner-IP MPLS path.
 
 ### 18_sctp_vxlan_inner_ipv4_data_s1ap.pcap
 
@@ -281,25 +281,52 @@ Expected future examples:
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / UDP / payload bytes that look SCTP-like
-- Expected future behavior: no SCTP flow/details should be fabricated from payload bytes when IP protocol is not SCTP.
+- Expected behavior: no SCTP flow/details should be fabricated from payload bytes when IP protocol is not SCTP.
 
 ### 22_sctp_ipv4_data_m2ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / M2AP-like payload bytes
 - PPID: `43` / `M2AP`
-- Expected future behavior: SCTP DATA PPID recognition shows `M2AP`.
+- Expected behavior: SCTP DATA PPID recognition shows `M2AP`.
 
 ### 23_sctp_ipv4_data_m3ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / M3AP-like payload bytes
 - PPID: `44` / `M3AP`
-- Expected future behavior: SCTP DATA PPID recognition shows `M3AP`.
+- Expected behavior: SCTP DATA PPID recognition shows `M3AP`.
 
 ### 24_sctp_ipv4_data_f1ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / SCTP / DATA chunk / F1AP-like payload bytes
 - PPID: `62` / `F1AP`
-- Expected future behavior: SCTP DATA PPID recognition shows `F1AP`.
+- Expected behavior: SCTP DATA PPID recognition shows `F1AP`.
+
+## Manual verification checklist
+
+Representative cases for review:
+
+- `01_sctp_ipv4_data_s1ap.pcap`
+- `02_sctp_ipv6_data_s1ap.pcap`
+- `03_sctp_ipv4_data_m3ua.pcap`
+- `09_sctp_ipv4_data_unknown_ppid.pcap`
+- `10_sctp_ipv4_init.pcap`
+- `12_sctp_truncated_common_header.pcap`
+- `14_sctp_truncated_data_chunk_ppid.pcap`
+- `16_sctp_vlan_ipv4_data_s1ap.pcap`
+- `17_sctp_mpls_ipv4_data_s1ap.pcap`
+- `18_sctp_vxlan_inner_ipv4_data_s1ap.pcap`
+- `19_sctp_geneve_inner_ipv4_data_m3ua.pcap`
+- `20_sctp_gtpu_inner_ipv4_data_s1ap.pcap`
+- `21_non_sctp_negative.pcap`
+
+Review checklist:
+
+- valid IPv4 and IPv6 SCTP packets form normal SCTP flows keyed by source/destination IP plus SCTP ports;
+- VLAN, MPLS, VXLAN, Geneve, and GTP-U regression fixtures preserve the expected inner SCTP tuple behavior;
+- selected-packet Summary / Protocol details show the SCTP common header, bounded first-chunk metadata, and known PPID naming where available;
+- unknown PPID stays generic and does not fabricate a known upper-layer;
+- truncated common-header / DATA-metadata cases remain conservative and do not fabricate ports or PPID pseudo-layers;
+- non-SCTP negative traffic does not fabricate SCTP flow or details from payload bytes alone.
