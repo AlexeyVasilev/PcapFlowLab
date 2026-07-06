@@ -22,7 +22,9 @@ Current implementation status:
 - outer IPv4/IPv6 SCTP flow extraction from the 12-byte common header is implemented;
 - VLAN and direct-inner-IP MPLS SCTP regression fixtures are expected to work through the existing shim paths;
 - selected-packet Summary / Protocol details now cover outer plain SCTP common-header fields, bounded first-chunk metadata, and known DATA PPID presentation;
-- overlay-inner SCTP behind VXLAN, Geneve, and GTP-U remains pending.
+- overlay-inner SCTP behind VXLAN, Geneve, and GTP-U now reuses the effective inner SCTP tuple for flow extraction;
+- selected-packet Summary / Protocol details now show overlay metadata plus sequential inner IPv4 / SCTP / DATA PPID presentation for supported VXLAN, Geneve, and GTP-U fixtures;
+- VNI / TEID remain presentation-only and are not yet part of flow identity.
 
 Non-goals for this branch:
 - no SCTP stream reassembly;
@@ -78,7 +80,8 @@ Current PPID behavior in selected-packet presentation:
 
 Overlay and shim expectations:
 - VLAN and MPLS are regression cases for already-supported shim paths;
-- VXLAN, Geneve, and GTP-U inner SCTP cases are committed now so later parser work can extend overlay inner tuple extraction from TCP/UDP to SCTP without introducing new fixture churn.
+- VXLAN, Geneve, and GTP-U inner SCTP cases now extend the existing overlay inner tuple path from TCP/UDP to SCTP;
+- overlay flow identity still uses the deepest inner 5-tuple only, so VNI / TEID namespace collisions remain future work.
 
 ## Shared constants
 
@@ -258,21 +261,21 @@ Expected future examples:
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / UDP / VXLAN / inner Ethernet / inner IPv4 / SCTP / DATA chunk
 - PPID: `18` / `S1AP`
-- Expected future behavior: later VXLAN inner tuple extraction should accept SCTP and key flows by the inner IPv4 + SCTP tuple.
+- Expected behavior: VXLAN inner tuple extraction accepts SCTP and keys flows by the inner IPv4 + SCTP tuple.
 
 ### 19_sctp_geneve_inner_ipv4_data_m3ua.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv4 / SCTP / DATA chunk
 - PPID: `3` / `M3UA`
-- Expected future behavior: later Geneve inner tuple extraction should accept SCTP and preserve PPID recognition.
+- Expected behavior: Geneve inner tuple extraction accepts SCTP and preserves PPID recognition.
 
 ### 20_sctp_gtpu_inner_ipv4_data_s1ap.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / UDP / GTP-U / direct inner IPv4 / SCTP / DATA chunk
 - PPID: `18` / `S1AP`
-- Expected future behavior: later GTP-U direct-inner-IP tuple extraction should accept SCTP; TEID remains presentation metadata only.
+- Expected behavior: GTP-U direct-inner-IP tuple extraction accepts SCTP; TEID remains presentation metadata only.
 
 ### 21_non_sctp_negative.pcap
 

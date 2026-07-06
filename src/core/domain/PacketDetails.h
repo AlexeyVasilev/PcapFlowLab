@@ -356,6 +356,8 @@ struct VxlanInnerPacketDetails {
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
 };
 
 struct GeneveInnerPacketDetails {
@@ -373,6 +375,8 @@ struct GeneveInnerPacketDetails {
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
 };
 
 struct GtpuInnerPacketDetails {
@@ -387,6 +391,8 @@ struct GtpuInnerPacketDetails {
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
 };
 
 struct IcmpDetails {

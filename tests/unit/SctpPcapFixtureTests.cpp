@@ -333,6 +333,165 @@ void expect_sctp_data_metadata_truncated_packet_details(const std::filesystem::p
     PFL_EXPECT(protocol_text.find("Warning: SCTP DATA chunk metadata is truncated.") != std::string::npos);
 }
 
+void expect_overlay_inner_sctp_packet_details(
+    const std::filesystem::path& relative_path,
+    const std::string& overlay_layer_id,
+    const std::string& overlay_title_fragment,
+    const std::string& overlay_field_label,
+    const std::string& overlay_field_fragment,
+    const std::string& expected_ppid_fragment,
+    const std::string& expected_payload_title,
+    const bool expect_inner_ethernet
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(relative_path)));
+
+    const auto packet = session.find_packet(0U);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+    PFL_EXPECT(details->has_ipv4 || details->has_ipv6);
+    if (overlay_layer_id == "vxlan") {
+        PFL_EXPECT(details->has_vxlan);
+        PFL_EXPECT(details->vxlan.has_inner_packet);
+        PFL_REQUIRE(details->vxlan.inner_packet != nullptr);
+        PFL_EXPECT(details->vxlan.inner_packet->has_sctp);
+    } else if (overlay_layer_id == "geneve") {
+        PFL_EXPECT(details->has_geneve);
+        PFL_EXPECT(details->geneve.has_inner_packet);
+        PFL_REQUIRE(details->geneve.inner_packet != nullptr);
+        PFL_EXPECT(details->geneve.inner_packet->has_sctp);
+    } else if (overlay_layer_id == "gtpu") {
+        PFL_EXPECT(details->has_gtpu);
+        PFL_EXPECT(details->gtpu.has_inner_packet);
+        PFL_REQUIRE(details->gtpu.inner_packet != nullptr);
+        PFL_EXPECT(details->gtpu.inner_packet->has_sctp);
+    }
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    const auto* overlay_layer = find_top_level_layer(summary_layers, overlay_layer_id);
+    PFL_REQUIRE(overlay_layer != nullptr);
+    PFL_EXPECT(overlay_layer->title.find(overlay_title_fragment) != std::string::npos);
+    PFL_EXPECT(layer_has_field_containing(*overlay_layer, overlay_field_label, overlay_field_fragment));
+
+    const auto overlay_index = [&]() {
+        for (std::size_t index = 0U; index < summary_layers.size(); ++index) {
+            if (summary_layers[index].id == overlay_layer_id) {
+                return index;
+            }
+        }
+        return summary_layers.size();
+    }();
+    PFL_REQUIRE(overlay_index < summary_layers.size());
+
+    const auto* inner_ethernet_layer = find_top_level_layer(summary_layers, "ethernet-inner");
+    PFL_EXPECT((inner_ethernet_layer != nullptr) == expect_inner_ethernet);
+    if (expect_inner_ethernet) {
+        PFL_REQUIRE(inner_ethernet_layer != nullptr);
+        PFL_EXPECT(title_contains_all(*inner_ethernet_layer, {
+            "Inner",
+            "02:00:00:00:86:01",
+            "02:00:00:00:86:02",
+        }));
+    }
+
+    const auto* inner_ipv4_layer = find_top_level_layer(summary_layers, "ipv4-inner");
+    PFL_REQUIRE(inner_ipv4_layer != nullptr);
+    PFL_EXPECT(title_contains_all(*inner_ipv4_layer, {
+        "Inner IPv4",
+        "10.132.0.10",
+        "10.132.0.20",
+    }));
+
+    const auto* inner_sctp_layer = find_top_level_layer(summary_layers, "sctp-inner");
+    PFL_REQUIRE(inner_sctp_layer != nullptr);
+    PFL_EXPECT(title_contains_all(*inner_sctp_layer, {
+        "Inner SCTP",
+        "49132",
+        "36412",
+    }));
+    PFL_EXPECT(layer_has_field_containing(*inner_sctp_layer, "Verification Tag", "0x10213243"));
+    PFL_EXPECT(layer_has_field_containing(*inner_sctp_layer, "Checksum", "0x00000000"));
+
+    const auto* chunk_layer = find_top_level_layer(summary_layers, "sctp-chunk");
+    PFL_REQUIRE(chunk_layer != nullptr);
+    PFL_EXPECT(title_contains_all(*chunk_layer, {"SCTP DATA", expected_ppid_fragment}));
+    PFL_EXPECT(layer_has_field_containing(*chunk_layer, "PPID", expected_ppid_fragment));
+
+    const auto* ppid_layer = find_top_level_layer(summary_layers, "sctp-ppid");
+    PFL_REQUIRE(ppid_layer != nullptr);
+    PFL_EXPECT(ppid_layer->title == expected_payload_title);
+
+    PFL_EXPECT(find_top_level_layer(summary_layers, "tcp-inner") == nullptr);
+    PFL_EXPECT(find_top_level_layer(summary_layers, "udp-inner") == nullptr);
+
+    const auto inner_ipv4_index = [&]() {
+        for (std::size_t index = 0U; index < summary_layers.size(); ++index) {
+            if (summary_layers[index].id == "ipv4-inner") {
+                return index;
+            }
+        }
+        return summary_layers.size();
+    }();
+    const auto inner_sctp_index = [&]() {
+        for (std::size_t index = 0U; index < summary_layers.size(); ++index) {
+            if (summary_layers[index].id == "sctp-inner") {
+                return index;
+            }
+        }
+        return summary_layers.size();
+    }();
+    const auto chunk_index = [&]() {
+        for (std::size_t index = 0U; index < summary_layers.size(); ++index) {
+            if (summary_layers[index].id == "sctp-chunk") {
+                return index;
+            }
+        }
+        return summary_layers.size();
+    }();
+    const auto ppid_index = [&]() {
+        for (std::size_t index = 0U; index < summary_layers.size(); ++index) {
+            if (summary_layers[index].id == "sctp-ppid") {
+                return index;
+            }
+        }
+        return summary_layers.size();
+    }();
+    PFL_REQUIRE(inner_ipv4_index < summary_layers.size());
+    PFL_REQUIRE(inner_sctp_index < summary_layers.size());
+    PFL_REQUIRE(chunk_index < summary_layers.size());
+    PFL_REQUIRE(ppid_index < summary_layers.size());
+    if (expect_inner_ethernet) {
+        const auto inner_ethernet_index = [&]() {
+            for (std::size_t index = 0U; index < summary_layers.size(); ++index) {
+                if (summary_layers[index].id == "ethernet-inner") {
+                    return index;
+                }
+            }
+            return summary_layers.size();
+        }();
+        PFL_REQUIRE(inner_ethernet_index < summary_layers.size());
+        PFL_EXPECT(overlay_index < inner_ethernet_index);
+        PFL_EXPECT(inner_ethernet_index < inner_ipv4_index);
+    } else {
+        PFL_EXPECT(overlay_index < inner_ipv4_index);
+    }
+    PFL_EXPECT(inner_ipv4_index < inner_sctp_index);
+    PFL_EXPECT(inner_sctp_index < chunk_index);
+    PFL_EXPECT(chunk_index < ppid_index);
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    PFL_EXPECT(protocol_text.find("Protocol: " + overlay_title_fragment) != std::string::npos);
+    PFL_EXPECT(protocol_text.find(overlay_field_label + ": " + overlay_field_fragment) != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner IPv4: SCTP") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner SCTP Source Port: 49132") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner SCTP Destination Port: 36412") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner SCTP Verification Tag: 0x10213243") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner SCTP First Chunk Type: DATA") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner SCTP PPID: " + expected_ppid_fragment) != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Recognized Inner Payload: " + expected_payload_title) != std::string::npos);
+}
+
 void run_default_outer_sctp_fixture_expectations() {
     constexpr std::uint16_t kSctpSourcePort = 49132U;
     constexpr std::uint16_t kSctpDestinationPort = 36412U;
@@ -437,6 +596,33 @@ void run_default_outer_sctp_fixture_expectations() {
     );
     expect_sctp_flow_present(
         "parsing/sctp/17_sctp_mpls_ipv4_data_s1ap.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/19_sctp_geneve_inner_ipv4_data_m3ua.pcap",
+        FlowAddressFamily::ipv4,
+        "10.132.0.10",
+        kSctpSourcePort,
+        "10.132.0.20",
+        kSctpDestinationPort,
+        1U
+    );
+    expect_sctp_flow_present(
+        "parsing/sctp/20_sctp_gtpu_inner_ipv4_data_s1ap.pcap",
         FlowAddressFamily::ipv4,
         "10.132.0.10",
         kSctpSourcePort,
@@ -560,43 +746,43 @@ void run_default_outer_sctp_fixture_expectations() {
         "F1 Application Protocol",
         "F1 Application Protocol"
     );
+    expect_overlay_inner_sctp_packet_details(
+        "parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap",
+        "vxlan",
+        "VXLAN",
+        "VNI",
+        "132",
+        "S1AP (18)",
+        "S1 Application Protocol",
+        true
+    );
+    expect_overlay_inner_sctp_packet_details(
+        "parsing/sctp/19_sctp_geneve_inner_ipv4_data_m3ua.pcap",
+        "geneve",
+        "Geneve",
+        "VNI",
+        "132",
+        "M3UA (3)",
+        "MTP 3 User Adaptation Layer",
+        true
+    );
+    expect_overlay_inner_sctp_packet_details(
+        "parsing/sctp/20_sctp_gtpu_inner_ipv4_data_s1ap.pcap",
+        "gtpu",
+        "GTP-U",
+        "TEID",
+        "0x01020384",
+        "S1AP (18)",
+        "S1 Application Protocol",
+        false
+    );
 }
-
-#if defined(PFL_ENABLE_PENDING_SCTP_TESTS)
-
-void run_pending_future_sctp_fixture_expectations() {
-    constexpr std::uint16_t kSctpSourcePort = 49132U;
-    constexpr std::uint16_t kSctpDestinationPort = 36412U;
-
-    const auto expect_ipv4_single_packet = [&](const std::filesystem::path& relative_path) {
-        expect_sctp_flow_present(
-            relative_path,
-            FlowAddressFamily::ipv4,
-            "10.132.0.10",
-            kSctpSourcePort,
-            "10.132.0.20",
-            kSctpDestinationPort,
-            1U
-        );
-    };
-
-    expect_ipv4_single_packet("parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap");
-    expect_ipv4_single_packet("parsing/sctp/19_sctp_geneve_inner_ipv4_data_m3ua.pcap");
-    expect_ipv4_single_packet("parsing/sctp/20_sctp_gtpu_inner_ipv4_data_s1ap.pcap");
-}
-
-#endif
 
 }  // namespace
 
 void run_sctp_pcap_fixture_tests() {
     expect_current_non_sctp_negative_behavior();
     run_default_outer_sctp_fixture_expectations();
-
-#if defined(PFL_ENABLE_PENDING_SCTP_TESTS)
-    // Remaining pending expectations cover overlay-inner SCTP behind VXLAN / Geneve / GTP-U.
-    run_pending_future_sctp_fixture_expectations();
-#endif
 }
 
 }  // namespace pfl::tests

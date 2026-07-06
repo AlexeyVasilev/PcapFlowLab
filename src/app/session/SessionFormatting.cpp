@@ -163,6 +163,24 @@ std::string format_protocol_summary_value_with_number(const std::uint8_t protoco
     return label + " (" + std::to_string(protocol) + ")";
 }
 
+std::string format_inner_transport_name(
+    const bool has_tcp,
+    const bool has_udp,
+    const bool has_sctp,
+    const std::uint8_t protocol
+) {
+    if (has_tcp) {
+        return "TCP";
+    }
+    if (has_udp) {
+        return "UDP";
+    }
+    if (has_sctp) {
+        return "SCTP";
+    }
+    return format_protocol_summary_value_with_number(protocol);
+}
+
 std::string format_sctp_chunk_type_name(const std::uint8_t type) {
     switch (type) {
     case 0U:
@@ -822,6 +840,21 @@ PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
     return layer;
 }
 
+PacketSummaryLayer build_inner_sctp_summary_layer(const SctpDetails& details) {
+    auto layer = build_sctp_summary_layer(details);
+    layer.id = "sctp-inner";
+    if (!details.common_header_truncated && details.available_common_header_bytes >= 4U) {
+        layer.title = "Inner SCTP, Src Port: " +
+            std::to_string(details.src_port) +
+            ", Dst Port: " + std::to_string(details.dst_port);
+    } else if (details.common_header_truncated) {
+        layer.title = "Inner SCTP, malformed";
+    } else {
+        layer.title = "Inner SCTP";
+    }
+    return layer;
+}
+
 void append_vxlan_inner_summary_layers(
     std::vector<PacketSummaryLayer>& layers,
     const PacketDetails& details,
@@ -841,6 +874,14 @@ void append_vxlan_inner_summary_layers(
             layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
         } else if (inner.has_udp) {
             layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
         }
         return;
     }
@@ -851,6 +892,14 @@ void append_vxlan_inner_summary_layers(
             layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
         } else if (inner.has_udp) {
             layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
         }
     }
 }
@@ -874,6 +923,14 @@ void append_geneve_inner_summary_layers(
             layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
         } else if (inner.has_udp) {
             layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
         }
         return;
     }
@@ -884,6 +941,14 @@ void append_geneve_inner_summary_layers(
             layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
         } else if (inner.has_udp) {
             layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
         }
     }
 }
@@ -913,6 +978,14 @@ void append_gtpu_inner_summary_layers(
             layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
         } else if (inner.has_udp) {
             layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
         }
         return;
     }
@@ -960,6 +1033,14 @@ void append_gtpu_inner_summary_layers(
             layers.push_back(build_inner_tcp_summary_layer(inner.tcp));
         } else if (inner.has_udp) {
             layers.push_back(build_inner_udp_summary_layer(inner.udp));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
         }
     }
 }
@@ -4150,7 +4231,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             }
             if (inner.has_ipv4) {
                 builder << '\n' << '\t' << "Inner IPv4: "
-                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv4.protocol);
                 if (inner.ipv4.header_truncated ||
                     inner.ipv4.header_length_bytes > inner.ipv4.available_header_bytes ||
                     (ipv4_field_available(inner.ipv4, 4U) && inner.ipv4.total_length > inner.ipv4.available_packet_bytes)) {
@@ -4158,7 +4239,22 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                 }
             } else if (inner.has_ipv6) {
                 builder << '\n' << '\t' << "Inner IPv6: "
-                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv6.next_header);
+            }
+            if (inner.has_sctp) {
+                builder << '\n' << '\t' << "Inner SCTP Source Port: " << inner.sctp.src_port
+                        << '\n' << '\t' << "Inner SCTP Destination Port: " << inner.sctp.dst_port
+                        << '\n' << '\t' << "Inner SCTP Verification Tag: " << format_hex_value(inner.sctp.verification_tag, 8);
+                if (inner.sctp.first_chunk_present) {
+                    builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
+                            << format_sctp_chunk_type_name(inner.sctp.first_chunk_type);
+                }
+                if (inner.sctp.data_metadata_present && inner.sctp.data_metadata_available_bytes >= 12U) {
+                    builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(inner.sctp.ppid);
+                    if (const auto display = lookup_sctp_ppid_display(inner.sctp.ppid); display.has_value()) {
+                        builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
+                    }
+                }
             }
         }
         return builder.str();
@@ -4229,7 +4325,7 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             }
             if (inner.has_ipv4) {
                 builder << '\n' << '\t' << "Inner IPv4: "
-                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv4.protocol);
                 if (inner.ipv4.header_truncated ||
                     inner.ipv4.header_length_bytes > inner.ipv4.available_header_bytes ||
                     (ipv4_field_available(inner.ipv4, 4U) && inner.ipv4.total_length > inner.ipv4.available_packet_bytes)) {
@@ -4237,7 +4333,22 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                 }
             } else if (inner.has_ipv6) {
                 builder << '\n' << '\t' << "Inner IPv6: "
-                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv6.next_header);
+            }
+            if (inner.has_sctp) {
+                builder << '\n' << '\t' << "Inner SCTP Source Port: " << inner.sctp.src_port
+                        << '\n' << '\t' << "Inner SCTP Destination Port: " << inner.sctp.dst_port
+                        << '\n' << '\t' << "Inner SCTP Verification Tag: " << format_hex_value(inner.sctp.verification_tag, 8);
+                if (inner.sctp.first_chunk_present) {
+                    builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
+                            << format_sctp_chunk_type_name(inner.sctp.first_chunk_type);
+                }
+                if (inner.sctp.data_metadata_present && inner.sctp.data_metadata_available_bytes >= 12U) {
+                    builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(inner.sctp.ppid);
+                    if (const auto display = lookup_sctp_ppid_display(inner.sctp.ppid); display.has_value()) {
+                        builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
+                    }
+                }
             }
         }
         return builder.str();
@@ -4307,16 +4418,31 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
             if (inner.has_ipv4) {
                 builder << '\n' << '\t' << "Inner Payload: IPv4"
                         << '\n' << '\t' << "Inner IPv4: "
-                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv4.protocol)));
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv4.protocol);
                 if (inner.ipv4_truncated) {
                     builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
                 }
             } else if (inner.has_ipv6) {
                 builder << '\n' << '\t' << "Inner Payload: IPv6"
                         << '\n' << '\t' << "Inner IPv6: "
-                        << (inner.has_tcp ? "TCP" : (inner.has_udp ? "UDP" : format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv6.next_header);
                 if (inner.ipv6_truncated) {
                     builder << '\n' << '\t' << "Warning: Inner IPv6 packet is truncated.";
+                }
+            }
+            if (inner.has_sctp) {
+                builder << '\n' << '\t' << "Inner SCTP Source Port: " << inner.sctp.src_port
+                        << '\n' << '\t' << "Inner SCTP Destination Port: " << inner.sctp.dst_port
+                        << '\n' << '\t' << "Inner SCTP Verification Tag: " << format_hex_value(inner.sctp.verification_tag, 8);
+                if (inner.sctp.first_chunk_present) {
+                    builder << '\n' << '\t' << "Inner SCTP First Chunk Type: "
+                            << format_sctp_chunk_type_name(inner.sctp.first_chunk_type);
+                }
+                if (inner.sctp.data_metadata_present && inner.sctp.data_metadata_available_bytes >= 12U) {
+                    builder << '\n' << '\t' << "Inner SCTP PPID: " << format_sctp_ppid_value(inner.sctp.ppid);
+                    if (const auto display = lookup_sctp_ppid_display(inner.sctp.ppid); display.has_value()) {
+                        builder << '\n' << '\t' << "Recognized Inner Payload: " << display->full_name;
+                    }
                 }
             }
         } else if (details.gtpu.unknown_inner_payload) {

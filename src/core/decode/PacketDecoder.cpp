@@ -113,6 +113,31 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
         };
     }
 
+    if (protocol == detail::kIpProtocolSctp) {
+        const auto sctp = detail::parse_sctp_common_header(bounded_bytes, transport_offset, packet_end);
+        if (!sctp.has_value()) {
+            return std::nullopt;
+        }
+
+        FlowKeyV4 flow_key {
+            .src_addr = detail::read_be32(bounded_bytes, ipv4_offset + 12U),
+            .dst_addr = detail::read_be32(bounded_bytes, ipv4_offset + 16U),
+            .src_port = sctp->src_port,
+            .dst_port = sctp->dst_port,
+            .protocol = ProtocolId::sctp,
+        };
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+
+        return DecodedPacket {
+            .ipv4 = IngestedPacketV4 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+        };
+    }
+
     return std::nullopt;
 }
 
@@ -198,6 +223,31 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
 
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+
+        return DecodedPacket {
+            .ipv6 = IngestedPacketV6 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+        };
+    }
+
+    if (payload->next_header == detail::kIpProtocolSctp) {
+        const auto sctp = detail::parse_sctp_common_header(
+            bounded_bytes,
+            payload->payload_offset,
+            packet_end
+        );
+        if (!sctp.has_value()) {
+            return std::nullopt;
+        }
+
+        flow_key.src_port = sctp->src_port;
+        flow_key.dst_port = sctp->dst_port;
+        flow_key.protocol = ProtocolId::sctp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
 
         return DecodedPacket {
             .ipv6 = IngestedPacketV6 {

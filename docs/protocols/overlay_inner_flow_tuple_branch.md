@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add support for common encapsulation protocols that appear above outer UDP and carry an inner IPv4/IPv6 plus TCP/UDP packet, so Pcap Flow Lab can build flows from the effective inner 5-tuple.
+Add support for common encapsulation protocols that appear above outer UDP and carry an inner IPv4/IPv6 plus TCP/UDP/SCTP packet, so Pcap Flow Lab can build flows from the effective inner 5-tuple.
 
 This branch is intentionally focused on UDP-based overlays first.
 
@@ -33,7 +33,7 @@ This branch does not aim to:
 
 ## Known limitation: tunnel namespace collisions
 
-The initial branch rule is to use the deepest successfully decoded inner IPv4/IPv6 plus TCP/UDP tuple as the effective flow tuple.
+The initial branch rule is to use the deepest successfully decoded inner IPv4/IPv6 plus TCP/UDP/SCTP tuple as the effective flow tuple.
 
 This can merge traffic from different tunnel namespaces when the inner tuple is identical. Example:
 
@@ -57,9 +57,9 @@ The intended tuple rule for this branch is:
 
 Expected initial protocol shapes:
 
-- VXLAN: outer IPv4/IPv6 -> UDP/4789 -> VXLAN -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP
-- Geneve: outer IPv4/IPv6 -> UDP/6081 -> Geneve -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP
-- GTP-U: outer IPv4/IPv6 -> UDP/2152 -> GTP-U -> inner IPv4/IPv6 -> TCP/UDP
+- VXLAN: outer IPv4/IPv6 -> UDP/4789 -> VXLAN -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP/SCTP
+- Geneve: outer IPv4/IPv6 -> UDP/6081 -> Geneve -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP/SCTP
+- GTP-U: outer IPv4/IPv6 -> UDP/2152 -> GTP-U -> inner IPv4/IPv6 -> TCP/UDP/SCTP
 
 ## Current tuple construction path
 
@@ -312,11 +312,11 @@ Still intentionally not solved:
 - VXLAN Packet Details / Summary preserve the outer IPv4/IPv6 and UDP presentation and add overlay metadata plus bounded sequential inner continuation when available
 - selected-packet Summary / Protocol details now show a VXLAN layer with flags, VNI flag state, and VNI
 - selected-packet Summary / Protocol details now also show a Geneve layer with version, option length, protocol type, VNI, and warnings for malformed/truncated UDP/6081 Geneve-like payloads
-- when the Geneve payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
-- when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
-- supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures
+- when the Geneve payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` / `Inner SCTP` layers as available, with inner layer titles carrying addresses/ports where applicable
+- when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` / `Inner SCTP` layers as available, with inner layer titles carrying addresses/ports where applicable
+- supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP / SCTP presentation for valid fixtures
 - outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN or Geneve and then the sequential inner continuation layers
-- GTP-U selected-packet Summary / Protocol details are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available for both outer IPv4 and outer IPv6 UDP carriers
+- GTP-U selected-packet Summary / Protocol details are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP/SCTP layers when safely available for both outer IPv4 and outer IPv6 UDP carriers
 - known GTP-U message types and known next-extension-header types may be named in selected-packet presentation, but extension headers are still handled as shallow bounded skip-only metadata rather than deep parsed structures
 - malformed/truncated/unsupported GTP-U selected-packet presentation remains lenient and warning-oriented on UDP/2152 only; it does not change effective flow tuple extraction
 - selected-packet VXLAN details are intentionally more lenient than flow extraction for UDP/4789 payloads, so malformed or invalid VXLAN-like packets can still surface best-effort VXLAN metadata and bounded inner warning layers without producing an inner flow tuple
