@@ -255,7 +255,7 @@ Selected-flow Stream currently supports only a subset of protocol-aware timeline
 The L2/L3 shim work in this branch intentionally does not claim support for:
 
 - QUIC false-positive cleanup beyond the bounded shim changes already implemented;
-- IP-in-IP, GRE, GTP-U, ESP/AH, or L2TP;
+- IP-in-IP, GRE, ESP/AH, L2TP, or GTP-U shapes outside the documented GTPv1-U T-PDU subset;
 - MACsec decryption, ICV validation, MKA/SAK handling, or inner flow recovery;
 - PBB-TE, OAM/CFM, PBB control-plane behavior, or bridge-learning semantics;
 - PPPoE session-negotiation or control-plane semantics beyond conservative Discovery / PPP-control presentation;
@@ -299,6 +299,8 @@ Current parsing fixture directories under `tests/data/parsing/` include:
   - deterministic VXLAN fixtures including inner IPv4/IPv6 TCP/UDP continuation, VNI boundary values, inner VLAN composition, malformed/truncated headers, wrong-port negatives, and selected-packet VXLAN presentation coverage.
 - `geneve`
   - deterministic Geneve fixtures including inner IPv4/IPv6 TCP/UDP continuation, bounded option skipping, VNI boundary values, inner VLAN composition, malformed/truncated headers, wrong-port negatives, unsupported-protocol cases, and selected-packet Geneve presentation coverage.
+- `gtpu`
+  - deterministic GTP-U fixtures including direct inner IPv4/IPv6 TCP/UDP continuation, TEID boundary values, optional S/PN/E field coverage, bounded extension-header skip, malformed/truncated headers, wrong-port negatives, and selected-packet GTP-U presentation coverage.
 
 ### Unit-test areas worth checking when protocol support changes
 
