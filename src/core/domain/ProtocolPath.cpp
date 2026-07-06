@@ -122,6 +122,51 @@ std::size_t ProtocolPathHash::operator()(const ProtocolPath& path) const noexcep
     return seed;
 }
 
+bool ProtocolPathBuilder::push(const LayerKey layer) noexcept {
+    if (overflowed_ || size_ >= kMaxProtocolPathLayers) {
+        overflowed_ = true;
+        return false;
+    }
+
+    layers_[size_] = layer;
+    ++size_;
+    return true;
+}
+
+bool ProtocolPathBuilder::full() const noexcept {
+    return size_ == kMaxProtocolPathLayers;
+}
+
+bool ProtocolPathBuilder::overflowed() const noexcept {
+    return overflowed_;
+}
+
+std::size_t ProtocolPathBuilder::size() const noexcept {
+    return size_;
+}
+
+bool ProtocolPathBuilder::empty() const noexcept {
+    return size_ == 0U;
+}
+
+const LayerKey& ProtocolPathBuilder::operator[](const std::size_t index) const noexcept {
+    return layers_[index];
+}
+
+ProtocolPath ProtocolPathBuilder::to_path() const {
+    std::vector<LayerKey> layers {};
+    layers.reserve(size_);
+    for (std::size_t index = 0; index < size_; ++index) {
+        layers.push_back(layers_[index]);
+    }
+    return ProtocolPath {std::move(layers)};
+}
+
+void ProtocolPathBuilder::clear() noexcept {
+    size_ = 0U;
+    overflowed_ = false;
+}
+
 ProtocolPathId ProtocolPathRegistry::intern(const ProtocolPath& path) {
     if (const auto found = ids_.find(path); found != ids_.end()) {
         return found->second;

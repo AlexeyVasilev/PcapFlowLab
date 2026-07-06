@@ -210,6 +210,102 @@ void expect_formatting() {
     PFL_EXPECT(format_protocol_path(gtpu) == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020384) -> IPv4 -> SCTP");
 }
 
+void expect_builder_empty_state() {
+    ProtocolPathBuilder builder {};
+
+    PFL_EXPECT(builder.empty());
+    PFL_EXPECT(builder.size() == 0U);
+    PFL_EXPECT(!builder.full());
+    PFL_EXPECT(!builder.overflowed());
+
+    const auto path = builder.to_path();
+    PFL_EXPECT(path.empty());
+}
+
+void expect_builder_push_order() {
+    ProtocolPathBuilder builder {};
+
+    PFL_EXPECT(builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(builder.push(LayerKey::tcp()));
+    PFL_EXPECT(builder.size() == 3U);
+    PFL_EXPECT(!builder.empty());
+    PFL_EXPECT(builder[0] == LayerKey::ethernet_ii());
+    PFL_EXPECT(builder[1] == LayerKey::ipv4());
+    PFL_EXPECT(builder[2] == LayerKey::tcp());
+
+    const auto path = builder.to_path();
+    PFL_EXPECT(path.size() == 3U);
+    PFL_EXPECT(format_protocol_path(path) == "EthernetII -> IPv4 -> TCP");
+}
+
+void expect_builder_identifier_layers() {
+    ProtocolPathBuilder builder {};
+    PFL_EXPECT(builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(builder.push(LayerKey::mpls(102U)));
+    PFL_EXPECT(builder.push(LayerKey::vlan(200U)));
+    PFL_EXPECT(builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(builder.push(LayerKey::tcp()));
+
+    const auto path = builder.to_path();
+    const ProtocolPath expected {
+        LayerKey::ethernet_ii(),
+        LayerKey::mpls(102U),
+        LayerKey::vlan(200U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    PFL_EXPECT(path == expected);
+}
+
+void expect_builder_clear_and_reuse() {
+    ProtocolPathBuilder builder {};
+    PFL_EXPECT(builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(builder.push(LayerKey::tcp()));
+    PFL_EXPECT(builder.size() == 3U);
+
+    builder.clear();
+    PFL_EXPECT(builder.empty());
+    PFL_EXPECT(builder.size() == 0U);
+    PFL_EXPECT(!builder.full());
+    PFL_EXPECT(!builder.overflowed());
+
+    PFL_EXPECT(builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(builder.push(LayerKey::ipv6()));
+    PFL_EXPECT(builder.push(LayerKey::udp()));
+
+    const auto path = builder.to_path();
+    PFL_EXPECT(format_protocol_path(path) == "EthernetII -> IPv6 -> UDP");
+}
+
+void expect_builder_capacity_and_overflow() {
+    ProtocolPathBuilder builder {};
+
+    for (std::size_t index = 0U; index < kMaxProtocolPathLayers; ++index) {
+        const auto layer = (index % 2U) == 0U ? LayerKey::ethernet_ii() : LayerKey::ipv4();
+        PFL_EXPECT(builder.push(layer));
+    }
+
+    PFL_EXPECT(builder.size() == kMaxProtocolPathLayers);
+    PFL_EXPECT(builder.full());
+    PFL_EXPECT(!builder.overflowed());
+
+    const auto prefix_path = builder.to_path();
+    PFL_EXPECT(prefix_path.size() == kMaxProtocolPathLayers);
+
+    PFL_EXPECT(!builder.push(LayerKey::tcp()));
+    PFL_EXPECT(builder.overflowed());
+    PFL_EXPECT(builder.full());
+    PFL_EXPECT(builder.size() == kMaxProtocolPathLayers);
+    PFL_EXPECT(builder.to_path() == prefix_path);
+
+    PFL_EXPECT(!builder.push(LayerKey::udp()));
+    PFL_EXPECT(builder.overflowed());
+    PFL_EXPECT(builder.size() == kMaxProtocolPathLayers);
+    PFL_EXPECT(builder.to_path() == prefix_path);
+}
+
 }  // namespace
 
 void run_protocol_path_tests() {
@@ -218,6 +314,11 @@ void run_protocol_path_tests() {
     expect_identifier_differences();
     expect_registry_interning();
     expect_formatting();
+    expect_builder_empty_state();
+    expect_builder_push_order();
+    expect_builder_identifier_layers();
+    expect_builder_clear_and_reuse();
+    expect_builder_capacity_and_overflow();
 }
 
 }  // namespace pfl::tests

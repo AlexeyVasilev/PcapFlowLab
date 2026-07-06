@@ -182,6 +182,9 @@ Stage-B implementation notes:
 - The standalone owned `ProtocolPath` model may use `std::vector<LayerKey>`.
 - A future decode hot-path builder can still use bounded inline storage before interning into the registry.
 - The initial model can reuse the same `EthernetII` kind for both outer and inner Ethernet positions, with path ordering and context distinguishing them.
+- Current builder capacity is `32` layers via `kMaxProtocolPathLayers`.
+- Builder overflow does not append additional layers and preserves only the already-stored prefix.
+- Future decode integration must treat builder overflow conservatively rather than silently fabricating a complete exact path.
 
 ## Identifiers Included In V1
 

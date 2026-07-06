@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <compare>
@@ -108,6 +109,25 @@ struct ProtocolPathHash {
 
 using ProtocolPathId = std::uint32_t;
 inline constexpr ProtocolPathId kInvalidProtocolPathId = 0U;
+inline constexpr std::size_t kMaxProtocolPathLayers = 32U;
+
+class ProtocolPathBuilder {
+public:
+    [[nodiscard]] bool push(LayerKey layer) noexcept;
+    [[nodiscard]] bool full() const noexcept;
+    [[nodiscard]] bool overflowed() const noexcept;
+    [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] const LayerKey& operator[](std::size_t index) const noexcept;
+
+    [[nodiscard]] ProtocolPath to_path() const;
+    void clear() noexcept;
+
+private:
+    std::array<LayerKey, kMaxProtocolPathLayers> layers_ {};
+    std::size_t size_ {0};
+    bool overflowed_ {false};
+};
 
 class ProtocolPathRegistry {
 public:
