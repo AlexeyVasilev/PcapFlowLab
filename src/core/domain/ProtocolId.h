@@ -11,6 +11,7 @@ enum class ProtocolId : std::uint8_t {
     tcp = 6,
     udp = 17,
     icmpv6 = 58,
+    sctp = 132,
     arp = 253,
 };
 

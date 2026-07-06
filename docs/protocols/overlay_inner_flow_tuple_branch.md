@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add support for common encapsulation protocols that appear above outer UDP and carry an inner IPv4/IPv6 plus TCP/UDP packet, so Pcap Flow Lab can build flows from the effective inner 5-tuple.
+Add support for common encapsulation protocols that appear above outer UDP and carry an inner IPv4/IPv6 plus TCP/UDP/SCTP packet, so Pcap Flow Lab can build flows from the effective inner 5-tuple.
 
 This branch is intentionally focused on UDP-based overlays first.
 
@@ -28,12 +28,12 @@ This branch does not aim to:
 - add outer-plus-inner dual flow table modes;
 - add full tunnel session tracking;
 - parse encrypted tunnel payloads;
-- add application-layer parsers beyond existing inner IPv4/IPv6 TCP/UDP handling;
+- add application-layer parsers beyond existing inner IPv4/IPv6 TCP/UDP/SCTP handling;
 - make open/import materially more expensive through deep recursive packet materialization.
 
 ## Known limitation: tunnel namespace collisions
 
-The initial branch rule is to use the deepest successfully decoded inner IPv4/IPv6 plus TCP/UDP tuple as the effective flow tuple.
+The initial branch rule is to use the deepest successfully decoded inner IPv4/IPv6 plus TCP/UDP/SCTP tuple as the effective flow tuple.
 
 This can merge traffic from different tunnel namespaces when the inner tuple is identical. Example:
 
@@ -44,7 +44,7 @@ Both would currently collapse to the same flow if only the inner 5-tuple is used
 
 Accepted branch limitation:
 
-- initial flow grouping uses only the effective deepest inner IPv4/IPv6 plus TCP/UDP tuple;
+- initial flow grouping uses only the effective deepest inner IPv4/IPv6 plus TCP/UDP/SCTP tuple;
 - future flow identity should include an optional tunnel discriminator such as VXLAN VNI, Geneve VNI, GTP-U TEID, GRE key, or similar namespace metadata.
 
 ## Effective tuple rule
@@ -52,14 +52,14 @@ Accepted branch limitation:
 The intended tuple rule for this branch is:
 
 - if no supported overlay is present, keep current tuple behavior;
-- if a supported overlay is present and an inner IPv4/IPv6 plus TCP/UDP tuple is successfully decoded, use the inner tuple as the effective flow tuple;
-- if overlay parsing succeeds but the inner packet does not yield a valid IPv4/IPv6 plus TCP/UDP tuple, stay conservative and do not fabricate a normal flow.
+- if a supported overlay is present and an inner IPv4/IPv6 plus TCP/UDP/SCTP tuple is successfully decoded, use the inner tuple as the effective flow tuple;
+- if overlay parsing succeeds but the inner packet does not yield a valid IPv4/IPv6 plus TCP/UDP/SCTP tuple, stay conservative and do not fabricate a normal flow.
 
 Expected initial protocol shapes:
 
-- VXLAN: outer IPv4/IPv6 -> UDP/4789 -> VXLAN -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP
-- Geneve: outer IPv4/IPv6 -> UDP/6081 -> Geneve -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP
-- GTP-U: outer IPv4/IPv6 -> UDP/2152 -> GTP-U -> inner IPv4/IPv6 -> TCP/UDP
+- VXLAN: outer IPv4/IPv6 -> UDP/4789 -> VXLAN -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP/SCTP
+- Geneve: outer IPv4/IPv6 -> UDP/6081 -> Geneve -> inner Ethernet -> inner IPv4/IPv6 -> TCP/UDP/SCTP
+- GTP-U: outer IPv4/IPv6 -> UDP/2152 -> GTP-U -> inner IPv4/IPv6 -> TCP/UDP/SCTP
 
 ## Current tuple construction path
 
@@ -69,7 +69,7 @@ Current flow-key construction is concentrated in the import/decode path:
   - `PacketDecoder::decode(...)`
   - calls `detail::parse_network_payload(...)` to resolve Ethernet/L2 shim continuation;
   - then directly builds `FlowKeyV4` or `FlowKeyV6` from the resolved network packet and transport header;
-  - today the decoder stops at ARP / IPv4 / IPv6 plus TCP / UDP / ICMP / IGMP / ICMPv6.
+  - today the decoder stops at ARP / IPv4 / IPv6 plus TCP / UDP / SCTP / ICMP / IGMP / ICMPv6.
 - `src/core/services/CaptureImportProcessor.cpp`
   - consumes `DecodedPacket`;
   - passes `IngestedPacketV4` / `IngestedPacketV6` to `PacketIngestor`;
@@ -119,7 +119,7 @@ Recommended structure:
    - derive bounded inner payload offsets;
    - for VXLAN/Geneve, continue through inner Ethernet using the same Ethernet continuation helpers already used elsewhere;
    - for GTP-U, continue directly to inner IPv4/IPv6;
-   - if a valid inner IPv4/IPv6 plus TCP/UDP tuple is found, return an effective inner flow key and payload metadata;
+   - if a valid inner IPv4/IPv6 plus TCP/UDP/SCTP tuple is found, return an effective inner flow key and payload metadata;
    - otherwise return no inner tuple and let the current outer UDP behavior stand or remain conservative, depending on the final per-protocol policy.
 
 Why this is the safest initial insertion point:
@@ -234,7 +234,7 @@ Recommended fixture cases per protocol:
 Recommended assertion shape:
 
 - open/import succeeds where supported;
-- expected inner IPv4/IPv6 TCP/UDP flow is created from the effective inner tuple;
+- expected inner IPv4/IPv6 TCP/UDP/SCTP flow is created from the effective inner tuple;
 - selected-packet Summary shows outer UDP plus overlay layer plus inner layers;
 - malformed cases stay conservative and do not fabricate normal flows;
 - protocol details can show tunnel metadata and truncation warnings when present.
@@ -267,16 +267,16 @@ After each protocol is implemented, update:
 Implemented in this branch so far:
 
 - VXLAN effective inner tuple extraction for valid UDP/4789 traffic carrying:
-  - inner Ethernet -> IPv4 -> TCP/UDP
-  - inner Ethernet -> IPv6 -> TCP/UDP
+  - inner Ethernet -> IPv4 -> TCP/UDP/SCTP
+  - inner Ethernet -> IPv6 -> TCP/UDP/SCTP
   - inner Ethernet -> VLAN -> IPv4 -> TCP when the existing inner Ethernet continuation resolves the VLAN path
 - Geneve effective inner tuple extraction for valid UDP/6081 traffic carrying:
-  - inner Ethernet -> IPv4 -> TCP/UDP
-  - inner Ethernet -> IPv6 -> TCP/UDP
+  - inner Ethernet -> IPv4 -> TCP/UDP/SCTP
+  - inner Ethernet -> IPv6 -> TCP/UDP/SCTP
   - inner Ethernet -> VLAN -> IPv4 -> TCP when the existing inner Ethernet continuation resolves the VLAN path
 - GTP-U effective inner tuple extraction for valid UDP/2152 GTPv1-U T-PDU carrying:
-  - direct inner IPv4 -> TCP/UDP
-  - direct inner IPv6 -> TCP/UDP
+  - direct inner IPv4 -> TCP/UDP/SCTP
+  - direct inner IPv6 -> TCP/UDP/SCTP
 - outer IPv4 and outer IPv6 VXLAN carrier paths both switch flow grouping to the decoded inner tuple
 - outer IPv4 and outer IPv6 Geneve carrier paths both switch flow grouping to the decoded inner tuple
 - outer IPv4 and outer IPv6 GTP-U carrier paths both switch flow grouping to the decoded inner tuple
@@ -300,7 +300,7 @@ Implemented in this branch so far:
   - the declared GTP-U length must fit in the bounded UDP payload
   - if any of E/S/PN is set, the 4-byte optional field block must be present and bounded
   - if `E=1`, the deterministic extension-header chain is bounded-skipped conservatively
-  - inner payload must start directly with IPv4 or IPv6 and then yield a valid TCP/UDP tuple through the existing bounded inner IP helpers
+  - inner payload must start directly with IPv4 or IPv6 and then yield a valid TCP/UDP/SCTP tuple through the existing bounded inner IP helpers
 
 Still intentionally not solved:
 
@@ -312,16 +312,16 @@ Still intentionally not solved:
 - VXLAN Packet Details / Summary preserve the outer IPv4/IPv6 and UDP presentation and add overlay metadata plus bounded sequential inner continuation when available
 - selected-packet Summary / Protocol details now show a VXLAN layer with flags, VNI flag state, and VNI
 - selected-packet Summary / Protocol details now also show a Geneve layer with version, option length, protocol type, VNI, and warnings for malformed/truncated UDP/6081 Geneve-like payloads
-- when the Geneve payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
-- when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` layers as available, with inner layer titles carrying addresses/ports where applicable
-- supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP presentation for valid fixtures
+- when the Geneve payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` / `Inner SCTP` layers as available, with inner layer titles carrying addresses/ports where applicable
+- when the VXLAN payload contains a bounded Ethernet header, Summary then appends sequential `Inner Ethernet`, `Inner VLAN`, `Inner IPv4` / `Inner IPv6`, and `Inner TCP` / `Inner UDP` / `Inner SCTP` layers as available, with inner layer titles carrying addresses/ports where applicable
+- supported inner continuation now extends into bounded inner VLAN / IPv4 / IPv6 / TCP / UDP / SCTP presentation for valid fixtures
 - outer IPv4/IPv6 and UDP remain the primary top-level packet details stack, followed by VXLAN or Geneve and then the sequential inner continuation layers
-- GTP-U selected-packet Summary / Protocol details are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available for both outer IPv4 and outer IPv6 UDP carriers
+- GTP-U selected-packet Summary / Protocol details are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP/SCTP layers when safely available for both outer IPv4 and outer IPv6 UDP carriers
 - known GTP-U message types and known next-extension-header types may be named in selected-packet presentation, but extension headers are still handled as shallow bounded skip-only metadata rather than deep parsed structures
 - malformed/truncated/unsupported GTP-U selected-packet presentation remains lenient and warning-oriented on UDP/2152 only; it does not change effective flow tuple extraction
 - selected-packet VXLAN details are intentionally more lenient than flow extraction for UDP/4789 payloads, so malformed or invalid VXLAN-like packets can still surface best-effort VXLAN metadata and bounded inner warning layers without producing an inner flow tuple
 - selected-packet Geneve details are intentionally more lenient than flow extraction for UDP/6081 payloads, so malformed or invalid Geneve-like packets can still surface best-effort Geneve metadata and bounded inner warning layers without producing an inner flow tuple
-- when the Geneve base header and option bounds are valid and Protocol Type is Ethernet (`0x6558`), selected-packet details may still show best-effort inner Ethernet / VLAN / IPv4 / IPv6 / TCP / UDP continuation even if the Geneve version is unsupported; strict flow extraction still rejects that packet as a Geneve inner-tuple carrier
+- when the Geneve base header and option bounds are valid and Protocol Type is Ethernet (`0x6558`), selected-packet details may still show best-effort inner Ethernet / VLAN / IPv4 / IPv6 / TCP / UDP / SCTP continuation even if the Geneve version is unsupported; strict flow extraction still rejects that packet as a Geneve inner-tuple carrier
 - unsupported Geneve protocol types are reported distinctly from malformed or invalid-version Geneve presentation and do not continue into inner Ethernet decoding in this branch
 
 ## Risks and unknowns
@@ -373,7 +373,7 @@ Known limitations intentionally left for future work:
 - no decapsulated export;
 - no outer-plus-inner dual flow table mode;
 - no deep GTP-U extension-header parsing;
-- no separate generic Data/Payload layer after decoded TCP/UDP.
+- no separate generic Data/Payload layer after decoded TCP/UDP/SCTP.
 
 Suggested local test command:
 

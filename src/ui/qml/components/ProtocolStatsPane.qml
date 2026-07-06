@@ -15,6 +15,10 @@ Frame {
     property var udpPacketCount: 0
     property var udpCapturedBytes: 0
     property var udpOriginalBytes: 0
+    property var sctpFlowCount: 0
+    property var sctpPacketCount: 0
+    property var sctpCapturedBytes: 0
+    property var sctpOriginalBytes: 0
     property var otherFlowCount: 0
     property var otherPacketCount: 0
     property var otherCapturedBytes: 0
@@ -158,19 +162,19 @@ Frame {
     }
 
     function totalTransportFlows() {
-        return Number(tcpFlowCount || 0) + Number(udpFlowCount || 0) + Number(otherFlowCount || 0)
+        return Number(tcpFlowCount || 0) + Number(udpFlowCount || 0) + Number(sctpFlowCount || 0) + Number(otherFlowCount || 0)
     }
 
     function totalTransportPackets() {
-        return Number(tcpPacketCount || 0) + Number(udpPacketCount || 0) + Number(otherPacketCount || 0)
+        return Number(tcpPacketCount || 0) + Number(udpPacketCount || 0) + Number(sctpPacketCount || 0) + Number(otherPacketCount || 0)
     }
 
     function totalTransportCapturedBytes() {
-        return Number(tcpCapturedBytes || 0) + Number(udpCapturedBytes || 0) + Number(otherCapturedBytes || 0)
+        return Number(tcpCapturedBytes || 0) + Number(udpCapturedBytes || 0) + Number(sctpCapturedBytes || 0) + Number(otherCapturedBytes || 0)
     }
 
     function totalTransportOriginalBytes() {
-        return Number(tcpOriginalBytes || 0) + Number(udpOriginalBytes || 0) + Number(otherOriginalBytes || 0)
+        return Number(tcpOriginalBytes || 0) + Number(udpOriginalBytes || 0) + Number(sctpOriginalBytes || 0) + Number(otherOriginalBytes || 0)
     }
 
     function totalIpFlows() {
@@ -622,6 +626,22 @@ Frame {
             }
 
             FiveColumnRow {
+                firstText: "SCTP"
+                secondText: root.hasCapture ? root.formatHintCell(root.sctpFlowCount || 0, root.totalTransportFlows(), false) : "-"
+                thirdText: root.hasCapture ? root.formatHintCell(root.sctpPacketCount || 0, root.totalTransportPackets(), false) : "-"
+                fourthText: root.hasCapture ? root.formatHintCell(root.sctpCapturedBytes || 0, root.totalTransportCapturedBytes(), true) : "-"
+                fifthText: root.hasCapture ? root.formatHintCell(root.sctpOriginalBytes || 0, root.totalTransportOriginalBytes(), true) : "-"
+                firstWidth: root.transportNameColumnWidth
+                secondWidth: root.transportFlowsColumnWidth
+                thirdWidth: root.transportPacketsColumnWidth
+                fourthWidth: root.transportCapturedColumnWidth
+                fifthWidth: root.transportOriginalColumnWidth
+                tableWidth: root.transportTableWidth
+                rowIndex: 2
+                firstColor: "#0f172a"
+            }
+
+            FiveColumnRow {
                 firstText: "Other"
                 secondText: root.hasCapture ? root.formatHintCell(root.otherFlowCount || 0, root.totalTransportFlows(), false) : "-"
                 thirdText: root.hasCapture ? root.formatHintCell(root.otherPacketCount || 0, root.totalTransportPackets(), false) : "-"
@@ -633,7 +653,7 @@ Frame {
                 fourthWidth: root.transportCapturedColumnWidth
                 fifthWidth: root.transportOriginalColumnWidth
                 tableWidth: root.transportTableWidth
-                rowIndex: 2
+                rowIndex: 3
                 firstColor: "#0f172a"
             }
         }

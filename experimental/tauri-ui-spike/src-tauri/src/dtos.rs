@@ -121,6 +121,7 @@ pub struct OverviewSummaryDto {
 pub struct OverviewProtocolSummaryDto {
     pub tcp: ProtocolStatsDto,
     pub udp: ProtocolStatsDto,
+    pub sctp: ProtocolStatsDto,
     pub other: ProtocolStatsDto,
     pub ipv4: ProtocolStatsDto,
     pub ipv6: ProtocolStatsDto,

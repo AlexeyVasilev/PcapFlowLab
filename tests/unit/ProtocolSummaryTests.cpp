@@ -8,9 +8,14 @@ namespace pfl::tests {
 
 namespace {
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
 void expect_protocol_stats(const ProtocolStats& actual, const ProtocolStats& expected) {
     PFL_EXPECT(actual.flow_count == expected.flow_count);
     PFL_EXPECT(actual.packet_count == expected.packet_count);
+    PFL_EXPECT(actual.captured_bytes == expected.captured_bytes);
     PFL_EXPECT(actual.original_bytes == expected.original_bytes);
 }
 
@@ -179,6 +184,7 @@ void run_protocol_summary_tests() {
             static_cast<std::uint64_t>(udp_ipv4_packet.size() + udp_ipv6_packet.size()),
             static_cast<std::uint64_t>(udp_ipv4_packet.size() + udp_ipv6_packet.size())
         });
+        expect_protocol_stats(summary.sctp, ProtocolStats {});
         expect_protocol_stats(summary.other, ProtocolStats {
             2,
             2,
@@ -218,6 +224,7 @@ void run_protocol_summary_tests() {
 
         expect_protocol_stats(loaded_summary.tcp, summary.tcp);
         expect_protocol_stats(loaded_summary.udp, summary.udp);
+        expect_protocol_stats(loaded_summary.sctp, summary.sctp);
         expect_protocol_stats(loaded_summary.other, summary.other);
         expect_protocol_stats(loaded_summary.ipv4, summary.ipv4);
         expect_protocol_stats(loaded_summary.ipv6, summary.ipv6);
@@ -448,10 +455,33 @@ void run_protocol_summary_tests() {
         PFL_EXPECT(hint_packet_total == session.summary().packet_count);
         PFL_EXPECT(hint_byte_total == session.summary().total_bytes);
     }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/sctp/24_sctp_ipv4_data_f1ap.pcap")));
+
+        const auto summary = session.protocol_summary();
+        expect_protocol_stats(summary.tcp, ProtocolStats {});
+        expect_protocol_stats(summary.udp, ProtocolStats {});
+        expect_protocol_stats(summary.sctp, ProtocolStats {1, 1, 66U, 66U});
+        expect_protocol_stats(summary.other, ProtocolStats {});
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap")));
+
+        const auto summary = session.protocol_summary();
+        PFL_EXPECT(summary.tcp.flow_count == 0U);
+        PFL_EXPECT(summary.udp.flow_count == 0U);
+        PFL_EXPECT(summary.sctp.flow_count == 1U);
+        PFL_EXPECT(summary.sctp.packet_count == 1U);
+        PFL_EXPECT(summary.other.flow_count == 0U);
+        PFL_EXPECT(summary.other.packet_count == 0U);
+    }
 }
 
 }  // namespace pfl::tests
-
 
 
 

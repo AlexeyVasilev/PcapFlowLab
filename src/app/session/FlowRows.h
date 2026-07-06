@@ -83,6 +83,7 @@ struct ProtocolStats {
 struct CaptureProtocolSummary {
     ProtocolStats tcp {};
     ProtocolStats udp {};
+    ProtocolStats sctp {};
     ProtocolStats other {};
     ProtocolStats ipv4 {};
     ProtocolStats ipv6 {};

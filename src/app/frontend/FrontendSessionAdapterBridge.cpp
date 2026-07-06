@@ -299,6 +299,7 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         << "\"protocol_summary\":{"
         << "\"tcp\":" << protocol_stats_json(overview.protocol_summary.tcp) << ','
         << "\"udp\":" << protocol_stats_json(overview.protocol_summary.udp) << ','
+        << "\"sctp\":" << protocol_stats_json(overview.protocol_summary.sctp) << ','
         << "\"other\":" << protocol_stats_json(overview.protocol_summary.other) << ','
         << "\"ipv4\":" << protocol_stats_json(overview.protocol_summary.ipv4) << ','
         << "\"ipv6\":" << protocol_stats_json(overview.protocol_summary.ipv6)

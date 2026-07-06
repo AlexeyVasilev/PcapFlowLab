@@ -45,6 +45,7 @@ inline constexpr std::uint8_t kIpProtocolIcmp = 1;
 inline constexpr std::uint8_t kIpProtocolIgmp = 2;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
 inline constexpr std::uint8_t kIpProtocolUdp = 17;
+inline constexpr std::uint8_t kIpProtocolSctp = 132;
 inline constexpr std::uint8_t kIpProtocolRouting = 43;
 inline constexpr std::uint8_t kIpProtocolFragment = 44;
 inline constexpr std::uint8_t kIpProtocolEsp = 50;
@@ -58,6 +59,7 @@ inline constexpr std::size_t kIpv6HeaderSize = 40;
 inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
+inline constexpr std::size_t kSctpCommonHeaderSize = 12;
 inline constexpr std::size_t kVxlanHeaderSize = 8U;
 inline constexpr std::size_t kGeneveHeaderSize = 8U;
 inline constexpr std::size_t kGtpuBaseHeaderSize = 8U;
@@ -123,6 +125,15 @@ struct Ipv6PayloadView {
 
 struct UdpPayloadBounds {
     std::uint16_t datagram_length {0};
+    std::size_t payload_offset {0};
+    std::size_t payload_length {0};
+};
+
+struct SctpCommonHeaderView {
+    std::uint16_t src_port {0};
+    std::uint16_t dst_port {0};
+    std::uint32_t verification_tag {0};
+    std::uint32_t checksum {0};
     std::size_t payload_offset {0};
     std::size_t payload_length {0};
 };
@@ -1368,6 +1379,26 @@ inline std::optional<UdpPayloadBounds> parse_udp_payload_bounds(std::span<const 
         .datagram_length = static_cast<std::uint16_t>(udp_length),
         .payload_offset = payload_offset,
         .payload_length = std::min(udp_length - kUdpHeaderSize, available_payload_length),
+    };
+}
+
+inline std::optional<SctpCommonHeaderView> parse_sctp_common_header(std::span<const std::uint8_t> bytes,
+                                                                    const std::size_t sctp_offset,
+                                                                    const std::size_t nominal_packet_end) {
+    const auto packet_end = std::min(nominal_packet_end, bytes.size());
+    if (sctp_offset + kSctpCommonHeaderSize > packet_end) {
+        return std::nullopt;
+    }
+
+    const auto payload_offset = sctp_offset + kSctpCommonHeaderSize;
+    const auto payload_length = packet_end > payload_offset ? (packet_end - payload_offset) : 0U;
+    return SctpCommonHeaderView {
+        .src_port = read_be16(bytes, sctp_offset),
+        .dst_port = read_be16(bytes, sctp_offset + 2U),
+        .verification_tag = read_be32(bytes, sctp_offset + 4U),
+        .checksum = read_be32(bytes, sctp_offset + 8U),
+        .payload_offset = payload_offset,
+        .payload_length = payload_length,
     };
 }
 

@@ -1550,6 +1550,9 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
         case ProtocolId::udp:
             add_protocol_stats(summary.udp, connection);
             break;
+        case ProtocolId::sctp:
+            add_protocol_stats(summary.sctp, connection);
+            break;
         default:
             add_protocol_stats(summary.other, connection);
             break;
@@ -2471,7 +2474,7 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
     }
 
     if (const auto details = details_service.decode_best_effort(bytes, packet);
-        details.has_value() && (details->has_pbb || details->has_macsec)) {
+        details.has_value() && (details->has_pbb || details->has_macsec || details->has_sctp)) {
         if (const auto generic_details = build_basic_protocol_details_text(*details); generic_details.has_value()) {
             return *generic_details;
         }

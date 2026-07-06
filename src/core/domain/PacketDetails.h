@@ -319,6 +319,28 @@ struct UdpDetails {
     bool payload_truncated {false};
 };
 
+struct SctpDetails {
+    std::uint8_t available_common_header_bytes {0};
+    bool common_header_truncated {false};
+    std::uint16_t src_port {0};
+    std::uint16_t dst_port {0};
+    std::uint32_t verification_tag {0};
+    std::uint32_t checksum {0};
+    bool first_chunk_present {false};
+    std::uint8_t first_chunk_available_header_bytes {0};
+    bool first_chunk_header_truncated {false};
+    std::uint8_t first_chunk_type {0};
+    std::uint8_t first_chunk_flags {0};
+    std::uint16_t first_chunk_length {0};
+    bool data_metadata_present {false};
+    std::uint8_t data_metadata_available_bytes {0};
+    bool data_metadata_truncated {false};
+    std::uint32_t tsn {0};
+    std::uint16_t stream_identifier {0};
+    std::uint16_t stream_sequence_number {0};
+    std::uint32_t ppid {0};
+};
+
 struct VxlanInnerPacketDetails {
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
@@ -334,6 +356,8 @@ struct VxlanInnerPacketDetails {
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
 };
 
 struct GeneveInnerPacketDetails {
@@ -351,6 +375,8 @@ struct GeneveInnerPacketDetails {
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
 };
 
 struct GtpuInnerPacketDetails {
@@ -365,6 +391,8 @@ struct GtpuInnerPacketDetails {
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
 };
 
 struct IcmpDetails {
@@ -451,6 +479,9 @@ struct PacketDetails {
 
     bool has_udp {false};
     UdpDetails udp {};
+
+    bool has_sctp {false};
+    SctpDetails sctp {};
 
     bool has_icmp {false};
     IcmpDetails icmp {};

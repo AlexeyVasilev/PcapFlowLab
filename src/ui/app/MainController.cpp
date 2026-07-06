@@ -163,6 +163,8 @@ QString formatProtocol(const std::uint8_t protocol) {
         return "TCP";
     case ProtocolId::udp:
         return "UDP";
+    case ProtocolId::sctp:
+        return "SCTP";
     case ProtocolId::icmpv6:
         return "ICMPv6";
     default:
@@ -235,7 +237,11 @@ QString selected_flow_wireshark_filter(const FlowListModel& flow_model, const in
 
     const QString port_term = protocol.compare(QStringLiteral("TCP"), Qt::CaseInsensitive) == 0
         ? QStringLiteral("tcp.port")
-        : (protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0 ? QStringLiteral("udp.port") : QString {});
+        : (protocol.compare(QStringLiteral("UDP"), Qt::CaseInsensitive) == 0
+            ? QStringLiteral("udp.port")
+            : (protocol.compare(QStringLiteral("SCTP"), Qt::CaseInsensitive) == 0
+                ? QStringLiteral("sctp.port")
+                : QString {}));
 
     if (address_term.isEmpty() || port_term.isEmpty() || address_a.isEmpty() || address_b.isEmpty()) {
         return {};
@@ -2825,6 +2831,7 @@ qulonglong MainController::capturedBytes() const noexcept {
     return static_cast<qulonglong>(
         protocol_summary_.tcp.captured_bytes +
         protocol_summary_.udp.captured_bytes +
+        protocol_summary_.sctp.captured_bytes +
         protocol_summary_.other.captured_bytes
     );
 }
@@ -2905,6 +2912,26 @@ qulonglong MainController::udpOriginalBytes() const noexcept {
 
 qulonglong MainController::udpTotalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.original_bytes);
+}
+
+qulonglong MainController::sctpFlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.flow_count);
+}
+
+qulonglong MainController::sctpPacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.packet_count);
+}
+
+qulonglong MainController::sctpCapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.captured_bytes);
+}
+
+qulonglong MainController::sctpOriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.original_bytes);
+}
+
+qulonglong MainController::sctpTotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.original_bytes);
 }
 
 qulonglong MainController::otherFlowCount() const noexcept {
