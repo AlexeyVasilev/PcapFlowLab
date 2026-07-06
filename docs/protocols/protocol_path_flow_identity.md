@@ -291,10 +291,33 @@ Expected impact:
 
 - adding `protocol_path_id` to flow identity changes the index format;
 - the index format version should be bumped when `FlowKeyV2` is enabled;
-- older indexes without protocol-path metadata should prefer rebuild over silent fallback;
-- explicit legacy mode is theoretically possible, but rebuild is safer for correctness.
+- backward compatibility with older `.pflidx` formats is not a goal for this migration;
+- older indexes without protocol-path metadata should be rejected with a rebuild-required message rather than silently loaded with degraded identity semantics;
+- explicit legacy compatibility mode is intentionally out of scope.
 
 This step documents the impact only. It does not implement serialization changes.
+
+## Stable Index Storage Policy
+
+When protocol-path-aware flow identity becomes part of the stable index format:
+
+- store one protocol-path table / registry per capture index;
+- store `protocol_path_id` at the flow identity / flow metadata level;
+- let each flow reference its interned `protocol_path_id`;
+- do not repeat full protocol paths in packet records;
+- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, or TEID redundantly per packet if they are already represented by the flow's protocol path id.
+
+Rationale:
+
+- avoid redundant stable-index growth from per-packet path metadata;
+- keep path identity normalized around flows, where `FlowKeyV2` will use it;
+- keep packet records focused on packet-local capture metadata rather than repeating flow namespace context.
+
+Stage C2 is intentionally different:
+
+- the current per-packet `protocol_path_id` on in-memory `PacketRef` is a staging/debug/test mechanism while grouping remains tuple-only;
+- it is not part of the stable index format;
+- once `FlowKeyV2` is enabled, protocol-path persistence should move to the flow/registry level and should not require per-packet persistence.
 
 ## Statistics Tree Follow-up
 
@@ -376,10 +399,11 @@ Stage C2 status:
 
 - decode now builds protocol-path metadata in the packet decode hot path using `ProtocolPathBuilder`;
 - `CaptureState` owns a per-capture `ProtocolPathRegistry`;
-- import interns non-empty, non-overflowed paths and stores only `protocol_path_id` on in-memory `PacketRef`;
+- import interns non-empty, non-overflowed paths and stores only a temporary in-memory `protocol_path_id` on `PacketRef`;
 - `FlowKey` and connection grouping remain tuple-only in this stage;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
-- capture index serialization is intentionally unchanged in this stage, so index-loaded packet refs do not yet restore protocol-path ids.
+- capture index serialization is intentionally unchanged in this stage, so index-loaded packet refs do not yet restore protocol-path ids;
+- this temporary packet-level metadata exists to prove decode/import correctness before `FlowKeyV2`, not as the final stable storage shape.
 
 Stage D:
 
@@ -391,7 +415,7 @@ Stage E:
 
 Stage F:
 
-- bump index format and handle legacy index behavior.
+- bump index format, persist protocol-path registry metadata at the flow level, and reject pre-FlowKeyV2 indexes with a rebuild-required path.
 
 Stage G:
 
@@ -412,7 +436,7 @@ Files likely affected in later implementation stages:
 - `src/core/domain/FlowKey.h`
   - current `FlowKeyV4` / `FlowKeyV6` are tuple-only
 - `src/core/domain/PacketRef.h`
-  - current Stage C2 attachment point for in-memory `protocol_path_id`
+  - current Stage C2 attachment point for temporary in-memory `protocol_path_id`
 - `src/core/domain/Connection.h`
   - connection grouping and direction logic depend on current key shape
 - `src/core/domain/Flow.h`
@@ -426,7 +450,7 @@ Files likely affected in later implementation stages:
 - `src/core/services/CaptureImportProcessor.cpp`
   - current Stage C2 interning point from `DecodedPacket::protocol_path` into the per-capture registry
 - `src/core/index/Serialization.cpp`
-  - current flow key serialization will need versioned changes
+  - current flow key serialization will need a versioned break once `FlowKeyV2` and flow-level protocol-path persistence are enabled
 - `src/app/session/CaptureSession.cpp`
   - session summaries, exports, and row generation may need access to protocol-path metadata later
 - `src/app/session/FlowRows.h`
@@ -506,6 +530,7 @@ Relevant existing fixture families:
 - outer tunnel endpoints are intentionally excluded from v1 identity
 - `ProtocolPathRegistry` should intern full path values and assign compact ids
 - exact path changes should eventually require an index format bump
+- old `.pflidx` compatibility is intentionally not a requirement for the FlowKeyV2 index break
 - protocol-path statistics and filters should be follow-up work, not part of the first identity change
 
 ## Risks
