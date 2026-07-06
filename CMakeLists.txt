@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PFL_BUILD_UI "Build the Qt Quick desktop UI when Qt 6 is available." ON)
+option(PFL_ENABLE_PENDING_SCTP_TESTS "Enable pending SCTP fixture expectations in core tests." OFF)
 
 add_library(pcap_flow_lab_warnings INTERFACE)
 
@@ -287,6 +288,7 @@ if(BUILD_TESTING)
         tests/unit/VxlanPcapFixtureTests.cpp
         tests/unit/GenevePcapFixtureTests.cpp
         tests/unit/GtpuPcapFixtureTests.cpp
+        tests/unit/SctpPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp
@@ -318,6 +320,14 @@ if(BUILD_TESTING)
         PRIVATE
             pcap_flow_lab_core
     )
+
+    if(PFL_ENABLE_PENDING_SCTP_TESTS)
+        target_compile_definitions(
+            pcap_flow_lab_core_tests
+            PRIVATE
+                PFL_ENABLE_PENDING_SCTP_TESTS=1
+        )
+    endif()
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
