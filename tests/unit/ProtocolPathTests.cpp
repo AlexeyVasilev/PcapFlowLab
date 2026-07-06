@@ -1,11 +1,71 @@
+#include <filesystem>
 #include <functional>
+#include <string>
 
 #include "TestSupport.h"
+#include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/services/CaptureImporter.h"
 
 namespace pfl::tests {
 
 namespace {
+
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+CaptureState require_imported_capture_state(const std::filesystem::path& path) {
+    CaptureImporter importer {};
+    CaptureState state {};
+    PFL_REQUIRE(importer.import_capture(path, state));
+    return state;
+}
+
+const PacketRef* find_packet_ref(const CaptureState& state, const std::uint64_t packet_index) {
+    for (const auto* connection : state.ipv4_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            if (packet.packet_index == packet_index) {
+                return &packet;
+            }
+        }
+        for (const auto& packet : connection->flow_b.packets) {
+            if (packet.packet_index == packet_index) {
+                return &packet;
+            }
+        }
+    }
+
+    for (const auto* connection : state.ipv6_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            if (packet.packet_index == packet_index) {
+                return &packet;
+            }
+        }
+        for (const auto& packet : connection->flow_b.packets) {
+            if (packet.packet_index == packet_index) {
+                return &packet;
+            }
+        }
+    }
+
+    for (const auto& record : state.unrecognized_packets) {
+        if (record.packet.packet_index == packet_index) {
+            return &record.packet;
+        }
+    }
+
+    return nullptr;
+}
+
+std::string require_packet_protocol_path_text(const CaptureState& state, const std::uint64_t packet_index) {
+    const auto* packet = find_packet_ref(state, packet_index);
+    PFL_REQUIRE(packet != nullptr);
+    PFL_REQUIRE(packet->protocol_path_id != kInvalidProtocolPathId);
+    const auto* path = state.protocol_path_registry.find(packet->protocol_path_id);
+    PFL_REQUIRE(path != nullptr);
+    return format_protocol_path(*path);
+}
 
 void expect_layer_key_equality() {
     PFL_EXPECT(LayerKey::ipv4() == LayerKey::ipv4());
@@ -306,6 +366,75 @@ void expect_builder_capacity_and_overflow() {
     PFL_EXPECT(builder.to_path() == prefix_path);
 }
 
+void expect_decode_attaches_direct_and_shim_protocol_paths() {
+    {
+        const auto packet = make_ethernet_ipv4_tcp_packet(ipv4(192, 0, 2, 10), ipv4(198, 51, 100, 20), 49152, 443);
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_path_direct_ipv4_tcp.pcap",
+            make_classic_pcap({{100U, packet}})
+        );
+        const auto state = require_imported_capture_state(capture_path);
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/sctp/16_sctp_vlan_ipv4_data_s1ap.pcap"));
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> VLAN(vid=132) -> IPv4 -> SCTP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/mpls/01_mpls_ipv4_tcp_single_label.pcap"));
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> MPLS(label=100) -> IPv4 -> TCP");
+    }
+}
+
+void expect_decode_attaches_overlay_protocol_paths() {
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> IPv4 -> UDP -> VXLAN(vni=132) -> EthernetII -> IPv4 -> SCTP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/sctp/19_sctp_geneve_inner_ipv4_data_m3ua.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> IPv4 -> UDP -> Geneve(vni=132) -> EthernetII -> IPv4 -> SCTP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/sctp/20_sctp_gtpu_inner_ipv4_data_s1ap.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020384) -> IPv4 -> SCTP");
+    }
+}
+
+void expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id() {
+    const auto state = require_imported_capture_state(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"));
+
+    const auto connections = state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    PFL_EXPECT(connections[0]->has_flow_a);
+    PFL_EXPECT(connections[0]->flow_a.packet_count == 2U);
+
+    const auto* first_packet = find_packet_ref(state, 0U);
+    const auto* second_packet = find_packet_ref(state, 1U);
+    PFL_REQUIRE(first_packet != nullptr);
+    PFL_REQUIRE(second_packet != nullptr);
+    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+
+    const auto* first_path = state.protocol_path_registry.find(first_packet->protocol_path_id);
+    const auto* second_path = state.protocol_path_registry.find(second_packet->protocol_path_id);
+    PFL_REQUIRE(first_path != nullptr);
+    PFL_REQUIRE(second_path != nullptr);
+    PFL_EXPECT(format_protocol_path(*first_path) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(*second_path) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP");
+}
+
 }  // namespace
 
 void run_protocol_path_tests() {
@@ -319,6 +448,9 @@ void run_protocol_path_tests() {
     expect_builder_identifier_layers();
     expect_builder_clear_and_reuse();
     expect_builder_capacity_and_overflow();
+    expect_decode_attaches_direct_and_shim_protocol_paths();
+    expect_decode_attaches_overlay_protocol_paths();
+    expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id();
 }
 
 }  // namespace pfl::tests

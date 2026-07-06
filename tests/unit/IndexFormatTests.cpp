@@ -137,7 +137,19 @@ std::vector<std::uint8_t> append_trailing_garbage(const std::vector<std::uint8_t
 }
 
 void expect_matching_packets(const std::vector<PacketRef>& left, const std::vector<PacketRef>& right) {
-    PFL_EXPECT(left == right);
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        PFL_EXPECT(left[index].packet_index == right[index].packet_index);
+        PFL_EXPECT(left[index].byte_offset == right[index].byte_offset);
+        PFL_EXPECT(left[index].data_link_type == right[index].data_link_type);
+        PFL_EXPECT(left[index].captured_length == right[index].captured_length);
+        PFL_EXPECT(left[index].original_length == right[index].original_length);
+        PFL_EXPECT(left[index].ts_sec == right[index].ts_sec);
+        PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
+        PFL_EXPECT(left[index].payload_length == right[index].payload_length);
+        PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
+        PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
+    }
 }
 
 void expect_matching_flows(const FlowV4& left, const FlowV4& right) {

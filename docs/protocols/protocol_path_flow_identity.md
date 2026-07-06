@@ -50,8 +50,8 @@ Even if the IPv4 addresses and TCP ports are identical.
 2. Same inner tuple but different VXLAN VNI:
 
 ```text
-EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> InnerEthernetII -> IPv4 -> TCP
-EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> InnerEthernetII -> IPv4 -> TCP
+EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP
+EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP
 ```
 
 3. Same inner tuple but different Geneve VNI.
@@ -138,7 +138,7 @@ Example paths:
 ```text
 EthernetII -> IPv4 -> TCP
 EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP
-EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> InnerEthernetII -> IPv4 -> TCP
+EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP
 EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020384) -> IPv4 -> SCTP
 ```
 
@@ -372,6 +372,15 @@ Stage C:
 - attach `protocol_path_id` to packet/flow metadata;
 - keep current grouping behavior unchanged.
 
+Stage C2 status:
+
+- decode now builds protocol-path metadata in the packet decode hot path using `ProtocolPathBuilder`;
+- `CaptureState` owns a per-capture `ProtocolPathRegistry`;
+- import interns non-empty, non-overflowed paths and stores only `protocol_path_id` on in-memory `PacketRef`;
+- `FlowKey` and connection grouping remain tuple-only in this stage;
+- builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
+- capture index serialization is intentionally unchanged in this stage, so index-loaded packet refs do not yet restore protocol-path ids.
+
 Stage D:
 
 - add path-extraction tests and known collision fixtures/expectations while still not changing grouping behavior where that would break current semantics.
@@ -403,7 +412,7 @@ Files likely affected in later implementation stages:
 - `src/core/domain/FlowKey.h`
   - current `FlowKeyV4` / `FlowKeyV6` are tuple-only
 - `src/core/domain/PacketRef.h`
-  - likely place for attaching `protocol_path_id` to packet metadata later
+  - current Stage C2 attachment point for in-memory `protocol_path_id`
 - `src/core/domain/Connection.h`
   - connection grouping and direction logic depend on current key shape
 - `src/core/domain/Flow.h`
@@ -415,7 +424,7 @@ Files likely affected in later implementation stages:
 - `src/core/decode/PacketDecodeSupport.h`
   - current shim and overlay identifier parsing lives here
 - `src/core/services/CaptureImportProcessor.cpp`
-  - import pipeline consumes `DecodedPacket` and currently assumes existing key layout
+  - current Stage C2 interning point from `DecodedPacket::protocol_path` into the per-capture registry
 - `src/core/index/Serialization.cpp`
   - current flow key serialization will need versioned changes
 - `src/app/session/CaptureSession.cpp`
@@ -461,7 +470,7 @@ Static audit of the current code path:
 - `src/core/index/Serialization.cpp`
   - persists the tuple-only flow keys
 
-The smallest safe future insertion point remains `PacketDecoder::decode(...)`, before `DecodedPacket` is returned to the import pipeline.
+The smallest safe insertion point was `PacketDecoder::decode(...)`, before `DecodedPacket` is returned to the import pipeline. Stage C2 now uses that path while still leaving flow identity unchanged.
 
 ## Test Plan
 
