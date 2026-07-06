@@ -145,6 +145,8 @@ std::string format_protocol_summary_value(const std::uint8_t protocol) {
         return "TCP";
     case 17U:
         return "UDP";
+    case 132U:
+        return "SCTP";
     case 58U:
         return "ICMPv6";
     default:
@@ -159,6 +161,96 @@ std::string format_protocol_summary_value_with_number(const std::uint8_t protoco
     }
 
     return label + " (" + std::to_string(protocol) + ")";
+}
+
+std::string format_sctp_chunk_type_name(const std::uint8_t type) {
+    switch (type) {
+    case 0U:
+        return "DATA";
+    case 1U:
+        return "INIT";
+    case 2U:
+        return "INIT ACK";
+    case 3U:
+        return "SACK";
+    case 4U:
+        return "HEARTBEAT";
+    case 6U:
+        return "ABORT";
+    case 7U:
+        return "SHUTDOWN";
+    case 9U:
+        return "ERROR";
+    case 14U:
+        return "SHUTDOWN COMPLETE";
+    default:
+        return "Unknown";
+    }
+}
+
+std::string format_sctp_chunk_type_with_number(const std::uint8_t type) {
+    return format_sctp_chunk_type_name(type) + " (" + format_hex_value(type, 2) + ")";
+}
+
+struct SctpPpidDisplay {
+    const char* short_name;
+    const char* full_name;
+};
+
+std::optional<SctpPpidDisplay> lookup_sctp_ppid_display(const std::uint32_t ppid) {
+    switch (ppid) {
+    case 1U:
+        return SctpPpidDisplay {"IUA", "ISDN Q.921 User Adaptation"};
+    case 2U:
+        return SctpPpidDisplay {"M2UA", "MTP2 User Adaptation"};
+    case 3U:
+        return SctpPpidDisplay {"M3UA", "MTP 3 User Adaptation Layer"};
+    case 4U:
+        return SctpPpidDisplay {"SUA", "SCCP User Adaptation"};
+    case 5U:
+        return SctpPpidDisplay {"M2PA", "MTP2 Peer-to-Peer Adaptation"};
+    case 10U:
+        return SctpPpidDisplay {"DUA", "DUA"};
+    case 18U:
+        return SctpPpidDisplay {"S1AP", "S1 Application Protocol"};
+    case 19U:
+        return SctpPpidDisplay {"RUA", "RANAP User Adaptation"};
+    case 20U:
+        return SctpPpidDisplay {"HNBAP", "Home Node B Application Part"};
+    case 24U:
+        return SctpPpidDisplay {"SBc-AP", "SBc Application Part"};
+    case 25U:
+        return SctpPpidDisplay {"NBAP", "Node B Application Part"};
+    case 27U:
+        return SctpPpidDisplay {"X2AP", "X2 Application Protocol"};
+    case 29U:
+        return SctpPpidDisplay {"LCS-AP", "LCS Application Protocol"};
+    case 31U:
+        return SctpPpidDisplay {"SABP", "Service Area Broadcast Protocol"};
+    case 43U:
+        return SctpPpidDisplay {"M2AP", "M2 Application Protocol"};
+    case 44U:
+        return SctpPpidDisplay {"M3AP", "M3 Application Protocol"};
+    case 46U:
+        return SctpPpidDisplay {"Diameter", "Diameter"};
+    case 60U:
+        return SctpPpidDisplay {"NGAP", "NG Application Protocol"};
+    case 61U:
+        return SctpPpidDisplay {"XnAP", "Xn Application Protocol"};
+    case 62U:
+        return SctpPpidDisplay {"F1AP", "F1 Application Protocol"};
+    case 64U:
+        return SctpPpidDisplay {"E1AP", "E1AP"};
+    default:
+        return std::nullopt;
+    }
+}
+
+std::string format_sctp_ppid_value(const std::uint32_t ppid) {
+    if (const auto display = lookup_sctp_ppid_display(ppid); display.has_value()) {
+        return std::string {display->short_name} + " (" + std::to_string(ppid) + ")";
+    }
+    return "Unknown (" + format_hex_value(ppid, 8) + ")";
 }
 
 std::string format_hex_byte_list(std::span<const std::uint8_t> bytes) {
@@ -537,6 +629,135 @@ PacketSummaryLayer build_udp_summary_layer(const UdpDetails& details) {
         .fields = std::move(udp_fields),
         .warning = details.payload_truncated,
         .marker_text = details.payload_truncated ? std::string {"Warning"} : std::string {},
+    };
+}
+
+PacketSummaryLayer build_sctp_summary_layer(const SctpDetails& details) {
+    std::vector<PacketSummaryField> sctp_fields {};
+    if (details.available_common_header_bytes >= 2U) {
+        sctp_fields.push_back(make_summary_field("Source Port", std::to_string(details.src_port)));
+    }
+    if (details.available_common_header_bytes >= 4U) {
+        sctp_fields.push_back(make_summary_field("Destination Port", std::to_string(details.dst_port)));
+    }
+    if (details.available_common_header_bytes >= 8U) {
+        sctp_fields.push_back(make_summary_field("Verification Tag", format_hex_value(details.verification_tag, 8)));
+    }
+    if (details.available_common_header_bytes >= 12U) {
+        sctp_fields.push_back(make_summary_field("Checksum", format_hex_value(details.checksum, 8)));
+    }
+    if (details.common_header_truncated) {
+        sctp_fields.push_back(make_summary_field(
+            "Available Header Bytes",
+            std::to_string(static_cast<unsigned>(details.available_common_header_bytes)) + " / 12"
+        ));
+        sctp_fields.push_back(make_summary_field("Warning", "SCTP common header is truncated"));
+    }
+
+    std::string title = "SCTP";
+    if (!details.common_header_truncated && details.available_common_header_bytes >= 4U) {
+        title += ", Src Port: " + std::to_string(details.src_port) +
+            ", Dst Port: " + std::to_string(details.dst_port);
+    } else if (details.common_header_truncated) {
+        title += ", malformed";
+    }
+
+    return PacketSummaryLayer {
+        .id = "sctp",
+        .title = std::move(title),
+        .fields = std::move(sctp_fields),
+        .warning = details.common_header_truncated,
+        .marker_text = details.common_header_truncated ? std::string {"Warning"} : std::string {},
+    };
+}
+
+std::optional<PacketSummaryLayer> build_sctp_chunk_summary_layer(const SctpDetails& details) {
+    if (!details.first_chunk_present) {
+        return std::nullopt;
+    }
+
+    std::vector<PacketSummaryField> chunk_fields {};
+    if (details.first_chunk_available_header_bytes >= 1U) {
+        chunk_fields.push_back(make_summary_field(
+            "Chunk Type",
+            format_sctp_chunk_type_with_number(details.first_chunk_type)
+        ));
+    }
+    if (details.first_chunk_available_header_bytes >= 2U) {
+        chunk_fields.push_back(make_summary_field("Chunk Flags", format_hex_value(details.first_chunk_flags, 2)));
+    }
+    if (details.first_chunk_available_header_bytes >= 4U) {
+        chunk_fields.push_back(make_summary_field("Chunk Length", std::to_string(details.first_chunk_length) + " bytes"));
+    }
+    if (details.first_chunk_type == 0U && details.data_metadata_present) {
+        if (details.data_metadata_available_bytes >= 4U) {
+            chunk_fields.push_back(make_summary_field("TSN", format_hex_value(details.tsn, 8)));
+        }
+        if (details.data_metadata_available_bytes >= 6U) {
+            chunk_fields.push_back(make_summary_field("Stream Identifier", std::to_string(details.stream_identifier)));
+        }
+        if (details.data_metadata_available_bytes >= 8U) {
+            chunk_fields.push_back(make_summary_field(
+                "Stream Sequence Number",
+                std::to_string(details.stream_sequence_number)
+            ));
+        }
+        if (details.data_metadata_available_bytes >= 12U) {
+            chunk_fields.push_back(make_summary_field("PPID", format_sctp_ppid_value(details.ppid)));
+        }
+    }
+    if (details.first_chunk_header_truncated) {
+        chunk_fields.push_back(make_summary_field(
+            "Available Chunk Header Bytes",
+            std::to_string(static_cast<unsigned>(details.first_chunk_available_header_bytes)) + " / 4"
+        ));
+        chunk_fields.push_back(make_summary_field("Warning", "SCTP first chunk header is truncated"));
+    }
+    if (details.data_metadata_truncated) {
+        chunk_fields.push_back(make_summary_field(
+            "Available DATA Metadata Bytes",
+            std::to_string(static_cast<unsigned>(details.data_metadata_available_bytes)) + " / 12"
+        ));
+        chunk_fields.push_back(make_summary_field("Warning", "SCTP DATA chunk metadata is truncated"));
+    }
+
+    std::string title;
+    if (details.first_chunk_header_truncated) {
+        title = "SCTP Chunk, malformed";
+    } else {
+        title = "SCTP " + format_sctp_chunk_type_name(details.first_chunk_type);
+        if (details.first_chunk_type == 0U && details.data_metadata_available_bytes >= 12U) {
+            title += ", PPID: " + format_sctp_ppid_value(details.ppid);
+        }
+    }
+
+    return PacketSummaryLayer {
+        .id = "sctp-chunk",
+        .title = std::move(title),
+        .fields = std::move(chunk_fields),
+        .warning = details.first_chunk_header_truncated || details.data_metadata_truncated,
+        .marker_text = (details.first_chunk_header_truncated || details.data_metadata_truncated)
+            ? "Warning"
+            : std::string {},
+    };
+}
+
+std::optional<PacketSummaryLayer> build_sctp_ppid_summary_layer(const SctpDetails& details) {
+    if (details.first_chunk_type != 0U || details.data_metadata_available_bytes < 12U) {
+        return std::nullopt;
+    }
+
+    const auto display = lookup_sctp_ppid_display(details.ppid);
+    if (!display.has_value()) {
+        return std::nullopt;
+    }
+
+    return PacketSummaryLayer {
+        .id = "sctp-ppid",
+        .title = std::string {display->full_name},
+        .fields = {
+            make_summary_field("PPID", std::string {display->short_name} + " (" + std::to_string(details.ppid) + ")"),
+        },
     };
 }
 
@@ -3361,6 +3582,16 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
+    if (details.has_sctp) {
+        append_layer_if_not_empty(layers, build_sctp_summary_layer(details.sctp));
+        if (const auto chunk_layer = build_sctp_chunk_summary_layer(details.sctp); chunk_layer.has_value()) {
+            append_layer_if_not_empty(layers, *chunk_layer);
+        }
+        if (const auto ppid_layer = build_sctp_ppid_summary_layer(details.sctp); ppid_layer.has_value()) {
+            append_layer_if_not_empty(layers, *ppid_layer);
+        }
+    }
+
     if (details.has_vxlan) {
         std::vector<PacketSummaryField> vxlan_fields {
             make_summary_field("Flags", format_hex_value(details.vxlan.flags, 2)),
@@ -3810,6 +4041,69 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         if (details.pppoe.captured_payload_exceeds_declared) {
             builder << '\n' << '\t'
                     << "Warning: PPPoE payload length is shorter than captured payload bytes; trailing bytes ignored.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_sctp) {
+        builder << "Protocol: SCTP";
+        if (details.sctp.available_common_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "Source Port: " << details.sctp.src_port;
+        }
+        if (details.sctp.available_common_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Destination Port: " << details.sctp.dst_port;
+        }
+        if (details.sctp.available_common_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "Verification Tag: "
+                    << format_hex_value(details.sctp.verification_tag, 8);
+        }
+        if (details.sctp.available_common_header_bytes >= 12U) {
+            builder << '\n' << '\t' << "Checksum: "
+                    << format_hex_value(details.sctp.checksum, 8);
+        }
+        if (details.sctp.first_chunk_present) {
+            if (details.sctp.first_chunk_available_header_bytes >= 1U) {
+                builder << '\n' << '\t' << "First Chunk Type: "
+                        << format_sctp_chunk_type_with_number(details.sctp.first_chunk_type);
+            }
+            if (details.sctp.first_chunk_available_header_bytes >= 2U) {
+                builder << '\n' << '\t' << "First Chunk Flags: "
+                        << format_hex_value(details.sctp.first_chunk_flags, 2);
+            }
+            if (details.sctp.first_chunk_available_header_bytes >= 4U) {
+                builder << '\n' << '\t' << "First Chunk Length: "
+                        << details.sctp.first_chunk_length << " bytes";
+            }
+        }
+        if (details.sctp.first_chunk_type == 0U && details.sctp.data_metadata_present) {
+            if (details.sctp.data_metadata_available_bytes >= 4U) {
+                builder << '\n' << '\t' << "TSN: "
+                        << format_hex_value(details.sctp.tsn, 8);
+            }
+            if (details.sctp.data_metadata_available_bytes >= 6U) {
+                builder << '\n' << '\t' << "Stream Identifier: "
+                        << details.sctp.stream_identifier;
+            }
+            if (details.sctp.data_metadata_available_bytes >= 8U) {
+                builder << '\n' << '\t' << "Stream Sequence Number: "
+                        << details.sctp.stream_sequence_number;
+            }
+            if (details.sctp.data_metadata_available_bytes >= 12U) {
+                builder << '\n' << '\t' << "PPID: "
+                        << format_sctp_ppid_value(details.sctp.ppid);
+                if (const auto display = lookup_sctp_ppid_display(details.sctp.ppid); display.has_value()) {
+                    builder << '\n' << '\t' << "Recognized Payload: " << display->full_name;
+                }
+            }
+        }
+        if (details.sctp.common_header_truncated) {
+            builder << '\n' << '\t' << "Warning: SCTP common header is truncated.";
+        }
+        if (details.sctp.first_chunk_header_truncated) {
+            builder << '\n' << '\t' << "Warning: SCTP first chunk header is truncated.";
+        }
+        if (details.sctp.data_metadata_truncated) {
+            builder << '\n' << '\t' << "Warning: SCTP DATA chunk metadata is truncated.";
         }
         return builder.str();
     }

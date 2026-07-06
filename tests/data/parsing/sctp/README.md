@@ -21,7 +21,8 @@ Current branch intent:
 Current implementation status:
 - outer IPv4/IPv6 SCTP flow extraction from the 12-byte common header is implemented;
 - VLAN and direct-inner-IP MPLS SCTP regression fixtures are expected to work through the existing shim paths;
-- selected-packet SCTP details, PPID presentation, and overlay-inner SCTP remain pending.
+- selected-packet Summary / Protocol details now cover outer plain SCTP common-header fields, bounded first-chunk metadata, and known DATA PPID presentation;
+- overlay-inner SCTP behind VXLAN, Geneve, and GTP-U remains pending.
 
 Non-goals for this branch:
 - no SCTP stream reassembly;
@@ -64,14 +65,14 @@ Notes:
   - Payload Protocol Identifier: 4 bytes
   - User payload bytes: tiny deterministic dummy bytes
 
-Expected strict future behavior:
+Current strict behavior:
 - normal SCTP flow extraction requires at least the full 12-byte SCTP common header;
 - truncated SCTP common-header packets must not fabricate a normal SCTP port-based flow;
-- selected-packet details may later show conservative partial/truncated metadata;
+- selected-packet details can show conservative partial/truncated metadata;
 - truncated DATA chunk metadata must not fabricate a PPID-derived pseudo-layer.
 
-PPID behavior expected later in the branch:
-- known PPID values may add a named next layer in selected-packet Summary / Protocol details;
+Current PPID behavior in selected-packet presentation:
+- known PPID values can add a named next layer in selected-packet Summary / Protocol details;
 - unknown PPID values remain generic SCTP payload presentation;
 - PPID recognition is presentation metadata only and does not affect flow identity.
 

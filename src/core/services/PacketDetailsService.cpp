@@ -15,6 +15,9 @@ constexpr std::size_t kTrailerPreviewMaxBytes = 32U;
 constexpr std::size_t kUnknownInnerEthernetPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kMacsecPayloadPreviewMaxBytes = 32U;
 constexpr std::size_t kMacsecIcvPreviewMaxBytes = 32U;
+constexpr std::size_t kSctpChunkHeaderSize = 4U;
+constexpr std::size_t kSctpDataChunkMetadataSize = 12U;
+constexpr std::uint8_t kSctpChunkTypeData = 0U;
 
 enum class DecodeMode : std::uint8_t {
     strict,
@@ -106,6 +109,91 @@ void populate_unknown_inner_ethernet_payload_preview(
     );
     details.unknown_inner_ethernet_payload.payload_preview_truncated =
         details.unknown_inner_ethernet_payload.payload_length > preview_length;
+}
+
+void populate_sctp_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t sctp_offset,
+    const std::size_t packet_end,
+    PacketDetails& details
+) {
+    const auto bounded_packet_end = std::min(packet_end, packet_bytes.size());
+    const auto available_common_header_bytes = sctp_offset < bounded_packet_end
+        ? std::min<std::size_t>(detail::kSctpCommonHeaderSize, bounded_packet_end - sctp_offset)
+        : 0U;
+
+    details.has_sctp = true;
+    details.sctp = {};
+    details.sctp.available_common_header_bytes = static_cast<std::uint8_t>(available_common_header_bytes);
+    details.sctp.common_header_truncated = available_common_header_bytes < detail::kSctpCommonHeaderSize;
+
+    if (available_common_header_bytes >= 2U) {
+        details.sctp.src_port = detail::read_be16(packet_bytes, sctp_offset);
+    }
+    if (available_common_header_bytes >= 4U) {
+        details.sctp.dst_port = detail::read_be16(packet_bytes, sctp_offset + 2U);
+    }
+    if (available_common_header_bytes >= 8U) {
+        details.sctp.verification_tag = detail::read_be32(packet_bytes, sctp_offset + 4U);
+    }
+    if (available_common_header_bytes >= 12U) {
+        details.sctp.checksum = detail::read_be32(packet_bytes, sctp_offset + 8U);
+    }
+
+    if (details.sctp.common_header_truncated) {
+        return;
+    }
+
+    const auto chunk_offset = sctp_offset + detail::kSctpCommonHeaderSize;
+    if (chunk_offset >= bounded_packet_end) {
+        return;
+    }
+
+    details.sctp.first_chunk_present = true;
+    const auto available_chunk_header_bytes = std::min<std::size_t>(kSctpChunkHeaderSize, bounded_packet_end - chunk_offset);
+    details.sctp.first_chunk_available_header_bytes = static_cast<std::uint8_t>(available_chunk_header_bytes);
+    details.sctp.first_chunk_header_truncated = available_chunk_header_bytes < kSctpChunkHeaderSize;
+
+    if (available_chunk_header_bytes >= 1U) {
+        details.sctp.first_chunk_type = packet_bytes[chunk_offset];
+    }
+    if (available_chunk_header_bytes >= 2U) {
+        details.sctp.first_chunk_flags = packet_bytes[chunk_offset + 1U];
+    }
+    if (available_chunk_header_bytes >= 4U) {
+        details.sctp.first_chunk_length = detail::read_be16(packet_bytes, chunk_offset + 2U);
+    }
+
+    if (details.sctp.first_chunk_header_truncated || details.sctp.first_chunk_type != kSctpChunkTypeData) {
+        return;
+    }
+
+    const auto chunk_available_bytes = bounded_packet_end - chunk_offset;
+    const auto declared_chunk_bytes = details.sctp.first_chunk_length >= kSctpChunkHeaderSize
+        ? static_cast<std::size_t>(details.sctp.first_chunk_length)
+        : kSctpChunkHeaderSize;
+    const auto bounded_chunk_bytes = std::min(chunk_available_bytes, declared_chunk_bytes);
+    const auto data_metadata_offset = chunk_offset + kSctpChunkHeaderSize;
+    const auto available_data_metadata_bytes = bounded_chunk_bytes > kSctpChunkHeaderSize
+        ? std::min<std::size_t>(kSctpDataChunkMetadataSize, bounded_chunk_bytes - kSctpChunkHeaderSize)
+        : 0U;
+
+    details.sctp.data_metadata_present = true;
+    details.sctp.data_metadata_available_bytes = static_cast<std::uint8_t>(available_data_metadata_bytes);
+    details.sctp.data_metadata_truncated = available_data_metadata_bytes < kSctpDataChunkMetadataSize;
+
+    if (available_data_metadata_bytes >= 4U) {
+        details.sctp.tsn = detail::read_be32(packet_bytes, data_metadata_offset);
+    }
+    if (available_data_metadata_bytes >= 6U) {
+        details.sctp.stream_identifier = detail::read_be16(packet_bytes, data_metadata_offset + 4U);
+    }
+    if (available_data_metadata_bytes >= 8U) {
+        details.sctp.stream_sequence_number = detail::read_be16(packet_bytes, data_metadata_offset + 6U);
+    }
+    if (available_data_metadata_bytes >= 12U) {
+        details.sctp.ppid = detail::read_be32(packet_bytes, data_metadata_offset + 8U);
+    }
 }
 
 void populate_vxlan_details(
@@ -1895,6 +1983,14 @@ std::optional<PacketDetails> decode_packet_details(
             return details;
         }
 
+        if (details.ipv4.protocol == detail::kIpProtocolSctp) {
+            populate_sctp_details(network_packet_bytes, transport_offset, packet_end, details);
+            if (details.sctp.common_header_truncated && mode == DecodeMode::strict) {
+                return std::nullopt;
+            }
+            return details;
+        }
+
         if (details.ipv4.protocol == detail::kIpProtocolIcmp) {
             if (transport_offset + 2U > packet_end || network_packet_bytes.size() < transport_offset + 2U) {
                 return mode == DecodeMode::best_effort ? std::optional<PacketDetails> {details} : std::nullopt;
@@ -2099,6 +2195,14 @@ std::optional<PacketDetails> decode_packet_details(
                         );
                     }
                 }
+            }
+            return details;
+        }
+
+        if (payload->next_header == detail::kIpProtocolSctp) {
+            populate_sctp_details(network_packet_bytes, payload->payload_offset, packet_end, details);
+            if (details.sctp.common_header_truncated && mode == DecodeMode::strict) {
+                return std::nullopt;
             }
             return details;
         }
