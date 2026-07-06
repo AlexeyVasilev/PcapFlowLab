@@ -753,12 +753,6 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
         }
 
         if (inner.ipv4.protocol == detail::kIpProtocolSctp) {
-            const auto sctp = detail::parse_sctp_common_header(network_packet_bytes, transport_offset, packet_end);
-            if (!sctp.has_value()) {
-                inner.ipv4_truncated = true;
-                return inner;
-            }
-
             inner.has_sctp = true;
             populate_sctp_details_fields(network_packet_bytes, transport_offset, packet_end, inner.sctp);
             return inner;
@@ -886,16 +880,6 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
         }
 
         if (payload->next_header == detail::kIpProtocolSctp) {
-            const auto sctp = detail::parse_sctp_common_header(
-                network_packet_bytes,
-                payload->payload_offset,
-                packet_end
-            );
-            if (!sctp.has_value()) {
-                inner.ipv6_truncated = true;
-                return inner;
-            }
-
             inner.has_sctp = true;
             populate_sctp_details_fields(network_packet_bytes, payload->payload_offset, packet_end, inner.sctp);
             return inner;
