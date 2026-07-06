@@ -2279,6 +2279,7 @@
     const transportRows = overview ? [
       ["TCP", overview.protocol_summary?.tcp],
       ["UDP", overview.protocol_summary?.udp],
+      ["SCTP", overview.protocol_summary?.sctp],
       ["Other", overview.protocol_summary?.other],
     ] : [];
     const familyRows = overview ? [

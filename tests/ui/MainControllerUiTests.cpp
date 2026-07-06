@@ -655,9 +655,9 @@ int main(int argc, char* argv[]) {
     controller.setStatisticsMode(99);
     UI_EXPECT(controller.statisticsMode() == 0);
 
-    UI_EXPECT(controller.tcpFlowCount() + controller.udpFlowCount() + controller.otherFlowCount() == controller.flowCount());
-    UI_EXPECT(controller.tcpPacketCount() + controller.udpPacketCount() + controller.otherPacketCount() == controller.packetCount());
-    UI_EXPECT(controller.tcpTotalBytes() + controller.udpTotalBytes() + controller.otherTotalBytes() == controller.totalBytes());
+    UI_EXPECT(controller.tcpFlowCount() + controller.udpFlowCount() + controller.sctpFlowCount() + controller.otherFlowCount() == controller.flowCount());
+    UI_EXPECT(controller.tcpPacketCount() + controller.udpPacketCount() + controller.sctpPacketCount() + controller.otherPacketCount() == controller.packetCount());
+    UI_EXPECT(controller.tcpTotalBytes() + controller.udpTotalBytes() + controller.sctpTotalBytes() + controller.otherTotalBytes() == controller.totalBytes());
     UI_EXPECT(controller.ipv4FlowCount() + controller.ipv6FlowCount() == controller.flowCount());
     UI_EXPECT(controller.ipv4PacketCount() + controller.ipv6PacketCount() == controller.packetCount());
     UI_EXPECT(controller.ipv4TotalBytes() + controller.ipv6TotalBytes() == controller.totalBytes());
@@ -830,9 +830,9 @@ int main(int argc, char* argv[]) {
     controller.setStatisticsMode(99);
     UI_EXPECT(controller.statisticsMode() == 0);
 
-    UI_EXPECT(controller.tcpFlowCount() + controller.udpFlowCount() + controller.otherFlowCount() == controller.flowCount());
-    UI_EXPECT(controller.tcpPacketCount() + controller.udpPacketCount() + controller.otherPacketCount() == controller.packetCount());
-    UI_EXPECT(controller.tcpTotalBytes() + controller.udpTotalBytes() + controller.otherTotalBytes() == controller.totalBytes());
+    UI_EXPECT(controller.tcpFlowCount() + controller.udpFlowCount() + controller.sctpFlowCount() + controller.otherFlowCount() == controller.flowCount());
+    UI_EXPECT(controller.tcpPacketCount() + controller.udpPacketCount() + controller.sctpPacketCount() + controller.otherPacketCount() == controller.packetCount());
+    UI_EXPECT(controller.tcpTotalBytes() + controller.udpTotalBytes() + controller.sctpTotalBytes() + controller.otherTotalBytes() == controller.totalBytes());
     UI_EXPECT(controller.ipv4FlowCount() + controller.ipv6FlowCount() == controller.flowCount());
     UI_EXPECT(controller.ipv4PacketCount() + controller.ipv6PacketCount() == controller.packetCount());
     UI_EXPECT(controller.ipv4TotalBytes() + controller.ipv6TotalBytes() == controller.totalBytes());

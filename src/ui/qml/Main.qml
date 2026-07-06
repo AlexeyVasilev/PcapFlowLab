@@ -1052,6 +1052,10 @@ ApplicationWindow {
                 udpPacketCount: mainController.udpPacketCount
                 udpCapturedBytes: mainController.udpCapturedBytes
                 udpOriginalBytes: mainController.udpOriginalBytes
+                sctpFlowCount: mainController.sctpFlowCount
+                sctpPacketCount: mainController.sctpPacketCount
+                sctpCapturedBytes: mainController.sctpCapturedBytes
+                sctpOriginalBytes: mainController.sctpOriginalBytes
                 otherFlowCount: mainController.otherFlowCount
                 otherPacketCount: mainController.otherPacketCount
                 otherCapturedBytes: mainController.otherCapturedBytes

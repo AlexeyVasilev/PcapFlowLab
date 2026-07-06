@@ -2124,8 +2124,10 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
         .summary = session_.summary(),
-        .captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes + protocol_summary.other.captured_bytes,
-        .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes + protocol_summary.other.original_bytes,
+        .captured_bytes = protocol_summary.tcp.captured_bytes + protocol_summary.udp.captured_bytes +
+            protocol_summary.sctp.captured_bytes + protocol_summary.other.captured_bytes,
+        .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
+            protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
         .protocol_summary = protocol_summary,
         .quic_recognition = session_.quic_recognition_stats(),

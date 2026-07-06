@@ -2831,6 +2831,7 @@ qulonglong MainController::capturedBytes() const noexcept {
     return static_cast<qulonglong>(
         protocol_summary_.tcp.captured_bytes +
         protocol_summary_.udp.captured_bytes +
+        protocol_summary_.sctp.captured_bytes +
         protocol_summary_.other.captured_bytes
     );
 }
@@ -2911,6 +2912,26 @@ qulonglong MainController::udpOriginalBytes() const noexcept {
 
 qulonglong MainController::udpTotalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.udp.original_bytes);
+}
+
+qulonglong MainController::sctpFlowCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.flow_count);
+}
+
+qulonglong MainController::sctpPacketCount() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.packet_count);
+}
+
+qulonglong MainController::sctpCapturedBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.captured_bytes);
+}
+
+qulonglong MainController::sctpOriginalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.original_bytes);
+}
+
+qulonglong MainController::sctpTotalBytes() const noexcept {
+    return static_cast<qulonglong>(protocol_summary_.sctp.original_bytes);
 }
 
 qulonglong MainController::otherFlowCount() const noexcept {

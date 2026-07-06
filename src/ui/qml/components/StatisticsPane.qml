@@ -18,6 +18,10 @@ Item {
     property var udpPacketCount: 0
     property var udpCapturedBytes: 0
     property var udpOriginalBytes: 0
+    property var sctpFlowCount: 0
+    property var sctpPacketCount: 0
+    property var sctpCapturedBytes: 0
+    property var sctpOriginalBytes: 0
     property var otherFlowCount: 0
     property var otherPacketCount: 0
     property var otherCapturedBytes: 0
@@ -95,6 +99,10 @@ Item {
                     udpPacketCount: root.udpPacketCount
                     udpCapturedBytes: root.udpCapturedBytes
                     udpOriginalBytes: root.udpOriginalBytes
+                    sctpFlowCount: root.sctpFlowCount
+                    sctpPacketCount: root.sctpPacketCount
+                    sctpCapturedBytes: root.sctpCapturedBytes
+                    sctpOriginalBytes: root.sctpOriginalBytes
                     otherFlowCount: root.otherFlowCount
                     otherPacketCount: root.otherPacketCount
                     otherCapturedBytes: root.otherCapturedBytes

@@ -1550,6 +1550,9 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
         case ProtocolId::udp:
             add_protocol_stats(summary.udp, connection);
             break;
+        case ProtocolId::sctp:
+            add_protocol_stats(summary.sctp, connection);
+            break;
         default:
             add_protocol_stats(summary.other, connection);
             break;

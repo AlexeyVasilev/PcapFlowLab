@@ -168,6 +168,11 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong udpCapturedBytes READ udpCapturedBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpOriginalBytes READ udpOriginalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong udpTotalBytes READ udpTotalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong sctpFlowCount READ sctpFlowCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong sctpPacketCount READ sctpPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong sctpCapturedBytes READ sctpCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong sctpOriginalBytes READ sctpOriginalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong sctpTotalBytes READ sctpTotalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherFlowCount READ otherFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherPacketCount READ otherPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong otherCapturedBytes READ otherCapturedBytes NOTIFY stateChanged)
@@ -366,6 +371,11 @@ public:
     [[nodiscard]] qulonglong udpCapturedBytes() const noexcept;
     [[nodiscard]] qulonglong udpOriginalBytes() const noexcept;
     [[nodiscard]] qulonglong udpTotalBytes() const noexcept;
+    [[nodiscard]] qulonglong sctpFlowCount() const noexcept;
+    [[nodiscard]] qulonglong sctpPacketCount() const noexcept;
+    [[nodiscard]] qulonglong sctpCapturedBytes() const noexcept;
+    [[nodiscard]] qulonglong sctpOriginalBytes() const noexcept;
+    [[nodiscard]] qulonglong sctpTotalBytes() const noexcept;
     [[nodiscard]] qulonglong otherFlowCount() const noexcept;
     [[nodiscard]] qulonglong otherPacketCount() const noexcept;
     [[nodiscard]] qulonglong otherCapturedBytes() const noexcept;
