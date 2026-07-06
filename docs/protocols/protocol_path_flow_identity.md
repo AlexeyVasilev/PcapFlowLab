@@ -176,6 +176,13 @@ Potential v1 layer kinds:
 
 The v1 design should keep the layer-key payload numeric and compact. No strings should be stored in hot-path structures.
 
+Stage-B implementation notes:
+
+- `ProtocolPathId 0` is reserved as invalid / none.
+- The standalone owned `ProtocolPath` model may use `std::vector<LayerKey>`.
+- A future decode hot-path builder can still use bounded inline storage before interning into the registry.
+- The initial model can reuse the same `EthernetII` kind for both outer and inner Ethernet positions, with path ordering and context distinguishing them.
+
 ## Identifiers Included In V1
 
 These identifiers should affect flow identity in v1:
@@ -510,4 +517,3 @@ Relevant existing fixture families:
 4. Should `ProtocolPathId` be attached only to flow keys first, or also to `PacketRef` in the same stage to avoid duplicate registry lookups later?
 5. What fixed maximum layer count is acceptable for the inline hot-path representation before falling back to a slower path or rejecting overly deep packets conservatively?
 6. Should exact path labels be generated only on demand from registry data, or should a small debug-only formatter exist earlier for tests and logs?
-

@@ -40,6 +40,7 @@ endif()
 add_library(
     pcap_flow_lab_core
     src/core/domain/FlowKey.cpp
+    src/core/domain/ProtocolPath.cpp
     src/core/domain/ConnectionKey.cpp
     src/core/domain/Flow.cpp
     src/core/domain/Connection.cpp
@@ -263,6 +264,7 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         tests/unit/test_main.cpp
         tests/unit/FlowKeyTests.cpp
+        tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
