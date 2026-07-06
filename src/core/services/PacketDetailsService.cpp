@@ -231,6 +231,7 @@ void populate_lenient_vxlan_details(
     }
 
     details.vxlan.reserved_bits_non_zero =
+        (details.vxlan.flags & static_cast<std::uint8_t>(~detail::kVxlanFlagI)) != 0U ||
         packet_bytes[vxlan_offset + 1U] != 0U ||
         packet_bytes[vxlan_offset + 2U] != 0U ||
         packet_bytes[vxlan_offset + 3U] != 0U ||

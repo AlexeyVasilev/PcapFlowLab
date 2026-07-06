@@ -708,6 +708,18 @@ inline std::optional<VxlanPayloadView> parse_vxlan_payload(
         return view;
     }
 
+    view.has_inner_ethernet = true;
+    view.inner_ethernet_truncated = true;
+    view.inner_ethernet = LinkLayerPayloadView {
+        .protocol_type = read_be16(bytes, view.inner_payload_offset + 12U),
+        .payload_offset = view.inner_payload_offset + kEthernetHeaderSize,
+        .is_ethernet = true,
+        .is_ieee_802_3 = read_be16(bytes, view.inner_payload_offset + 12U) < kIeee8023LengthCutoff,
+        .declared_payload_length = static_cast<std::uint16_t>(
+            read_be16(bytes, view.inner_payload_offset + 12U) < kIeee8023LengthCutoff
+                ? read_be16(bytes, view.inner_payload_offset + 12U)
+                : 0U),
+    };
     return view;
 }
 
@@ -777,6 +789,18 @@ inline std::optional<GenevePayloadView> parse_geneve_payload(
         return view;
     }
 
+    view.has_inner_ethernet = true;
+    view.inner_ethernet_truncated = true;
+    view.inner_ethernet = LinkLayerPayloadView {
+        .protocol_type = read_be16(bytes, view.inner_payload_offset + 12U),
+        .payload_offset = view.inner_payload_offset + kEthernetHeaderSize,
+        .is_ethernet = true,
+        .is_ieee_802_3 = read_be16(bytes, view.inner_payload_offset + 12U) < kIeee8023LengthCutoff,
+        .declared_payload_length = static_cast<std::uint16_t>(
+            read_be16(bytes, view.inner_payload_offset + 12U) < kIeee8023LengthCutoff
+                ? read_be16(bytes, view.inner_payload_offset + 12U)
+                : 0U),
+    };
     return view;
 }
 
