@@ -148,7 +148,20 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
         PFL_EXPECT(left[index].payload_length == right[index].payload_length);
         PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
+        PFL_EXPECT(left[index].protocol_path_id == right[index].protocol_path_id);
         PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
+    }
+}
+
+void expect_matching_protocol_path_registries(const ProtocolPathRegistry& left, const ProtocolPathRegistry& right) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0U; index < left.size(); ++index) {
+        const auto id = static_cast<ProtocolPathId>(index + 1U);
+        const auto* left_path = left.find(id);
+        const auto* right_path = right.find(id);
+        PFL_REQUIRE(left_path != nullptr);
+        PFL_REQUIRE(right_path != nullptr);
+        PFL_EXPECT(*left_path == *right_path);
     }
 }
 
@@ -220,6 +233,7 @@ void expect_matching_states(const CaptureState& left, const CaptureState& right)
     PFL_EXPECT(left.summary.packet_count == right.summary.packet_count);
     PFL_EXPECT(left.summary.flow_count == right.summary.flow_count);
     PFL_EXPECT(left.summary.total_bytes == right.summary.total_bytes);
+    expect_matching_protocol_path_registries(left.protocol_path_registry, right.protocol_path_registry);
     expect_matching_tables(left.ipv4_connections, right.ipv4_connections);
     expect_matching_tables(left.ipv6_connections, right.ipv6_connections);
 }
@@ -290,11 +304,25 @@ void run_index_format_tests() {
     );
     PFL_EXPECT(!index_reader.read(missing_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
 
+    const auto missing_protocol_paths_index_path = write_temp_binary_file(
+        "pfl_index_missing_protocol_paths.idx",
+        remove_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_paths))
+    );
+    PFL_EXPECT(!index_reader.read(
+        missing_protocol_paths_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+
     const auto duplicate_index_path = write_temp_binary_file(
         "pfl_index_duplicate_summary.idx",
         duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::summary))
     );
     PFL_EXPECT(!index_reader.read(duplicate_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+
+    const auto duplicate_protocol_paths_index_path = write_temp_binary_file(
+        "pfl_index_duplicate_protocol_paths.idx",
+        duplicate_section(index_bytes, static_cast<std::uint32_t>(detail::CaptureIndexSectionId::protocol_paths))
+    );
+    PFL_EXPECT(!index_reader.read(
+        duplicate_protocol_paths_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
 
     const auto trailing_index_path = write_temp_binary_file(
         "pfl_index_trailing_garbage.idx",
@@ -315,11 +343,23 @@ void run_index_format_tests() {
     );
     PFL_EXPECT(!checkpoint_reader.read(missing_checkpoint_path, loaded_checkpoint));
 
+    const auto missing_protocol_paths_checkpoint_path = write_temp_binary_file(
+        "pfl_checkpoint_missing_protocol_paths.ckp",
+        remove_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::protocol_paths))
+    );
+    PFL_EXPECT(!checkpoint_reader.read(missing_protocol_paths_checkpoint_path, loaded_checkpoint));
+
     const auto duplicate_checkpoint_path = write_temp_binary_file(
         "pfl_checkpoint_duplicate_progress.ckp",
         duplicate_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::progress))
     );
     PFL_EXPECT(!checkpoint_reader.read(duplicate_checkpoint_path, loaded_checkpoint));
+
+    const auto duplicate_protocol_paths_checkpoint_path = write_temp_binary_file(
+        "pfl_checkpoint_duplicate_protocol_paths.ckp",
+        duplicate_section(checkpoint_bytes, static_cast<std::uint32_t>(detail::ImportCheckpointSectionId::protocol_paths))
+    );
+    PFL_EXPECT(!checkpoint_reader.read(duplicate_protocol_paths_checkpoint_path, loaded_checkpoint));
 
     const auto trailing_checkpoint_path = write_temp_binary_file(
         "pfl_checkpoint_trailing_garbage.ckp",

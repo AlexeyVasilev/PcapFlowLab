@@ -138,6 +138,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
     CaptureState state {};
     bool has_source_info {false};
     bool has_summary {false};
+    bool has_protocol_paths {false};
     bool has_ipv4_connections {false};
     bool has_ipv6_connections {false};
 
@@ -160,7 +161,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
     }
 
     if (version != kCaptureIndexVersion) {
-        set_error_context(0, "unsupported index version");
+        set_error_context(0, "unsupported index version; rebuild the index from the source capture");
         if (ctx != nullptr) {
             ctx->set_failure(last_error_);
         }
@@ -234,6 +235,18 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
             }
             has_summary = true;
             break;
+        case detail::CaptureIndexSectionId::protocol_paths:
+            if (has_protocol_paths || !parse_section_payload(payload, [&](std::istream& section_stream) {
+                return detail::read_protocol_path_registry(section_stream, state.protocol_path_registry);
+            })) {
+                set_error_context(current_offset(stream), "invalid protocol-path section");
+                if (ctx != nullptr) {
+                    ctx->set_failure(last_error_);
+                }
+                return false;
+            }
+            has_protocol_paths = true;
+            break;
         case detail::CaptureIndexSectionId::ipv4_connections:
             if (has_ipv4_connections || !parse_section_payload(payload, [&](std::istream& section_stream) {
                 return detail::read_connection_table(section_stream, state.ipv4_connections);
@@ -272,7 +285,7 @@ bool CaptureIndexReader::read(const std::filesystem::path& index_path,
         return false;
     }
 
-    if (!has_source_info || !has_summary || !has_ipv4_connections || !has_ipv6_connections) {
+    if (!has_source_info || !has_summary || !has_protocol_paths || !has_ipv4_connections || !has_ipv6_connections) {
         set_error_context(current_offset(stream), "missing required index sections");
         if (ctx != nullptr) {
             ctx->set_failure(last_error_);

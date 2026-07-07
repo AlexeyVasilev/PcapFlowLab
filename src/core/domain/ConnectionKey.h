@@ -31,6 +31,7 @@ struct ConnectionKeyV4 {
     EndpointKeyV4 first {};
     EndpointKeyV4 second {};
     ProtocolId protocol {ProtocolId::unknown};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
 
     [[nodiscard]] friend constexpr bool operator==(const ConnectionKeyV4&, const ConnectionKeyV4&) = default;
     [[nodiscard]] friend constexpr auto operator<=>(const ConnectionKeyV4&, const ConnectionKeyV4&) = default;
@@ -40,6 +41,7 @@ struct ConnectionKeyV6 {
     EndpointKeyV6 first {};
     EndpointKeyV6 second {};
     ProtocolId protocol {ProtocolId::unknown};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
 
     [[nodiscard]] friend constexpr bool operator==(const ConnectionKeyV6&, const ConnectionKeyV6&) = default;
     [[nodiscard]] friend constexpr auto operator<=>(const ConnectionKeyV6&, const ConnectionKeyV6&) = default;

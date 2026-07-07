@@ -26,14 +26,9 @@ void run_vlan_tests() {
         PFL_EXPECT(session.summary().flow_count == 1);
         PFL_EXPECT(session.state().ipv4_connections.size() == 1);
 
-        const auto key = make_connection_key(FlowKeyV4 {
-            .src_addr = ipv4(192, 168, 1, 10),
-            .dst_addr = ipv4(192, 168, 1, 20),
-            .src_port = 12345,
-            .dst_port = 443,
-            .protocol = ProtocolId::tcp,
-        });
-        const auto* connection = session.state().ipv4_connections.find(key);
+        const auto connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto* connection = connections.front();
         PFL_EXPECT(connection != nullptr);
         PFL_EXPECT(connection->has_flow_a);
         PFL_EXPECT(connection->flow_a.packet_count == 1);
@@ -72,14 +67,9 @@ void run_vlan_tests() {
         PFL_EXPECT(session.summary().flow_count == 1);
         PFL_EXPECT(session.state().ipv4_connections.size() == 1);
 
-        const auto key = make_connection_key(FlowKeyV4 {
-            .src_addr = ipv4(172, 16, 0, 1),
-            .dst_addr = ipv4(172, 16, 0, 2),
-            .src_port = 5353,
-            .dst_port = 53,
-            .protocol = ProtocolId::udp,
-        });
-        const auto* connection = session.state().ipv4_connections.find(key);
+        const auto connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto* connection = connections.front();
         PFL_EXPECT(connection != nullptr);
         PFL_EXPECT(connection->has_flow_a);
 

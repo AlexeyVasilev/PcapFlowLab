@@ -31,14 +31,9 @@ void run_packet_access_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(path));
-        const auto key = make_connection_key(FlowKeyV4 {
-            .src_addr = ipv4(10, 0, 0, 1),
-            .dst_addr = ipv4(10, 0, 0, 2),
-            .src_port = 12345,
-            .dst_port = 443,
-            .protocol = ProtocolId::tcp,
-        });
-        const auto* connection = session.state().ipv4_connections.find(key);
+        const auto connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto* connection = connections.front();
         PFL_EXPECT(connection != nullptr);
         PFL_EXPECT(connection->has_flow_a);
 

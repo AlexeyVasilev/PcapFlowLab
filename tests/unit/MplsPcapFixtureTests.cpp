@@ -507,9 +507,10 @@ void run_mpls_pcap_fixture_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap")));
         const auto rows = session.list_flows();
-        PFL_REQUIRE(rows.size() == 1U);
-        PFL_EXPECT(rows[0].packet_count == 2U);
-        PFL_EXPECT(rows[0].protocol_text == "TCP");
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [](const FlowRow& row) {
+            return row.packet_count == 1U && row.protocol_text == "TCP";
+        }));
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
 
         const auto first_packet = require_packet(session, 0U);

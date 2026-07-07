@@ -516,21 +516,22 @@ void run_gtpu_positive_fixture_tests() {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
         const auto rows = session.list_flows();
-        const auto* flow = find_flow_by_tuple(
-            rows,
-            FlowAddressFamily::ipv4,
-            "TCP",
-            "10.60.0.10",
-            49660U,
-            "10.60.0.20",
-            443U
-        );
-        PFL_EXPECT(flow != nullptr);
-        if (flow != nullptr) {
-            PFL_EXPECT(flow->packet_count == 2U);
-        }
-        // Known branch limitation: TEID is not yet part of flow identity, so
-        // identical inner tuples from different TEIDs may merge into one flow.
+        const auto matching_flow_count = static_cast<std::size_t>(std::count_if(rows.begin(), rows.end(), [&](const FlowRow& row) {
+            return row_matches_tuple(
+                row,
+                FlowAddressFamily::ipv4,
+                "TCP",
+                "10.60.0.10",
+                49660U,
+                "10.60.0.20",
+                443U
+            );
+        }));
+        PFL_EXPECT(rows.size() == 2U);
+        PFL_EXPECT(matching_flow_count == 2U);
+        PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [](const FlowRow& row) {
+            return row.packet_count == 1U;
+        }));
     }
 }
 

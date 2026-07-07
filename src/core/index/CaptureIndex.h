@@ -20,7 +20,7 @@ struct CaptureSourceInfo {
 };
 
 inline constexpr std::uint64_t kCaptureIndexMagic = 0x315844494c465050ULL;
-inline constexpr std::uint16_t kCaptureIndexVersion = 7;
+inline constexpr std::uint16_t kCaptureIndexVersion = 8;
 
 [[nodiscard]] CaptureSourceFormat detect_capture_source_format(const std::filesystem::path& path);
 [[nodiscard]] bool validate_index_magic(const std::filesystem::path& index_path);

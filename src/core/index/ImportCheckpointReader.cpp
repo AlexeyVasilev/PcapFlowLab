@@ -57,6 +57,7 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
     bool has_source_info {false};
     bool has_progress {false};
     bool has_summary {false};
+    bool has_protocol_paths {false};
     bool has_ipv4_connections {false};
     bool has_ipv6_connections {false};
 
@@ -118,6 +119,14 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
             }
             has_summary = true;
             break;
+        case detail::ImportCheckpointSectionId::protocol_paths:
+            if (has_protocol_paths || !parse_section_payload(payload, [&](std::istream& section_stream) {
+                return detail::read_protocol_path_registry(section_stream, checkpoint.state.protocol_path_registry);
+            })) {
+                return false;
+            }
+            has_protocol_paths = true;
+            break;
         case detail::ImportCheckpointSectionId::ipv4_connections:
             if (has_ipv4_connections || !parse_section_payload(payload, [&](std::istream& section_stream) {
                 return detail::read_connection_table(section_stream, checkpoint.state.ipv4_connections);
@@ -139,7 +148,8 @@ bool ImportCheckpointReader::read(const std::filesystem::path& checkpoint_path,
         }
     }
 
-    if (!has_source_info || !has_progress || !has_summary || !has_ipv4_connections || !has_ipv6_connections) {
+    if (!has_source_info || !has_progress || !has_summary || !has_protocol_paths ||
+        !has_ipv4_connections || !has_ipv6_connections) {
         return false;
     }
 

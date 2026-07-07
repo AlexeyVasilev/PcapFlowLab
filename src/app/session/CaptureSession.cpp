@@ -20,6 +20,7 @@
 #include <sstream>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 #include "../../../core/open_context.h"
 #include "core/debug_logging.h"
@@ -1262,6 +1263,46 @@ void CaptureSession::reset_runtime_state() noexcept {
     selected_flow_tcp_payload_suppression_.reset();
 }
 
+CaptureSession::CaptureSession(CaptureSession&& other) noexcept {
+    swap(other);
+    clear_runtime_caches_after_transfer();
+    other.clear_runtime_caches_after_transfer();
+}
+
+CaptureSession& CaptureSession::operator=(CaptureSession&& other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+
+    reset_runtime_state();
+    swap(other);
+    clear_runtime_caches_after_transfer();
+    other.clear_runtime_caches_after_transfer();
+    return *this;
+}
+
+void CaptureSession::swap(CaptureSession& other) noexcept {
+    using std::swap;
+
+    swap(capture_path_, other.capture_path_);
+    swap(source_capture_path_, other.source_capture_path_);
+    swap(source_info_, other.source_info_);
+    swap(state_, other.state_);
+    swap(import_mode_, other.import_mode_);
+    swap(analysis_settings_, other.analysis_settings_);
+    swap(deep_protocol_details_enabled_, other.deep_protocol_details_enabled_);
+    swap(opened_from_index_, other.opened_from_index_);
+    swap(has_loaded_state_, other.has_loaded_state_);
+    swap(partial_open_, other.partial_open_);
+    swap(partial_open_failure_, other.partial_open_failure_);
+    swap(last_open_error_text_, other.last_open_error_text_);
+    swap(selected_flow_full_packet_cache_, other.selected_flow_full_packet_cache_);
+    swap(selected_flow_packet_cache_, other.selected_flow_packet_cache_);
+    swap(selected_flow_tcp_prefix_context_, other.selected_flow_tcp_prefix_context_);
+    swap(listed_connections_cache_, other.listed_connections_cache_);
+    swap(selected_flow_tcp_payload_suppression_, other.selected_flow_tcp_payload_suppression_);
+}
+
 bool CaptureSession::open_capture(const std::filesystem::path& path) {
     return open_capture(path, CaptureImportOptions {}, nullptr);
 }
@@ -1616,6 +1657,14 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
     }
 
     return summary;
+}
+
+void CaptureSession::clear_runtime_caches_after_transfer() noexcept {
+    selected_flow_full_packet_cache_.reset();
+    selected_flow_packet_cache_.reset();
+    selected_flow_tcp_prefix_context_.reset();
+    listed_connections_cache_.reset();
+    selected_flow_tcp_payload_suppression_.reset();
 }
 
 void CaptureSession::set_analysis_settings(const AnalysisSettings& settings) noexcept {

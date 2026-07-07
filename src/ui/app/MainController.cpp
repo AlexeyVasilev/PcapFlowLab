@@ -4738,11 +4738,13 @@ void MainController::applyLoadedState(const QString& path) {
     protocol_summary_ = session_.protocol_summary();
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
+    // Clear any selected-flow state from the previous capture before publishing
+    // the new flow list, so re-selecting flow 0 after a reload always refreshes.
+    clearFlowSelection();
     flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
-    clearFlowSelection();
     setOpenErrorText({});
     setStatusText({});
     emit stateChanged();
@@ -4866,6 +4868,7 @@ void MainController::completeOpenJob(
     setApplyingSession(true);
     QTimer::singleShot(kSessionApplyOverlayDelayMs, this, [this, path, loadedSession]() mutable {
         session_ = std::move(*loadedSession);
+        session_.clear_runtime_caches_after_transfer();
         applyLoadedState(path);
         setApplyingSession(false);
         finishOpenProgress();

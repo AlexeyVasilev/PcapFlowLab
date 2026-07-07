@@ -15,16 +15,18 @@ namespace pfl::detail {
 enum class CaptureIndexSectionId : std::uint32_t {
     source_info = 1,
     summary = 2,
-    ipv4_connections = 3,
-    ipv6_connections = 4,
+    protocol_paths = 3,
+    ipv4_connections = 4,
+    ipv6_connections = 5,
 };
 
 enum class ImportCheckpointSectionId : std::uint32_t {
     source_info = 1,
     progress = 2,
     summary = 3,
-    ipv4_connections = 4,
-    ipv6_connections = 5,
+    protocol_paths = 4,
+    ipv4_connections = 5,
+    ipv6_connections = 6,
 };
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes);
@@ -52,6 +54,8 @@ bool read_capture_source_info(std::istream& stream, CaptureSourceInfo& source_in
 
 bool write_capture_summary(std::ostream& stream, const CaptureSummary& summary);
 bool read_capture_summary(std::istream& stream, CaptureSummary& summary);
+bool write_protocol_path_registry(std::ostream& stream, const ProtocolPathRegistry& registry);
+bool read_protocol_path_registry(std::istream& stream, ProtocolPathRegistry& registry);
 
 bool write_packet_ref(std::ostream& stream, const PacketRef& packet);
 bool read_packet_ref(std::istream& stream, PacketRef& packet);

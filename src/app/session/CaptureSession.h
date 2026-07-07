@@ -89,6 +89,10 @@ struct SelectedFlowPacketCacheInfo {
 
 class CaptureSession {
 public:
+    CaptureSession() = default;
+    CaptureSession(CaptureSession&& other) noexcept;
+    CaptureSession& operator=(CaptureSession&& other) noexcept;
+
     bool open_capture(const std::filesystem::path& path);
     bool open_capture(const std::filesystem::path& path, OpenContext* ctx);
     bool open_capture(const std::filesystem::path& path, const CaptureImportOptions& options);
@@ -112,6 +116,7 @@ public:
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
+    void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
     [[nodiscard]] QuicRecognitionStats quic_recognition_stats() const noexcept;
@@ -313,6 +318,7 @@ private:
         std::uint64_t flow_packet_index
     ) const noexcept;
 
+    void swap(CaptureSession& other) noexcept;
     void reset_runtime_state() noexcept;
 
     std::filesystem::path capture_path_ {};

@@ -399,30 +399,31 @@ Stage C2 status:
 
 - decode now builds protocol-path metadata in the packet decode hot path using `ProtocolPathBuilder`;
 - `CaptureState` owns a per-capture `ProtocolPathRegistry`;
-- import interns non-empty, non-overflowed paths and stores only a temporary in-memory `protocol_path_id` on `PacketRef`;
+- import interns non-empty, non-overflowed paths and stores a staging/runtime `protocol_path_id` on `PacketRef`;
 - `FlowKey` and connection grouping remain tuple-only in this stage;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
-- capture index serialization is intentionally unchanged in this stage, so index-loaded packet refs do not yet restore protocol-path ids;
-- this temporary packet-level metadata exists to prove decode/import correctness before `FlowKeyV2`, not as the final stable storage shape.
+- this packet-level metadata exists first as a decode/import validation aid before `FlowKeyV2`, not as the final stable storage shape;
+- once path-aware flow identity is enabled, packet refs may still carry the effective flow path id in memory for debugging and presentation, but stable storage should remain flow/registry oriented rather than per-packet.
 
 Stage D:
 
 - add path-extraction tests and known collision fixtures/expectations while still not changing grouping behavior where that would break current semantics.
 - current Stage D coverage now includes default-safe Stage C2 assertions proving that packet-level protocol-path metadata already distinguishes at least the VXLAN same-inner-tuple/different-VNI case while grouping remains tuple-only;
-- guarded pending FlowKeyV2 contract tests are intended for:
-  - VXLAN same inner tuple, different VNI -> future split into two flows;
-  - GTP-U same inner tuple, different TEID -> future split into two flows;
-  - MPLS same inner tuple, different label -> future split into two flows;
-  - same exact VXLAN path with reverse inner tuple -> still one bidirectional flow;
-- the guarded contract tests are disabled by default behind `PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS`.
+- the Stage D contract cases that previously lived behind a pending guard are now the default Stage E regression set:
+  - VXLAN same inner tuple, different VNI -> split into two flows;
+  - GTP-U same inner tuple, different TEID -> split into two flows;
+  - MPLS same inner tuple, different label -> split into two flows;
+  - same exact VXLAN path with reverse inner tuple -> still one bidirectional flow.
 
 Stage E:
 
-- enable `FlowKeyV2` by adding `protocol_path_id` to effective flow identity.
+- enable `FlowKeyV2` by adding `protocol_path_id` to effective flow identity;
+- carry `protocol_path_id` through both `FlowKey` and normalized `ConnectionKey`, so in-memory grouping splits same-tuple traffic when protocol paths differ;
+- keep `kInvalidProtocolPathId` as the conservative fallback for unsupported/overflowed/unknown paths.
 
 Stage F:
 
-- bump index format, persist protocol-path registry metadata at the flow level, and reject pre-FlowKeyV2 indexes with a rebuild-required path.
+- bump index/checkpoint formats, persist protocol-path registry metadata at the capture level plus `protocol_path_id` at the flow/connection-key level, and reject pre-FlowKeyV2 indexes with a rebuild-required path.
 
 Stage G:
 
@@ -441,7 +442,7 @@ Stage I:
 Files likely affected in later implementation stages:
 
 - `src/core/domain/FlowKey.h`
-  - current `FlowKeyV4` / `FlowKeyV6` are tuple-only
+  - `FlowKeyV4` / `FlowKeyV6` now carry the effective `protocol_path_id`
 - `src/core/domain/PacketRef.h`
   - current Stage C2 attachment point for temporary in-memory `protocol_path_id`
 - `src/core/domain/Connection.h`
@@ -449,7 +450,7 @@ Files likely affected in later implementation stages:
 - `src/core/domain/Flow.h`
   - flow storage mirrors current key model
 - `src/core/domain/ConnectionKey.h`
-  - current connection identity is derived from `FlowKey`
+  - connection identity now mirrors `FlowKey` path awareness
 - `src/core/decode/PacketDecoder.cpp`
   - current flow key is created here for direct IP and overlay-resolved inner tuples
 - `src/core/decode/PacketDecodeSupport.h`
@@ -457,7 +458,7 @@ Files likely affected in later implementation stages:
 - `src/core/services/CaptureImportProcessor.cpp`
   - current Stage C2 interning point from `DecodedPacket::protocol_path` into the per-capture registry
 - `src/core/index/Serialization.cpp`
-  - current flow key serialization will need a versioned break once `FlowKeyV2` and flow-level protocol-path persistence are enabled
+  - flow key and connection key serialization now require a versioned break once `FlowKeyV2` is enabled
 - `src/app/session/CaptureSession.cpp`
   - session summaries, exports, and row generation may need access to protocol-path metadata later
 - `src/app/session/FlowRows.h`
@@ -479,6 +480,19 @@ Files likely affected in later implementation stages:
 
 ## Current Tuple Construction Path Summary
 
+## Index Compatibility Policy
+
+- backward compatibility with pre-FlowKeyV2 stable index formats is not a goal;
+- when protocol-path-aware flow identity is enabled, the stable index/checkpoint format may be bumped and older artifacts may be rejected with a rebuild-required message;
+- future unrelated metadata work, including richer unrecognized-packet persistence, may require later format bumps in separate branches.
+
+## Stable Index Storage Policy
+
+- stable capture storage should keep one protocol-path registry/table per indexed capture;
+- each persisted flow/connection references a compact `protocol_path_id`;
+- packet records should not redundantly persist the full protocol path or repeated per-packet protocol identifiers;
+- when index/checkpoint data is loaded back into memory, packet-level `protocol_path_id` can be reconstructed from the owning flow key for runtime convenience.
+
 Static audit of the current code path:
 
 - `src/core/decode/PacketDecoder.cpp`
@@ -499,15 +513,15 @@ Static audit of the current code path:
 - `src/core/services/CaptureImportProcessor.cpp`
   - consumes decoded packets and inserts them into capture state
 - `src/core/index/Serialization.cpp`
-  - persists the tuple-only flow keys
+  - now persists flow/connection path ids plus the shared protocol-path registry
 
-The smallest safe insertion point was `PacketDecoder::decode(...)`, before `DecodedPacket` is returned to the import pipeline. Stage C2 now uses that path while still leaving flow identity unchanged.
+The smallest safe insertion point was `PacketDecoder::decode(...)`, before `DecodedPacket` is returned to the import pipeline. Stages C2 through E use that path, with Stage E now enabling path-aware flow identity on top of the same decode/import handoff.
 
 ## Test Plan
 
 Future tests should cover:
 
-- direct `IPv4/TCP` and `MPLS/VLAN/IPv4/TCP` with the same endpoint tuple must split after `FlowKeyV2`;
+- direct `IPv4/TCP` and `MPLS/VLAN/IPv4/TCP` with the same endpoint tuple must split under `FlowKeyV2`;
 - same inner VXLAN tuple with different VNI must split;
 - same inner Geneve tuple with different VNI must split;
 - same inner GTP-U tuple with different TEID must split;
@@ -553,9 +567,9 @@ Relevant existing fixture families:
 - outer tunnel endpoints remain outside identity in v1, so some namespace collisions may still remain
 - path extraction must stay cheap enough for open/import hot paths
 - fixed-capacity path storage must be sized carefully to avoid silent truncation
-- current tests assume tuple-only grouping and will need coordinated expectation updates once `FlowKeyV2` is enabled
+- remaining test follow-ups should focus on missing collision fixtures and broader regression coverage, not tuple-only-to-path-aware expectation migration
 
-## Open Questions Before Changing FlowKey
+## Remaining Open Questions
 
 1. Should direct Ethernet and IEEE 802.3 be distinct layer kinds in the initial path model, or should they share a single link-layer kind where no namespace identifier differs?
 2. Should PPPoE, PBB, and MACsec enter the v1 path model immediately, or should the first enabling step focus only on the namespace-bearing layers already known to collide today?

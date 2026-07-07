@@ -50,6 +50,9 @@ bool CaptureIndexWriter::write(const std::filesystem::path& index_path,
         !write_marshaled_section(stream, detail::CaptureIndexSectionId::summary, [&](std::ostream& payload) {
             return detail::write_capture_summary(payload, state.summary);
         }) ||
+        !write_marshaled_section(stream, detail::CaptureIndexSectionId::protocol_paths, [&](std::ostream& payload) {
+            return detail::write_protocol_path_registry(payload, state.protocol_path_registry);
+        }) ||
         !write_marshaled_section(stream, detail::CaptureIndexSectionId::ipv4_connections, [&](std::ostream& payload) {
             return detail::write_connection_table(payload, state.ipv4_connections);
         }) ||

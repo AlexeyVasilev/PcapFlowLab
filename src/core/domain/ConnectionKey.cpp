@@ -39,6 +39,7 @@ ConnectionKeyV4 make_connection_key(const FlowKeyV4& key) noexcept {
             .first = source,
             .second = destination,
             .protocol = key.protocol,
+            .protocol_path_id = key.protocol_path_id,
         };
     }
 
@@ -46,6 +47,7 @@ ConnectionKeyV4 make_connection_key(const FlowKeyV4& key) noexcept {
         .first = destination,
         .second = source,
         .protocol = key.protocol,
+        .protocol_path_id = key.protocol_path_id,
     };
 }
 
@@ -58,6 +60,7 @@ ConnectionKeyV6 make_connection_key(const FlowKeyV6& key) noexcept {
             .first = source,
             .second = destination,
             .protocol = key.protocol,
+            .protocol_path_id = key.protocol_path_id,
         };
     }
 
@@ -65,6 +68,7 @@ ConnectionKeyV6 make_connection_key(const FlowKeyV6& key) noexcept {
         .first = destination,
         .second = source,
         .protocol = key.protocol,
+        .protocol_path_id = key.protocol_path_id,
     };
 }
 
@@ -94,6 +98,7 @@ std::size_t ConnectionKeyV4Hash::operator()(const ConnectionKeyV4& key) const no
     auto seed = detail::hash_combine(0U, hash_endpoint(key.first));
     seed = detail::hash_combine(seed, hash_endpoint(key.second));
     seed = detail::hash_combine(seed, std::hash<std::uint8_t> {}(static_cast<std::uint8_t>(key.protocol)));
+    seed = detail::hash_combine(seed, std::hash<ProtocolPathId> {}(key.protocol_path_id));
     return seed;
 }
 
@@ -101,6 +106,7 @@ std::size_t ConnectionKeyV6Hash::operator()(const ConnectionKeyV6& key) const no
     auto seed = detail::hash_combine(0U, hash_endpoint(key.first));
     seed = detail::hash_combine(seed, hash_endpoint(key.second));
     seed = detail::hash_combine(seed, std::hash<std::uint8_t> {}(static_cast<std::uint8_t>(key.protocol)));
+    seed = detail::hash_combine(seed, std::hash<ProtocolPathId> {}(key.protocol_path_id));
     return seed;
 }
 

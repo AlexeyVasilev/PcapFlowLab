@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <utility>
 
 namespace pfl::detail {
 
@@ -40,6 +41,81 @@ bool read_protocol_id(std::istream& stream, ProtocolId& protocol) {
     return true;
 }
 
+bool write_protocol_layer_kind(std::ostream& stream, const ProtocolLayerKind kind) {
+    return write_u16(stream, static_cast<std::uint16_t>(kind));
+}
+
+bool read_protocol_layer_kind(std::istream& stream, ProtocolLayerKind& kind) {
+    std::uint16_t raw_kind {0};
+    if (!read_u16(stream, raw_kind)) {
+        return false;
+    }
+
+    kind = static_cast<ProtocolLayerKind>(raw_kind);
+    return true;
+}
+
+bool write_protocol_layer_identifier(std::ostream& stream, const ProtocolLayerIdentifier& identifier) {
+    return write_u8(stream, static_cast<std::uint8_t>(identifier.kind)) &&
+           write_u64(stream, identifier.value);
+}
+
+bool read_protocol_layer_identifier(std::istream& stream, ProtocolLayerIdentifier& identifier) {
+    std::uint8_t raw_kind {0};
+    if (!read_u8(stream, raw_kind) || !read_u64(stream, identifier.value)) {
+        return false;
+    }
+
+    identifier.kind = static_cast<ProtocolLayerIdentifierKind>(raw_kind);
+    return true;
+}
+
+bool write_layer_key(std::ostream& stream, const LayerKey& key) {
+    return write_protocol_layer_kind(stream, key.kind) &&
+           write_protocol_layer_identifier(stream, key.identifier);
+}
+
+bool read_layer_key(std::istream& stream, LayerKey& key) {
+    return read_protocol_layer_kind(stream, key.kind) &&
+           read_protocol_layer_identifier(stream, key.identifier);
+}
+
+bool write_protocol_path(std::ostream& stream, const ProtocolPath& path) {
+    if (!write_u64(stream, static_cast<std::uint64_t>(path.size()))) {
+        return false;
+    }
+
+    for (const auto& layer : path.layers()) {
+        if (!write_layer_key(stream, layer)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_protocol_path(std::istream& stream, ProtocolPath& path) {
+    std::uint64_t layer_count {0};
+    if (!read_u64(stream, layer_count) ||
+        layer_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max()) ||
+        layer_count > static_cast<std::uint64_t>(kMaxProtocolPathLayers)) {
+        return false;
+    }
+
+    std::vector<LayerKey> layers {};
+    layers.reserve(static_cast<std::size_t>(layer_count));
+    for (std::uint64_t index = 0; index < layer_count; ++index) {
+        LayerKey layer {};
+        if (!read_layer_key(stream, layer)) {
+            return false;
+        }
+        layers.push_back(layer);
+    }
+
+    path = ProtocolPath {std::move(layers)};
+    return true;
+}
+
 bool write_flow_protocol_hint(std::ostream& stream, const FlowProtocolHint hint) {
     return write_u8(stream, static_cast<std::uint8_t>(hint));
 }
@@ -59,7 +135,8 @@ bool write_flow_key(std::ostream& stream, const FlowKeyV4& key) {
            write_u32(stream, key.dst_addr) &&
            write_u16(stream, key.src_port) &&
            write_u16(stream, key.dst_port) &&
-           write_protocol_id(stream, key.protocol);
+           write_protocol_id(stream, key.protocol) &&
+           write_u32(stream, key.protocol_path_id);
 }
 
 bool write_flow_key(std::ostream& stream, const FlowKeyV6& key) {
@@ -69,7 +146,8 @@ bool write_flow_key(std::ostream& stream, const FlowKeyV6& key) {
            write_bytes(stream, destination) &&
            write_u16(stream, key.src_port) &&
            write_u16(stream, key.dst_port) &&
-           write_protocol_id(stream, key.protocol);
+           write_protocol_id(stream, key.protocol) &&
+           write_u32(stream, key.protocol_path_id);
 }
 
 bool read_flow_key(std::istream& stream, FlowKeyV4& key) {
@@ -77,7 +155,8 @@ bool read_flow_key(std::istream& stream, FlowKeyV4& key) {
            read_u32(stream, key.dst_addr) &&
            read_u16(stream, key.src_port) &&
            read_u16(stream, key.dst_port) &&
-           read_protocol_id(stream, key.protocol);
+           read_protocol_id(stream, key.protocol) &&
+           read_u32(stream, key.protocol_path_id);
 }
 
 bool read_flow_key(std::istream& stream, FlowKeyV6& key) {
@@ -87,31 +166,36 @@ bool read_flow_key(std::istream& stream, FlowKeyV6& key) {
            read_bytes(stream, destination) &&
            read_u16(stream, key.src_port) &&
            read_u16(stream, key.dst_port) &&
-           read_protocol_id(stream, key.protocol);
+           read_protocol_id(stream, key.protocol) &&
+           read_u32(stream, key.protocol_path_id);
 }
 
 bool write_connection_key(std::ostream& stream, const ConnectionKeyV4& key) {
     return write_endpoint_key(stream, key.first) &&
            write_endpoint_key(stream, key.second) &&
-           write_protocol_id(stream, key.protocol);
+           write_protocol_id(stream, key.protocol) &&
+           write_u32(stream, key.protocol_path_id);
 }
 
 bool write_connection_key(std::ostream& stream, const ConnectionKeyV6& key) {
     return write_endpoint_key(stream, key.first) &&
            write_endpoint_key(stream, key.second) &&
-           write_protocol_id(stream, key.protocol);
+           write_protocol_id(stream, key.protocol) &&
+           write_u32(stream, key.protocol_path_id);
 }
 
 bool read_connection_key(std::istream& stream, ConnectionKeyV4& key) {
     return read_endpoint_key(stream, key.first) &&
            read_endpoint_key(stream, key.second) &&
-           read_protocol_id(stream, key.protocol);
+           read_protocol_id(stream, key.protocol) &&
+           read_u32(stream, key.protocol_path_id);
 }
 
 bool read_connection_key(std::istream& stream, ConnectionKeyV6& key) {
     return read_endpoint_key(stream, key.first) &&
            read_endpoint_key(stream, key.second) &&
-           read_protocol_id(stream, key.protocol);
+           read_protocol_id(stream, key.protocol) &&
+           read_u32(stream, key.protocol_path_id);
 }
 
 bool read_packet_refs(std::istream& stream, std::vector<PacketRef>& packets) {
@@ -411,17 +495,33 @@ bool write_flow(std::ostream& stream, const FlowV6& flow) {
 }
 
 bool read_flow(std::istream& stream, FlowV4& flow) {
-    return read_flow_key(stream, flow.key) &&
-           read_u64(stream, flow.packet_count) &&
-           read_u64(stream, flow.total_bytes) &&
-           read_packet_refs(stream, flow.packets);
+    if (!read_flow_key(stream, flow.key) ||
+        !read_u64(stream, flow.packet_count) ||
+        !read_u64(stream, flow.total_bytes) ||
+        !read_packet_refs(stream, flow.packets)) {
+        return false;
+    }
+
+    for (auto& packet : flow.packets) {
+        packet.protocol_path_id = flow.key.protocol_path_id;
+    }
+
+    return true;
 }
 
 bool read_flow(std::istream& stream, FlowV6& flow) {
-    return read_flow_key(stream, flow.key) &&
-           read_u64(stream, flow.packet_count) &&
-           read_u64(stream, flow.total_bytes) &&
-           read_packet_refs(stream, flow.packets);
+    if (!read_flow_key(stream, flow.key) ||
+        !read_u64(stream, flow.packet_count) ||
+        !read_u64(stream, flow.total_bytes) ||
+        !read_packet_refs(stream, flow.packets)) {
+        return false;
+    }
+
+    for (auto& packet : flow.packets) {
+        packet.protocol_path_id = flow.key.protocol_path_id;
+    }
+
+    return true;
 }
 
 bool write_connection(std::ostream& stream, const ConnectionV4& connection) {
@@ -628,8 +728,50 @@ bool read_connection_table(std::istream& stream, ConnectionTableV6& table) {
     return true;
 }
 
+bool write_protocol_path_registry(std::ostream& stream, const ProtocolPathRegistry& registry) {
+    if (!write_u64(stream, static_cast<std::uint64_t>(registry.size()))) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < registry.size(); ++index) {
+        const auto id = static_cast<ProtocolPathId>(index + 1U);
+        const auto* path = registry.find(id);
+        if (path == nullptr || !write_protocol_path(stream, *path)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_protocol_path_registry(std::istream& stream, ProtocolPathRegistry& registry) {
+    std::uint64_t path_count {0};
+    if (!read_u64(stream, path_count) ||
+        path_count > static_cast<std::uint64_t>(std::numeric_limits<ProtocolPathId>::max())) {
+        return false;
+    }
+
+    registry = {};
+    for (std::uint64_t index = 0; index < path_count; ++index) {
+        ProtocolPath path {};
+        if (!read_protocol_path(stream, path)) {
+            registry = {};
+            return false;
+        }
+
+        const auto expected_id = static_cast<ProtocolPathId>(index + 1U);
+        if (registry.intern(std::move(path)) != expected_id) {
+            registry = {};
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {
     return write_capture_summary(stream, state.summary) &&
+           write_protocol_path_registry(stream, state.protocol_path_registry) &&
            write_connection_table(stream, state.ipv4_connections) &&
            write_connection_table(stream, state.ipv6_connections);
 }
@@ -637,6 +779,7 @@ bool write_capture_state(std::ostream& stream, const CaptureState& state) {
 bool read_capture_state(std::istream& stream, CaptureState& state) {
     state = {};
     return read_capture_summary(stream, state.summary) &&
+           read_protocol_path_registry(stream, state.protocol_path_registry) &&
            read_connection_table(stream, state.ipv4_connections) &&
            read_connection_table(stream, state.ipv6_connections);
 }

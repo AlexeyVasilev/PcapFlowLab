@@ -1,9 +1,13 @@
 #include <filesystem>
 #include <functional>
+#include <map>
+#include <set>
+#include <sstream>
 #include <string>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/FlowRows.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/CaptureImporter.h"
@@ -66,6 +70,151 @@ std::string require_packet_protocol_path_text(const CaptureState& state, const s
     const auto* path = state.protocol_path_registry.find(packet->protocol_path_id);
     PFL_REQUIRE(path != nullptr);
     return format_protocol_path(*path);
+}
+
+CaptureImportOptions fast_import_options() {
+    CaptureImportOptions options {};
+    options.mode = ImportMode::fast;
+    return options;
+}
+
+ProtocolPathId flow_protocol_path_id(const FlowRow& row) {
+    if (std::holds_alternative<ConnectionKeyV4>(row.key)) {
+        return std::get<ConnectionKeyV4>(row.key).protocol_path_id;
+    }
+
+    return std::get<ConnectionKeyV6>(row.key).protocol_path_id;
+}
+
+std::string protocol_path_text_or_invalid(const CaptureState& state, const ProtocolPathId id) {
+    if (id == kInvalidProtocolPathId) {
+        return "invalid";
+    }
+
+    const auto* path = state.protocol_path_registry.find(id);
+    if (path == nullptr) {
+        return "missing";
+    }
+
+    return format_protocol_path(*path);
+}
+
+std::string normalized_protocol_path_text_for_flow_identity(const CaptureState& state, const ProtocolPathId id) {
+    if (id == kInvalidProtocolPathId) {
+        return "invalid";
+    }
+
+    const auto* path = state.protocol_path_registry.find(id);
+    if (path == nullptr) {
+        return "missing";
+    }
+
+    std::vector<LayerKey> normalized_layers {};
+    normalized_layers.reserve(path->size());
+    for (const auto& layer : path->layers()) {
+        const bool omit_priority_tag =
+            layer.kind == ProtocolLayerKind::vlan &&
+            layer.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid &&
+            layer.identifier.value == 0U;
+        if (!omit_priority_tag) {
+            normalized_layers.push_back(layer);
+        }
+    }
+
+    return format_protocol_path(ProtocolPath {std::move(normalized_layers)});
+}
+
+std::string join_packet_indices(const std::vector<PacketRef>& packets) {
+    std::ostringstream builder {};
+    for (std::size_t index = 0; index < packets.size(); ++index) {
+        if (index != 0U) {
+            builder << ',';
+        }
+        builder << packets[index].packet_index;
+    }
+    return builder.str();
+}
+
+std::string join_packet_numbers(const std::vector<PacketRef>& packets) {
+    std::ostringstream builder {};
+    for (std::size_t index = 0; index < packets.size(); ++index) {
+        if (index != 0U) {
+            builder << ',';
+        }
+        builder << '#' << (packets[index].packet_index + 1U);
+    }
+    return builder.str();
+}
+
+std::string summarize_packet_path_ids(const CaptureState& state, const std::vector<PacketRef>& packets) {
+    std::map<ProtocolPathId, std::vector<std::uint64_t>> packets_by_path {};
+    for (const auto& packet : packets) {
+        packets_by_path[packet.protocol_path_id].push_back(packet.packet_index);
+    }
+
+    std::ostringstream builder {};
+    bool first_entry = true;
+    for (const auto& [path_id, packet_indices] : packets_by_path) {
+        if (!first_entry) {
+            builder << "; ";
+        }
+        first_entry = false;
+
+        builder << "id=" << path_id
+                << " [" << protocol_path_text_or_invalid(state, path_id) << "] packets=";
+        for (std::size_t index = 0; index < packet_indices.size(); ++index) {
+            if (index != 0U) {
+                builder << ',';
+            }
+            builder << packet_indices[index];
+        }
+    }
+    return builder.str();
+}
+
+std::string format_fixture_flow_diagnostics(
+    const std::filesystem::path& relative_path,
+    const CaptureSession& session
+) {
+    const auto& state = session.state();
+    const auto rows = session.list_flows();
+
+    std::ostringstream builder {};
+    builder << "Protocol-path diagnostics for " << relative_path.generic_string() << '\n';
+    builder << "flow_count=" << rows.size() << '\n';
+
+    for (std::size_t flow_index = 0U; flow_index < rows.size(); ++flow_index) {
+        const auto& row = rows[flow_index];
+        const auto packets = session.flow_packets(flow_index);
+        const auto packet_rows = session.list_flow_packets(flow_index);
+        builder << "  flow[" << flow_index << "]: protocol=" << row.protocol_text
+                << " tuple=" << row.endpoint_a << " <-> " << row.endpoint_b
+                << " packet_count=" << row.packet_count
+                << " flow_protocol_path_id=" << flow_protocol_path_id(row)
+                << " flow_protocol_path=" << protocol_path_text_or_invalid(state, flow_protocol_path_id(row))
+                << '\n';
+        builder << "    packet_rows.count=" << packet_rows.size();
+        if (!packet_rows.empty()) {
+            builder << " first_row={row=" << packet_rows.front().row_number
+                    << ",packet_index=" << packet_rows.front().packet_index
+                    << ",payload_length=" << packet_rows.front().payload_length
+                    << "} last_row={row=" << packet_rows.back().row_number
+                    << ",packet_index=" << packet_rows.back().packet_index
+                    << ",payload_length=" << packet_rows.back().payload_length
+                    << "}";
+        }
+        builder << '\n';
+        if (!packets.has_value()) {
+            builder << "    packets: unavailable\n";
+            continue;
+        }
+
+        builder << "    packet_indices=[" << join_packet_indices(*packets) << "]\n";
+        builder << "    packet_numbers=[" << join_packet_numbers(*packets) << "]\n";
+        builder << "    packet_paths=" << summarize_packet_path_ids(state, *packets) << '\n';
+    }
+
+    return builder.str();
 }
 
 void expect_layer_key_equality() {
@@ -412,13 +561,11 @@ void expect_decode_attaches_overlay_protocol_paths() {
     }
 }
 
-void expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id() {
+void expect_same_inner_tuple_different_vni_splits_into_two_flows() {
     const auto state = require_imported_capture_state(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"));
 
     const auto connections = state.ipv4_connections.list();
-    PFL_REQUIRE(connections.size() == 1U);
-    PFL_EXPECT(connections[0]->has_flow_a);
-    PFL_EXPECT(connections[0]->flow_a.packet_count == 2U);
+    PFL_REQUIRE(connections.size() == 2U);
 
     const auto* first_packet = find_packet_ref(state, 0U);
     const auto* second_packet = find_packet_ref(state, 1U);
@@ -436,24 +583,7 @@ void expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id() 
     PFL_EXPECT(format_protocol_path(*second_path) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP");
 }
 
-#if defined(PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS)
-
-void expect_pending_vxlan_same_inner_tuple_different_vni_splits_into_two_flows() {
-    CaptureSession session {};
-    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
-    PFL_EXPECT(session.list_flows().size() == 2U);
-
-    const auto& state = session.state();
-    const auto* first_packet = find_packet_ref(state, 0U);
-    const auto* second_packet = find_packet_ref(state, 1U);
-    PFL_REQUIRE(first_packet != nullptr);
-    PFL_REQUIRE(second_packet != nullptr);
-    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
-}
-
-void expect_pending_gtpu_same_inner_tuple_different_teid_splits_into_two_flows() {
+void expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
     PFL_EXPECT(session.list_flows().size() == 2U);
@@ -474,7 +604,7 @@ void expect_pending_gtpu_same_inner_tuple_different_teid_splits_into_two_flows()
         "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344) -> IPv4 -> TCP");
 }
 
-void expect_pending_mpls_same_inner_tuple_different_labels_splits_into_two_flows() {
+void expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap")));
     PFL_EXPECT(session.list_flows().size() == 2U);
@@ -491,7 +621,7 @@ void expect_pending_mpls_same_inner_tuple_different_labels_splits_into_two_flows
     PFL_EXPECT(require_packet_protocol_path_text(state, 1U) == "EthernetII -> MPLS(label=1200) -> IPv4 -> TCP");
 }
 
-void expect_pending_same_exact_path_reverse_tuple_stays_bidirectional() {
+void expect_same_exact_path_reverse_tuple_stays_bidirectional() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap")));
     const auto rows = session.list_flows();
@@ -514,7 +644,105 @@ void expect_pending_same_exact_path_reverse_tuple_stays_bidirectional() {
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
 }
 
-#endif
+void expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths() {
+    struct FixtureExpectation {
+        std::filesystem::path relative_path {};
+        std::uint64_t expected_packet_count {0};
+    };
+
+    const std::vector<FixtureExpectation> fixtures {
+        {.relative_path = "parsing/tls/ipv4_tls_constricted_1.pcap", .expected_packet_count = 14U},
+        {.relative_path = "parsing/tls/ipv6_tls_constricted_1.pcap", .expected_packet_count = 19U},
+        {.relative_path = "parsing/tls/ipv6_tls_strong_constrict_1.pcap", .expected_packet_count = 19U},
+        {.relative_path = "parsing/quic/quic_constricted_1.pcap", .expected_packet_count = 18U},
+        {.relative_path = "parsing/quic/ipv6_quic_constricted_1.pcap", .expected_packet_count = 16U},
+        {.relative_path = "parsing/quic/quic_initial_ack_decrypt_ok_1.pcap", .expected_packet_count = 8U},
+        {.relative_path = "parsing/quic/quic_initial_ack_wrong_pkn_1.pcap", .expected_packet_count = 8U},
+    };
+
+    const auto fast_options = fast_import_options();
+
+    for (const auto& fixture : fixtures) {
+        CaptureSession session {};
+        const auto full_path = fixture_path(fixture.relative_path);
+        PFL_REQUIRE(session.open_capture(full_path, fast_options));
+
+        const auto rows = session.list_flows();
+        const auto diagnostics = format_fixture_flow_diagnostics(fixture.relative_path, session);
+        if (rows.size() != 1U) {
+            record_failure_message(diagnostics);
+        }
+        PFL_EXPECT(rows.size() == 1U);
+
+        std::map<std::string, std::set<std::string>> tuple_path_ids {};
+        std::map<std::string, std::set<std::string>> payloadless_tuple_path_ids {};
+        std::map<std::string, std::set<std::string>> payloadbearing_tuple_path_ids {};
+        bool saw_invalid_protocol_path_id = false;
+
+        for (std::size_t flow_index = 0U; flow_index < rows.size(); ++flow_index) {
+            const auto packets = session.flow_packets(flow_index);
+            const auto packet_rows = session.list_flow_packets(flow_index);
+            PFL_REQUIRE(packets.has_value());
+
+            const auto& row = rows[flow_index];
+            const auto tuple_text = row.endpoint_a + " <-> " + row.endpoint_b + " [" + row.protocol_text + "]";
+
+            if (row.packet_count != fixture.expected_packet_count) {
+                record_failure_message(diagnostics);
+            }
+            PFL_EXPECT(row.packet_count == fixture.expected_packet_count);
+            if (packet_rows.size() != static_cast<std::size_t>(fixture.expected_packet_count)) {
+                record_failure_message(diagnostics);
+            }
+            PFL_EXPECT(packet_rows.size() == static_cast<std::size_t>(fixture.expected_packet_count));
+            if (!packet_rows.empty()) {
+                PFL_EXPECT(packet_rows.front().row_number == 1U);
+                PFL_EXPECT(packet_rows.back().row_number == fixture.expected_packet_count);
+            }
+
+            for (const auto& packet : *packets) {
+                if (packet.protocol_path_id == kInvalidProtocolPathId) {
+                    saw_invalid_protocol_path_id = true;
+                }
+
+                const auto normalized_path_text =
+                    normalized_protocol_path_text_for_flow_identity(session.state(), packet.protocol_path_id);
+                tuple_path_ids[tuple_text].insert(normalized_path_text);
+                if (packet.payload_length == 0U) {
+                    payloadless_tuple_path_ids[tuple_text].insert(normalized_path_text);
+                } else {
+                    payloadbearing_tuple_path_ids[tuple_text].insert(normalized_path_text);
+                }
+            }
+        }
+
+        bool same_tuple_split_across_protocol_paths = false;
+        bool payloadless_packets_use_distinct_protocol_paths = false;
+        for (const auto& [tuple_text, path_ids] : tuple_path_ids) {
+            if (path_ids.size() > 1U) {
+                same_tuple_split_across_protocol_paths = true;
+            }
+
+            const auto payloadless = payloadless_tuple_path_ids.find(tuple_text);
+            const auto payloadbearing = payloadbearing_tuple_path_ids.find(tuple_text);
+            if (payloadless != payloadless_tuple_path_ids.end() &&
+                payloadbearing != payloadbearing_tuple_path_ids.end() &&
+                payloadless->second != payloadbearing->second) {
+                payloadless_packets_use_distinct_protocol_paths = true;
+            }
+        }
+
+        if (saw_invalid_protocol_path_id ||
+            same_tuple_split_across_protocol_paths ||
+            payloadless_packets_use_distinct_protocol_paths) {
+            record_failure_message(diagnostics);
+        }
+
+        PFL_EXPECT(!saw_invalid_protocol_path_id);
+        PFL_EXPECT(!same_tuple_split_across_protocol_paths);
+        PFL_EXPECT(!payloadless_packets_use_distinct_protocol_paths);
+    }
+}
 
 }  // namespace
 
@@ -531,16 +759,11 @@ void run_protocol_path_tests() {
     expect_builder_capacity_and_overflow();
     expect_decode_attaches_direct_and_shim_protocol_paths();
     expect_decode_attaches_overlay_protocol_paths();
-    expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id();
-
-#if defined(PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS)
-    // Pending FlowKeyV2 contract tests. Keep disabled by default until protocol-path-aware
-    // flow identity replaces the current tuple-only grouping behavior.
-    expect_pending_vxlan_same_inner_tuple_different_vni_splits_into_two_flows();
-    expect_pending_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
-    expect_pending_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
-    expect_pending_same_exact_path_reverse_tuple_stays_bidirectional();
-#endif
+    expect_same_inner_tuple_different_vni_splits_into_two_flows();
+    expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
+    expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
+    expect_same_exact_path_reverse_tuple_stays_bidirectional();
+    expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths();
 }
 
 }  // namespace pfl::tests
