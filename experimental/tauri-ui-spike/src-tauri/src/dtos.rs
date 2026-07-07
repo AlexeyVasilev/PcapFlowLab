@@ -221,6 +221,17 @@ pub struct ProtocolPathBadgeDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathLegendEntryDto {
+    pub short_label: String,
+    pub full_name: String,
+    pub tooltip: String,
+    pub color_key: String,
+    pub background_color: String,
+    pub border_color: String,
+    pub text_color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PacketDto {
     pub row_number: u64,
     pub packet_index: u64,

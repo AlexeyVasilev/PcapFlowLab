@@ -22,10 +22,16 @@
     openMenu: null,
     aboutDialogVisible: false,
     settingsDialogVisible: false,
+    protocolPathLegendDialogVisible: false,
+    protocolPathLegendLoading: false,
+    protocolPathLegendEntries: [],
+    protocolPathLegendStatusText: "",
+    protocolPathLegendStatusKind: "neutral",
     settingsDialogLoading: false,
     settingsSaveInProgress: false,
     settingsStatusText: "",
     settingsStatusKind: "neutral",
+    showProtocolPathColumn: true,
     settings: {
       http_use_path_as_service_hint: false,
       use_possible_tls_quic: false,
@@ -146,9 +152,14 @@
     aboutDialog: document.getElementById("aboutDialog"),
     aboutDialogCloseButton: document.getElementById("aboutDialogCloseButton"),
     settingsDialog: document.getElementById("settingsDialog"),
+    protocolPathLegendDialog: document.getElementById("protocolPathLegendDialog"),
+    protocolPathLegendCloseButton: document.getElementById("protocolPathLegendCloseButton"),
+    protocolPathLegendGrid: document.getElementById("protocolPathLegendGrid"),
+    protocolPathLegendStatusText: document.getElementById("protocolPathLegendStatusText"),
     settingsHttpUsePathAsServiceHint: document.getElementById("settingsHttpUsePathAsServiceHint"),
     settingsUsePossibleTlsQuic: document.getElementById("settingsUsePossibleTlsQuic"),
     settingsShowWiresharkFilterForSelectedFlow: document.getElementById("settingsShowWiresharkFilterForSelectedFlow"),
+    settingsShowProtocolPathColumn: document.getElementById("settingsShowProtocolPathColumn"),
     settingsValidateSelectedPacketChecksums: document.getElementById("settingsValidateSelectedPacketChecksums"),
     settingsStatusText: document.getElementById("settingsStatusText"),
     settingsCancelButton: document.getElementById("settingsCancelButton"),
@@ -219,6 +230,7 @@
     flowFilterInput: document.getElementById("flowFilterInput"),
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
     flowSortHeaders: Array.from(document.querySelectorAll("[data-flow-sort-key]")),
+    flowPathHeader: document.getElementById("flowPathHeader"),
     flowTableBody: document.getElementById("flowTableBody"),
     flowTableViewport: document.getElementById("flowTableViewport"),
     flowRenderCapBar: document.getElementById("flowRenderCapBar"),
@@ -1075,6 +1087,15 @@
     state.settingsStatusKind = "neutral";
   }
 
+  function clearProtocolPathLegendStatus() {
+    state.protocolPathLegendStatusText = "";
+    state.protocolPathLegendStatusKind = "neutral";
+  }
+
+  function flowTableColumnCount() {
+    return state.showProtocolPathColumn ? 12 : 11;
+  }
+
   function sourceAvailabilityOrDefault(sourceAvailability) {
     return {
       has_source_capture: Boolean(sourceAvailability?.has_source_capture),
@@ -1699,6 +1720,8 @@
             || state.smartExportInProgress;
         } else if (action === "settings") {
           item.disabled = state.settingsDialogLoading || state.settingsSaveInProgress;
+        } else if (action === "protocol-path-legend") {
+          item.disabled = state.protocolPathLegendLoading;
         }
       }
 
@@ -1709,6 +1732,10 @@
       if (elements.settingsDialog) {
         elements.settingsDialog.classList.toggle("is-visible", state.settingsDialogVisible);
         elements.settingsDialog.setAttribute("aria-hidden", state.settingsDialogVisible ? "false" : "true");
+      }
+      if (elements.protocolPathLegendDialog) {
+        elements.protocolPathLegendDialog.classList.toggle("is-visible", state.protocolPathLegendDialogVisible);
+        elements.protocolPathLegendDialog.setAttribute("aria-hidden", state.protocolPathLegendDialogVisible ? "false" : "true");
       }
       if (elements.smartExportDialog) {
         elements.smartExportDialog.classList.toggle("is-visible", state.smartExportDialogVisible);
@@ -1734,6 +1761,10 @@
       elements.settingsShowWiresharkFilterForSelectedFlow.checked = Boolean(state.settings.show_wireshark_filter_for_selected_flow);
       elements.settingsShowWiresharkFilterForSelectedFlow.disabled = dialogDisabled;
     }
+    if (elements.settingsShowProtocolPathColumn) {
+      elements.settingsShowProtocolPathColumn.checked = Boolean(state.showProtocolPathColumn);
+      elements.settingsShowProtocolPathColumn.disabled = dialogDisabled;
+    }
     if (elements.settingsValidateSelectedPacketChecksums) {
       elements.settingsValidateSelectedPacketChecksums.checked = Boolean(state.settings.validate_selected_packet_checksums);
       elements.settingsValidateSelectedPacketChecksums.disabled = dialogDisabled;
@@ -1754,6 +1785,59 @@
         elements.settingsStatusText.classList.add("is-success");
       }
     }
+  }
+
+  function renderProtocolPathLegendDialog() {
+    if (elements.protocolPathLegendCloseButton) {
+      elements.protocolPathLegendCloseButton.disabled = state.protocolPathLegendLoading;
+    }
+
+    if (elements.protocolPathLegendStatusText) {
+      elements.protocolPathLegendStatusText.textContent = state.protocolPathLegendStatusText;
+      elements.protocolPathLegendStatusText.className = "status-text";
+      if (state.protocolPathLegendStatusKind === "error") {
+        elements.protocolPathLegendStatusText.classList.add("is-error");
+      } else if (state.protocolPathLegendStatusKind === "success") {
+        elements.protocolPathLegendStatusText.classList.add("is-success");
+      }
+    }
+
+    if (!elements.protocolPathLegendGrid) {
+      return;
+    }
+
+    if (state.protocolPathLegendLoading) {
+      elements.protocolPathLegendGrid.innerHTML = '<div class="settings-disabled-row">Loading protocol path legend...</div>';
+      return;
+    }
+
+    if (!Array.isArray(state.protocolPathLegendEntries) || state.protocolPathLegendEntries.length === 0) {
+      elements.protocolPathLegendGrid.innerHTML = '<div class="settings-disabled-row">Protocol path legend is unavailable.</div>';
+      return;
+    }
+
+    elements.protocolPathLegendGrid.innerHTML = state.protocolPathLegendEntries.map((entry) => {
+      const shortLabel = String(entry?.short_label || "").trim();
+      const fullName = String(entry?.full_name || "").trim();
+      const tooltip = String(entry?.tooltip || fullName || shortLabel).trim();
+      const colorKey = String(entry?.color_key || "").trim();
+      const backgroundColor = String(entry?.background_color || "").trim() || "#e2e8f0";
+      const borderColor = String(entry?.border_color || "").trim() || "#cbd5e1";
+      const textColor = String(entry?.text_color || "").trim() || "#334155";
+
+      return `
+        <div class="protocol-path-legend-item" title="${escapeHtml(tooltip)}">
+          <span
+            class="flow-path-badge${colorKey ? ` flow-path-badge-${escapeHtml(colorKey)}` : ""}"
+            style="background:${escapeHtml(backgroundColor)};border-color:${escapeHtml(borderColor)};color:${escapeHtml(textColor)}"
+          >${escapeHtml(shortLabel)}</span>
+          <div class="protocol-path-legend-copy">
+            <span class="protocol-path-legend-title">${escapeHtml(fullName)}</span>
+            <span class="protocol-path-legend-meta">${escapeHtml(colorKey || "protocol")}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
   }
 
   function renderSmartExportDialog() {
@@ -2502,11 +2586,15 @@
     const flows = state.flows;
     const visibleFlows = getVisibleFlows();
     const checkedCount = checkedFlowCount();
+    const columnCount = flowTableColumnCount();
 
     elements.flowFilterInput.value = state.flowFilterText;
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
     elements.checkedFlowsStatusBar.classList.toggle("is-visible", checkedCount > 0);
     elements.checkedFlowsStatusText.textContent = checkedCount === 1 ? "1 flow selected" : `${formatNumber(checkedCount)} flows selected`;
+    if (elements.flowPathHeader) {
+      elements.flowPathHeader.style.display = state.showProtocolPathColumn ? "" : "none";
+    }
     renderUnrecognizedPacketsPanel();
 
     if (state.openState === "opening" || state.flowState === "loading") {
@@ -2515,7 +2603,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">Loading flows...</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${columnCount}">Loading flows...</td></tr>`;
       return;
     }
 
@@ -2525,7 +2613,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="12">Open failed. No flows were loaded.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="${columnCount}">Open failed. No flows were loaded.</td></tr>`;
       return;
     }
 
@@ -2535,7 +2623,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">Open a capture or index to load flows.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${columnCount}">Open a capture or index to load flows.</td></tr>`;
       return;
     }
 
@@ -2545,7 +2633,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">No flows available.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${columnCount}">No flows available.</td></tr>`;
       return;
     }
 
@@ -2557,7 +2645,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">No flows match the current filter.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${columnCount}">No flows match the current filter.</td></tr>`;
       return;
     }
 
@@ -2567,10 +2655,13 @@
       rowHeight: flowVirtualRowHeight,
       viewportElement: elements.flowTableViewport,
       overscanRows: flowVirtualOverscanRows,
-      colspan: 12,
+      colspan: columnCount,
       renderRow: (flow) => {
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const checked = state.checkedFlowIndices.has(flow.flow_index) ? " checked" : "";
+        const protocolPathCell = state.showProtocolPathColumn
+          ? `<td class="flow-path-cell">${renderProtocolPathCell(flow)}</td>`
+          : "";
         return `
           <tr class="flow-row${selected}${checked}" data-flow-index="${flow.flow_index}">
             <td class="flow-check-cell"><input type="checkbox" class="flow-check-input" data-flow-check-index="${flow.flow_index}" ${state.checkedFlowIndices.has(flow.flow_index) ? "checked" : ""} aria-label="Select flow ${flowDisplayNumber(flow)} for batch actions" /></td>
@@ -2582,7 +2673,7 @@
             <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_a, flow.port_a)}</td>
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_b, flow.port_b)}</td>
-            <td class="flow-path-cell">${renderProtocolPathCell(flow)}</td>
+            ${protocolPathCell}
             <td>${formatPlainInteger(flow.packet_count)}</td>
             <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>
@@ -4005,6 +4096,7 @@
     const renderSteps = [
       ["menu", renderMenuState],
       ["settings dialog", renderSettingsDialog],
+      ["protocol path legend dialog", renderProtocolPathLegendDialog],
       ["smart export dialog", renderSmartExportDialog],
       ["tabs", renderTabs],
       ["flow view tabs", renderFlowViewTabs],
@@ -5079,6 +5171,35 @@
     }
   }
 
+  async function openProtocolPathLegendDialogFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    clearProtocolPathLegendStatus();
+    state.protocolPathLegendDialogVisible = true;
+    state.protocolPathLegendLoading = true;
+    render();
+
+    try {
+      const legend = await invoke("get_protocol_path_legend");
+      state.protocolPathLegendEntries = Array.isArray(legend) ? legend : [];
+      if (state.protocolPathLegendEntries.length === 0) {
+        state.protocolPathLegendStatusText = "Protocol path legend is unavailable.";
+        state.protocolPathLegendStatusKind = "error";
+      }
+    } catch (error) {
+      state.protocolPathLegendEntries = [];
+      state.protocolPathLegendStatusText = `Failed to load protocol path legend: ${String(error)}`;
+      state.protocolPathLegendStatusKind = "error";
+    } finally {
+      state.protocolPathLegendLoading = false;
+      render();
+    }
+  }
+
   function closeSettingsDialog() {
     if (state.settingsDialogLoading || state.settingsSaveInProgress) {
       return;
@@ -5086,6 +5207,16 @@
 
     state.settingsDialogVisible = false;
     clearSettingsStatus();
+    render();
+  }
+
+  function closeProtocolPathLegendDialog() {
+    if (state.protocolPathLegendLoading) {
+      return;
+    }
+
+    state.protocolPathLegendDialogVisible = false;
+    clearProtocolPathLegendStatus();
     render();
   }
 
@@ -5100,6 +5231,7 @@
     const httpUsePathAsServiceHint = Boolean(elements.settingsHttpUsePathAsServiceHint?.checked);
     const usePossibleTlsQuic = Boolean(elements.settingsUsePossibleTlsQuic?.checked);
     const showWiresharkFilterForSelectedFlow = Boolean(elements.settingsShowWiresharkFilterForSelectedFlow?.checked);
+    const showProtocolPathColumn = Boolean(elements.settingsShowProtocolPathColumn?.checked);
     const validateSelectedPacketChecksums = Boolean(elements.settingsValidateSelectedPacketChecksums?.checked);
 
     state.settingsSaveInProgress = true;
@@ -5120,6 +5252,7 @@
         show_wireshark_filter_for_selected_flow: settings?.show_wireshark_filter_for_selected_flow !== false,
         validate_selected_packet_checksums: Boolean(settings?.validate_selected_packet_checksums),
       };
+      state.showProtocolPathColumn = showProtocolPathColumn;
 
       if (state.openState === "opened") {
         await loadOverviewAndFlows();
@@ -5378,6 +5511,9 @@
         state.aboutDialogVisible = true;
         render();
         return;
+      case "protocol-path-legend":
+        await openProtocolPathLegendDialogFromMenu();
+        return;
       case "export-current-flow":
         await exportCurrentFlowFromMenu();
         return;
@@ -5488,6 +5624,12 @@
       render();
     }
   });
+  elements.protocolPathLegendCloseButton?.addEventListener("click", closeProtocolPathLegendDialog);
+  elements.protocolPathLegendDialog?.addEventListener("click", (event) => {
+    if (event.target === elements.protocolPathLegendDialog) {
+      closeProtocolPathLegendDialog();
+    }
+  });
   elements.settingsCancelButton?.addEventListener("click", closeSettingsDialog);
   elements.settingsSaveButton?.addEventListener("click", () => {
     void saveSettingsFromDialog();
@@ -5558,12 +5700,20 @@
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      const hadVisibleUi = state.openMenu != null || state.aboutDialogVisible || state.settingsDialogVisible || state.smartExportDialogVisible;
+      const hadVisibleUi = state.openMenu != null
+        || state.aboutDialogVisible
+        || state.settingsDialogVisible
+        || state.protocolPathLegendDialogVisible
+        || state.smartExportDialogVisible;
       closeMenus();
       state.aboutDialogVisible = false;
       if (!state.settingsDialogLoading && !state.settingsSaveInProgress) {
         state.settingsDialogVisible = false;
         clearSettingsStatus();
+      }
+      if (!state.protocolPathLegendLoading) {
+        state.protocolPathLegendDialogVisible = false;
+        clearProtocolPathLegendStatus();
       }
       if (!state.smartExportInProgress) {
         state.smartExportDialogVisible = false;

@@ -44,6 +44,7 @@ public:
     ) const;
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
+    [[nodiscard]] std::vector<FrontendProtocolPathLegendEntryDto> get_protocol_path_legend() const;
     [[nodiscard]] FrontendSelectionResultDto select_flow(std::size_t flow_index);
     [[nodiscard]] FrontendSelectedFlowPacketsResult get_selected_flow_packets(std::size_t offset, std::size_t limit);
     [[nodiscard]] FrontendUnrecognizedPacketsResult get_unrecognized_packets(std::size_t offset, std::size_t limit) const;

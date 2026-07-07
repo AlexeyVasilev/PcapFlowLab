@@ -22,6 +22,8 @@ Current repository state:
 - stable index serialization persists protocol-path registry data plus flow/connection `protocol_path_id`;
 - the flow list can now expose protocol paths as compact badge/chip presentation derived from the interned registry;
 - both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
+- both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
+- the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - protocol-path statistics trees and protocol-path filters remain future work.
 
 ## Flow List Presentation
@@ -46,6 +48,7 @@ Still deferred:
 - protocol-path statistics trees;
 - protocol-path filters;
 - protocol-path drill-down workflows beyond flow-list presentation.
+- persistence for the Tauri Path-column visibility toggle.
 
 ## Problem Statement
 

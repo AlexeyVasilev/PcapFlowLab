@@ -38,6 +38,7 @@
         <div class="menu-root">
           <button id="menuButtonHelp" type="button" class="menu-button" data-menu-button="help">Help</button>
           <div id="menuPanelHelp" class="menu-panel" data-menu-panel="help">
+            <button type="button" class="menu-item" data-menu-action="protocol-path-legend">Protocol Path Legend</button>
             <button type="button" class="menu-item" data-menu-action="about">About</button>
           </div>
         </div>
@@ -139,7 +140,7 @@
                       <th id="flowSortFrag" class="sortable-header" data-flow-sort-key="frag">Frag</th>
                       <th id="flowSortEndpointA" class="sortable-header" data-flow-sort-key="endpoint_a">Endpoint A</th>
                       <th id="flowSortEndpointB" class="sortable-header" data-flow-sort-key="endpoint_b">Endpoint B</th>
-                      <th class="flow-path-column">Path</th>
+                      <th id="flowPathHeader" class="flow-path-column">Path</th>
                       <th id="flowSortPackets" class="sortable-header" data-flow-sort-key="packets">Packets</th>
                       <th id="flowSortBytes" class="sortable-header" data-flow-sort-key="bytes">Bytes</th>
                     </tr>
@@ -673,6 +674,13 @@
           </section>
           <section class="settings-section">
             <label class="settings-checkbox-row">
+              <input id="settingsShowProtocolPathColumn" type="checkbox" />
+              <span>Show Protocol Path column in the flow table</span>
+            </label>
+            <p class="settings-help">Applied immediately in this Tauri session. Persistence is a follow-up.</p>
+          </section>
+          <section class="settings-section">
+            <label class="settings-checkbox-row">
               <input id="settingsValidateSelectedPacketChecksums" type="checkbox" />
               <span>Validate IPv4/TCP/UDP checksums for selected packet</span>
             </label>
@@ -684,6 +692,20 @@
           <button id="settingsCancelButton" type="button" class="secondary-button">Cancel</button>
           <button id="settingsSaveButton" type="button">OK</button>
         </div>
+      </section>
+    </div>
+
+    <div id="protocolPathLegendDialog" class="dialog-backdrop" aria-hidden="true">
+      <section class="dialog-card protocol-path-legend-dialog-card" role="dialog" aria-modal="true" aria-labelledby="protocolPathLegendDialogTitle">
+        <div class="dialog-heading">
+          <h2 id="protocolPathLegendDialogTitle">Protocol Path Legend</h2>
+          <button id="protocolPathLegendCloseButton" type="button" class="secondary-button">Close</button>
+        </div>
+        <p class="dialog-copy">
+          Protocol-path badges use centralized C++ abbreviations and colors shared with the Qt UI.
+        </p>
+        <p id="protocolPathLegendStatusText" class="status-text"></p>
+        <div id="protocolPathLegendGrid" class="protocol-path-legend-grid" aria-live="polite"></div>
       </section>
     </div>
 

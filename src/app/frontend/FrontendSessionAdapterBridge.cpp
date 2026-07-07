@@ -129,6 +129,20 @@ std::string protocol_path_badge_json(const pfl::ProtocolPathBadgeRow& badge) {
     return out.str();
 }
 
+std::string protocol_path_legend_entry_json(const pfl::FrontendProtocolPathLegendEntryDto& entry) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"short_label\":" << json_string(entry.short_label) << ','
+        << "\"full_name\":" << json_string(entry.full_name) << ','
+        << "\"tooltip\":" << json_string(entry.tooltip) << ','
+        << "\"color_key\":" << json_string(entry.color_key) << ','
+        << "\"background_color\":" << json_string(entry.background_color) << ','
+        << "\"border_color\":" << json_string(entry.border_color) << ','
+        << "\"text_color\":" << json_string(entry.text_color)
+        << '}';
+    return out.str();
+}
+
 std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& source) {
     std::ostringstream out {};
     out << '{'
@@ -468,6 +482,19 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
 
     out << ']'
         << '}';
+    return out.str();
+}
+
+std::string protocol_path_legend_json(const std::vector<pfl::FrontendProtocolPathLegendEntryDto>& legend) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < legend.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_legend_entry_json(legend[index]);
+    }
+    out << ']';
     return out.str();
 }
 
@@ -989,6 +1016,14 @@ char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHa
     }
 
     return make_c_string(settings_json(handle->adapter.get_settings()));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    return make_c_string(protocol_path_legend_json(handle->adapter.get_protocol_path_legend()));
 }
 
 char* pfl_frontend_session_adapter_update_settings_json(

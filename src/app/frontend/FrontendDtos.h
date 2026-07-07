@@ -181,6 +181,16 @@ struct FrontendFlowDto {
     std::string wireshark_display_filter {};
 };
 
+struct FrontendProtocolPathLegendEntryDto {
+    std::string short_label {};
+    std::string full_name {};
+    std::string tooltip {};
+    std::string color_key {};
+    std::string background_color {};
+    std::string border_color {};
+    std::string text_color {};
+};
+
 struct FrontendSelectionResultDto {
     bool selected {false};
     std::optional<FrontendFlowDto> updated_flow {};

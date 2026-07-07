@@ -231,6 +231,10 @@ body.is-resizing-vertical {
   width: min(560px, 100%);
 }
 
+.protocol-path-legend-dialog-card {
+  width: min(760px, 100%);
+}
+
 .settings-sections {
   display: flex;
   flex-direction: column;
@@ -281,6 +285,41 @@ body.is-resizing-vertical {
   color: #7b8794;
   background: var(--surface-muted);
   font-size: 13px;
+}
+
+.protocol-path-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.protocol-path-legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-bg);
+}
+
+.protocol-path-legend-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.protocol-path-legend-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.protocol-path-legend-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .smart-export-dialog-card {

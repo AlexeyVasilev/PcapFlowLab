@@ -139,6 +139,7 @@ std::vector<ProtocolPathLegendEntry> protocol_path_legend_entries() {
         legend.push_back(ProtocolPathLegendEntry {
             .short_label = descriptor.short_label,
             .full_name = descriptor.full_name,
+            .tooltip = descriptor.full_name,
             .color_key = descriptor.color_key,
             .background_color = descriptor.background_color,
             .border_color = descriptor.border_color,

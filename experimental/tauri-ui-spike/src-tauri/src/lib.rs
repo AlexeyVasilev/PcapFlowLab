@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -565,6 +565,16 @@ fn get_settings(state: State<'_, Mutex<AdapterState>>) -> Result<SettingsDto, St
     state.adapter.get_settings()
 }
 
+#[tauri::command]
+fn get_protocol_path_legend(
+    state: State<'_, Mutex<AdapterState>>,
+) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_protocol_path_legend()
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn update_settings(
     state: State<'_, Mutex<AdapterState>>,
@@ -839,6 +849,7 @@ pub fn run() {
             exit_app,
             get_overview,
             get_settings,
+            get_protocol_path_legend,
             update_settings,
             get_flows,
             select_flow,

@@ -11,6 +11,7 @@ namespace pfl::session_detail {
 struct ProtocolPathLegendEntry {
     std::string short_label {};
     std::string full_name {};
+    std::string tooltip {};
     std::string color_key {};
     std::string background_color {};
     std::string border_color {};

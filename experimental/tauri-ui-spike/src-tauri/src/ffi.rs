@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -42,6 +42,9 @@ extern "C" {
         path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_settings_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_legend_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_update_settings_json(
@@ -236,6 +239,11 @@ impl CppFrontendSessionAdapter {
     pub fn get_settings(&self) -> Result<SettingsDto, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_settings_json(self.handle) };
         parse_json_owned::<SettingsDto>(json)
+    }
+
+    pub fn get_protocol_path_legend(&self) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_legend_json(self.handle) };
+        parse_json_owned::<Vec<ProtocolPathLegendEntryDto>>(json)
     }
 
     pub fn update_settings(

@@ -1,5 +1,6 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecodeSupport.h"
@@ -2148,6 +2149,26 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
     }
 
     return flows;
+}
+
+std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_protocol_path_legend() const {
+    const auto legend = session_detail::protocol_path_legend_entries();
+    std::vector<FrontendProtocolPathLegendEntryDto> rows {};
+    rows.reserve(legend.size());
+
+    for (const auto& entry : legend) {
+        rows.push_back(FrontendProtocolPathLegendEntryDto {
+            .short_label = entry.short_label,
+            .full_name = entry.full_name,
+            .tooltip = entry.tooltip,
+            .color_key = entry.color_key,
+            .background_color = entry.background_color,
+            .border_color = entry.border_color,
+            .text_color = entry.text_color,
+        });
+    }
+
+    return rows;
 }
 
 FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t flow_index) {

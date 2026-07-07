@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -534,6 +535,31 @@ void expect_frontend_flows_expose_protocol_path_presentation() {
     PFL_EXPECT(flows[0].protocol_path_badges[3].tooltip == "VXLAN\nVNI: 100");
 }
 
+void expect_frontend_protocol_path_legend_exposure() {
+    FrontendSessionAdapter adapter {};
+    const auto legend = adapter.get_protocol_path_legend();
+
+    PFL_REQUIRE(legend.size() == 19U);
+    PFL_EXPECT(legend.front().short_label == "EII");
+    PFL_EXPECT(legend.back().short_label == "?");
+    PFL_EXPECT(legend.back().full_name == "Unknown");
+
+    const auto contains_short_label = [&](const std::string& short_label) {
+        return std::any_of(legend.begin(), legend.end(), [&](const auto& entry) {
+            return entry.short_label == short_label;
+        });
+    };
+
+    PFL_EXPECT(contains_short_label("EII"));
+    PFL_EXPECT(contains_short_label("Vl"));
+    PFL_EXPECT(contains_short_label("M"));
+    PFL_EXPECT(contains_short_label("Ip4"));
+    PFL_EXPECT(contains_short_label("UDP"));
+    PFL_EXPECT(contains_short_label("Vx"));
+    PFL_EXPECT(contains_short_label("GTP-U"));
+    PFL_EXPECT(contains_short_label("?"));
+}
+
 void expect_builder_empty_state() {
     ProtocolPathBuilder builder {};
 
@@ -869,6 +895,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_presentation_mapping();
     expect_flow_rows_expose_protocol_path_presentation();
     expect_frontend_flows_expose_protocol_path_presentation();
+    expect_frontend_protocol_path_legend_exposure();
     expect_builder_empty_state();
     expect_builder_push_order();
     expect_builder_identifier_layers();
