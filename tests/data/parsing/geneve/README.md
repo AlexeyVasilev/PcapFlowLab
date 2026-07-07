@@ -6,24 +6,22 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed Geneve version or option-length handling;
 - malformed or truncated inner Ethernet / IPv4 payload after Geneve;
 - unsupported Geneve protocol types;
-- the known branch limitation where identical inner 5-tuples from different VNIs may still merge;
+- namespace-collision coverage where identical inner 5-tuples from different VNIs must now split into distinct flows;
 - future bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
 - same-outer-tuple cases that split by the inner tuple instead of the outer UDP carrier tuple;
 - recursive continuation from Geneve into an inner VLAN-tagged Ethernet payload;
 - outer IPv6 Geneve carriage, UDP port-gating negative controls, and a valid non-zero option-length Geneve case.
 
-These fixtures are for the `feature/overlay-inner-flow-tuples` branch.
-
-Current branch intent:
+Supported behavior covered by these fixtures:
 - supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
-- Geneve VNI is presentation metadata for now, not part of flow identity;
+- Geneve VNI now participates in protocol-path-aware flow identity;
 - malformed Geneve cases should remain conservative and should not fabricate inner flow tuples.
 
 Current implemented status:
 - Geneve fixture generator, README, generated `.pcap` files, and flow fixture tests are committed;
 - valid UDP/6081 Geneve carrying Ethernet plus inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
 - Geneve option length is handled in 4-byte units and bounded options are skipped safely for tuple extraction;
-- Geneve VNI is parsed as metadata, but it is not part of flow identity in this branch yet;
+- Geneve VNI is parsed as metadata and now participates in protocol-path-aware flow identity;
 - selected-packet Geneve Summary / Protocol details now show a Geneve layer plus sequential inner Ethernet/VLAN/IP/transport layers for valid fixtures, and lenient warnings for malformed/truncated UDP/6081 Geneve-like payloads.
 
 ## Local generation
@@ -75,16 +73,16 @@ Notes:
 - Default VNI: `100`
 - Alternate VNI for collision case: `200`
 
-## Current branch behavior and remaining follow-up
+## Current behavior and remaining follow-up
 
-Current Geneve behavior in this branch:
+Current Geneve behavior:
 - valid Geneve over UDP/6081 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
 - bounded Geneve options are skipped safely using the option length field in 4-byte units;
 - malformed or truncated Geneve / inner payload cases remain conservative and do not fabricate normal inner flows;
-- identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity;
+- identical inner tuples from different VNIs now split because VNI participates in protocol-path-aware flow identity;
 - selected-packet Summary / Protocol details now show Geneve metadata and sequential inner layers for valid fixtures, while malformed/truncated UDP/6081 Geneve-like payloads can still surface presentational warnings without affecting flow keys;
 - invalid Geneve version packets remain no-flow for strict tuple extraction, but selected-packet details may still show best-effort inner Ethernet/IP/transport continuation when the bounded header, options, and Ethernet protocol type are otherwise usable;
-- unsupported Geneve protocol types are reported distinctly from malformed or invalid-version cases and do not continue into inner Ethernet presentation in this branch.
+- unsupported Geneve protocol types are reported distinctly from malformed or invalid-version cases and do not continue into inner Ethernet presentation.
 
 ---
 
@@ -246,7 +244,7 @@ Current Geneve behavior in this branch:
 - Inner tuples:
   - packet 1: `10.50.0.10:49550 -> 10.50.0.20:443`
   - packet 2: `10.50.0.11:10011 -> 10.50.0.21:443`
-- Expected current behavior: valid Geneve packets produce inner flows for both VNI boundary values. VNI still remains outside flow identity in this branch.
+- Expected current behavior: valid Geneve packets produce inner flows for both VNI boundary values, and VNI participates in protocol-path-aware flow identity when tuples would otherwise collide.
 
 ### 17_geneve_with_options_inner_ipv4_tcp.pcap
 

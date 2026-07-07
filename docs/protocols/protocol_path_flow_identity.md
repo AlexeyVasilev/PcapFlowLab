@@ -13,20 +13,29 @@ struct FlowKeyV2 {
 };
 ```
 
-This document is RFC/design only.
+This document began as the RFC/design note for protocol-path-aware flow identity.
 
-This step does not change:
+Current repository state:
 
-- runtime behavior;
-- `FlowKey` layout;
-- packet decode behavior;
-- capture index serialization;
-- statistics UI;
-- filters.
+- protocol-path extraction and interning are implemented;
+- `FlowKeyV2` is enabled through `protocol_path_id` on flow identity and normalized connection identity;
+- stable index serialization persists protocol-path registry data plus flow/connection `protocol_path_id`;
+- protocol-path statistics trees and protocol-path filters remain future work.
 
 ## Problem Statement
 
-Current flow grouping is mostly based on an effective normalized endpoint tuple:
+Tuple-only flow grouping is not sufficient once the same effective endpoint tuple can appear behind different shim or tunnel paths.
+
+The current implementation now groups flows by:
+
+- normalized source IP;
+- normalized destination IP;
+- normalized source port;
+- normalized destination port;
+- terminal transport protocol;
+- `protocol_path_id`.
+
+The original problem this RFC set out to solve was that flow grouping used only an effective normalized endpoint tuple:
 
 - source IP;
 - destination IP;
@@ -287,15 +296,23 @@ Static audit of the current format:
   - ports;
   - `ProtocolId`.
 
-Expected impact:
+Current implementation state:
 
-- adding `protocol_path_id` to flow identity changes the index format;
-- the index format version should be bumped when `FlowKeyV2` is enabled;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 8`;
+- `src/core/index/Serialization.cpp` serializes:
+  - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
+  - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
+  - one capture-level `ProtocolPathRegistry` table;
+- `PacketRef` records do not serialize a per-packet `protocol_path_id`;
+- during index load, packet refs inherit the owning flow key's `protocol_path_id` for runtime convenience;
+- `src/core/index/CaptureIndexReader.cpp` rejects older versions with:
+  - `unsupported index version; rebuild the index from the source capture`
+
+Policy:
+
 - backward compatibility with older `.pflidx` formats is not a goal for this migration;
-- older indexes without protocol-path metadata should be rejected with a rebuild-required message rather than silently loaded with degraded identity semantics;
-- explicit legacy compatibility mode is intentionally out of scope.
-
-This step documents the impact only. It does not implement serialization changes.
+- older indexes without protocol-path metadata are expected to be rejected with a rebuild-required message rather than silently loaded with degraded identity semantics;
+- explicit legacy compatibility mode remains out of scope.
 
 ## Stable Index Storage Policy
 
@@ -392,24 +409,23 @@ Stage B:
 Stage C:
 
 - collect protocol path during decode;
-- attach `protocol_path_id` to packet/flow metadata;
-- keep current grouping behavior unchanged.
+- attach `protocol_path_id` to packet/flow metadata.
 
 Stage C2 status:
 
 - decode now builds protocol-path metadata in the packet decode hot path using `ProtocolPathBuilder`;
 - `CaptureState` owns a per-capture `ProtocolPathRegistry`;
-- import interns non-empty, non-overflowed paths and stores a staging/runtime `protocol_path_id` on `PacketRef`;
-- `FlowKey` and connection grouping remain tuple-only in this stage;
+- import interns non-empty, non-overflowed paths and stores:
+  - an effective flow-identity `protocol_path_id` on `FlowKey`;
+  - a staging/runtime packet-level `protocol_path_id` on `PacketRef`;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
-- this packet-level metadata exists first as a decode/import validation aid before `FlowKeyV2`, not as the final stable storage shape;
-- once path-aware flow identity is enabled, packet refs may still carry the effective flow path id in memory for debugging and presentation, but stable storage should remain flow/registry oriented rather than per-packet.
+- packet-level metadata still exists first as a decode/import validation aid and runtime convenience, not as the final stable per-packet storage shape;
+- stable storage remains flow/registry oriented rather than per-packet.
 
 Stage D:
 
-- add path-extraction tests and known collision fixtures/expectations while still not changing grouping behavior where that would break current semantics.
-- current Stage D coverage now includes default-safe Stage C2 assertions proving that packet-level protocol-path metadata already distinguishes at least the VXLAN same-inner-tuple/different-VNI case while grouping remains tuple-only;
-- the Stage D contract cases that previously lived behind a pending guard are now the default Stage E regression set:
+- add path-extraction tests and known collision fixtures/expectations;
+- current Stage D / E coverage includes default regression assertions for:
   - VXLAN same inner tuple, different VNI -> split into two flows;
   - GTP-U same inner tuple, different TEID -> split into two flows;
   - MPLS same inner tuple, different label -> split into two flows;
@@ -420,6 +436,10 @@ Stage E:
 - enable `FlowKeyV2` by adding `protocol_path_id` to effective flow identity;
 - carry `protocol_path_id` through both `FlowKey` and normalized `ConnectionKey`, so in-memory grouping splits same-tuple traffic when protocol paths differ;
 - keep `kInvalidProtocolPathId` as the conservative fallback for unsupported/overflowed/unknown paths.
+
+Stage E status:
+
+- enabled in the current branch state.
 
 Stage F:
 
@@ -532,9 +552,9 @@ Future tests should cover:
 
 Relevant existing fixture families:
 
-- VXLAN collision fixtures already document same-inner-tuple/different-VNI limitations;
-- Geneve collision fixtures already document the same VNI limitation;
-- GTP-U collision fixtures already document the same TEID limitation;
+- VXLAN collision fixtures now document same-inner-tuple/different-VNI split behavior under `FlowKeyV2`;
+- Geneve same-inner-tuple/different-VNI collision coverage is still missing as a dedicated deterministic fixture follow-up;
+- GTP-U collision fixtures now document same-inner-tuple/different-TEID split behavior under `FlowKeyV2`;
 - MPLS/VLAN fixtures already provide the shim stack shapes needed for future direct-vs-shim separation tests.
 - direct-vs-shimmed same effective tuple coverage is still missing as an exact deterministic fixture follow-up;
 - same-inner-tuple/different-VNI Geneve coverage is also still missing as a dedicated deterministic fixture follow-up.
