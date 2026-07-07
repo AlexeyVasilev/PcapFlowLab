@@ -14,6 +14,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PFL_BUILD_UI "Build the Qt Quick desktop UI when Qt 6 is available." ON)
+option(
+    PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS
+    "Enable pending ProtocolPath FlowKeyV2 contract tests that document future path-aware grouping behavior."
+    OFF
+)
 
 add_library(pcap_flow_lab_warnings INTERFACE)
 
@@ -320,6 +325,12 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         PRIVATE
             pcap_flow_lab_core
+    )
+
+    target_compile_definitions(
+        pcap_flow_lab_core_tests
+        PRIVATE
+            $<$<BOOL:${PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS}>:PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS>
     )
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)

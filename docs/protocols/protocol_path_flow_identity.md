@@ -408,6 +408,13 @@ Stage C2 status:
 Stage D:
 
 - add path-extraction tests and known collision fixtures/expectations while still not changing grouping behavior where that would break current semantics.
+- current Stage D coverage now includes default-safe Stage C2 assertions proving that packet-level protocol-path metadata already distinguishes at least the VXLAN same-inner-tuple/different-VNI case while grouping remains tuple-only;
+- guarded pending FlowKeyV2 contract tests are intended for:
+  - VXLAN same inner tuple, different VNI -> future split into two flows;
+  - GTP-U same inner tuple, different TEID -> future split into two flows;
+  - MPLS same inner tuple, different label -> future split into two flows;
+  - same exact VXLAN path with reverse inner tuple -> still one bidirectional flow;
+- the guarded contract tests are disabled by default behind `PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS`.
 
 Stage E:
 
@@ -515,6 +522,8 @@ Relevant existing fixture families:
 - Geneve collision fixtures already document the same VNI limitation;
 - GTP-U collision fixtures already document the same TEID limitation;
 - MPLS/VLAN fixtures already provide the shim stack shapes needed for future direct-vs-shim separation tests.
+- direct-vs-shimmed same effective tuple coverage is still missing as an exact deterministic fixture follow-up;
+- same-inner-tuple/different-VNI Geneve coverage is also still missing as a dedicated deterministic fixture follow-up.
 
 ## Key Decisions In This RFC
 

@@ -3,6 +3,7 @@
 #include <string>
 
 #include "TestSupport.h"
+#include "app/session/CaptureSession.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/CaptureImporter.h"
@@ -435,6 +436,86 @@ void expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id() 
     PFL_EXPECT(format_protocol_path(*second_path) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200) -> EthernetII -> IPv4 -> TCP");
 }
 
+#if defined(PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS)
+
+void expect_pending_vxlan_same_inner_tuple_different_vni_splits_into_two_flows() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
+    PFL_EXPECT(session.list_flows().size() == 2U);
+
+    const auto& state = session.state();
+    const auto* first_packet = find_packet_ref(state, 0U);
+    const auto* second_packet = find_packet_ref(state, 1U);
+    PFL_REQUIRE(first_packet != nullptr);
+    PFL_REQUIRE(second_packet != nullptr);
+    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+}
+
+void expect_pending_gtpu_same_inner_tuple_different_teid_splits_into_two_flows() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
+    PFL_EXPECT(session.list_flows().size() == 2U);
+
+    const auto& state = session.state();
+    const auto* first_packet = find_packet_ref(state, 0U);
+    const auto* second_packet = find_packet_ref(state, 1U);
+    PFL_REQUIRE(first_packet != nullptr);
+    PFL_REQUIRE(second_packet != nullptr);
+    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+    PFL_EXPECT(
+        require_packet_protocol_path_text(state, 0U) ==
+        "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+    PFL_EXPECT(
+        require_packet_protocol_path_text(state, 1U) ==
+        "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344) -> IPv4 -> TCP");
+}
+
+void expect_pending_mpls_same_inner_tuple_different_labels_splits_into_two_flows() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap")));
+    PFL_EXPECT(session.list_flows().size() == 2U);
+
+    const auto& state = session.state();
+    const auto* first_packet = find_packet_ref(state, 0U);
+    const auto* second_packet = find_packet_ref(state, 1U);
+    PFL_REQUIRE(first_packet != nullptr);
+    PFL_REQUIRE(second_packet != nullptr);
+    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+    PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> MPLS(label=1100) -> IPv4 -> TCP");
+    PFL_EXPECT(require_packet_protocol_path_text(state, 1U) == "EthernetII -> MPLS(label=1200) -> IPv4 -> TCP");
+}
+
+void expect_pending_same_exact_path_reverse_tuple_stays_bidirectional() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/11_vxlan_inner_ipv4_tcp_bidirectional.pcap")));
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(rows[0].packet_count == 2U);
+
+    const auto& state = session.state();
+    const auto* first_packet = find_packet_ref(state, 0U);
+    const auto* second_packet = find_packet_ref(state, 1U);
+    PFL_REQUIRE(first_packet != nullptr);
+    PFL_REQUIRE(second_packet != nullptr);
+    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
+    PFL_EXPECT(first_packet->protocol_path_id == second_packet->protocol_path_id);
+    PFL_EXPECT(
+        require_packet_protocol_path_text(state, 0U) ==
+        "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(
+        require_packet_protocol_path_text(state, 1U) ==
+        "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+}
+
+#endif
+
 }  // namespace
 
 void run_protocol_path_tests() {
@@ -451,6 +532,15 @@ void run_protocol_path_tests() {
     expect_decode_attaches_direct_and_shim_protocol_paths();
     expect_decode_attaches_overlay_protocol_paths();
     expect_same_inner_tuple_different_vni_keeps_grouping_but_changes_path_id();
+
+#if defined(PFL_ENABLE_PENDING_PROTOCOL_PATH_FLOWKEY_TESTS)
+    // Pending FlowKeyV2 contract tests. Keep disabled by default until protocol-path-aware
+    // flow identity replaces the current tuple-only grouping behavior.
+    expect_pending_vxlan_same_inner_tuple_different_vni_splits_into_two_flows();
+    expect_pending_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
+    expect_pending_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
+    expect_pending_same_exact_path_reverse_tuple_stays_bidirectional();
+#endif
 }
 
 }  // namespace pfl::tests
