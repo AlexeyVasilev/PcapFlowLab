@@ -5,6 +5,7 @@
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "core/index/CaptureIndex.h"
 #include "core/index/CaptureIndexReader.h"
 #include "core/index/CaptureIndexWriter.h"
 #include "core/index/ImportCheckpointReader.h"
@@ -49,6 +50,11 @@ void write_le64_at(std::vector<std::uint8_t>& bytes, const std::size_t offset, c
     bytes[offset + 5] = static_cast<std::uint8_t>((value >> 40U) & 0xFFU);
     bytes[offset + 6] = static_cast<std::uint8_t>((value >> 48U) & 0xFFU);
     bytes[offset + 7] = static_cast<std::uint8_t>((value >> 56U) & 0xFFU);
+}
+
+void write_le16_at(std::vector<std::uint8_t>& bytes, const std::size_t offset, const std::uint16_t value) {
+    bytes[offset] = static_cast<std::uint8_t>(value & 0xFFU);
+    bytes[offset + 1] = static_cast<std::uint8_t>((value >> 8U) & 0xFFU);
 }
 
 std::vector<std::uint8_t> read_file_bytes(const std::filesystem::path& path) {
@@ -269,6 +275,16 @@ void run_index_format_tests() {
     PFL_EXPECT(loaded_source_info.capture_path == source_path);
     expect_matching_states(state, loaded_state);
 
+    const auto index_bytes = read_file_bytes(index_path);
+    auto legacy_version_bytes = index_bytes;
+    write_le16_at(legacy_version_bytes, 8U, static_cast<std::uint16_t>(kCaptureIndexVersion - 1U));
+    const auto legacy_version_index_path = write_temp_binary_file(
+        "pfl_index_legacy_version.idx",
+        legacy_version_bytes
+    );
+    PFL_EXPECT(!index_reader.read(legacy_version_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    PFL_EXPECT(index_reader.last_error().reason == "unsupported index version; rebuild the index from the source capture");
+
     ImportCheckpoint checkpoint {};
     PFL_EXPECT(read_capture_source_info(source_path, checkpoint.source_info));
     checkpoint.packets_processed = 2;
@@ -291,7 +307,6 @@ void run_index_format_tests() {
     PFL_EXPECT(loaded_checkpoint.completed == checkpoint.completed);
     expect_matching_states(loaded_checkpoint.state, checkpoint.state);
 
-    const auto index_bytes = read_file_bytes(index_path);
     const auto malformed_index_path = write_temp_binary_file(
         "pfl_index_section_size_invalid.idx",
         corrupt_first_section_size(index_bytes)

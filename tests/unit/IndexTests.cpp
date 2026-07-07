@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <variant>
 #include <vector>
@@ -13,6 +14,26 @@ namespace pfl::tests {
 
 namespace {
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+void expect_matching_protocol_path_badges(
+    const std::vector<ProtocolPathBadgeRow>& left,
+    const std::vector<ProtocolPathBadgeRow>& right
+) {
+    PFL_EXPECT(left.size() == right.size());
+    for (std::size_t index = 0; index < left.size(); ++index) {
+        PFL_EXPECT(left[index].short_label == right[index].short_label);
+        PFL_EXPECT(left[index].full_name == right[index].full_name);
+        PFL_EXPECT(left[index].tooltip == right[index].tooltip);
+        PFL_EXPECT(left[index].color_key == right[index].color_key);
+        PFL_EXPECT(left[index].background_color == right[index].background_color);
+        PFL_EXPECT(left[index].border_color == right[index].border_color);
+        PFL_EXPECT(left[index].text_color == right[index].text_color);
+    }
+}
+
 void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<FlowRow>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
@@ -23,6 +44,9 @@ void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<Fl
         PFL_EXPECT(left[index].key == right[index].key);
         PFL_EXPECT(left[index].protocol_hint == right[index].protocol_hint);
         PFL_EXPECT(left[index].service_hint == right[index].service_hint);
+        PFL_EXPECT(left[index].protocol_path_text == right[index].protocol_path_text);
+        PFL_EXPECT(left[index].protocol_path_compact_text == right[index].protocol_path_compact_text);
+        expect_matching_protocol_path_badges(left[index].protocol_path_badges, right[index].protocol_path_badges);
         PFL_EXPECT(left[index].has_fragmented_packets == right[index].has_fragmented_packets);
         PFL_EXPECT(left[index].fragmented_packet_count == right[index].fragmented_packet_count);
     }
@@ -80,6 +104,50 @@ std::vector<std::uint8_t> make_tls_handshake_record_for_index_test(const std::ui
     record.insert(record.end(), handshake.begin(), handshake.end());
     return record;
 }
+
+void expect_index_roundtrip_preserves_protocol_path_identity(
+    const std::filesystem::path& relative_fixture_path,
+    const std::size_t expected_flow_count
+) {
+    auto fixture_stem = relative_fixture_path.filename().string();
+    std::replace(fixture_stem.begin(), fixture_stem.end(), '.', '_');
+    const auto index_path =
+        std::filesystem::temp_directory_path() / ("pfl_protocol_path_roundtrip_" + fixture_stem + ".idx");
+    std::filesystem::remove(index_path);
+
+    CaptureSession original_session {};
+    PFL_REQUIRE(original_session.open_capture(fixture_path(relative_fixture_path)));
+    const auto original_rows = original_session.list_flows();
+    PFL_EXPECT(original_rows.size() == expected_flow_count);
+    std::vector<std::vector<PacketRef>> original_packets_by_flow {};
+    original_packets_by_flow.reserve(original_rows.size());
+    for (std::size_t flow_index = 0; flow_index < original_rows.size(); ++flow_index) {
+        const auto packets = original_session.flow_packets(flow_index);
+        PFL_REQUIRE(packets.has_value());
+        original_packets_by_flow.push_back(*packets);
+        for (const auto& packet : *packets) {
+            PFL_EXPECT(packet.protocol_path_id != kInvalidProtocolPathId);
+        }
+    }
+
+    PFL_REQUIRE(original_session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    PFL_EXPECT(loaded_session.opened_from_index());
+    const auto loaded_rows = loaded_session.list_flows();
+    PFL_EXPECT(loaded_rows.size() == expected_flow_count);
+    expect_matching_rows(loaded_rows, original_rows);
+
+    for (std::size_t flow_index = 0; flow_index < loaded_rows.size(); ++flow_index) {
+        const auto loaded_packets = loaded_session.flow_packets(flow_index);
+        PFL_REQUIRE(loaded_packets.has_value());
+        expect_matching_packets(*loaded_packets, original_packets_by_flow[flow_index]);
+        for (const auto& packet : *loaded_packets) {
+            PFL_EXPECT(packet.protocol_path_id != kInvalidProtocolPathId);
+        }
+    }
+}
 }  // namespace
 
 void run_index_tests() {
@@ -104,6 +172,11 @@ void run_index_tests() {
     const auto original_rows = original_session.list_flows();
     const auto original_packets = original_session.flow_packets(0);
     PFL_EXPECT(original_packets.has_value());
+    if (original_packets.has_value()) {
+        for (const auto& packet : *original_packets) {
+            PFL_EXPECT(packet.protocol_path_id != kInvalidProtocolPathId);
+        }
+    }
     PFL_EXPECT(original_session.save_index(index_path));
     PFL_EXPECT(std::filesystem::exists(index_path));
 
@@ -337,6 +410,19 @@ void run_index_tests() {
         PFL_EXPECT(loaded_stream_session.summary().flow_count == original_stream_session.summary().flow_count);
         PFL_EXPECT(loaded_stream_session.summary().total_bytes == original_stream_session.summary().total_bytes);
     }
+
+    expect_index_roundtrip_preserves_protocol_path_identity(
+        std::filesystem::path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"),
+        2U
+    );
+    expect_index_roundtrip_preserves_protocol_path_identity(
+        std::filesystem::path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap"),
+        2U
+    );
+    expect_index_roundtrip_preserves_protocol_path_identity(
+        std::filesystem::path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap"),
+        2U
+    );
 
     {
         auto truncated_bytes = make_classic_pcap({{100, forward_packet}, {200, reverse_packet}});
