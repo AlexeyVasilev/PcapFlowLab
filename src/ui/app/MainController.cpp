@@ -1,6 +1,7 @@
 ﻿#include "ui/app/MainController.h"
 
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "core/decode/PacketDecodeSupport.h"
 
@@ -518,6 +519,25 @@ void appendSection(QStringList& lines, const QString& title, const QStringList& 
     for (const auto& value : values) {
         lines.push_back(QStringLiteral("  %1").arg(value));
     }
+}
+
+QVariantList protocol_path_legend_to_variant_list() {
+    QVariantList legend {};
+    const auto entries = session_detail::protocol_path_legend_entries();
+    legend.reserve(static_cast<qsizetype>(entries.size()));
+
+    for (const auto& entry : entries) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("shortLabel"), QString::fromStdString(entry.short_label));
+        row.insert(QStringLiteral("fullName"), QString::fromStdString(entry.full_name));
+        row.insert(QStringLiteral("colorKey"), QString::fromStdString(entry.color_key));
+        row.insert(QStringLiteral("backgroundColor"), QString::fromStdString(entry.background_color));
+        row.insert(QStringLiteral("borderColor"), QString::fromStdString(entry.border_color));
+        row.insert(QStringLiteral("textColor"), QString::fromStdString(entry.text_color));
+        legend.push_back(row);
+    }
+
+    return legend;
 }
 
 enum class ChecksumValidationStatus {
@@ -3071,12 +3091,20 @@ bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
     return show_wireshark_filter_for_selected_flow_;
 }
 
+bool MainController::showProtocolPathColumn() const noexcept {
+    return show_protocol_path_column_;
+}
+
 QString MainController::selectedFlowWiresharkFilter() const {
     if (!show_wireshark_filter_for_selected_flow_) {
         return {};
     }
 
     return selected_flow_wireshark_filter(flow_model_, selected_flow_index_);
+}
+
+QVariantList MainController::protocolPathLegend() const {
+    return protocol_path_legend_to_variant_list();
 }
 
 bool MainController::selectedFlowHasWiresharkFilter() const {
@@ -4002,6 +4030,15 @@ void MainController::setShowWiresharkFilterForSelectedFlow(const bool enabled) {
     show_wireshark_filter_for_selected_flow_ = enabled;
     emit showWiresharkFilterForSelectedFlowChanged();
     emit selectedFlowWiresharkFilterChanged();
+}
+
+void MainController::setShowProtocolPathColumn(const bool enabled) {
+    if (show_protocol_path_column_ == enabled) {
+        return;
+    }
+
+    show_protocol_path_column_ = enabled;
+    emit showProtocolPathColumnChanged();
 }
 
 void MainController::setCurrentTabIndex(const int index) {

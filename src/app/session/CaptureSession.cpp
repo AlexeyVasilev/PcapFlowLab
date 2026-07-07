@@ -1,5 +1,6 @@
 ﻿#include "app/session/CaptureSession.h"
 #include "app/session/SessionFlowHelpers.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SessionHttpReconstruction.h"
 #include "app/session/SessionOpenHelpers.h"
@@ -70,6 +71,7 @@ using session_detail::make_flow_row;
 using session_detail::packet_count;
 using session_detail::protocol_id;
 using session_detail::effective_protocol_hint;
+using session_detail::build_protocol_path_presentation;
 using session_detail::find_quic_client_initial_connection_id_for_connection;
 using session_detail::find_quic_client_initial_connection_id_for_packets;
 using session_detail::build_quic_presentation_for_selected_direction;
@@ -78,6 +80,26 @@ using session_detail::QuicPresentationResult;
 using session_detail::analyze_selected_flow_tcp_payload_suppression;
 using session_detail::collect_suspected_tcp_retransmission_packet_indices;
 using session_detail::total_bytes;
+
+ProtocolPathId protocol_path_id_from_flow_key(const FlowConnectionKey& key) {
+    if (std::holds_alternative<ConnectionKeyV4>(key)) {
+        return std::get<ConnectionKeyV4>(key).protocol_path_id;
+    }
+
+    return std::get<ConnectionKeyV6>(key).protocol_path_id;
+}
+
+FlowRow populate_flow_row_protocol_path(const CaptureState& state, FlowRow row) {
+    const auto protocol_path_id = protocol_path_id_from_flow_key(row.key);
+    const auto* path = protocol_path_id == kInvalidProtocolPathId
+        ? nullptr
+        : state.protocol_path_registry.find(protocol_path_id);
+    const auto presentation = build_protocol_path_presentation(path);
+    row.protocol_path_text = presentation.full_text;
+    row.protocol_path_compact_text = presentation.compact_text;
+    row.protocol_path_badges = presentation.badges;
+    return row;
+}
 using session_detail::format_quic_presentation_enrichment;
 using session_detail::format_quic_presentation_protocol_text;
 using session_detail::tls_stream_label_from_protocol_text;
@@ -2799,7 +2821,7 @@ std::vector<FlowRow> CaptureSession::list_flows() const {
     rows.reserve(connections.size());
 
     for (std::size_t index = 0; index < connections.size(); ++index) {
-        rows.push_back(make_flow_row(index, connections[index], analysis_settings_));
+        rows.push_back(populate_flow_row_protocol_path(state_, make_flow_row(index, connections[index], analysis_settings_)));
     }
 
     return rows;
@@ -2811,7 +2833,7 @@ std::optional<FlowRow> CaptureSession::flow_row(const std::size_t flow_index) co
         return std::nullopt;
     }
 
-    return make_flow_row(flow_index, connections[flow_index], analysis_settings_);
+    return populate_flow_row_protocol_path(state_, make_flow_row(flow_index, connections[flow_index], analysis_settings_));
 }
 
 std::optional<FlowAnalysisResult> CaptureSession::get_flow_analysis(const std::size_t flow_index) const {

@@ -84,6 +84,7 @@ add_library(
     src/core/services/HexDumpService.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/session/CaptureSession.cpp
+    src/app/session/ProtocolPathPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp

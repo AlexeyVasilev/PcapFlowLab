@@ -17,6 +17,16 @@ enum class FlowAddressFamily : std::uint8_t {
 
 using FlowConnectionKey = std::variant<ConnectionKeyV4, ConnectionKeyV6>;
 
+struct ProtocolPathBadgeRow {
+    std::string short_label {};
+    std::string full_name {};
+    std::string tooltip {};
+    std::string color_key {};
+    std::string background_color {};
+    std::string border_color {};
+    std::string text_color {};
+};
+
 struct FlowRow {
     std::size_t index {0};
     FlowAddressFamily family {FlowAddressFamily::ipv4};
@@ -24,6 +34,9 @@ struct FlowRow {
     std::string protocol_text {};
     std::string protocol_hint {};
     std::string service_hint {};
+    std::string protocol_path_text {};
+    std::string protocol_path_compact_text {};
+    std::vector<ProtocolPathBadgeRow> protocol_path_badges {};
     bool has_fragmented_packets {false};
     std::uint64_t fragmented_packet_count {0};
     std::string address_a {};

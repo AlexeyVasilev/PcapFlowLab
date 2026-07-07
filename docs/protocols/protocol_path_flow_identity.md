@@ -20,7 +20,32 @@ Current repository state:
 - protocol-path extraction and interning are implemented;
 - `FlowKeyV2` is enabled through `protocol_path_id` on flow identity and normalized connection identity;
 - stable index serialization persists protocol-path registry data plus flow/connection `protocol_path_id`;
+- the flow list can now expose protocol paths as compact badge/chip presentation derived from the interned registry;
+- both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
 - protocol-path statistics trees and protocol-path filters remain future work.
+
+## Flow List Presentation
+
+The current UI may expose protocol-path-aware flow identity as a compact flow-list column, for example:
+
+```text
+[EII] [Ip4] [UDP] [Vx] [EII] [Ip4] [TCP]
+```
+
+Important scope boundaries:
+
+- this badge/chip presentation is explanatory UI only;
+- it does not change `FlowKeyV2`, decode behavior, import behavior, or stable index semantics;
+- it is derived lazily from the capture-level `ProtocolPathRegistry`, not stored redundantly per packet;
+- both UI frontends should consume centralized C++ presentation data rather than duplicating abbreviation or color-key mapping in UI-specific code;
+- badge tooltips may include namespace identifiers such as VLAN VID, MPLS label, VXLAN VNI, Geneve VNI, or GTP-U TEID;
+- higher-level application hints such as TLS, QUIC, DNS, or HTTP are intentionally excluded from protocol-path badges because they are not part of flow identity in v1.
+
+Still deferred:
+
+- protocol-path statistics trees;
+- protocol-path filters;
+- protocol-path drill-down workflows beyond flow-list presentation.
 
 ## Problem Statement
 

@@ -124,6 +124,7 @@ fn main() {
 
     let sources = [
         "src/core/domain/FlowKey.cpp",
+        "src/core/domain/ProtocolPath.cpp",
         "src/core/domain/ConnectionKey.cpp",
         "src/core/domain/Flow.cpp",
         "src/core/domain/Connection.cpp",
@@ -168,6 +169,7 @@ fn main() {
         "src/app/frontend/FrontendSessionAdapter.cpp",
         "src/app/frontend/FrontendSessionAdapterBridge.cpp",
         "src/app/session/CaptureSession.cpp",
+        "src/app/session/ProtocolPathPresentation.cpp",
         "src/app/session/SelectedFlowPacketSemantics.cpp",
         "src/app/session/SessionFlowHelpers.cpp",
         "src/app/session/SessionFormatting.cpp",

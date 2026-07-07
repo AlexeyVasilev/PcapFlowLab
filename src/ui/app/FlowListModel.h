@@ -21,6 +21,9 @@ public:
         ProtocolRole,
         ProtocolHintRole,
         ServiceHintRole,
+        ProtocolPathTextRole,
+        ProtocolPathCompactTextRole,
+        ProtocolPathBadgesRole,
         HasFragmentedPacketsRole,
         FragmentedPacketCountRole,
         AddressARole,
@@ -83,6 +86,9 @@ public:
         QString protocol {};
         QString protocol_hint {};
         QString service_hint {};
+        QString protocol_path_text {};
+        QString protocol_path_compact_text {};
+        QVariantList protocol_path_badges {};
         bool has_fragmented_packets {false};
         qulonglong fragmented_packets {0};
         QString address_a {};

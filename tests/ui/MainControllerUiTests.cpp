@@ -2258,6 +2258,19 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(wireshark_setting_checkbox->property("checked").toBool());
     });
 
+    run_ui_section("settings_pane_protocol_path_checkbox", [&]() {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* protocol_path_checkbox = named_object(settings_pane.object.get(), "showProtocolPathColumnCheckBox");
+        UI_EXPECT(protocol_path_checkbox != nullptr);
+        UI_EXPECT(protocol_path_checkbox->property("visible").toBool());
+        settings_pane.object->setProperty("showProtocolPathColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!protocol_path_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("showProtocolPathColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(protocol_path_checkbox->property("checked").toBool());
+    });
+
     run_ui_section("flow_table_wireshark_filter_row", [&]() {
         auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
         UI_EXPECT(named_object(flow_table.object.get(), "wiresharkFilterRow") != nullptr);
@@ -2268,6 +2281,40 @@ int main(int argc, char* argv[]) {
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(flow_table.object.get(), "wiresharkFilterRow"));
     });
+
+    run_ui_section("flow_table_protocol_path_column_visibility", [&]() {
+        auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
+        UI_EXPECT(named_object(flow_table.object.get(), "pathHeaderCell") != nullptr);
+        flow_table.object->setProperty("showProtocolPathColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(flow_table.object.get(), "pathHeaderCell"));
+        flow_table.object->setProperty("showProtocolPathColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
+    });
+
+    const auto protocol_path_capture_path = write_temp_pcap(
+        "pfl_ui_protocol_path_roles.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 30, 0, 1), ipv4(10, 30, 0, 2), 43010, 443)},
+        })
+    );
+
+    MainController protocol_path_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_controller, protocol_path_capture_path));
+    auto* protocol_path_flow_model = qobject_cast<FlowListModel*>(protocol_path_controller.flowModel());
+    UI_EXPECT(protocol_path_flow_model != nullptr);
+    UI_EXPECT(protocol_path_flow_model->rowCount() == 1);
+    {
+        const auto protocol_path_index = protocol_path_flow_model->index(0, 0);
+        UI_EXPECT(protocol_path_flow_model->data(protocol_path_index, FlowListModel::ProtocolPathTextRole).toString() == QStringLiteral("EthernetII -> IPv4 -> TCP"));
+        UI_EXPECT(protocol_path_flow_model->data(protocol_path_index, FlowListModel::ProtocolPathCompactTextRole).toString() == QStringLiteral("EII|Ip4|TCP"));
+        const auto badge_list = protocol_path_flow_model->data(protocol_path_index, FlowListModel::ProtocolPathBadgesRole).toList();
+        UI_EXPECT(badge_list.size() == 3);
+        UI_EXPECT(badge_list[0].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("EII"));
+        UI_EXPECT(badge_list[1].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("Ip4"));
+        UI_EXPECT(badge_list[2].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("TCP"));
+    }
 
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",

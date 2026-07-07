@@ -13,6 +13,7 @@ Item {
     property string filterText: ""
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
+    property bool showProtocolPathColumn: true
     property int sortColumn: 0
     property bool sortAscending: true
     property var packetModel: null
@@ -115,6 +116,7 @@ Item {
             filterText: root.filterText
             wiresharkFilterText: root.wiresharkFilterText
             wiresharkFilterVisible: root.wiresharkFilterVisible
+            showProtocolPathColumn: root.showProtocolPathColumn
             sortColumn: root.sortColumn
             sortAscending: root.sortAscending
             onFlowSelected: function(flowIndex) {

@@ -193,6 +193,9 @@ pub struct FlowDto {
     pub protocol_hint: String,
     pub protocol_hint_display: String,
     pub service_hint: String,
+    pub protocol_path_text: String,
+    pub protocol_path_compact_text: String,
+    pub protocol_path_badges: Vec<ProtocolPathBadgeDto>,
     pub has_fragmented_packets: bool,
     pub fragmented_packet_count: u64,
     pub address_a: String,
@@ -204,6 +207,17 @@ pub struct FlowDto {
     pub packet_count: u64,
     pub total_bytes: u64,
     pub wireshark_display_filter: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathBadgeDto {
+    pub short_label: String,
+    pub full_name: String,
+    pub tooltip: String,
+    pub color_key: String,
+    pub background_color: String,
+    pub border_color: String,
+    pub text_color: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

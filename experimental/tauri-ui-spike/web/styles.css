@@ -1214,6 +1214,11 @@ select:disabled {
   white-space: nowrap;
 }
 
+.flow-path-cell {
+  min-width: 220px;
+  max-width: 320px;
+}
+
 .endpoint-cell-inner {
   display: inline-grid;
   grid-template-columns: max-content 1ch 5ch;
@@ -1233,6 +1238,38 @@ select:disabled {
 
 .endpoint-port {
   text-align: right;
+}
+
+.flow-path-cell-inner {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.flow-path-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.flow-path-compact-text {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font: 12px/1.2 "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table tbody tr.packet-row.is-warning {

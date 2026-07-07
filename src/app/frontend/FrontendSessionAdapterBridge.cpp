@@ -115,6 +115,20 @@ std::string protocol_stats_json(const pfl::ProtocolStats& stats) {
     return out.str();
 }
 
+std::string protocol_path_badge_json(const pfl::ProtocolPathBadgeRow& badge) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"short_label\":" << json_string(badge.short_label) << ','
+        << "\"full_name\":" << json_string(badge.full_name) << ','
+        << "\"tooltip\":" << json_string(badge.tooltip) << ','
+        << "\"color_key\":" << json_string(badge.color_key) << ','
+        << "\"background_color\":" << json_string(badge.background_color) << ','
+        << "\"border_color\":" << json_string(badge.border_color) << ','
+        << "\"text_color\":" << json_string(badge.text_color)
+        << '}';
+    return out.str();
+}
+
 std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& source) {
     std::ostringstream out {};
     out << '{'
@@ -392,6 +406,8 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
             << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
             << "\"service_hint\":" << json_string(flow.service_hint) << ','
+            << "\"protocol_path_text\":" << json_string(flow.protocol_path_text) << ','
+            << "\"protocol_path_compact_text\":" << json_string(flow.protocol_path_compact_text) << ','
             << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
             << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
             << "\"address_a\":" << json_string(flow.address_a) << ','
@@ -402,7 +418,17 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"endpoint_b\":" << json_string(flow.endpoint_b) << ','
             << "\"packet_count\":" << flow.packet_count << ','
             << "\"total_bytes\":" << flow.total_bytes << ','
-            << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
+            << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter) << ','
+            << "\"protocol_path_badges\":[";
+
+        for (std::size_t badge_index = 0; badge_index < flow.protocol_path_badges.size(); ++badge_index) {
+            if (badge_index != 0U) {
+                out << ',';
+            }
+            out << protocol_path_badge_json(flow.protocol_path_badges[badge_index]);
+        }
+
+        out << ']'
             << '}';
     }
     out << ']';
@@ -418,6 +444,8 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
         << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
         << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
         << "\"service_hint\":" << json_string(flow.service_hint) << ','
+        << "\"protocol_path_text\":" << json_string(flow.protocol_path_text) << ','
+        << "\"protocol_path_compact_text\":" << json_string(flow.protocol_path_compact_text) << ','
         << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
         << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
         << "\"address_a\":" << json_string(flow.address_a) << ','
@@ -428,7 +456,17 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
         << "\"endpoint_b\":" << json_string(flow.endpoint_b) << ','
         << "\"packet_count\":" << flow.packet_count << ','
         << "\"total_bytes\":" << flow.total_bytes << ','
-        << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
+        << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter) << ','
+        << "\"protocol_path_badges\":[";
+
+    for (std::size_t badge_index = 0; badge_index < flow.protocol_path_badges.size(); ++badge_index) {
+        if (badge_index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_badge_json(flow.protocol_path_badges[badge_index]);
+    }
+
+    out << ']'
         << '}';
     return out.str();
 }

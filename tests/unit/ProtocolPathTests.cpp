@@ -6,8 +6,10 @@
 #include <string>
 
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "PcapTestUtils.h"
 #include "core/domain/ProtocolPath.h"
 #include "core/services/CaptureImporter.h"
@@ -170,6 +172,15 @@ std::string summarize_packet_path_ids(const CaptureState& state, const std::vect
         }
     }
     return builder.str();
+}
+
+std::vector<std::string> badge_short_labels(const std::vector<ProtocolPathBadgeRow>& badges) {
+    std::vector<std::string> labels {};
+    labels.reserve(badges.size());
+    for (const auto& badge : badges) {
+        labels.push_back(badge.short_label);
+    }
+    return labels;
 }
 
 std::string format_fixture_flow_diagnostics(
@@ -418,6 +429,109 @@ void expect_formatting() {
     PFL_EXPECT(format_protocol_path(shim) == "EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(vxlan) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(gtpu) == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020384) -> IPv4 -> SCTP");
+}
+
+void expect_protocol_path_presentation_mapping() {
+    const ProtocolPath direct {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath vxlan {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::vxlan(100U),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath gtpu {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+        LayerKey::gtpu(0x01020384U),
+        LayerKey::ipv4(),
+        LayerKey::sctp(),
+    };
+    const ProtocolPath mpls {
+        LayerKey::ethernet_ii(),
+        LayerKey::mpls(100U),
+        LayerKey::mpls(200U),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+
+    const auto direct_presentation = session_detail::build_protocol_path_presentation(&direct);
+    PFL_EXPECT(direct_presentation.full_text == "EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(direct_presentation.compact_text == "EII|Ip4|TCP");
+    PFL_EXPECT(badge_short_labels(direct_presentation.badges) == std::vector<std::string>({"EII", "Ip4", "TCP"}));
+    PFL_EXPECT(direct_presentation.badges[0].full_name == "Ethernet II");
+    PFL_EXPECT(direct_presentation.badges[0].color_key == "link");
+
+    const auto vxlan_presentation = session_detail::build_protocol_path_presentation(&vxlan);
+    PFL_EXPECT(vxlan_presentation.compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
+    PFL_EXPECT(vxlan_presentation.badges[3].tooltip == "VXLAN\nVNI: 100");
+    PFL_EXPECT(vxlan_presentation.badges[3].color_key == "overlay");
+
+    const auto gtpu_presentation = session_detail::build_protocol_path_presentation(&gtpu);
+    PFL_EXPECT(gtpu_presentation.badges[3].short_label == "GTP-U");
+    PFL_EXPECT(gtpu_presentation.badges[3].tooltip == "GTP-U\nTEID: 0x01020384");
+    PFL_EXPECT(gtpu_presentation.badges.back().short_label == "SCTP");
+
+    const auto mpls_presentation = session_detail::build_protocol_path_presentation(&mpls);
+    PFL_EXPECT(badge_short_labels(mpls_presentation.badges) == std::vector<std::string>({"EII", "M", "M", "Ip4", "TCP"}));
+    PFL_EXPECT(mpls_presentation.badges[1].tooltip == "MPLS\nLabel: 100");
+    PFL_EXPECT(mpls_presentation.badges[2].tooltip == "MPLS\nLabel: 200");
+
+    const auto unknown_presentation = session_detail::build_protocol_path_presentation(nullptr);
+    PFL_EXPECT(unknown_presentation.full_text == "Unknown protocol path");
+    PFL_EXPECT(unknown_presentation.compact_text == "?");
+    PFL_REQUIRE(unknown_presentation.badges.size() == 1U);
+    PFL_EXPECT(unknown_presentation.badges[0].short_label == "?");
+
+    const auto legend = session_detail::protocol_path_legend_entries();
+    PFL_EXPECT(legend.size() == 19U);
+    PFL_EXPECT(legend.front().short_label == "EII");
+    PFL_EXPECT(legend.back().short_label == "?");
+    PFL_EXPECT(legend.back().full_name == "Unknown");
+}
+
+void expect_flow_rows_expose_protocol_path_presentation() {
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+        PFL_EXPECT(rows[0].protocol_path_compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
+        PFL_REQUIRE(rows[0].protocol_path_badges.size() == 7U);
+        PFL_EXPECT(rows[0].protocol_path_badges[3].tooltip == "VXLAN\nVNI: 100");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_path_text == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+        PFL_EXPECT(rows[0].protocol_path_compact_text == "EII|Ip4|UDP|GTP-U|Ip4|TCP");
+        PFL_REQUIRE(rows[0].protocol_path_badges.size() == 6U);
+        PFL_EXPECT(rows[0].protocol_path_badges[3].tooltip == "GTP-U\nTEID: 0x01020304");
+    }
+}
+
+void expect_frontend_flows_expose_protocol_path_presentation() {
+    FrontendSessionAdapter adapter {};
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap"), FrontendOpenMode::fast).opened);
+
+    const auto flows = adapter.get_flows();
+    PFL_REQUIRE(flows.size() == 1U);
+    PFL_EXPECT(flows[0].protocol_path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(flows[0].protocol_path_compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
+    PFL_REQUIRE(flows[0].protocol_path_badges.size() == 7U);
+    PFL_EXPECT(flows[0].protocol_path_badges[3].short_label == "Vx");
+    PFL_EXPECT(flows[0].protocol_path_badges[3].tooltip == "VXLAN\nVNI: 100");
 }
 
 void expect_builder_empty_state() {
@@ -752,6 +866,9 @@ void run_protocol_path_tests() {
     expect_identifier_differences();
     expect_registry_interning();
     expect_formatting();
+    expect_protocol_path_presentation_mapping();
+    expect_flow_rows_expose_protocol_path_presentation();
+    expect_frontend_flows_expose_protocol_path_presentation();
     expect_builder_empty_state();
     expect_builder_push_order();
     expect_builder_identifier_layers();

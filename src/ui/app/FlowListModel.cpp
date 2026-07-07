@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <map>
 
+#include <QVariantMap>
+
 namespace pfl {
 
 namespace {
@@ -25,6 +27,25 @@ QString format_protocol_hint(const std::string& value) {
 
 QString format_fragmented_packet_count(const FlowListModel::Item& item) {
     return item.fragmented_packets == 0 ? QString {} : QString::number(item.fragmented_packets);
+}
+
+QVariantList to_protocol_path_badge_list(const std::vector<ProtocolPathBadgeRow>& badges) {
+    QVariantList badge_list {};
+    badge_list.reserve(static_cast<qsizetype>(badges.size()));
+
+    for (const auto& badge : badges) {
+        QVariantMap badge_map {};
+        badge_map.insert(QStringLiteral("shortLabel"), to_qstring(badge.short_label));
+        badge_map.insert(QStringLiteral("fullName"), to_qstring(badge.full_name));
+        badge_map.insert(QStringLiteral("tooltip"), to_qstring(badge.tooltip));
+        badge_map.insert(QStringLiteral("colorKey"), to_qstring(badge.color_key));
+        badge_map.insert(QStringLiteral("backgroundColor"), to_qstring(badge.background_color));
+        badge_map.insert(QStringLiteral("borderColor"), to_qstring(badge.border_color));
+        badge_map.insert(QStringLiteral("textColor"), to_qstring(badge.text_color));
+        badge_list.push_back(badge_map);
+    }
+
+    return badge_list;
 }
 
 bool contains_text(const FlowListModel::Item& item, const QString& filter) {
@@ -137,6 +158,12 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
         return item.protocol_hint;
     case ServiceHintRole:
         return item.service_hint;
+    case ProtocolPathTextRole:
+        return item.protocol_path_text;
+    case ProtocolPathCompactTextRole:
+        return item.protocol_path_compact_text;
+    case ProtocolPathBadgesRole:
+        return item.protocol_path_badges;
     case HasFragmentedPacketsRole:
         return item.has_fragmented_packets;
     case FragmentedPacketCountRole:
@@ -166,6 +193,9 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
         {ProtocolRole, "protocol"},
         {ProtocolHintRole, "protocolHint"},
         {ServiceHintRole, "serviceHint"},
+        {ProtocolPathTextRole, "protocolPathText"},
+        {ProtocolPathCompactTextRole, "protocolPathCompactText"},
+        {ProtocolPathBadgesRole, "protocolPathBadges"},
         {HasFragmentedPacketsRole, "hasFragmentedPackets"},
         {FragmentedPacketCountRole, "fragmentedPacketCount"},
         {AddressARole, "addressA"},
@@ -271,6 +301,9 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
             .protocol = to_qstring(row.protocol_text),
             .protocol_hint = format_protocol_hint(row.protocol_hint),
             .service_hint = to_qstring(row.service_hint),
+            .protocol_path_text = to_qstring(row.protocol_path_text),
+            .protocol_path_compact_text = to_qstring(row.protocol_path_compact_text),
+            .protocol_path_badges = to_protocol_path_badge_list(row.protocol_path_badges),
             .has_fragmented_packets = row.has_fragmented_packets,
             .fragmented_packets = static_cast<qulonglong>(row.fragmented_packet_count),
             .address_a = to_qstring(row.address_a),

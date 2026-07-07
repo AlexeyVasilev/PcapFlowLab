@@ -92,6 +92,12 @@ ApplicationWindow {
     }
 
     Action {
+        id: showProtocolPathLegendAction
+        text: "Protocol Path Legend"
+        onTriggered: protocolPathLegendDialog.open()
+    }
+
+    Action {
         id: showAboutAction
         text: "About"
         onTriggered: aboutDialog.open()
@@ -130,6 +136,8 @@ ApplicationWindow {
             title: "View"
 
             MenuItem { action: showSettingsAction }
+            MenuSeparator {}
+            MenuItem { action: showProtocolPathLegendAction }
             MenuSeparator {}
             MenuItem { action: showAboutAction }
         }
@@ -260,6 +268,7 @@ ApplicationWindow {
                 usePossibleTlsQuic: mainController.usePossibleTlsQuic
                 validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
                 showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
+                showProtocolPathColumn: mainController.showProtocolPathColumn
                 onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
                     mainController.httpUsePathAsServiceHint = enabled
                 }
@@ -272,6 +281,9 @@ ApplicationWindow {
                 onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
                     mainController.showWiresharkFilterForSelectedFlow = enabled
                 }
+                onShowProtocolPathColumnChangedByUser: function(enabled) {
+                    mainController.showProtocolPathColumn = enabled
+                }
             }
         }
 
@@ -279,6 +291,110 @@ ApplicationWindow {
             standardButtons: DialogButtonBox.Ok | DialogButtonBox.Cancel
             onAccepted: settingsDialog.close()
             onRejected: settingsDialog.close()
+        }
+    }
+
+    Dialog {
+        id: protocolPathLegendDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 640
+        height: 520
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        title: "Protocol Path Legend"
+
+        contentItem: ScrollView {
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            ColumnLayout {
+                width: parent.width
+                spacing: 12
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: "#475569"
+                    text: "Compact flow-list badges explain FlowKeyV2 path identity. They show only current flow-identity layers, not higher-level application hints."
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 18
+                    rowSpacing: 10
+
+                    Repeater {
+                        model: mainController.protocolPathLegend
+
+                        delegate: RowLayout {
+                            required property var modelData
+
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            spacing: 12
+
+                            Rectangle {
+                                Layout.preferredWidth: 58
+                                implicitHeight: 24
+                                radius: 12
+                                color: modelData.backgroundColor
+                                border.color: modelData.borderColor
+                                border.width: 1
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: modelData.shortLabel
+                                    color: modelData.textColor
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: modelData.fullName
+                                    color: "#0f172a"
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: "Category: " + modelData.colorKey
+                                    color: "#64748b"
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: "#64748b"
+                    font.pixelSize: 12
+                    text: "Identifiers such as VLAN VID, MPLS label, VXLAN VNI, Geneve VNI, and GTP-U TEID appear in badge tooltips and the full path text."
+                }
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Ok
+            onAccepted: protocolPathLegendDialog.close()
         }
     }
 
@@ -889,6 +1005,7 @@ ApplicationWindow {
                 filterText: mainController.flowFilterText
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
+                showProtocolPathColumn: mainController.showProtocolPathColumn
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel

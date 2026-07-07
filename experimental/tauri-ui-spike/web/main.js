@@ -632,6 +632,40 @@
     `;
   }
 
+  function renderProtocolPathCell(flow) {
+    const fullText = String(flow?.protocol_path_text || "").trim();
+    const compactText = String(flow?.protocol_path_compact_text || "").trim();
+    const badges = Array.isArray(flow?.protocol_path_badges) ? flow.protocol_path_badges : [];
+
+    if (badges.length > 0) {
+      const chips = badges.map((badge) => {
+        const shortLabel = String(badge?.short_label || "").trim();
+        const tooltip = String(badge?.tooltip || "").trim();
+        const backgroundColor = String(badge?.background_color || "").trim() || "#e2e8f0";
+        const borderColor = String(badge?.border_color || "").trim() || "#cbd5e1";
+        const textColor = String(badge?.text_color || "").trim() || "#334155";
+        const colorKey = String(badge?.color_key || "").trim();
+        const className = colorKey ? `flow-path-badge flow-path-badge-${escapeHtml(colorKey)}` : "flow-path-badge";
+
+        return `
+          <span
+            class="${className}"
+            style="background:${escapeHtml(backgroundColor)};border-color:${escapeHtml(borderColor)};color:${escapeHtml(textColor)}"
+            title="${escapeHtml(tooltip || fullText || shortLabel)}"
+          >${escapeHtml(shortLabel)}</span>
+        `;
+      }).join("");
+
+      return `<span class="flow-path-cell-inner" title="${escapeHtml(fullText || compactText)}">${chips}</span>`;
+    }
+
+    if (!compactText) {
+      return "";
+    }
+
+    return `<span class="flow-path-compact-text" title="${escapeHtml(fullText || compactText)}">${escapeHtml(compactText)}</span>`;
+  }
+
   function unrecognizedPacketCount() {
     return Number(state.overview?.unrecognized_packet_count || 0);
   }
@@ -2481,7 +2515,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Loading flows...</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">Loading flows...</td></tr>`;
       return;
     }
 
@@ -2491,7 +2525,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="11">Open failed. No flows were loaded.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row is-error"><td colspan="12">Open failed. No flows were loaded.</td></tr>`;
       return;
     }
 
@@ -2501,7 +2535,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">Open a capture or index to load flows.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">Open a capture or index to load flows.</td></tr>`;
       return;
     }
 
@@ -2511,7 +2545,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows available.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">No flows available.</td></tr>`;
       return;
     }
 
@@ -2523,7 +2557,7 @@
       state.flowVirtualWindowStart = 0;
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
-      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="11">No flows match the current filter.</td></tr>`;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="12">No flows match the current filter.</td></tr>`;
       return;
     }
 
@@ -2533,7 +2567,7 @@
       rowHeight: flowVirtualRowHeight,
       viewportElement: elements.flowTableViewport,
       overscanRows: flowVirtualOverscanRows,
-      colspan: 11,
+      colspan: 12,
       renderRow: (flow) => {
         const selected = state.selectedFlowIndex === flow.flow_index ? " selected" : "";
         const checked = state.checkedFlowIndices.has(flow.flow_index) ? " checked" : "";
@@ -2548,6 +2582,7 @@
             <td title="${escapeHtml(formatFlowFragmentMarker(flow))}">${escapeHtml(formatFlowFragmentMarker(flow))}</td>
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_a, flow.port_a)}</td>
             <td class="flow-endpoint-cell">${renderEndpointCell(flow.address_b, flow.port_b)}</td>
+            <td class="flow-path-cell">${renderProtocolPathCell(flow)}</td>
             <td>${formatPlainInteger(flow.packet_count)}</td>
             <td>${formatPlainInteger(flow.total_bytes)}</td>
           </tr>

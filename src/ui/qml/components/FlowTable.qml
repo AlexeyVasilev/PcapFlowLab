@@ -10,6 +10,7 @@ Frame {
     property string filterText: ""
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
+    property bool showProtocolPathColumn: true
     property bool unrecognizedPacketsSelected: false
     property int unrecognizedPacketCount: 0
     property int sortColumn: 0
@@ -24,11 +25,12 @@ Frame {
     readonly property int protocolColumnWidth: 86
     readonly property int protocolHintColumnWidth: 98
     readonly property int serviceColumnWidth: 180
+    readonly property int protocolPathColumnWidth: 320
     readonly property int endpointColumnWidth: Math.ceil(endpointTextMetrics.width) + 16
     readonly property int fragColumnWidth: 56
     readonly property int packetsColumnWidth: 86
     readonly property int bytesColumnWidth: 92
-    readonly property int flowTableColumnCount: 11
+    readonly property int flowTableColumnCount: root.showProtocolPathColumn ? 12 : 11
     readonly property int flowTableBaseWidth:
         root.tableContentLeftMargin
         + root.tableContentRightMargin
@@ -38,6 +40,7 @@ Frame {
         + root.protocolColumnWidth
         + root.protocolHintColumnWidth
         + root.serviceColumnWidth
+        + (root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0)
         + root.endpointColumnWidth
         + root.endpointColumnWidth
         + root.fragColumnWidth
@@ -289,6 +292,15 @@ Frame {
                             Button { text: "Service" + root.sortIndicator(4); Layout.preferredWidth: root.serviceColumnWidth; Layout.minimumWidth: root.serviceColumnWidth; Layout.maximumWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
                             Button { text: "Endpoint A" + root.sortIndicator(6); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(6) }
                             Button { text: "Endpoint B" + root.sortIndicator(8); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(8) }
+                            Label {
+                                objectName: "pathHeaderCell"
+                                text: "Path"
+                                visible: root.showProtocolPathColumn
+                                Layout.preferredWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                Layout.minimumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                Layout.maximumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                verticalAlignment: Text.AlignVCenter
+                            }
                             Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
                             Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
                             Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
@@ -331,6 +343,9 @@ Frame {
                             required property string protocol
                             required property string protocolHint
                             required property string serviceHint
+                            required property string protocolPathText
+                            required property string protocolPathCompactText
+                            required property var protocolPathBadges
                             required property bool hasFragmentedPackets
                             required property string fragmentedPacketCount
                             required property string addressA
@@ -503,6 +518,63 @@ Frame {
                                             && endpointBText.length > 0
                                             && endpointBLabel.implicitWidth > endpointBLabel.width + 1
                                         ToolTip.text: endpointBText
+                                    }
+                                    Item {
+                                        visible: root.showProtocolPathColumn
+                                        Layout.preferredWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                        Layout.minimumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                        Layout.maximumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                        implicitHeight: 22
+                                        clip: true
+
+                                        Row {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 4
+
+                                            Repeater {
+                                                model: protocolPathBadges
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+
+                                                    radius: 10
+                                                    implicitHeight: 20
+                                                    implicitWidth: badgeLabel.implicitWidth + 12
+                                                    color: modelData.backgroundColor
+                                                    border.color: modelData.borderColor
+                                                    border.width: 1
+
+                                                    Label {
+                                                        id: badgeLabel
+                                                        anchors.centerIn: parent
+                                                        text: modelData.shortLabel
+                                                        color: modelData.textColor
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                    }
+
+                                                    MouseArea {
+                                                        id: badgeHoverArea
+                                                        anchors.fill: parent
+                                                        acceptedButtons: Qt.NoButton
+                                                        hoverEnabled: true
+                                                    }
+
+                                                    ToolTip.visible: badgeHoverArea.containsMouse && modelData.tooltip.length > 0
+                                                    ToolTip.text: modelData.tooltip
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: protocolPathHoverArea
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                        }
+
+                                        ToolTip.visible: protocolPathHoverArea.containsMouse && protocolPathText.length > 0
+                                        ToolTip.text: protocolPathText
                                     }
                                     Rectangle {
                                         Layout.preferredWidth: root.fragColumnWidth

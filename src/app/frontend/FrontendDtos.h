@@ -165,6 +165,9 @@ struct FrontendFlowDto {
     std::string protocol_hint {};
     std::string protocol_hint_display {};
     std::string service_hint {};
+    std::string protocol_path_text {};
+    std::string protocol_path_compact_text {};
+    std::vector<ProtocolPathBadgeRow> protocol_path_badges {};
     bool has_fragmented_packets {false};
     std::uint64_t fragmented_packet_count {0};
     std::string address_a {};
