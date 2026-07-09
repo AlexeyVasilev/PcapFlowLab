@@ -17,6 +17,7 @@
 #include "ui/app/FlowListModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/ProtocolPathStatsModel.h"
 #include "ui/app/StreamListModel.h"
 #include "ui/app/TopSummaryListModel.h"
 
@@ -158,6 +159,8 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong originalBytes READ originalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
     Q_PROPERTY(QVariantList protocolHintDistribution READ protocolHintDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList protocolPathStatistics READ protocolPathStatistics NOTIFY stateChanged)
+    Q_PROPERTY(QObject* protocolPathStatsModel READ protocolPathStatsModel CONSTANT)
     Q_PROPERTY(qulonglong tcpFlowCount READ tcpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpPacketCount READ tcpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpCapturedBytes READ tcpCapturedBytes NOTIFY stateChanged)
@@ -363,6 +366,8 @@ public:
     [[nodiscard]] qulonglong originalBytes() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
     [[nodiscard]] QVariantList protocolHintDistribution() const;
+    [[nodiscard]] QVariantList protocolPathStatistics() const;
+    [[nodiscard]] QObject* protocolPathStatsModel() noexcept;
     [[nodiscard]] qulonglong tcpFlowCount() const noexcept;
     [[nodiscard]] qulonglong tcpPacketCount() const noexcept;
     [[nodiscard]] qulonglong tcpCapturedBytes() const noexcept;
@@ -599,9 +604,11 @@ private:
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
+    CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};
     FlowListModel flow_model_ {};
+    ProtocolPathStatsModel protocol_path_stats_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
     PacketListModel packet_model_ {};

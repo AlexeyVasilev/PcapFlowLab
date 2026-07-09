@@ -144,6 +144,15 @@ struct FrontendTopPortDto {
     std::uint64_t total_bytes {0};
 };
 
+struct FrontendProtocolPathStatsDto {
+    std::size_t depth {0};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+};
+
 struct FrontendOverviewDto {
     bool has_capture {false};
     CaptureSummary summary {};
@@ -156,6 +165,7 @@ struct FrontendOverviewDto {
     std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
     std::vector<FrontendTopEndpointDto> top_endpoints {};
     std::vector<FrontendTopPortDto> top_ports {};
+    std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics {};
 };
 
 struct FrontendFlowDto {

@@ -42,6 +42,7 @@
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/ProtocolPathStatsModel.h"
 #include "ui/app/StreamListModel.h"
 
 namespace {
@@ -2314,6 +2315,16 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(badge_list[0].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("EII"));
         UI_EXPECT(badge_list[1].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("Ip4"));
         UI_EXPECT(badge_list[2].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("TCP"));
+    }
+    {
+        auto* protocol_path_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_controller.protocolPathStatsModel());
+        UI_EXPECT(protocol_path_stats_model != nullptr);
+        UI_EXPECT(protocol_path_stats_model->rowCount() >= 3);
+        const auto first_row = protocol_path_stats_model->index(0, 0);
+        UI_EXPECT(first_row.isValid());
+        UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PathTextRole).toString().isEmpty());
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::FlowCountRole).toULongLong() >= 1U);
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountRole).toULongLong() >= 1U);
     }
 
     const auto possible_hint_capture_path = write_temp_pcap(

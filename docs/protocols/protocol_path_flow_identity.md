@@ -24,7 +24,8 @@ Current repository state:
 - both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
 - both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
-- protocol-path statistics trees and protocol-path filters remain future work.
+- runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;
+- protocol-path filters remain future work.
 
 ## Flow List Presentation
 
@@ -45,10 +46,30 @@ Important scope boundaries:
 
 Still deferred:
 
-- protocol-path statistics trees;
 - protocol-path filters;
 - protocol-path drill-down workflows beyond flow-list presentation.
 - persistence for the Tauri Path-column visibility toggle.
+
+## Runtime Protocol-Path Statistics
+
+The current implementation now computes a runtime protocol-path prefix tree from loaded capture state.
+
+Important properties:
+
+- statistics are computed lazily from flow-level `protocol_path_id` plus the capture-level `ProtocolPathRegistry`;
+- the tree is available after both fresh PCAP import and opening from a saved index;
+- each flow contributes `+1` to every prefix of its protocol path;
+- each recognized packet contributes via its owning flow's path, so packet totals are stable with respect to `FlowKeyV2`;
+- identifier-bearing layers such as `VXLAN(vni=...)`, `Geneve(vni=...)`, `GTP-U(teid=...)`, `VLAN(vid=...)`, and `MPLS(label=...)` remain distinct tree nodes;
+- unrecognized packets are excluded for now because they do not yet participate in the same stable protocol-path model;
+- byte totals are intentionally omitted in v1 because the most useful semantics for prefix-node byte aggregation were not settled in this step.
+
+Presentation notes:
+
+- the Qt Statistics tab shows a compact indented `Path / Flows / Packets` tree;
+- the Qt tree now uses a dedicated list model plus `ListView` virtualization, and the tree section keeps a bounded internal height so large captures do not instantiate every row eagerly;
+- the Tauri spike exposes the same runtime tree through the shared overview DTO and renders the same three columns;
+- ordering is deterministic: descending `packet_count`, then descending `flow_count`, then path text.
 
 ## Problem Statement
 
@@ -364,9 +385,9 @@ Stage C2 is intentionally different:
 - it is not part of the stable index format;
 - once `FlowKeyV2` is enabled, protocol-path persistence should move to the flow/registry level and should not require per-packet persistence.
 
-## Statistics Tree Follow-up
+## Statistics Tree
 
-Future protocol-path statistics should be prefix-based.
+Runtime protocol-path statistics are now prefix-based.
 
 Example exact path:
 
@@ -382,9 +403,8 @@ That packet should contribute to:
 - `EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4`
 - `EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP`
 
-Flow counters should be incremented on flow creation using the same prefix model.
-
-This is a later branch step after protocol-path extraction exists.
+Flow counters are incremented per recognized flow using the same prefix model.
+Packet counters are accumulated from the owning flow's recognized packet count.
 
 ## Filter Follow-up
 
@@ -477,6 +497,12 @@ Stage G:
 
 - add backend protocol-path statistics tree support.
 
+Stage G status:
+
+- implemented in the current branch state as a runtime session/overview tree;
+- computed from flow-level `protocol_path_id` and flow packet counts;
+- intentionally not persisted as precomputed index statistics.
+
 Stage H:
 
 - add protocol-path filters and namespace-identifier filters.
@@ -484,6 +510,12 @@ Stage H:
 Stage I:
 
 - add UI integration for protocol-path statistics and filtering.
+
+Stage I status:
+
+- Statistics-tab integration is implemented in both Qt and the Tauri spike for runtime protocol-path tree display;
+- Qt now uses a virtualized runtime tree presentation; top-N, search, collapse/expand, and filters remain follow-up UX work;
+- protocol-path filtering remains deferred.
 
 ## Static Audit: Likely Touch Points
 
@@ -508,15 +540,15 @@ Files likely affected in later implementation stages:
 - `src/core/index/Serialization.cpp`
   - flow key and connection key serialization now require a versioned break once `FlowKeyV2` is enabled
 - `src/app/session/CaptureSession.cpp`
-  - session summaries, exports, and row generation may need access to protocol-path metadata later
+  - session summaries, exports, row generation, and runtime protocol-path statistics need access to protocol-path metadata
 - `src/app/session/FlowRows.h`
-  - current row model has protocol text and endpoint text only
+  - current row model and runtime statistics rows expose protocol-path presentation/state
 - `src/app/session/SessionFlowHelpers.cpp`
-  - flow listing and protocol summary helpers are connection-key driven today
+  - flow listing, protocol summary, and runtime protocol-path statistics helpers are connection-key driven
 - `src/app/frontend/FrontendSessionAdapter.cpp`
-  - frontend DTO assembly will need any future path-oriented data
+  - frontend DTO assembly now carries runtime path-oriented statistics data
 - `src/ui/app/MainController.cpp`
-  - future path filters or path statistics would eventually surface here
+  - Qt statistics exposure for runtime protocol-path trees now surfaces here
 - `tests/unit/*.cpp`
   - flow-key tests, decode/import tests, overlay fixture tests, and statistics/filter tests
 - fixture directories already relevant to namespace collisions:
@@ -602,7 +634,7 @@ Relevant existing fixture families:
 - `ProtocolPathRegistry` should intern full path values and assign compact ids
 - exact path changes should eventually require an index format bump
 - old `.pflidx` compatibility is intentionally not a requirement for the FlowKeyV2 index break
-- protocol-path statistics and filters should be follow-up work, not part of the first identity change
+- protocol-path filters should remain follow-up work after the first identity/statistics change
 
 ## Risks
 

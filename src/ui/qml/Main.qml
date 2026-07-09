@@ -1196,10 +1196,11 @@ ApplicationWindow {
                 tlsWithSni: mainController.tlsWithSni
                 tlsWithoutSni: mainController.tlsWithoutSni
                 tlsVersion12: mainController.tlsVersion12
-                tlsVersion13: mainController.tlsVersion13
-                tlsVersionUnknown: mainController.tlsVersionUnknown
-                protocolHintDistribution: mainController.protocolHintDistribution
-                statisticsMode: mainController.statisticsMode
+                    tlsVersion13: mainController.tlsVersion13
+                    tlsVersionUnknown: mainController.tlsVersionUnknown
+                    protocolHintDistribution: mainController.protocolHintDistribution
+                    protocolPathStatsModel: mainController.protocolPathStatsModel
+                    statisticsMode: mainController.statisticsMode
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {

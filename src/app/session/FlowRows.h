@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "core/domain/ConnectionKey.h"
+#include "core/domain/ProtocolPath.h"
 
 namespace pfl {
 
@@ -154,6 +155,21 @@ struct TlsRecognitionStats {
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
+};
+
+struct ProtocolPathStatisticsRow {
+    std::size_t depth {0};
+    LayerKey layer {};
+    ProtocolPath path {};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+};
+
+struct CaptureProtocolPathSummary {
+    std::vector<ProtocolPathStatisticsRow> rows {};
 };
 
 }  // namespace pfl

@@ -2894,6 +2894,27 @@ QVariantList MainController::protocolHintDistribution() const {
     return rows;
 }
 
+QVariantList MainController::protocolPathStatistics() const {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(protocol_path_summary_.rows.size()));
+
+    for (const auto& row : protocol_path_summary_.rows) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("depth"), static_cast<qulonglong>(row.depth));
+        item.insert(QStringLiteral("pathText"), QString::fromStdString(row.path_text));
+        item.insert(QStringLiteral("compactText"), QString::fromStdString(row.compact_text));
+        item.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(row.flow_count));
+        item.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(row.packet_count));
+        rows.push_back(item);
+    }
+
+    return rows;
+}
+
+QObject* MainController::protocolPathStatsModel() noexcept {
+    return &protocol_path_stats_model_;
+}
+
 qulonglong MainController::tcpFlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.flow_count);
 }
@@ -3999,6 +4020,8 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     session_.set_analysis_settings(pending_analysis_settings_);
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
+        protocol_path_summary_ = session_.protocol_path_summary();
+        protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
         flow_model_.refresh(session_.list_flows());
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
@@ -4733,6 +4756,8 @@ void MainController::resetLoadedState() {
     finishOpenProgress();
     session_ = {};
     protocol_summary_ = {};
+    protocol_path_summary_ = {};
+    protocol_path_stats_model_.clear();
     quic_recognition_stats_ = {};
     tls_recognition_stats_ = {};
     flow_model_.clear();
@@ -4773,6 +4798,8 @@ void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
+    protocol_path_summary_ = session_.protocol_path_summary();
+    protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
     // Clear any selected-flow state from the previous capture before publishing

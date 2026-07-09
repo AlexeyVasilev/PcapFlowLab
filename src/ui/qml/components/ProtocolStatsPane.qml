@@ -45,6 +45,8 @@ Frame {
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
     property var protocolHintDistribution: []
+    property var protocolPathStatistics: []
+    property var protocolPathStatsModel: null
     property int statisticsMode: 0
     property bool hasCapture: false
 
@@ -67,6 +69,11 @@ Frame {
     readonly property int hintCapturedColumnWidth: 118
     readonly property int hintOriginalColumnWidth: 118
     readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintCapturedColumnWidth + hintOriginalColumnWidth + (tableColumnSpacing * 5) + (tablePadding * 2)
+    readonly property int pathTreeLabelColumnWidth: 420
+    readonly property int pathTreeFlowsColumnWidth: 110
+    readonly property int pathTreePacketsColumnWidth: 120
+    readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
+    readonly property int pathTreeViewportHeight: 420
 
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
@@ -159,6 +166,12 @@ Frame {
     function formatHintCell(value, total, isBytes) {
         const formattedValue = isBytes ? formatBytes(value) : groupInteger(value)
         return formattedValue + " (" + formatShare(value, total) + ")"
+    }
+
+    function protocolPathLabel(row) {
+        const compact = (row && row["compactText"]) ? row["compactText"] : ""
+        const full = (row && row["pathText"]) ? row["pathText"] : ""
+        return compact.length > 0 ? compact : full
     }
 
     function totalTransportFlows() {
@@ -379,6 +392,57 @@ Frame {
                 text: parent.parent.fifthText
                 color: "#334155"
                 elide: Text.ElideLeft
+            }
+        }
+    }
+
+    component ThreeColumnHeader: Rectangle {
+        required property string firstTitle
+        required property string secondTitle
+        required property string thirdTitle
+        required property int firstWidth
+        required property int secondWidth
+        required property int thirdWidth
+        required property int tableWidth
+
+        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        height: root.tableHeaderHeight
+        radius: 4
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: root.tablePadding
+            anchors.rightMargin: root.tablePadding
+
+            Label {
+                x: 0
+                width: parent.parent.firstWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.firstTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing
+                width: parent.parent.secondWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.secondTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
+                width: parent.parent.thirdWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.thirdTitle
+                font.bold: true
+                color: "#334155"
             }
         }
     }
@@ -809,6 +873,118 @@ Frame {
                         }
                     }
                 }
+            }
+        }
+
+        SectionFrame {
+            Label {
+                text: "Protocol Path Tree"
+                font.bold: true
+            }
+
+            ThreeColumnHeader {
+                firstTitle: "Path"
+                secondTitle: "Flows"
+                thirdTitle: "Packets"
+                firstWidth: root.pathTreeLabelColumnWidth
+                secondWidth: root.pathTreeFlowsColumnWidth
+                thirdWidth: root.pathTreePacketsColumnWidth
+                tableWidth: root.pathTreeTableWidth
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: root.pathTreeViewportHeight
+                color: "#ffffff"
+                border.color: "#e2e8f0"
+                radius: 6
+                clip: true
+
+                ListView {
+                    id: protocolPathListView
+                    objectName: "protocolPathListView"
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    clip: true
+                    model: root.protocolPathStatsModel
+                    boundsBehavior: Flickable.StopAtBounds
+                    reuseItems: true
+                    cacheBuffer: root.tableRowHeight * 12
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: protocolPathListView.contentHeight > protocolPathListView.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                    }
+
+                    delegate: Rectangle {
+                        required property string pathText
+                        required property string compactText
+                        required property int depth
+                        required property var flowCount
+                        required property var packetCount
+                        required property int rowIndex
+                        required property string tooltipText
+
+                        width: protocolPathListView.width
+                        height: root.tableRowHeight
+                        color: rowIndex % 2 === 0 ? "transparent" : "#f8fafc"
+
+                        Item {
+                            anchors.fill: parent
+                            anchors.leftMargin: root.tablePadding
+                            anchors.rightMargin: root.tablePadding
+
+                            Label {
+                                id: protocolPathLabel
+                                x: 0
+                                width: root.pathTreeLabelColumnWidth
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: compactText.length > 0 ? compactText : pathText
+                                color: "#0f172a"
+                                elide: Text.ElideRight
+                                leftPadding: Math.max(0, depth) * 18
+
+                                ToolTip.visible: protocolPathHoverArea.hovered && tooltipText.length > 0 && implicitWidth > width + 1
+                                ToolTip.text: tooltipText
+                            }
+
+                            HoverHandler {
+                                id: protocolPathHoverArea
+                            }
+
+                            Label {
+                                x: root.pathTreeLabelColumnWidth + root.tableColumnSpacing
+                                width: root.pathTreeFlowsColumnWidth
+                                anchors.verticalCenter: parent.verticalCenter
+                                horizontalAlignment: Text.AlignRight
+                                text: root.hasCapture ? root.groupInteger(flowCount || 0) : "-"
+                                color: "#334155"
+                                elide: Text.ElideLeft
+                            }
+
+                            Label {
+                                x: root.pathTreeLabelColumnWidth + root.tableColumnSpacing + root.pathTreeFlowsColumnWidth + root.tableColumnSpacing
+                                width: root.pathTreePacketsColumnWidth
+                                anchors.verticalCenter: parent.verticalCenter
+                                horizontalAlignment: Text.AlignRight
+                                text: root.hasCapture ? root.groupInteger(packetCount || 0) : "-"
+                                color: "#334155"
+                                elide: Text.ElideLeft
+                            }
+                        }
+                    }
+                }
+            }
+
+            Label {
+                visible: root.hasCapture && (!root.protocolPathStatsModel || root.protocolPathStatsModel.rowCount() === 0)
+                text: "No protocol-path statistics are available for this capture."
+                color: "#64748b"
+            }
+
+            Label {
+                visible: !root.hasCapture
+                text: "Open a capture or index to load protocol-path statistics."
+                color: "#64748b"
             }
         }
 

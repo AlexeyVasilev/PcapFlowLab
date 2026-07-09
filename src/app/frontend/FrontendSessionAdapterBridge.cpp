@@ -143,6 +143,28 @@ std::string protocol_path_legend_entry_json(const pfl::FrontendProtocolPathLegen
     return out.str();
 }
 
+std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"depth\":" << row.depth << ','
+        << "\"path_text\":" << json_string(row.path_text) << ','
+        << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"badges\":[";
+
+    for (std::size_t index = 0; index < row.badges.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_badge_json(row.badges[index]);
+    }
+
+    out << "],"
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"packet_count\":" << row.packet_count
+        << '}';
+    return out.str();
+}
+
 std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& source) {
     std::ostringstream out {};
     out << '{'
@@ -397,6 +419,17 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
             << "\"packet_count\":" << row.packet_count << ','
             << "\"total_bytes\":" << row.total_bytes
             << '}';
+    }
+
+    out << "],"
+        << "\"protocol_path_statistics\":[";
+
+    for (std::size_t index = 0; index < overview.protocol_path_statistics.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        out << protocol_path_stats_json(overview.protocol_path_statistics[index]);
     }
 
     out << ']'

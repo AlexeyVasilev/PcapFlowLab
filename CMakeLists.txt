@@ -138,6 +138,8 @@ if(PFL_BUILD_UI)
             src/ui/app/MainController.h
             src/ui/app/FlowListModel.cpp
             src/ui/app/FlowListModel.h
+            src/ui/app/ProtocolPathStatsModel.cpp
+            src/ui/app/ProtocolPathStatsModel.h
             src/ui/app/TopSummaryListModel.cpp
             src/ui/app/TopSummaryListModel.h
             src/ui/app/PacketListModel.cpp
@@ -230,6 +232,7 @@ if(PFL_BUILD_UI)
                 tests/ui/MainControllerUiTests.cpp
                 src/ui/app/MainController.cpp
                 src/ui/app/FlowListModel.cpp
+                src/ui/app/ProtocolPathStatsModel.cpp
                 src/ui/app/TopSummaryListModel.cpp
                 src/ui/app/PacketListModel.cpp
                 src/ui/app/PacketDetailsViewModel.cpp

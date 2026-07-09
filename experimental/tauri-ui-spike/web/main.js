@@ -336,6 +336,7 @@
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
     protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
+    protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
     quicStatsBody: document.getElementById("quicStatsBody"),
     tlsStatsBody: document.getElementById("tlsStatsBody"),
     topEndpointsBody: document.getElementById("topEndpointsBody"),
@@ -963,6 +964,7 @@
     clearHtml(elements.transportStatsBody);
     clearHtml(elements.familyStatsBody);
     clearHtml(elements.protocolHintStatsBody);
+    clearHtml(elements.protocolPathStatsBody);
     clearHtml(elements.quicStatsBody);
     clearHtml(elements.tlsStatsBody);
     clearHtml(elements.topEndpointsBody);
@@ -2181,6 +2183,7 @@
     elements.transportStatsBody && (elements.transportStatsBody.innerHTML = "");
     elements.familyStatsBody && (elements.familyStatsBody.innerHTML = "");
     elements.protocolHintStatsBody && (elements.protocolHintStatsBody.innerHTML = "");
+    elements.protocolPathStatsBody && (elements.protocolPathStatsBody.innerHTML = "");
     elements.quicStatsBody && (elements.quicStatsBody.innerHTML = "");
     elements.tlsStatsBody && (elements.tlsStatsBody.innerHTML = "");
     elements.topEndpointsBody && (elements.topEndpointsBody.innerHTML = "");
@@ -2405,6 +2408,7 @@
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
     const protocolHintRows = Array.isArray(overview?.protocol_hints) ? overview.protocol_hints : [];
+    const protocolPathRows = Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : [];
     const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
     const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
     const topTalkersVisible = Number(overview?.summary?.flow_count ?? 0) > 30;
@@ -2421,12 +2425,13 @@
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Loading transport statistics...");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Loading IP family statistics...");
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Loading protocol-hint statistics...");
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(3, "Loading protocol-path statistics...");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Loading top endpoints...");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Loading top ports...");
       elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Loading QUIC recognition...");
       elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, "Loading TLS recognition...");
     } else if (state.openState === "opened" && overview) {
-      elements.overviewMeta.textContent = "Overview, transport, family, protocol-hint, QUIC/TLS, and top-talker summaries loaded from the active capture or index.";
+      elements.overviewMeta.textContent = "Overview, transport, family, protocol-path, protocol-hint, QUIC/TLS, and top-talker summaries loaded from the active capture or index.";
       elements.transportStatsBody.innerHTML = transportRows
         .map(([label, stats]) => `
           <tr>
@@ -2463,6 +2468,23 @@
           `)
           .join("")
         : renderStatsStateRow(6, "No protocol-hint statistics are available.");
+      elements.protocolPathStatsBody.innerHTML = protocolPathRows.length > 0
+        ? protocolPathRows
+          .map((row) => {
+            const depth = Number(row.depth ?? 0);
+            const compactText = String(row.compact_text || "").trim();
+            const fullText = String(row.path_text || "").trim();
+            const displayText = compactText.length > 0 ? compactText : fullText;
+            return `
+              <tr title="${escapeHtml(fullText)}">
+                <td><span style="display:inline-block; padding-left:${Math.max(0, depth) * 18}px;">${escapeHtml(displayText)}</span></td>
+                <td>${formatNumber(row.flow_count)}</td>
+                <td>${formatNumber(row.packet_count)}</td>
+              </tr>
+            `;
+          })
+          .join("")
+        : renderStatsStateRow(3, "No protocol-path statistics are available.");
       elements.quicStatsBody.innerHTML = [
         ["Flows", formatNumber(quicRecognition?.total_flows)],
         ["Recognised Initial", formatFlowPercentAndCount(quicRecognition?.with_sni, quicRecognition?.total_flows)],
@@ -2562,10 +2584,11 @@
         });
       }
     } else if (state.openState === "error") {
-      elements.overviewMeta.textContent = "No overview available after open failure.";
+      elements.overviewMeta.textContent = "No overview or protocol-path statistics available after open failure.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No IP family statistics were loaded.", "error");
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open failed. No protocol-hint statistics were loaded.", "error");
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(3, "Open failed. No protocol-path statistics were loaded.", "error");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-endpoint summary was loaded.", "error");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-port summary was loaded.", "error");
       elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Open failed. No QUIC recognition was loaded.", "error");
@@ -2575,6 +2598,7 @@
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load transport statistics.");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load IP family statistics.");
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open a capture or index to load protocol-hint statistics.");
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load protocol-path statistics.");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top endpoints.");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top ports.");
       elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Open a capture or index to load QUIC recognition.");

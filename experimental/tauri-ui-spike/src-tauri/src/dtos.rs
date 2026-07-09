@@ -173,6 +173,16 @@ pub struct TopPortDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathStatsDto {
+    pub depth: usize,
+    pub path_text: String,
+    pub compact_text: String,
+    pub badges: Vec<ProtocolPathBadgeDto>,
+    pub flow_count: u64,
+    pub packet_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewDto {
     pub has_capture: bool,
     pub unrecognized_packet_count: u64,
@@ -183,6 +193,7 @@ pub struct OverviewDto {
     pub protocol_hints: Vec<ProtocolHintStatsDto>,
     pub top_endpoints: Vec<TopEndpointDto>,
     pub top_ports: Vec<TopPortDto>,
+    pub protocol_path_statistics: Vec<ProtocolPathStatsDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

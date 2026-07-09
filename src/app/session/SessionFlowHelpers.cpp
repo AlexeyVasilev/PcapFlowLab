@@ -1,7 +1,10 @@
 #include "app/session/SessionFlowHelpers.h"
 
 #include <algorithm>
+#include <limits>
+#include <unordered_map>
 
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/FlowHints.h"
 
@@ -70,6 +73,59 @@ bool listed_connection_less(const ListedConnectionRef& left, const ListedConnect
     }
 
     return left.ipv6->key < right.ipv6->key;
+}
+
+ProtocolPathId protocol_path_id(const ListedConnectionRef& connection) noexcept {
+    return (connection.family == FlowAddressFamily::ipv4)
+        ? connection.ipv4->key.protocol_path_id
+        : connection.ipv6->key.protocol_path_id;
+}
+
+struct ProtocolPathStatisticsAccumulatorNode {
+    std::size_t depth {0};
+    LayerKey layer {};
+    ProtocolPath path {};
+    std::size_t parent_index {std::numeric_limits<std::size_t>::max()};
+    std::vector<std::size_t> child_indices {};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+};
+
+void append_protocol_path_statistics_rows(
+    const std::vector<ProtocolPathStatisticsAccumulatorNode>& nodes,
+    std::vector<ProtocolPathStatisticsRow>& rows,
+    const std::vector<std::size_t>& node_indices
+) {
+    auto sorted_indices = node_indices;
+    std::sort(sorted_indices.begin(), sorted_indices.end(), [&](const std::size_t left, const std::size_t right) {
+        const auto& left_node = nodes[left];
+        const auto& right_node = nodes[right];
+        if (left_node.packet_count != right_node.packet_count) {
+            return left_node.packet_count > right_node.packet_count;
+        }
+        if (left_node.flow_count != right_node.flow_count) {
+            return left_node.flow_count > right_node.flow_count;
+        }
+        return left_node.path_text < right_node.path_text;
+    });
+
+    for (const auto node_index : sorted_indices) {
+        const auto& node = nodes[node_index];
+        rows.push_back(ProtocolPathStatisticsRow {
+            .depth = node.depth,
+            .layer = node.layer,
+            .path = node.path,
+            .path_text = node.path_text,
+            .compact_text = node.compact_text,
+            .badges = node.badges,
+            .flow_count = node.flow_count,
+            .packet_count = node.packet_count,
+        });
+        append_protocol_path_statistics_rows(nodes, rows, node.child_indices);
+    }
 }
 
 }  // namespace
@@ -213,6 +269,67 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
         .packet_count = connection.ipv6->packet_count,
         .total_bytes = connection.ipv6->total_bytes,
     };
+}
+
+CaptureProtocolPathSummary build_protocol_path_summary(
+    const CaptureState& state,
+    const std::vector<ListedConnectionRef>& connections
+) {
+    CaptureProtocolPathSummary summary {};
+    std::unordered_map<ProtocolPath, std::size_t, ProtocolPathHash> node_index_by_path {};
+    std::vector<ProtocolPathStatisticsAccumulatorNode> nodes {};
+
+    for (const auto& connection : connections) {
+        const auto path_id = protocol_path_id(connection);
+        if (path_id == kInvalidProtocolPathId) {
+            continue;
+        }
+
+        const auto* path = state.protocol_path_registry.find(path_id);
+        if (path == nullptr || path->empty()) {
+            continue;
+        }
+
+        std::size_t parent_index = std::numeric_limits<std::size_t>::max();
+        for (std::size_t depth = 0; depth < path->size(); ++depth) {
+            const auto prefix_layers = std::vector<LayerKey>(path->layers().begin(), path->layers().begin() + static_cast<std::ptrdiff_t>(depth + 1U));
+            ProtocolPath prefix_path {prefix_layers};
+
+            auto [it, inserted] = node_index_by_path.emplace(prefix_path, nodes.size());
+            if (inserted) {
+                nodes.push_back(ProtocolPathStatisticsAccumulatorNode {
+                    .depth = depth,
+                    .layer = prefix_layers.back(),
+                    .path = std::move(prefix_path),
+                    .parent_index = parent_index,
+                });
+                if (parent_index != std::numeric_limits<std::size_t>::max()) {
+                    nodes[parent_index].child_indices.push_back(it->second);
+                }
+            }
+
+            auto& node = nodes[it->second];
+            node.flow_count += 1U;
+            node.packet_count += packet_count(connection);
+            parent_index = it->second;
+        }
+    }
+
+    std::vector<std::size_t> root_indices {};
+    root_indices.reserve(nodes.size());
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        const auto presentation = build_protocol_path_presentation(&nodes[index].path);
+        nodes[index].path_text = presentation.full_text;
+        nodes[index].compact_text = presentation.compact_text;
+        nodes[index].badges = std::move(presentation.badges);
+        if (nodes[index].parent_index == std::numeric_limits<std::size_t>::max()) {
+            root_indices.push_back(index);
+        }
+    }
+
+    summary.rows.reserve(nodes.size());
+    append_protocol_path_statistics_rows(nodes, summary.rows, root_indices);
+    return summary;
 }
 
 }  // namespace pfl::session_detail

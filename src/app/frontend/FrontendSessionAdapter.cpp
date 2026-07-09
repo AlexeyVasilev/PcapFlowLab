@@ -255,6 +255,24 @@ std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary
     return rows;
 }
 
+std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const CaptureProtocolPathSummary& summary) {
+    std::vector<FrontendProtocolPathStatsDto> rows {};
+    rows.reserve(summary.rows.size());
+
+    for (const auto& row : summary.rows) {
+        rows.push_back(FrontendProtocolPathStatsDto {
+            .depth = row.depth,
+            .path_text = row.path_text,
+            .compact_text = row.compact_text,
+            .badges = row.badges,
+            .flow_count = row.flow_count,
+            .packet_count = row.packet_count,
+        });
+    }
+
+    return rows;
+}
+
 std::string build_wireshark_display_filter(const FlowRow& row) {
     const std::string address_term = row.family == FlowAddressFamily::ipv6 ? "ipv6.addr" : "ip.addr";
 
@@ -2121,6 +2139,7 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
+    const auto protocol_path_summary = session_.protocol_path_summary();
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
@@ -2136,6 +2155,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .protocol_hints = build_protocol_hint_stats(protocol_summary),
         .top_endpoints = build_top_endpoints(top_summary),
         .top_ports = build_top_ports(top_summary),
+        .protocol_path_statistics = build_protocol_path_statistics(protocol_path_summary),
     };
 }
 

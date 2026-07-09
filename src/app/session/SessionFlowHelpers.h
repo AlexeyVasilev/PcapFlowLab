@@ -24,5 +24,9 @@ void add_protocol_stats(ProtocolStats& stats, const ListedConnectionRef& connect
 std::vector<PacketRef> collect_packets(const ConnectionV4& connection);
 std::vector<PacketRef> collect_packets(const ConnectionV6& connection);
 FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, const AnalysisSettings& settings);
+CaptureProtocolPathSummary build_protocol_path_summary(
+    const CaptureState& state,
+    const std::vector<ListedConnectionRef>& connections
+);
 
 }  // namespace pfl::session_detail

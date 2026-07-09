@@ -1282,6 +1282,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     listed_connections_cache_.reset();
+    protocol_path_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 }
 
@@ -1393,6 +1394,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     listed_connections_cache_.reset();
+    protocol_path_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
     if (!read_capture_source_info(path, source_info_)) {
         source_info_.capture_path = path;
@@ -1493,6 +1495,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     listed_connections_cache_.reset();
+    protocol_path_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 
     if (validate_capture_source(source_info_)) {
@@ -1681,11 +1684,21 @@ CaptureProtocolSummary CaptureSession::protocol_summary() const noexcept {
     return summary;
 }
 
+CaptureProtocolPathSummary CaptureSession::protocol_path_summary() const {
+    if (protocol_path_summary_cache_.has_value()) {
+        return *protocol_path_summary_cache_;
+    }
+
+    protocol_path_summary_cache_ = session_detail::build_protocol_path_summary(state_, listed_connections());
+    return *protocol_path_summary_cache_;
+}
+
 void CaptureSession::clear_runtime_caches_after_transfer() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();
     selected_flow_tcp_prefix_context_.reset();
     listed_connections_cache_.reset();
+    protocol_path_summary_cache_.reset();
     selected_flow_tcp_payload_suppression_.reset();
 }
 
