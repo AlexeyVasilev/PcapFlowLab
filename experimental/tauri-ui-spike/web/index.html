@@ -374,14 +374,14 @@
                 <div class="statistics-section">
                   <div class="statistics-section-heading">
                     <h3>Protocol Path Tree</h3>
-                    <label class="inline-select-label" for="protocolPathStatsMode">
-                      <span>Mode</span>
-                      <select id="protocolPathStatsMode">
-                        <option value="0">Kind overview</option>
-                        <option value="1">Identity tree</option>
-                        <option value="2">Terminal paths</option>
-                      </select>
-                    </label>
+                    <div class="statistics-mode-toolbar">
+                      <span class="inline-select-label">Mode</span>
+                      <div class="statistics-mode-tabs" aria-label="Protocol path statistics mode">
+                        <button id="protocolPathStatsModeKindOverview" type="button" class="secondary-button">Kind overview</button>
+                        <button id="protocolPathStatsModeIdentityTree" type="button" class="secondary-button">Identity tree</button>
+                        <button id="protocolPathStatsModeTerminalPaths" type="button" class="secondary-button">Terminal paths</button>
+                      </div>
+                    </div>
                   </div>
                   <div class="table-wrap protocol-path-stats-viewport">
                     <table class="data-table compact-stats-table">

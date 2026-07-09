@@ -248,6 +248,14 @@ Frame {
         elide: Text.ElideRight
     }
 
+    component ProtocolPathModeButton: Button {
+        checkable: true
+        leftPadding: 12
+        rightPadding: 12
+        implicitWidth: Math.max(120, implicitContentWidth + leftPadding + rightPadding)
+        implicitHeight: 28
+    }
+
     component FiveColumnHeader: Rectangle {
         required property string firstTitle
         required property string secondTitle
@@ -898,16 +906,57 @@ Frame {
                     color: "#475569"
                 }
 
-                ComboBox {
-                    id: protocolPathStatsModeComboBox
-                    objectName: "protocolPathStatsModeComboBox"
-                    model: ["Kind overview", "Identity tree", "Terminal paths"]
-                    currentIndex: Math.max(0, Math.min(count - 1, root.statisticsMode))
-                    implicitWidth: 168
+                Rectangle {
+                    color: "#f8fafc"
+                    border.color: "#cbd5e1"
+                    radius: 6
+                    implicitHeight: protocolPathStatsModeLayout.implicitHeight + 4
+                    implicitWidth: protocolPathStatsModeLayout.implicitWidth + 8
 
-                    onActivated: function(index) {
-                        if (index !== root.statisticsMode) {
-                            root.statisticsModeChangedByUser(index)
+                    RowLayout {
+                        id: protocolPathStatsModeLayout
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        spacing: 2
+
+                        ButtonGroup {
+                            id: protocolPathStatsModeGroup
+                        }
+
+                        ProtocolPathModeButton {
+                            objectName: "protocolPathStatsModeKindOverviewButton"
+                            text: "Kind overview"
+                            checked: root.statisticsMode === 0
+                            ButtonGroup.group: protocolPathStatsModeGroup
+                            onClicked: {
+                                if (root.statisticsMode !== 0) {
+                                    root.statisticsModeChangedByUser(0)
+                                }
+                            }
+                        }
+
+                        ProtocolPathModeButton {
+                            objectName: "protocolPathStatsModeIdentityTreeButton"
+                            text: "Identity tree"
+                            checked: root.statisticsMode === 1
+                            ButtonGroup.group: protocolPathStatsModeGroup
+                            onClicked: {
+                                if (root.statisticsMode !== 1) {
+                                    root.statisticsModeChangedByUser(1)
+                                }
+                            }
+                        }
+
+                        ProtocolPathModeButton {
+                            objectName: "protocolPathStatsModeTerminalPathsButton"
+                            text: "Terminal paths"
+                            checked: root.statisticsMode === 2
+                            ButtonGroup.group: protocolPathStatsModeGroup
+                            onClicked: {
+                                if (root.statisticsMode !== 2) {
+                                    root.statisticsModeChangedByUser(2)
+                                }
+                            }
                         }
                     }
                 }

@@ -2001,6 +2001,25 @@ select:disabled {
   color: var(--text-secondary);
 }
 
+.statistics-mode-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.statistics-mode-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.statistics-mode-tabs .secondary-button.is-active {
+  background: #e3effb;
+  border-color: var(--selection-border);
+}
+
 .inline-select-label select {
   min-height: 28px;
   padding: 3px 8px;

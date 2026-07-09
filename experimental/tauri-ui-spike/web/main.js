@@ -337,7 +337,9 @@
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
     protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
-    protocolPathStatsModeSelect: document.getElementById("protocolPathStatsMode"),
+    protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
+    protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
+    protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
     protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
     quicStatsBody: document.getElementById("quicStatsBody"),
@@ -2427,9 +2429,12 @@
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
     elements.metricCapturedBytes.textContent = overview ? formatNumber(overview.summary?.captured_bytes) : "-";
     elements.metricOriginalBytes.textContent = overview ? formatNumber(overview.summary?.original_bytes) : "-";
-    if (elements.protocolPathStatsModeSelect) {
-      elements.protocolPathStatsModeSelect.value = String(protocolPathMode);
-    }
+    elements.protocolPathStatsModeKindOverview?.classList.toggle("is-active", protocolPathMode === 0);
+    elements.protocolPathStatsModeIdentityTree?.classList.toggle("is-active", protocolPathMode === 1);
+    elements.protocolPathStatsModeTerminalPaths?.classList.toggle("is-active", protocolPathMode === 2);
+    elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
+    elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
+    elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
     if (elements.protocolPathStatsPrimaryHeader) {
       elements.protocolPathStatsPrimaryHeader.textContent = protocolPathMode === 2 ? "Path" : "Layer";
     }
@@ -5766,8 +5771,16 @@
     applyFlowFilterState(elements.flowFilterInput.value);
     render();
   });
-  elements.protocolPathStatsModeSelect?.addEventListener("change", () => {
-    state.protocolPathStatsMode = Number(elements.protocolPathStatsModeSelect.value || 0);
+  elements.protocolPathStatsModeKindOverview?.addEventListener("click", () => {
+    state.protocolPathStatsMode = 0;
+    renderOverview();
+  });
+  elements.protocolPathStatsModeIdentityTree?.addEventListener("click", () => {
+    state.protocolPathStatsMode = 1;
+    renderOverview();
+  });
+  elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
+    state.protocolPathStatsMode = 2;
     renderOverview();
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {
