@@ -175,6 +175,7 @@ pub struct TopPortDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolPathStatsDto {
     pub depth: usize,
+    pub layer_text: String,
     pub path_text: String,
     pub compact_text: String,
     pub badges: Vec<ProtocolPathBadgeDto>,

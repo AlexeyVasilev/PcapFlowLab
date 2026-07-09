@@ -2901,6 +2901,7 @@ QVariantList MainController::protocolPathStatistics() const {
     for (const auto& row : protocol_path_summary_.rows) {
         QVariantMap item {};
         item.insert(QStringLiteral("depth"), static_cast<qulonglong>(row.depth));
+        item.insert(QStringLiteral("layerText"), QString::fromStdString(row.layer_text));
         item.insert(QStringLiteral("pathText"), QString::fromStdString(row.path_text));
         item.insert(QStringLiteral("compactText"), QString::fromStdString(row.compact_text));
         item.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(row.flow_count));

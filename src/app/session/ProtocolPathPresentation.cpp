@@ -77,6 +77,32 @@ std::optional<std::string> identifier_tooltip_text(const LayerKey& layer) {
     return std::nullopt;
 }
 
+std::optional<std::string> identifier_display_suffix_text(const LayerKey& layer) {
+    switch (layer.identifier.kind) {
+    case ProtocolLayerIdentifierKind::none:
+        return std::nullopt;
+    case ProtocolLayerIdentifierKind::vlan_vid:
+        return "VID " + std::to_string(layer.identifier.value);
+    case ProtocolLayerIdentifierKind::mpls_label:
+        return "label " + std::to_string(layer.identifier.value);
+    case ProtocolLayerIdentifierKind::vxlan_vni:
+    case ProtocolLayerIdentifierKind::geneve_vni:
+        return "VNI " + std::to_string(layer.identifier.value);
+    case ProtocolLayerIdentifierKind::gtpu_teid: {
+        std::ostringstream text {};
+        text << "TEID 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    }
+
+    return std::nullopt;
+}
+
 ProtocolPathBadgeRow badge_for_layer(const LayerKey& layer) {
     const auto& descriptor = descriptor_for_kind(layer.kind);
     auto tooltip = std::string {descriptor.full_name};
@@ -105,6 +131,17 @@ ProtocolPathPresentation unknown_protocol_path_presentation() {
 }
 
 }  // namespace
+
+std::string format_protocol_path_layer_display_text(const LayerKey& layer) {
+    const auto& descriptor = descriptor_for_kind(layer.kind);
+    std::string text {descriptor.full_name};
+    if (const auto suffix = identifier_display_suffix_text(layer); suffix.has_value()) {
+        text += " (";
+        text += *suffix;
+        text += ')';
+    }
+    return text;
+}
 
 ProtocolPathPresentation build_protocol_path_presentation(const ProtocolPath* path) {
     if (path == nullptr || path->empty()) {

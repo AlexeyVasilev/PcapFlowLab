@@ -2468,18 +2468,18 @@
           `)
           .join("")
         : renderStatsStateRow(6, "No protocol-hint statistics are available.");
-      elements.protocolPathStatsBody.innerHTML = protocolPathRows.length > 0
-        ? protocolPathRows
-          .map((row) => {
-            const depth = Number(row.depth ?? 0);
-            const compactText = String(row.compact_text || "").trim();
-            const fullText = String(row.path_text || "").trim();
-            const displayText = compactText.length > 0 ? compactText : fullText;
-            return `
-              <tr title="${escapeHtml(fullText)}">
-                <td><span style="display:inline-block; padding-left:${Math.max(0, depth) * 18}px;">${escapeHtml(displayText)}</span></td>
-                <td>${formatNumber(row.flow_count)}</td>
-                <td>${formatNumber(row.packet_count)}</td>
+        elements.protocolPathStatsBody.innerHTML = protocolPathRows.length > 0
+          ? protocolPathRows
+            .map((row) => {
+              const depth = Number(row.depth ?? 0);
+              const layerText = String(row.layer_text || "").trim();
+              const fullText = String(row.path_text || "").trim();
+              const displayText = layerText.length > 0 ? layerText : fullText;
+              return `
+                <tr title="${escapeHtml(fullText)}">
+                  <td><span style="display:inline-block; padding-left:${Math.max(0, depth) * 18}px;">${escapeHtml(displayText)}</span></td>
+                  <td>${formatNumber(row.flow_count)}</td>
+                  <td>${formatNumber(row.packet_count)}</td>
               </tr>
             `;
           })

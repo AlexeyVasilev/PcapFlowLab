@@ -146,6 +146,7 @@ struct FrontendTopPortDto {
 
 struct FrontendProtocolPathStatsDto {
     std::size_t depth {0};
+    std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
     std::vector<ProtocolPathBadgeRow> badges {};

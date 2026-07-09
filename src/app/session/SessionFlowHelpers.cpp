@@ -89,6 +89,7 @@ struct ProtocolPathStatisticsAccumulatorNode {
     std::vector<std::size_t> child_indices {};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
@@ -118,6 +119,7 @@ void append_protocol_path_statistics_rows(
             .depth = node.depth,
             .layer = node.layer,
             .path = node.path,
+            .layer_text = node.layer_text,
             .path_text = node.path_text,
             .compact_text = node.compact_text,
             .badges = node.badges,
@@ -317,13 +319,14 @@ CaptureProtocolPathSummary build_protocol_path_summary(
 
     std::vector<std::size_t> root_indices {};
     root_indices.reserve(nodes.size());
-    for (std::size_t index = 0; index < nodes.size(); ++index) {
-        const auto presentation = build_protocol_path_presentation(&nodes[index].path);
-        nodes[index].path_text = presentation.full_text;
-        nodes[index].compact_text = presentation.compact_text;
-        nodes[index].badges = std::move(presentation.badges);
-        if (nodes[index].parent_index == std::numeric_limits<std::size_t>::max()) {
-            root_indices.push_back(index);
+      for (std::size_t index = 0; index < nodes.size(); ++index) {
+          const auto presentation = build_protocol_path_presentation(&nodes[index].path);
+          nodes[index].layer_text = format_protocol_path_layer_display_text(nodes[index].layer);
+          nodes[index].path_text = presentation.full_text;
+          nodes[index].compact_text = presentation.compact_text;
+          nodes[index].badges = std::move(presentation.badges);
+          if (nodes[index].parent_index == std::numeric_limits<std::size_t>::max()) {
+              root_indices.push_back(index);
         }
     }
 

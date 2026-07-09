@@ -25,6 +25,7 @@ struct ProtocolPathPresentation {
 };
 
 [[nodiscard]] ProtocolPathPresentation build_protocol_path_presentation(const ProtocolPath* path);
+[[nodiscard]] std::string format_protocol_path_layer_display_text(const LayerKey& layer);
 [[nodiscard]] std::vector<ProtocolPathLegendEntry> protocol_path_legend_entries();
 
 }  // namespace pfl::session_detail

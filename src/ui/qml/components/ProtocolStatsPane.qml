@@ -883,7 +883,7 @@ Frame {
             }
 
             ThreeColumnHeader {
-                firstTitle: "Path"
+                firstTitle: "Layer"
                 secondTitle: "Flows"
                 thirdTitle: "Packets"
                 firstWidth: root.pathTreeLabelColumnWidth
@@ -916,6 +916,7 @@ Frame {
                     }
 
                     delegate: Rectangle {
+                        required property string layerText
                         required property string pathText
                         required property string compactText
                         required property int depth
@@ -938,7 +939,7 @@ Frame {
                                 x: 0
                                 width: root.pathTreeLabelColumnWidth
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: compactText.length > 0 ? compactText : pathText
+                                text: layerText
                                 color: "#0f172a"
                                 elide: Text.ElideRight
                                 leftPadding: Math.max(0, depth) * 18

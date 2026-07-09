@@ -161,6 +161,7 @@ struct ProtocolPathStatisticsRow {
     std::size_t depth {0};
     LayerKey layer {};
     ProtocolPath path {};
+    std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
     std::vector<ProtocolPathBadgeRow> badges {};

@@ -66,9 +66,11 @@ Important properties:
 
 Presentation notes:
 
-- the Qt Statistics tab shows a compact indented `Path / Flows / Packets` tree;
+- the Qt Statistics tab shows a compact indented `Layer / Flows / Packets` tree;
+- visible tree rows now display readable per-layer names such as `Ethernet II`, `IPv4`, `TCP`, `VLAN (VID 200)`, `MPLS (label 102)`, `VXLAN (VNI 100)`, and `GTP-U (TEID 0x01020384)`;
+- full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;
 - the Qt tree now uses a dedicated list model plus `ListView` virtualization, and the tree section keeps a bounded internal height so large captures do not instantiate every row eagerly;
-- the Tauri spike exposes the same runtime tree through the shared overview DTO and renders the same three columns;
+- the Tauri spike exposes the same runtime tree through the shared overview DTO, uses the same readable layer text, and also keeps the tree inside a bounded internal scroll block;
 - ordering is deterministic: descending `packet_count`, then descending `flow_count`, then path text.
 
 ## Problem Statement

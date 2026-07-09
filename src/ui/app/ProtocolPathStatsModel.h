@@ -15,7 +15,8 @@ class ProtocolPathStatsModel final : public QAbstractListModel {
 
 public:
     enum Role {
-        PathTextRole = Qt::UserRole + 1,
+        LayerTextRole = Qt::UserRole + 1,
+        PathTextRole,
         CompactTextRole,
         DepthRole,
         FlowCountRole,

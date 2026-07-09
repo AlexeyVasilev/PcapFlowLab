@@ -147,6 +147,7 @@ std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& ro
     std::ostringstream out {};
     out << '{'
         << "\"depth\":" << row.depth << ','
+        << "\"layer_text\":" << json_string(row.layer_text) << ','
         << "\"path_text\":" << json_string(row.path_text) << ','
         << "\"compact_text\":" << json_string(row.compact_text) << ','
         << "\"badges\":[";

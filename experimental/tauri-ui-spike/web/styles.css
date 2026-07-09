@@ -2001,6 +2001,11 @@ select:disabled {
   min-width: 560px;
 }
 
+.protocol-path-stats-viewport {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
 .protocol-hints-table {
   min-width: 760px;
 }

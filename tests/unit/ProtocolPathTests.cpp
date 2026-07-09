@@ -206,6 +206,16 @@ void expect_protocol_path_stats_row(
     PFL_EXPECT(row->packet_count == expected_packet_count);
 }
 
+void expect_protocol_path_stats_layer_text(
+    const CaptureProtocolPathSummary& summary,
+    const std::string& path_text,
+    const std::string& expected_layer_text
+) {
+    const auto* row = find_protocol_path_stats_row(summary, path_text);
+    PFL_REQUIRE(row != nullptr);
+    PFL_EXPECT(row->layer_text == expected_layer_text);
+}
+
 std::string format_fixture_flow_diagnostics(
     const std::filesystem::path& relative_path,
     const CaptureSession& session
@@ -518,6 +528,14 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_EXPECT(legend.back().short_label == "?");
     PFL_EXPECT(legend.back().full_name == "Unknown");
+
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ethernet_ii()) == "Ethernet II");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ipv4()) == "IPv4");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::vlan(200U)) == "VLAN (VID 200)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::mpls(102U)) == "MPLS (label 102)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::vxlan(100U)) == "VXLAN (VNI 100)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::geneve(100U)) == "Geneve (VNI 100)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::gtpu(0x01020384U)) == "GTP-U (TEID 0x01020384)");
 }
 
 void expect_flow_rows_expose_protocol_path_presentation() {
@@ -759,6 +777,9 @@ void expect_protocol_path_statistics_direct_tcp_prefixes() {
     expect_protocol_path_stats_row(summary, "EthernetII", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> TCP", 1U, 1U);
+    expect_protocol_path_stats_layer_text(summary, "EthernetII", "Ethernet II");
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4", "IPv4");
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> TCP", "TCP");
 }
 
 void expect_protocol_path_statistics_distinguish_vxlan_vnis() {
@@ -770,6 +791,8 @@ void expect_protocol_path_statistics_distinguish_vxlan_vnis() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP", 2U, 2U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", 1U, 1U);
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)", "VXLAN (VNI 100)");
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", "VXLAN (VNI 200)");
     expect_protocol_path_stats_row(
         summary,
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP",
@@ -793,6 +816,8 @@ void expect_protocol_path_statistics_distinguish_gtpu_teids() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP", 2U, 2U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", 1U, 1U);
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)", "GTP-U (TEID 0x01020304)");
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", "GTP-U (TEID 0x11223344)");
 }
 
 void expect_protocol_path_statistics_preserve_nested_mpls_prefixes() {
@@ -805,6 +830,8 @@ void expect_protocol_path_statistics_preserve_nested_mpls_prefixes() {
     expect_protocol_path_stats_row(summary, "EthernetII -> MPLS(label=16000) -> MPLS(label=16001)", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> MPLS(label=16000) -> MPLS(label=16001) -> IPv4", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> MPLS(label=16000) -> MPLS(label=16001) -> IPv4 -> TCP", 1U, 1U);
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS(label=16000)", "MPLS (label 16000)");
+    expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS(label=16000) -> MPLS(label=16001)", "MPLS (label 16001)");
 }
 
 void expect_protocol_path_statistics_survive_index_roundtrip() {
@@ -826,6 +853,7 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
         const auto* loaded_row = find_protocol_path_stats_row(loaded_summary, row.path_text);
         PFL_REQUIRE(loaded_row != nullptr);
         PFL_EXPECT(loaded_row->depth == row.depth);
+        PFL_EXPECT(loaded_row->layer_text == row.layer_text);
         PFL_EXPECT(loaded_row->flow_count == row.flow_count);
         PFL_EXPECT(loaded_row->packet_count == row.packet_count);
         PFL_EXPECT(loaded_row->compact_text == row.compact_text);
@@ -847,6 +875,7 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
         }
     );
     PFL_REQUIRE(found != overview.protocol_path_statistics.end());
+    PFL_EXPECT(found->layer_text == "VXLAN (VNI 100)");
     PFL_EXPECT(found->flow_count == 1U);
     PFL_EXPECT(found->packet_count == 1U);
 }

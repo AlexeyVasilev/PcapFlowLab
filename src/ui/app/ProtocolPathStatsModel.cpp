@@ -23,6 +23,8 @@ QVariant ProtocolPathStatsModel::data(const QModelIndex& index, const int role) 
 
     const auto& row = rows_[static_cast<std::size_t>(index.row())];
     switch (role) {
+    case LayerTextRole:
+        return QString::fromStdString(row.layer_text);
     case PathTextRole:
         return QString::fromStdString(row.path_text);
     case CompactTextRole:
@@ -46,6 +48,7 @@ QVariant ProtocolPathStatsModel::data(const QModelIndex& index, const int role) 
 
 QHash<int, QByteArray> ProtocolPathStatsModel::roleNames() const {
     return {
+        {LayerTextRole, "layerText"},
         {PathTextRole, "pathText"},
         {CompactTextRole, "compactText"},
         {DepthRole, "depth"},

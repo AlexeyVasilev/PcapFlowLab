@@ -262,6 +262,7 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
     for (const auto& row : summary.rows) {
         rows.push_back(FrontendProtocolPathStatsDto {
             .depth = row.depth,
+            .layer_text = row.layer_text,
             .path_text = row.path_text,
             .compact_text = row.compact_text,
             .badges = row.badges,

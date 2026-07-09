@@ -2322,6 +2322,7 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(protocol_path_stats_model->rowCount() >= 3);
         const auto first_row = protocol_path_stats_model->index(0, 0);
         UI_EXPECT(first_row.isValid());
+        UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::LayerTextRole).toString().isEmpty());
         UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PathTextRole).toString().isEmpty());
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::FlowCountRole).toULongLong() >= 1U);
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountRole).toULongLong() >= 1U);
