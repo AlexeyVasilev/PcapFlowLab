@@ -260,6 +260,39 @@ Frame {
         implicitHeight: 28
     }
 
+    component ProtocolPathPrimaryActionButton: Button {
+        implicitHeight: 30
+        leftPadding: 14
+        rightPadding: 14
+
+        contentItem: Label {
+            text: parent.text
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            font.pixelSize: 12
+            font.bold: true
+            color: parent.enabled ? "#166534" : "#94a3b8"
+        }
+
+        background: Rectangle {
+            radius: 6
+            color: parent.enabled
+                ? (parent.down ? "#dcfce7" : (parent.hovered ? "#f0fdf4" : "#ffffff"))
+                : "#f8fafc"
+            border.color: parent.enabled ? "#86efac" : "#e2e8f0"
+            border.width: 1
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 4
+                radius: 6
+                color: parent.parent.enabled ? "#22c55e" : "#cbd5e1"
+            }
+        }
+    }
+
     component FiveColumnHeader: Rectangle {
         required property string firstTitle
         required property string secondTitle
@@ -964,8 +997,14 @@ Frame {
                     font.bold: true
                 }
 
-                Item {
-                    Layout.fillWidth: true
+                ProtocolPathPrimaryActionButton {
+                    objectName: "protocolPathShowFlowsButton"
+                    text: "Show flows"
+                    enabled: root.hasCapture
+                        && root.protocolPathStatsModel
+                        && root.protocolPathStatsModel.hasSelectedNode
+                        && root.protocolPathStatsModel.selectedNodeFlowCount > 0
+                    onClicked: root.showFlowsRequested()
                 }
 
                 Label {
@@ -1029,18 +1068,7 @@ Frame {
                 }
 
                 Item {
-                    Layout.preferredWidth: 10
-                    Layout.fillHeight: true
-                }
-
-                Button {
-                    objectName: "protocolPathShowFlowsButton"
-                    text: "Show flows"
-                    enabled: root.hasCapture
-                        && root.protocolPathStatsModel
-                        && root.protocolPathStatsModel.hasSelectedNode
-                        && root.protocolPathStatsModel.selectedNodeFlowCount > 0
-                    onClicked: root.showFlowsRequested()
+                    Layout.fillWidth: true
                 }
 
                 Button {
