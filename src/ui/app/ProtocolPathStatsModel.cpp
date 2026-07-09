@@ -35,10 +35,18 @@ QVariant ProtocolPathStatsModel::data(const QModelIndex& index, const int role) 
         return static_cast<qulonglong>(row.flow_count);
     case PacketCountRole:
         return static_cast<qulonglong>(row.packet_count);
+    case FlowPercentRole:
+        return row.flow_percent;
+    case PacketPercentRole:
+        return row.packet_percent;
+    case FlowCountTextRole:
+        return QString::fromStdString(row.flow_count_text);
+    case PacketCountTextRole:
+        return QString::fromStdString(row.packet_count_text);
     case TooltipRole:
         return QString::fromStdString(row.path_text);
     case IsTerminalRole:
-        return !row.path.layers().empty();
+        return row.is_terminal;
     case RowIndexRole:
         return index.row();
     default:
@@ -54,6 +62,10 @@ QHash<int, QByteArray> ProtocolPathStatsModel::roleNames() const {
         {DepthRole, "depth"},
         {FlowCountRole, "flowCount"},
         {PacketCountRole, "packetCount"},
+        {FlowPercentRole, "flowPercent"},
+        {PacketPercentRole, "packetPercent"},
+        {FlowCountTextRole, "flowCountText"},
+        {PacketCountTextRole, "packetCountText"},
         {TooltipRole, "tooltipText"},
         {IsTerminalRole, "isTerminal"},
         {RowIndexRole, "rowIndex"},

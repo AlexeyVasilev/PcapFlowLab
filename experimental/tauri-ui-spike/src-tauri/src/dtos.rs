@@ -181,6 +181,10 @@ pub struct ProtocolPathStatsDto {
     pub badges: Vec<ProtocolPathBadgeDto>,
     pub flow_count: u64,
     pub packet_count: u64,
+    pub flow_percent: f64,
+    pub packet_percent: f64,
+    pub flow_count_text: String,
+    pub packet_count_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,7 +198,10 @@ pub struct OverviewDto {
     pub protocol_hints: Vec<ProtocolHintStatsDto>,
     pub top_endpoints: Vec<TopEndpointDto>,
     pub top_ports: Vec<TopPortDto>,
+    pub protocol_path_statistics_default_mode: u8,
     pub protocol_path_statistics: Vec<ProtocolPathStatsDto>,
+    pub protocol_path_statistics_identity_tree: Vec<ProtocolPathStatsDto>,
+    pub protocol_path_statistics_terminal_paths: Vec<ProtocolPathStatsDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

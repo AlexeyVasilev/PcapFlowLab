@@ -58,16 +58,45 @@ Important properties:
 
 - statistics are computed lazily from flow-level `protocol_path_id` plus the capture-level `ProtocolPathRegistry`;
 - the tree is available after both fresh PCAP import and opening from a saved index;
-- each flow contributes `+1` to every prefix of its protocol path;
-- each recognized packet contributes via its owning flow's path, so packet totals are stable with respect to `FlowKeyV2`;
-- identifier-bearing layers such as `VXLAN(vni=...)`, `Geneve(vni=...)`, `GTP-U(teid=...)`, `VLAN(vid=...)`, and `MPLS(label=...)` remain distinct tree nodes;
+- protocol-path statistics are still runtime-only and are not persisted in the stable index;
+- collapse/expand, search, top-N, and protocol-path filters remain future work.
+
+The current UI exposes three runtime view modes:
+
+1. `Kind overview`
+   - default mode;
+   - aggregates by ordered layer kind only;
+   - namespace identifiers are ignored for grouping and row display;
+   - examples:
+     - `VXLAN(vni=100)` and `VXLAN(vni=200)` aggregate under `VXLAN`;
+     - `GTP-U(teid=...)` aggregates under `GTP-U`;
+     - `MPLS(label=102)` and `MPLS(label=200)` aggregate under `MPLS`;
+   - repeated layers remain positional, so `MPLS -> MPLS -> IPv4` stays a nested two-level MPLS stack.
+
+2. `Identity tree`
+   - exact `FlowKeyV2` explanation mode;
+   - current identifier-bearing layers such as `VXLAN(vni=...)`, `Geneve(vni=...)`, `GTP-U(teid=...)`, `VLAN(vid=...)`, and `MPLS(label=...)` remain distinct tree nodes.
+
+3. `Terminal paths`
+   - flat list of complete terminal protocol paths only;
+   - intermediate prefixes are omitted;
+   - terminal rows currently use exact identity paths for traceability.
+
+Counting semantics:
+
+- in both prefix-tree modes, each recognized flow contributes `+1` to every prefix of its protocol path;
+- in both prefix-tree modes, each recognized flow contributes its recognized packet count to every prefix of that same path;
+- in terminal-path mode, each flow contributes once to its complete path only;
 - unrecognized packets are excluded for now because they do not yet participate in the same stable protocol-path model;
-- byte totals are intentionally omitted in v1 because the most useful semantics for prefix-node byte aggregation were not settled in this step.
+- byte totals are intentionally omitted in v1 because the most useful semantics for prefix-node byte aggregation were not settled in this step;
+- `flow_percent` uses total recognized flow count as the denominator;
+- `packet_percent` uses total capture packet count as the denominator, so packet shares remain anchored to the capture rather than to recognized flows only.
 
 Presentation notes:
 
-- the Qt Statistics tab shows a compact indented `Layer / Flows / Packets` tree;
+- the Qt Statistics tab shows a compact indented `Layer / Flows / Packets` tree plus a mode selector;
 - visible tree rows now display readable per-layer names such as `Ethernet II`, `IPv4`, `TCP`, `VLAN (VID 200)`, `MPLS (label 102)`, `VXLAN (VNI 100)`, and `GTP-U (TEID 0x01020384)`;
+- count columns now use centralized formatted `count (percent)` text in both frontends;
 - full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;
 - the Qt tree now uses a dedicated list model plus `ListView` virtualization, and the tree section keeps a bounded internal height so large captures do not instantiate every row eagerly;
 - the Tauri spike exposes the same runtime tree through the shared overview DTO, uses the same readable layer text, and also keeps the tree inside a bounded internal scroll block;

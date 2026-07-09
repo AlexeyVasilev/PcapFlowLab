@@ -1,7 +1,10 @@
 #include "app/session/SessionFlowHelpers.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <unordered_map>
 
 #include "app/session/ProtocolPathPresentation.h"
@@ -89,11 +92,98 @@ struct ProtocolPathStatisticsAccumulatorNode {
     std::vector<std::size_t> child_indices {};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    bool is_terminal {false};
+    double flow_percent {0.0};
+    double packet_percent {0.0};
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
+    std::string flow_count_text {};
+    std::string packet_count_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
 };
+
+std::string group_integer_part(std::string text) {
+    const auto sign_offset = !text.empty() && text.front() == '-' ? std::size_t {1} : std::size_t {0};
+    const auto decimal_pos = text.find('.');
+    const auto integer_end = decimal_pos == std::string::npos ? text.size() : decimal_pos;
+
+    for (std::ptrdiff_t index = static_cast<std::ptrdiff_t>(integer_end) - 3;
+         index > static_cast<std::ptrdiff_t>(sign_offset);
+         index -= 3) {
+        text.insert(static_cast<std::size_t>(index), 1U, ' ');
+    }
+
+    return text;
+}
+
+std::string trim_trailing_zeros(std::string text) {
+    const auto decimal_pos = text.find('.');
+    if (decimal_pos == std::string::npos) {
+        return text;
+    }
+
+    while (!text.empty() && text.back() == '0') {
+        text.pop_back();
+    }
+
+    if (!text.empty() && text.back() == '.') {
+        text.pop_back();
+    }
+
+    return text;
+}
+
+std::string format_grouped_integer(const std::uint64_t value) {
+    return group_integer_part(std::to_string(value));
+}
+
+std::string format_percent_text(const double percent) {
+    if (!(percent > 0.0)) {
+        return "0%";
+    }
+
+    if (percent < 0.01) {
+        return "<0.01%";
+    }
+
+    std::ostringstream out {};
+    if (percent < 1.0) {
+        out << std::fixed << std::setprecision(2) << percent;
+    } else {
+        out << std::fixed << std::setprecision(1) << percent;
+    }
+
+    return trim_trailing_zeros(out.str()) + '%';
+}
+
+std::string format_count_with_percent_text(const std::uint64_t count, const double percent) {
+    return format_grouped_integer(count) + " (" + format_percent_text(percent) + ')';
+}
+
+double safe_percent(const std::uint64_t part, const std::uint64_t total) noexcept {
+    if (part == 0U || total == 0U) {
+        return 0.0;
+    }
+
+    return (static_cast<double>(part) * 100.0) / static_cast<double>(total);
+}
+
+LayerKey kind_only_layer_key(const LayerKey& layer) noexcept {
+    return LayerKey {
+        .kind = layer.kind,
+        .identifier = {},
+    };
+}
+
+ProtocolPath kind_only_protocol_path(const ProtocolPath& path) {
+    std::vector<LayerKey> layers {};
+    layers.reserve(path.size());
+    for (const auto& layer : path.layers()) {
+        layers.push_back(kind_only_layer_key(layer));
+    }
+    return ProtocolPath {std::move(layers)};
+}
 
 void append_protocol_path_statistics_rows(
     const std::vector<ProtocolPathStatisticsAccumulatorNode>& nodes,
@@ -123,8 +213,13 @@ void append_protocol_path_statistics_rows(
             .path_text = node.path_text,
             .compact_text = node.compact_text,
             .badges = node.badges,
+            .is_terminal = node.is_terminal,
             .flow_count = node.flow_count,
             .packet_count = node.packet_count,
+            .flow_percent = node.flow_percent,
+            .packet_percent = node.packet_percent,
+            .flow_count_text = node.flow_count_text,
+            .packet_count_text = node.packet_count_text,
         });
         append_protocol_path_statistics_rows(nodes, rows, node.child_indices);
     }
@@ -275,9 +370,16 @@ FlowRow make_flow_row(std::size_t index, const ListedConnectionRef& connection, 
 
 CaptureProtocolPathSummary build_protocol_path_summary(
     const CaptureState& state,
-    const std::vector<ListedConnectionRef>& connections
+    const std::vector<ListedConnectionRef>& connections,
+    const ProtocolPathStatisticsMode mode
 ) {
-    CaptureProtocolPathSummary summary {};
+    CaptureProtocolPathSummary summary {
+        .mode = mode,
+        // Keep packet shares anchored to the full capture packet count so
+        // protocol-path rows remain comparable even when some packets are
+        // unrecognized and intentionally excluded from the path tree.
+        .total_packet_count = state.summary.packet_count,
+    };
     std::unordered_map<ProtocolPath, std::size_t, ProtocolPathHash> node_index_by_path {};
     std::vector<ProtocolPathStatisticsAccumulatorNode> nodes {};
 
@@ -292,9 +394,35 @@ CaptureProtocolPathSummary build_protocol_path_summary(
             continue;
         }
 
+        ++summary.total_flow_count;
+        const auto packets_for_flow = packet_count(connection);
+        const auto effective_path = mode == ProtocolPathStatisticsMode::kind_overview
+            ? kind_only_protocol_path(*path)
+            : *path;
+
+        if (mode == ProtocolPathStatisticsMode::terminal_paths) {
+            auto [it, inserted] = node_index_by_path.emplace(effective_path, nodes.size());
+            if (inserted) {
+                nodes.push_back(ProtocolPathStatisticsAccumulatorNode {
+                    .depth = 0U,
+                    .layer = effective_path.layers().back(),
+                    .path = effective_path,
+                    .is_terminal = true,
+                });
+            }
+
+            auto& node = nodes[it->second];
+            node.flow_count += 1U;
+            node.packet_count += packets_for_flow;
+            continue;
+        }
+
         std::size_t parent_index = std::numeric_limits<std::size_t>::max();
-        for (std::size_t depth = 0; depth < path->size(); ++depth) {
-            const auto prefix_layers = std::vector<LayerKey>(path->layers().begin(), path->layers().begin() + static_cast<std::ptrdiff_t>(depth + 1U));
+        for (std::size_t depth = 0; depth < effective_path.size(); ++depth) {
+            const auto prefix_layers = std::vector<LayerKey>(
+                effective_path.layers().begin(),
+                effective_path.layers().begin() + static_cast<std::ptrdiff_t>(depth + 1U)
+            );
             ProtocolPath prefix_path {prefix_layers};
 
             auto [it, inserted] = node_index_by_path.emplace(prefix_path, nodes.size());
@@ -302,8 +430,9 @@ CaptureProtocolPathSummary build_protocol_path_summary(
                 nodes.push_back(ProtocolPathStatisticsAccumulatorNode {
                     .depth = depth,
                     .layer = prefix_layers.back(),
-                    .path = std::move(prefix_path),
+                    .path = prefix_path,
                     .parent_index = parent_index,
+                    .is_terminal = depth + 1U >= effective_path.size(),
                 });
                 if (parent_index != std::numeric_limits<std::size_t>::max()) {
                     nodes[parent_index].child_indices.push_back(it->second);
@@ -312,21 +441,27 @@ CaptureProtocolPathSummary build_protocol_path_summary(
 
             auto& node = nodes[it->second];
             node.flow_count += 1U;
-            node.packet_count += packet_count(connection);
+            node.packet_count += packets_for_flow;
             parent_index = it->second;
         }
     }
 
     std::vector<std::size_t> root_indices {};
     root_indices.reserve(nodes.size());
-      for (std::size_t index = 0; index < nodes.size(); ++index) {
-          const auto presentation = build_protocol_path_presentation(&nodes[index].path);
-          nodes[index].layer_text = format_protocol_path_layer_display_text(nodes[index].layer);
-          nodes[index].path_text = presentation.full_text;
-          nodes[index].compact_text = presentation.compact_text;
-          nodes[index].badges = std::move(presentation.badges);
-          if (nodes[index].parent_index == std::numeric_limits<std::size_t>::max()) {
-              root_indices.push_back(index);
+    for (std::size_t index = 0; index < nodes.size(); ++index) {
+        auto presentation = build_protocol_path_presentation(&nodes[index].path);
+        nodes[index].path_text = presentation.full_text;
+        nodes[index].compact_text = presentation.compact_text;
+        nodes[index].badges = std::move(presentation.badges);
+        nodes[index].layer_text = mode == ProtocolPathStatisticsMode::terminal_paths
+            ? nodes[index].path_text
+            : format_protocol_path_layer_display_text(nodes[index].layer);
+        nodes[index].flow_percent = safe_percent(nodes[index].flow_count, summary.total_flow_count);
+        nodes[index].packet_percent = safe_percent(nodes[index].packet_count, summary.total_packet_count);
+        nodes[index].flow_count_text = format_count_with_percent_text(nodes[index].flow_count, nodes[index].flow_percent);
+        nodes[index].packet_count_text = format_count_with_percent_text(nodes[index].packet_count, nodes[index].packet_percent);
+        if (nodes[index].parent_index == std::numeric_limits<std::size_t>::max()) {
+            root_indices.push_back(index);
         }
     }
 

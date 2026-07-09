@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
@@ -116,7 +117,9 @@ public:
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
-    [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary() const;
+    [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(
+        ProtocolPathStatisticsMode mode = ProtocolPathStatisticsMode::kind_overview
+    ) const;
     void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
@@ -338,7 +341,7 @@ private:
     mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
-    mutable std::optional<CaptureProtocolPathSummary> protocol_path_summary_cache_ {};
+    mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };
 

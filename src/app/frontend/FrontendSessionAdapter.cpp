@@ -268,6 +268,10 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
             .badges = row.badges,
             .flow_count = row.flow_count,
             .packet_count = row.packet_count,
+            .flow_percent = row.flow_percent,
+            .packet_percent = row.packet_percent,
+            .flow_count_text = row.flow_count_text,
+            .packet_count_text = row.packet_count_text,
         });
     }
 
@@ -2140,7 +2144,9 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
-    const auto protocol_path_summary = session_.protocol_path_summary();
+    const auto protocol_path_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::kind_overview);
+    const auto protocol_path_identity_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+    const auto protocol_path_terminal_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
@@ -2156,7 +2162,10 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .protocol_hints = build_protocol_hint_stats(protocol_summary),
         .top_endpoints = build_top_endpoints(top_summary),
         .top_ports = build_top_ports(top_summary),
+        .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
         .protocol_path_statistics = build_protocol_path_statistics(protocol_path_summary),
+        .protocol_path_statistics_identity_tree = build_protocol_path_statistics(protocol_path_identity_summary),
+        .protocol_path_statistics_terminal_paths = build_protocol_path_statistics(protocol_path_terminal_summary),
     };
 }
 

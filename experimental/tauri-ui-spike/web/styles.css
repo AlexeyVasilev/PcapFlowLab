@@ -1981,9 +1981,33 @@ select:disabled {
   min-height: 0;
 }
 
+.statistics-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .statistics-section-heading h3 {
   margin: 0;
   font-size: 14px;
+}
+
+.inline-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.inline-select-label select {
+  min-height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-primary);
 }
 
 .statistics-split {

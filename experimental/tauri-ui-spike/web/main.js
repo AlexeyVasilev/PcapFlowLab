@@ -117,6 +117,7 @@
     analysisFlowVirtualWindowStart: 0,
     analysisFlowVirtualWindowEnd: 0,
     analysisFlowVirtualizationActive: false,
+    protocolPathStatsMode: 0,
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
@@ -336,6 +337,8 @@
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
     protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
+    protocolPathStatsModeSelect: document.getElementById("protocolPathStatsMode"),
+    protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
     protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
     quicStatsBody: document.getElementById("quicStatsBody"),
     tlsStatsBody: document.getElementById("tlsStatsBody"),
@@ -2408,7 +2411,12 @@
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
     const protocolHintRows = Array.isArray(overview?.protocol_hints) ? overview.protocol_hints : [];
-    const protocolPathRows = Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : [];
+    const protocolPathMode = Number(state.protocolPathStatsMode ?? overview?.protocol_path_statistics_default_mode ?? 0);
+    const protocolPathRows = protocolPathMode === 1
+      ? (Array.isArray(overview?.protocol_path_statistics_identity_tree) ? overview.protocol_path_statistics_identity_tree : [])
+      : (protocolPathMode === 2
+        ? (Array.isArray(overview?.protocol_path_statistics_terminal_paths) ? overview.protocol_path_statistics_terminal_paths : [])
+        : (Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : []));
     const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
     const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
     const topTalkersVisible = Number(overview?.summary?.flow_count ?? 0) > 30;
@@ -2419,6 +2427,12 @@
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
     elements.metricCapturedBytes.textContent = overview ? formatNumber(overview.summary?.captured_bytes) : "-";
     elements.metricOriginalBytes.textContent = overview ? formatNumber(overview.summary?.original_bytes) : "-";
+    if (elements.protocolPathStatsModeSelect) {
+      elements.protocolPathStatsModeSelect.value = String(protocolPathMode);
+    }
+    if (elements.protocolPathStatsPrimaryHeader) {
+      elements.protocolPathStatsPrimaryHeader.textContent = protocolPathMode === 2 ? "Path" : "Layer";
+    }
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";
@@ -2478,8 +2492,8 @@
               return `
                 <tr title="${escapeHtml(fullText)}">
                   <td><span style="display:inline-block; padding-left:${Math.max(0, depth) * 18}px;">${escapeHtml(displayText)}</span></td>
-                  <td>${formatNumber(row.flow_count)}</td>
-                  <td>${formatNumber(row.packet_count)}</td>
+                  <td>${escapeHtml(String(row.flow_count_text || formatNumber(row.flow_count)))}</td>
+                  <td>${escapeHtml(String(row.packet_count_text || formatNumber(row.packet_count)))}</td>
               </tr>
             `;
           })
@@ -5751,6 +5765,10 @@
   elements.flowFilterInput.addEventListener("input", () => {
     applyFlowFilterState(elements.flowFilterInput.value);
     render();
+  });
+  elements.protocolPathStatsModeSelect?.addEventListener("change", () => {
+    state.protocolPathStatsMode = Number(elements.protocolPathStatsModeSelect.value || 0);
+    renderOverview();
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {
     applyFlowFilterState("");

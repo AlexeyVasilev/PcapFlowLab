@@ -133,6 +133,9 @@ Item {
                     protocolHintDistribution: root.protocolHintDistribution
                     protocolPathStatsModel: root.protocolPathStatsModel
                     statisticsMode: root.statisticsMode
+                    onStatisticsModeChangedByUser: function(mode) {
+                        root.statisticsModeChangedByUser(mode)
+                    }
                 }
 
                 TopTalkersPane {

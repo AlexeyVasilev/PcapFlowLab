@@ -152,6 +152,12 @@ struct TlsRecognitionStats {
     std::uint64_t version_unknown {0};
 };
 
+enum class ProtocolPathStatisticsMode : std::uint8_t {
+    kind_overview = 0,
+    identity_tree = 1,
+    terminal_paths = 2,
+};
+
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
@@ -165,11 +171,19 @@ struct ProtocolPathStatisticsRow {
     std::string path_text {};
     std::string compact_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
+    bool is_terminal {false};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    double flow_percent {0.0};
+    double packet_percent {0.0};
+    std::string flow_count_text {};
+    std::string packet_count_text {};
 };
 
 struct CaptureProtocolPathSummary {
+    ProtocolPathStatisticsMode mode {ProtocolPathStatisticsMode::kind_overview};
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_packet_count {0};
     std::vector<ProtocolPathStatisticsRow> rows {};
 };
 

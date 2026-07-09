@@ -49,9 +49,9 @@ constexpr int kSmartExportOutputModeSeparateFilePerFlow = 1;
 constexpr int kSmartExportBaseModeAllPackets = 0;
 constexpr int kSmartExportBaseModeFirstNPackets = 1;
 constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
-constexpr int kStatisticsModeFlows = 0;
-constexpr int kStatisticsModePackets = 1;
-constexpr int kStatisticsModeBytes = 2;
+constexpr int kProtocolPathStatisticsModeKindOverview = 0;
+constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
+constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
@@ -518,6 +518,18 @@ void appendSection(QStringList& lines, const QString& title, const QStringList& 
     lines.push_back(title);
     for (const auto& value : values) {
         lines.push_back(QStringLiteral("  %1").arg(value));
+    }
+}
+
+ProtocolPathStatisticsMode protocol_path_statistics_mode_from_int(const int mode) noexcept {
+    switch (mode) {
+    case kProtocolPathStatisticsModeIdentityTree:
+        return ProtocolPathStatisticsMode::identity_tree;
+    case kProtocolPathStatisticsModeTerminalPaths:
+        return ProtocolPathStatisticsMode::terminal_paths;
+    case kProtocolPathStatisticsModeKindOverview:
+    default:
+        return ProtocolPathStatisticsMode::kind_overview;
     }
 }
 
@@ -2906,6 +2918,10 @@ QVariantList MainController::protocolPathStatistics() const {
         item.insert(QStringLiteral("compactText"), QString::fromStdString(row.compact_text));
         item.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(row.flow_count));
         item.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(row.packet_count));
+        item.insert(QStringLiteral("flowPercent"), row.flow_percent);
+        item.insert(QStringLiteral("packetPercent"), row.packet_percent);
+        item.insert(QStringLiteral("flowCountText"), QString::fromStdString(row.flow_count_text));
+        item.insert(QStringLiteral("packetCountText"), QString::fromStdString(row.packet_count_text));
         rows.push_back(item);
     }
 
@@ -3991,15 +4007,22 @@ void MainController::setCaptureOpenMode(const int mode) {
 }
 
 void MainController::setStatisticsMode(const int mode) {
-    const int normalizedMode = (mode == kStatisticsModePackets)
-        ? kStatisticsModePackets
-        : (mode == kStatisticsModeBytes ? kStatisticsModeBytes : kStatisticsModeFlows);
+    const int normalizedMode = (mode == kProtocolPathStatisticsModeIdentityTree)
+        ? kProtocolPathStatisticsModeIdentityTree
+        : (mode == kProtocolPathStatisticsModeTerminalPaths
+            ? kProtocolPathStatisticsModeTerminalPaths
+            : kProtocolPathStatisticsModeKindOverview);
 
     if (statistics_mode_ == normalizedMode) {
         return;
     }
 
     statistics_mode_ = normalizedMode;
+    if (session_.has_capture()) {
+        protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
+        protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
+        emit stateChanged();
+    }
     emit statisticsModeChanged();
 }
 
@@ -4021,7 +4044,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     session_.set_analysis_settings(pending_analysis_settings_);
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
-        protocol_path_summary_ = session_.protocol_path_summary();
+        protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
         protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
         flow_model_.refresh(session_.list_flows());
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
@@ -4799,7 +4822,7 @@ void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
-    protocol_path_summary_ = session_.protocol_path_summary();
+    protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
     protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();

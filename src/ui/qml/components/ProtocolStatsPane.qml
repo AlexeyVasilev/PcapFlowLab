@@ -50,6 +50,8 @@ Frame {
     property int statisticsMode: 0
     property bool hasCapture: false
 
+    signal statisticsModeChangedByUser(int mode)
+
     readonly property int tableRowHeight: 26
     readonly property int tableHeaderHeight: 28
     readonly property int tablePadding: 8
@@ -70,10 +72,11 @@ Frame {
     readonly property int hintOriginalColumnWidth: 118
     readonly property int hintTableWidth: hintGroupColumnWidth + hintProtocolColumnWidth + hintFlowsColumnWidth + hintPacketsColumnWidth + hintCapturedColumnWidth + hintOriginalColumnWidth + (tableColumnSpacing * 5) + (tablePadding * 2)
     readonly property int pathTreeLabelColumnWidth: 420
-    readonly property int pathTreeFlowsColumnWidth: 110
-    readonly property int pathTreePacketsColumnWidth: 120
+    readonly property int pathTreeFlowsColumnWidth: 138
+    readonly property int pathTreePacketsColumnWidth: 150
     readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
     readonly property int pathTreeViewportHeight: 420
+    readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
 
     function groupInteger(value) {
         const digits = Math.max(0, Math.round(Number(value || 0))).toString()
@@ -877,13 +880,41 @@ Frame {
         }
 
         SectionFrame {
-            Label {
-                text: "Protocol Path Tree"
-                font.bold: true
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+
+                Label {
+                    text: "Protocol Path Tree"
+                    font.bold: true
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                Label {
+                    text: "Mode"
+                    color: "#475569"
+                }
+
+                ComboBox {
+                    id: protocolPathStatsModeComboBox
+                    objectName: "protocolPathStatsModeComboBox"
+                    model: ["Kind overview", "Identity tree", "Terminal paths"]
+                    currentIndex: Math.max(0, Math.min(count - 1, root.statisticsMode))
+                    implicitWidth: 168
+
+                    onActivated: function(index) {
+                        if (index !== root.statisticsMode) {
+                            root.statisticsModeChangedByUser(index)
+                        }
+                    }
+                }
             }
 
             ThreeColumnHeader {
-                firstTitle: "Layer"
+                firstTitle: root.protocolPathPrimaryColumnTitle
                 secondTitle: "Flows"
                 thirdTitle: "Packets"
                 firstWidth: root.pathTreeLabelColumnWidth
@@ -922,6 +953,8 @@ Frame {
                         required property int depth
                         required property var flowCount
                         required property var packetCount
+                        required property string flowCountText
+                        required property string packetCountText
                         required property int rowIndex
                         required property string tooltipText
 
@@ -957,7 +990,7 @@ Frame {
                                 width: root.pathTreeFlowsColumnWidth
                                 anchors.verticalCenter: parent.verticalCenter
                                 horizontalAlignment: Text.AlignRight
-                                text: root.hasCapture ? root.groupInteger(flowCount || 0) : "-"
+                                text: root.hasCapture ? flowCountText : "-"
                                 color: "#334155"
                                 elide: Text.ElideLeft
                             }
@@ -967,7 +1000,7 @@ Frame {
                                 width: root.pathTreePacketsColumnWidth
                                 anchors.verticalCenter: parent.verticalCenter
                                 horizontalAlignment: Text.AlignRight
-                                text: root.hasCapture ? root.groupInteger(packetCount || 0) : "-"
+                                text: root.hasCapture ? packetCountText : "-"
                                 color: "#334155"
                                 elide: Text.ElideLeft
                             }

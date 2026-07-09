@@ -374,12 +374,20 @@
                 <div class="statistics-section">
                   <div class="statistics-section-heading">
                     <h3>Protocol Path Tree</h3>
+                    <label class="inline-select-label" for="protocolPathStatsMode">
+                      <span>Mode</span>
+                      <select id="protocolPathStatsMode">
+                        <option value="0">Kind overview</option>
+                        <option value="1">Identity tree</option>
+                        <option value="2">Terminal paths</option>
+                      </select>
+                    </label>
                   </div>
                   <div class="table-wrap protocol-path-stats-viewport">
                     <table class="data-table compact-stats-table">
                       <thead>
                         <tr>
-                          <th>Layer</th>
+                          <th id="protocolPathStatsPrimaryHeader">Layer</th>
                           <th>Flows</th>
                           <th>Packets</th>
                         </tr>

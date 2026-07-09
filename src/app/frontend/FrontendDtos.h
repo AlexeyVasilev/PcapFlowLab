@@ -152,6 +152,10 @@ struct FrontendProtocolPathStatsDto {
     std::vector<ProtocolPathBadgeRow> badges {};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    double flow_percent {0.0};
+    double packet_percent {0.0};
+    std::string flow_count_text {};
+    std::string packet_count_text {};
 };
 
 struct FrontendOverviewDto {
@@ -166,7 +170,10 @@ struct FrontendOverviewDto {
     std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
     std::vector<FrontendTopEndpointDto> top_endpoints {};
     std::vector<FrontendTopPortDto> top_ports {};
+    ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
     std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics {};
+    std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics_identity_tree {};
+    std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics_terminal_paths {};
 };
 
 struct FrontendFlowDto {
