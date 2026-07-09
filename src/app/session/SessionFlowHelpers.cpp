@@ -1,6 +1,7 @@
 #include "app/session/SessionFlowHelpers.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -92,14 +93,17 @@ struct ProtocolPathStatisticsAccumulatorNode {
     std::vector<std::size_t> child_indices {};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t original_byte_count {0};
     bool is_terminal {false};
     double flow_percent {0.0};
     double packet_percent {0.0};
+    double original_byte_percent {0.0};
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
     std::string flow_count_text {};
     std::string packet_count_text {};
+    std::string original_byte_count_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
 };
 
@@ -159,6 +163,29 @@ std::string format_percent_text(const double percent) {
 
 std::string format_count_with_percent_text(const std::uint64_t count, const double percent) {
     return format_grouped_integer(count) + " (" + format_percent_text(percent) + ')';
+}
+
+std::string format_byte_value(const std::uint64_t value) {
+    static constexpr std::array<const char*, 5> units {"B", "KB", "MB", "GB", "TB"};
+
+    double scaled = static_cast<double>(value);
+    std::size_t unit_index = 0;
+    while (scaled >= 1024.0 && unit_index + 1U < units.size()) {
+        scaled /= 1024.0;
+        ++unit_index;
+    }
+
+    if (unit_index == 0U) {
+        return format_grouped_integer(value) + ' ' + units[unit_index];
+    }
+
+    std::ostringstream out {};
+    out << std::fixed << std::setprecision(1) << scaled;
+    return group_integer_part(trim_trailing_zeros(out.str())) + ' ' + units[unit_index];
+}
+
+std::string format_byte_count_with_percent_text(const std::uint64_t count, const double percent) {
+    return format_byte_value(count) + " (" + format_percent_text(percent) + ')';
 }
 
 double safe_percent(const std::uint64_t part, const std::uint64_t total) noexcept {
@@ -221,10 +248,13 @@ void append_protocol_path_statistics_rows(
             .is_terminal = node.is_terminal,
             .flow_count = node.flow_count,
             .packet_count = node.packet_count,
+            .original_byte_count = node.original_byte_count,
             .flow_percent = node.flow_percent,
             .packet_percent = node.packet_percent,
+            .original_byte_percent = node.original_byte_percent,
             .flow_count_text = node.flow_count_text,
             .packet_count_text = node.packet_count_text,
+            .original_byte_count_text = node.original_byte_count_text,
         });
         append_protocol_path_statistics_rows(nodes, rows, node.child_indices);
     }
@@ -401,6 +431,8 @@ CaptureProtocolPathSummary build_protocol_path_summary(
 
         ++summary.total_flow_count;
         const auto packets_for_flow = packet_count(connection);
+        const auto original_bytes_for_flow = total_bytes(connection);
+        summary.total_original_byte_count += original_bytes_for_flow;
         const auto effective_path = mode == ProtocolPathStatisticsMode::kind_overview
             ? kind_only_protocol_path(*path)
             : *path;
@@ -419,6 +451,7 @@ CaptureProtocolPathSummary build_protocol_path_summary(
             auto& node = nodes[it->second];
             node.flow_count += 1U;
             node.packet_count += packets_for_flow;
+            node.original_byte_count += original_bytes_for_flow;
             continue;
         }
 
@@ -447,6 +480,7 @@ CaptureProtocolPathSummary build_protocol_path_summary(
             auto& node = nodes[it->second];
             node.flow_count += 1U;
             node.packet_count += packets_for_flow;
+            node.original_byte_count += original_bytes_for_flow;
             parent_index = it->second;
         }
     }
@@ -463,8 +497,16 @@ CaptureProtocolPathSummary build_protocol_path_summary(
             : format_protocol_path_layer_display_text(nodes[index].layer);
         nodes[index].flow_percent = safe_percent(nodes[index].flow_count, summary.total_flow_count);
         nodes[index].packet_percent = safe_percent(nodes[index].packet_count, summary.total_packet_count);
+        nodes[index].original_byte_percent = safe_percent(
+            nodes[index].original_byte_count,
+            summary.total_original_byte_count
+        );
         nodes[index].flow_count_text = format_count_with_percent_text(nodes[index].flow_count, nodes[index].flow_percent);
         nodes[index].packet_count_text = format_count_with_percent_text(nodes[index].packet_count, nodes[index].packet_percent);
+        nodes[index].original_byte_count_text = format_byte_count_with_percent_text(
+            nodes[index].original_byte_count,
+            nodes[index].original_byte_percent
+        );
         if (nodes[index].parent_index == std::numeric_limits<std::size_t>::max()) {
             root_indices.push_back(index);
         }

@@ -2351,8 +2351,12 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountRole).toULongLong() >= 1U);
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::FlowCountTextRole).toString().contains('%'));
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountTextRole).toString().contains('%'));
+        UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::OriginalByteCountTextRole).toString().isEmpty());
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::OriginalByteCountTextRole).toString().contains(QStringLiteral("B")));
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::NodeIdRole).toULongLong() != pfl::kInvalidProtocolPathStatisticsNodeId);
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::HasChildrenRole).toBool());
+        UI_EXPECT(!protocol_path_rows.isEmpty());
+        UI_EXPECT(protocol_path_rows.front().toMap().contains(QStringLiteral("originalByteCountText")));
         protocol_path_stats_model->expandAll();
         UI_EXPECT(protocol_path_stats_model->rowCount() == protocol_path_rows.size());
     }
@@ -2379,6 +2383,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(root_node_id != pfl::kInvalidProtocolPathStatisticsNodeId);
     UI_EXPECT(protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::HasChildrenRole).toBool());
     UI_EXPECT(!protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::ExpandedRole).toBool());
+    UI_EXPECT(!protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::OriginalByteCountTextRole).toString().isEmpty());
 
     protocol_path_mode_stats_model->toggleExpanded(root_node_id);
     UI_EXPECT(protocol_path_mode_stats_model->data(protocol_path_mode_stats_model->index(0, 0), ProtocolPathStatsModel::ExpandedRole).toBool());

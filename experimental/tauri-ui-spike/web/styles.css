@@ -2020,6 +2020,9 @@ select:disabled {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-subtle);
 }
 
 .statistics-mode-tabs .secondary-button.is-active {

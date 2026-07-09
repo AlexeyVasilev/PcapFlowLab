@@ -185,10 +185,13 @@ pub struct ProtocolPathStatsDto {
     pub is_terminal: bool,
     pub flow_count: u64,
     pub packet_count: u64,
+    pub original_byte_count: u64,
     pub flow_percent: f64,
     pub packet_percent: f64,
+    pub original_byte_percent: f64,
     pub flow_count_text: String,
     pub packet_count_text: String,
+    pub original_byte_count_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

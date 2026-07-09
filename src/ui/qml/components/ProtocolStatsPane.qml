@@ -74,7 +74,8 @@ Frame {
     readonly property int pathTreeLabelColumnWidth: 420
     readonly property int pathTreeFlowsColumnWidth: 138
     readonly property int pathTreePacketsColumnWidth: 150
-    readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
+    readonly property int pathTreeOriginalColumnWidth: 150
+    readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + pathTreeOriginalColumnWidth + (tableColumnSpacing * 3) + (tablePadding * 2)
     readonly property int pathTreeViewportHeight: 420
     readonly property int pathTreeIndentWidth: 18
     readonly property int pathTreeExpanderWidth: 16
@@ -454,6 +455,69 @@ Frame {
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
                 text: parent.parent.thirdTitle
+                font.bold: true
+                color: "#334155"
+            }
+        }
+    }
+
+    component FourColumnHeader: Rectangle {
+        required property string firstTitle
+        required property string secondTitle
+        required property string thirdTitle
+        required property string fourthTitle
+        required property int firstWidth
+        required property int secondWidth
+        required property int thirdWidth
+        required property int fourthWidth
+        required property int tableWidth
+
+        width: Math.min(tableWidth, parent ? parent.width : tableWidth)
+        height: root.tableHeaderHeight
+        radius: 4
+        color: "#f8fafc"
+        border.color: "#e2e8f0"
+
+        Item {
+            anchors.fill: parent
+            anchors.leftMargin: root.tablePadding
+            anchors.rightMargin: root.tablePadding
+
+            Label {
+                x: 0
+                width: parent.parent.firstWidth
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.firstTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing
+                width: parent.parent.secondWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.secondTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing
+                width: parent.parent.thirdWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.thirdTitle
+                font.bold: true
+                color: "#334155"
+            }
+
+            Label {
+                x: parent.parent.firstWidth + root.tableColumnSpacing + parent.parent.secondWidth + root.tableColumnSpacing + parent.parent.thirdWidth + root.tableColumnSpacing
+                width: parent.parent.fourthWidth
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: parent.parent.fourthTitle
                 font.bold: true
                 color: "#334155"
             }
@@ -963,6 +1027,11 @@ Frame {
                     }
                 }
 
+                Item {
+                    Layout.preferredWidth: 10
+                    Layout.fillHeight: true
+                }
+
                 Button {
                     text: "Expand all"
                     visible: root.statisticsMode !== 2
@@ -978,13 +1047,15 @@ Frame {
                 }
             }
 
-            ThreeColumnHeader {
+            FourColumnHeader {
                 firstTitle: root.protocolPathPrimaryColumnTitle
                 secondTitle: "Flows"
                 thirdTitle: "Packets"
+                fourthTitle: "Original Bytes"
                 firstWidth: root.pathTreeLabelColumnWidth
                 secondWidth: root.pathTreeFlowsColumnWidth
                 thirdWidth: root.pathTreePacketsColumnWidth
+                fourthWidth: root.pathTreeOriginalColumnWidth
                 tableWidth: root.pathTreeTableWidth
             }
 
@@ -1023,8 +1094,10 @@ Frame {
                         required property bool canExpand
                         required property var flowCount
                         required property var packetCount
+                        required property var originalByteCount
                         required property string flowCountText
                         required property string packetCountText
+                        required property string originalByteCountText
                         required property int rowIndex
                         required property string tooltipText
 
@@ -1098,6 +1171,16 @@ Frame {
                                 anchors.verticalCenter: parent.verticalCenter
                                 horizontalAlignment: Text.AlignRight
                                 text: root.hasCapture ? packetCountText : "-"
+                                color: "#334155"
+                                elide: Text.ElideLeft
+                            }
+
+                            Label {
+                                x: root.pathTreeLabelColumnWidth + root.tableColumnSpacing + root.pathTreeFlowsColumnWidth + root.tableColumnSpacing + root.pathTreePacketsColumnWidth + root.tableColumnSpacing
+                                width: root.pathTreeOriginalColumnWidth
+                                anchors.verticalCenter: parent.verticalCenter
+                                horizontalAlignment: Text.AlignRight
+                                text: root.hasCapture ? originalByteCountText : "-"
                                 color: "#334155"
                                 elide: Text.ElideLeft
                             }

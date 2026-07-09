@@ -58,6 +58,12 @@ QVariant ProtocolPathStatsModel::data(const QModelIndex& index, const int role) 
         return QString::fromStdString(row.flow_count_text);
     case PacketCountTextRole:
         return QString::fromStdString(row.packet_count_text);
+    case OriginalByteCountRole:
+        return static_cast<qulonglong>(row.original_byte_count);
+    case OriginalBytePercentRole:
+        return row.original_byte_percent;
+    case OriginalByteCountTextRole:
+        return QString::fromStdString(row.original_byte_count_text);
     case NodeIdRole:
         return static_cast<qulonglong>(row.node_id);
     case ParentNodeIdRole:
@@ -91,6 +97,9 @@ QHash<int, QByteArray> ProtocolPathStatsModel::roleNames() const {
         {PacketPercentRole, "packetPercent"},
         {FlowCountTextRole, "flowCountText"},
         {PacketCountTextRole, "packetCountText"},
+        {OriginalByteCountRole, "originalByteCount"},
+        {OriginalBytePercentRole, "originalBytePercent"},
+        {OriginalByteCountTextRole, "originalByteCountText"},
         {NodeIdRole, "nodeId"},
         {ParentNodeIdRole, "parentNodeId"},
         {HasChildrenRole, "hasChildren"},

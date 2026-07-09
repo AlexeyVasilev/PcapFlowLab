@@ -2922,10 +2922,13 @@ QVariantList MainController::protocolPathStatistics() const {
         item.insert(QStringLiteral("isTerminal"), row.is_terminal);
         item.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(row.flow_count));
         item.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(row.packet_count));
+        item.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(row.original_byte_count));
         item.insert(QStringLiteral("flowPercent"), row.flow_percent);
         item.insert(QStringLiteral("packetPercent"), row.packet_percent);
+        item.insert(QStringLiteral("originalBytePercent"), row.original_byte_percent);
         item.insert(QStringLiteral("flowCountText"), QString::fromStdString(row.flow_count_text));
         item.insert(QStringLiteral("packetCountText"), QString::fromStdString(row.packet_count_text));
+        item.insert(QStringLiteral("originalByteCountText"), QString::fromStdString(row.original_byte_count_text));
         rows.push_back(item);
     }
 

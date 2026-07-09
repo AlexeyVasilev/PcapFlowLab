@@ -61,7 +61,7 @@ Important properties:
 - the tree is available after both fresh PCAP import and opening from a saved index;
 - protocol-path statistics are still runtime-only and are not persisted in the stable index;
 - expanded/collapsed state is presentation-only, resets on capture or mode changes, and is not persisted;
-- search, top-N, original-byte columns, and protocol-path filters remain future work.
+- search, top-N, and protocol-path filters remain future work.
 
 The current UI exposes three runtime view modes:
 
@@ -91,18 +91,19 @@ Counting semantics:
 
 - in both prefix-tree modes, each recognized flow contributes `+1` to every prefix of its protocol path;
 - in both prefix-tree modes, each recognized flow contributes its recognized packet count to every prefix of that same path;
+- in both prefix-tree modes, each recognized flow contributes its flow-level recognized original byte count to every prefix of that same path;
 - in terminal-path mode, each flow contributes once to its complete path only;
 - unrecognized packets are excluded for now because they do not yet participate in the same stable protocol-path model;
-- byte totals are intentionally omitted in v1 because the most useful semantics for prefix-node byte aggregation were not settled in this step;
 - `flow_percent` uses total recognized flow count as the denominator;
 - `packet_percent` uses total capture packet count as the denominator, so packet shares remain anchored to the capture rather than to recognized flows only.
+- `original_byte_percent` currently uses total protocol-path-recognized original bytes as the denominator, because the capture summary does not yet carry a separate capture-wide original-byte total for this view.
 
 Presentation notes:
 
-- the Qt Statistics tab shows a compact indented `Layer / Flows / Packets` tree plus a mode selector;
+- the Qt Statistics tab shows a compact indented `Layer / Flows / Packets / Original Bytes` tree plus a mode selector;
 - in tree modes, both frontends expose per-row expanders plus `Expand all` / `Collapse all` controls;
 - visible tree rows now display readable per-layer names such as `Ethernet II`, `IPv4`, `TCP`, `VLAN (VID 200)`, `MPLS (label 102)`, `VXLAN (VNI 100)`, and `GTP-U (TEID 0x01020384)`;
-- count columns now use centralized formatted `count (percent)` text in both frontends;
+- count and original-byte columns now use centralized formatted `value (percent)` text in both frontends;
 - full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;
 - the Qt tree now uses a dedicated list model plus `ListView` virtualization, and the tree section keeps a bounded internal height so large captures do not instantiate every row eagerly;
 - the Tauri spike exposes the same runtime tree through the shared overview DTO, uses the same readable layer text, and also keeps the tree inside a bounded internal scroll block;

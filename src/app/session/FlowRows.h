@@ -180,16 +180,20 @@ struct ProtocolPathStatisticsRow {
     bool is_terminal {false};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
+    std::uint64_t original_byte_count {0};
     double flow_percent {0.0};
     double packet_percent {0.0};
+    double original_byte_percent {0.0};
     std::string flow_count_text {};
     std::string packet_count_text {};
+    std::string original_byte_count_text {};
 };
 
 struct CaptureProtocolPathSummary {
     ProtocolPathStatisticsMode mode {ProtocolPathStatisticsMode::kind_overview};
     std::uint64_t total_flow_count {0};
     std::uint64_t total_packet_count {0};
+    std::uint64_t total_original_byte_count {0};
     std::vector<ProtocolPathStatisticsRow> rows {};
 };
 

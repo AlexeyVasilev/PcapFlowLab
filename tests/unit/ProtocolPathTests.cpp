@@ -793,6 +793,7 @@ void expect_protocol_path_statistics_direct_tcp_prefixes() {
     PFL_REQUIRE(session.open_capture(capture_path));
 
     const auto summary = session.protocol_path_summary();
+    PFL_EXPECT(summary.total_original_byte_count > 0U);
     expect_protocol_path_stats_row(summary, "EthernetII", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4", 1U, 1U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> TCP", 1U, 1U);
@@ -803,8 +804,12 @@ void expect_protocol_path_statistics_direct_tcp_prefixes() {
     PFL_REQUIRE(terminal_row != nullptr);
     PFL_EXPECT(terminal_row->flow_count_text.find('%') != std::string::npos);
     PFL_EXPECT(terminal_row->packet_count_text.find('%') != std::string::npos);
+    PFL_EXPECT(terminal_row->original_byte_count > 0U);
+    PFL_EXPECT(terminal_row->original_byte_count_text.find('B') != std::string::npos);
+    PFL_EXPECT(terminal_row->original_byte_count_text.find('%') != std::string::npos);
     PFL_EXPECT(terminal_row->flow_percent == 100.0);
     PFL_EXPECT(terminal_row->packet_percent == 100.0);
+    PFL_EXPECT(terminal_row->original_byte_percent == 100.0);
 }
 
 void expect_protocol_path_statistics_kind_overview_merge_vxlan_vnis() {
@@ -976,6 +981,7 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
         PFL_EXPECT(imported_summary.get().mode == loaded_summary.get().mode);
         PFL_EXPECT(imported_summary.get().total_flow_count == loaded_summary.get().total_flow_count);
         PFL_EXPECT(imported_summary.get().total_packet_count == loaded_summary.get().total_packet_count);
+        PFL_EXPECT(imported_summary.get().total_original_byte_count == loaded_summary.get().total_original_byte_count);
         PFL_EXPECT(imported_summary.get().rows.size() == loaded_summary.get().rows.size());
         for (const auto& row : imported_summary.get().rows) {
             const auto* loaded_row = find_protocol_path_stats_row(loaded_summary.get(), row.path_text);
@@ -987,10 +993,13 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
             PFL_EXPECT(loaded_row->has_children == row.has_children);
             PFL_EXPECT(loaded_row->flow_count == row.flow_count);
             PFL_EXPECT(loaded_row->packet_count == row.packet_count);
+            PFL_EXPECT(loaded_row->original_byte_count == row.original_byte_count);
             PFL_EXPECT(loaded_row->is_terminal == row.is_terminal);
             PFL_EXPECT(loaded_row->compact_text == row.compact_text);
             PFL_EXPECT(loaded_row->flow_count_text == row.flow_count_text);
             PFL_EXPECT(loaded_row->packet_count_text == row.packet_count_text);
+            PFL_EXPECT(loaded_row->original_byte_percent == row.original_byte_percent);
+            PFL_EXPECT(loaded_row->original_byte_count_text == row.original_byte_count_text);
         }
     }
 }
@@ -1019,6 +1028,9 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
     PFL_EXPECT(found->layer_text == "VXLAN");
     PFL_EXPECT(found->flow_count == 2U);
     PFL_EXPECT(found->packet_count == 2U);
+    PFL_EXPECT(found->original_byte_count > 0U);
+    PFL_EXPECT(found->original_byte_count_text.find('B') != std::string::npos);
+    PFL_EXPECT(found->original_byte_count_text.find('%') != std::string::npos);
 
     const auto identity_found = std::find_if(
         overview.protocol_path_statistics_identity_tree.begin(),
@@ -1032,6 +1044,8 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
     PFL_EXPECT(identity_found->has_children);
     PFL_EXPECT(identity_found->layer_text == "VXLAN (VNI 100)");
     PFL_EXPECT(identity_found->flow_count_text.find('%') != std::string::npos);
+    PFL_EXPECT(identity_found->original_byte_count_text.find('B') != std::string::npos);
+    PFL_EXPECT(identity_found->original_byte_count_text.find('%') != std::string::npos);
 
     const auto terminal_found = std::find_if(
         overview.protocol_path_statistics_terminal_paths.begin(),
@@ -1044,6 +1058,8 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
     PFL_EXPECT(terminal_found->parent_node_id == kInvalidProtocolPathStatisticsNodeId);
     PFL_EXPECT(!terminal_found->has_children);
     PFL_EXPECT(terminal_found->is_terminal);
+    PFL_EXPECT(terminal_found->original_byte_count > 0U);
+    PFL_EXPECT(terminal_found->original_byte_count_text.find('B') != std::string::npos);
 }
 
 void expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows() {

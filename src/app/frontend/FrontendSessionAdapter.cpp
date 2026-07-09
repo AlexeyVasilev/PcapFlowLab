@@ -272,10 +272,13 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
             .is_terminal = row.is_terminal,
             .flow_count = row.flow_count,
             .packet_count = row.packet_count,
+            .original_byte_count = row.original_byte_count,
             .flow_percent = row.flow_percent,
             .packet_percent = row.packet_percent,
+            .original_byte_percent = row.original_byte_percent,
             .flow_count_text = row.flow_count_text,
             .packet_count_text = row.packet_count_text,
+            .original_byte_count_text = row.original_byte_count_text,
         });
     }
 

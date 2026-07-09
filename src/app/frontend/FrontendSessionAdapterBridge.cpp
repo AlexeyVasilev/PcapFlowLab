@@ -166,10 +166,13 @@ std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& ro
         << "\"is_terminal\":" << bool_json(row.is_terminal) << ','
         << "\"flow_count\":" << row.flow_count << ','
         << "\"packet_count\":" << row.packet_count << ','
+        << "\"original_byte_count\":" << row.original_byte_count << ','
         << "\"flow_percent\":" << row.flow_percent << ','
         << "\"packet_percent\":" << row.packet_percent << ','
+        << "\"original_byte_percent\":" << row.original_byte_percent << ','
         << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
-        << "\"packet_count_text\":" << json_string(row.packet_count_text)
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"original_byte_count_text\":" << json_string(row.original_byte_count_text)
         << '}';
     return out.str();
 }
