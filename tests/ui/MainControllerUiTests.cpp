@@ -602,6 +602,17 @@ int find_protocol_path_stats_row_by_path_text(pfl::ProtocolPathStatsModel* model
     return -1;
 }
 
+int count_protocol_path_root_rows(const QVariantList& rows) {
+    int count = 0;
+    for (const auto& value : rows) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("parentNodeId")).toULongLong() == pfl::kInvalidProtocolPathStatisticsNodeId) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 QVariantMap find_protocol_distribution_row(const QVariantList& rows, const QString& title) {
     for (const auto& value : rows) {
         const auto row = value.toMap();
@@ -2330,7 +2341,8 @@ int main(int argc, char* argv[]) {
     {
         auto* protocol_path_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_controller.protocolPathStatsModel());
         UI_EXPECT(protocol_path_stats_model != nullptr);
-        UI_EXPECT(protocol_path_stats_model->rowCount() >= 3);
+        const auto protocol_path_rows = protocol_path_controller.protocolPathStatistics();
+        UI_EXPECT(protocol_path_stats_model->rowCount() == count_protocol_path_root_rows(protocol_path_rows));
         const auto first_row = protocol_path_stats_model->index(0, 0);
         UI_EXPECT(first_row.isValid());
         UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::LayerTextRole).toString().isEmpty());
@@ -2339,6 +2351,10 @@ int main(int argc, char* argv[]) {
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountRole).toULongLong() >= 1U);
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::FlowCountTextRole).toString().contains('%'));
         UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountTextRole).toString().contains('%'));
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::NodeIdRole).toULongLong() != pfl::kInvalidProtocolPathStatisticsNodeId);
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::HasChildrenRole).toBool());
+        protocol_path_stats_model->expandAll();
+        UI_EXPECT(protocol_path_stats_model->rowCount() == protocol_path_rows.size());
     }
 
     const auto protocol_path_mode_capture_path = ui_test_root() / "data" / "parsing" / "vxlan" / "10_vxlan_same_inner_tuple_different_vni.pcap";
@@ -2347,21 +2363,53 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_mode_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_mode_controller.protocolPathStatsModel());
     UI_EXPECT(protocol_path_mode_stats_model != nullptr);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 0);
+    const auto kind_overview_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
-        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
+        QStringLiteral("EthernetII")) >= 0);
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) < 0);
+    UI_EXPECT(protocol_path_mode_stats_model->canExpand());
+
+    const auto root_row = protocol_path_mode_stats_model->index(0, 0);
+    UI_EXPECT(root_row.isValid());
+    const auto root_node_id = protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::NodeIdRole).toULongLong();
+    UI_EXPECT(root_node_id != pfl::kInvalidProtocolPathStatisticsNodeId);
+    UI_EXPECT(protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::HasChildrenRole).toBool());
+    UI_EXPECT(!protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::ExpandedRole).toBool());
+
+    protocol_path_mode_stats_model->toggleExpanded(root_node_id);
+    UI_EXPECT(protocol_path_mode_stats_model->data(protocol_path_mode_stats_model->index(0, 0), ProtocolPathStatsModel::ExpandedRole).toBool());
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() > count_protocol_path_root_rows(kind_overview_rows));
+
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
+
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == kind_overview_rows.size());
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
 
     protocol_path_mode_controller.setStatisticsMode(1);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 1);
+    const auto identity_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == identity_rows.size());
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) >= 0);
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
 
     protocol_path_mode_controller.setStatisticsMode(2);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 2);
+    const auto terminal_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(!protocol_path_mode_stats_model->canExpand());
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
         protocol_path_mode_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP")) < 0);
@@ -2373,6 +2421,10 @@ int main(int argc, char* argv[]) {
         protocol_path_mode_stats_model->index(terminal_row, 0),
         ProtocolPathStatsModel::LayerTextRole).toString() ==
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
 
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",

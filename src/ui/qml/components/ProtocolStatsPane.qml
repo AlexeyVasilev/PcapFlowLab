@@ -76,6 +76,8 @@ Frame {
     readonly property int pathTreePacketsColumnWidth: 150
     readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + (tableColumnSpacing * 2) + (tablePadding * 2)
     readonly property int pathTreeViewportHeight: 420
+    readonly property int pathTreeIndentWidth: 18
+    readonly property int pathTreeExpanderWidth: 16
     readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
 
     function groupInteger(value) {
@@ -960,6 +962,20 @@ Frame {
                         }
                     }
                 }
+
+                Button {
+                    text: "Expand all"
+                    visible: root.statisticsMode !== 2
+                    enabled: visible && root.protocolPathStatsModel && root.protocolPathStatsModel.canExpand() && root.protocolPathStatsModel.rowCount() > 0
+                    onClicked: root.protocolPathStatsModel.expandAll()
+                }
+
+                Button {
+                    text: "Collapse all"
+                    visible: root.statisticsMode !== 2
+                    enabled: visible && root.protocolPathStatsModel && root.protocolPathStatsModel.canExpand() && root.protocolPathStatsModel.rowCount() > 0
+                    onClicked: root.protocolPathStatsModel.collapseAll()
+                }
             }
 
             ThreeColumnHeader {
@@ -999,7 +1015,12 @@ Frame {
                         required property string layerText
                         required property string pathText
                         required property string compactText
+                        required property var nodeId
+                        required property var parentNodeId
                         required property int depth
+                        required property bool hasChildren
+                        required property bool expanded
+                        required property bool canExpand
                         required property var flowCount
                         required property var packetCount
                         required property string flowCountText
@@ -1017,21 +1038,48 @@ Frame {
                             anchors.rightMargin: root.tablePadding
 
                             Label {
-                                id: protocolPathLabel
+                                id: protocolPathIndentSpacer
                                 x: 0
-                                width: root.pathTreeLabelColumnWidth
+                                width: Math.max(0, depth) * root.pathTreeIndentWidth
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: width > 0
+                            }
+
+                            Item {
+                                x: Math.max(0, depth) * root.pathTreeIndentWidth
+                                width: root.pathTreeExpanderWidth
+                                height: parent.height
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    visible: hasChildren && canExpand
+                                    text: expanded ? "\u25BC" : "\u25B6"
+                                    color: "#475569"
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: hasChildren && canExpand
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: protocolPathListView.model.toggleExpanded(nodeId)
+                                }
+                            }
+
+                            Label {
+                                id: protocolPathLabel
+                                x: (Math.max(0, depth) * root.pathTreeIndentWidth) + root.pathTreeExpanderWidth + 4
+                                width: Math.max(0, root.pathTreeLabelColumnWidth - x)
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: layerText
                                 color: "#0f172a"
                                 elide: Text.ElideRight
-                                leftPadding: Math.max(0, depth) * 18
 
-                                ToolTip.visible: protocolPathHoverArea.hovered && tooltipText.length > 0 && implicitWidth > width + 1
+                                ToolTip.visible: protocolPathHoverHandler.hovered && tooltipText.length > 0 && implicitWidth > width + 1
                                 ToolTip.text: tooltipText
                             }
 
                             HoverHandler {
-                                id: protocolPathHoverArea
+                                id: protocolPathHoverHandler
                             }
 
                             Label {

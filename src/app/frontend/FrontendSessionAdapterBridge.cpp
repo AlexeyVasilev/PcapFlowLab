@@ -146,6 +146,8 @@ std::string protocol_path_legend_entry_json(const pfl::FrontendProtocolPathLegen
 std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& row) {
     std::ostringstream out {};
     out << '{'
+        << "\"node_id\":" << row.node_id << ','
+        << "\"parent_node_id\":" << row.parent_node_id << ','
         << "\"depth\":" << row.depth << ','
         << "\"layer_text\":" << json_string(row.layer_text) << ','
         << "\"path_text\":" << json_string(row.path_text) << ','
@@ -160,6 +162,8 @@ std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& ro
     }
 
     out << "],"
+        << "\"has_children\":" << bool_json(row.has_children) << ','
+        << "\"is_terminal\":" << bool_json(row.is_terminal) << ','
         << "\"flow_count\":" << row.flow_count << ','
         << "\"packet_count\":" << row.packet_count << ','
         << "\"flow_percent\":" << row.flow_percent << ','

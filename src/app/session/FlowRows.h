@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <variant>
 #include <vector>
@@ -158,12 +159,16 @@ enum class ProtocolPathStatisticsMode : std::uint8_t {
     terminal_paths = 2,
 };
 
+inline constexpr std::uint64_t kInvalidProtocolPathStatisticsNodeId = 0U;
+
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
 };
 
 struct ProtocolPathStatisticsRow {
+    std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
+    std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};
     std::size_t depth {0};
     LayerKey layer {};
     ProtocolPath path {};
@@ -171,6 +176,7 @@ struct ProtocolPathStatisticsRow {
     std::string path_text {};
     std::string compact_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
+    bool has_children {false};
     bool is_terminal {false};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};

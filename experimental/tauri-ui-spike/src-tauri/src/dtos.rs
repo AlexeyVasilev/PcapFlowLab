@@ -174,11 +174,15 @@ pub struct TopPortDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolPathStatsDto {
+    pub node_id: u64,
+    pub parent_node_id: u64,
     pub depth: usize,
     pub layer_text: String,
     pub path_text: String,
     pub compact_text: String,
     pub badges: Vec<ProtocolPathBadgeDto>,
+    pub has_children: bool,
+    pub is_terminal: bool,
     pub flow_count: u64,
     pub packet_count: u64,
     pub flow_percent: f64,

@@ -2015,9 +2015,51 @@ select:disabled {
   flex-wrap: wrap;
 }
 
+.statistics-mode-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .statistics-mode-tabs .secondary-button.is-active {
   background: #e3effb;
   border-color: var(--selection-border);
+}
+
+.protocol-path-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.protocol-path-expander-spacer,
+.protocol-path-expander {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+}
+
+.protocol-path-expander {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.protocol-path-expander:hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+.protocol-path-label {
+  display: inline-block;
+  min-width: 0;
 }
 
 .inline-select-label select {

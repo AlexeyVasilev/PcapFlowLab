@@ -118,6 +118,7 @@
     analysisFlowVirtualWindowEnd: 0,
     analysisFlowVirtualizationActive: false,
     protocolPathStatsMode: 0,
+    protocolPathExpandedNodeIds: new Set(),
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
     analysisSequenceExportStatusKind: "neutral",
@@ -340,6 +341,8 @@
     protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
+    protocolPathExpandAllButton: document.getElementById("protocolPathExpandAllButton"),
+    protocolPathCollapseAllButton: document.getElementById("protocolPathCollapseAllButton"),
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
     protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
     quicStatsBody: document.getElementById("quicStatsBody"),
@@ -1518,6 +1521,81 @@
 
   function clearOverview() {
     state.overview = null;
+    state.protocolPathExpandedNodeIds.clear();
+  }
+
+  function isProtocolPathTreeMode(mode) {
+    return Number(mode) !== 2;
+  }
+
+  function pruneProtocolPathExpandedNodeIds(rows, mode) {
+    if (!isProtocolPathTreeMode(mode)) {
+      state.protocolPathExpandedNodeIds.clear();
+      return;
+    }
+
+    const validExpandableIds = new Set();
+    for (const row of rows) {
+      if (row?.has_children) {
+        validExpandableIds.add(Number(row.node_id));
+      }
+    }
+
+    for (const nodeId of Array.from(state.protocolPathExpandedNodeIds)) {
+      if (!validExpandableIds.has(Number(nodeId))) {
+        state.protocolPathExpandedNodeIds.delete(nodeId);
+      }
+    }
+  }
+
+  function buildVisibleProtocolPathRows(rows, mode) {
+    if (!isProtocolPathTreeMode(mode)) {
+      return rows;
+    }
+
+    const visibleRows = [];
+    const visibleByNodeId = new Map();
+    for (const row of rows) {
+      const nodeId = Number(row?.node_id);
+      const parentNodeId = Number(row?.parent_node_id);
+      const visible = !Number.isFinite(parentNodeId)
+        || parentNodeId === 0
+        ? true
+        : Boolean(visibleByNodeId.get(parentNodeId)) && state.protocolPathExpandedNodeIds.has(parentNodeId);
+
+      visibleByNodeId.set(nodeId, visible);
+      if (visible) {
+        visibleRows.push(row);
+      }
+    }
+
+    return visibleRows;
+  }
+
+  function setProtocolPathStatsMode(mode) {
+    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    if (state.protocolPathStatsMode === normalizedMode) {
+      return;
+    }
+
+    state.protocolPathStatsMode = normalizedMode;
+    state.protocolPathExpandedNodeIds.clear();
+    renderOverview();
+  }
+
+  function toggleProtocolPathNode(nodeId) {
+    const normalizedNodeId = Number(nodeId);
+    if (!Number.isFinite(normalizedNodeId) || normalizedNodeId <= 0) {
+      return;
+    }
+
+    if (state.protocolPathExpandedNodeIds.has(normalizedNodeId)) {
+      state.protocolPathExpandedNodeIds.delete(normalizedNodeId);
+    } else {
+      state.protocolPathExpandedNodeIds.add(normalizedNodeId);
+    }
+
+    renderOverview();
   }
 
   function applyUpdatedFlowRow(updatedFlow) {
@@ -2419,6 +2497,8 @@
       : (protocolPathMode === 2
         ? (Array.isArray(overview?.protocol_path_statistics_terminal_paths) ? overview.protocol_path_statistics_terminal_paths : [])
         : (Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : []));
+    pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
+    const visibleProtocolPathRows = buildVisibleProtocolPathRows(protocolPathRows, protocolPathMode);
     const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
     const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
     const topTalkersVisible = Number(overview?.summary?.flow_count ?? 0) > 30;
@@ -2435,6 +2515,14 @@
     elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
     elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
     elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
+    if (elements.protocolPathExpandAllButton) {
+      elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
+      elements.protocolPathExpandAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
+    }
+    if (elements.protocolPathCollapseAllButton) {
+      elements.protocolPathCollapseAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
+      elements.protocolPathCollapseAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
+    }
     if (elements.protocolPathStatsPrimaryHeader) {
       elements.protocolPathStatsPrimaryHeader.textContent = protocolPathMode === 2 ? "Path" : "Layer";
     }
@@ -2487,16 +2575,26 @@
           `)
           .join("")
         : renderStatsStateRow(6, "No protocol-hint statistics are available.");
-        elements.protocolPathStatsBody.innerHTML = protocolPathRows.length > 0
-          ? protocolPathRows
+        elements.protocolPathStatsBody.innerHTML = visibleProtocolPathRows.length > 0
+          ? visibleProtocolPathRows
             .map((row) => {
               const depth = Number(row.depth ?? 0);
+              const nodeId = Number(row.node_id ?? 0);
+              const hasChildren = Boolean(row.has_children);
+              const expanded = hasChildren && state.protocolPathExpandedNodeIds.has(nodeId);
               const layerText = String(row.layer_text || "").trim();
               const fullText = String(row.path_text || "").trim();
               const displayText = layerText.length > 0 ? layerText : fullText;
               return `
                 <tr title="${escapeHtml(fullText)}">
-                  <td><span style="display:inline-block; padding-left:${Math.max(0, depth) * 18}px;">${escapeHtml(displayText)}</span></td>
+                  <td>
+                    <div class="protocol-path-cell" style="padding-left:${Math.max(0, depth) * 18}px;">
+                      ${hasChildren
+                        ? `<button type="button" class="protocol-path-expander" data-protocol-path-node-id="${nodeId}" aria-label="${expanded ? "Collapse" : "Expand"} protocol path row">${expanded ? "&#9660;" : "&#9654;"}</button>`
+                        : `<span class="protocol-path-expander-spacer" aria-hidden="true"></span>`}
+                      <span class="protocol-path-label">${escapeHtml(displayText)}</span>
+                    </div>
+                  </td>
                   <td>${escapeHtml(String(row.flow_count_text || formatNumber(row.flow_count)))}</td>
                   <td>${escapeHtml(String(row.packet_count_text || formatNumber(row.packet_count)))}</td>
               </tr>
@@ -2504,6 +2602,11 @@
           })
           .join("")
         : renderStatsStateRow(3, "No protocol-path statistics are available.");
+      for (const button of elements.protocolPathStatsBody.querySelectorAll("[data-protocol-path-node-id]")) {
+        button.addEventListener("click", () => {
+          toggleProtocolPathNode(button.dataset.protocolPathNodeId);
+        });
+      }
       elements.quicStatsBody.innerHTML = [
         ["Flows", formatNumber(quicRecognition?.total_flows)],
         ["Recognised Initial", formatFlowPercentAndCount(quicRecognition?.with_sni, quicRecognition?.total_flows)],
@@ -5772,15 +5875,34 @@
     render();
   });
   elements.protocolPathStatsModeKindOverview?.addEventListener("click", () => {
-    state.protocolPathStatsMode = 0;
-    renderOverview();
+    setProtocolPathStatsMode(0);
   });
   elements.protocolPathStatsModeIdentityTree?.addEventListener("click", () => {
-    state.protocolPathStatsMode = 1;
-    renderOverview();
+    setProtocolPathStatsMode(1);
   });
   elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
-    state.protocolPathStatsMode = 2;
+    setProtocolPathStatsMode(2);
+  });
+  elements.protocolPathExpandAllButton?.addEventListener("click", () => {
+    const overview = state.overview;
+    const protocolPathMode = Number(state.protocolPathStatsMode ?? overview?.protocol_path_statistics_default_mode ?? 0);
+    if (!isProtocolPathTreeMode(protocolPathMode)) {
+      return;
+    }
+
+    const protocolPathRows = protocolPathMode === 1
+      ? (Array.isArray(overview?.protocol_path_statistics_identity_tree) ? overview.protocol_path_statistics_identity_tree : [])
+      : (Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : []);
+    state.protocolPathExpandedNodeIds.clear();
+    for (const row of protocolPathRows) {
+      if (row?.has_children) {
+        state.protocolPathExpandedNodeIds.add(Number(row.node_id));
+      }
+    }
+    renderOverview();
+  });
+  elements.protocolPathCollapseAllButton?.addEventListener("click", () => {
+    state.protocolPathExpandedNodeIds.clear();
     renderOverview();
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {

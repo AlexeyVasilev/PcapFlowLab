@@ -2912,10 +2912,14 @@ QVariantList MainController::protocolPathStatistics() const {
 
     for (const auto& row : protocol_path_summary_.rows) {
         QVariantMap item {};
+        item.insert(QStringLiteral("nodeId"), static_cast<qulonglong>(row.node_id));
+        item.insert(QStringLiteral("parentNodeId"), static_cast<qulonglong>(row.parent_node_id));
         item.insert(QStringLiteral("depth"), static_cast<qulonglong>(row.depth));
         item.insert(QStringLiteral("layerText"), QString::fromStdString(row.layer_text));
         item.insert(QStringLiteral("pathText"), QString::fromStdString(row.path_text));
         item.insert(QStringLiteral("compactText"), QString::fromStdString(row.compact_text));
+        item.insert(QStringLiteral("hasChildren"), row.has_children);
+        item.insert(QStringLiteral("isTerminal"), row.is_terminal);
         item.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(row.flow_count));
         item.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(row.packet_count));
         item.insert(QStringLiteral("flowPercent"), row.flow_percent);
@@ -4020,7 +4024,7 @@ void MainController::setStatisticsMode(const int mode) {
     statistics_mode_ = normalizedMode;
     if (session_.has_capture()) {
         protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
-        protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
+        protocol_path_stats_model_.refresh(protocol_path_summary_);
         emit stateChanged();
     }
     emit statisticsModeChanged();
@@ -4045,7 +4049,7 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
         protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
-        protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
+        protocol_path_stats_model_.refresh(protocol_path_summary_);
         flow_model_.refresh(session_.list_flows());
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
@@ -4823,7 +4827,7 @@ void MainController::applyLoadedState(const QString& path) {
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
     protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
-    protocol_path_stats_model_.refresh(protocol_path_summary_.rows);
+    protocol_path_stats_model_.refresh(protocol_path_summary_);
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
     // Clear any selected-flow state from the previous capture before publishing

@@ -206,6 +206,10 @@ void append_protocol_path_statistics_rows(
     for (const auto node_index : sorted_indices) {
         const auto& node = nodes[node_index];
         rows.push_back(ProtocolPathStatisticsRow {
+            .node_id = static_cast<std::uint64_t>(node_index + 1U),
+            .parent_node_id = node.parent_index == std::numeric_limits<std::size_t>::max()
+                ? kInvalidProtocolPathStatisticsNodeId
+                : static_cast<std::uint64_t>(node.parent_index + 1U),
             .depth = node.depth,
             .layer = node.layer,
             .path = node.path,
@@ -213,6 +217,7 @@ void append_protocol_path_statistics_rows(
             .path_text = node.path_text,
             .compact_text = node.compact_text,
             .badges = node.badges,
+            .has_children = !node.child_indices.empty(),
             .is_terminal = node.is_terminal,
             .flow_count = node.flow_count,
             .packet_count = node.packet_count,

@@ -25,6 +25,7 @@ Current repository state:
 - both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;
+- kind-overview and identity-tree protocol-path statistics are now collapsible in both UI frontends;
 - protocol-path filters remain future work.
 
 ## Flow List Presentation
@@ -59,13 +60,15 @@ Important properties:
 - statistics are computed lazily from flow-level `protocol_path_id` plus the capture-level `ProtocolPathRegistry`;
 - the tree is available after both fresh PCAP import and opening from a saved index;
 - protocol-path statistics are still runtime-only and are not persisted in the stable index;
-- collapse/expand, search, top-N, and protocol-path filters remain future work.
+- expanded/collapsed state is presentation-only, resets on capture or mode changes, and is not persisted;
+- search, top-N, original-byte columns, and protocol-path filters remain future work.
 
 The current UI exposes three runtime view modes:
 
 1. `Kind overview`
    - default mode;
    - aggregates by ordered layer kind only;
+   - presented as a collapsible tree;
    - namespace identifiers are ignored for grouping and row display;
    - examples:
      - `VXLAN(vni=100)` and `VXLAN(vni=200)` aggregate under `VXLAN`;
@@ -75,10 +78,12 @@ The current UI exposes three runtime view modes:
 
 2. `Identity tree`
    - exact `FlowKeyV2` explanation mode;
+   - presented as a collapsible tree;
    - current identifier-bearing layers such as `VXLAN(vni=...)`, `Geneve(vni=...)`, `GTP-U(teid=...)`, `VLAN(vid=...)`, and `MPLS(label=...)` remain distinct tree nodes.
 
 3. `Terminal paths`
    - flat list of complete terminal protocol paths only;
+   - remains non-collapsible;
    - intermediate prefixes are omitted;
    - terminal rows currently use exact identity paths for traceability.
 
@@ -95,6 +100,7 @@ Counting semantics:
 Presentation notes:
 
 - the Qt Statistics tab shows a compact indented `Layer / Flows / Packets` tree plus a mode selector;
+- in tree modes, both frontends expose per-row expanders plus `Expand all` / `Collapse all` controls;
 - visible tree rows now display readable per-layer names such as `Ethernet II`, `IPv4`, `TCP`, `VLAN (VID 200)`, `MPLS (label 102)`, `VXLAN (VNI 100)`, and `GTP-U (TEID 0x01020384)`;
 - count columns now use centralized formatted `count (percent)` text in both frontends;
 - full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;

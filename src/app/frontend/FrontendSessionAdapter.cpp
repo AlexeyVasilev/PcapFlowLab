@@ -261,11 +261,15 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
 
     for (const auto& row : summary.rows) {
         rows.push_back(FrontendProtocolPathStatsDto {
+            .node_id = row.node_id,
+            .parent_node_id = row.parent_node_id,
             .depth = row.depth,
             .layer_text = row.layer_text,
             .path_text = row.path_text,
             .compact_text = row.compact_text,
             .badges = row.badges,
+            .has_children = row.has_children,
+            .is_terminal = row.is_terminal,
             .flow_count = row.flow_count,
             .packet_count = row.packet_count,
             .flow_percent = row.flow_percent,

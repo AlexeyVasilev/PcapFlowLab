@@ -145,11 +145,15 @@ struct FrontendTopPortDto {
 };
 
 struct FrontendProtocolPathStatsDto {
+    std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
+    std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};
     std::size_t depth {0};
     std::string layer_text {};
     std::string path_text {};
     std::string compact_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
+    bool has_children {false};
+    bool is_terminal {false};
     std::uint64_t flow_count {0};
     std::uint64_t packet_count {0};
     double flow_percent {0.0};
