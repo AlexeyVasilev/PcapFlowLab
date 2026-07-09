@@ -206,6 +206,17 @@ const ProtocolPathStatisticsRow* find_protocol_path_stats_row_by_node_id(
     return found == summary.rows.end() ? nullptr : &(*found);
 }
 
+void expect_protocol_path_stats_membership(
+    const CaptureProtocolPathSummary& summary,
+    const std::string& path_text,
+    const std::vector<FlowIndex>& expected_flow_indices
+) {
+    const auto* row = find_protocol_path_stats_row(summary, path_text);
+    PFL_REQUIRE(row != nullptr);
+    PFL_EXPECT(row->flow_indices == expected_flow_indices);
+    PFL_EXPECT(row->flow_indices.size() == row->flow_count);
+}
+
 void expect_protocol_path_stats_row(
     const CaptureProtocolPathSummary& summary,
     const std::string& path_text,
@@ -827,6 +838,7 @@ void expect_protocol_path_statistics_kind_overview_merge_vxlan_vnis() {
     );
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN", "VXLAN");
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN -> EthernetII -> IPv4 -> TCP", 2U, 2U);
+    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> VXLAN", {0U, 1U});
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)");
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)");
 }
@@ -842,6 +854,8 @@ void expect_protocol_path_statistics_identity_tree_distinguish_vxlan_vnis() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", 1U, 1U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)", "VXLAN (VNI 100)");
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", "VXLAN (VNI 200)");
+    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)", {0U});
+    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", {1U});
 }
 
 void expect_protocol_path_statistics_kind_overview_merge_gtpu_teids() {
@@ -853,6 +867,7 @@ void expect_protocol_path_statistics_kind_overview_merge_gtpu_teids() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP", 2U, 2U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U", 2U, 2U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U", "GTP-U");
+    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> GTP-U", {0U, 1U});
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)");
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)");
 }
@@ -866,6 +881,8 @@ void expect_protocol_path_statistics_identity_tree_distinguish_gtpu_teids() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", 1U, 1U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)", "GTP-U (TEID 0x01020304)");
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", "GTP-U (TEID 0x11223344)");
+    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)", {0U});
+    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", {1U});
 }
 
 void expect_protocol_path_statistics_preserve_nested_mpls_prefixes_in_kind_overview() {
@@ -880,6 +897,7 @@ void expect_protocol_path_statistics_preserve_nested_mpls_prefixes_in_kind_overv
     expect_protocol_path_stats_row(summary, "EthernetII -> MPLS -> MPLS -> IPv4 -> TCP", 1U, 1U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS", "MPLS");
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS -> MPLS", "MPLS");
+    expect_protocol_path_stats_membership(summary, "EthernetII -> MPLS -> MPLS", {0U});
 }
 
 void expect_protocol_path_statistics_terminal_paths_only() {
@@ -905,6 +923,8 @@ void expect_protocol_path_statistics_terminal_paths_only() {
     PFL_EXPECT(second_terminal->depth == 0U);
     PFL_EXPECT(first_terminal->layer_text == first_terminal->path_text);
     PFL_EXPECT(second_terminal->layer_text == second_terminal->path_text);
+    PFL_EXPECT(first_terminal->flow_indices == std::vector<FlowIndex> {0U});
+    PFL_EXPECT(second_terminal->flow_indices == std::vector<FlowIndex> {1U});
 }
 
 void expect_protocol_path_statistics_tree_metadata() {
@@ -1000,8 +1020,54 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
             PFL_EXPECT(loaded_row->packet_count_text == row.packet_count_text);
             PFL_EXPECT(loaded_row->original_byte_percent == row.original_byte_percent);
             PFL_EXPECT(loaded_row->original_byte_count_text == row.original_byte_count_text);
+            PFL_EXPECT(loaded_row->flow_indices == row.flow_indices);
         }
     }
+}
+
+void expect_protocol_path_statistics_flow_membership_lookup() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
+
+    const auto kind_summary = session.protocol_path_summary(ProtocolPathStatisticsMode::kind_overview);
+    const auto identity_summary = session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+    const auto terminal_summary = session.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
+
+    const auto* kind_row = find_protocol_path_stats_row(kind_summary, "EthernetII -> IPv4 -> UDP -> VXLAN");
+    const auto* identity_prefix_row = find_protocol_path_stats_row(identity_summary, "EthernetII -> IPv4 -> UDP");
+    const auto* identity_vni_100 = find_protocol_path_stats_row(identity_summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)");
+    const auto* identity_vni_200 = find_protocol_path_stats_row(identity_summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)");
+    const auto* terminal_vni_100 = find_protocol_path_stats_row(
+        terminal_summary,
+        "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"
+    );
+
+    PFL_REQUIRE(kind_row != nullptr);
+    PFL_REQUIRE(identity_prefix_row != nullptr);
+    PFL_REQUIRE(identity_vni_100 != nullptr);
+    PFL_REQUIRE(identity_vni_200 != nullptr);
+    PFL_REQUIRE(terminal_vni_100 != nullptr);
+
+    const auto both_flows = std::vector<FlowIndex> {0U, 1U};
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::kind_overview, kind_row->node_id)
+        == both_flows);
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::identity_tree, identity_prefix_row->node_id)
+        == both_flows);
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::identity_tree, identity_vni_100->node_id)
+        == std::vector<FlowIndex> {0U});
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::identity_tree, identity_vni_200->node_id)
+        == std::vector<FlowIndex> {1U});
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::terminal_paths, terminal_vni_100->node_id)
+        == std::vector<FlowIndex> {0U});
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::terminal_paths, kind_row->node_id).empty());
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(
+        ProtocolPathStatisticsMode::kind_overview,
+        kInvalidProtocolPathStatisticsNodeId
+    ).empty());
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(
+        ProtocolPathStatisticsMode::kind_overview,
+        std::numeric_limits<std::uint64_t>::max()
+    ).empty());
 }
 
 void expect_frontend_overview_exposes_protocol_path_statistics() {
@@ -1252,6 +1318,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_statistics_tree_metadata();
     expect_protocol_path_statistics_terminal_paths_only();
     expect_protocol_path_statistics_terminal_metadata_is_flat();
+    expect_protocol_path_statistics_flow_membership_lookup();
     expect_protocol_path_statistics_survive_index_roundtrip();
     expect_frontend_overview_exposes_protocol_path_statistics();
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();

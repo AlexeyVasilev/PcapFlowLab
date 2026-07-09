@@ -12,6 +12,8 @@
 
 namespace pfl {
 
+using FlowIndex = std::uint32_t;
+
 enum class FlowAddressFamily : std::uint8_t {
     ipv4,
     ipv6
@@ -187,6 +189,7 @@ struct ProtocolPathStatisticsRow {
     std::string flow_count_text {};
     std::string packet_count_text {};
     std::string original_byte_count_text {};
+    std::vector<FlowIndex> flow_indices {};
 };
 
 struct CaptureProtocolPathSummary {

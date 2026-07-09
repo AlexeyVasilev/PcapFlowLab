@@ -1697,6 +1697,25 @@ CaptureProtocolPathSummary CaptureSession::protocol_path_summary(const ProtocolP
     return summary;
 }
 
+std::vector<FlowIndex> CaptureSession::protocol_path_summary_flow_indices(
+    const ProtocolPathStatisticsMode mode,
+    const std::uint64_t node_id
+) const {
+    if (node_id == kInvalidProtocolPathStatisticsNodeId) {
+        return {};
+    }
+
+    const auto summary = protocol_path_summary(mode);
+    const auto found = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
+        return row.node_id == node_id;
+    });
+    if (found == summary.rows.end()) {
+        return {};
+    }
+
+    return found->flow_indices;
+}
+
 void CaptureSession::clear_runtime_caches_after_transfer() noexcept {
     selected_flow_full_packet_cache_.reset();
     selected_flow_packet_cache_.reset();

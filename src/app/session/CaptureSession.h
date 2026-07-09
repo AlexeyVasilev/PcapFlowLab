@@ -120,6 +120,10 @@ public:
     [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(
         ProtocolPathStatisticsMode mode = ProtocolPathStatisticsMode::kind_overview
     ) const;
+    [[nodiscard]] std::vector<FlowIndex> protocol_path_summary_flow_indices(
+        ProtocolPathStatisticsMode mode,
+        std::uint64_t node_id
+    ) const;
     void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;

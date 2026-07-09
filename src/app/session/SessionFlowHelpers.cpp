@@ -105,6 +105,7 @@ struct ProtocolPathStatisticsAccumulatorNode {
     std::string packet_count_text {};
     std::string original_byte_count_text {};
     std::vector<ProtocolPathBadgeRow> badges {};
+    std::vector<FlowIndex> flow_indices {};
 };
 
 std::string group_integer_part(std::string text) {
@@ -255,6 +256,7 @@ void append_protocol_path_statistics_rows(
             .flow_count_text = node.flow_count_text,
             .packet_count_text = node.packet_count_text,
             .original_byte_count_text = node.original_byte_count_text,
+            .flow_indices = node.flow_indices,
         });
         append_protocol_path_statistics_rows(nodes, rows, node.child_indices);
     }
@@ -418,7 +420,8 @@ CaptureProtocolPathSummary build_protocol_path_summary(
     std::unordered_map<ProtocolPath, std::size_t, ProtocolPathHash> node_index_by_path {};
     std::vector<ProtocolPathStatisticsAccumulatorNode> nodes {};
 
-    for (const auto& connection : connections) {
+    for (std::size_t connection_index = 0; connection_index < connections.size(); ++connection_index) {
+        const auto& connection = connections[connection_index];
         const auto path_id = protocol_path_id(connection);
         if (path_id == kInvalidProtocolPathId) {
             continue;
@@ -433,6 +436,7 @@ CaptureProtocolPathSummary build_protocol_path_summary(
         const auto packets_for_flow = packet_count(connection);
         const auto original_bytes_for_flow = total_bytes(connection);
         summary.total_original_byte_count += original_bytes_for_flow;
+        const auto flow_index = static_cast<FlowIndex>(connection_index);
         const auto effective_path = mode == ProtocolPathStatisticsMode::kind_overview
             ? kind_only_protocol_path(*path)
             : *path;
@@ -452,6 +456,7 @@ CaptureProtocolPathSummary build_protocol_path_summary(
             node.flow_count += 1U;
             node.packet_count += packets_for_flow;
             node.original_byte_count += original_bytes_for_flow;
+            node.flow_indices.push_back(flow_index);
             continue;
         }
 
@@ -481,6 +486,7 @@ CaptureProtocolPathSummary build_protocol_path_summary(
             node.flow_count += 1U;
             node.packet_count += packets_for_flow;
             node.original_byte_count += original_bytes_for_flow;
+            node.flow_indices.push_back(flow_index);
             parent_index = it->second;
         }
     }

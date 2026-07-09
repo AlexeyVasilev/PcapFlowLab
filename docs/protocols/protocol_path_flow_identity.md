@@ -539,7 +539,18 @@ Stage G status:
 
 - implemented in the current branch state as a runtime session/overview tree;
 - computed from flow-level `protocol_path_id` and flow packet counts;
+- each runtime statistics node now also tracks the contributing flow indices in session memory only;
+- membership semantics are mode-specific:
+  - `kind_overview`: flows whose kind-only protocol path has the node's prefix;
+  - `identity_tree`: flows whose exact identifier-aware protocol path has the node's prefix;
+  - `terminal_paths`: flows whose exact full protocol path equals the terminal node path;
 - intentionally not persisted as precomputed index statistics.
+
+Current membership follow-up:
+
+- this runtime node membership is the backend/session preparation for future "show matching flows" behavior;
+- membership is intentionally not exposed through the default frontend overview DTOs yet;
+- future flow-list filtering should resolve matching flows through `mode + node_id` against the session, rather than embedding flow memberships directly into UI statistics payloads.
 
 Stage H:
 
@@ -609,6 +620,7 @@ Files likely affected in later implementation stages:
 - stable capture storage should keep one protocol-path registry/table per indexed capture;
 - each persisted flow/connection references a compact `protocol_path_id`;
 - packet records should not redundantly persist the full protocol path or repeated per-packet protocol identifiers;
+- runtime protocol-path statistics membership lists should also remain non-persisted and be rebuilt from flow metadata after import or index load;
 - when index/checkpoint data is loaded back into memory, packet-level `protocol_path_id` can be reconstructed from the owning flow key for runtime convenience.
 
 Static audit of the current code path:
