@@ -64,6 +64,10 @@ bool contains_text(const FlowListModel::Item& item, const QString& filter) {
         || matches_fragment_text;
 }
 
+bool matches_allowed_flow_index_filter(const FlowListModel::Item& item, const std::vector<int>& allowedFlowIndices) {
+    return std::binary_search(allowedFlowIndices.begin(), allowedFlowIndices.end(), item.flow_index);
+}
+
 bool less_than(const FlowListModel::Item& left, const FlowListModel::Item& right, const FlowListModel::SortKey key) {
     switch (key) {
     case FlowListModel::SortKey::index:
@@ -337,6 +341,8 @@ void FlowListModel::clear() {
 
 void FlowListModel::resetViewState() {
     filter_text_.clear();
+    allowed_flow_indices_.clear();
+    has_allowed_flow_index_filter_ = false;
     sort_key_ = SortKey::index;
     sort_ascending_ = true;
     rebuildVisibleItems();
@@ -348,6 +354,29 @@ void FlowListModel::setFilterText(const QString& text) {
     }
 
     filter_text_ = text;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::setAllowedFlowIndices(std::vector<int> flowIndices) {
+    std::sort(flowIndices.begin(), flowIndices.end());
+    flowIndices.erase(std::unique(flowIndices.begin(), flowIndices.end()), flowIndices.end());
+
+    if (has_allowed_flow_index_filter_ && allowed_flow_indices_ == flowIndices) {
+        return;
+    }
+
+    allowed_flow_indices_ = std::move(flowIndices);
+    has_allowed_flow_index_filter_ = true;
+    rebuildVisibleItems();
+}
+
+void FlowListModel::clearAllowedFlowIndices() {
+    if (!has_allowed_flow_index_filter_ && allowed_flow_indices_.empty()) {
+        return;
+    }
+
+    allowed_flow_indices_.clear();
+    has_allowed_flow_index_filter_ = false;
     rebuildVisibleItems();
 }
 
@@ -371,6 +400,10 @@ void FlowListModel::setSortAscending(const bool ascending) noexcept {
 
 const QString& FlowListModel::filterText() const noexcept {
     return filter_text_;
+}
+
+bool FlowListModel::hasAllowedFlowIndexFilter() const noexcept {
+    return has_allowed_flow_index_filter_;
 }
 
 FlowListModel::SortKey FlowListModel::sortKey() const noexcept {
@@ -501,7 +534,8 @@ void FlowListModel::rebuildVisibleItems() {
     visible_items_.reserve(all_items_.size());
 
     for (const auto& item : all_items_) {
-        if (filter_text_.isEmpty() || contains_text(item, filter_text_)) {
+        if ((filter_text_.isEmpty() || contains_text(item, filter_text_)) &&
+            (!has_allowed_flow_index_filter_ || matches_allowed_flow_index_filter(item, allowed_flow_indices_))) {
             visible_items_.push_back(item);
         }
     }

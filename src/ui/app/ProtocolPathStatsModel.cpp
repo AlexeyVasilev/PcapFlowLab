@@ -80,6 +80,8 @@ QVariant ProtocolPathStatsModel::data(const QModelIndex& index, const int role) 
         return row.is_terminal;
     case RowIndexRole:
         return index.row();
+    case SelectedRole:
+        return row.node_id == selected_node_id_;
     default:
         return {};
     }
@@ -108,6 +110,7 @@ QHash<int, QByteArray> ProtocolPathStatsModel::roleNames() const {
         {TooltipRole, "tooltipText"},
         {IsTerminalRole, "isTerminal"},
         {RowIndexRole, "rowIndex"},
+        {SelectedRole, "selected"},
     };
 }
 
@@ -117,8 +120,12 @@ void ProtocolPathStatsModel::refresh(const CaptureProtocolPathSummary& summary) 
     rows_ = summary.rows;
     rebuildIndexMaps();
     expanded_node_ids_.clear();
+    selected_node_id_ = kInvalidProtocolPathStatisticsNodeId;
+    selected_node_filter_label_.clear();
+    selected_node_flow_count_ = 0U;
     materializeVisibleRows();
     endResetModel();
+    emit selectedNodeChanged();
 }
 
 void ProtocolPathStatsModel::clear() {
@@ -132,7 +139,11 @@ void ProtocolPathStatsModel::clear() {
     expanded_node_ids_.clear();
     row_index_by_node_id_.clear();
     mode_ = ProtocolPathStatisticsMode::kind_overview;
+    selected_node_id_ = kInvalidProtocolPathStatisticsNodeId;
+    selected_node_filter_label_.clear();
+    selected_node_flow_count_ = 0U;
     endResetModel();
+    emit selectedNodeChanged();
 }
 
 void ProtocolPathStatsModel::toggleExpanded(const qulonglong nodeId) {
@@ -209,11 +220,79 @@ void ProtocolPathStatsModel::collapseAll() {
 void ProtocolPathStatsModel::resetExpandedStateForMode(const int mode) {
     mode_ = protocol_path_statistics_mode_from_int(mode);
     expanded_node_ids_.clear();
+    clearSelection();
     applyExpandedStateChange();
 }
 
 bool ProtocolPathStatsModel::canExpand() const noexcept {
     return isTreeMode();
+}
+
+void ProtocolPathStatsModel::selectNode(const qulonglong nodeId) {
+    const auto found = row_index_by_node_id_.find(static_cast<std::uint64_t>(nodeId));
+    if (found == row_index_by_node_id_.end()) {
+        clearSelection();
+        return;
+    }
+
+    const auto& row = rows_[found->second];
+    if (selected_node_id_ == row.node_id) {
+        return;
+    }
+
+    const auto old_node_id = selected_node_id_;
+    selected_node_id_ = row.node_id;
+    selected_node_filter_label_ = QString::fromStdString(row.path_text);
+    selected_node_flow_count_ = static_cast<qulonglong>(row.flow_count);
+
+    for (int visible_row = 0; visible_row < rowCount(); ++visible_row) {
+        const auto model_index = index(visible_row, 0);
+        const auto current_node_id = data(model_index, NodeIdRole).toULongLong();
+        if (current_node_id == old_node_id || current_node_id == selected_node_id_) {
+            emit dataChanged(model_index, model_index, {SelectedRole});
+        }
+    }
+
+    emit selectedNodeChanged();
+}
+
+void ProtocolPathStatsModel::clearSelection() {
+    if (selected_node_id_ == kInvalidProtocolPathStatisticsNodeId &&
+        selected_node_filter_label_.isEmpty() &&
+        selected_node_flow_count_ == 0U) {
+        return;
+    }
+
+    const auto old_node_id = selected_node_id_;
+    selected_node_id_ = kInvalidProtocolPathStatisticsNodeId;
+    selected_node_filter_label_.clear();
+    selected_node_flow_count_ = 0U;
+
+    for (int visible_row = 0; visible_row < rowCount(); ++visible_row) {
+        const auto model_index = index(visible_row, 0);
+        if (data(model_index, NodeIdRole).toULongLong() == old_node_id) {
+            emit dataChanged(model_index, model_index, {SelectedRole});
+            break;
+        }
+    }
+
+    emit selectedNodeChanged();
+}
+
+bool ProtocolPathStatsModel::hasSelectedNode() const noexcept {
+    return selected_node_id_ != kInvalidProtocolPathStatisticsNodeId;
+}
+
+qulonglong ProtocolPathStatsModel::selectedNodeId() const noexcept {
+    return static_cast<qulonglong>(selected_node_id_);
+}
+
+QString ProtocolPathStatsModel::selectedNodeFilterLabel() const {
+    return selected_node_filter_label_;
+}
+
+qulonglong ProtocolPathStatsModel::selectedNodeFlowCount() const noexcept {
+    return selected_node_flow_count_;
 }
 
 bool ProtocolPathStatsModel::isTreeMode() const noexcept {

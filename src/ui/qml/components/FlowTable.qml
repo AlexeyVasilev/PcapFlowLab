@@ -8,6 +8,8 @@ Frame {
     property var flowModel: null
     property int selectedFlowIndex: -1
     property string filterText: ""
+    property string protocolPathFilterText: ""
+    property bool protocolPathFilterVisible: false
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
     property bool showProtocolPathColumn: true
@@ -51,6 +53,8 @@ Frame {
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
+    signal clearTextFilterRequested()
+    signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
     signal sendFlowToAnalysisRequested()
@@ -176,9 +180,58 @@ Frame {
             }
 
             Button {
+                objectName: "flowTextFilterClearButton"
+                text: "Clear"
+                enabled: root.filterText.length > 0
+                onClicked: root.clearTextFilterRequested()
+            }
+
+            Button {
                 text: "Send flow to Analysis"
                 enabled: root.selectedFlowIndex >= 0
                 onClicked: root.sendFlowToAnalysisRequested()
+            }
+        }
+
+        Rectangle {
+            objectName: "protocolPathFilterRow"
+            Layout.fillWidth: true
+            visible: root.protocolPathFilterVisible
+            implicitHeight: protocolPathFilterLayout.implicitHeight + 10
+            radius: 6
+            color: "#f8fafc"
+            border.color: "#cbd5e1"
+
+            RowLayout {
+                id: protocolPathFilterLayout
+                anchors.fill: parent
+                anchors.margins: 5
+                spacing: 8
+
+                Label {
+                    text: "Protocol path filter:"
+                    color: "#475569"
+                }
+
+                Label {
+                    id: protocolPathFilterTextLabel
+                    Layout.fillWidth: true
+                    text: root.protocolPathFilterText
+                    color: "#0f172a"
+                    elide: Text.ElideRight
+                    ToolTip.visible: protocolPathFilterHoverHandler.hovered && implicitWidth > width + 1
+                    ToolTip.text: text
+
+                    HoverHandler {
+                        id: protocolPathFilterHoverHandler
+                    }
+                }
+
+                Button {
+                    objectName: "protocolPathFilterClearButton"
+                    text: "Clear"
+                    onClicked: root.clearProtocolPathFilterRequested()
+                }
             }
         }
 

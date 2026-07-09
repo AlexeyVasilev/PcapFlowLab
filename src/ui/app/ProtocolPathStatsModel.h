@@ -2,6 +2,7 @@
 
 #include <QAbstractListModel>
 #include <QModelIndex>
+#include <QString>
 #include <QVariant>
 
 #include <cstdint>
@@ -15,6 +16,10 @@ namespace pfl {
 
 class ProtocolPathStatsModel final : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(bool hasSelectedNode READ hasSelectedNode NOTIFY selectedNodeChanged)
+    Q_PROPERTY(qulonglong selectedNodeId READ selectedNodeId NOTIFY selectedNodeChanged)
+    Q_PROPERTY(QString selectedNodeFilterLabel READ selectedNodeFilterLabel NOTIFY selectedNodeChanged)
+    Q_PROPERTY(qulonglong selectedNodeFlowCount READ selectedNodeFlowCount NOTIFY selectedNodeChanged)
 
 public:
     enum Role {
@@ -39,6 +44,7 @@ public:
         TooltipRole,
         IsTerminalRole,
         RowIndexRole,
+        SelectedRole,
     };
 
     explicit ProtocolPathStatsModel(QObject* parent = nullptr);
@@ -56,6 +62,16 @@ public:
     Q_INVOKABLE void collapseAll();
     Q_INVOKABLE void resetExpandedStateForMode(int mode);
     [[nodiscard]] Q_INVOKABLE bool canExpand() const noexcept;
+    Q_INVOKABLE void selectNode(qulonglong nodeId);
+    Q_INVOKABLE void clearSelection();
+
+    [[nodiscard]] bool hasSelectedNode() const noexcept;
+    [[nodiscard]] qulonglong selectedNodeId() const noexcept;
+    [[nodiscard]] QString selectedNodeFilterLabel() const;
+    [[nodiscard]] qulonglong selectedNodeFlowCount() const noexcept;
+
+signals:
+    void selectedNodeChanged();
 
 private:
     [[nodiscard]] bool isTreeMode() const noexcept;
@@ -68,6 +84,9 @@ private:
     std::vector<std::size_t> visible_row_indices_ {};
     std::set<std::uint64_t> expanded_node_ids_ {};
     std::unordered_map<std::uint64_t, std::size_t> row_index_by_node_id_ {};
+    std::uint64_t selected_node_id_ {kInvalidProtocolPathStatisticsNodeId};
+    QString selected_node_filter_label_ {};
+    qulonglong selected_node_flow_count_ {0U};
 };
 
 }  // namespace pfl

@@ -2431,6 +2431,110 @@ int main(int argc, char* argv[]) {
     protocol_path_mode_stats_model->expandAll();
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
 
+    MainController protocol_path_filter_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_mode_capture_path));
+    auto* protocol_path_filter_flow_model = qobject_cast<FlowListModel*>(protocol_path_filter_controller.flowModel());
+    auto* protocol_path_filter_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_filter_controller.protocolPathStatsModel());
+    UI_REQUIRE(protocol_path_filter_flow_model != nullptr);
+    UI_REQUIRE(protocol_path_filter_stats_model != nullptr);
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 2);
+    UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
+
+    protocol_path_filter_controller.setStatisticsMode(1);
+    protocol_path_filter_stats_model->expandAll();
+    const auto identity_vni_100_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_filter_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")
+    );
+    UI_REQUIRE(identity_vni_100_row >= 0);
+    const auto identity_vni_100_node_id = protocol_path_filter_stats_model->data(
+        protocol_path_filter_stats_model->index(identity_vni_100_row, 0),
+        ProtocolPathStatsModel::NodeIdRole
+    ).toULongLong();
+    protocol_path_filter_stats_model->selectNode(identity_vni_100_node_id);
+    UI_EXPECT(protocol_path_filter_stats_model->hasSelectedNode());
+    UI_EXPECT(protocol_path_filter_stats_model->selectedNodeId() == identity_vni_100_node_id);
+    UI_EXPECT(protocol_path_filter_stats_model->selectedNodeFilterLabel()
+        == QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)"));
+    UI_EXPECT(protocol_path_filter_stats_model->selectedNodeFlowCount() == 1U);
+
+    protocol_path_filter_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_filter_controller.currentTabIndex() == 0);
+    UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText() ==
+        QStringLiteral("Identity tree / EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)"));
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_filter_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+
+    protocol_path_filter_controller.setStatisticsMode(2);
+    const auto terminal_vni_100_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_filter_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP")
+    );
+    UI_REQUIRE(terminal_vni_100_row >= 0);
+    const auto terminal_vni_100_node_id = protocol_path_filter_stats_model->data(
+        protocol_path_filter_stats_model->index(terminal_vni_100_row, 0),
+        ProtocolPathStatsModel::NodeIdRole
+    ).toULongLong();
+    protocol_path_filter_stats_model->selectNode(terminal_vni_100_node_id);
+    protocol_path_filter_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText() ==
+        QStringLiteral("Terminal paths / EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_filter_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+
+    const auto protocol_path_and_text_capture_path =
+        ui_test_root() / "data" / "parsing" / "vxlan" / "12_vxlan_same_outer_tuple_different_inner_flows.pcap";
+    MainController protocol_path_and_text_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_and_text_controller, protocol_path_and_text_capture_path));
+    auto* protocol_path_and_text_flow_model = qobject_cast<FlowListModel*>(protocol_path_and_text_controller.flowModel());
+    auto* protocol_path_and_text_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_and_text_controller.protocolPathStatsModel());
+    UI_REQUIRE(protocol_path_and_text_flow_model != nullptr);
+    UI_REQUIRE(protocol_path_and_text_stats_model != nullptr);
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+
+    protocol_path_and_text_controller.setStatisticsMode(0);
+    protocol_path_and_text_stats_model->expandAll();
+    const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_and_text_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")
+    );
+    UI_REQUIRE(kind_vxlan_row >= 0);
+    const auto kind_vxlan_node_id = protocol_path_and_text_stats_model->data(
+        protocol_path_and_text_stats_model->index(kind_vxlan_row, 0),
+        ProtocolPathStatsModel::NodeIdRole
+    ).toULongLong();
+    protocol_path_and_text_stats_model->selectNode(kind_vxlan_node_id);
+    protocol_path_and_text_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+    UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0, 1}));
+
+    protocol_path_and_text_controller.setSelectedFlowIndex(1);
+    UI_EXPECT(protocol_path_and_text_controller.selectedFlowIndex() == 1);
+    protocol_path_and_text_controller.setFlowFilterText(QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+    UI_EXPECT(protocol_path_and_text_controller.selectedFlowIndex() == -1);
+
+    protocol_path_and_text_controller.clearProtocolPathFlowFilter();
+    UI_EXPECT(!protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+
+    protocol_path_and_text_controller.setFlowFilterText(QString());
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText().isEmpty());
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+
+    protocol_path_filter_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_capture_path));
+    UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText().isEmpty());
+
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",
         make_classic_pcap({

@@ -1003,6 +1003,8 @@ ApplicationWindow {
                 unrecognizedPacketCount: mainController.unrecognizedPacketCount
                 sourceCaptureAvailable: mainController.hasSourceCapture
                 filterText: mainController.flowFilterText
+                protocolPathFilterText: mainController.protocolPathFlowFilterText
+                protocolPathFilterVisible: mainController.hasProtocolPathFlowFilter
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
                 showProtocolPathColumn: mainController.showProtocolPathColumn
@@ -1033,6 +1035,12 @@ ApplicationWindow {
                 }
                 onFilterTextEdited: function(text) {
                     mainController.flowFilterText = text
+                }
+                onClearTextFilterRequested: function() {
+                    mainController.flowFilterText = ""
+                }
+                onClearProtocolPathFilterRequested: function() {
+                    mainController.clearProtocolPathFlowFilter()
                 }
                 onCopyWiresharkFilterRequested: function() {
                     mainController.copySelectedFlowWiresharkFilter()
@@ -1211,6 +1219,9 @@ ApplicationWindow {
                 }
                 onStatisticsModeChangedByUser: function(mode) {
                     mainController.statisticsMode = mode
+                }
+                onShowFlowsRequested: function() {
+                    mainController.showSelectedProtocolPathFlows()
                 }
             }
         }

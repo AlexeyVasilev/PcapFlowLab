@@ -26,7 +26,8 @@ Current repository state:
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;
 - kind-overview and identity-tree protocol-path statistics are now collapsible in both UI frontends;
-- protocol-path filters remain future work.
+- the Qt UI can now apply a selected protocol-path statistics node as a runtime structured flow-list filter;
+- Tauri parity for protocol-path flow filtering remains future work.
 
 ## Flow List Presentation
 
@@ -47,8 +48,8 @@ Important scope boundaries:
 
 Still deferred:
 
-- protocol-path filters;
-- protocol-path drill-down workflows beyond flow-list presentation.
+- Tauri protocol-path flow-filter parity;
+- protocol-path drill-down workflows beyond the current Qt statistics-to-flows filter;
 - persistence for the Tauri Path-column visibility toggle.
 
 ## Runtime Protocol-Path Statistics
@@ -61,7 +62,7 @@ Important properties:
 - the tree is available after both fresh PCAP import and opening from a saved index;
 - protocol-path statistics are still runtime-only and are not persisted in the stable index;
 - expanded/collapsed state is presentation-only, resets on capture or mode changes, and is not persisted;
-- search, top-N, and protocol-path filters remain future work.
+- search and top-N remain future work.
 
 The current UI exposes three runtime view modes:
 
@@ -108,6 +109,27 @@ Presentation notes:
 - the Qt tree now uses a dedicated list model plus `ListView` virtualization, and the tree section keeps a bounded internal height so large captures do not instantiate every row eagerly;
 - the Tauri spike exposes the same runtime tree through the shared overview DTO, uses the same readable layer text, and also keeps the tree inside a bounded internal scroll block;
 - ordering is deterministic: descending `packet_count`, then descending `flow_count`, then path text.
+
+### Qt Structured Flow Filter
+
+The Qt UI can now apply a selected protocol-path statistics row as a runtime structured flow-list filter.
+
+Current behavior:
+
+- the user selects a protocol-path row in the Statistics tab and clicks `Show flows`;
+- the app switches to the Flows tab and applies a snapshot flow-membership filter for that row;
+- the Flows tab shows a read-only protocol-path filter chip with a dedicated `Clear` action;
+- the normal text filter remains independent and combines with the protocol-path filter using logical `AND`;
+- clearing the protocol-path filter restores the text-filter-only flow list;
+- the structured filter is runtime UI state only and is not persisted in the index.
+
+Membership semantics:
+
+- `Kind overview` applies kind-prefix membership;
+- `Identity tree` applies identifier-aware prefix membership;
+- `Terminal paths` applies exact full terminal-path membership.
+
+The current implementation intentionally uses a snapshot of runtime flow indices rather than persisting node selections or node ids. Tauri parity for this workflow remains follow-up work.
 
 ## Problem Statement
 

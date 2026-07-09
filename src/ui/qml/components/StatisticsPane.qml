@@ -58,6 +58,7 @@ Item {
     signal endpointActivated(string endpointText)
     signal portActivated(int port)
     signal statisticsModeChangedByUser(int mode)
+    signal showFlowsRequested()
 
     ScrollView {
         id: statisticsScroll
@@ -135,6 +136,9 @@ Item {
                     statisticsMode: root.statisticsMode
                     onStatisticsModeChangedByUser: function(mode) {
                         root.statisticsModeChangedByUser(mode)
+                    }
+                    onShowFlowsRequested: function() {
+                        root.showFlowsRequested()
                     }
                 }
 

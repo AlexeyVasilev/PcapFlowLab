@@ -65,11 +65,14 @@ public:
     void clear();
     void resetViewState();
     void setFilterText(const QString& text);
+    void setAllowedFlowIndices(std::vector<int> flowIndices);
+    void clearAllowedFlowIndices();
     void setSortKey(SortKey key);
     void setSortAscending(bool ascending) noexcept;
     void setServiceHintForFlowIndex(int flowIndex, const QString& serviceHint);
 
     [[nodiscard]] const QString& filterText() const noexcept;
+    [[nodiscard]] bool hasAllowedFlowIndexFilter() const noexcept;
     [[nodiscard]] SortKey sortKey() const noexcept;
     [[nodiscard]] bool sortAscending() const noexcept;
     [[nodiscard]] bool containsFlowIndex(int flowIndex) const noexcept;
@@ -110,6 +113,8 @@ private:
     std::vector<Item> all_items_ {};
     std::vector<Item> visible_items_ {};
     QString filter_text_ {};
+    std::vector<int> allowed_flow_indices_ {};
+    bool has_allowed_flow_index_filter_ {false};
     SortKey sort_key_ {SortKey::index};
     bool sort_ascending_ {true};
 };

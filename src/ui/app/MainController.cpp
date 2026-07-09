@@ -533,6 +533,18 @@ ProtocolPathStatisticsMode protocol_path_statistics_mode_from_int(const int mode
     }
 }
 
+QString protocol_path_statistics_mode_label(const ProtocolPathStatisticsMode mode) {
+    switch (mode) {
+    case ProtocolPathStatisticsMode::identity_tree:
+        return QStringLiteral("Identity tree");
+    case ProtocolPathStatisticsMode::terminal_paths:
+        return QStringLiteral("Terminal paths");
+    case ProtocolPathStatisticsMode::kind_overview:
+    default:
+        return QStringLiteral("Kind overview");
+    }
+}
+
 QVariantList protocol_path_legend_to_variant_list() {
     QVariantList legend {};
     const auto entries = session_detail::protocol_path_legend_entries();
@@ -3155,6 +3167,15 @@ QVariantList MainController::protocolPathLegend() const {
 bool MainController::selectedFlowHasWiresharkFilter() const {
     return !selectedFlowWiresharkFilter().isEmpty();
 }
+
+bool MainController::hasProtocolPathFlowFilter() const noexcept {
+    return has_active_protocol_path_filter_;
+}
+
+QString MainController::protocolPathFlowFilterText() const {
+    return active_protocol_path_filter_label_;
+}
+
 int MainController::currentTabIndex() const noexcept {
     return current_tab_index_;
 }
@@ -3948,6 +3969,45 @@ void MainController::drillDownToEndpoint(const QString& endpointText) {
 
 void MainController::drillDownToPort(const quint32 port) {
     drillDownToFlows(QString::number(port));
+}
+
+void MainController::showSelectedProtocolPathFlows() {
+    if (!session_.has_capture() || !protocol_path_stats_model_.hasSelectedNode()) {
+        return;
+    }
+
+    const auto mode = protocol_path_statistics_mode_from_int(statistics_mode_);
+    const auto node_id = static_cast<std::uint64_t>(protocol_path_stats_model_.selectedNodeId());
+    const auto flow_indices = session_.protocol_path_summary_flow_indices(mode, node_id);
+
+    std::vector<int> snapshot_flow_indices {};
+    snapshot_flow_indices.reserve(flow_indices.size());
+    for (const auto flow_index : flow_indices) {
+        snapshot_flow_indices.push_back(static_cast<int>(flow_index));
+    }
+
+    has_active_protocol_path_filter_ = true;
+    active_protocol_path_filter_mode_ = mode;
+    active_protocol_path_filter_node_id_ = node_id;
+    active_protocol_path_filter_flow_indices_ = snapshot_flow_indices;
+    active_protocol_path_filter_label_ = QStringLiteral("%1 / %2").arg(
+        protocol_path_statistics_mode_label(mode),
+        protocol_path_stats_model_.selectedNodeFilterLabel()
+    );
+
+    flow_model_.setAllowedFlowIndices(std::move(snapshot_flow_indices));
+    setCurrentTabIndex(kFlowTabIndex);
+    synchronizeFlowSelection();
+    emit protocolPathFlowFilterChanged();
+}
+
+void MainController::clearProtocolPathFlowFilter() {
+    if (!clearProtocolPathFlowFilterState()) {
+        return;
+    }
+
+    synchronizeFlowSelection();
+    emit protocolPathFlowFilterChanged();
 }
 
 void MainController::setFlowDetailsTabIndex(const int index) {
@@ -4780,6 +4840,21 @@ void MainController::synchronizeFlowSelection() {
     }
 }
 
+bool MainController::clearProtocolPathFlowFilterState() {
+    const bool changed = has_active_protocol_path_filter_ ||
+        active_protocol_path_filter_node_id_ != kInvalidProtocolPathStatisticsNodeId ||
+        !active_protocol_path_filter_label_.isEmpty() ||
+        !active_protocol_path_filter_flow_indices_.empty();
+
+    has_active_protocol_path_filter_ = false;
+    active_protocol_path_filter_mode_ = ProtocolPathStatisticsMode::kind_overview;
+    active_protocol_path_filter_node_id_ = kInvalidProtocolPathStatisticsNodeId;
+    active_protocol_path_filter_label_.clear();
+    active_protocol_path_filter_flow_indices_.clear();
+    flow_model_.clearAllowedFlowIndices();
+    return changed;
+}
+
 void MainController::resetLoadedState() {
     setApplyingSession(false);
     source_capture_unavailable_notice_shown_ = false;
@@ -4789,6 +4864,7 @@ void MainController::resetLoadedState() {
     protocol_summary_ = {};
     protocol_path_summary_ = {};
     protocol_path_stats_model_.clear();
+    clearProtocolPathFlowFilterState();
     quic_recognition_stats_ = {};
     tls_recognition_stats_ = {};
     flow_model_.clear();
@@ -4823,6 +4899,7 @@ void MainController::resetLoadedState() {
     emit analysisStateChanged();
     current_flow_analysis_.reset();
     setAnalysisSequenceExportState(false, {}, false);
+    emit protocolPathFlowFilterChanged();
 }
 
 void MainController::applyLoadedState(const QString& path) {
@@ -4831,6 +4908,7 @@ void MainController::applyLoadedState(const QString& path) {
     protocol_summary_ = session_.protocol_summary();
     protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
     protocol_path_stats_model_.refresh(protocol_path_summary_);
+    clearProtocolPathFlowFilterState();
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
     // Clear any selected-flow state from the previous capture before publishing
@@ -4845,6 +4923,7 @@ void MainController::applyLoadedState(const QString& path) {
     emit stateChanged();
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
+    emit protocolPathFlowFilterChanged();
 }
 
 void MainController::refreshTopSummaryModels() {
@@ -4943,6 +5022,10 @@ void MainController::completeOpenJob(
     releaseOpenContext();
 
     if (cancellationWon) {
+        if (clearProtocolPathFlowFilterState()) {
+            synchronizeFlowSelection();
+            emit protocolPathFlowFilterChanged();
+        }
         finishOpenProgress();
         setOpenErrorText({});
         setStatusText(QStringLiteral("Open cancelled."));
@@ -4950,6 +5033,10 @@ void MainController::completeOpenJob(
     }
 
     if (!opened) {
+        if (clearProtocolPathFlowFilterState()) {
+            synchronizeFlowSelection();
+            emit protocolPathFlowFilterChanged();
+        }
         finishOpenProgress();
         const QString genericError = asIndex
             ? QStringLiteral("Failed to open analysis index.")

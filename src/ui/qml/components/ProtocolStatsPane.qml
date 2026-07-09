@@ -51,6 +51,7 @@ Frame {
     property bool hasCapture: false
 
     signal statisticsModeChangedByUser(int mode)
+    signal showFlowsRequested()
 
     readonly property int tableRowHeight: 26
     readonly property int tableHeaderHeight: 28
@@ -1033,6 +1034,16 @@ Frame {
                 }
 
                 Button {
+                    objectName: "protocolPathShowFlowsButton"
+                    text: "Show flows"
+                    enabled: root.hasCapture
+                        && root.protocolPathStatsModel
+                        && root.protocolPathStatsModel.hasSelectedNode
+                        && root.protocolPathStatsModel.selectedNodeFlowCount > 0
+                    onClicked: root.showFlowsRequested()
+                }
+
+                Button {
                     text: "Expand all"
                     visible: root.statisticsMode !== 2
                     enabled: visible && root.protocolPathStatsModel && root.protocolPathStatsModel.canExpand() && root.protocolPathStatsModel.rowCount() > 0
@@ -1100,10 +1111,13 @@ Frame {
                         required property string originalByteCountText
                         required property int rowIndex
                         required property string tooltipText
+                        required property bool selected
 
                         width: protocolPathListView.width
                         height: root.tableRowHeight
-                        color: rowIndex % 2 === 0 ? "transparent" : "#f8fafc"
+                        color: selected
+                            ? "#e0f2fe"
+                            : (rowIndex % 2 === 0 ? "transparent" : "#f8fafc")
 
                         Item {
                             anchors.fill: parent
@@ -1149,6 +1163,13 @@ Frame {
 
                                 ToolTip.visible: protocolPathHoverHandler.hovered && tooltipText.length > 0 && implicitWidth > width + 1
                                 ToolTip.text: tooltipText
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.leftMargin: (Math.max(0, depth) * root.pathTreeIndentWidth) + root.pathTreeExpanderWidth
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: protocolPathListView.model.selectNode(nodeId)
                             }
 
                             HoverHandler {

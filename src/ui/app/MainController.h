@@ -214,6 +214,8 @@ class MainController final : public QObject {
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
     Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
+    Q_PROPERTY(bool hasProtocolPathFlowFilter READ hasProtocolPathFlowFilter NOTIFY protocolPathFlowFilterChanged)
+    Q_PROPERTY(QString protocolPathFlowFilterText READ protocolPathFlowFilterText NOTIFY protocolPathFlowFilterChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
     Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
@@ -421,6 +423,8 @@ public:
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
     [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
+    [[nodiscard]] bool hasProtocolPathFlowFilter() const noexcept;
+    [[nodiscard]] QString protocolPathFlowFilterText() const;
     [[nodiscard]] int currentTabIndex() const noexcept;
     [[nodiscard]] QObject* topEndpointsModel() noexcept;
     [[nodiscard]] QObject* topPortsModel() noexcept;
@@ -477,6 +481,8 @@ public:
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
     Q_INVOKABLE void drillDownToPort(quint32 port);
+    Q_INVOKABLE void showSelectedProtocolPathFlows();
+    Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
     Q_INVOKABLE void selectUnrecognizedPackets();
 
@@ -507,6 +513,7 @@ signals:
     void showWiresharkFilterForSelectedFlowChanged();
     void showProtocolPathColumnChanged();
     void selectedFlowWiresharkFilterChanged();
+    void protocolPathFlowFilterChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void unrecognizedPacketsSelectionChanged();
@@ -550,6 +557,7 @@ private:
     void clearStreamSelection();
     void clearFlowSelection();
     void synchronizeFlowSelection();
+    bool clearProtocolPathFlowFilterState();
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
@@ -634,6 +642,11 @@ private:
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
     bool status_is_error_ {false};
+    bool has_active_protocol_path_filter_ {false};
+    ProtocolPathStatisticsMode active_protocol_path_filter_mode_ {ProtocolPathStatisticsMode::kind_overview};
+    std::uint64_t active_protocol_path_filter_node_id_ {kInvalidProtocolPathStatisticsNodeId};
+    QString active_protocol_path_filter_label_ {};
+    std::vector<int> active_protocol_path_filter_flow_indices_ {};
     bool is_opening_ {false};
     bool is_applying_session_ {false};
     bool packets_loading_ {false};
