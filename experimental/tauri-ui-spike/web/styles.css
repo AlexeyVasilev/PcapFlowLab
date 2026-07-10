@@ -2065,6 +2065,12 @@ select:disabled {
   cursor: pointer;
 }
 
+.protocol-path-stats-viewport .data-table tbody tr.protocol-path-stats-row td {
+  height: 32px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .protocol-path-stats-row:hover {
   background: #f5f8fc;
 }
@@ -2078,6 +2084,7 @@ select:disabled {
   align-items: center;
   gap: 4px;
   min-width: 0;
+  max-width: 100%;
 }
 
 .protocol-path-expander-spacer,
@@ -2106,6 +2113,9 @@ select:disabled {
 .protocol-path-label {
   display: inline-block;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inline-select-label select {

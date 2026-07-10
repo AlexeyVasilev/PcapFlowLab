@@ -14,8 +14,10 @@
   const streamPacketBatchSize = 30;
   const flowVirtualRowHeight = 32;
   const analysisFlowVirtualRowHeight = 44;
+  const protocolPathStatsVirtualRowHeight = 32;
   const flowVirtualOverscanRows = 12;
   const analysisFlowVirtualOverscanRows = 10;
+  const protocolPathStatsVirtualOverscanRows = 12;
 
   const state = {
     memoryDiagnosticsEnabled: false,
@@ -119,6 +121,7 @@
     analysisFlowVirtualWindowEnd: 0,
     analysisFlowVirtualizationActive: false,
     protocolPathStatsMode: 0,
+    protocolPathStatsVisibleRows: [],
     selectedProtocolPathNode: null,
     protocolPathExpandedNodeIds: new Set(),
     analysisSequenceExportInProgress: false,
@@ -351,6 +354,7 @@
     protocolPathExpandAllButton: document.getElementById("protocolPathExpandAllButton"),
     protocolPathCollapseAllButton: document.getElementById("protocolPathCollapseAllButton"),
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
+    protocolPathStatsViewport: document.getElementById("protocolPathStatsViewport"),
     protocolPathStatsBody: document.getElementById("protocolPathStatsBody"),
     quicStatsBody: document.getElementById("quicStatsBody"),
     tlsStatsBody: document.getElementById("tlsStatsBody"),
@@ -1661,6 +1665,7 @@
 
   function clearOverview() {
     state.overview = null;
+    state.protocolPathStatsVisibleRows = [];
     state.selectedProtocolPathNode = null;
     state.activeProtocolPathFilter = null;
     state.protocolPathFilterRequestToken += 1;
@@ -1723,7 +1728,10 @@
 
     state.protocolPathStatsMode = normalizedMode;
     state.protocolPathExpandedNodeIds.clear();
-    renderOverview();
+    if (elements.protocolPathStatsViewport) {
+      elements.protocolPathStatsViewport.scrollTop = 0;
+    }
+    renderProtocolPathStatsSection();
   }
 
   function toggleProtocolPathNode(nodeId) {
@@ -1738,7 +1746,112 @@
       state.protocolPathExpandedNodeIds.add(normalizedNodeId);
     }
 
-    renderOverview();
+    renderProtocolPathStatsSection();
+  }
+
+  function renderProtocolPathStatsRow(row, protocolPathMode, selectedProtocolPathNode) {
+    const depth = Number(row?.depth ?? 0);
+    const nodeId = Number(row?.node_id ?? 0);
+    const hasChildren = Boolean(row?.has_children);
+    const expanded = hasChildren && state.protocolPathExpandedNodeIds.has(nodeId);
+    const layerText = String(row?.layer_text || "").trim();
+    const fullText = String(row?.path_text || "").trim();
+    const displayText = layerText.length > 0 ? layerText : fullText;
+    const selected = selectedProtocolPathNode
+      && Number(selectedProtocolPathNode.mode) === Number(protocolPathMode)
+      && Number(selectedProtocolPathNode.nodeId) === Number(nodeId);
+
+    return `
+      <tr class="protocol-path-stats-row${selected ? " is-selected" : ""}" data-protocol-path-row-node-id="${nodeId}" title="${escapeHtml(fullText)}">
+        <td>
+          <div class="protocol-path-cell" style="padding-left:${Math.max(0, depth) * 18}px;">
+            ${hasChildren
+              ? `<button type="button" class="protocol-path-expander" data-protocol-path-node-id="${nodeId}" aria-label="${expanded ? "Collapse" : "Expand"} protocol path row">${expanded ? "&#9660;" : "&#9654;"}</button>`
+              : `<span class="protocol-path-expander-spacer" aria-hidden="true"></span>`}
+            <span class="protocol-path-label">${escapeHtml(displayText)}</span>
+          </div>
+        </td>
+        <td>${escapeHtml(String(row?.flow_count_text || formatNumber(row?.flow_count)))}</td>
+        <td>${escapeHtml(String(row?.packet_count_text || formatNumber(row?.packet_count)))}</td>
+        <td>${escapeHtml(String(row?.original_byte_count_text || formatNumber(row?.original_byte_count)))}</td>
+      </tr>
+    `;
+  }
+
+  function renderProtocolPathStatsSection() {
+    const overview = state.overview;
+    const protocolPathMode = currentProtocolPathMode();
+    const protocolPathRows = currentProtocolPathStatsRows();
+
+    pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
+    const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
+    const visibleProtocolPathRows = buildVisibleProtocolPathRows(protocolPathRows, protocolPathMode);
+    state.protocolPathStatsVisibleRows = visibleProtocolPathRows;
+
+    elements.protocolPathStatsModeKindOverview?.classList.toggle("is-active", protocolPathMode === 0);
+    elements.protocolPathStatsModeIdentityTree?.classList.toggle("is-active", protocolPathMode === 1);
+    elements.protocolPathStatsModeTerminalPaths?.classList.toggle("is-active", protocolPathMode === 2);
+    elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
+    elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
+    elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
+
+    if (elements.protocolPathShowFlowsButton) {
+      elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
+    }
+    if (elements.protocolPathExpandAllButton) {
+      elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
+      elements.protocolPathExpandAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
+    }
+    if (elements.protocolPathCollapseAllButton) {
+      elements.protocolPathCollapseAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
+      elements.protocolPathCollapseAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
+    }
+    if (elements.protocolPathStatsPrimaryHeader) {
+      elements.protocolPathStatsPrimaryHeader.textContent = protocolPathMode === 2 ? "Path" : "Layer";
+    }
+
+    if (state.openState === "opening") {
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Loading protocol-path statistics...");
+      return;
+    }
+
+    if (state.openState === "error") {
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Open failed. No protocol-path statistics were loaded.", "error");
+      return;
+    }
+
+    if (state.openState !== "opened" || !overview) {
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Open a capture or index to load protocol-path statistics.");
+      return;
+    }
+
+    if (visibleProtocolPathRows.length === 0) {
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "No protocol-path statistics are available.");
+      if (elements.protocolPathStatsViewport) {
+        elements.protocolPathStatsViewport.scrollTop = 0;
+      }
+      return;
+    }
+
+    const viewportElement = elements.protocolPathStatsViewport;
+    if (viewportElement) {
+      const viewportHeight = Math.max(0, Number(viewportElement.clientHeight || 0));
+      const totalHeight = visibleProtocolPathRows.length * protocolPathStatsVirtualRowHeight;
+      const maxScrollTop = Math.max(0, totalHeight - viewportHeight);
+      if (viewportElement.scrollTop > maxScrollTop) {
+        viewportElement.scrollTop = maxScrollTop;
+      }
+    }
+
+    renderVirtualizedTableBody({
+      tableBody: elements.protocolPathStatsBody,
+      rows: visibleProtocolPathRows,
+      rowHeight: protocolPathStatsVirtualRowHeight,
+      viewportElement: elements.protocolPathStatsViewport,
+      overscanRows: protocolPathStatsVirtualOverscanRows,
+      colspan: 4,
+      renderRow: (row) => renderProtocolPathStatsRow(row, protocolPathMode, selectedProtocolPathNode),
+    });
   }
 
   function applyUpdatedFlowRow(updatedFlow) {
@@ -2416,6 +2529,7 @@
     elements.familyStatsBody && (elements.familyStatsBody.innerHTML = "");
     elements.protocolHintStatsBody && (elements.protocolHintStatsBody.innerHTML = "");
     elements.protocolPathStatsBody && (elements.protocolPathStatsBody.innerHTML = "");
+    state.protocolPathStatsVisibleRows = [];
     elements.quicStatsBody && (elements.quicStatsBody.innerHTML = "");
     elements.tlsStatsBody && (elements.tlsStatsBody.innerHTML = "");
     elements.topEndpointsBody && (elements.topEndpointsBody.innerHTML = "");
@@ -2640,15 +2754,6 @@
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
     const protocolHintRows = Array.isArray(overview?.protocol_hints) ? overview.protocol_hints : [];
-    const protocolPathMode = Number(state.protocolPathStatsMode ?? overview?.protocol_path_statistics_default_mode ?? 0);
-    const protocolPathRows = protocolPathMode === 1
-      ? (Array.isArray(overview?.protocol_path_statistics_identity_tree) ? overview.protocol_path_statistics_identity_tree : [])
-      : (protocolPathMode === 2
-        ? (Array.isArray(overview?.protocol_path_statistics_terminal_paths) ? overview.protocol_path_statistics_terminal_paths : [])
-        : (Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : []));
-    pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
-    const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
-    const visibleProtocolPathRows = buildVisibleProtocolPathRows(protocolPathRows, protocolPathMode);
     const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
     const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
     const topTalkersVisible = Number(overview?.summary?.flow_count ?? 0) > 30;
@@ -2659,33 +2764,12 @@
     elements.metricFlows.textContent = overview ? formatNumber(overview.summary?.flow_count) : "-";
     elements.metricCapturedBytes.textContent = overview ? formatNumber(overview.summary?.captured_bytes) : "-";
     elements.metricOriginalBytes.textContent = overview ? formatNumber(overview.summary?.original_bytes) : "-";
-    elements.protocolPathStatsModeKindOverview?.classList.toggle("is-active", protocolPathMode === 0);
-    elements.protocolPathStatsModeIdentityTree?.classList.toggle("is-active", protocolPathMode === 1);
-    elements.protocolPathStatsModeTerminalPaths?.classList.toggle("is-active", protocolPathMode === 2);
-    elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
-    elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
-    elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
-    if (elements.protocolPathShowFlowsButton) {
-      elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
-    }
-    if (elements.protocolPathExpandAllButton) {
-      elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
-      elements.protocolPathExpandAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
-    }
-    if (elements.protocolPathCollapseAllButton) {
-      elements.protocolPathCollapseAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
-      elements.protocolPathCollapseAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
-    }
-    if (elements.protocolPathStatsPrimaryHeader) {
-      elements.protocolPathStatsPrimaryHeader.textContent = protocolPathMode === 2 ? "Path" : "Layer";
-    }
 
     if (state.openState === "opening") {
       elements.overviewMeta.textContent = "Loading overview...";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Loading transport statistics...");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Loading IP family statistics...");
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Loading protocol-hint statistics...");
-      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Loading protocol-path statistics...");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Loading top endpoints...");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Loading top ports...");
       elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Loading QUIC recognition...");
@@ -2728,60 +2812,6 @@
           `)
           .join("")
         : renderStatsStateRow(6, "No protocol-hint statistics are available.");
-        elements.protocolPathStatsBody.innerHTML = visibleProtocolPathRows.length > 0
-          ? visibleProtocolPathRows
-            .map((row) => {
-              const depth = Number(row.depth ?? 0);
-              const nodeId = Number(row.node_id ?? 0);
-              const hasChildren = Boolean(row.has_children);
-              const expanded = hasChildren && state.protocolPathExpandedNodeIds.has(nodeId);
-              const layerText = String(row.layer_text || "").trim();
-              const fullText = String(row.path_text || "").trim();
-              const displayText = layerText.length > 0 ? layerText : fullText;
-              const selected = selectedProtocolPathNode
-                && Number(selectedProtocolPathNode.mode) === Number(protocolPathMode)
-                && Number(selectedProtocolPathNode.nodeId) === Number(nodeId);
-              return `
-                <tr class="protocol-path-stats-row${selected ? " is-selected" : ""}" data-protocol-path-row-node-id="${nodeId}" title="${escapeHtml(fullText)}">
-                  <td>
-                    <div class="protocol-path-cell" style="padding-left:${Math.max(0, depth) * 18}px;">
-                      ${hasChildren
-                        ? `<button type="button" class="protocol-path-expander" data-protocol-path-node-id="${nodeId}" aria-label="${expanded ? "Collapse" : "Expand"} protocol path row">${expanded ? "&#9660;" : "&#9654;"}</button>`
-                        : `<span class="protocol-path-expander-spacer" aria-hidden="true"></span>`}
-                      <span class="protocol-path-label">${escapeHtml(displayText)}</span>
-                    </div>
-                  </td>
-                  <td>${escapeHtml(String(row.flow_count_text || formatNumber(row.flow_count)))}</td>
-                  <td>${escapeHtml(String(row.packet_count_text || formatNumber(row.packet_count)))}</td>
-                  <td>${escapeHtml(String(row.original_byte_count_text || formatNumber(row.original_byte_count)))}</td>
-              </tr>
-            `;
-          })
-          .join("")
-        : renderStatsStateRow(4, "No protocol-path statistics are available.");
-      for (const button of elements.protocolPathStatsBody.querySelectorAll("[data-protocol-path-node-id]")) {
-        button.addEventListener("click", (event) => {
-          event.stopPropagation();
-          toggleProtocolPathNode(button.dataset.protocolPathNodeId);
-        });
-      }
-      for (const row of elements.protocolPathStatsBody.querySelectorAll("[data-protocol-path-row-node-id]")) {
-        row.addEventListener("click", () => {
-          const nodeId = Number(row.dataset.protocolPathRowNodeId);
-          const selectedRow = visibleProtocolPathRows.find((candidate) => Number(candidate?.node_id) === nodeId);
-          if (!selectedRow) {
-            return;
-          }
-
-          state.selectedProtocolPathNode = {
-            mode: Number(protocolPathMode),
-            nodeId,
-            label: protocolPathRowFilterLabel(selectedRow, protocolPathMode),
-            flowCount: Number(selectedRow.flow_count ?? 0),
-          };
-          render();
-        });
-      }
       elements.quicStatsBody.innerHTML = [
         ["Flows", formatNumber(quicRecognition?.total_flows)],
         ["Recognised Initial", formatFlowPercentAndCount(quicRecognition?.with_sni, quicRecognition?.total_flows)],
@@ -2885,7 +2915,6 @@
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No IP family statistics were loaded.", "error");
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open failed. No protocol-hint statistics were loaded.", "error");
-      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Open failed. No protocol-path statistics were loaded.", "error");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-endpoint summary was loaded.", "error");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-port summary was loaded.", "error");
       elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Open failed. No QUIC recognition was loaded.", "error");
@@ -2895,12 +2924,13 @@
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load transport statistics.");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load IP family statistics.");
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open a capture or index to load protocol-hint statistics.");
-      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Open a capture or index to load protocol-path statistics.");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top endpoints.");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top ports.");
       elements.quicStatsBody.innerHTML = renderStatsStateRow(2, "Open a capture or index to load QUIC recognition.");
       elements.tlsStatsBody.innerHTML = renderStatsStateRow(2, "Open a capture or index to load TLS recognition.");
     }
+
+    renderProtocolPathStatsSection();
   }
 
   function renderFlows() {
@@ -4491,6 +4521,7 @@
 
   let flowViewportRenderScheduled = false;
   let analysisViewportRenderScheduled = false;
+  let protocolPathStatsViewportRenderScheduled = false;
 
   function scheduleFlowViewportRender() {
     if (flowViewportRenderScheduled) {
@@ -4516,6 +4547,20 @@
       analysisViewportRenderScheduled = false;
       if (state.activeTab === "analysis") {
         renderAnalysisFlowList();
+      }
+    });
+  }
+
+  function scheduleProtocolPathStatsViewportRender() {
+    if (protocolPathStatsViewportRenderScheduled) {
+      return;
+    }
+
+    protocolPathStatsViewportRenderScheduled = true;
+    window.requestAnimationFrame(() => {
+      protocolPathStatsViewportRenderScheduled = false;
+      if (state.activeTab === "statistics") {
+        renderProtocolPathStatsSection();
       }
     });
   }
@@ -6074,6 +6119,38 @@
   elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
     setProtocolPathStatsMode(2);
   });
+  elements.protocolPathStatsBody?.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const expanderButton = event.target.closest("[data-protocol-path-node-id]");
+    if (expanderButton) {
+      event.stopPropagation();
+      toggleProtocolPathNode(expanderButton.dataset.protocolPathNodeId);
+      return;
+    }
+
+    const row = event.target.closest("[data-protocol-path-row-node-id]");
+    if (!row) {
+      return;
+    }
+
+    const nodeId = Number(row.dataset.protocolPathRowNodeId);
+    const protocolPathMode = currentProtocolPathMode();
+    const selectedRow = state.protocolPathStatsVisibleRows.find((candidate) => Number(candidate?.node_id) === nodeId);
+    if (!selectedRow) {
+      return;
+    }
+
+    state.selectedProtocolPathNode = {
+      mode: Number(protocolPathMode),
+      nodeId,
+      label: protocolPathRowFilterLabel(selectedRow, protocolPathMode),
+      flowCount: Number(selectedRow.flow_count ?? 0),
+    };
+    renderProtocolPathStatsSection();
+  });
   elements.protocolPathShowFlowsButton?.addEventListener("click", () => {
     void showSelectedProtocolPathFlows();
   });
@@ -6093,11 +6170,11 @@
         state.protocolPathExpandedNodeIds.add(Number(row.node_id));
       }
     }
-    renderOverview();
+    renderProtocolPathStatsSection();
   });
   elements.protocolPathCollapseAllButton?.addEventListener("click", () => {
     state.protocolPathExpandedNodeIds.clear();
-    renderOverview();
+    renderProtocolPathStatsSection();
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {
     applyFlowFilterState("");
@@ -6152,6 +6229,9 @@
   });
   elements.analysisFlowTableViewport?.addEventListener("scroll", () => {
     scheduleAnalysisFlowViewportRender();
+  });
+  elements.protocolPathStatsViewport?.addEventListener("scroll", () => {
+    scheduleProtocolPathStatsViewportRender();
   });
   for (const button of elements.tabButtons) {
     button.addEventListener("click", async () => {

@@ -584,6 +584,7 @@ Stage I status:
 
 - Statistics-tab integration is implemented in both Qt and the Tauri spike for runtime protocol-path tree display;
 - Qt now uses a virtualized runtime tree presentation; top-N, search, collapse/expand, and filters remain follow-up UX work;
+- the Tauri spike now also virtualizes protocol-path statistics row rendering inside the bounded tree viewport, so large mode switches and expand/collapse actions avoid rebuilding every visible DOM row at once;
 - protocol-path filtering is now implemented as runtime UI state in both frontends; persistence and broader drill-down workflows remain follow-up work.
 
 ## Static Audit: Likely Touch Points
