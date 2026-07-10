@@ -4,8 +4,11 @@
 #include <QString>
 #include <QVariant>
 
+#include <functional>
+#include <unordered_map>
 #include <vector>
 
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/FlowRows.h"
 
 namespace pfl {
@@ -64,6 +67,7 @@ public:
     void refresh(const std::vector<FlowRow>& rows);
     void clear();
     void resetViewState();
+    void setProtocolPathPresentationResolver(std::function<session_detail::ProtocolPathPresentation(ProtocolPathId)> resolver);
     void setFilterText(const QString& text);
     void setAllowedFlowIndices(std::vector<int> flowIndices);
     void clearAllowedFlowIndices();
@@ -89,9 +93,7 @@ public:
         QString protocol {};
         QString protocol_hint {};
         QString service_hint {};
-        QString protocol_path_text {};
-        QString protocol_path_compact_text {};
-        QVariantList protocol_path_badges {};
+        ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
         bool has_fragmented_packets {false};
         qulonglong fragmented_packets {0};
         QString address_a {};
@@ -108,10 +110,19 @@ signals:
     void checkedFlowsChanged();
 
 private:
+    struct CachedProtocolPathPresentation {
+        QString full_text {};
+        QString compact_text {};
+        QVariantList badges {};
+    };
+
+    [[nodiscard]] const CachedProtocolPathPresentation& protocolPathPresentation(ProtocolPathId protocolPathId) const;
     void rebuildVisibleItems();
 
     std::vector<Item> all_items_ {};
     std::vector<Item> visible_items_ {};
+    std::function<session_detail::ProtocolPathPresentation(ProtocolPathId)> protocol_path_presentation_resolver_ {};
+    mutable std::unordered_map<ProtocolPathId, CachedProtocolPathPresentation> protocol_path_presentation_cache_ {};
     QString filter_text_ {};
     std::vector<int> allowed_flow_indices_ {};
     bool has_allowed_flow_index_filter_ {false};

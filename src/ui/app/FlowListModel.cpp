@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <utility>
 
 #include <QVariantMap>
 
@@ -163,11 +164,11 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
     case ServiceHintRole:
         return item.service_hint;
     case ProtocolPathTextRole:
-        return item.protocol_path_text;
+        return protocolPathPresentation(item.protocol_path_id).full_text;
     case ProtocolPathCompactTextRole:
-        return item.protocol_path_compact_text;
+        return protocolPathPresentation(item.protocol_path_id).compact_text;
     case ProtocolPathBadgesRole:
-        return item.protocol_path_badges;
+        return protocolPathPresentation(item.protocol_path_id).badges;
     case HasFragmentedPacketsRole:
         return item.has_fragmented_packets;
     case FragmentedPacketCountRole:
@@ -295,6 +296,7 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
 
     all_items_.clear();
     all_items_.reserve(rows.size());
+    protocol_path_presentation_cache_.clear();
 
     for (const auto& row : rows) {
         const int flowIndex = static_cast<int>(row.index);
@@ -305,9 +307,7 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
             .protocol = to_qstring(row.protocol_text),
             .protocol_hint = format_protocol_hint(row.protocol_hint),
             .service_hint = to_qstring(row.service_hint),
-            .protocol_path_text = to_qstring(row.protocol_path_text),
-            .protocol_path_compact_text = to_qstring(row.protocol_path_compact_text),
-            .protocol_path_badges = to_protocol_path_badge_list(row.protocol_path_badges),
+            .protocol_path_id = row.protocol_path_id,
             .has_fragmented_packets = row.has_fragmented_packets,
             .fragmented_packets = static_cast<qulonglong>(row.fragmented_packet_count),
             .address_a = to_qstring(row.address_a),
@@ -332,6 +332,7 @@ void FlowListModel::clear() {
 
     const bool hadCheckedFlows = checkedFlowCount() > 0;
     all_items_.clear();
+    protocol_path_presentation_cache_.clear();
     rebuildVisibleItems();
 
     if (hadCheckedFlows) {
@@ -346,6 +347,20 @@ void FlowListModel::resetViewState() {
     sort_key_ = SortKey::index;
     sort_ascending_ = true;
     rebuildVisibleItems();
+}
+
+void FlowListModel::setProtocolPathPresentationResolver(
+    std::function<session_detail::ProtocolPathPresentation(ProtocolPathId)> resolver
+) {
+    protocol_path_presentation_resolver_ = std::move(resolver);
+    protocol_path_presentation_cache_.clear();
+    if (!visible_items_.empty()) {
+        emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {
+            ProtocolPathTextRole,
+            ProtocolPathCompactTextRole,
+            ProtocolPathBadgesRole,
+        });
+    }
 }
 
 void FlowListModel::setFilterText(const QString& text) {
@@ -526,6 +541,30 @@ void FlowListModel::setServiceHintForFlowIndex(const int flowIndex, const QStrin
 
     itemIt->service_hint = serviceHint;
     rebuildVisibleItems();
+}
+
+const FlowListModel::CachedProtocolPathPresentation& FlowListModel::protocolPathPresentation(
+    const ProtocolPathId protocolPathId
+) const {
+    const auto found = protocol_path_presentation_cache_.find(protocolPathId);
+    if (found != protocol_path_presentation_cache_.end()) {
+        return found->second;
+    }
+
+    session_detail::ProtocolPathPresentation presentation {};
+    if (protocol_path_presentation_resolver_) {
+        presentation = protocol_path_presentation_resolver_(protocolPathId);
+    }
+
+    auto [inserted, _] = protocol_path_presentation_cache_.emplace(
+        protocolPathId,
+        CachedProtocolPathPresentation {
+            .full_text = to_qstring(presentation.full_text),
+            .compact_text = to_qstring(presentation.compact_text),
+            .badges = to_protocol_path_badge_list(presentation.badges),
+        }
+    );
+    return inserted->second;
 }
 
 void FlowListModel::rebuildVisibleItems() {

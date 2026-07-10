@@ -190,6 +190,25 @@ std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& ro
     return out.str();
 }
 
+std::string protocol_path_presentation_json(const pfl::FrontendProtocolPathPresentationDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"protocol_path_id\":" << row.protocol_path_id << ','
+        << "\"path_text\":" << json_string(row.path_text) << ','
+        << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"badges\":[";
+
+    for (std::size_t index = 0; index < row.badges.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_badge_json(row.badges[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
 std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& source) {
     std::ostringstream out {};
     out << '{'
@@ -480,6 +499,17 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
         out << protocol_path_stats_json(overview.protocol_path_statistics_terminal_paths[index]);
     }
 
+    out << "],"
+        << "\"protocol_path_presentations\":[";
+
+    for (std::size_t index = 0; index < overview.protocol_path_presentations.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        out << protocol_path_presentation_json(overview.protocol_path_presentations[index]);
+    }
+
     out << ']'
         << '}';
     return out.str();
@@ -501,8 +531,7 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
             << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
             << "\"service_hint\":" << json_string(flow.service_hint) << ','
-            << "\"protocol_path_text\":" << json_string(flow.protocol_path_text) << ','
-            << "\"protocol_path_compact_text\":" << json_string(flow.protocol_path_compact_text) << ','
+            << "\"protocol_path_id\":" << flow.protocol_path_id << ','
             << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
             << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
             << "\"address_a\":" << json_string(flow.address_a) << ','
@@ -513,17 +542,7 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"endpoint_b\":" << json_string(flow.endpoint_b) << ','
             << "\"packet_count\":" << flow.packet_count << ','
             << "\"total_bytes\":" << flow.total_bytes << ','
-            << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter) << ','
-            << "\"protocol_path_badges\":[";
-
-        for (std::size_t badge_index = 0; badge_index < flow.protocol_path_badges.size(); ++badge_index) {
-            if (badge_index != 0U) {
-                out << ',';
-            }
-            out << protocol_path_badge_json(flow.protocol_path_badges[badge_index]);
-        }
-
-        out << ']'
+            << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
             << '}';
     }
     out << ']';
@@ -539,8 +558,7 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
         << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
         << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
         << "\"service_hint\":" << json_string(flow.service_hint) << ','
-        << "\"protocol_path_text\":" << json_string(flow.protocol_path_text) << ','
-        << "\"protocol_path_compact_text\":" << json_string(flow.protocol_path_compact_text) << ','
+        << "\"protocol_path_id\":" << flow.protocol_path_id << ','
         << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
         << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
         << "\"address_a\":" << json_string(flow.address_a) << ','
@@ -551,17 +569,7 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
         << "\"endpoint_b\":" << json_string(flow.endpoint_b) << ','
         << "\"packet_count\":" << flow.packet_count << ','
         << "\"total_bytes\":" << flow.total_bytes << ','
-        << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter) << ','
-        << "\"protocol_path_badges\":[";
-
-    for (std::size_t badge_index = 0; badge_index < flow.protocol_path_badges.size(); ++badge_index) {
-        if (badge_index != 0U) {
-            out << ',';
-        }
-        out << protocol_path_badge_json(flow.protocol_path_badges[badge_index]);
-    }
-
-    out << ']'
+        << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
         << '}';
     return out.str();
 }

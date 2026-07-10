@@ -285,6 +285,26 @@ std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const C
     return rows;
 }
 
+std::vector<FrontendProtocolPathPresentationDto> build_protocol_path_presentations(const CaptureSession& session) {
+    std::vector<FrontendProtocolPathPresentationDto> rows {};
+    const auto& registry = session.state().protocol_path_registry;
+    rows.reserve(registry.size());
+
+    for (ProtocolPathId protocol_path_id = 1U;
+         protocol_path_id <= static_cast<ProtocolPathId>(registry.size());
+         ++protocol_path_id) {
+        const auto presentation = session_detail::build_protocol_path_presentation(registry, protocol_path_id);
+        rows.push_back(FrontendProtocolPathPresentationDto {
+            .protocol_path_id = protocol_path_id,
+            .path_text = std::move(presentation.full_text),
+            .compact_text = std::move(presentation.compact_text),
+            .badges = std::move(presentation.badges),
+        });
+    }
+
+    return rows;
+}
+
 std::string build_wireshark_display_filter(const FlowRow& row) {
     const std::string address_term = row.family == FlowAddressFamily::ipv6 ? "ipv6.addr" : "ip.addr";
 
@@ -2154,6 +2174,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_path_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::kind_overview);
     const auto protocol_path_identity_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
     const auto protocol_path_terminal_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
+    const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
@@ -2173,6 +2194,7 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .protocol_path_statistics = build_protocol_path_statistics(protocol_path_summary),
         .protocol_path_statistics_identity_tree = build_protocol_path_statistics(protocol_path_identity_summary),
         .protocol_path_statistics_terminal_paths = build_protocol_path_statistics(protocol_path_terminal_summary),
+        .protocol_path_presentations = std::move(protocol_path_presentations),
     };
 }
 
@@ -2959,9 +2981,7 @@ FrontendFlowDto FrontendSessionAdapter::to_frontend_flow(const FlowRow& row) {
         .protocol_hint = row.protocol_hint,
         .protocol_hint_display = format_protocol_hint_display(row.protocol_hint),
         .service_hint = row.service_hint,
-        .protocol_path_text = row.protocol_path_text,
-        .protocol_path_compact_text = row.protocol_path_compact_text,
-        .protocol_path_badges = row.protocol_path_badges,
+        .protocol_path_id = row.protocol_path_id,
         .has_fragmented_packets = row.has_fragmented_packets,
         .fragmented_packet_count = row.fragmented_packet_count,
         .address_a = row.address_a,

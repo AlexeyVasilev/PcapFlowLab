@@ -35,6 +35,7 @@ struct FlowRow {
     std::size_t index {0};
     FlowAddressFamily family {FlowAddressFamily::ipv4};
     FlowConnectionKey key {ConnectionKeyV4 {}};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
     std::string protocol_text {};
     std::string protocol_hint {};
     std::string service_hint {};

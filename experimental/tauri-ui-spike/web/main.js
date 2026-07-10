@@ -27,6 +27,7 @@
     protocolPathLegendDialogVisible: false,
     protocolPathLegendLoading: false,
     protocolPathLegendEntries: [],
+    protocolPathPresentationsById: new Map(),
     protocolPathLegendStatusText: "",
     protocolPathLegendStatusKind: "neutral",
     settingsDialogLoading: false,
@@ -665,9 +666,13 @@
   }
 
   function renderProtocolPathCell(flow) {
-    const fullText = String(flow?.protocol_path_text || "").trim();
-    const compactText = String(flow?.protocol_path_compact_text || "").trim();
-    const badges = Array.isArray(flow?.protocol_path_badges) ? flow.protocol_path_badges : [];
+    const protocolPathId = Number(flow?.protocol_path_id || 0);
+    const presentation = protocolPathId > 0
+      ? state.protocolPathPresentationsById?.get(protocolPathId) || null
+      : null;
+    const fullText = String(presentation?.path_text || "").trim();
+    const compactText = String(presentation?.compact_text || "").trim();
+    const badges = Array.isArray(presentation?.badges) ? presentation.badges : [];
 
     if (badges.length > 0) {
       const chips = badges.map((badge) => {
@@ -4575,6 +4580,11 @@
     ]);
 
     state.overview = overview;
+    state.protocolPathPresentationsById = new Map(
+      (Array.isArray(overview?.protocol_path_presentations) ? overview.protocol_path_presentations : [])
+        .map((presentation) => [Number(presentation?.protocol_path_id || 0), presentation])
+        .filter(([protocolPathId]) => protocolPathId > 0)
+    );
     await logMemoryPhase("after_get_overview");
     state.flows = flows || [];
     state.flowState = "loaded";

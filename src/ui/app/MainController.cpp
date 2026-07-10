@@ -2045,6 +2045,10 @@ MainController::MainController(QObject* parent)
     , capture_open_mode_(kCliFastImportModeIndex)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
+    flow_model_.setProtocolPathPresentationResolver([this](const ProtocolPathId protocol_path_id) {
+        return session_detail::build_protocol_path_presentation(session_.state().protocol_path_registry, protocol_path_id);
+    });
+
     QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
         emit selectedFlowCountChanged();
         emit actionAvailabilityChanged();

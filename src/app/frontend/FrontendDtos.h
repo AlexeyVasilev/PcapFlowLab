@@ -165,6 +165,13 @@ struct FrontendProtocolPathStatsDto {
     std::string original_byte_count_text {};
 };
 
+struct FrontendProtocolPathPresentationDto {
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+};
+
 struct FrontendOverviewDto {
     bool has_capture {false};
     CaptureSummary summary {};
@@ -181,6 +188,7 @@ struct FrontendOverviewDto {
     std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics {};
     std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics_identity_tree {};
     std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics_terminal_paths {};
+    std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};
 };
 
 struct FrontendFlowDto {
@@ -190,9 +198,7 @@ struct FrontendFlowDto {
     std::string protocol_hint {};
     std::string protocol_hint_display {};
     std::string service_hint {};
-    std::string protocol_path_text {};
-    std::string protocol_path_compact_text {};
-    std::vector<ProtocolPathBadgeRow> protocol_path_badges {};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
     bool has_fragmented_packets {false};
     std::uint64_t fragmented_packet_count {0};
     std::string address_a {};

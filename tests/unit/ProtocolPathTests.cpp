@@ -129,6 +129,16 @@ std::string normalized_protocol_path_text_for_flow_identity(const CaptureState& 
     return format_protocol_path(ProtocolPath {std::move(normalized_layers)});
 }
 
+const FrontendProtocolPathPresentationDto* find_frontend_protocol_path_presentation(
+    const std::vector<FrontendProtocolPathPresentationDto>& presentations,
+    const ProtocolPathId protocol_path_id
+) {
+    const auto found = std::find_if(presentations.begin(), presentations.end(), [protocol_path_id](const auto& row) {
+        return row.protocol_path_id == protocol_path_id;
+    });
+    return found == presentations.end() ? nullptr : &*found;
+}
+
 std::string join_packet_indices(const std::vector<PacketRef>& packets) {
     std::ostringstream builder {};
     for (std::size_t index = 0; index < packets.size(); ++index) {
@@ -682,10 +692,15 @@ void expect_flow_rows_expose_protocol_path_presentation() {
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap")));
         const auto rows = session.list_flows();
         PFL_REQUIRE(rows.size() == 1U);
-        PFL_EXPECT(rows[0].protocol_path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
-        PFL_EXPECT(rows[0].protocol_path_compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
-        PFL_REQUIRE(rows[0].protocol_path_badges.size() == 7U);
-        PFL_EXPECT(rows[0].protocol_path_badges[3].tooltip == "VXLAN\nVNI: 100");
+        PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+        const auto presentation = session_detail::build_protocol_path_presentation(
+            session.state().protocol_path_registry,
+            rows[0].protocol_path_id
+        );
+        PFL_EXPECT(presentation.full_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+        PFL_EXPECT(presentation.compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
+        PFL_REQUIRE(presentation.badges.size() == 7U);
+        PFL_EXPECT(presentation.badges[3].tooltip == "VXLAN\nVNI: 100");
     }
 
     {
@@ -693,10 +708,15 @@ void expect_flow_rows_expose_protocol_path_presentation() {
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap")));
         const auto rows = session.list_flows();
         PFL_REQUIRE(rows.size() == 1U);
-        PFL_EXPECT(rows[0].protocol_path_text == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
-        PFL_EXPECT(rows[0].protocol_path_compact_text == "EII|Ip4|UDP|GTP-U|Ip4|TCP");
-        PFL_REQUIRE(rows[0].protocol_path_badges.size() == 6U);
-        PFL_EXPECT(rows[0].protocol_path_badges[3].tooltip == "GTP-U\nTEID: 0x01020304");
+        PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+        const auto presentation = session_detail::build_protocol_path_presentation(
+            session.state().protocol_path_registry,
+            rows[0].protocol_path_id
+        );
+        PFL_EXPECT(presentation.full_text == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+        PFL_EXPECT(presentation.compact_text == "EII|Ip4|UDP|GTP-U|Ip4|TCP");
+        PFL_REQUIRE(presentation.badges.size() == 6U);
+        PFL_EXPECT(presentation.badges[3].tooltip == "GTP-U\nTEID: 0x01020304");
     }
 }
 
@@ -705,12 +725,19 @@ void expect_frontend_flows_expose_protocol_path_presentation() {
     PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap"), FrontendOpenMode::fast).opened);
 
     const auto flows = adapter.get_flows();
+    const auto overview = adapter.get_overview();
     PFL_REQUIRE(flows.size() == 1U);
-    PFL_EXPECT(flows[0].protocol_path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
-    PFL_EXPECT(flows[0].protocol_path_compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
-    PFL_REQUIRE(flows[0].protocol_path_badges.size() == 7U);
-    PFL_EXPECT(flows[0].protocol_path_badges[3].short_label == "Vx");
-    PFL_EXPECT(flows[0].protocol_path_badges[3].tooltip == "VXLAN\nVNI: 100");
+    PFL_REQUIRE(flows[0].protocol_path_id != kInvalidProtocolPathId);
+    const auto* presentation = find_frontend_protocol_path_presentation(
+        overview.protocol_path_presentations,
+        flows[0].protocol_path_id
+    );
+    PFL_REQUIRE(presentation != nullptr);
+    PFL_EXPECT(presentation->path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(presentation->compact_text == "EII|Ip4|UDP|Vx|EII|Ip4|TCP");
+    PFL_REQUIRE(presentation->badges.size() == 7U);
+    PFL_EXPECT(presentation->badges[3].short_label == "Vx");
+    PFL_EXPECT(presentation->badges[3].tooltip == "VXLAN\nVNI: 100");
 }
 
 void expect_frontend_protocol_path_legend_exposure() {
@@ -1320,6 +1347,7 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
     PFL_EXPECT(overview.protocol_path_statistics_default_mode == ProtocolPathStatisticsMode::kind_overview);
     PFL_EXPECT(!overview.protocol_path_statistics_identity_tree.empty());
     PFL_EXPECT(!overview.protocol_path_statistics_terminal_paths.empty());
+    PFL_EXPECT(!overview.protocol_path_presentations.empty());
 
     const auto found = std::find_if(
         overview.protocol_path_statistics.begin(),

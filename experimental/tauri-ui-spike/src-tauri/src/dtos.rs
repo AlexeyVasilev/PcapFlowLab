@@ -195,6 +195,14 @@ pub struct ProtocolPathStatsDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathPresentationDto {
+    pub protocol_path_id: u32,
+    pub path_text: String,
+    pub compact_text: String,
+    pub badges: Vec<ProtocolPathBadgeDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewDto {
     pub has_capture: bool,
     pub unrecognized_packet_count: u64,
@@ -209,6 +217,7 @@ pub struct OverviewDto {
     pub protocol_path_statistics: Vec<ProtocolPathStatsDto>,
     pub protocol_path_statistics_identity_tree: Vec<ProtocolPathStatsDto>,
     pub protocol_path_statistics_terminal_paths: Vec<ProtocolPathStatsDto>,
+    pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,9 +228,7 @@ pub struct FlowDto {
     pub protocol_hint: String,
     pub protocol_hint_display: String,
     pub service_hint: String,
-    pub protocol_path_text: String,
-    pub protocol_path_compact_text: String,
-    pub protocol_path_badges: Vec<ProtocolPathBadgeDto>,
+    pub protocol_path_id: u32,
     pub has_fragmented_packets: bool,
     pub fragmented_packet_count: u64,
     pub address_a: String,

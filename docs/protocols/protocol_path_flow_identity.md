@@ -23,6 +23,7 @@ Current repository state:
 - the flow list can now expose protocol paths as compact badge/chip presentation derived from the interned registry;
 - the flow-list Path column is intended to show the intermediate link / shim / overlay path to the effective flow protocol rather than duplicate terminal control protocols already shown in the Protocol column;
 - both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
+- flow-list protocol-path presentation is now resolved lazily or deduplicated per unique `ProtocolPathId` rather than materialized eagerly per flow row;
 - both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;
@@ -41,7 +42,7 @@ Important scope boundaries:
 
 - this badge/chip presentation is explanatory UI only;
 - it does not change `FlowKeyV2`, decode behavior, import behavior, or stable index semantics;
-- it is derived lazily from the capture-level `ProtocolPathRegistry`, not stored redundantly per packet;
+- it is derived lazily from the capture-level `ProtocolPathRegistry`, not stored redundantly per packet or duplicated eagerly into every flow row payload;
 - both UI frontends should consume centralized C++ presentation data rather than duplicating abbreviation or color-key mapping in UI-specific code;
 - badge tooltips may include namespace identifiers such as VLAN VID, MPLS label, VXLAN VNI, Geneve VNI, or GTP-U TEID;
 - current badge coverage also includes parser-supported shim layers such as LLC/SNAP, MPLS PW, PBB, PPPoE, and PPP where those layers lead to normal flows;
@@ -51,6 +52,12 @@ Still deferred:
 
 - protocol-path drill-down workflows beyond the current Statistics-to-Flows structured filter;
 - persistence for the Tauri Path-column visibility toggle.
+
+Implementation note:
+
+- the Qt flow list resolves path text / compact text / badges on demand from `protocol_path_id` and caches the resulting presentation by unique id;
+- the Tauri spike receives protocol-path presentations once per unique `protocol_path_id` and looks them up when rendering flow rows;
+- this optimization reduces memory pressure in Fast mode without changing FlowKeyV2 identity, protocol-path statistics semantics, or protocol-path filtering behavior.
 
 ## Runtime Protocol-Path Statistics
 

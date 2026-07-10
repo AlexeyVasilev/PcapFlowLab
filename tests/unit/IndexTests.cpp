@@ -18,22 +18,6 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
 }
 
-void expect_matching_protocol_path_badges(
-    const std::vector<ProtocolPathBadgeRow>& left,
-    const std::vector<ProtocolPathBadgeRow>& right
-) {
-    PFL_EXPECT(left.size() == right.size());
-    for (std::size_t index = 0; index < left.size(); ++index) {
-        PFL_EXPECT(left[index].short_label == right[index].short_label);
-        PFL_EXPECT(left[index].full_name == right[index].full_name);
-        PFL_EXPECT(left[index].tooltip == right[index].tooltip);
-        PFL_EXPECT(left[index].color_key == right[index].color_key);
-        PFL_EXPECT(left[index].background_color == right[index].background_color);
-        PFL_EXPECT(left[index].border_color == right[index].border_color);
-        PFL_EXPECT(left[index].text_color == right[index].text_color);
-    }
-}
-
 void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<FlowRow>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
@@ -42,11 +26,9 @@ void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<Fl
         PFL_EXPECT(left[index].packet_count == right[index].packet_count);
         PFL_EXPECT(left[index].total_bytes == right[index].total_bytes);
         PFL_EXPECT(left[index].key == right[index].key);
+        PFL_EXPECT(left[index].protocol_path_id == right[index].protocol_path_id);
         PFL_EXPECT(left[index].protocol_hint == right[index].protocol_hint);
         PFL_EXPECT(left[index].service_hint == right[index].service_hint);
-        PFL_EXPECT(left[index].protocol_path_text == right[index].protocol_path_text);
-        PFL_EXPECT(left[index].protocol_path_compact_text == right[index].protocol_path_compact_text);
-        expect_matching_protocol_path_badges(left[index].protocol_path_badges, right[index].protocol_path_badges);
         PFL_EXPECT(left[index].has_fragmented_packets == right[index].has_fragmented_packets);
         PFL_EXPECT(left[index].fragmented_packet_count == right[index].fragmented_packet_count);
     }

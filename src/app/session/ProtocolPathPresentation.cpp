@@ -194,6 +194,17 @@ ProtocolPathPresentation build_protocol_path_presentation(const ProtocolPath* pa
     return presentation;
 }
 
+ProtocolPathPresentation build_protocol_path_presentation(
+    const ProtocolPathRegistry& registry,
+    const ProtocolPathId protocol_path_id
+) {
+    if (protocol_path_id == kInvalidProtocolPathId) {
+        return build_protocol_path_presentation(static_cast<const ProtocolPath*>(nullptr));
+    }
+
+    return build_protocol_path_presentation(registry.find(protocol_path_id));
+}
+
 std::vector<ProtocolPathLegendEntry> protocol_path_legend_entries() {
     std::vector<ProtocolPathLegendEntry> legend {};
     legend.reserve(kProtocolPathDescriptors.size());
