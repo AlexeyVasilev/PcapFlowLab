@@ -215,7 +215,7 @@ ProtocolPath kind_only_protocol_path(const ProtocolPath& path) {
 
 void append_protocol_path_statistics_rows(
     const std::vector<ProtocolPathStatisticsAccumulatorNode>& nodes,
-    std::vector<ProtocolPathStatisticsRow>& rows,
+    CaptureProtocolPathSummary& summary,
     const std::vector<std::size_t>& node_indices
 ) {
     auto sorted_indices = node_indices;
@@ -233,7 +233,19 @@ void append_protocol_path_statistics_rows(
 
     for (const auto node_index : sorted_indices) {
         const auto& node = nodes[node_index];
-        rows.push_back(ProtocolPathStatisticsRow {
+        const auto node_id = static_cast<std::uint64_t>(node_index + 1U);
+        const auto membership_offset = summary.flow_index_pool.size();
+        summary.flow_index_pool.insert(
+            summary.flow_index_pool.end(),
+            node.flow_indices.begin(),
+            node.flow_indices.end()
+        );
+        summary.node_membership_ranges[static_cast<std::size_t>(node_id)] = ProtocolPathStatisticsNodeMembershipRange {
+            .offset = membership_offset,
+            .count = node.flow_indices.size(),
+        };
+
+        summary.rows.push_back(ProtocolPathStatisticsRow {
             .node_id = static_cast<std::uint64_t>(node_index + 1U),
             .parent_node_id = node.parent_index == std::numeric_limits<std::size_t>::max()
                 ? kInvalidProtocolPathStatisticsNodeId
@@ -256,9 +268,8 @@ void append_protocol_path_statistics_rows(
             .flow_count_text = node.flow_count_text,
             .packet_count_text = node.packet_count_text,
             .original_byte_count_text = node.original_byte_count_text,
-            .flow_indices = node.flow_indices,
         });
-        append_protocol_path_statistics_rows(nodes, rows, node.child_indices);
+        append_protocol_path_statistics_rows(nodes, summary, node.child_indices);
     }
 }
 
@@ -521,7 +532,9 @@ CaptureProtocolPathSummary build_protocol_path_summary(
     }
 
     summary.rows.reserve(nodes.size());
-    append_protocol_path_statistics_rows(nodes, summary.rows, root_indices);
+    summary.flow_index_pool.reserve(connections.size() * 2U);
+    summary.node_membership_ranges.resize(nodes.size() + 1U);
+    append_protocol_path_statistics_rows(nodes, summary, root_indices);
     return summary;
 }
 

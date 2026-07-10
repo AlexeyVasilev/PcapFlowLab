@@ -190,7 +190,11 @@ struct ProtocolPathStatisticsRow {
     std::string flow_count_text {};
     std::string packet_count_text {};
     std::string original_byte_count_text {};
-    std::vector<FlowIndex> flow_indices {};
+};
+
+struct ProtocolPathStatisticsNodeMembershipRange {
+    std::size_t offset {0};
+    std::size_t count {0};
 };
 
 struct CaptureProtocolPathSummary {
@@ -199,6 +203,8 @@ struct CaptureProtocolPathSummary {
     std::uint64_t total_packet_count {0};
     std::uint64_t total_original_byte_count {0};
     std::vector<ProtocolPathStatisticsRow> rows {};
+    std::vector<FlowIndex> flow_index_pool {};
+    std::vector<ProtocolPathStatisticsNodeMembershipRange> node_membership_ranges {};
 };
 
 }  // namespace pfl

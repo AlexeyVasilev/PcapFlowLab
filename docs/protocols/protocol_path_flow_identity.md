@@ -582,6 +582,8 @@ Stage G status:
 Current membership follow-up:
 
 - this runtime node membership is the backend/session preparation for future "show matching flows" behavior;
+- runtime protocol-path statistics rows should remain lightweight display records;
+- node membership should live in session-side sidecar storage such as a `flow_index_pool` plus per-node ranges on `CaptureProtocolPathSummary`;
 - membership is intentionally not exposed through the default frontend overview DTOs yet;
 - future flow-list filtering should resolve matching flows through `mode + node_id` against the session, rather than embedding flow memberships directly into UI statistics payloads.
 

@@ -1685,15 +1685,37 @@ std::vector<FlowIndex> CaptureSession::protocol_path_summary_flow_indices(
         return {};
     }
 
-    const auto summary = protocol_path_summary(mode);
-    const auto found = std::find_if(summary.rows.begin(), summary.rows.end(), [&](const auto& row) {
-        return row.node_id == node_id;
-    });
-    if (found == summary.rows.end()) {
+    const auto cache_index = static_cast<std::size_t>(mode);
+    if (cache_index < protocol_path_summary_cache_.size() && !protocol_path_summary_cache_[cache_index].has_value()) {
+        protocol_path_summary_cache_[cache_index] = session_detail::build_protocol_path_summary(
+            state_,
+            listed_connections(),
+            mode
+        );
+    }
+    if (cache_index >= protocol_path_summary_cache_.size() || !protocol_path_summary_cache_[cache_index].has_value()) {
         return {};
     }
 
-    return found->flow_indices;
+    const auto& summary = *protocol_path_summary_cache_[cache_index];
+    const auto membership_index = static_cast<std::size_t>(node_id);
+    if (membership_index >= summary.node_membership_ranges.size()) {
+        return {};
+    }
+
+    const auto membership = summary.node_membership_ranges[membership_index];
+    if (membership.count == 0U) {
+        return {};
+    }
+    if (membership.offset > summary.flow_index_pool.size() ||
+        membership.count > summary.flow_index_pool.size() - membership.offset) {
+        return {};
+    }
+
+    return {
+        summary.flow_index_pool.begin() + static_cast<std::ptrdiff_t>(membership.offset),
+        summary.flow_index_pool.begin() + static_cast<std::ptrdiff_t>(membership.offset + membership.count)
+    };
 }
 
 void CaptureSession::clear_runtime_caches_after_transfer() noexcept {

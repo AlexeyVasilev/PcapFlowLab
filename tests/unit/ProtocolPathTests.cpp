@@ -217,14 +217,17 @@ const ProtocolPathStatisticsRow* find_protocol_path_stats_row_by_node_id(
 }
 
 void expect_protocol_path_stats_membership(
+    const CaptureSession& session,
     const CaptureProtocolPathSummary& summary,
+    const ProtocolPathStatisticsMode mode,
     const std::string& path_text,
     const std::vector<FlowIndex>& expected_flow_indices
 ) {
     const auto* row = find_protocol_path_stats_row(summary, path_text);
     PFL_REQUIRE(row != nullptr);
-    PFL_EXPECT(row->flow_indices == expected_flow_indices);
-    PFL_EXPECT(row->flow_indices.size() == row->flow_count);
+    const auto actual_flow_indices = session.protocol_path_summary_flow_indices(mode, row->node_id);
+    PFL_EXPECT(actual_flow_indices == expected_flow_indices);
+    PFL_EXPECT(actual_flow_indices.size() == row->flow_count);
 }
 
 void expect_protocol_path_stats_row(
@@ -1049,7 +1052,13 @@ void expect_protocol_path_statistics_kind_overview_merge_vxlan_vnis() {
     );
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN", "VXLAN");
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN -> EthernetII -> IPv4 -> TCP", 2U, 2U);
-    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> VXLAN", {0U, 1U});
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::kind_overview,
+        "EthernetII -> IPv4 -> UDP -> VXLAN",
+        {0U, 1U}
+    );
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)");
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)");
 }
@@ -1065,8 +1074,20 @@ void expect_protocol_path_statistics_identity_tree_distinguish_vxlan_vnis() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", 1U, 1U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)", "VXLAN (VNI 100)");
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", "VXLAN (VNI 200)");
-    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)", {0U});
-    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)", {1U});
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::identity_tree,
+        "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)",
+        {0U}
+    );
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::identity_tree,
+        "EthernetII -> IPv4 -> UDP -> VXLAN(vni=200)",
+        {1U}
+    );
 }
 
 void expect_protocol_path_statistics_kind_overview_merge_gtpu_teids() {
@@ -1078,7 +1099,13 @@ void expect_protocol_path_statistics_kind_overview_merge_gtpu_teids() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP", 2U, 2U);
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U", 2U, 2U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U", "GTP-U");
-    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> GTP-U", {0U, 1U});
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::kind_overview,
+        "EthernetII -> IPv4 -> UDP -> GTP-U",
+        {0U, 1U}
+    );
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)");
     expect_no_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)");
 }
@@ -1092,8 +1119,20 @@ void expect_protocol_path_statistics_identity_tree_distinguish_gtpu_teids() {
     expect_protocol_path_stats_row(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", 1U, 1U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)", "GTP-U (TEID 0x01020304)");
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", "GTP-U (TEID 0x11223344)");
-    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)", {0U});
-    expect_protocol_path_stats_membership(summary, "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)", {1U});
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::identity_tree,
+        "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304)",
+        {0U}
+    );
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::identity_tree,
+        "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344)",
+        {1U}
+    );
 }
 
 void expect_protocol_path_statistics_preserve_nested_mpls_prefixes_in_kind_overview() {
@@ -1108,7 +1147,13 @@ void expect_protocol_path_statistics_preserve_nested_mpls_prefixes_in_kind_overv
     expect_protocol_path_stats_row(summary, "EthernetII -> MPLS -> MPLS -> IPv4 -> TCP", 1U, 1U);
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS", "MPLS");
     expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS -> MPLS", "MPLS");
-    expect_protocol_path_stats_membership(summary, "EthernetII -> MPLS -> MPLS", {0U});
+    expect_protocol_path_stats_membership(
+        session,
+        summary,
+        ProtocolPathStatisticsMode::kind_overview,
+        "EthernetII -> MPLS -> MPLS",
+        {0U}
+    );
 }
 
 void expect_protocol_path_statistics_cover_new_shim_layers() {
@@ -1120,7 +1165,13 @@ void expect_protocol_path_statistics_cover_new_shim_layers() {
         const auto summary = session.protocol_path_summary();
         expect_protocol_path_stats_row(summary, "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", 1U, 1U);
         expect_protocol_path_stats_layer_text(summary, "IEEE 802.3 -> LLC/SNAP", "LLC/SNAP");
-        expect_protocol_path_stats_membership(summary, "IEEE 802.3 -> LLC/SNAP", one_flow);
+        expect_protocol_path_stats_membership(
+            session,
+            summary,
+            ProtocolPathStatisticsMode::kind_overview,
+            "IEEE 802.3 -> LLC/SNAP",
+            one_flow
+        );
     }
 
     {
@@ -1130,7 +1181,13 @@ void expect_protocol_path_statistics_cover_new_shim_layers() {
         expect_protocol_path_stats_row(summary, "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP", 1U, 1U);
         expect_protocol_path_stats_layer_text(summary, "EthernetII -> PPPoE", "PPPoE");
         expect_protocol_path_stats_layer_text(summary, "EthernetII -> PPPoE -> PPP", "PPP");
-        expect_protocol_path_stats_membership(summary, "EthernetII -> PPPoE -> PPP", one_flow);
+        expect_protocol_path_stats_membership(
+            session,
+            summary,
+            ProtocolPathStatisticsMode::kind_overview,
+            "EthernetII -> PPPoE -> PPP",
+            one_flow
+        );
     }
 
     {
@@ -1140,10 +1197,22 @@ void expect_protocol_path_statistics_cover_new_shim_layers() {
         const auto identity_summary = session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
         expect_protocol_path_stats_row(kind_summary, "EthernetII -> PBB -> EthernetII -> IPv4 -> TCP", 1U, 1U);
         expect_protocol_path_stats_layer_text(kind_summary, "EthernetII -> PBB", "PBB");
-        expect_protocol_path_stats_membership(kind_summary, "EthernetII -> PBB", one_flow);
+        expect_protocol_path_stats_membership(
+            session,
+            kind_summary,
+            ProtocolPathStatisticsMode::kind_overview,
+            "EthernetII -> PBB",
+            one_flow
+        );
         expect_protocol_path_stats_row(identity_summary, "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP", 1U, 1U);
         expect_protocol_path_stats_layer_text(identity_summary, "EthernetII -> PBB(isid=0x123456)", "PBB (I-SID 0x123456)");
-        expect_protocol_path_stats_membership(identity_summary, "EthernetII -> PBB(isid=0x123456)", one_flow);
+        expect_protocol_path_stats_membership(
+            session,
+            identity_summary,
+            ProtocolPathStatisticsMode::identity_tree,
+            "EthernetII -> PBB(isid=0x123456)",
+            one_flow
+        );
     }
 
     {
@@ -1152,7 +1221,13 @@ void expect_protocol_path_statistics_cover_new_shim_layers() {
         const auto summary = session.protocol_path_summary();
         expect_protocol_path_stats_row(summary, "EthernetII -> MPLS -> MPLS -> MPLS PW -> EthernetII -> IPv4 -> TCP", 1U, 1U);
         expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS -> MPLS -> MPLS PW", "MPLS PW");
-        expect_protocol_path_stats_membership(summary, "EthernetII -> MPLS -> MPLS -> MPLS PW", one_flow);
+        expect_protocol_path_stats_membership(
+            session,
+            summary,
+            ProtocolPathStatisticsMode::kind_overview,
+            "EthernetII -> MPLS -> MPLS -> MPLS PW",
+            one_flow
+        );
     }
 }
 
@@ -1189,8 +1264,10 @@ void expect_protocol_path_statistics_terminal_paths_only() {
     PFL_EXPECT(second_terminal->layer_text == second_terminal->path_text);
     const auto first_terminal_flow = std::vector<FlowIndex> {0U};
     const auto second_terminal_flow = std::vector<FlowIndex> {1U};
-    PFL_EXPECT(first_terminal->flow_indices == first_terminal_flow);
-    PFL_EXPECT(second_terminal->flow_indices == second_terminal_flow);
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::terminal_paths, first_terminal->node_id)
+        == first_terminal_flow);
+    PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::terminal_paths, second_terminal->node_id)
+        == second_terminal_flow);
 }
 
 void expect_protocol_path_statistics_tree_metadata() {
@@ -1286,7 +1363,10 @@ void expect_protocol_path_statistics_survive_index_roundtrip() {
             PFL_EXPECT(loaded_row->packet_count_text == row.packet_count_text);
             PFL_EXPECT(loaded_row->original_byte_percent == row.original_byte_percent);
             PFL_EXPECT(loaded_row->original_byte_count_text == row.original_byte_count_text);
-            PFL_EXPECT(loaded_row->flow_indices == row.flow_indices);
+            PFL_EXPECT(
+                loaded_session.protocol_path_summary_flow_indices(loaded_summary.get().mode, loaded_row->node_id) ==
+                imported_session.protocol_path_summary_flow_indices(imported_summary.get().mode, row.node_id)
+            );
         }
     }
 }
