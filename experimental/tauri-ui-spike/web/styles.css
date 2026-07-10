@@ -901,6 +901,10 @@ body.is-resizing-vertical {
   align-items: center;
 }
 
+#protocolPathFlowFilterRow {
+  display: none;
+}
+
 .flows-panel .table-wrap {
   margin-top: 0;
 }
@@ -2008,6 +2012,33 @@ select:disabled {
   flex-wrap: wrap;
 }
 
+.protocol-path-show-flows-button {
+  padding-inline: 14px;
+  border: 1px solid #b9d7c2;
+  border-left: 4px solid #5ec47a;
+  background: #ffffff;
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 0.08);
+}
+
+.protocol-path-show-flows-button:hover:not(:disabled) {
+  background: #f3fbf5;
+}
+
+.protocol-path-show-flows-button:active:not(:disabled) {
+  background: #e6f6ea;
+}
+
+.protocol-path-show-flows-button:disabled {
+  border-color: var(--border);
+  border-left-color: #b8c0ca;
+  background: var(--surface-muted);
+  color: var(--text);
+  opacity: 1;
+  box-shadow: none;
+}
+
 .statistics-mode-tabs {
   display: inline-flex;
   align-items: center;
@@ -2028,6 +2059,18 @@ select:disabled {
 .statistics-mode-tabs .secondary-button.is-active {
   background: #e3effb;
   border-color: var(--selection-border);
+}
+
+.protocol-path-stats-row {
+  cursor: pointer;
+}
+
+.protocol-path-stats-row:hover {
+  background: #f5f8fc;
+}
+
+.protocol-path-stats-row.is-selected {
+  background: var(--selected);
 }
 
 .protocol-path-cell {

@@ -2208,6 +2208,18 @@ std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_prot
     return rows;
 }
 
+std::vector<std::size_t> FrontendSessionAdapter::get_protocol_path_summary_flow_indices(
+    const ProtocolPathStatisticsMode mode,
+    const std::uint64_t node_id
+) const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    const auto flow_indices = session_.protocol_path_summary_flow_indices(mode, node_id);
+    return {flow_indices.begin(), flow_indices.end()};
+}
+
 FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t flow_index) {
     FrontendSelectionResultDto result {};
 

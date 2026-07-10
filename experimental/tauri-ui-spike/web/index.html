@@ -120,6 +120,11 @@
                   <input id="flowFilterInput" class="flow-filter-input" type="text" placeholder="Filter by protocol, hint, service, address, or port" />
                   <button id="clearFlowFilterButton" type="button" class="secondary-button">Clear</button>
                 </div>
+                <div id="protocolPathFlowFilterRow" class="flow-wireshark-row">
+                  <span class="inline-label">Protocol path</span>
+                  <pre id="protocolPathFlowFilterText" class="details-pre compact-filter-pre">No protocol path filter.</pre>
+                  <button id="clearProtocolPathFlowFilterButton" type="button" class="secondary-button">Clear</button>
+                </div>
                 <div id="wiresharkFilterRow" class="flow-wireshark-row">
                   <span class="inline-label">Wireshark filter</span>
                   <pre id="wiresharkFilterText" class="details-pre compact-filter-pre">No flow selected.</pre>
@@ -375,6 +380,7 @@
                   <div class="statistics-section-heading">
                     <h3>Protocol Path Tree</h3>
                     <div class="statistics-mode-toolbar">
+                      <button id="protocolPathShowFlowsButton" type="button" class="protocol-path-show-flows-button">Show flows</button>
                       <span class="inline-select-label">Mode</span>
                       <div class="statistics-mode-tabs" aria-label="Protocol path statistics mode">
                         <button id="protocolPathStatsModeKindOverview" type="button" class="secondary-button">Kind overview</button>

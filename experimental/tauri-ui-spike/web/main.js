@@ -71,6 +71,7 @@
     overview: null,
     flows: [],
     flowFilterText: "",
+    activeProtocolPathFilter: null,
     flowSortKey: "index",
     flowSortDirection: "asc",
     flowVirtualWindowStart: 0,
@@ -118,6 +119,7 @@
     analysisFlowVirtualWindowEnd: 0,
     analysisFlowVirtualizationActive: false,
     protocolPathStatsMode: 0,
+    selectedProtocolPathNode: null,
     protocolPathExpandedNodeIds: new Set(),
     analysisSequenceExportInProgress: false,
     analysisSequenceExportStatusText: "",
@@ -133,6 +135,7 @@
     wiresharkFilterStatusText: "",
     wiresharkFilterStatusKind: "neutral",
     flowSelectionRequestToken: 0,
+    protocolPathFilterRequestToken: 0,
     packetRequestToken: 0,
     streamRequestToken: 0,
     streamDetailsRequestToken: 0,
@@ -231,6 +234,9 @@
     flowMeta: document.getElementById("flowMeta"),
     flowFilterInput: document.getElementById("flowFilterInput"),
     clearFlowFilterButton: document.getElementById("clearFlowFilterButton"),
+    protocolPathFlowFilterRow: document.getElementById("protocolPathFlowFilterRow"),
+    protocolPathFlowFilterText: document.getElementById("protocolPathFlowFilterText"),
+    clearProtocolPathFlowFilterButton: document.getElementById("clearProtocolPathFlowFilterButton"),
     flowSortHeaders: Array.from(document.querySelectorAll("[data-flow-sort-key]")),
     flowPathHeader: document.getElementById("flowPathHeader"),
     flowTableBody: document.getElementById("flowTableBody"),
@@ -341,6 +347,7 @@
     protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
     protocolPathStatsModeTerminalPaths: document.getElementById("protocolPathStatsModeTerminalPaths"),
+    protocolPathShowFlowsButton: document.getElementById("protocolPathShowFlowsButton"),
     protocolPathExpandAllButton: document.getElementById("protocolPathExpandAllButton"),
     protocolPathCollapseAllButton: document.getElementById("protocolPathCollapseAllButton"),
     protocolPathStatsPrimaryHeader: document.getElementById("protocolPathStatsPrimaryHeader"),
@@ -689,6 +696,93 @@
 
   function unrecognizedPacketCount() {
     return Number(state.overview?.unrecognized_packet_count || 0);
+  }
+
+  function currentProtocolPathMode() {
+    return Number(state.protocolPathStatsMode ?? state.overview?.protocol_path_statistics_default_mode ?? 0);
+  }
+
+  function currentProtocolPathStatsRows() {
+    const overview = state.overview;
+    const protocolPathMode = currentProtocolPathMode();
+    if (protocolPathMode === 1) {
+      return Array.isArray(overview?.protocol_path_statistics_identity_tree) ? overview.protocol_path_statistics_identity_tree : [];
+    }
+    if (protocolPathMode === 2) {
+      return Array.isArray(overview?.protocol_path_statistics_terminal_paths) ? overview.protocol_path_statistics_terminal_paths : [];
+    }
+    return Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : [];
+  }
+
+  function protocolPathModeLabel(mode) {
+    const normalizedMode = Number(mode);
+    if (normalizedMode === 1) {
+      return "Identity tree";
+    }
+    if (normalizedMode === 2) {
+      return "Terminal paths";
+    }
+    return "Kind overview";
+  }
+
+  function protocolPathRowFilterLabel(row, mode) {
+    const pathText = String(row?.path_text || "").trim();
+    const layerText = String(row?.layer_text || "").trim();
+    const suffix = pathText.length > 0 ? pathText : layerText;
+    return suffix.length > 0
+      ? `${protocolPathModeLabel(mode)} / ${suffix}`
+      : protocolPathModeLabel(mode);
+  }
+
+  function syncSelectedProtocolPathNode(rows = currentProtocolPathStatsRows(), mode = currentProtocolPathMode()) {
+    const currentSelection = state.selectedProtocolPathNode;
+    if (!currentSelection || Number(currentSelection.mode) !== Number(mode)) {
+      state.selectedProtocolPathNode = null;
+      return null;
+    }
+
+    const matchingRow = rows.find((row) => Number(row?.node_id) === Number(currentSelection.nodeId)) || null;
+    if (!matchingRow) {
+      state.selectedProtocolPathNode = null;
+      return null;
+    }
+
+    state.selectedProtocolPathNode = {
+      mode: Number(mode),
+      nodeId: Number(matchingRow.node_id),
+      label: protocolPathRowFilterLabel(matchingRow, mode),
+      flowCount: Number(matchingRow.flow_count ?? 0),
+    };
+    return state.selectedProtocolPathNode;
+  }
+
+  function hasActiveProtocolPathFilter() {
+    return state.activeProtocolPathFilter != null && state.activeProtocolPathFilter.flowIndexSet instanceof Set;
+  }
+
+  function hasActiveFlowFilters() {
+    return state.flowFilterText.trim().length > 0 || hasActiveProtocolPathFilter();
+  }
+
+  function clearSelectedFlowArtifacts() {
+    state.selectedFlowIndex = null;
+    clearPackets();
+    clearStream();
+    clearAnalysis();
+  }
+
+  function ensureSelectedFlowVisible(reasonText = "") {
+    if (state.selectedFlowIndex == null) {
+      return;
+    }
+
+    const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
+    if (!selectedFlowVisible) {
+      clearSelectedFlowArtifacts();
+      if (reasonText.length > 0) {
+        setStatus(reasonText, "neutral");
+      }
+    }
   }
 
   function formatPercent(part, total) {
@@ -1501,15 +1595,7 @@
       resetAnalysisFlowVirtualizationState();
     }
     setWiresharkFilterStatus("", "neutral");
-
-    const selectedFlowVisible = filteredFlows().some((flow) => flow.flow_index === state.selectedFlowIndex);
-    if (!selectedFlowVisible) {
-      state.selectedFlowIndex = null;
-      clearPackets();
-      clearStream();
-      clearAnalysis();
-      setStatus("Selected flow was cleared because it no longer matches the current filter.", "neutral");
-    }
+    ensureSelectedFlowVisible("Selected flow was cleared because it no longer matches the current filter.");
   }
 
   function applyFlowFilterFromStatistics(filterText, sourceLabel) {
@@ -1519,8 +1605,65 @@
     render();
   }
 
+  function clearProtocolPathFlowFilter(statusText = "Cleared protocol path filter.") {
+    if (!hasActiveProtocolPathFilter()) {
+      return;
+    }
+
+    state.protocolPathFilterRequestToken += 1;
+    state.activeProtocolPathFilter = null;
+    ensureSelectedFlowVisible("Selected flow was cleared because it no longer matches the current filter.");
+    setStatus(statusText, "neutral");
+  }
+
+  async function showSelectedProtocolPathFlows() {
+    const selection = syncSelectedProtocolPathNode();
+    if (!selection || Number(selection.flowCount) <= 0) {
+      return;
+    }
+
+    const requestToken = ++state.protocolPathFilterRequestToken;
+    try {
+      const flowIndices = await invoke("get_protocol_path_summary_flow_indices", {
+        mode: Number(selection.mode),
+        node_id: Number(selection.nodeId),
+      });
+
+      if (requestToken !== state.protocolPathFilterRequestToken) {
+        return;
+      }
+
+      const normalizedFlowIndices = Array.isArray(flowIndices)
+        ? flowIndices
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value >= 0)
+        : [];
+
+      state.activeProtocolPathFilter = {
+        mode: Number(selection.mode),
+        nodeId: Number(selection.nodeId),
+        label: String(selection.label || "").trim(),
+        flowIndices: normalizedFlowIndices,
+        flowIndexSet: new Set(normalizedFlowIndices),
+      };
+      state.activeTab = "flows";
+      ensureSelectedFlowVisible("Selected flow was cleared because it no longer matches the current filter.");
+      setStatus(`Applied protocol path filter: ${selection.label}.`, "success");
+      render();
+    } catch (error) {
+      if (requestToken !== state.protocolPathFilterRequestToken) {
+        return;
+      }
+      setStatus(`Failed to filter flows by protocol path: ${String(error)}`, "error");
+      render();
+    }
+  }
+
   function clearOverview() {
     state.overview = null;
+    state.selectedProtocolPathNode = null;
+    state.activeProtocolPathFilter = null;
+    state.protocolPathFilterRequestToken += 1;
     state.protocolPathExpandedNodeIds.clear();
   }
 
@@ -2014,11 +2157,17 @@
 
   function filteredFlows() {
     const filterText = state.flowFilterText.trim().toLowerCase();
-    if (filterText.length === 0) {
-      return state.flows;
-    }
+    const protocolPathFilter = hasActiveProtocolPathFilter() ? state.activeProtocolPathFilter : null;
 
     return state.flows.filter((flow) => {
+      if (protocolPathFilter && !protocolPathFilter.flowIndexSet.has(Number(flow.flow_index))) {
+        return false;
+      }
+
+      if (filterText.length === 0) {
+        return true;
+      }
+
       const haystack = [
         formatFlowFamily(flow),
         flow.protocol_text,
@@ -2498,6 +2647,7 @@
         ? (Array.isArray(overview?.protocol_path_statistics_terminal_paths) ? overview.protocol_path_statistics_terminal_paths : [])
         : (Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : []));
     pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
+    const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
     const visibleProtocolPathRows = buildVisibleProtocolPathRows(protocolPathRows, protocolPathMode);
     const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
     const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
@@ -2515,6 +2665,9 @@
     elements.protocolPathStatsModeKindOverview?.setAttribute("aria-pressed", protocolPathMode === 0 ? "true" : "false");
     elements.protocolPathStatsModeIdentityTree?.setAttribute("aria-pressed", protocolPathMode === 1 ? "true" : "false");
     elements.protocolPathStatsModeTerminalPaths?.setAttribute("aria-pressed", protocolPathMode === 2 ? "true" : "false");
+    if (elements.protocolPathShowFlowsButton) {
+      elements.protocolPathShowFlowsButton.disabled = !selectedProtocolPathNode || Number(selectedProtocolPathNode.flowCount) <= 0;
+    }
     if (elements.protocolPathExpandAllButton) {
       elements.protocolPathExpandAllButton.disabled = !isProtocolPathTreeMode(protocolPathMode) || protocolPathRows.length === 0;
       elements.protocolPathExpandAllButton.hidden = !isProtocolPathTreeMode(protocolPathMode);
@@ -2585,8 +2738,11 @@
               const layerText = String(row.layer_text || "").trim();
               const fullText = String(row.path_text || "").trim();
               const displayText = layerText.length > 0 ? layerText : fullText;
+              const selected = selectedProtocolPathNode
+                && Number(selectedProtocolPathNode.mode) === Number(protocolPathMode)
+                && Number(selectedProtocolPathNode.nodeId) === Number(nodeId);
               return `
-                <tr title="${escapeHtml(fullText)}">
+                <tr class="protocol-path-stats-row${selected ? " is-selected" : ""}" data-protocol-path-row-node-id="${nodeId}" title="${escapeHtml(fullText)}">
                   <td>
                     <div class="protocol-path-cell" style="padding-left:${Math.max(0, depth) * 18}px;">
                       ${hasChildren
@@ -2604,8 +2760,26 @@
           .join("")
         : renderStatsStateRow(4, "No protocol-path statistics are available.");
       for (const button of elements.protocolPathStatsBody.querySelectorAll("[data-protocol-path-node-id]")) {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
           toggleProtocolPathNode(button.dataset.protocolPathNodeId);
+        });
+      }
+      for (const row of elements.protocolPathStatsBody.querySelectorAll("[data-protocol-path-row-node-id]")) {
+        row.addEventListener("click", () => {
+          const nodeId = Number(row.dataset.protocolPathRowNodeId);
+          const selectedRow = visibleProtocolPathRows.find((candidate) => Number(candidate?.node_id) === nodeId);
+          if (!selectedRow) {
+            return;
+          }
+
+          state.selectedProtocolPathNode = {
+            mode: Number(protocolPathMode),
+            nodeId,
+            label: protocolPathRowFilterLabel(selectedRow, protocolPathMode),
+            flowCount: Number(selectedRow.flow_count ?? 0),
+          };
+          render();
         });
       }
       elements.quicStatsBody.innerHTML = [
@@ -2734,9 +2908,25 @@
     const visibleFlows = getVisibleFlows();
     const checkedCount = checkedFlowCount();
     const columnCount = flowTableColumnCount();
+    const hasProtocolPathFilter = hasActiveProtocolPathFilter();
+    const protocolPathFilterLabel = hasProtocolPathFilter
+      ? String(state.activeProtocolPathFilter?.label || "").trim()
+      : "";
 
     elements.flowFilterInput.value = state.flowFilterText;
     elements.clearFlowFilterButton.disabled = state.flowFilterText.trim().length === 0;
+    if (elements.protocolPathFlowFilterRow) {
+      elements.protocolPathFlowFilterRow.style.display = hasProtocolPathFilter ? "grid" : "none";
+    }
+    if (elements.protocolPathFlowFilterText) {
+      elements.protocolPathFlowFilterText.textContent = hasProtocolPathFilter
+        ? protocolPathFilterLabel
+        : "No protocol path filter.";
+      elements.protocolPathFlowFilterText.title = hasProtocolPathFilter ? protocolPathFilterLabel : "";
+    }
+    if (elements.clearProtocolPathFlowFilterButton) {
+      elements.clearProtocolPathFlowFilterButton.disabled = !hasProtocolPathFilter;
+    }
     elements.checkedFlowsStatusBar.classList.toggle("is-visible", checkedCount > 0);
     elements.checkedFlowsStatusText.textContent = checkedCount === 1 ? "1 flow selected" : `${formatNumber(checkedCount)} flows selected`;
     if (elements.flowPathHeader) {
@@ -2785,7 +2975,7 @@
     }
 
     if (visibleFlows.length === 0) {
-      elements.flowMeta.textContent = state.flowFilterText.trim().length > 0
+      elements.flowMeta.textContent = hasActiveFlowFilters()
         ? `Filtered to 0 of ${formatNumber(flows.length)} flows.`
         : "";
       elements.flowRenderCapBar.classList.remove("is-visible");
@@ -2835,7 +3025,7 @@
     state.flowVirtualWindowEnd = virtualWindow.endIndex;
     state.flowVirtualizationActive = virtualWindow.virtualizationActive;
 
-    elements.flowMeta.textContent = state.flowFilterText.trim().length > 0
+    elements.flowMeta.textContent = hasActiveFlowFilters()
       ? `Filtered to ${formatNumber(visibleFlows.length)} of ${formatNumber(flows.length)} flows.`
       : "";
     elements.flowRenderCapBar.classList.remove("is-visible");
@@ -5884,6 +6074,9 @@
   elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
     setProtocolPathStatsMode(2);
   });
+  elements.protocolPathShowFlowsButton?.addEventListener("click", () => {
+    void showSelectedProtocolPathFlows();
+  });
   elements.protocolPathExpandAllButton?.addEventListener("click", () => {
     const overview = state.overview;
     const protocolPathMode = Number(state.protocolPathStatsMode ?? overview?.protocol_path_statistics_default_mode ?? 0);
@@ -5908,6 +6101,10 @@
   });
   elements.clearFlowFilterButton.addEventListener("click", () => {
     applyFlowFilterState("");
+    render();
+  });
+  elements.clearProtocolPathFlowFilterButton?.addEventListener("click", () => {
+    clearProtocolPathFlowFilter();
     render();
   });
   elements.copyWiresharkFilterButton.addEventListener("click", async () => {

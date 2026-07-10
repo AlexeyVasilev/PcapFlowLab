@@ -576,6 +576,20 @@ fn get_protocol_path_legend(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_protocol_path_summary_flow_indices(
+    state: State<'_, Mutex<AdapterState>>,
+    mode: u8,
+    node_id: u64,
+) -> Result<Vec<usize>, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state
+        .adapter
+        .get_protocol_path_summary_flow_indices(mode, node_id)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn update_settings(
     state: State<'_, Mutex<AdapterState>>,
     http_use_path_as_service_hint: bool,
@@ -850,6 +864,7 @@ pub fn run() {
             get_overview,
             get_settings,
             get_protocol_path_legend,
+            get_protocol_path_summary_flow_indices,
             update_settings,
             get_flows,
             select_flow,

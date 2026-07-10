@@ -26,8 +26,7 @@ Current repository state:
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;
 - kind-overview and identity-tree protocol-path statistics are now collapsible in both UI frontends;
-- the Qt UI can now apply a selected protocol-path statistics node as a runtime structured flow-list filter;
-- Tauri parity for protocol-path flow filtering remains future work.
+- both the Qt UI and the Tauri spike can now apply a selected protocol-path statistics node as a runtime structured flow-list filter.
 
 ## Flow List Presentation
 
@@ -48,8 +47,7 @@ Important scope boundaries:
 
 Still deferred:
 
-- Tauri protocol-path flow-filter parity;
-- protocol-path drill-down workflows beyond the current Qt statistics-to-flows filter;
+- protocol-path drill-down workflows beyond the current Statistics-to-Flows structured filter;
 - persistence for the Tauri Path-column visibility toggle.
 
 ## Runtime Protocol-Path Statistics
@@ -110,9 +108,9 @@ Presentation notes:
 - the Tauri spike exposes the same runtime tree through the shared overview DTO, uses the same readable layer text, and also keeps the tree inside a bounded internal scroll block;
 - ordering is deterministic: descending `packet_count`, then descending `flow_count`, then path text.
 
-### Qt Structured Flow Filter
+### Structured Flow Filter
 
-The Qt UI can now apply a selected protocol-path statistics row as a runtime structured flow-list filter.
+Both frontends can now apply a selected protocol-path statistics row as a runtime structured flow-list filter.
 
 Current behavior:
 
@@ -129,7 +127,7 @@ Membership semantics:
 - `Identity tree` applies identifier-aware prefix membership;
 - `Terminal paths` applies exact full terminal-path membership.
 
-The current implementation intentionally uses a snapshot of runtime flow indices rather than persisting node selections or node ids. Tauri parity for this workflow remains follow-up work.
+The current implementation intentionally uses a snapshot of runtime flow indices rather than persisting node selections or node ids.
 
 ## Problem Statement
 
@@ -586,7 +584,7 @@ Stage I status:
 
 - Statistics-tab integration is implemented in both Qt and the Tauri spike for runtime protocol-path tree display;
 - Qt now uses a virtualized runtime tree presentation; top-N, search, collapse/expand, and filters remain follow-up UX work;
-- protocol-path filtering remains deferred.
+- protocol-path filtering is now implemented as runtime UI state in both frontends; persistence and broader drill-down workflows remain follow-up work.
 
 ## Static Audit: Likely Touch Points
 
@@ -706,7 +704,7 @@ Relevant existing fixture families:
 - `ProtocolPathRegistry` should intern full path values and assign compact ids
 - exact path changes should eventually require an index format bump
 - old `.pflidx` compatibility is intentionally not a requirement for the FlowKeyV2 index break
-- protocol-path filters should remain follow-up work after the first identity/statistics change
+- richer protocol-path filters beyond the current runtime Statistics-to-Flows UI filter should remain follow-up work after the first identity/statistics change
 
 ## Risks
 

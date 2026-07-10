@@ -143,6 +143,19 @@ std::string protocol_path_legend_entry_json(const pfl::FrontendProtocolPathLegen
     return out.str();
 }
 
+std::string flow_indices_json(const std::vector<std::size_t>& flow_indices) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < flow_indices.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << flow_indices[index];
+    }
+    out << ']';
+    return out.str();
+}
+
 std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& row) {
     std::ostringstream out {};
     out << '{'
@@ -1092,6 +1105,25 @@ char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSess
     }
 
     return make_c_string(protocol_path_legend_json(handle->adapter.get_protocol_path_legend()));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode,
+    const std::uint64_t node_id
+) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    const auto statistics_mode = mode == 1U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree
+        : (mode == 2U
+            ? pfl::ProtocolPathStatisticsMode::terminal_paths
+            : pfl::ProtocolPathStatisticsMode::kind_overview);
+    return make_c_string(flow_indices_json(
+        handle->adapter.get_protocol_path_summary_flow_indices(statistics_mode, node_id)
+    ));
 }
 
 char* pfl_frontend_session_adapter_update_settings_json(

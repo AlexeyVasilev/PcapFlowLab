@@ -47,6 +47,11 @@ extern "C" {
     fn pfl_frontend_session_adapter_get_protocol_path_legend_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+        node_id: u64,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_update_settings_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         http_use_path_as_service_hint: c_uchar,
@@ -244,6 +249,21 @@ impl CppFrontendSessionAdapter {
     pub fn get_protocol_path_legend(&self) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_legend_json(self.handle) };
         parse_json_owned::<Vec<ProtocolPathLegendEntryDto>>(json)
+    }
+
+    pub fn get_protocol_path_summary_flow_indices(
+        &self,
+        mode: u8,
+        node_id: u64,
+    ) -> Result<Vec<usize>, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+                self.handle,
+                mode,
+                node_id,
+            )
+        };
+        parse_json_owned::<Vec<usize>>(json)
     }
 
     pub fn update_settings(
