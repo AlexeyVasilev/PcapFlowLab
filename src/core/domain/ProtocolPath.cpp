@@ -34,6 +34,8 @@ namespace {
         return "EthernetII";
     case ProtocolLayerKind::ieee8023:
         return "IEEE 802.3";
+    case ProtocolLayerKind::llc_snap:
+        return "LLC/SNAP";
     case ProtocolLayerKind::linux_sll:
         return "LinuxSll";
     case ProtocolLayerKind::linux_sll2:
@@ -42,6 +44,16 @@ namespace {
         return "VLAN";
     case ProtocolLayerKind::mpls:
         return "MPLS";
+    case ProtocolLayerKind::mpls_pw:
+        return "MPLS PW";
+    case ProtocolLayerKind::pbb:
+        return "PBB";
+    case ProtocolLayerKind::pppoe:
+        return "PPPoE";
+    case ProtocolLayerKind::ppp:
+        return "PPP";
+    case ProtocolLayerKind::macsec:
+        return "MACsec";
     case ProtocolLayerKind::ipv4:
         return "IPv4";
     case ProtocolLayerKind::ipv6:
@@ -215,6 +227,8 @@ std::string format_protocol_layer_key(const LayerKey& key) {
         return protocol_layer_kind_label(key.kind) + "(vid=" + std::to_string(key.identifier.value) + ")";
     case ProtocolLayerIdentifierKind::mpls_label:
         return protocol_layer_kind_label(key.kind) + "(label=" + std::to_string(key.identifier.value) + ")";
+    case ProtocolLayerIdentifierKind::pbb_isid:
+        return protocol_layer_kind_label(key.kind) + "(isid=" + format_hex_value(key.identifier.value, 6) + ")";
     case ProtocolLayerIdentifierKind::vxlan_vni:
         return protocol_layer_kind_label(key.kind) + "(vni=" + std::to_string(key.identifier.value) + ")";
     case ProtocolLayerIdentifierKind::geneve_vni:

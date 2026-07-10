@@ -19,13 +19,19 @@ struct ProtocolPathLayerPresentationDescriptor {
     const char* text_color {""};
 };
 
-constexpr std::array<ProtocolPathLayerPresentationDescriptor, 19> kProtocolPathDescriptors {{
+constexpr std::array<ProtocolPathLayerPresentationDescriptor, 25> kProtocolPathDescriptors {{
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ethernet_ii, "EII", "Ethernet II", "link", "#eef2ff", "#c7d2fe", "#3730a3"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ieee8023, "802.3", "IEEE 802.3", "link", "#eef2ff", "#c7d2fe", "#3730a3"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::llc_snap, "LLC", "LLC/SNAP", "shim", "#fff7ed", "#fdba74", "#9a3412"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::linux_sll, "SLL", "Linux SLL", "link", "#eef2ff", "#c7d2fe", "#3730a3"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::linux_sll2, "SLL2", "Linux SLL2", "link", "#eef2ff", "#c7d2fe", "#3730a3"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::vlan, "Vl", "VLAN", "shim", "#fff7ed", "#fdba74", "#9a3412"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::mpls, "M", "MPLS", "shim", "#fff7ed", "#fdba74", "#9a3412"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::mpls_pw, "PW", "MPLS PW", "shim", "#fff7ed", "#fdba74", "#9a3412"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::pbb, "PBB", "PBB", "shim", "#fff7ed", "#fdba74", "#9a3412"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::pppoe, "PPPoE", "PPPoE", "shim", "#fff7ed", "#fdba74", "#9a3412"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ppp, "PPP", "PPP", "shim", "#fff7ed", "#fdba74", "#9a3412"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::macsec, "MS", "MACsec", "security", "#f0fdf4", "#86efac", "#166534"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ipv4, "Ip4", "IPv4", "network", "#ecfeff", "#a5f3fc", "#155e75"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ipv6, "Ip6", "IPv6", "network", "#ecfeff", "#a5f3fc", "#155e75"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::tcp, "TCP", "TCP", "transport", "#eff6ff", "#93c5fd", "#1d4ed8"},
@@ -59,6 +65,16 @@ std::optional<std::string> identifier_tooltip_text(const LayerKey& layer) {
         return "VID: " + std::to_string(layer.identifier.value);
     case ProtocolLayerIdentifierKind::mpls_label:
         return "Label: " + std::to_string(layer.identifier.value);
+    case ProtocolLayerIdentifierKind::pbb_isid: {
+        std::ostringstream text {};
+        text << "I-SID: 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(6)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
     case ProtocolLayerIdentifierKind::vxlan_vni:
     case ProtocolLayerIdentifierKind::geneve_vni:
         return "VNI: " + std::to_string(layer.identifier.value);
@@ -85,6 +101,16 @@ std::optional<std::string> identifier_display_suffix_text(const LayerKey& layer)
         return "VID " + std::to_string(layer.identifier.value);
     case ProtocolLayerIdentifierKind::mpls_label:
         return "label " + std::to_string(layer.identifier.value);
+    case ProtocolLayerIdentifierKind::pbb_isid: {
+        std::ostringstream text {};
+        text << "I-SID 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(6)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
     case ProtocolLayerIdentifierKind::vxlan_vni:
     case ProtocolLayerIdentifierKind::geneve_vni:
         return "VNI " + std::to_string(layer.identifier.value);
@@ -173,6 +199,11 @@ std::vector<ProtocolPathLegendEntry> protocol_path_legend_entries() {
     legend.reserve(kProtocolPathDescriptors.size());
 
     for (const auto& descriptor : kProtocolPathDescriptors) {
+        if (descriptor.kind == ProtocolLayerKind::arp ||
+            descriptor.kind == ProtocolLayerKind::icmp ||
+            descriptor.kind == ProtocolLayerKind::icmpv6) {
+            continue;
+        }
         legend.push_back(ProtocolPathLegendEntry {
             .short_label = descriptor.short_label,
             .full_name = descriptor.full_name,

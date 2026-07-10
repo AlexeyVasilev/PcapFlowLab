@@ -478,12 +478,52 @@ void expect_formatting() {
         LayerKey::ipv4(),
         LayerKey::sctp(),
     };
+    const ProtocolPath llc_snap {
+        LayerKey::ieee8023(),
+        LayerKey::llc_snap(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath mpls_pw {
+        LayerKey::ethernet_ii(),
+        LayerKey::mpls(24050U),
+        LayerKey::mpls(16050U),
+        LayerKey::mpls_pw(),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath pbb {
+        LayerKey::ethernet_ii(),
+        LayerKey::pbb(0x123456U),
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath pppoe {
+        LayerKey::ethernet_ii(),
+        LayerKey::pppoe(),
+        LayerKey::ppp(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath macsec {
+        LayerKey::ethernet_ii(),
+        LayerKey::macsec(),
+    };
 
     PFL_EXPECT(format_protocol_layer_key(LayerKey::ethernet_ii()) == "EthernetII");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::ieee8023()) == "IEEE 802.3");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::llc_snap()) == "LLC/SNAP");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::ipv4()) == "IPv4");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::tcp()) == "TCP");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::vlan(200U)) == "VLAN(vid=200)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::mpls(102U)) == "MPLS(label=102)");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::mpls_pw()) == "MPLS PW");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::pbb(0x123456U)) == "PBB(isid=0x123456)");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::pppoe()) == "PPPoE");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::ppp()) == "PPP");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::macsec()) == "MACsec");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::vxlan(100U)) == "VXLAN(vni=100)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::geneve(200U)) == "Geneve(vni=200)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::gtpu(0x01020384U)) == "GTP-U(teid=0x01020384)");
@@ -492,6 +532,12 @@ void expect_formatting() {
     PFL_EXPECT(format_protocol_path(shim) == "EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(vxlan) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(gtpu) == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020384) -> IPv4 -> SCTP");
+    PFL_EXPECT(format_protocol_path(llc_snap) == "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(mpls_pw)
+        == "EthernetII -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(pbb) == "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(pppoe) == "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(macsec) == "EthernetII -> MACsec");
 }
 
 void expect_protocol_path_presentation_mapping() {
@@ -524,6 +570,31 @@ void expect_protocol_path_presentation_mapping() {
         LayerKey::ipv4(),
         LayerKey::tcp(),
     };
+    const ProtocolPath llc_snap {
+        LayerKey::ieee8023(),
+        LayerKey::llc_snap(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath pbb {
+        LayerKey::ethernet_ii(),
+        LayerKey::pbb(0x123456U),
+        LayerKey::ieee8023(),
+        LayerKey::llc_snap(),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
+    };
+    const ProtocolPath pppoe {
+        LayerKey::ethernet_ii(),
+        LayerKey::pppoe(),
+        LayerKey::ppp(),
+        LayerKey::ipv4(),
+        LayerKey::tcp(),
+    };
+    const ProtocolPath macsec {
+        LayerKey::ethernet_ii(),
+        LayerKey::macsec(),
+    };
 
     const auto direct_presentation = session_detail::build_protocol_path_presentation(&direct);
     PFL_EXPECT(direct_presentation.full_text == "EthernetII -> IPv4 -> TCP");
@@ -547,6 +618,27 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(mpls_presentation.badges[1].tooltip == "MPLS\nLabel: 100");
     PFL_EXPECT(mpls_presentation.badges[2].tooltip == "MPLS\nLabel: 200");
 
+    const auto llc_presentation = session_detail::build_protocol_path_presentation(&llc_snap);
+    PFL_EXPECT(llc_presentation.compact_text == "802.3|LLC|Ip4|TCP");
+    PFL_EXPECT(llc_presentation.badges[1].full_name == "LLC/SNAP");
+    PFL_EXPECT(llc_presentation.badges[1].color_key == "shim");
+
+    const auto pbb_presentation = session_detail::build_protocol_path_presentation(&pbb);
+    PFL_EXPECT(pbb_presentation.badges[1].short_label == "PBB");
+    PFL_EXPECT(pbb_presentation.badges[1].tooltip == "PBB\nI-SID: 0x123456");
+    PFL_EXPECT(pbb_presentation.badges[2].short_label == "802.3");
+    PFL_EXPECT(pbb_presentation.badges[3].short_label == "LLC");
+
+    const auto pppoe_presentation = session_detail::build_protocol_path_presentation(&pppoe);
+    PFL_EXPECT(pppoe_presentation.compact_text == "EII|PPPoE|PPP|Ip4|TCP");
+    PFL_EXPECT(pppoe_presentation.badges[1].full_name == "PPPoE");
+    PFL_EXPECT(pppoe_presentation.badges[2].full_name == "PPP");
+
+    const auto macsec_presentation = session_detail::build_protocol_path_presentation(&macsec);
+    PFL_EXPECT(macsec_presentation.compact_text == "EII|MS");
+    PFL_EXPECT(macsec_presentation.badges[1].full_name == "MACsec");
+    PFL_EXPECT(macsec_presentation.badges[1].color_key == "security");
+
     const auto unknown_presentation = session_detail::build_protocol_path_presentation(nullptr);
     PFL_EXPECT(unknown_presentation.full_text == "Unknown protocol path");
     PFL_EXPECT(unknown_presentation.compact_text == "?");
@@ -554,15 +646,31 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(unknown_presentation.badges[0].short_label == "?");
 
     const auto legend = session_detail::protocol_path_legend_entries();
-    PFL_EXPECT(legend.size() == 19U);
+    PFL_EXPECT(legend.size() == 22U);
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_EXPECT(legend.back().short_label == "?");
     PFL_EXPECT(legend.back().full_name == "Unknown");
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "LLC"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PW"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PBB"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PPPoE"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PPP"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "MS"; }));
+    PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ARP"; }));
+    PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ICMP"; }));
+    PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ICMP6"; }));
 
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ethernet_ii()) == "Ethernet II");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ieee8023()) == "IEEE 802.3");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::llc_snap()) == "LLC/SNAP");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ipv4()) == "IPv4");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::vlan(200U)) == "VLAN (VID 200)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::mpls(102U)) == "MPLS (label 102)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::mpls_pw()) == "MPLS PW");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::pbb(0x123456U)) == "PBB (I-SID 0x123456)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::pppoe()) == "PPPoE");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ppp()) == "PPP");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::macsec()) == "MACsec");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::vxlan(100U)) == "VXLAN (VNI 100)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::geneve(100U)) == "Geneve (VNI 100)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::gtpu(0x01020384U)) == "GTP-U (TEID 0x01020384)");
@@ -609,7 +717,7 @@ void expect_frontend_protocol_path_legend_exposure() {
     FrontendSessionAdapter adapter {};
     const auto legend = adapter.get_protocol_path_legend();
 
-    PFL_REQUIRE(legend.size() == 19U);
+    PFL_REQUIRE(legend.size() == 22U);
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_EXPECT(legend.back().short_label == "?");
     PFL_EXPECT(legend.back().full_name == "Unknown");
@@ -621,13 +729,22 @@ void expect_frontend_protocol_path_legend_exposure() {
     };
 
     PFL_EXPECT(contains_short_label("EII"));
+    PFL_EXPECT(contains_short_label("LLC"));
     PFL_EXPECT(contains_short_label("Vl"));
     PFL_EXPECT(contains_short_label("M"));
+    PFL_EXPECT(contains_short_label("PW"));
+    PFL_EXPECT(contains_short_label("PBB"));
+    PFL_EXPECT(contains_short_label("PPPoE"));
+    PFL_EXPECT(contains_short_label("PPP"));
+    PFL_EXPECT(contains_short_label("MS"));
     PFL_EXPECT(contains_short_label("Ip4"));
     PFL_EXPECT(contains_short_label("UDP"));
     PFL_EXPECT(contains_short_label("Vx"));
     PFL_EXPECT(contains_short_label("GTP-U"));
     PFL_EXPECT(contains_short_label("?"));
+    PFL_EXPECT(!contains_short_label("ARP"));
+    PFL_EXPECT(!contains_short_label("ICMP"));
+    PFL_EXPECT(!contains_short_label("ICMP6"));
 }
 
 void expect_builder_empty_state() {
@@ -745,6 +862,73 @@ void expect_decode_attaches_direct_and_shim_protocol_paths() {
     {
         const auto state = require_imported_capture_state(fixture_path("parsing/mpls/01_mpls_ipv4_tcp_single_label.pcap"));
         PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> MPLS(label=100) -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap"));
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap"));
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/pbb/01_pbb_ipv4_tcp.pcap"));
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/pbb/08_pbb_inner_llc_snap_ipv4_udp.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> PBB(isid=0x123456) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/mpls_pw/01_mpls_pw_eth_ipv4_tcp_no_cw.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/mpls_pw/08_mpls_pw_eth_llc_snap_ipv4_udp_cw.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP");
+    }
+}
+
+void expect_terminal_control_protocols_do_not_appear_in_protocol_paths() {
+    {
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_path_arp_cleanup.pcap",
+            make_classic_pcap({{100U, make_ethernet_arp_packet(ipv4(192, 168, 1, 10), ipv4(192, 168, 1, 1), 1U)}})
+        );
+        const auto state = require_imported_capture_state(capture_path);
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII");
+    }
+
+    {
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_path_icmp_cleanup.pcap",
+            make_classic_pcap({{100U, make_ethernet_ipv4_icmp_packet(ipv4(10, 0, 0, 10), ipv4(10, 0, 0, 20), 8U, 0U)}})
+        );
+        const auto state = require_imported_capture_state(capture_path);
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> IPv4");
+    }
+
+    {
+        const auto ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10});
+        const auto ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x20});
+        const auto capture_path = write_temp_pcap(
+            "pfl_protocol_path_icmpv6_cleanup.pcap",
+            make_classic_pcap({{100U, make_ethernet_ipv6_icmpv6_with_hop_by_hop_packet(ipv6_src, ipv6_dst, 128U, 0U)}})
+        );
+        const auto state = require_imported_capture_state(capture_path);
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> IPv6");
     }
 }
 
@@ -900,6 +1084,59 @@ void expect_protocol_path_statistics_preserve_nested_mpls_prefixes_in_kind_overv
     expect_protocol_path_stats_membership(summary, "EthernetII -> MPLS -> MPLS", {0U});
 }
 
+void expect_protocol_path_statistics_cover_new_shim_layers() {
+    const auto one_flow = std::vector<FlowIndex> {0U};
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap")));
+        const auto summary = session.protocol_path_summary();
+        expect_protocol_path_stats_row(summary, "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", 1U, 1U);
+        expect_protocol_path_stats_layer_text(summary, "IEEE 802.3 -> LLC/SNAP", "LLC/SNAP");
+        expect_protocol_path_stats_membership(summary, "IEEE 802.3 -> LLC/SNAP", one_flow);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap")));
+        const auto summary = session.protocol_path_summary();
+        expect_protocol_path_stats_row(summary, "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP", 1U, 1U);
+        expect_protocol_path_stats_layer_text(summary, "EthernetII -> PPPoE", "PPPoE");
+        expect_protocol_path_stats_layer_text(summary, "EthernetII -> PPPoE -> PPP", "PPP");
+        expect_protocol_path_stats_membership(summary, "EthernetII -> PPPoE -> PPP", one_flow);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/pbb/01_pbb_ipv4_tcp.pcap")));
+        const auto kind_summary = session.protocol_path_summary();
+        const auto identity_summary = session.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
+        expect_protocol_path_stats_row(kind_summary, "EthernetII -> PBB -> EthernetII -> IPv4 -> TCP", 1U, 1U);
+        expect_protocol_path_stats_layer_text(kind_summary, "EthernetII -> PBB", "PBB");
+        expect_protocol_path_stats_membership(kind_summary, "EthernetII -> PBB", one_flow);
+        expect_protocol_path_stats_row(identity_summary, "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP", 1U, 1U);
+        expect_protocol_path_stats_layer_text(identity_summary, "EthernetII -> PBB(isid=0x123456)", "PBB (I-SID 0x123456)");
+        expect_protocol_path_stats_membership(identity_summary, "EthernetII -> PBB(isid=0x123456)", one_flow);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/mpls_pw/01_mpls_pw_eth_ipv4_tcp_no_cw.pcap")));
+        const auto summary = session.protocol_path_summary();
+        expect_protocol_path_stats_row(summary, "EthernetII -> MPLS -> MPLS -> MPLS PW -> EthernetII -> IPv4 -> TCP", 1U, 1U);
+        expect_protocol_path_stats_layer_text(summary, "EthernetII -> MPLS -> MPLS -> MPLS PW", "MPLS PW");
+        expect_protocol_path_stats_membership(summary, "EthernetII -> MPLS -> MPLS -> MPLS PW", one_flow);
+    }
+}
+
+void expect_macsec_does_not_fabricate_flow_paths() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/macsec/01_macsec_basic_no_sci.pcap")));
+    PFL_EXPECT(session.list_flows().empty());
+    PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+    PFL_EXPECT(session.protocol_path_summary().rows.empty());
+}
+
 void expect_protocol_path_statistics_terminal_paths_only() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
@@ -923,8 +1160,10 @@ void expect_protocol_path_statistics_terminal_paths_only() {
     PFL_EXPECT(second_terminal->depth == 0U);
     PFL_EXPECT(first_terminal->layer_text == first_terminal->path_text);
     PFL_EXPECT(second_terminal->layer_text == second_terminal->path_text);
-    PFL_EXPECT(first_terminal->flow_indices == std::vector<FlowIndex> {0U});
-    PFL_EXPECT(second_terminal->flow_indices == std::vector<FlowIndex> {1U});
+    const auto first_terminal_flow = std::vector<FlowIndex> {0U};
+    const auto second_terminal_flow = std::vector<FlowIndex> {1U};
+    PFL_EXPECT(first_terminal->flow_indices == first_terminal_flow);
+    PFL_EXPECT(second_terminal->flow_indices == second_terminal_flow);
 }
 
 void expect_protocol_path_statistics_tree_metadata() {
@@ -1049,16 +1288,18 @@ void expect_protocol_path_statistics_flow_membership_lookup() {
     PFL_REQUIRE(terminal_vni_100 != nullptr);
 
     const auto both_flows = std::vector<FlowIndex> {0U, 1U};
+    const auto first_flow = std::vector<FlowIndex> {0U};
+    const auto second_flow = std::vector<FlowIndex> {1U};
     PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::kind_overview, kind_row->node_id)
         == both_flows);
     PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::identity_tree, identity_prefix_row->node_id)
         == both_flows);
     PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::identity_tree, identity_vni_100->node_id)
-        == std::vector<FlowIndex> {0U});
+        == first_flow);
     PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::identity_tree, identity_vni_200->node_id)
-        == std::vector<FlowIndex> {1U});
+        == second_flow);
     PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::terminal_paths, terminal_vni_100->node_id)
-        == std::vector<FlowIndex> {0U});
+        == first_flow);
     PFL_EXPECT(session.protocol_path_summary_flow_indices(ProtocolPathStatisticsMode::terminal_paths, kind_row->node_id).empty());
     PFL_EXPECT(session.protocol_path_summary_flow_indices(
         ProtocolPathStatisticsMode::kind_overview,
@@ -1325,6 +1566,9 @@ void run_protocol_path_tests() {
     expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
     expect_same_exact_path_reverse_tuple_stays_bidirectional();
     expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths();
+    expect_terminal_control_protocols_do_not_appear_in_protocol_paths();
+    expect_protocol_path_statistics_cover_new_shim_layers();
+    expect_macsec_does_not_fabricate_flow_paths();
 }
 
 }  // namespace pfl::tests

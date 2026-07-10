@@ -16,10 +16,16 @@ enum class ProtocolLayerKind : std::uint16_t {
     unknown = 0,
     ethernet_ii,
     ieee8023,
+    llc_snap,
     linux_sll,
     linux_sll2,
     vlan,
     mpls,
+    mpls_pw,
+    pbb,
+    pppoe,
+    ppp,
+    macsec,
     ipv4,
     ipv6,
     tcp,
@@ -38,6 +44,7 @@ enum class ProtocolLayerIdentifierKind : std::uint8_t {
     none = 0,
     vlan_vid,
     mpls_label,
+    pbb_isid,
     vxlan_vni,
     geneve_vni,
     gtpu_teid,
@@ -61,8 +68,14 @@ struct LayerKey {
     [[nodiscard]] static constexpr LayerKey unknown() noexcept;
     [[nodiscard]] static constexpr LayerKey ethernet_ii() noexcept;
     [[nodiscard]] static constexpr LayerKey ieee8023() noexcept;
+    [[nodiscard]] static constexpr LayerKey llc_snap() noexcept;
     [[nodiscard]] static constexpr LayerKey linux_sll() noexcept;
     [[nodiscard]] static constexpr LayerKey linux_sll2() noexcept;
+    [[nodiscard]] static constexpr LayerKey mpls_pw() noexcept;
+    [[nodiscard]] static constexpr LayerKey pbb(std::uint32_t isid) noexcept;
+    [[nodiscard]] static constexpr LayerKey pppoe() noexcept;
+    [[nodiscard]] static constexpr LayerKey ppp() noexcept;
+    [[nodiscard]] static constexpr LayerKey macsec() noexcept;
     [[nodiscard]] static constexpr LayerKey ipv4() noexcept;
     [[nodiscard]] static constexpr LayerKey ipv6() noexcept;
     [[nodiscard]] static constexpr LayerKey tcp() noexcept;
@@ -158,12 +171,42 @@ constexpr LayerKey LayerKey::ieee8023() noexcept {
     return LayerKey {.kind = ProtocolLayerKind::ieee8023};
 }
 
+constexpr LayerKey LayerKey::llc_snap() noexcept {
+    return LayerKey {.kind = ProtocolLayerKind::llc_snap};
+}
+
 constexpr LayerKey LayerKey::linux_sll() noexcept {
     return LayerKey {.kind = ProtocolLayerKind::linux_sll};
 }
 
 constexpr LayerKey LayerKey::linux_sll2() noexcept {
     return LayerKey {.kind = ProtocolLayerKind::linux_sll2};
+}
+
+constexpr LayerKey LayerKey::mpls_pw() noexcept {
+    return LayerKey {.kind = ProtocolLayerKind::mpls_pw};
+}
+
+constexpr LayerKey LayerKey::pbb(const std::uint32_t isid) noexcept {
+    return LayerKey {
+        .kind = ProtocolLayerKind::pbb,
+        .identifier = ProtocolLayerIdentifier {
+            .kind = ProtocolLayerIdentifierKind::pbb_isid,
+            .value = isid,
+        },
+    };
+}
+
+constexpr LayerKey LayerKey::pppoe() noexcept {
+    return LayerKey {.kind = ProtocolLayerKind::pppoe};
+}
+
+constexpr LayerKey LayerKey::ppp() noexcept {
+    return LayerKey {.kind = ProtocolLayerKind::ppp};
+}
+
+constexpr LayerKey LayerKey::macsec() noexcept {
+    return LayerKey {.kind = ProtocolLayerKind::macsec};
 }
 
 constexpr LayerKey LayerKey::ipv4() noexcept {

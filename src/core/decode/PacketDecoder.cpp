@@ -92,6 +92,19 @@ void push_link_layer_path(
     }
 }
 
+void push_llc_snap_path_if_resolved(
+    ProtocolPathBuilder& builder,
+    const detail::LinkLayerPayloadView& link_layer,
+    const std::uint16_t resolved_protocol_type
+) {
+    if (link_layer.is_ieee_802_3 &&
+        (resolved_protocol_type == detail::kEtherTypeArp ||
+         resolved_protocol_type == detail::kEtherTypeIpv4 ||
+         resolved_protocol_type == detail::kEtherTypeIpv6)) {
+        static_cast<void>(builder.push(LayerKey::llc_snap()));
+    }
+}
+
 void push_outer_protocol_path(
     ProtocolPathBuilder& builder,
     std::span<const std::uint8_t> packet_bytes,
@@ -99,10 +112,32 @@ void push_outer_protocol_path(
     const std::uint32_t data_link_type
 ) {
     push_link_layer_path(builder, packet_bytes, data_link_type, 0U);
+    push_llc_snap_path_if_resolved(builder, network.link_layer, network.protocol_type);
+
+    if (network.has_pppoe &&
+        (network.ppp_protocol == detail::kPppProtocolIpv4 ||
+         network.ppp_protocol == detail::kPppProtocolIpv6)) {
+        static_cast<void>(builder.push(LayerKey::pppoe()));
+        static_cast<void>(builder.push(LayerKey::ppp()));
+    }
 
     if (network.has_mpls) {
         for (std::size_t index = 0U; index < network.mpls.label_count; ++index) {
             static_cast<void>(builder.push(LayerKey::mpls(network.mpls.labels[index].label)));
+        }
+
+        if (network.mpls.has_inner_ethernet) {
+            static_cast<void>(builder.push(LayerKey::mpls_pw()));
+            push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, network.mpls.inner_ethernet_offset);
+            push_llc_snap_path_if_resolved(builder, network.mpls.inner_ethernet, network.mpls.inner_protocol_type);
+        }
+    }
+
+    if (network.has_pbb && detail::pbb_has_resolved_inner_payload(network.pbb.status)) {
+        static_cast<void>(builder.push(LayerKey::pbb(network.pbb.isid)));
+        if (network.pbb.has_inner_ethernet) {
+            push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, network.pbb.inner_ethernet_offset);
+            push_llc_snap_path_if_resolved(builder, network.pbb.inner_ethernet, network.pbb.inner_protocol_type);
         }
     }
 }
@@ -394,6 +429,7 @@ std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
     static_cast<void>(builder.push(LayerKey::vxlan(vxlan->vni)));
     if (vxlan->has_inner_ethernet) {
         push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, vxlan->inner_ethernet_offset);
+        push_llc_snap_path_if_resolved(builder, vxlan->inner_ethernet, vxlan->resolved_protocol_type);
     }
 
     return decode_supported_ip_transport_payload(
@@ -422,6 +458,7 @@ std::optional<DecodedPacket> try_decode_geneve_inner_packet(
     static_cast<void>(builder.push(LayerKey::geneve(geneve->vni)));
     if (geneve->has_inner_ethernet) {
         push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, geneve->inner_ethernet_offset);
+        push_llc_snap_path_if_resolved(builder, geneve->inner_ethernet, geneve->resolved_protocol_type);
     }
 
     return decode_supported_ip_transport_payload(
@@ -509,7 +546,6 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             .protocol = ProtocolId::arp,
         };
         auto builder = base_builder;
-        static_cast<void>(builder.push(LayerKey::arp()));
         return make_decoded_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
@@ -721,7 +757,6 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             auto flow_key = flow_base;
             flow_key.protocol = ProtocolId::icmp;
             auto builder = ipv4_builder;
-            static_cast<void>(builder.push(LayerKey::icmp()));
             return make_decoded_packet(
                 IngestedPacketV4 {
                     .flow_key = flow_key,
@@ -955,7 +990,6 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
             flow_key.protocol = ProtocolId::icmpv6;
             auto builder = ipv6_builder;
-            static_cast<void>(builder.push(LayerKey::icmpv6()));
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,

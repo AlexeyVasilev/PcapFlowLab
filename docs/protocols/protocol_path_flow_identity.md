@@ -21,6 +21,7 @@ Current repository state:
 - `FlowKeyV2` is enabled through `protocol_path_id` on flow identity and normalized connection identity;
 - stable index serialization persists protocol-path registry data plus flow/connection `protocol_path_id`;
 - the flow list can now expose protocol paths as compact badge/chip presentation derived from the interned registry;
+- the flow-list Path column is intended to show the intermediate link / shim / overlay path to the effective flow protocol rather than duplicate terminal control protocols already shown in the Protocol column;
 - both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
 - both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
@@ -43,6 +44,7 @@ Important scope boundaries:
 - it is derived lazily from the capture-level `ProtocolPathRegistry`, not stored redundantly per packet;
 - both UI frontends should consume centralized C++ presentation data rather than duplicating abbreviation or color-key mapping in UI-specific code;
 - badge tooltips may include namespace identifiers such as VLAN VID, MPLS label, VXLAN VNI, Geneve VNI, or GTP-U TEID;
+- current badge coverage also includes parser-supported shim layers such as LLC/SNAP, MPLS PW, PBB, PPPoE, and PPP where those layers lead to normal flows;
 - higher-level application hints such as TLS, QUIC, DNS, or HTTP are intentionally excluded from protocol-path badges because they are not part of flow identity in v1.
 
 Still deferred:
@@ -269,11 +271,14 @@ Potential v1 layer kinds:
 
 - `EthernetII`
 - `Ieee8023`
+- `LlcSnap`
 - `LinuxSll`
 - `LinuxSll2`
 - `VLAN`
 - `MPLS`
+- `MplsPw`
 - `PPPoE`
+- `PPP`
 - `PBB`
 - `MACsec`
 - `IPv4`
@@ -281,9 +286,6 @@ Potential v1 layer kinds:
 - `TCP`
 - `UDP`
 - `SCTP`
-- `ICMP`
-- `ICMPv6`
-- `ARP`
 - `VXLAN`
 - `Geneve`
 - `GTP-U`
@@ -308,6 +310,7 @@ These identifiers should affect flow identity in v1:
 
 - VLAN VID
 - MPLS label
+- PBB I-SID
 - VXLAN VNI
 - Geneve VNI
 - GTP-U TEID
@@ -340,10 +343,13 @@ Stop the protocol path at the terminal effective L4:
 - TCP
 - UDP
 - SCTP
-- ICMP / ICMPv6 if the current flow model continues to treat them as flow-bearing
-- ARP should remain documented separately based on current non-port behavior
 
 Do not include protocols below the terminal effective transport layer such as TLS or HTTP.
+
+Path-presentation cleanup follows the same rule:
+
+- the Path column keeps intermediate link / shim / overlay layers plus terminal TCP / UDP / SCTP where applicable;
+- it does not duplicate terminal control protocols such as ARP, ICMP, or ICMPv6, which are already visible in the Protocol column.
 
 ## Tunnel Endpoint Policy
 
@@ -405,7 +411,7 @@ Static audit of the current format:
 
 Current implementation state:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 8`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 9`;
 - `src/core/index/Serialization.cpp` serializes:
   - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
@@ -723,8 +729,7 @@ Relevant existing fixture families:
 ## Remaining Open Questions
 
 1. Should direct Ethernet and IEEE 802.3 be distinct layer kinds in the initial path model, or should they share a single link-layer kind where no namespace identifier differs?
-2. Should PPPoE, PBB, and MACsec enter the v1 path model immediately, or should the first enabling step focus only on the namespace-bearing layers already known to collide today?
-3. For ICMP/ICMPv6 and ARP, should protocol-path-aware identity be enabled in the same migration or follow after TCP/UDP/SCTP paths are stable?
-4. Should `ProtocolPathId` be attached only to flow keys first, or also to `PacketRef` in the same stage to avoid duplicate registry lookups later?
-5. What fixed maximum layer count is acceptable for the inline hot-path representation before falling back to a slower path or rejecting overly deep packets conservatively?
-6. Should exact path labels be generated only on demand from registry data, or should a small debug-only formatter exist earlier for tests and logs?
+2. Should MACsec gain a namespace-bearing identifier in a future revision if protected-payload flow recovery is ever implemented?
+3. Should `ProtocolPathId` be attached only to flow keys first, or also to `PacketRef` in the same stage to avoid duplicate registry lookups later?
+4. What fixed maximum layer count is acceptable for the inline hot-path representation before falling back to a slower path or rejecting overly deep packets conservatively?
+5. Should exact path labels be generated only on demand from registry data, or should a small debug-only formatter exist earlier for tests and logs?
