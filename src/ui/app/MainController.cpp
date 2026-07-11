@@ -4005,6 +4005,22 @@ void MainController::showSelectedProtocolPathFlows() {
     emit protocolPathFlowFilterChanged();
 }
 
+void MainController::ensureProtocolPathStatisticsLoaded() {
+    if (!session_.has_capture()) {
+        return;
+    }
+
+    const auto current_mode = protocol_path_statistics_mode_from_int(statistics_mode_);
+    if (loaded_protocol_path_statistics_mode_ == statistics_mode_) {
+        return;
+    }
+
+    protocol_path_summary_ = session_.protocol_path_summary(current_mode);
+    protocol_path_stats_model_.refresh(protocol_path_summary_);
+    loaded_protocol_path_statistics_mode_ = statistics_mode_;
+    emit stateChanged();
+}
+
 void MainController::clearProtocolPathFlowFilter() {
     if (!clearProtocolPathFlowFilterState()) {
         return;
@@ -4089,9 +4105,13 @@ void MainController::setStatisticsMode(const int mode) {
     }
 
     statistics_mode_ = normalizedMode;
-    if (session_.has_capture()) {
-        protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
-        protocol_path_stats_model_.refresh(protocol_path_summary_);
+    protocol_path_summary_ = {};
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.clear();
+    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    if (session_.has_capture() && current_tab_index_ == kStatsTabIndex) {
+        ensureProtocolPathStatisticsLoaded();
+    } else {
         emit stateChanged();
     }
     emit statisticsModeChanged();
@@ -4115,8 +4135,6 @@ void MainController::setUsePossibleTlsQuic(const bool enabled) {
     session_.set_analysis_settings(pending_analysis_settings_);
     if (session_.has_capture()) {
         protocol_summary_ = session_.protocol_summary();
-        protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
-        protocol_path_stats_model_.refresh(protocol_path_summary_);
         flow_model_.refresh(session_.list_flows());
         if (analysis_tab_active_ && selected_flow_index_ >= 0) {
             refreshSelectedFlowAnalysis();
@@ -4179,6 +4197,9 @@ void MainController::setCurrentTabIndex(const int index) {
             analysis_loading_ = false;
             emit analysisStateChanged();
         }
+    }
+    if (current_tab_index_ == kStatsTabIndex) {
+        ensureProtocolPathStatisticsLoaded();
     }
     emit currentTabIndexChanged();
 }
@@ -4867,6 +4888,7 @@ void MainController::resetLoadedState() {
     session_ = {};
     protocol_summary_ = {};
     protocol_path_summary_ = {};
+    loaded_protocol_path_statistics_mode_ = -1;
     protocol_path_stats_model_.clear();
     clearProtocolPathFlowFilterState();
     quic_recognition_stats_ = {};
@@ -4910,8 +4932,10 @@ void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
-    protocol_path_summary_ = session_.protocol_path_summary(protocol_path_statistics_mode_from_int(statistics_mode_));
-    protocol_path_stats_model_.refresh(protocol_path_summary_);
+    protocol_path_summary_ = {};
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.clear();
+    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
     clearProtocolPathFlowFilterState();
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
@@ -4922,6 +4946,9 @@ void MainController::applyLoadedState(const QString& path) {
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
+    if (current_tab_index_ == kStatsTabIndex) {
+        ensureProtocolPathStatisticsLoaded();
+    }
     setOpenErrorText({});
     setStatusText({});
     emit stateChanged();

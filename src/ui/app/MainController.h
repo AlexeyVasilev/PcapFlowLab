@@ -482,6 +482,7 @@ public:
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
     Q_INVOKABLE void drillDownToPort(quint32 port);
     Q_INVOKABLE void showSelectedProtocolPathFlows();
+    Q_INVOKABLE void ensureProtocolPathStatisticsLoaded();
     Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
     Q_INVOKABLE void selectUnrecognizedPackets();
@@ -636,6 +637,7 @@ private:
     bool show_wireshark_filter_for_selected_flow_ {true};
     bool show_protocol_path_column_ {true};
     int statistics_mode_ {0};
+    int loaded_protocol_path_statistics_mode_ {-1};
     int capture_open_mode_ {0};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};

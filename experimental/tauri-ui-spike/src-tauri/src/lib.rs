@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -576,6 +576,17 @@ fn get_protocol_path_legend(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn get_protocol_path_statistics(
+    state: State<'_, Mutex<AdapterState>>,
+    mode: u8,
+) -> Result<Vec<ProtocolPathStatsDto>, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.get_protocol_path_statistics(mode)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 fn get_protocol_path_summary_flow_indices(
     state: State<'_, Mutex<AdapterState>>,
     mode: u8,
@@ -864,6 +875,7 @@ pub fn run() {
             get_overview,
             get_settings,
             get_protocol_path_legend,
+            get_protocol_path_statistics,
             get_protocol_path_summary_flow_indices,
             update_settings,
             get_flows,

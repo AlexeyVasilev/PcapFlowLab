@@ -214,9 +214,6 @@ pub struct OverviewDto {
     pub top_endpoints: Vec<TopEndpointDto>,
     pub top_ports: Vec<TopPortDto>,
     pub protocol_path_statistics_default_mode: u8,
-    pub protocol_path_statistics: Vec<ProtocolPathStatsDto>,
-    pub protocol_path_statistics_identity_tree: Vec<ProtocolPathStatsDto>,
-    pub protocol_path_statistics_terminal_paths: Vec<ProtocolPathStatsDto>,
     pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,
 }
 

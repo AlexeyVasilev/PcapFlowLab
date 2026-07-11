@@ -190,6 +190,22 @@ std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& ro
     return out.str();
 }
 
+std::string protocol_path_statistics_json(const std::vector<pfl::FrontendProtocolPathStatsDto>& rows) {
+    std::ostringstream out {};
+    out << '[';
+
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        out << protocol_path_stats_json(rows[index]);
+    }
+
+    out << ']';
+    return out.str();
+}
+
 std::string protocol_path_presentation_json(const pfl::FrontendProtocolPathPresentationDto& row) {
     std::ostringstream out {};
     out << '{'
@@ -467,39 +483,6 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
 
     out << "],"
         << "\"protocol_path_statistics_default_mode\":" << static_cast<int>(overview.protocol_path_statistics_default_mode) << ','
-        << "\"protocol_path_statistics\":[";
-
-    for (std::size_t index = 0; index < overview.protocol_path_statistics.size(); ++index) {
-        if (index != 0U) {
-            out << ',';
-        }
-
-        out << protocol_path_stats_json(overview.protocol_path_statistics[index]);
-    }
-
-    out << "],"
-        << "\"protocol_path_statistics_identity_tree\":[";
-
-    for (std::size_t index = 0; index < overview.protocol_path_statistics_identity_tree.size(); ++index) {
-        if (index != 0U) {
-            out << ',';
-        }
-
-        out << protocol_path_stats_json(overview.protocol_path_statistics_identity_tree[index]);
-    }
-
-    out << "],"
-        << "\"protocol_path_statistics_terminal_paths\":[";
-
-    for (std::size_t index = 0; index < overview.protocol_path_statistics_terminal_paths.size(); ++index) {
-        if (index != 0U) {
-            out << ',';
-        }
-
-        out << protocol_path_stats_json(overview.protocol_path_statistics_terminal_paths[index]);
-    }
-
-    out << "],"
         << "\"protocol_path_presentations\":[";
 
     for (std::size_t index = 0; index < overview.protocol_path_presentations.size(); ++index) {
@@ -1113,6 +1096,24 @@ char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSess
     }
 
     return make_c_string(protocol_path_legend_json(handle->adapter.get_protocol_path_legend()));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode
+) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    const auto statistics_mode = mode == 1U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree
+        : (mode == 2U
+            ? pfl::ProtocolPathStatisticsMode::terminal_paths
+            : pfl::ProtocolPathStatisticsMode::kind_overview);
+    return make_c_string(protocol_path_statistics_json(
+        handle->adapter.get_protocol_path_statistics(statistics_mode)
+    ));
 }
 
 char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(

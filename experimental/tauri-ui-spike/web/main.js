@@ -122,6 +122,8 @@
     analysisFlowVirtualWindowEnd: 0,
     analysisFlowVirtualizationActive: false,
     protocolPathStatsMode: 0,
+    protocolPathStatsByMode: new Map(),
+    protocolPathStatsPendingByMode: new Map(),
     protocolPathStatsVisibleRows: [],
     selectedProtocolPathNode: null,
     protocolPathExpandedNodeIds: new Set(),
@@ -712,15 +714,9 @@
   }
 
   function currentProtocolPathStatsRows() {
-    const overview = state.overview;
     const protocolPathMode = currentProtocolPathMode();
-    if (protocolPathMode === 1) {
-      return Array.isArray(overview?.protocol_path_statistics_identity_tree) ? overview.protocol_path_statistics_identity_tree : [];
-    }
-    if (protocolPathMode === 2) {
-      return Array.isArray(overview?.protocol_path_statistics_terminal_paths) ? overview.protocol_path_statistics_terminal_paths : [];
-    }
-    return Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : [];
+    const rows = state.protocolPathStatsByMode.get(protocolPathMode);
+    return Array.isArray(rows) ? rows : [];
   }
 
   function protocolPathModeLabel(mode) {
@@ -1670,11 +1666,52 @@
 
   function clearOverview() {
     state.overview = null;
+    state.protocolPathStatsByMode = new Map();
+    state.protocolPathStatsPendingByMode = new Map();
     state.protocolPathStatsVisibleRows = [];
     state.selectedProtocolPathNode = null;
     state.activeProtocolPathFilter = null;
     state.protocolPathFilterRequestToken += 1;
     state.protocolPathExpandedNodeIds.clear();
+  }
+
+  async function ensureProtocolPathStatsLoaded(mode = currentProtocolPathMode()) {
+    const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
+    if (state.openState !== "opened" || !state.overview) {
+      return [];
+    }
+
+    const cachedRows = state.protocolPathStatsByMode.get(normalizedMode);
+    if (Array.isArray(cachedRows)) {
+      return cachedRows;
+    }
+
+    const pendingLoad = state.protocolPathStatsPendingByMode.get(normalizedMode);
+    if (pendingLoad) {
+      return pendingLoad;
+    }
+
+    const loadPromise = (async () => {
+      try {
+        if (state.activeTab === "statistics" && currentProtocolPathMode() === normalizedMode) {
+          renderProtocolPathStatsSection();
+        }
+
+        const rows = await invoke("get_protocol_path_statistics", { mode: normalizedMode });
+        const normalizedRows = Array.isArray(rows) ? rows : [];
+        state.protocolPathStatsByMode.set(normalizedMode, normalizedRows);
+        pruneProtocolPathExpandedNodeIds(normalizedRows, normalizedMode);
+        return normalizedRows;
+      } finally {
+        state.protocolPathStatsPendingByMode.delete(normalizedMode);
+        if (state.activeTab === "statistics" && currentProtocolPathMode() === normalizedMode) {
+          renderProtocolPathStatsSection();
+        }
+      }
+    })();
+
+    state.protocolPathStatsPendingByMode.set(normalizedMode, loadPromise);
+    return loadPromise;
   }
 
   function isProtocolPathTreeMode(mode) {
@@ -1725,9 +1762,12 @@
     return visibleRows;
   }
 
-  function setProtocolPathStatsMode(mode) {
+  async function setProtocolPathStatsMode(mode) {
     const normalizedMode = Number(mode) === 1 ? 1 : (Number(mode) === 2 ? 2 : 0);
     if (state.protocolPathStatsMode === normalizedMode) {
+      if (state.activeTab === "statistics") {
+        await ensureProtocolPathStatsLoaded(normalizedMode);
+      }
       return;
     }
 
@@ -1737,6 +1777,9 @@
       elements.protocolPathStatsViewport.scrollTop = 0;
     }
     renderProtocolPathStatsSection();
+    if (state.activeTab === "statistics") {
+      await ensureProtocolPathStatsLoaded(normalizedMode);
+    }
   }
 
   function toggleProtocolPathNode(nodeId) {
@@ -1787,6 +1830,7 @@
     const overview = state.overview;
     const protocolPathMode = currentProtocolPathMode();
     const protocolPathRows = currentProtocolPathStatsRows();
+    const protocolPathRowsLoading = state.protocolPathStatsPendingByMode.has(protocolPathMode);
 
     pruneProtocolPathExpandedNodeIds(protocolPathRows, protocolPathMode);
     const selectedProtocolPathNode = syncSelectedProtocolPathNode(protocolPathRows, protocolPathMode);
@@ -1827,6 +1871,16 @@
 
     if (state.openState !== "opened" || !overview) {
       elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Open a capture or index to load protocol-path statistics.");
+      return;
+    }
+
+    if (protocolPathRowsLoading) {
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Loading protocol-path statistics...");
+      return;
+    }
+
+    if (!state.protocolPathStatsByMode.has(protocolPathMode)) {
+      elements.protocolPathStatsBody.innerHTML = renderStatsStateRow(4, "Protocol-path statistics are loaded when this section is opened.");
       return;
     }
 
@@ -4572,6 +4626,8 @@
 
   async function loadOverviewAndFlows() {
     state.flowState = "loading";
+    state.protocolPathStatsByMode = new Map();
+    state.protocolPathStatsPendingByMode = new Map();
     render();
 
     const [overview, flows] = await Promise.all([
@@ -4589,6 +4645,9 @@
     state.flows = flows || [];
     state.flowState = "loaded";
     await logMemoryPhase("after_get_flows");
+    if (state.activeTab === "statistics") {
+      await ensureProtocolPathStatsLoaded();
+    }
   }
 
   async function loadSelectedFlowPackets(selectionToken = state.flowSelectionRequestToken, options = {}) {
@@ -6121,13 +6180,13 @@
     render();
   });
   elements.protocolPathStatsModeKindOverview?.addEventListener("click", () => {
-    setProtocolPathStatsMode(0);
+    void setProtocolPathStatsMode(0);
   });
   elements.protocolPathStatsModeIdentityTree?.addEventListener("click", () => {
-    setProtocolPathStatsMode(1);
+    void setProtocolPathStatsMode(1);
   });
   elements.protocolPathStatsModeTerminalPaths?.addEventListener("click", () => {
-    setProtocolPathStatsMode(2);
+    void setProtocolPathStatsMode(2);
   });
   elements.protocolPathStatsBody?.addEventListener("click", (event) => {
     if (!(event.target instanceof Element)) {
@@ -6165,15 +6224,12 @@
     void showSelectedProtocolPathFlows();
   });
   elements.protocolPathExpandAllButton?.addEventListener("click", () => {
-    const overview = state.overview;
-    const protocolPathMode = Number(state.protocolPathStatsMode ?? overview?.protocol_path_statistics_default_mode ?? 0);
+    const protocolPathMode = currentProtocolPathMode();
     if (!isProtocolPathTreeMode(protocolPathMode)) {
       return;
     }
 
-    const protocolPathRows = protocolPathMode === 1
-      ? (Array.isArray(overview?.protocol_path_statistics_identity_tree) ? overview.protocol_path_statistics_identity_tree : [])
-      : (Array.isArray(overview?.protocol_path_statistics) ? overview.protocol_path_statistics : []);
+    const protocolPathRows = currentProtocolPathStatsRows();
     state.protocolPathExpandedNodeIds.clear();
     for (const row of protocolPathRows) {
       if (row?.has_children) {
@@ -6247,6 +6303,10 @@
     button.addEventListener("click", async () => {
       state.activeTab = button.dataset.tab || "flows";
       render();
+      if (state.activeTab === "statistics") {
+        await ensureProtocolPathStatsLoaded();
+        render();
+      }
       await waitForNextPaint();
       ensureSelectedFlowVisibleForTab(state.activeTab);
 

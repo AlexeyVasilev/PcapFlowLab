@@ -2341,6 +2341,8 @@ int main(int argc, char* argv[]) {
     {
         auto* protocol_path_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_controller.protocolPathStatsModel());
         UI_EXPECT(protocol_path_stats_model != nullptr);
+        UI_EXPECT(protocol_path_stats_model->rowCount() == 0);
+        protocol_path_controller.ensureProtocolPathStatisticsLoaded();
         const auto protocol_path_rows = protocol_path_controller.protocolPathStatistics();
         UI_EXPECT(protocol_path_stats_model->rowCount() == count_protocol_path_root_rows(protocol_path_rows));
         const auto first_row = protocol_path_stats_model->index(0, 0);
@@ -2367,6 +2369,8 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_mode_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_mode_controller.protocolPathStatsModel());
     UI_EXPECT(protocol_path_mode_stats_model != nullptr);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 0);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
     const auto kind_overview_rows = protocol_path_mode_controller.protocolPathStatistics();
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
     UI_EXPECT(find_protocol_path_stats_row_by_path_text(
@@ -2400,6 +2404,8 @@ int main(int argc, char* argv[]) {
 
     protocol_path_mode_controller.setStatisticsMode(1);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 1);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
     const auto identity_rows = protocol_path_mode_controller.protocolPathStatistics();
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
     protocol_path_mode_stats_model->expandAll();
@@ -2412,6 +2418,8 @@ int main(int argc, char* argv[]) {
 
     protocol_path_mode_controller.setStatisticsMode(2);
     UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 2);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
     const auto terminal_rows = protocol_path_mode_controller.protocolPathStatistics();
     UI_EXPECT(!protocol_path_mode_stats_model->canExpand());
     UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
@@ -2437,10 +2445,13 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_filter_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_filter_controller.protocolPathStatsModel());
     UI_REQUIRE(protocol_path_filter_flow_model != nullptr);
     UI_REQUIRE(protocol_path_filter_stats_model != nullptr);
+    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
     UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 2);
     UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
 
     protocol_path_filter_controller.setStatisticsMode(1);
+    UI_EXPECT(protocol_path_filter_stats_model->rowCount() == 0);
+    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
     protocol_path_filter_stats_model->expandAll();
     const auto identity_vni_100_row = find_protocol_path_stats_row_by_path_text(
         protocol_path_filter_stats_model,
@@ -2467,6 +2478,8 @@ int main(int argc, char* argv[]) {
     UI_EXPECT((protocol_path_filter_flow_model->visibleFlowIndices() == std::vector<int> {0}));
 
     protocol_path_filter_controller.setStatisticsMode(2);
+    UI_EXPECT(protocol_path_filter_stats_model->rowCount() == 0);
+    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
     const auto terminal_vni_100_row = find_protocol_path_stats_row_by_path_text(
         protocol_path_filter_stats_model,
         QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP")
@@ -2491,9 +2504,11 @@ int main(int argc, char* argv[]) {
     auto* protocol_path_and_text_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_and_text_controller.protocolPathStatsModel());
     UI_REQUIRE(protocol_path_and_text_flow_model != nullptr);
     UI_REQUIRE(protocol_path_and_text_stats_model != nullptr);
+    protocol_path_and_text_controller.ensureProtocolPathStatisticsLoaded();
     UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
 
     protocol_path_and_text_controller.setStatisticsMode(0);
+    protocol_path_and_text_controller.ensureProtocolPathStatisticsLoaded();
     protocol_path_and_text_stats_model->expandAll();
     const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
         protocol_path_and_text_stats_model,

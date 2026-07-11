@@ -3,7 +3,7 @@ use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    ProtocolPathLegendEntryDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -46,6 +46,10 @@ extern "C" {
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_protocol_path_legend_json(
         handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_statistics_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -249,6 +253,11 @@ impl CppFrontendSessionAdapter {
     pub fn get_protocol_path_legend(&self) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
         let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_legend_json(self.handle) };
         parse_json_owned::<Vec<ProtocolPathLegendEntryDto>>(json)
+    }
+
+    pub fn get_protocol_path_statistics(&self, mode: u8) -> Result<Vec<ProtocolPathStatsDto>, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_statistics_json(self.handle, mode) };
+        parse_json_owned::<Vec<ProtocolPathStatsDto>>(json)
     }
 
     pub fn get_protocol_path_summary_flow_indices(

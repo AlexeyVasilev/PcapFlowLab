@@ -1418,25 +1418,29 @@ void expect_protocol_path_statistics_flow_membership_lookup() {
     ).empty());
 }
 
-void expect_frontend_overview_exposes_protocol_path_statistics() {
+void expect_frontend_protocol_path_statistics_are_loaded_by_mode() {
     FrontendSessionAdapter adapter {};
     PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"), FrontendOpenMode::fast).opened);
 
     const auto overview = adapter.get_overview();
-    PFL_EXPECT(!overview.protocol_path_statistics.empty());
     PFL_EXPECT(overview.protocol_path_statistics_default_mode == ProtocolPathStatisticsMode::kind_overview);
-    PFL_EXPECT(!overview.protocol_path_statistics_identity_tree.empty());
-    PFL_EXPECT(!overview.protocol_path_statistics_terminal_paths.empty());
     PFL_EXPECT(!overview.protocol_path_presentations.empty());
 
+    const auto kind_overview_rows = adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::kind_overview);
+    const auto identity_tree_rows = adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::identity_tree);
+    const auto terminal_path_rows = adapter.get_protocol_path_statistics(ProtocolPathStatisticsMode::terminal_paths);
+    PFL_EXPECT(!kind_overview_rows.empty());
+    PFL_EXPECT(!identity_tree_rows.empty());
+    PFL_EXPECT(!terminal_path_rows.empty());
+
     const auto found = std::find_if(
-        overview.protocol_path_statistics.begin(),
-        overview.protocol_path_statistics.end(),
+        kind_overview_rows.begin(),
+        kind_overview_rows.end(),
         [](const auto& row) {
             return row.path_text == "EthernetII -> IPv4 -> UDP -> VXLAN";
         }
     );
-    PFL_REQUIRE(found != overview.protocol_path_statistics.end());
+    PFL_REQUIRE(found != kind_overview_rows.end());
     PFL_EXPECT(found->node_id != kInvalidProtocolPathStatisticsNodeId);
     PFL_EXPECT(found->parent_node_id != kInvalidProtocolPathStatisticsNodeId);
     PFL_EXPECT(found->has_children);
@@ -1448,13 +1452,13 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
     PFL_EXPECT(found->original_byte_count_text.find('%') != std::string::npos);
 
     const auto identity_found = std::find_if(
-        overview.protocol_path_statistics_identity_tree.begin(),
-        overview.protocol_path_statistics_identity_tree.end(),
+        identity_tree_rows.begin(),
+        identity_tree_rows.end(),
         [](const auto& row) {
             return row.path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)";
         }
     );
-    PFL_REQUIRE(identity_found != overview.protocol_path_statistics_identity_tree.end());
+    PFL_REQUIRE(identity_found != identity_tree_rows.end());
     PFL_EXPECT(identity_found->node_id != kInvalidProtocolPathStatisticsNodeId);
     PFL_EXPECT(identity_found->has_children);
     PFL_EXPECT(identity_found->layer_text == "VXLAN (VNI 100)");
@@ -1463,13 +1467,13 @@ void expect_frontend_overview_exposes_protocol_path_statistics() {
     PFL_EXPECT(identity_found->original_byte_count_text.find('%') != std::string::npos);
 
     const auto terminal_found = std::find_if(
-        overview.protocol_path_statistics_terminal_paths.begin(),
-        overview.protocol_path_statistics_terminal_paths.end(),
+        terminal_path_rows.begin(),
+        terminal_path_rows.end(),
         [](const auto& row) {
             return row.path_text == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP";
         }
     );
-    PFL_REQUIRE(terminal_found != overview.protocol_path_statistics_terminal_paths.end());
+    PFL_REQUIRE(terminal_found != terminal_path_rows.end());
     PFL_EXPECT(terminal_found->parent_node_id == kInvalidProtocolPathStatisticsNodeId);
     PFL_EXPECT(!terminal_found->has_children);
     PFL_EXPECT(terminal_found->is_terminal);
@@ -1669,7 +1673,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_statistics_terminal_metadata_is_flat();
     expect_protocol_path_statistics_flow_membership_lookup();
     expect_protocol_path_statistics_survive_index_roundtrip();
-    expect_frontend_overview_exposes_protocol_path_statistics();
+    expect_frontend_protocol_path_statistics_are_loaded_by_mode();
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
     expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
     expect_same_exact_path_reverse_tuple_stays_bidirectional();

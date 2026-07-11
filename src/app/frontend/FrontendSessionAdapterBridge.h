@@ -32,6 +32,10 @@ char* pfl_frontend_session_adapter_save_index_json(
 );
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
 char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode
+);
 char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t mode,

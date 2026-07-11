@@ -68,6 +68,8 @@ Important properties:
 - statistics are computed lazily from flow-level `protocol_path_id` plus the capture-level `ProtocolPathRegistry`;
 - the tree is available after both fresh PCAP import and opening from a saved index;
 - protocol-path statistics are still runtime-only and are not persisted in the stable index;
+- each statistics mode is built on demand and then reused from the capture-session cache;
+- opening a capture no longer eagerly builds all protocol-path statistics modes up front;
 - expanded/collapsed state is presentation-only, resets on capture or mode changes, and is not persisted;
 - search and top-N remain future work.
 
@@ -113,8 +115,8 @@ Presentation notes:
 - visible tree rows now display readable per-layer names such as `Ethernet II`, `IPv4`, `TCP`, `VLAN (VID 200)`, `MPLS (label 102)`, `VXLAN (VNI 100)`, and `GTP-U (TEID 0x01020384)`;
 - count and original-byte columns now use centralized formatted `value (percent)` text in both frontends;
 - full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;
-- the Qt tree now uses a dedicated list model plus `ListView` virtualization, and the tree section keeps a bounded internal height so large captures do not instantiate every row eagerly;
-- the Tauri spike exposes the same runtime tree through the shared overview DTO, uses the same readable layer text, and also keeps the tree inside a bounded internal scroll block;
+- the Qt tree now uses a dedicated list model plus `ListView` virtualization, keeps a bounded internal height so large captures do not instantiate every row eagerly, and loads the active statistics mode when the Statistics tab actually needs it;
+- the Tauri spike keeps the tree inside a bounded internal scroll block and now fetches protocol-path statistics rows per mode on demand instead of shipping all three modes in the initial overview payload;
 - ordering is deterministic: descending `packet_count`, then descending `flow_count`, then path text.
 
 ### Structured Flow Filter

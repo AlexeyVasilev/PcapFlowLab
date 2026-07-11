@@ -2171,9 +2171,6 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
-    const auto protocol_path_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::kind_overview);
-    const auto protocol_path_identity_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::identity_tree);
-    const auto protocol_path_terminal_summary = session_.protocol_path_summary(ProtocolPathStatisticsMode::terminal_paths);
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
@@ -2191,9 +2188,6 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .top_endpoints = build_top_endpoints(top_summary),
         .top_ports = build_top_ports(top_summary),
         .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
-        .protocol_path_statistics = build_protocol_path_statistics(protocol_path_summary),
-        .protocol_path_statistics_identity_tree = build_protocol_path_statistics(protocol_path_identity_summary),
-        .protocol_path_statistics_terminal_paths = build_protocol_path_statistics(protocol_path_terminal_summary),
         .protocol_path_presentations = std::move(protocol_path_presentations),
     };
 }
@@ -2228,6 +2222,16 @@ std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_prot
     }
 
     return rows;
+}
+
+std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_path_statistics(
+    const ProtocolPathStatisticsMode mode
+) const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_protocol_path_statistics(session_.protocol_path_summary(mode));
 }
 
 std::vector<std::size_t> FrontendSessionAdapter::get_protocol_path_summary_flow_indices(

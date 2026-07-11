@@ -46,6 +46,9 @@ public:
     [[nodiscard]] FrontendOverviewDto get_overview() const;
     [[nodiscard]] std::vector<FrontendFlowDto> get_flows() const;
     [[nodiscard]] std::vector<FrontendProtocolPathLegendEntryDto> get_protocol_path_legend() const;
+    [[nodiscard]] std::vector<FrontendProtocolPathStatsDto> get_protocol_path_statistics(
+        ProtocolPathStatisticsMode mode
+    ) const;
     [[nodiscard]] std::vector<std::size_t> get_protocol_path_summary_flow_indices(
         ProtocolPathStatisticsMode mode,
         std::uint64_t node_id

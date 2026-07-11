@@ -185,9 +185,6 @@ struct FrontendOverviewDto {
     std::vector<FrontendTopEndpointDto> top_endpoints {};
     std::vector<FrontendTopPortDto> top_ports {};
     ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
-    std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics {};
-    std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics_identity_tree {};
-    std::vector<FrontendProtocolPathStatsDto> protocol_path_statistics_terminal_paths {};
     std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};
 };
 
