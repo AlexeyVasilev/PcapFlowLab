@@ -3,7 +3,9 @@
 #include <cstdint>
 
 #include "TestSupport.h"
+#include "core/domain/CaptureState.h"
 #include "core/domain/Connection.h"
+#include "core/services/PacketIngestor.h"
 
 namespace pfl::tests {
 
@@ -156,6 +158,48 @@ void run_connection_tests() {
         ssh_connection.protocol_hint = FlowProtocolHint::ssh;
         PFL_EXPECT(ssh_connection.hint_detection_settled());
         PFL_EXPECT(!ssh_connection.should_attempt_hint_detection(packet_ref(50, 90, 12), ProtocolId::tcp));
+    }
+
+    {
+        CaptureState state {};
+        PacketIngestor ingestor {state};
+        const auto packet = IngestedPacketV4 {
+            .flow_key = flow_v4_ab,
+            .packet_ref = packet_ref(60, 144, 48),
+        };
+
+        auto& ingested_connection = ingestor.ingest(packet);
+        const auto key = make_connection_key(flow_v4_ab);
+        const auto* stored_connection = state.ipv4_connections.find(key);
+
+        PFL_REQUIRE(stored_connection != nullptr);
+        PFL_EXPECT(&ingested_connection == stored_connection);
+        PFL_EXPECT(ingested_connection.packet_count == 1U);
+        PFL_EXPECT(ingested_connection.total_bytes == 144U);
+        PFL_EXPECT(state.summary.packet_count == 1U);
+        PFL_EXPECT(state.summary.total_bytes == 144U);
+        PFL_EXPECT(state.summary.flow_count == 1U);
+    }
+
+    {
+        CaptureState state {};
+        PacketIngestor ingestor {state};
+        const auto packet = IngestedPacketV6 {
+            .flow_key = flow_v6_ab,
+            .packet_ref = packet_ref(61, 188, 64),
+        };
+
+        auto& ingested_connection = ingestor.ingest(packet);
+        const auto key = make_connection_key(flow_v6_ab);
+        const auto* stored_connection = state.ipv6_connections.find(key);
+
+        PFL_REQUIRE(stored_connection != nullptr);
+        PFL_EXPECT(&ingested_connection == stored_connection);
+        PFL_EXPECT(ingested_connection.packet_count == 1U);
+        PFL_EXPECT(ingested_connection.total_bytes == 188U);
+        PFL_EXPECT(state.summary.packet_count == 1U);
+        PFL_EXPECT(state.summary.total_bytes == 188U);
+        PFL_EXPECT(state.summary.flow_count == 1U);
     }
 }
 

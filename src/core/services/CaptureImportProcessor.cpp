@@ -975,7 +975,6 @@ std::string classify_unrecognized_packet_reason(
 bool ingest_fallback_arp_packet(
     const RawPcapPacket& packet,
     const std::span<const std::uint8_t> packet_bytes,
-    CaptureState& state,
     PacketIngestor& ingestor,
     const FlowHintService& hint_service
 ) {
@@ -1005,12 +1004,10 @@ bool ingest_fallback_arp_packet(
             static_cast<std::uint32_t>(details->arp.target_protocol_address[3]);
     }
 
-    ingestor.ingest(IngestedPacketV4 {
+    auto& connection = ingestor.ingest(IngestedPacketV4 {
         .flow_key = flow_key,
         .packet_ref = packet_ref_from_raw_packet(packet),
     });
-
-    auto& connection = state.ipv4_connections.get_or_create(make_connection_key(flow_key));
     connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, flow_key));
     return true;
 }
@@ -1334,8 +1331,7 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
 
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
-        ingestor.ingest(*decoded.ipv4);
-        auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
+        auto& connection = ingestor.ingest(*decoded.ipv4);
         if (!decoded.ipv4->packet_ref.is_ip_fragmented &&
             connection.should_attempt_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol) &&
             requires_full_packet_for_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol)) {
@@ -1367,8 +1363,7 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
 
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
-        ingestor.ingest(*decoded.ipv6);
-        auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
+        auto& connection = ingestor.ingest(*decoded.ipv6);
         if (!decoded.ipv6->packet_ref.is_ip_fragmented &&
             connection.should_attempt_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol) &&
             requires_full_packet_for_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol)) {
@@ -1400,7 +1395,7 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
         return true;
     }
 
-    if (!ingest_fallback_arp_packet(packet, packet_bytes, state, ingestor, hint_service_)) {
+    if (!ingest_fallback_arp_packet(packet, packet_bytes, ingestor, hint_service_)) {
         state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
             .packet = packet_ref_from_raw_packet(packet),
             .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
@@ -1419,8 +1414,7 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     if (decoded.ipv4.has_value()) {
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
-        ingestor.ingest(*decoded.ipv4);
-        auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
+        auto& connection = ingestor.ingest(*decoded.ipv4);
         apply_import_hints_if_needed(
             packet,
             packet_bytes,
@@ -1434,8 +1428,7 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     if (decoded.ipv6.has_value()) {
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
-        ingestor.ingest(*decoded.ipv6);
-        auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
+        auto& connection = ingestor.ingest(*decoded.ipv6);
         apply_import_hints_if_needed(
             packet,
             packet_bytes,
@@ -1446,7 +1439,7 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
         return;
     }
 
-    if (!ingest_fallback_arp_packet(packet, packet_bytes, state, ingestor, hint_service_)) {
+    if (!ingest_fallback_arp_packet(packet, packet_bytes, ingestor, hint_service_)) {
         state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
             .packet = packet_ref_from_raw_packet(packet),
             .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
