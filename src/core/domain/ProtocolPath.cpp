@@ -84,6 +84,28 @@ namespace {
     }
 }
 
+[[nodiscard]] bool protocol_path_equals_view(const ProtocolPathView view, const ProtocolPath& path) noexcept {
+    if (view.size() != path.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < view.size(); ++index) {
+        if (view[index] != path[index]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] std::size_t hash_protocol_path_view(const ProtocolPathView view) noexcept {
+    auto seed = std::hash<std::size_t> {}(view.size());
+    for (const auto& layer : view) {
+        seed = detail::hash_combine(seed, LayerKeyHash {}(layer));
+    }
+    return seed;
+}
+
 }  // namespace
 
 std::size_t LayerKeyHash::operator()(const LayerKey& key) const noexcept {
@@ -116,6 +138,10 @@ const LayerKey& ProtocolPath::operator[](const std::size_t index) const noexcept
 
 const std::vector<LayerKey>& ProtocolPath::layers() const noexcept {
     return layers_;
+}
+
+ProtocolPathView ProtocolPath::view() const noexcept {
+    return ProtocolPathView {layers_.data(), layers_.size()};
 }
 
 std::vector<LayerKey>::const_iterator ProtocolPath::begin() const noexcept {
@@ -165,6 +191,10 @@ const LayerKey& ProtocolPathBuilder::operator[](const std::size_t index) const n
     return layers_[index];
 }
 
+ProtocolPathView ProtocolPathBuilder::view() const noexcept {
+    return ProtocolPathView {layers_.data(), size_};
+}
+
 ProtocolPath ProtocolPathBuilder::to_path() const {
     std::vector<LayerKey> layers {};
     layers.reserve(size_);
@@ -179,12 +209,31 @@ void ProtocolPathBuilder::clear() noexcept {
     overflowed_ = false;
 }
 
-ProtocolPathId ProtocolPathRegistry::intern(const ProtocolPath& path) {
-    if (const auto found = ids_.find(path); found != ids_.end()) {
-        return found->second;
+ProtocolPathId ProtocolPathRegistry::intern(const ProtocolPathView path) {
+    if (path.empty()) {
+        return kInvalidProtocolPathId;
     }
 
-    return insert_unique_path(path);
+    const auto hash = hash_protocol_path_view(path);
+    if (const auto found = ids_by_hash_.find(hash); found != ids_by_hash_.end()) {
+        for (const auto id : found->second) {
+            const auto* stored_path = find(id);
+            if (stored_path != nullptr && protocol_path_equals_view(path, *stored_path)) {
+                return id;
+            }
+        }
+    }
+
+    std::vector<LayerKey> layers {};
+    layers.reserve(path.size());
+    for (const auto& layer : path) {
+        layers.push_back(layer);
+    }
+    return insert_unique_path(ProtocolPath {std::move(layers)}, hash);
+}
+
+ProtocolPathId ProtocolPathRegistry::intern(const ProtocolPath& path) {
+    return intern(path.view());
 }
 
 ProtocolPathId ProtocolPathRegistry::intern(ProtocolPath&& path) {
@@ -192,7 +241,8 @@ ProtocolPathId ProtocolPathRegistry::intern(ProtocolPath&& path) {
         return found->second;
     }
 
-    return insert_unique_path(std::move(path));
+    const auto hash = hash_protocol_path_view(path.view());
+    return insert_unique_path(std::move(path), hash);
 }
 
 const ProtocolPath* ProtocolPathRegistry::find(const ProtocolPathId id) const noexcept {
@@ -212,11 +262,17 @@ std::size_t ProtocolPathRegistry::size() const noexcept {
     return paths_.size();
 }
 
-ProtocolPathId ProtocolPathRegistry::insert_unique_path(ProtocolPath path) {
+ProtocolPathId ProtocolPathRegistry::insert_unique_path(ProtocolPath path, const std::size_t hash) {
     paths_.push_back(std::move(path));
     const auto id = static_cast<ProtocolPathId>(paths_.size());
     ids_.emplace(paths_.back(), id);
+    ids_by_hash_[hash].push_back(id);
     return id;
+}
+
+ProtocolPathId ProtocolPathRegistry::insert_unique_path(ProtocolPath path) {
+    const auto hash = hash_protocol_path_view(path.view());
+    return insert_unique_path(std::move(path), hash);
 }
 
 std::string format_protocol_layer_key(const LayerKey& key) {

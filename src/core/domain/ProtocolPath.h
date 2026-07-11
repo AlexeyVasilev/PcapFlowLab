@@ -96,6 +96,42 @@ struct LayerKeyHash {
     [[nodiscard]] std::size_t operator()(const LayerKey& key) const noexcept;
 };
 
+class ProtocolPathView {
+public:
+    constexpr ProtocolPathView() noexcept = default;
+    constexpr ProtocolPathView(const LayerKey* layers, const std::size_t size) noexcept
+        : layers_(layers),
+          size_(size) {}
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        return size_;
+    }
+
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return size_ == 0U;
+    }
+
+    [[nodiscard]] constexpr const LayerKey& operator[](const std::size_t index) const noexcept {
+        return layers_[index];
+    }
+
+    [[nodiscard]] constexpr const LayerKey* data() const noexcept {
+        return layers_;
+    }
+
+    [[nodiscard]] constexpr const LayerKey* begin() const noexcept {
+        return layers_;
+    }
+
+    [[nodiscard]] constexpr const LayerKey* end() const noexcept {
+        return layers_ + size_;
+    }
+
+private:
+    const LayerKey* layers_ {nullptr};
+    std::size_t size_ {0U};
+};
+
 class ProtocolPath {
 public:
     ProtocolPath() = default;
@@ -108,6 +144,7 @@ public:
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] const LayerKey& operator[](std::size_t index) const noexcept;
     [[nodiscard]] const std::vector<LayerKey>& layers() const noexcept;
+    [[nodiscard]] ProtocolPathView view() const noexcept;
 
     [[nodiscard]] std::vector<LayerKey>::const_iterator begin() const noexcept;
     [[nodiscard]] std::vector<LayerKey>::const_iterator end() const noexcept;
@@ -132,6 +169,7 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
     [[nodiscard]] bool empty() const noexcept;
     [[nodiscard]] const LayerKey& operator[](std::size_t index) const noexcept;
+    [[nodiscard]] ProtocolPathView view() const noexcept;
 
     [[nodiscard]] ProtocolPath to_path() const;
     void clear() noexcept;
@@ -144,16 +182,19 @@ private:
 
 class ProtocolPathRegistry {
 public:
+    [[nodiscard]] ProtocolPathId intern(ProtocolPathView path);
     [[nodiscard]] ProtocolPathId intern(const ProtocolPath& path);
     [[nodiscard]] ProtocolPathId intern(ProtocolPath&& path);
     [[nodiscard]] const ProtocolPath* find(ProtocolPathId id) const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+    [[nodiscard]] ProtocolPathId insert_unique_path(ProtocolPath path, std::size_t hash);
     [[nodiscard]] ProtocolPathId insert_unique_path(ProtocolPath path);
 
     std::vector<ProtocolPath> paths_ {};
     std::unordered_map<ProtocolPath, ProtocolPathId, ProtocolPathHash> ids_ {};
+    std::unordered_map<std::size_t, std::vector<ProtocolPathId>> ids_by_hash_ {};
 };
 
 [[nodiscard]] std::string format_protocol_layer_key(const LayerKey& key);

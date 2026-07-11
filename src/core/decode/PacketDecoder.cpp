@@ -27,25 +27,17 @@ PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragment
     };
 }
 
-ProtocolPath finalize_protocol_path(const ProtocolPathBuilder& builder) {
-    if (builder.empty() || builder.overflowed()) {
-        return {};
-    }
-
-    return builder.to_path();
-}
-
 DecodedPacket make_decoded_packet(const IngestedPacketV4& packet, const ProtocolPathBuilder& builder) {
     return DecodedPacket {
         .ipv4 = packet,
-        .protocol_path = finalize_protocol_path(builder),
+        .protocol_path_builder = builder,
     };
 }
 
 DecodedPacket make_decoded_packet(const IngestedPacketV6& packet, const ProtocolPathBuilder& builder) {
     return DecodedPacket {
         .ipv6 = packet,
-        .protocol_path = finalize_protocol_path(builder),
+        .protocol_path_builder = builder,
     };
 }
 

@@ -536,7 +536,8 @@ Stage C2 status:
 
 - decode now builds protocol-path metadata in the packet decode hot path using `ProtocolPathBuilder`;
 - `CaptureState` owns a per-capture `ProtocolPathRegistry`;
-- import interns non-empty, non-overflowed paths and stores an effective flow-identity `protocol_path_id` on `FlowKey`;
+- import now interns non-empty, non-overflowed decoded paths from a lightweight builder/view representation and stores an effective flow-identity `protocol_path_id` on `FlowKey`;
+- in the common import hot path, owning `ProtocolPath` materialization is now deferred until the registry sees a new unique path;
 - in the common case, decode now emits flow-identity-ready protocol paths and import interns that path once for flow identity;
 - a later normalization pass is still retained only for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;

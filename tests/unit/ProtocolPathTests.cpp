@@ -497,6 +497,43 @@ void expect_registry_interning() {
     PFL_EXPECT(*stored_shim == shim);
 }
 
+void expect_registry_view_interning() {
+    ProtocolPathRegistry registry {};
+
+    ProtocolPathBuilder direct_builder {};
+    PFL_EXPECT(direct_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(direct_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(direct_builder.push(LayerKey::tcp()));
+
+    ProtocolPathBuilder direct_copy_builder {};
+    PFL_EXPECT(direct_copy_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(direct_copy_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(direct_copy_builder.push(LayerKey::tcp()));
+
+    ProtocolPathBuilder shim_builder {};
+    PFL_EXPECT(shim_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(shim_builder.push(LayerKey::mpls(102U)));
+    PFL_EXPECT(shim_builder.push(LayerKey::vlan(200U)));
+    PFL_EXPECT(shim_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(shim_builder.push(LayerKey::tcp()));
+
+    const auto direct_id = registry.intern(direct_builder.view());
+    const auto direct_copy_id = registry.intern(direct_copy_builder.view());
+    const auto shim_id = registry.intern(shim_builder.view());
+
+    PFL_EXPECT(direct_id == 1U);
+    PFL_EXPECT(direct_copy_id == direct_id);
+    PFL_EXPECT(shim_id == 2U);
+    PFL_EXPECT(registry.size() == 2U);
+
+    const auto* stored_direct = registry.find(direct_id);
+    const auto* stored_shim = registry.find(shim_id);
+    PFL_REQUIRE(stored_direct != nullptr);
+    PFL_REQUIRE(stored_shim != nullptr);
+    PFL_EXPECT(format_protocol_path(*stored_direct) == "EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(*stored_shim) == "EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP");
+}
+
 void expect_formatting() {
     const ProtocolPath direct {
         LayerKey::ethernet_ii(),
@@ -1706,6 +1743,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_ordered_equality();
     expect_identifier_differences();
     expect_registry_interning();
+    expect_registry_view_interning();
     expect_formatting();
     expect_protocol_path_presentation_mapping();
     expect_flow_rows_expose_protocol_path_presentation();

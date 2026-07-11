@@ -11,7 +11,7 @@ namespace pfl {
 struct DecodedPacket {
     std::optional<IngestedPacketV4> ipv4 {};
     std::optional<IngestedPacketV6> ipv6 {};
-    ProtocolPath protocol_path {};
+    ProtocolPathBuilder protocol_path_builder {};
 
     [[nodiscard]] bool has_value() const noexcept {
         return ipv4.has_value() || ipv6.has_value();
