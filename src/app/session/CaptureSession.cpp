@@ -117,6 +117,12 @@ UnrecognizedPacketRow make_unrecognized_packet_row(
     };
 }
 
+template <typename Connection>
+void append_connection_storage_summary(const Connection& connection, CaptureStorageSummary& summary) {
+    summary.connection_packet_refs += static_cast<std::uint64_t>(connection.flow_a.packets.size());
+    summary.connection_packet_refs += static_cast<std::uint64_t>(connection.flow_b.packets.size());
+}
+
 struct StreamPacketCandidate {
     PacketRef packet {};
     std::string_view direction_text {};
@@ -4283,6 +4289,46 @@ std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index)
     }
 
     return std::nullopt;
+}
+
+CaptureStorageSummary CaptureSession::storage_summary() const {
+    CaptureStorageSummary summary {};
+    summary.ipv4_connection_count = static_cast<std::uint64_t>(state_.ipv4_connections.size());
+    summary.ipv6_connection_count = static_cast<std::uint64_t>(state_.ipv6_connections.size());
+    summary.flow_count = state_.summary.flow_count;
+    summary.recognized_packets = state_.summary.packet_count;
+    summary.unrecognized_packets = static_cast<std::uint64_t>(state_.unrecognized_packets.size());
+    summary.total_packets_seen = summary.recognized_packets + summary.unrecognized_packets;
+    summary.unrecognized_packet_refs = summary.unrecognized_packets;
+
+    for (const auto* connection : state_.ipv4_connections.list()) {
+        append_connection_storage_summary(*connection, summary);
+    }
+    for (const auto* connection : state_.ipv6_connections.list()) {
+        append_connection_storage_summary(*connection, summary);
+    }
+
+    summary.unique_protocol_paths = static_cast<std::uint64_t>(state_.protocol_path_registry.size());
+    for (const auto& path : state_.protocol_path_registry.paths()) {
+        const auto path_depth = static_cast<std::uint64_t>(path.size());
+        summary.protocol_path_layers_total += path_depth;
+        summary.protocol_path_max_depth = std::max(summary.protocol_path_max_depth, path_depth);
+    }
+
+    summary.sizeof_packet_ref = static_cast<std::uint64_t>(sizeof(PacketRef));
+    summary.sizeof_unrecognized_packet_record = static_cast<std::uint64_t>(sizeof(UnrecognizedPacketRecord));
+    summary.sizeof_layer_key = static_cast<std::uint64_t>(sizeof(LayerKey));
+
+    summary.approx_connection_packet_ref_bytes = summary.connection_packet_refs * summary.sizeof_packet_ref;
+    summary.approx_unrecognized_record_bytes =
+        summary.unrecognized_packets * summary.sizeof_unrecognized_packet_record;
+    for (const auto& record : state_.unrecognized_packets) {
+        summary.approx_unrecognized_reason_text_bytes += static_cast<std::uint64_t>(record.reason_text.size());
+    }
+    summary.approx_protocol_path_layer_payload_bytes =
+        summary.protocol_path_layers_total * summary.sizeof_layer_key * 2U;
+
+    return summary;
 }
 
 CaptureState& CaptureSession::state() noexcept {

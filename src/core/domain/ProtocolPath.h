@@ -187,6 +187,7 @@ public:
     [[nodiscard]] ProtocolPathId intern(ProtocolPath&& path);
     [[nodiscard]] const ProtocolPath* find(ProtocolPathId id) const noexcept;
     [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] const std::vector<ProtocolPath>& paths() const noexcept;
 
 private:
     [[nodiscard]] ProtocolPathId insert_unique_path(ProtocolPath path, std::size_t hash);

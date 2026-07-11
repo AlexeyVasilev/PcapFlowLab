@@ -476,6 +476,7 @@ public:
     Q_INVOKABLE void cancelSmartExport();
     Q_INVOKABLE QString chooseSmartExportDestinationFolder() const;
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
+    Q_INVOKABLE void copyTextToClipboard(const QString& text);
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
@@ -486,6 +487,7 @@ public:
     Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
     Q_INVOKABLE void selectUnrecognizedPackets();
+    Q_INVOKABLE QString captureStorageSummaryText() const;
 
     void setCaptureOpenMode(int mode);
     void setStatisticsMode(int mode);

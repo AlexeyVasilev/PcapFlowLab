@@ -262,6 +262,10 @@ std::size_t ProtocolPathRegistry::size() const noexcept {
     return paths_.size();
 }
 
+const std::vector<ProtocolPath>& ProtocolPathRegistry::paths() const noexcept {
+    return paths_;
+}
+
 ProtocolPathId ProtocolPathRegistry::insert_unique_path(ProtocolPath path, const std::size_t hash) {
     paths_.push_back(std::move(path));
     const auto id = static_cast<ProtocolPathId>(paths_.size());

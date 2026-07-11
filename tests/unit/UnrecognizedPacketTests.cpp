@@ -151,6 +151,19 @@ void run_unrecognized_packet_tests() {
         PFL_EXPECT(loaded_index_session.load_index(index_path));
         PFL_EXPECT(loaded_index_session.unrecognized_packet_count() == 0U);
     }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(truncated_tcp_fixture));
+        const auto storage = session.storage_summary();
+        PFL_EXPECT(storage.recognized_packets == 0U);
+        PFL_EXPECT(storage.unrecognized_packets == 1U);
+        PFL_EXPECT(storage.total_packets_seen == 1U);
+        PFL_EXPECT(storage.connection_packet_refs == 0U);
+        PFL_EXPECT(storage.unrecognized_packet_refs == 1U);
+        PFL_EXPECT(storage.approx_unrecognized_record_bytes == sizeof(UnrecognizedPacketRecord));
+        PFL_EXPECT(storage.approx_unrecognized_reason_text_bytes >= std::string("TCP header truncated").size());
+    }
 }
 
 }  // namespace pfl::tests

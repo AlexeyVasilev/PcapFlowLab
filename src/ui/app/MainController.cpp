@@ -173,6 +173,33 @@ QString formatProtocol(const std::uint8_t protocol) {
     }
 }
 
+QString formatCaptureStorageSummaryText(const CaptureStorageSummary& summary) {
+    QStringList lines {};
+    lines << QStringLiteral("Capture storage summary");
+    lines << QStringLiteral("Total packets seen: %1").arg(summary.total_packets_seen);
+    lines << QStringLiteral("Recognized packets: %1").arg(summary.recognized_packets);
+    lines << QStringLiteral("Unrecognized packets: %1").arg(summary.unrecognized_packets);
+    lines << QStringLiteral("IPv4 connections: %1").arg(summary.ipv4_connection_count);
+    lines << QStringLiteral("IPv6 connections: %1").arg(summary.ipv6_connection_count);
+    lines << QStringLiteral("Flows: %1").arg(summary.flow_count);
+    lines << QStringLiteral("Connection packet refs: %1").arg(summary.connection_packet_refs);
+    lines << QStringLiteral("Unrecognized packet refs: %1").arg(summary.unrecognized_packet_refs);
+    lines << QStringLiteral("Unique protocol paths: %1").arg(summary.unique_protocol_paths);
+    lines << QStringLiteral("Protocol path layers total/max: %1 / %2")
+        .arg(summary.protocol_path_layers_total)
+        .arg(summary.protocol_path_max_depth);
+    lines << QStringLiteral("sizeof(PacketRef): %1").arg(summary.sizeof_packet_ref);
+    lines << QStringLiteral("sizeof(UnrecognizedPacketRecord): %1").arg(summary.sizeof_unrecognized_packet_record);
+    lines << QStringLiteral("sizeof(LayerKey): %1").arg(summary.sizeof_layer_key);
+    lines << QStringLiteral("Approx connection PacketRef bytes: %1").arg(summary.approx_connection_packet_ref_bytes);
+    lines << QStringLiteral("Approx unrecognized record bytes: %1").arg(summary.approx_unrecognized_record_bytes);
+    lines << QStringLiteral("Approx unrecognized reason text bytes: %1").arg(summary.approx_unrecognized_reason_text_bytes);
+    lines << QStringLiteral("Approx protocol path layer payload bytes: %1")
+        .arg(summary.approx_protocol_path_layer_payload_bytes);
+    lines << QStringLiteral("Notes: estimates exclude allocator, hash-node, and transient UI/frontend copy overhead.");
+    return lines.join(QLatin1Char('\n'));
+}
+
 QString selected_flow_service_hint(const FlowListModel& flow_model, const int selected_flow_index) {
     if (selected_flow_index < 0) {
         return {};
@@ -3947,6 +3974,16 @@ void MainController::copySelectedFlowWiresharkFilter() {
     }
 }
 
+void MainController::copyTextToClipboard(const QString& text) {
+    if (text.isEmpty()) {
+        return;
+    }
+
+    if (auto* clipboard = QGuiApplication::clipboard(); clipboard != nullptr) {
+        clipboard->setText(text);
+    }
+}
+
 void MainController::sortFlows(const int column) {
     const auto requestedKey = sort_key_from_column(column);
 
@@ -4328,6 +4365,14 @@ void MainController::selectUnrecognizedPackets() {
 
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
     refreshUnrecognizedPackets(true);
+}
+
+QString MainController::captureStorageSummaryText() const {
+    if (!session_.has_capture()) {
+        return QStringLiteral("No capture loaded.");
+    }
+
+    return formatCaptureStorageSummaryText(session_.storage_summary());
 }
 
 void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex) {

@@ -98,6 +98,15 @@ ApplicationWindow {
     }
 
     Action {
+        id: showCaptureStorageDiagnosticsAction
+        text: "Capture Storage Diagnostics"
+        onTriggered: {
+            captureStorageDiagnosticsDialog.diagnosticsText = mainController.captureStorageSummaryText()
+            captureStorageDiagnosticsDialog.open()
+        }
+    }
+
+    Action {
         id: showAboutAction
         text: "About"
         onTriggered: aboutDialog.open()
@@ -138,8 +147,65 @@ ApplicationWindow {
             MenuItem { action: showSettingsAction }
             MenuSeparator {}
             MenuItem { action: showProtocolPathLegendAction }
+        }
+
+        Menu {
+            title: "Help"
+
+            MenuItem { action: showCaptureStorageDiagnosticsAction }
             MenuSeparator {}
             MenuItem { action: showAboutAction }
+        }
+    }
+
+    Dialog {
+        id: captureStorageDiagnosticsDialog
+        property string diagnosticsText: ""
+
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 760
+        height: 520
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        title: "Capture Storage Diagnostics"
+
+        contentItem: ScrollView {
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+            TextArea {
+                readOnly: true
+                selectByMouse: true
+                textFormat: TextEdit.PlainText
+                wrapMode: TextEdit.NoWrap
+                text: captureStorageDiagnosticsDialog.diagnosticsText
+                font.family: "Consolas"
+                font.pixelSize: 12
+                color: "#0f172a"
+                padding: 14
+                background: Rectangle {
+                    color: "#f8fafc"
+                    border.color: "#e2e8f0"
+                    radius: 8
+                }
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Close
+
+            Button {
+                text: "Copy"
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                enabled: captureStorageDiagnosticsDialog.diagnosticsText.length > 0
+                onClicked: mainController.copyTextToClipboard(captureStorageDiagnosticsDialog.diagnosticsText)
+            }
+
+            onRejected: captureStorageDiagnosticsDialog.close()
         }
     }
 

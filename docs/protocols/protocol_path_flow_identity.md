@@ -460,6 +460,18 @@ Current runtime policy:
 - unrecognized packets do not have protocol-path identity;
 - packet details and protocol text rely on packet decode / packet bytes rather than stored per-packet protocol-path ids.
 
+### Storage Diagnostics
+
+The current implementation also exposes a runtime-only capture storage summary for large-capture investigation.
+
+Notes:
+
+- it is intended for diagnostics and local measurement only;
+- packet and protocol-path byte totals are rough estimates, not process RSS;
+- estimates intentionally exclude allocator overhead, hash-table node overhead, and transient UI/frontend copies;
+- `total_packets_seen` is reported as `recognized_packets + unrecognized_packets`, because the existing capture summary packet count tracks recognized packets only.
+- the Qt UI exposes the current text summary through `Help -> Capture Storage Diagnostics`.
+
 ## Statistics Tree
 
 Runtime protocol-path statistics are now prefix-based.

@@ -88,6 +88,27 @@ struct SelectedFlowPacketCacheInfo {
     bool window_fully_cached {false};
 };
 
+struct CaptureStorageSummary {
+    std::uint64_t total_packets_seen {0};
+    std::uint64_t recognized_packets {0};
+    std::uint64_t unrecognized_packets {0};
+    std::uint64_t ipv4_connection_count {0};
+    std::uint64_t ipv6_connection_count {0};
+    std::uint64_t flow_count {0};
+    std::uint64_t connection_packet_refs {0};
+    std::uint64_t unrecognized_packet_refs {0};
+    std::uint64_t unique_protocol_paths {0};
+    std::uint64_t protocol_path_layers_total {0};
+    std::uint64_t protocol_path_max_depth {0};
+    std::uint64_t sizeof_packet_ref {0};
+    std::uint64_t sizeof_unrecognized_packet_record {0};
+    std::uint64_t sizeof_layer_key {0};
+    std::uint64_t approx_connection_packet_ref_bytes {0};
+    std::uint64_t approx_unrecognized_record_bytes {0};
+    std::uint64_t approx_unrecognized_reason_text_bytes {0};
+    std::uint64_t approx_protocol_path_layer_payload_bytes {0};
+};
+
 class CaptureSession {
 public:
     CaptureSession() = default;
@@ -230,6 +251,7 @@ public:
         std::string* out_error_text
     ) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
+    [[nodiscard]] CaptureStorageSummary storage_summary() const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
 

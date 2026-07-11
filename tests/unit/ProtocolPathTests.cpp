@@ -1580,6 +1580,28 @@ void expect_frontend_protocol_path_statistics_are_loaded_by_mode() {
     PFL_EXPECT(terminal_found->original_byte_count_text.find('B') != std::string::npos);
 }
 
+void expect_storage_summary_counts_recognized_packets_and_protocol_paths() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
+
+    const auto summary = session.storage_summary();
+    PFL_EXPECT(summary.unrecognized_packets == 0U);
+    PFL_EXPECT(summary.recognized_packets == session.summary().packet_count);
+    PFL_EXPECT(summary.total_packets_seen == summary.recognized_packets + summary.unrecognized_packets);
+    PFL_EXPECT(summary.connection_packet_refs == summary.recognized_packets);
+    PFL_EXPECT(summary.flow_count == session.summary().flow_count);
+    PFL_EXPECT(summary.ipv4_connection_count + summary.ipv6_connection_count == summary.flow_count);
+    PFL_EXPECT(summary.unique_protocol_paths >= 2U);
+    PFL_EXPECT(summary.protocol_path_layers_total >= summary.unique_protocol_paths);
+    PFL_EXPECT(summary.protocol_path_max_depth > 0U);
+    PFL_EXPECT(summary.sizeof_packet_ref == sizeof(PacketRef));
+    PFL_EXPECT(summary.sizeof_unrecognized_packet_record == sizeof(UnrecognizedPacketRecord));
+    PFL_EXPECT(summary.sizeof_layer_key == sizeof(LayerKey));
+    PFL_EXPECT(summary.approx_connection_packet_ref_bytes == summary.connection_packet_refs * sizeof(PacketRef));
+    PFL_EXPECT(summary.approx_protocol_path_layer_payload_bytes ==
+        summary.protocol_path_layers_total * sizeof(LayerKey) * 2U);
+}
+
 void expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows() {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
@@ -1768,6 +1790,7 @@ void run_protocol_path_tests() {
     expect_protocol_path_statistics_terminal_metadata_is_flat();
     expect_protocol_path_statistics_flow_membership_lookup();
     expect_protocol_path_statistics_survive_index_roundtrip();
+    expect_storage_summary_counts_recognized_packets_and_protocol_paths();
     expect_frontend_protocol_path_statistics_are_loaded_by_mode();
     expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows();
     expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows();
