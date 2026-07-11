@@ -962,6 +962,34 @@ void expect_terminal_control_protocols_do_not_appear_in_protocol_paths() {
     }
 }
 
+void expect_common_case_packet_and_flow_protocol_path_ids_match() {
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto packets = session.flow_packets(0U);
+        PFL_REQUIRE(packets.has_value());
+        PFL_REQUIRE(!packets->empty());
+        PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+        PFL_REQUIRE((*packets)[0].protocol_path_id != kInvalidProtocolPathId);
+        PFL_EXPECT((*packets)[0].protocol_path_id == rows[0].protocol_path_id);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/sctp/16_sctp_vlan_ipv4_data_s1ap.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto packets = session.flow_packets(0U);
+        PFL_REQUIRE(packets.has_value());
+        PFL_REQUIRE(!packets->empty());
+        PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+        PFL_REQUIRE((*packets)[0].protocol_path_id != kInvalidProtocolPathId);
+        PFL_EXPECT((*packets)[0].protocol_path_id == rows[0].protocol_path_id);
+    }
+}
+
 void expect_decode_attaches_overlay_protocol_paths() {
     {
         const auto state = require_imported_capture_state(fixture_path("parsing/sctp/18_sctp_vxlan_inner_ipv4_data_s1ap.pcap"));
@@ -1679,6 +1707,7 @@ void run_protocol_path_tests() {
     expect_same_exact_path_reverse_tuple_stays_bidirectional();
     expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths();
     expect_terminal_control_protocols_do_not_appear_in_protocol_paths();
+    expect_common_case_packet_and_flow_protocol_path_ids_match();
     expect_protocol_path_statistics_cover_new_shim_layers();
     expect_macsec_does_not_fabricate_flow_paths();
 }

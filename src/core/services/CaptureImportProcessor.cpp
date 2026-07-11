@@ -1,6 +1,7 @@
 #include "core/services/CaptureImportProcessor.h"
 
 #include <algorithm>
+#include <optional>
 #include <span>
 #include <string>
 #include <system_error>
@@ -624,22 +625,48 @@ bool omit_protocol_layer_from_flow_identity(const LayerKey& layer) noexcept {
         layer.identifier.value == 0U;
 }
 
-ProtocolPath normalize_protocol_path_for_flow_identity(const ProtocolPath& path) {
-    if (path.empty()) {
-        return {};
-    }
-
+std::optional<ProtocolPath> normalize_protocol_path_for_flow_identity(const ProtocolPath& path) {
     std::vector<LayerKey> normalized_layers {};
     normalized_layers.reserve(path.size());
+    bool changed = false;
     for (const auto& layer : path.layers()) {
-        if (!omit_protocol_layer_from_flow_identity(layer)) {
-            normalized_layers.push_back(layer);
+        if (omit_protocol_layer_from_flow_identity(layer)) {
+            changed = true;
+            continue;
         }
+
+        normalized_layers.push_back(layer);
     }
 
-    return normalized_layers.size() == path.size()
-        ? path
-        : ProtocolPath {std::move(normalized_layers)};
+    if (!changed) {
+        return std::nullopt;
+    }
+
+    return ProtocolPath {std::move(normalized_layers)};
+}
+
+struct InternedProtocolPathIds {
+    ProtocolPathId packet_protocol_path_id {kInvalidProtocolPathId};
+    ProtocolPathId flow_protocol_path_id {kInvalidProtocolPathId};
+};
+
+InternedProtocolPathIds intern_protocol_path_ids_for_packet_and_flow(
+    CaptureState& state,
+    const ProtocolPath& decoded_protocol_path
+) {
+    const auto packet_protocol_path_id = intern_protocol_path_id(state, decoded_protocol_path);
+    const auto normalized_protocol_path = normalize_protocol_path_for_flow_identity(decoded_protocol_path);
+    if (!normalized_protocol_path.has_value()) {
+        return InternedProtocolPathIds {
+            .packet_protocol_path_id = packet_protocol_path_id,
+            .flow_protocol_path_id = packet_protocol_path_id,
+        };
+    }
+
+    return InternedProtocolPathIds {
+        .packet_protocol_path_id = packet_protocol_path_id,
+        .flow_protocol_path_id = state.protocol_path_registry.intern(std::move(*normalized_protocol_path)),
+    };
 }
 
 PacketRef packet_ref_from_raw_packet(const RawPcapPacket& packet) {
@@ -1313,13 +1340,9 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
             decoded.ipv4->packet_ref.payload_length = *payload_length;
         }
 
-        const auto packet_protocol_path_id = intern_protocol_path_id(state, decoded.protocol_path);
-        const auto flow_protocol_path_id = intern_protocol_path_id(
-            state,
-            normalize_protocol_path_for_flow_identity(decoded.protocol_path)
-        );
-        decoded.ipv4->packet_ref.protocol_path_id = packet_protocol_path_id;
-        decoded.ipv4->flow_key.protocol_path_id = flow_protocol_path_id;
+        const auto protocol_path_ids = intern_protocol_path_ids_for_packet_and_flow(state, decoded.protocol_path);
+        decoded.ipv4->packet_ref.protocol_path_id = protocol_path_ids.packet_protocol_path_id;
+        decoded.ipv4->flow_key.protocol_path_id = protocol_path_ids.flow_protocol_path_id;
         ingestor.ingest(*decoded.ipv4);
         auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
         if (!decoded.ipv4->packet_ref.is_ip_fragmented &&
@@ -1351,13 +1374,9 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
             decoded.ipv6->packet_ref.payload_length = *payload_length;
         }
 
-        const auto packet_protocol_path_id = intern_protocol_path_id(state, decoded.protocol_path);
-        const auto flow_protocol_path_id = intern_protocol_path_id(
-            state,
-            normalize_protocol_path_for_flow_identity(decoded.protocol_path)
-        );
-        decoded.ipv6->packet_ref.protocol_path_id = packet_protocol_path_id;
-        decoded.ipv6->flow_key.protocol_path_id = flow_protocol_path_id;
+        const auto protocol_path_ids = intern_protocol_path_ids_for_packet_and_flow(state, decoded.protocol_path);
+        decoded.ipv6->packet_ref.protocol_path_id = protocol_path_ids.packet_protocol_path_id;
+        decoded.ipv6->flow_key.protocol_path_id = protocol_path_ids.flow_protocol_path_id;
         ingestor.ingest(*decoded.ipv6);
         auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
         if (!decoded.ipv6->packet_ref.is_ip_fragmented &&
@@ -1408,13 +1427,9 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
 
     if (decoded.ipv4.has_value()) {
-        const auto packet_protocol_path_id = intern_protocol_path_id(state, decoded.protocol_path);
-        const auto flow_protocol_path_id = intern_protocol_path_id(
-            state,
-            normalize_protocol_path_for_flow_identity(decoded.protocol_path)
-        );
-        decoded.ipv4->packet_ref.protocol_path_id = packet_protocol_path_id;
-        decoded.ipv4->flow_key.protocol_path_id = flow_protocol_path_id;
+        const auto protocol_path_ids = intern_protocol_path_ids_for_packet_and_flow(state, decoded.protocol_path);
+        decoded.ipv4->packet_ref.protocol_path_id = protocol_path_ids.packet_protocol_path_id;
+        decoded.ipv4->flow_key.protocol_path_id = protocol_path_ids.flow_protocol_path_id;
         ingestor.ingest(*decoded.ipv4);
         auto& connection = state.ipv4_connections.get_or_create(make_connection_key(decoded.ipv4->flow_key));
         apply_import_hints_if_needed(
@@ -1428,13 +1443,9 @@ void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, Capture
     }
 
     if (decoded.ipv6.has_value()) {
-        const auto packet_protocol_path_id = intern_protocol_path_id(state, decoded.protocol_path);
-        const auto flow_protocol_path_id = intern_protocol_path_id(
-            state,
-            normalize_protocol_path_for_flow_identity(decoded.protocol_path)
-        );
-        decoded.ipv6->packet_ref.protocol_path_id = packet_protocol_path_id;
-        decoded.ipv6->flow_key.protocol_path_id = flow_protocol_path_id;
+        const auto protocol_path_ids = intern_protocol_path_ids_for_packet_and_flow(state, decoded.protocol_path);
+        decoded.ipv6->packet_ref.protocol_path_id = protocol_path_ids.packet_protocol_path_id;
+        decoded.ipv6->flow_key.protocol_path_id = protocol_path_ids.flow_protocol_path_id;
         ingestor.ingest(*decoded.ipv6);
         auto& connection = state.ipv6_connections.get_or_create(make_connection_key(decoded.ipv6->flow_key));
         apply_import_hints_if_needed(

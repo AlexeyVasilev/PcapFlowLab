@@ -539,6 +539,8 @@ Stage C2 status:
 - import interns non-empty, non-overflowed paths and stores:
   - an effective flow-identity `protocol_path_id` on `FlowKey`;
   - a staging/runtime packet-level `protocol_path_id` on `PacketRef`;
+- in the common case, decode now emits flow-identity-ready protocol paths and import interns that path once, reusing the same id for both packet/runtime metadata and flow identity;
+- a later normalization pass is still retained only for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity while remaining visible in packet-level path metadata;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
 - packet-level metadata still exists first as a decode/import validation aid and runtime convenience, not as the final stable per-packet storage shape;
 - stable storage remains flow/registry oriented rather than per-packet.
@@ -623,7 +625,7 @@ Files likely affected in later implementation stages:
 - `src/core/decode/PacketDecodeSupport.h`
   - current shim and overlay identifier parsing lives here
 - `src/core/services/CaptureImportProcessor.cpp`
-  - current Stage C2 interning point from `DecodedPacket::protocol_path` into the per-capture registry
+  - current Stage C2 interning point from `DecodedPacket::protocol_path` into the per-capture registry, with the common path avoiding a second normalization/interner pass
 - `src/core/index/Serialization.cpp`
   - flow key and connection key serialization now require a versioned break once `FlowKeyV2` is enabled
 - `src/app/session/CaptureSession.cpp`
