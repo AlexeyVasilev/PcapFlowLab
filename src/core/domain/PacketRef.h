@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "core/domain/ProtocolPath.h"
 #include "core/io/LinkType.h"
 
 namespace pfl {
@@ -19,7 +18,6 @@ struct PacketRef {
     std::uint32_t ts_usec {0};
     std::uint32_t payload_length {0};
     std::uint8_t tcp_flags {0};
-    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
     bool is_ip_fragmented {false};
 
     [[nodiscard]] friend constexpr bool operator==(const PacketRef&, const PacketRef&) = default;

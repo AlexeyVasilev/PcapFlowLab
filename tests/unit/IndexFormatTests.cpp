@@ -154,7 +154,6 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
         PFL_EXPECT(left[index].payload_length == right[index].payload_length);
         PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
-        PFL_EXPECT(left[index].protocol_path_id == right[index].protocol_path_id);
         PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
     }
 }

@@ -426,7 +426,6 @@ Current implementation state:
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
   - one capture-level `ProtocolPathRegistry` table;
 - `PacketRef` records do not serialize a per-packet `protocol_path_id`;
-- during index load, packet refs inherit the owning flow key's `protocol_path_id` for runtime convenience;
 - `src/core/index/CaptureIndexReader.cpp` rejects older versions with:
   - `unsupported index version; rebuild the index from the source capture`
 
@@ -452,11 +451,12 @@ Rationale:
 - keep path identity normalized around flows, where `FlowKeyV2` will use it;
 - keep packet records focused on packet-local capture metadata rather than repeating flow namespace context.
 
-Stage C2 is intentionally different:
+Current runtime policy:
 
-- the current per-packet `protocol_path_id` on in-memory `PacketRef` is a staging/debug/test mechanism while grouping remains tuple-only;
-- it is not part of the stable index format;
-- once `FlowKeyV2` is enabled, protocol-path persistence should move to the flow/registry level and should not require per-packet persistence.
+- `PacketRef` intentionally does not carry `protocol_path_id` in memory;
+- recognized packets resolve protocol-path identity through the owning flow / connection key;
+- unrecognized packets do not have protocol-path identity;
+- packet details and protocol text rely on packet decode / packet bytes rather than stored per-packet protocol-path ids.
 
 ## Statistics Tree
 
@@ -530,19 +530,16 @@ Stage B:
 Stage C:
 
 - collect protocol path during decode;
-- attach `protocol_path_id` to packet/flow metadata.
+- attach `protocol_path_id` to flow metadata.
 
 Stage C2 status:
 
 - decode now builds protocol-path metadata in the packet decode hot path using `ProtocolPathBuilder`;
 - `CaptureState` owns a per-capture `ProtocolPathRegistry`;
-- import interns non-empty, non-overflowed paths and stores:
-  - an effective flow-identity `protocol_path_id` on `FlowKey`;
-  - a staging/runtime packet-level `protocol_path_id` on `PacketRef`;
-- in the common case, decode now emits flow-identity-ready protocol paths and import interns that path once, reusing the same id for both packet/runtime metadata and flow identity;
-- a later normalization pass is still retained only for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity while remaining visible in packet-level path metadata;
+- import interns non-empty, non-overflowed paths and stores an effective flow-identity `protocol_path_id` on `FlowKey`;
+- in the common case, decode now emits flow-identity-ready protocol paths and import interns that path once for flow identity;
+- a later normalization pass is still retained only for the narrow priority-tag case where `VLAN(vid=0)` is omitted from flow identity;
 - builder overflow is handled conservatively by leaving `protocol_path_id = kInvalidProtocolPathId`;
-- packet-level metadata still exists first as a decode/import validation aid and runtime convenience, not as the final stable per-packet storage shape;
 - stable storage remains flow/registry oriented rather than per-packet.
 
 Stage D:
@@ -613,7 +610,7 @@ Files likely affected in later implementation stages:
 - `src/core/domain/FlowKey.h`
   - `FlowKeyV4` / `FlowKeyV6` now carry the effective `protocol_path_id`
 - `src/core/domain/PacketRef.h`
-  - current Stage C2 attachment point for temporary in-memory `protocol_path_id`
+  - packet-local capture metadata only; no per-packet protocol-path identity
 - `src/core/domain/Connection.h`
   - connection grouping and direction logic depend on current key shape
 - `src/core/domain/Flow.h`
@@ -661,7 +658,7 @@ Files likely affected in later implementation stages:
 - each persisted flow/connection references a compact `protocol_path_id`;
 - packet records should not redundantly persist the full protocol path or repeated per-packet protocol identifiers;
 - runtime protocol-path statistics membership lists should also remain non-persisted and be rebuilt from flow metadata after import or index load;
-- when index/checkpoint data is loaded back into memory, packet-level `protocol_path_id` can be reconstructed from the owning flow key for runtime convenience.
+- when index/checkpoint data is loaded back into memory, packet refs still remain packet-local capture metadata only; protocol-path identity stays flow-level.
 
 Static audit of the current code path:
 
@@ -743,6 +740,5 @@ Relevant existing fixture families:
 
 1. Should direct Ethernet and IEEE 802.3 be distinct layer kinds in the initial path model, or should they share a single link-layer kind where no namespace identifier differs?
 2. Should MACsec gain a namespace-bearing identifier in a future revision if protected-payload flow recovery is ever implemented?
-3. Should `ProtocolPathId` be attached only to flow keys first, or also to `PacketRef` in the same stage to avoid duplicate registry lookups later?
-4. What fixed maximum layer count is acceptable for the inline hot-path representation before falling back to a slower path or rejecting overly deep packets conservatively?
-5. Should exact path labels be generated only on demand from registry data, or should a small debug-only formatter exist earlier for tests and logs?
+3. What fixed maximum layer count is acceptable for the inline hot-path representation before falling back to a slower path or rejecting overly deep packets conservatively?
+4. Should exact path labels be generated only on demand from registry data, or should a small debug-only formatter exist earlier for tests and logs?

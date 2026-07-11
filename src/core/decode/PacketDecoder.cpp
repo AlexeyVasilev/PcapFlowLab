@@ -23,7 +23,6 @@ PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragment
         .ts_usec = packet.ts_usec,
         .payload_length = 0,
         .tcp_flags = 0,
-        .protocol_path_id = kInvalidProtocolPathId,
         .is_ip_fragmented = is_ip_fragmented,
     };
 }

@@ -46,7 +46,6 @@ void expect_matching_packets(const std::vector<PacketRef>& left, const std::vect
         PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
         PFL_EXPECT(left[index].payload_length == right[index].payload_length);
         PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
-        PFL_EXPECT(left[index].protocol_path_id == right[index].protocol_path_id);
         PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
     }
 }
@@ -107,9 +106,6 @@ void expect_index_roundtrip_preserves_protocol_path_identity(
         const auto packets = original_session.flow_packets(flow_index);
         PFL_REQUIRE(packets.has_value());
         original_packets_by_flow.push_back(*packets);
-        for (const auto& packet : *packets) {
-            PFL_EXPECT(packet.protocol_path_id != kInvalidProtocolPathId);
-        }
     }
 
     PFL_REQUIRE(original_session.save_index(index_path));
@@ -125,9 +121,6 @@ void expect_index_roundtrip_preserves_protocol_path_identity(
         const auto loaded_packets = loaded_session.flow_packets(flow_index);
         PFL_REQUIRE(loaded_packets.has_value());
         expect_matching_packets(*loaded_packets, original_packets_by_flow[flow_index]);
-        for (const auto& packet : *loaded_packets) {
-            PFL_EXPECT(packet.protocol_path_id != kInvalidProtocolPathId);
-        }
     }
 }
 }  // namespace
@@ -154,11 +147,6 @@ void run_index_tests() {
     const auto original_rows = original_session.list_flows();
     const auto original_packets = original_session.flow_packets(0);
     PFL_EXPECT(original_packets.has_value());
-    if (original_packets.has_value()) {
-        for (const auto& packet : *original_packets) {
-            PFL_EXPECT(packet.protocol_path_id != kInvalidProtocolPathId);
-        }
-    }
     PFL_EXPECT(original_session.save_index(index_path));
     PFL_EXPECT(std::filesystem::exists(index_path));
 

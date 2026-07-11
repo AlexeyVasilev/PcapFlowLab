@@ -68,11 +68,46 @@ const PacketRef* find_packet_ref(const CaptureState& state, const std::uint64_t 
     return nullptr;
 }
 
+std::optional<ProtocolPathId> find_packet_flow_protocol_path_id(const CaptureState& state, const std::uint64_t packet_index) {
+    for (const auto* connection : state.ipv4_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            if (packet.packet_index == packet_index) {
+                return connection->key.protocol_path_id;
+            }
+        }
+        for (const auto& packet : connection->flow_b.packets) {
+            if (packet.packet_index == packet_index) {
+                return connection->key.protocol_path_id;
+            }
+        }
+    }
+
+    for (const auto* connection : state.ipv6_connections.list()) {
+        for (const auto& packet : connection->flow_a.packets) {
+            if (packet.packet_index == packet_index) {
+                return connection->key.protocol_path_id;
+            }
+        }
+        for (const auto& packet : connection->flow_b.packets) {
+            if (packet.packet_index == packet_index) {
+                return connection->key.protocol_path_id;
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+ProtocolPathId require_packet_flow_protocol_path_id(const CaptureState& state, const std::uint64_t packet_index) {
+    const auto path_id = find_packet_flow_protocol_path_id(state, packet_index);
+    PFL_REQUIRE(path_id.has_value());
+    PFL_REQUIRE(*path_id != kInvalidProtocolPathId);
+    return *path_id;
+}
+
 std::string require_packet_protocol_path_text(const CaptureState& state, const std::uint64_t packet_index) {
-    const auto* packet = find_packet_ref(state, packet_index);
-    PFL_REQUIRE(packet != nullptr);
-    PFL_REQUIRE(packet->protocol_path_id != kInvalidProtocolPathId);
-    const auto* path = state.protocol_path_registry.find(packet->protocol_path_id);
+    const auto path_id = require_packet_flow_protocol_path_id(state, packet_index);
+    const auto* path = state.protocol_path_registry.find(path_id);
     PFL_REQUIRE(path != nullptr);
     return format_protocol_path(*path);
 }
@@ -164,7 +199,8 @@ std::string join_packet_numbers(const std::vector<PacketRef>& packets) {
 std::string summarize_packet_path_ids(const CaptureState& state, const std::vector<PacketRef>& packets) {
     std::map<ProtocolPathId, std::vector<std::uint64_t>> packets_by_path {};
     for (const auto& packet : packets) {
-        packets_by_path[packet.protocol_path_id].push_back(packet.packet_index);
+        const auto path_id = find_packet_flow_protocol_path_id(state, packet.packet_index).value_or(kInvalidProtocolPathId);
+        packets_by_path[path_id].push_back(packet.packet_index);
     }
 
     std::ostringstream builder {};
@@ -962,7 +998,7 @@ void expect_terminal_control_protocols_do_not_appear_in_protocol_paths() {
     }
 }
 
-void expect_common_case_packet_and_flow_protocol_path_ids_match() {
+void expect_common_case_packets_resolve_to_owning_flow_protocol_path() {
     {
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap")));
@@ -972,8 +1008,7 @@ void expect_common_case_packet_and_flow_protocol_path_ids_match() {
         PFL_REQUIRE(packets.has_value());
         PFL_REQUIRE(!packets->empty());
         PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
-        PFL_REQUIRE((*packets)[0].protocol_path_id != kInvalidProtocolPathId);
-        PFL_EXPECT((*packets)[0].protocol_path_id == rows[0].protocol_path_id);
+        PFL_EXPECT(require_packet_flow_protocol_path_id(session.state(), (*packets)[0].packet_index) == rows[0].protocol_path_id);
     }
 
     {
@@ -985,8 +1020,7 @@ void expect_common_case_packet_and_flow_protocol_path_ids_match() {
         PFL_REQUIRE(packets.has_value());
         PFL_REQUIRE(!packets->empty());
         PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
-        PFL_REQUIRE((*packets)[0].protocol_path_id != kInvalidProtocolPathId);
-        PFL_EXPECT((*packets)[0].protocol_path_id == rows[0].protocol_path_id);
+        PFL_EXPECT(require_packet_flow_protocol_path_id(session.state(), (*packets)[0].packet_index) == rows[0].protocol_path_id);
     }
 }
 
@@ -1023,12 +1057,12 @@ void expect_same_inner_tuple_different_vni_splits_into_two_flows() {
     const auto* second_packet = find_packet_ref(state, 1U);
     PFL_REQUIRE(first_packet != nullptr);
     PFL_REQUIRE(second_packet != nullptr);
-    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+    const auto first_path_id = require_packet_flow_protocol_path_id(state, 0U);
+    const auto second_path_id = require_packet_flow_protocol_path_id(state, 1U);
+    PFL_EXPECT(first_path_id != second_path_id);
 
-    const auto* first_path = state.protocol_path_registry.find(first_packet->protocol_path_id);
-    const auto* second_path = state.protocol_path_registry.find(second_packet->protocol_path_id);
+    const auto* first_path = state.protocol_path_registry.find(first_path_id);
+    const auto* second_path = state.protocol_path_registry.find(second_path_id);
     PFL_REQUIRE(first_path != nullptr);
     PFL_REQUIRE(second_path != nullptr);
     PFL_EXPECT(format_protocol_path(*first_path) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
@@ -1519,9 +1553,7 @@ void expect_gtpu_same_inner_tuple_different_teid_splits_into_two_flows() {
     const auto* second_packet = find_packet_ref(state, 1U);
     PFL_REQUIRE(first_packet != nullptr);
     PFL_REQUIRE(second_packet != nullptr);
-    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+    PFL_EXPECT(require_packet_flow_protocol_path_id(state, 0U) != require_packet_flow_protocol_path_id(state, 1U));
     PFL_EXPECT(
         require_packet_protocol_path_text(state, 0U) ==
         "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
@@ -1540,9 +1572,7 @@ void expect_mpls_same_inner_tuple_different_labels_splits_into_two_flows() {
     const auto* second_packet = find_packet_ref(state, 1U);
     PFL_REQUIRE(first_packet != nullptr);
     PFL_REQUIRE(second_packet != nullptr);
-    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_EXPECT(first_packet->protocol_path_id != second_packet->protocol_path_id);
+    PFL_EXPECT(require_packet_flow_protocol_path_id(state, 0U) != require_packet_flow_protocol_path_id(state, 1U));
     PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> MPLS(label=1100) -> IPv4 -> TCP");
     PFL_EXPECT(require_packet_protocol_path_text(state, 1U) == "EthernetII -> MPLS(label=1200) -> IPv4 -> TCP");
 }
@@ -1559,9 +1589,7 @@ void expect_same_exact_path_reverse_tuple_stays_bidirectional() {
     const auto* second_packet = find_packet_ref(state, 1U);
     PFL_REQUIRE(first_packet != nullptr);
     PFL_REQUIRE(second_packet != nullptr);
-    PFL_REQUIRE(first_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_REQUIRE(second_packet->protocol_path_id != kInvalidProtocolPathId);
-    PFL_EXPECT(first_packet->protocol_path_id == second_packet->protocol_path_id);
+    PFL_EXPECT(require_packet_flow_protocol_path_id(state, 0U) == require_packet_flow_protocol_path_id(state, 1U));
     PFL_EXPECT(
         require_packet_protocol_path_text(state, 0U) ==
         "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
@@ -1627,12 +1655,13 @@ void expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_pa
             }
 
             for (const auto& packet : *packets) {
-                if (packet.protocol_path_id == kInvalidProtocolPathId) {
+                const auto packet_path_id = find_packet_flow_protocol_path_id(session.state(), packet.packet_index);
+                if (!packet_path_id.has_value() || *packet_path_id == kInvalidProtocolPathId) {
                     saw_invalid_protocol_path_id = true;
                 }
 
                 const auto normalized_path_text =
-                    normalized_protocol_path_text_for_flow_identity(session.state(), packet.protocol_path_id);
+                    normalized_protocol_path_text_for_flow_identity(session.state(), packet_path_id.value_or(kInvalidProtocolPathId));
                 tuple_path_ids[tuple_text].insert(normalized_path_text);
                 if (packet.payload_length == 0U) {
                     payloadless_tuple_path_ids[tuple_text].insert(normalized_path_text);
@@ -1707,7 +1736,7 @@ void run_protocol_path_tests() {
     expect_same_exact_path_reverse_tuple_stays_bidirectional();
     expect_tls_quic_constricted_fixtures_do_not_split_into_multiple_protocol_paths();
     expect_terminal_control_protocols_do_not_appear_in_protocol_paths();
-    expect_common_case_packet_and_flow_protocol_path_ids_match();
+    expect_common_case_packets_resolve_to_owning_flow_protocol_path();
     expect_protocol_path_statistics_cover_new_shim_layers();
     expect_macsec_does_not_fabricate_flow_paths();
 }

@@ -502,10 +502,6 @@ bool read_flow(std::istream& stream, FlowV4& flow) {
         return false;
     }
 
-    for (auto& packet : flow.packets) {
-        packet.protocol_path_id = flow.key.protocol_path_id;
-    }
-
     return true;
 }
 
@@ -515,10 +511,6 @@ bool read_flow(std::istream& stream, FlowV6& flow) {
         !read_u64(stream, flow.total_bytes) ||
         !read_packet_refs(stream, flow.packets)) {
         return false;
-    }
-
-    for (auto& packet : flow.packets) {
-        packet.protocol_path_id = flow.key.protocol_path_id;
     }
 
     return true;
