@@ -120,7 +120,7 @@ private:
     void rebuildVisibleItems();
 
     std::vector<Item> all_items_ {};
-    std::vector<Item> visible_items_ {};
+    std::vector<std::size_t> visible_item_indices_ {};
     std::function<session_detail::ProtocolPathPresentation(ProtocolPathId)> protocol_path_presentation_resolver_ {};
     mutable std::unordered_map<ProtocolPathId, CachedProtocolPathPresentation> protocol_path_presentation_cache_ {};
     QString filter_text_ {};

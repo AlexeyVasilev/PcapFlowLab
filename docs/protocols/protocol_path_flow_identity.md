@@ -24,6 +24,7 @@ Current repository state:
 - the flow-list Path column is intended to show the intermediate link / shim / overlay path to the effective flow protocol rather than duplicate terminal control protocols already shown in the Protocol column;
 - both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
 - flow-list protocol-path presentation is now resolved lazily or deduplicated per unique `ProtocolPathId` rather than materialized eagerly per flow row;
+- session flow rows now carry only `protocol_path_id` for protocol-path-aware flow-list presentation; full path text, compact text, and badges are resolved lazily from the capture-level registry when a frontend actually needs them;
 - both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;
@@ -56,6 +57,7 @@ Still deferred:
 Implementation note:
 
 - the Qt flow list resolves path text / compact text / badges on demand from `protocol_path_id` and caches the resulting presentation by unique id;
+- the Qt flow list keeps one owning `all_items_` store plus visible-row indices into that store so filtering does not duplicate QString-heavy rows in memory;
 - the Tauri spike receives protocol-path presentations once per unique `protocol_path_id` and looks them up when rendering flow rows;
 - this optimization reduces memory pressure in Fast mode without changing FlowKeyV2 identity, protocol-path statistics semantics, or protocol-path filtering behavior.
 

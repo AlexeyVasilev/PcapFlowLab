@@ -141,7 +141,7 @@ int FlowListModel::rowCount(const QModelIndex& parent) const {
         return 0;
     }
 
-    return static_cast<int>(visible_items_.size());
+    return static_cast<int>(visible_item_indices_.size());
 }
 
 QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
@@ -149,7 +149,7 @@ QVariant FlowListModel::data(const QModelIndex& index, const int role) const {
         return {};
     }
 
-    const Item& item = visible_items_[static_cast<std::size_t>(index.row())];
+    const Item& item = all_items_[visible_item_indices_[static_cast<std::size_t>(index.row())]];
     switch (role) {
     case FlowIndexRole:
         return item.flow_index;
@@ -213,8 +213,8 @@ QHash<int, QByteArray> FlowListModel::roleNames() const {
 }
 
 int FlowListModel::rowForFlowIndex(const int flowIndex) const noexcept {
-    for (std::size_t row = 0; row < visible_items_.size(); ++row) {
-        if (visible_items_[row].flow_index == flowIndex) {
+    for (std::size_t row = 0; row < visible_item_indices_.size(); ++row) {
+        if (all_items_[visible_item_indices_[row]].flow_index == flowIndex) {
             return static_cast<int>(row);
         }
     }
@@ -232,12 +232,15 @@ void FlowListModel::setFlowChecked(const int flowIndex, const bool checked) {
 
     allItemIt->checked = checked;
 
-    auto visibleItemIt = std::find_if(visible_items_.begin(), visible_items_.end(), [flowIndex](const Item& item) {
-        return item.flow_index == flowIndex;
-    });
-    if (visibleItemIt != visible_items_.end()) {
-        visibleItemIt->checked = checked;
-        const auto row = static_cast<int>(std::distance(visible_items_.begin(), visibleItemIt));
+    const auto visibleItemIt = std::find_if(
+        visible_item_indices_.begin(),
+        visible_item_indices_.end(),
+        [this, flowIndex](const std::size_t itemIndex) {
+            return all_items_[itemIndex].flow_index == flowIndex;
+        }
+    );
+    if (visibleItemIt != visible_item_indices_.end()) {
+        const auto row = static_cast<int>(std::distance(visible_item_indices_.begin(), visibleItemIt));
         const QModelIndex modelIndex = index(row, 0);
         emit dataChanged(modelIndex, modelIndex, {CheckedRole});
     }
@@ -270,11 +273,7 @@ void FlowListModel::clearCheckedFlows() {
         return;
     }
 
-    for (auto& item : visible_items_) {
-        item.checked = false;
-    }
-
-    if (!visible_items_.empty()) {
+    if (!visible_item_indices_.empty()) {
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {CheckedRole});
     }
     emit checkedFlowsChanged();
@@ -326,7 +325,7 @@ void FlowListModel::refresh(const std::vector<FlowRow>& rows) {
 }
 
 void FlowListModel::clear() {
-    if (all_items_.empty() && visible_items_.empty()) {
+    if (all_items_.empty() && visible_item_indices_.empty()) {
         return;
     }
 
@@ -354,7 +353,7 @@ void FlowListModel::setProtocolPathPresentationResolver(
 ) {
     protocol_path_presentation_resolver_ = std::move(resolver);
     protocol_path_presentation_cache_.clear();
-    if (!visible_items_.empty()) {
+    if (!visible_item_indices_.empty()) {
         emit dataChanged(index(0, 0), index(rowCount() - 1, 0), {
             ProtocolPathTextRole,
             ProtocolPathCompactTextRole,
@@ -430,8 +429,8 @@ bool FlowListModel::sortAscending() const noexcept {
 }
 
 bool FlowListModel::containsFlowIndex(const int flowIndex) const noexcept {
-    return std::any_of(visible_items_.begin(), visible_items_.end(), [flowIndex](const Item& item) {
-        return item.flow_index == flowIndex;
+    return std::any_of(visible_item_indices_.begin(), visible_item_indices_.end(), [this, flowIndex](const std::size_t itemIndex) {
+        return all_items_[itemIndex].flow_index == flowIndex;
     });
 }
 
@@ -441,62 +440,25 @@ int FlowListModel::totalFlowCount() const noexcept {
 
 std::vector<int> FlowListModel::visibleFlowIndices() const {
     std::vector<int> flowIndices {};
-    flowIndices.reserve(visible_items_.size());
+    flowIndices.reserve(visible_item_indices_.size());
 
-    for (const auto& item : visible_items_) {
-        flowIndices.push_back(item.flow_index);
+    for (const auto itemIndex : visible_item_indices_) {
+        flowIndices.push_back(all_items_[itemIndex].flow_index);
     }
 
     return flowIndices;
 }
 
 std::vector<int> FlowListModel::hiddenFlowIndices() const {
-    int maxVisibleFlowIndex = -1;
-    std::vector<int> negativeVisibleFlowIndices {};
-    negativeVisibleFlowIndices.reserve(visible_items_.size());
-    for (const auto& item : visible_items_) {
-        if (item.flow_index < 0) {
-            negativeVisibleFlowIndices.push_back(item.flow_index);
-            continue;
-        }
-        maxVisibleFlowIndex = std::max(maxVisibleFlowIndex, item.flow_index);
-    }
-    std::sort(negativeVisibleFlowIndices.begin(), negativeVisibleFlowIndices.end());
-    negativeVisibleFlowIndices.erase(
-        std::unique(negativeVisibleFlowIndices.begin(), negativeVisibleFlowIndices.end()),
-        negativeVisibleFlowIndices.end()
-    );
-
-    int maxAllFlowIndex = -1;
-    for (const auto& item : all_items_) {
-        if (item.flow_index >= 0) {
-            maxAllFlowIndex = std::max(maxAllFlowIndex, item.flow_index);
-        }
-    }
-
-    const auto maxFlowIndex = std::max(maxVisibleFlowIndex, maxAllFlowIndex);
-    std::vector<unsigned char> visibleMask {};
-    if (maxFlowIndex >= 0) {
-        visibleMask.resize(static_cast<std::size_t>(maxFlowIndex) + 1U, 0U);
-    }
-    for (const auto& item : visible_items_) {
-        if (item.flow_index >= 0) {
-            visibleMask[static_cast<std::size_t>(item.flow_index)] = 1U;
-        }
-    }
+    auto visibleFlowIndices = this->visibleFlowIndices();
+    std::sort(visibleFlowIndices.begin(), visibleFlowIndices.end());
+    visibleFlowIndices.erase(std::unique(visibleFlowIndices.begin(), visibleFlowIndices.end()), visibleFlowIndices.end());
 
     std::vector<int> flowIndices {};
     flowIndices.reserve(all_items_.size());
 
     for (const auto& item : all_items_) {
-        const bool isVisible = item.flow_index >= 0
-            ? static_cast<std::size_t>(item.flow_index) < visibleMask.size() &&
-                visibleMask[static_cast<std::size_t>(item.flow_index)] != 0U
-            : std::binary_search(
-                negativeVisibleFlowIndices.begin(),
-                negativeVisibleFlowIndices.end(),
-                item.flow_index
-            );
+        const bool isVisible = std::binary_search(visibleFlowIndices.begin(), visibleFlowIndices.end(), item.flow_index);
         if (!isVisible) {
             flowIndices.push_back(item.flow_index);
         }
@@ -569,17 +531,20 @@ const FlowListModel::CachedProtocolPathPresentation& FlowListModel::protocolPath
 
 void FlowListModel::rebuildVisibleItems() {
     beginResetModel();
-    visible_items_.clear();
-    visible_items_.reserve(all_items_.size());
+    visible_item_indices_.clear();
+    visible_item_indices_.reserve(all_items_.size());
 
-    for (const auto& item : all_items_) {
+    for (std::size_t itemIndex = 0; itemIndex < all_items_.size(); ++itemIndex) {
+        const auto& item = all_items_[itemIndex];
         if ((filter_text_.isEmpty() || contains_text(item, filter_text_)) &&
             (!has_allowed_flow_index_filter_ || matches_allowed_flow_index_filter(item, allowed_flow_indices_))) {
-            visible_items_.push_back(item);
+            visible_item_indices_.push_back(itemIndex);
         }
     }
 
-    std::sort(visible_items_.begin(), visible_items_.end(), [this](const Item& left, const Item& right) {
+    std::sort(visible_item_indices_.begin(), visible_item_indices_.end(), [this](const std::size_t leftIndex, const std::size_t rightIndex) {
+        const auto& left = all_items_[leftIndex];
+        const auto& right = all_items_[rightIndex];
         const bool isLess = less_than(left, right, sort_key_);
         const bool isGreater = less_than(right, left, sort_key_);
 
