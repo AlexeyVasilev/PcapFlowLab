@@ -1150,8 +1150,10 @@ int main(int argc, char* argv[]) {
     std::error_code remove_error {};
     std::filesystem::remove(saved_index_path, remove_error);
     UI_EXPECT(controller.saveAnalysisIndex(QString::fromStdWString(saved_index_path.wstring())));
-    UI_EXPECT(std::filesystem::exists(saved_index_path));
-    UI_EXPECT(controller.statusText() == QStringLiteral("Analysis index saved successfully."));
+    UI_EXPECT(wait_until(app, [&controller, &saved_index_path]() {
+        return !controller.indexSaveInProgress() && std::filesystem::exists(saved_index_path);
+    }));
+    UI_EXPECT(controller.statusText() == QStringLiteral("Analysis index saved successfully: %1").arg(QString::fromStdWString(saved_index_path.wstring())));
     UI_EXPECT(!controller.statusIsError());
 
     const auto no_selection_export_path = std::filesystem::temp_directory_path() / "pfl_ui_no_selection_export.pcap";
@@ -1966,7 +1968,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(partial_controller.hasCapture());
     UI_EXPECT(partial_controller.packetCount() == 1U);
     UI_EXPECT(partial_controller.flowCount() == 1U);
-    UI_EXPECT(!partial_controller.canSaveIndex());
+    UI_EXPECT(partial_controller.canSaveIndex());
     UI_EXPECT(partial_controller.partialOpen());
     UI_EXPECT(partial_controller.openErrorText().isEmpty());
     UI_EXPECT(partial_controller.statusText().isEmpty());
@@ -1976,9 +1978,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(partial_packet_model != nullptr);
     partial_controller.setSelectedFlowIndex(0);
     UI_EXPECT(partial_packet_model->rowCount() == 1);
-    UI_EXPECT(!partial_controller.saveAnalysisIndex(QString::fromStdWString((std::filesystem::temp_directory_path() / "pfl_ui_partial_should_not_save.idx").wstring())));
-    UI_EXPECT(partial_controller.statusText() == QStringLiteral("Saving an index from a partial capture is not supported yet."));
-    UI_EXPECT(partial_controller.statusIsError());
+    const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_ui_partial_should_save.idx";
+    std::filesystem::remove(partial_index_path, remove_error);
+    UI_EXPECT(partial_controller.saveAnalysisIndex(QString::fromStdWString(partial_index_path.wstring())));
+    UI_EXPECT(wait_until(app, [&partial_controller, &partial_index_path]() {
+        return !partial_controller.indexSaveInProgress() && std::filesystem::exists(partial_index_path);
+    }));
+    UI_EXPECT(partial_controller.statusText() == QStringLiteral("Analysis index saved successfully: %1").arg(QString::fromStdWString(partial_index_path.wstring())));
+    UI_EXPECT(!partial_controller.statusIsError());
     auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(flow_model != nullptr);
     UI_EXPECT(flow_model->rowCount() == 3);

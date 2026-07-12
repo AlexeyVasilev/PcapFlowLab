@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <optional>
 #include <utility>
 
 namespace pfl::detail {
 
 namespace {
+
+constexpr std::uint64_t kSerializationProgressReportInterval = 4096U;
 
 bool write_endpoint_key(std::ostream& stream, const EndpointKeyV4& endpoint) {
     return write_u32(stream, endpoint.addr) && write_u16(stream, endpoint.port);
@@ -114,6 +117,14 @@ bool read_protocol_path(std::istream& stream, ProtocolPath& path) {
 
     path = ProtocolPath {std::move(layers)};
     return true;
+}
+
+bool report_serialization_progress(
+    const SerializationProgressCallback& callback,
+    const std::uint64_t processed,
+    const std::uint64_t total
+) {
+    return !callback || callback(processed, total);
 }
 
 bool write_flow_protocol_hint(std::ostream& stream, const FlowProtocolHint hint) {
@@ -494,6 +505,36 @@ bool write_flow(std::ostream& stream, const FlowV6& flow) {
     return true;
 }
 
+template <typename Flow>
+bool write_flow_with_progress(
+    std::ostream& stream,
+    const Flow& flow,
+    std::uint64_t& packets_processed,
+    const std::uint64_t total_packets,
+    const SerializationProgressCallback& progress_callback
+) {
+    if (!write_flow_key(stream, flow.key) ||
+        !write_u64(stream, flow.packet_count) ||
+        !write_u64(stream, flow.total_bytes) ||
+        !write_u64(stream, static_cast<std::uint64_t>(flow.packets.size()))) {
+        return false;
+    }
+
+    for (const auto& packet : flow.packets) {
+        if (!write_packet_ref(stream, packet)) {
+            return false;
+        }
+
+        ++packets_processed;
+        if (((packets_processed % kSerializationProgressReportInterval) == 0U || packets_processed == total_packets) &&
+            !report_serialization_progress(progress_callback, packets_processed, total_packets)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool read_flow(std::istream& stream, FlowV4& flow) {
     if (!read_flow_key(stream, flow.key) ||
         !read_u64(stream, flow.packet_count) ||
@@ -648,80 +689,189 @@ std::vector<const ConnectionV6*> sorted_connections(const ConnectionTableV6& tab
     return connections;
 }
 
-bool write_connection_table(std::ostream& stream, const ConnectionTableV4& table) {
+template <typename Table>
+std::uint64_t count_connection_table_packet_refs(const Table& table) {
+    std::uint64_t total_packets {0};
     const auto connections = sorted_connections(table);
-    if (!write_u64(stream, static_cast<std::uint64_t>(connections.size()))) {
-        return false;
-    }
-
     for (const auto* connection : connections) {
-        if (!write_connection(stream, *connection)) {
-            return false;
+        if (connection->has_flow_a) {
+            total_packets += static_cast<std::uint64_t>(connection->flow_a.packets.size());
+        }
+        if (connection->has_flow_b) {
+            total_packets += static_cast<std::uint64_t>(connection->flow_b.packets.size());
         }
     }
+    return total_packets;
+}
 
-    return true;
+bool write_connection_table(std::ostream& stream, const ConnectionTableV4& table) {
+    return write_connection_table(stream, table, {});
 }
 
 bool write_connection_table(std::ostream& stream, const ConnectionTableV6& table) {
+    return write_connection_table(stream, table, {});
+}
+
+bool write_connection_table(
+    std::ostream& stream,
+    const ConnectionTableV4& table,
+    const SerializationProgressCallback& progress_callback
+) {
     const auto connections = sorted_connections(table);
     if (!write_u64(stream, static_cast<std::uint64_t>(connections.size()))) {
         return false;
     }
 
+    const auto total_packets = count_connection_table_packet_refs(table);
+    std::uint64_t processed_packets {0};
+    if (total_packets == 0U && !report_serialization_progress(progress_callback, 0U, 0U)) {
+        return false;
+    }
+
     for (const auto* connection : connections) {
-        if (!write_connection(stream, *connection)) {
+        if (!write_connection_key(stream, connection->key) ||
+            !write_u8(stream, connection->has_flow_a ? 1U : 0U) ||
+            !write_u8(stream, connection->has_flow_b ? 1U : 0U) ||
+            !write_u64(stream, connection->packet_count) ||
+            !write_u64(stream, connection->total_bytes) ||
+            !write_u8(stream, connection->has_fragmented_packets ? 1U : 0U) ||
+            !write_u64(stream, connection->fragmented_packet_count) ||
+            !write_flow_protocol_hint(stream, connection->protocol_hint) ||
+            !write_string(stream, connection->service_hint)) {
             return false;
         }
+
+        if (connection->has_flow_a &&
+            !write_flow_with_progress(stream, connection->flow_a, processed_packets, total_packets, progress_callback)) {
+            return false;
+        }
+
+        if (connection->has_flow_b &&
+            !write_flow_with_progress(stream, connection->flow_b, processed_packets, total_packets, progress_callback)) {
+            return false;
+        }
+    }
+
+    if (total_packets > 0U && !report_serialization_progress(progress_callback, processed_packets, total_packets)) {
+        return false;
     }
 
     return true;
 }
 
-bool read_connection_table(std::istream& stream, ConnectionTableV4& table) {
+bool write_connection_table(
+    std::ostream& stream,
+    const ConnectionTableV6& table,
+    const SerializationProgressCallback& progress_callback
+) {
+    const auto connections = sorted_connections(table);
+    if (!write_u64(stream, static_cast<std::uint64_t>(connections.size()))) {
+        return false;
+    }
+
+    const auto total_packets = count_connection_table_packet_refs(table);
+    std::uint64_t processed_packets {0};
+    if (total_packets == 0U && !report_serialization_progress(progress_callback, 0U, 0U)) {
+        return false;
+    }
+
+    for (const auto* connection : connections) {
+        if (!write_connection_key(stream, connection->key) ||
+            !write_u8(stream, connection->has_flow_a ? 1U : 0U) ||
+            !write_u8(stream, connection->has_flow_b ? 1U : 0U) ||
+            !write_u64(stream, connection->packet_count) ||
+            !write_u64(stream, connection->total_bytes) ||
+            !write_u8(stream, connection->has_fragmented_packets ? 1U : 0U) ||
+            !write_u64(stream, connection->fragmented_packet_count) ||
+            !write_flow_protocol_hint(stream, connection->protocol_hint) ||
+            !write_string(stream, connection->service_hint)) {
+            return false;
+        }
+
+        if (connection->has_flow_a &&
+            !write_flow_with_progress(stream, connection->flow_a, processed_packets, total_packets, progress_callback)) {
+            return false;
+        }
+
+        if (connection->has_flow_b &&
+            !write_flow_with_progress(stream, connection->flow_b, processed_packets, total_packets, progress_callback)) {
+            return false;
+        }
+    }
+
+    if (total_packets > 0U && !report_serialization_progress(progress_callback, processed_packets, total_packets)) {
+        return false;
+    }
+
+    return true;
+}
+
+template <typename Connection, typename Table>
+bool read_connection_table_chunk_into(std::istream& stream, Table& table) {
     std::uint64_t connection_count {0};
     if (!read_u64(stream, connection_count) ||
         connection_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
         return false;
     }
 
-    table.clear();
     for (std::uint64_t index = 0; index < connection_count; ++index) {
-        ConnectionV4 connection {};
+        Connection connection {};
         if (!read_connection(stream, connection)) {
-            table.clear();
             return false;
         }
 
-        table.get_or_create(connection.key) = connection;
+        if (table.find(connection.key) != nullptr) {
+            return false;
+        }
+
+        table.get_or_create(connection.key) = std::move(connection);
+    }
+
+    return true;
+}
+
+bool read_connection_table_chunk(std::istream& stream, ConnectionTableV4& table) {
+    return read_connection_table_chunk_into<ConnectionV4>(stream, table);
+}
+
+bool read_connection_table_chunk(std::istream& stream, ConnectionTableV6& table) {
+    return read_connection_table_chunk_into<ConnectionV6>(stream, table);
+}
+
+bool read_connection_table(std::istream& stream, ConnectionTableV4& table) {
+    table.clear();
+    if (!read_connection_table_chunk(stream, table)) {
+        table.clear();
+        return false;
     }
 
     return true;
 }
 
 bool read_connection_table(std::istream& stream, ConnectionTableV6& table) {
-    std::uint64_t connection_count {0};
-    if (!read_u64(stream, connection_count) ||
-        connection_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
-        return false;
-    }
-
     table.clear();
-    for (std::uint64_t index = 0; index < connection_count; ++index) {
-        ConnectionV6 connection {};
-        if (!read_connection(stream, connection)) {
-            table.clear();
-            return false;
-        }
-
-        table.get_or_create(connection.key) = connection;
+    if (!read_connection_table_chunk(stream, table)) {
+        table.clear();
+        return false;
     }
 
     return true;
 }
 
 bool write_protocol_path_registry(std::ostream& stream, const ProtocolPathRegistry& registry) {
+    return write_protocol_path_registry(stream, registry, {});
+}
+
+bool write_protocol_path_registry(
+    std::ostream& stream,
+    const ProtocolPathRegistry& registry,
+    const SerializationProgressCallback& progress_callback
+) {
     if (!write_u64(stream, static_cast<std::uint64_t>(registry.size()))) {
+        return false;
+    }
+
+    if (registry.size() == 0U && !report_serialization_progress(progress_callback, 0U, 0U)) {
         return false;
     }
 
@@ -729,6 +879,13 @@ bool write_protocol_path_registry(std::ostream& stream, const ProtocolPathRegist
         const auto id = static_cast<ProtocolPathId>(index + 1U);
         const auto* path = registry.find(id);
         if (path == nullptr || !write_protocol_path(stream, *path)) {
+            return false;
+        }
+
+        const auto processed = static_cast<std::uint64_t>(index + 1U);
+        const auto total = static_cast<std::uint64_t>(registry.size());
+        if (((processed % kSerializationProgressReportInterval) == 0U || processed == total) &&
+            !report_serialization_progress(progress_callback, processed, total)) {
             return false;
         }
     }
@@ -761,11 +918,70 @@ bool read_protocol_path_registry(std::istream& stream, ProtocolPathRegistry& reg
     return true;
 }
 
+bool write_unrecognized_packet_records(
+    std::ostream& stream,
+    std::span<const UnrecognizedPacketRecord> records
+) {
+    return write_unrecognized_packet_records(stream, records, {});
+}
+
+bool write_unrecognized_packet_records(
+    std::ostream& stream,
+    std::span<const UnrecognizedPacketRecord> records,
+    const SerializationProgressCallback& progress_callback
+) {
+    if (!write_u64(stream, static_cast<std::uint64_t>(records.size()))) {
+        return false;
+    }
+
+    if (records.empty() && !report_serialization_progress(progress_callback, 0U, 0U)) {
+        return false;
+    }
+
+    for (std::size_t index = 0U; index < records.size(); ++index) {
+        const auto& record = records[index];
+        if (!write_packet_ref(stream, record.packet) || !write_string(stream, record.reason_text)) {
+            return false;
+        }
+
+        const auto processed = static_cast<std::uint64_t>(index + 1U);
+        const auto total = static_cast<std::uint64_t>(records.size());
+        if (((processed % kSerializationProgressReportInterval) == 0U || processed == total) &&
+            !report_serialization_progress(progress_callback, processed, total)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool read_unrecognized_packet_records(std::istream& stream, std::vector<UnrecognizedPacketRecord>& records) {
+    std::uint64_t record_count {0};
+    if (!read_u64(stream, record_count) ||
+        record_count > static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+
+    records.clear();
+    records.reserve(static_cast<std::size_t>(record_count));
+    for (std::uint64_t index = 0U; index < record_count; ++index) {
+        UnrecognizedPacketRecord record {};
+        if (!read_packet_ref(stream, record.packet) || !read_string(stream, record.reason_text)) {
+            records.clear();
+            return false;
+        }
+        records.push_back(std::move(record));
+    }
+
+    return true;
+}
+
 bool write_capture_state(std::ostream& stream, const CaptureState& state) {
     return write_capture_summary(stream, state.summary) &&
            write_protocol_path_registry(stream, state.protocol_path_registry) &&
            write_connection_table(stream, state.ipv4_connections) &&
-           write_connection_table(stream, state.ipv6_connections);
+           write_connection_table(stream, state.ipv6_connections) &&
+           write_unrecognized_packet_records(stream, state.unrecognized_packets);
 }
 
 bool read_capture_state(std::istream& stream, CaptureState& state) {
@@ -773,7 +989,8 @@ bool read_capture_state(std::istream& stream, CaptureState& state) {
     return read_capture_summary(stream, state.summary) &&
            read_protocol_path_registry(stream, state.protocol_path_registry) &&
            read_connection_table(stream, state.ipv4_connections) &&
-           read_connection_table(stream, state.ipv6_connections);
+           read_connection_table(stream, state.ipv6_connections) &&
+           read_unrecognized_packet_records(stream, state.unrecognized_packets);
 }
 
 }  // namespace pfl::detail

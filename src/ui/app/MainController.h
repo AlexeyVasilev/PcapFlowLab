@@ -83,6 +83,10 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong smartExportProgressTotalPackets READ smartExportProgressTotalPackets NOTIFY smartExportStateChanged)
     Q_PROPERTY(double smartExportProgressPercent READ smartExportProgressPercent NOTIFY smartExportStateChanged)
     Q_PROPERTY(QString smartExportProgressText READ smartExportProgressText NOTIFY smartExportStateChanged)
+    Q_PROPERTY(bool indexSaveInProgress READ indexSaveInProgress NOTIFY indexSaveStateChanged)
+    Q_PROPERTY(bool indexSaveCancelRequested READ indexSaveCancelRequested NOTIFY indexSaveStateChanged)
+    Q_PROPERTY(double indexSaveProgressPercent READ indexSaveProgressPercent NOTIFY indexSaveStateChanged)
+    Q_PROPERTY(QString indexSaveProgressText READ indexSaveProgressText NOTIFY indexSaveStateChanged)
     Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineFirstPacketTime READ analysisTimelineFirstPacketTime NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineLastPacketTime READ analysisTimelineLastPacketTime NOTIFY analysisStateChanged)
@@ -292,6 +296,10 @@ public:
     [[nodiscard]] qulonglong smartExportProgressTotalPackets() const noexcept;
     [[nodiscard]] double smartExportProgressPercent() const noexcept;
     [[nodiscard]] QString smartExportProgressText() const;
+    [[nodiscard]] bool indexSaveInProgress() const noexcept;
+    [[nodiscard]] bool indexSaveCancelRequested() const noexcept;
+    [[nodiscard]] double indexSaveProgressPercent() const noexcept;
+    [[nodiscard]] QString indexSaveProgressText() const;
     [[nodiscard]] QString analysisDurationText() const;
     [[nodiscard]] QString analysisTimelineFirstPacketTime() const;
     [[nodiscard]] QString analysisTimelineLastPacketTime() const;
@@ -445,6 +453,7 @@ public:
     Q_INVOKABLE bool openIndexFile(const QString& path);
     Q_INVOKABLE bool attachSourceCapture(const QString& path);
     Q_INVOKABLE void cancelOpen();
+    Q_INVOKABLE void cancelSaveAnalysisIndex();
     Q_INVOKABLE void loadMorePackets();
     Q_INVOKABLE void loadMoreStreamItems();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
@@ -531,6 +540,7 @@ signals:
     void analysisStateChanged();
     void analysisSequenceExportStateChanged();
     void smartExportStateChanged();
+    void indexSaveStateChanged();
     void sessionApplicationStateChanged();
 
 private:
@@ -593,9 +603,12 @@ private:
         bool cancelled,
         const QString& errorText
     );
+    void updateIndexSaveProgress(qulonglong jobId, const IndexSaveProgress& progress);
+    void completeIndexSave(qulonglong jobId, const QString& outputPath, bool saved, const QString& errorText);
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
     void cleanupSmartExportThread();
+    void cleanupIndexSaveThread();
     void cleanupAnalysisSequenceExportThread();
     void cleanupOpenThread();
     void releaseOpenContext();
@@ -606,6 +619,7 @@ private:
     void setOpenErrorText(const QString& text);
     void setAnalysisSequenceExportState(bool inProgress, const QString& statusText, bool statusIsError);
     void setSmartExportState(bool inProgress, qulonglong packetsProcessed, qulonglong totalPackets, const QString& progressText);
+    void setIndexSaveState(bool inProgress, bool cancelRequested, double progressPercent, const QString& progressText);
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
@@ -670,17 +684,22 @@ private:
     bool analysis_loading_ {false};
     bool analysis_sequence_export_in_progress_ {false};
     bool smart_export_in_progress_ {false};
+    bool index_save_in_progress_ {false};
     bool smart_export_cancel_requested_ {false};
+    bool index_save_cancel_requested_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
     qulonglong smart_export_progress_packets_ {0};
     qulonglong smart_export_progress_total_packets_ {0};
     QString smart_export_progress_text_ {};
+    double index_save_progress_percent_ {0.0};
+    QString index_save_progress_text_ {};
     bool source_capture_unavailable_notice_shown_ {false};
     qulonglong active_analysis_request_id_ {0};
     qulonglong active_analysis_sequence_export_job_id_ {0};
     qulonglong active_smart_export_job_id_ {0};
+    qulonglong active_index_save_job_id_ {0};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
@@ -689,8 +708,10 @@ private:
     bool active_open_as_index_ {false};
     QThread* analysis_sequence_export_thread_ {nullptr};
     QThread* smart_export_thread_ {nullptr};
+    QThread* index_save_thread_ {nullptr};
     QThread* open_thread_ {nullptr};
     std::shared_ptr<std::atomic_bool> smart_export_cancel_token_ {};
+    std::shared_ptr<std::atomic_bool> index_save_cancel_token_ {};
     std::shared_ptr<OpenContext> active_open_context_ {};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };

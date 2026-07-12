@@ -1942,11 +1942,6 @@ FrontendSaveIndexResult FrontendSessionAdapter::save_index(const std::filesystem
         return result;
     }
 
-    if (session_.is_partial_open()) {
-        result.error_text = "Saving an index from a partial capture is not supported yet.";
-        return result;
-    }
-
     if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
         result.error_text = "Original source capture is unavailable. Reattach the capture file to save an analysis index.";
         return result;

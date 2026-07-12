@@ -263,6 +263,7 @@ void run_index_tests() {
         const auto truncated_index_path = write_temp_binary_file("pfl_capture_state_truncated.idx", {0x50, 0x46, 0x4c});
         CaptureSession session {};
         PFL_EXPECT(!session.load_index(truncated_index_path));
+        PFL_EXPECT(session.last_open_error_text().find("incomplete or was not finalized") != std::string::npos);
 
         CaptureIndexReader reader {};
         CaptureState state {};
@@ -397,15 +398,63 @@ void run_index_tests() {
     {
         auto truncated_bytes = make_classic_pcap({{100, forward_packet}, {200, reverse_packet}});
         truncated_bytes.resize(truncated_bytes.size() - 5U);
-        const auto partial_capture_path = write_temp_pcap("pfl_partial_index_rejected.pcap", truncated_bytes);
-        const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_partial_index_rejected.idx";
+        const auto partial_capture_path = write_temp_pcap("pfl_partial_index_allowed.pcap", truncated_bytes);
+        const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_partial_index_allowed.idx";
         std::filesystem::remove(partial_index_path);
 
         CaptureSession partial_session {};
         PFL_EXPECT(partial_session.open_capture(partial_capture_path));
         PFL_EXPECT(partial_session.is_partial_open());
-        PFL_EXPECT(!partial_session.save_index(partial_index_path));
-        PFL_EXPECT(!std::filesystem::exists(partial_index_path));
+        PFL_EXPECT(partial_session.save_index(partial_index_path));
+        PFL_EXPECT(std::filesystem::exists(partial_index_path));
+
+        CaptureSession reloaded_partial_session {};
+        PFL_EXPECT(reloaded_partial_session.load_index(partial_index_path));
+        PFL_EXPECT(reloaded_partial_session.summary().packet_count == 1U);
+        PFL_EXPECT(reloaded_partial_session.summary().flow_count == 1U);
+    }
+
+    {
+        const auto existing_index_path = std::filesystem::temp_directory_path() / "pfl_index_atomic_existing.idx";
+        const auto cancelled_index_path = std::filesystem::temp_directory_path() / "pfl_index_atomic_cancelled.idx";
+        std::filesystem::remove(existing_index_path);
+        std::filesystem::remove(cancelled_index_path);
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(source_path));
+        PFL_REQUIRE(session.save_index(existing_index_path));
+
+        {
+            std::ifstream baseline_stream(existing_index_path, std::ios::binary);
+            std::ofstream cancelled_stream(cancelled_index_path, std::ios::binary | std::ios::trunc);
+            cancelled_stream << baseline_stream.rdbuf();
+        }
+
+        bool saw_progress = false;
+        bool cancel_requested = false;
+        const CaptureSession::IndexSaveOptions options {
+            .progress_callback = [&](const CaptureSession::IndexSaveProgress& progress) {
+                saw_progress = true;
+                (void)progress;
+            },
+            .cancel_requested = [&cancel_requested]() {
+                const bool result = cancel_requested;
+                cancel_requested = true;
+                return result;
+            },
+        };
+
+        std::string error_text {};
+        PFL_EXPECT(!session.save_index(cancelled_index_path, options, &error_text));
+        PFL_EXPECT(saw_progress);
+        PFL_EXPECT(error_text == "Index save cancelled by user.");
+        PFL_EXPECT(std::filesystem::exists(cancelled_index_path));
+        PFL_EXPECT(validate_index_magic(cancelled_index_path));
+
+        CaptureSession cancelled_loaded_session {};
+        PFL_EXPECT(cancelled_loaded_session.load_index(cancelled_index_path));
+        PFL_EXPECT(cancelled_loaded_session.summary().packet_count == 2U);
+        PFL_EXPECT(cancelled_loaded_session.summary().flow_count == 1U);
     }
 }
 

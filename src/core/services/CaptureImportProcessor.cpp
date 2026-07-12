@@ -1169,7 +1169,7 @@ void apply_import_hints_if_needed(const RawPcapPacket& packet,
 }
 
 [[nodiscard]] bool is_safe_partial_import(const CaptureState& state, const OpenContext* ctx) noexcept {
-    return !should_cancel(ctx) && state.summary.packet_count > 0U;
+    return !should_cancel(ctx) && (state.summary.packet_count > 0U || !state.unrecognized_packets.empty());
 }
 
 void release_large_import_packet_capacity(RawPcapPacket& packet) {

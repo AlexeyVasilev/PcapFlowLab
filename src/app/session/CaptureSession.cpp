@@ -1415,12 +1415,20 @@ bool CaptureSession::open_input(const std::filesystem::path& path, OpenContext* 
 }
 
 bool CaptureSession::save_index(const std::filesystem::path& index_path) const {
-    if (partial_open_ || !has_source_capture()) {
+    return save_index(index_path, {}, nullptr);
+}
+
+bool CaptureSession::save_index(
+    const std::filesystem::path& index_path,
+    const IndexSaveOptions& options,
+    std::string* out_error_text
+) const {
+    if (!has_source_capture()) {
         return false;
     }
 
     CaptureIndexWriter writer {};
-    return writer.write(index_path, state_, capture_path_);
+    return writer.write(index_path, state_, capture_path_, options, out_error_text);
 }
 
 bool CaptureSession::load_index(const std::filesystem::path& index_path) {
@@ -1467,9 +1475,9 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     }
 
     capture_path_.clear();
-    source_capture_path_ = loaded_capture_path;
-    source_info_ = loaded_source_info;
-    state_ = loaded_state;
+    source_capture_path_ = std::move(loaded_capture_path);
+    source_info_ = std::move(loaded_source_info);
+    state_ = std::move(loaded_state);
     import_mode_ = ImportMode::fast;
     analysis_settings_ = {};
     deep_protocol_details_enabled_ = false;

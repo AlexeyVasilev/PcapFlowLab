@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -81,6 +82,13 @@ std::vector<SectionInfo> parse_sections(const std::vector<std::uint8_t>& bytes) 
     return sections;
 }
 
+std::size_t count_sections(const std::vector<std::uint8_t>& bytes, const std::uint32_t section_id) {
+    const auto sections = parse_sections(bytes);
+    return static_cast<std::size_t>(std::count_if(sections.begin(), sections.end(), [&](const SectionInfo& section) {
+        return section.id == section_id;
+    }));
+}
+
 std::vector<std::uint8_t> remove_section(const std::vector<std::uint8_t>& bytes, const std::uint32_t section_id) {
     const auto sections = parse_sections(bytes);
     std::vector<std::uint8_t> mutated {};
@@ -140,6 +148,23 @@ std::vector<std::uint8_t> append_trailing_garbage(const std::vector<std::uint8_t
     mutated.push_back(0x55U);
     mutated.push_back(0x01U);
     return mutated;
+}
+
+std::vector<std::uint8_t> make_ipv6_tcp_segment_for_index_test(
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port
+) {
+    std::vector<std::uint8_t> bytes {};
+    append_be16(bytes, src_port);
+    append_be16(bytes, dst_port);
+    append_be32(bytes, 0U);
+    append_be32(bytes, 0U);
+    bytes.push_back(0x50U);
+    bytes.push_back(0x10U);
+    append_be16(bytes, 0U);
+    append_be16(bytes, 0U);
+    append_be16(bytes, 0U);
+    return bytes;
 }
 
 void expect_matching_packets(const std::vector<PacketRef>& left, const std::vector<PacketRef>& right) {
@@ -274,6 +299,133 @@ void run_index_format_tests() {
     PFL_EXPECT(loaded_source_info.capture_path == source_path);
     expect_matching_states(state, loaded_state);
 
+    {
+        const auto chunked_ipv4_source_path = write_temp_pcap(
+            "pfl_index_chunked_ipv4_source.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 41000, 443)},
+                {200, make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 3), ipv4(10, 0, 0, 4), 41001, 443)},
+                {300, make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 5), ipv4(10, 0, 0, 6), 41002, 443)},
+                {400, make_ethernet_ipv4_tcp_packet(ipv4(10, 0, 0, 7), ipv4(10, 0, 0, 8), 41003, 443)},
+            })
+        );
+
+        CaptureState chunked_ipv4_state {};
+        PFL_EXPECT(importer.import_capture(chunked_ipv4_source_path, chunked_ipv4_state));
+
+        const auto chunked_ipv4_index_path = std::filesystem::temp_directory_path() / "pfl_chunked_ipv4_sections.idx";
+        std::filesystem::remove(chunked_ipv4_index_path);
+
+        CaptureIndexWriter chunked_writer {};
+        PFL_EXPECT(chunked_writer.write(
+            chunked_ipv4_index_path,
+            chunked_ipv4_state,
+            chunked_ipv4_source_path,
+            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 256U},
+            nullptr
+        ));
+
+        const auto chunked_ipv4_index_bytes = read_file_bytes(chunked_ipv4_index_path);
+        PFL_EXPECT(count_sections(
+            chunked_ipv4_index_bytes,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections)
+        ) > 1U);
+
+        CaptureState loaded_chunked_ipv4_state {};
+        std::filesystem::path loaded_chunked_ipv4_capture_path {};
+        CaptureSourceInfo loaded_chunked_ipv4_source_info {};
+        PFL_EXPECT(index_reader.read(
+            chunked_ipv4_index_path,
+            loaded_chunked_ipv4_state,
+            loaded_chunked_ipv4_capture_path,
+            &loaded_chunked_ipv4_source_info
+        ));
+        PFL_EXPECT(loaded_chunked_ipv4_capture_path == chunked_ipv4_source_path);
+        PFL_EXPECT(loaded_chunked_ipv4_source_info.capture_path == chunked_ipv4_source_path);
+        expect_matching_states(chunked_ipv4_state, loaded_chunked_ipv4_state);
+
+        auto truncated_chunked_ipv4_bytes = chunked_ipv4_index_bytes;
+        PFL_REQUIRE(!truncated_chunked_ipv4_bytes.empty());
+        truncated_chunked_ipv4_bytes.pop_back();
+        const auto truncated_chunked_ipv4_index_path = write_temp_binary_file(
+            "pfl_chunked_ipv4_sections_truncated.idx",
+            truncated_chunked_ipv4_bytes
+        );
+        PFL_EXPECT(!index_reader.read(
+            truncated_chunked_ipv4_index_path,
+            loaded_chunked_ipv4_state,
+            loaded_chunked_ipv4_capture_path,
+            &loaded_chunked_ipv4_source_info
+        ));
+        PFL_EXPECT(index_reader.last_error().reason == "index file is incomplete or was not finalized");
+    }
+
+    {
+        const auto chunked_ipv6_source_path = write_temp_pcap(
+            "pfl_index_chunked_ipv6_source.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv6_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}),
+                    6U,
+                    make_ipv6_tcp_segment_for_index_test(51000, 443)
+                )},
+                {200, make_ethernet_ipv6_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+                    6U,
+                    make_ipv6_tcp_segment_for_index_test(51001, 443)
+                )},
+                {300, make_ethernet_ipv6_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6}),
+                    6U,
+                    make_ipv6_tcp_segment_for_index_test(51002, 443)
+                )},
+                {400, make_ethernet_ipv6_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8}),
+                    6U,
+                    make_ipv6_tcp_segment_for_index_test(51003, 443)
+                )},
+            })
+        );
+
+        CaptureState chunked_ipv6_state {};
+        PFL_EXPECT(importer.import_capture(chunked_ipv6_source_path, chunked_ipv6_state));
+
+        const auto chunked_ipv6_index_path = std::filesystem::temp_directory_path() / "pfl_chunked_ipv6_sections.idx";
+        std::filesystem::remove(chunked_ipv6_index_path);
+
+        CaptureIndexWriter chunked_writer {};
+        PFL_EXPECT(chunked_writer.write(
+            chunked_ipv6_index_path,
+            chunked_ipv6_state,
+            chunked_ipv6_source_path,
+            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 256U},
+            nullptr
+        ));
+
+        const auto chunked_ipv6_index_bytes = read_file_bytes(chunked_ipv6_index_path);
+        PFL_EXPECT(count_sections(
+            chunked_ipv6_index_bytes,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv6_connections)
+        ) > 1U);
+
+        CaptureState loaded_chunked_ipv6_state {};
+        std::filesystem::path loaded_chunked_ipv6_capture_path {};
+        CaptureSourceInfo loaded_chunked_ipv6_source_info {};
+        PFL_EXPECT(index_reader.read(
+            chunked_ipv6_index_path,
+            loaded_chunked_ipv6_state,
+            loaded_chunked_ipv6_capture_path,
+            &loaded_chunked_ipv6_source_info
+        ));
+        PFL_EXPECT(loaded_chunked_ipv6_capture_path == chunked_ipv6_source_path);
+        PFL_EXPECT(loaded_chunked_ipv6_source_info.capture_path == chunked_ipv6_source_path);
+        expect_matching_states(chunked_ipv6_state, loaded_chunked_ipv6_state);
+    }
+
     const auto index_bytes = read_file_bytes(index_path);
     auto legacy_version_bytes = index_bytes;
     write_le16_at(legacy_version_bytes, 8U, static_cast<std::uint16_t>(kCaptureIndexVersion - 1U));
@@ -311,6 +463,16 @@ void run_index_format_tests() {
         corrupt_first_section_size(index_bytes)
     );
     PFL_EXPECT(!index_reader.read(malformed_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+
+    auto truncated_tail_bytes = index_bytes;
+    PFL_REQUIRE(!truncated_tail_bytes.empty());
+    truncated_tail_bytes.pop_back();
+    const auto truncated_tail_index_path = write_temp_binary_file(
+        "pfl_index_truncated_tail.idx",
+        truncated_tail_bytes
+    );
+    PFL_EXPECT(!index_reader.read(truncated_tail_index_path, loaded_state, loaded_capture_path, &loaded_source_info));
+    PFL_EXPECT(index_reader.last_error().reason == "index file is incomplete or was not finalized");
 
     const auto missing_index_path = write_temp_binary_file(
         "pfl_index_missing_summary.idx",

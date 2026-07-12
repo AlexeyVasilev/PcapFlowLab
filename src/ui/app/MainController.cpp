@@ -2084,6 +2084,7 @@ MainController::MainController(QObject* parent)
 
 MainController::~MainController() {
     cleanupSmartExportThread();
+    cleanupIndexSaveThread();
     cleanupAnalysisSequenceExportThread();
     cleanupOpenThread();
 }
@@ -2130,11 +2131,12 @@ bool MainController::openedFromIndex() const noexcept {
 }
 
 bool MainController::canAttachSourceCapture() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && session_.has_capture() && !hasSourceCapture();
+    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ && session_.has_capture() && !hasSourceCapture();
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && session_.has_capture() && hasSourceCapture() && !session_.is_partial_open();
+    return !is_opening_ && !smart_export_in_progress_ && !analysis_sequence_export_in_progress_ && !index_save_in_progress_ &&
+           session_.has_capture() && hasSourceCapture();
 }
 
 bool MainController::partialOpen() const noexcept {
@@ -2148,7 +2150,7 @@ QString MainController::partialOpenWarningText() const {
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && selected_flow_index_ >= 0;
+    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ && hasSourceCapture() && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::selectedFlowCount() const noexcept {
@@ -2156,11 +2158,12 @@ qulonglong MainController::selectedFlowCount() const noexcept {
 }
 
 bool MainController::canExportSelectedFlows() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
+    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
 }
 
 bool MainController::canExportUnselectedFlows() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ &&
+           hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
 }
 
 bool MainController::isOpening() const noexcept {
@@ -2302,7 +2305,7 @@ QVariantList MainController::analysisRateSeriesBToA() const {
     return make_analysis_rate_series(current_flow_analysis_->rate_graph.points_b_to_a);
 }
 bool MainController::canExportAnalysisSequence() const noexcept {
-    return selected_flow_index_ >= 0 && !analysis_sequence_export_in_progress_;
+    return selected_flow_index_ >= 0 && !analysis_sequence_export_in_progress_ && !index_save_in_progress_;
 }
 
 bool MainController::analysisSequenceExportInProgress() const noexcept {
@@ -2347,6 +2350,22 @@ double MainController::smartExportProgressPercent() const noexcept {
 
 QString MainController::smartExportProgressText() const {
     return smart_export_progress_text_;
+}
+
+bool MainController::indexSaveInProgress() const noexcept {
+    return index_save_in_progress_;
+}
+
+bool MainController::indexSaveCancelRequested() const noexcept {
+    return index_save_cancel_requested_;
+}
+
+double MainController::indexSaveProgressPercent() const noexcept {
+    return index_save_progress_percent_;
+}
+
+QString MainController::indexSaveProgressText() const {
+    return index_save_progress_text_;
 }
 
 QString MainController::analysisDurationText() const {
@@ -3272,6 +3291,10 @@ bool MainController::openCaptureFile(const QString& path) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another capture."), true);
         return false;
     }
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before opening another capture."), true);
+        return false;
+    }
     return openPath(path, false);
 }
 
@@ -3280,12 +3303,20 @@ bool MainController::openIndexFile(const QString& path) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another session."), true);
         return false;
     }
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before opening another session."), true);
+        return false;
+    }
     return openPath(path, true);
 }
 
 bool MainController::attachSourceCapture(const QString& path) {
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before changing the source capture."), true);
+        return false;
+    }
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before changing the source capture."), true);
         return false;
     }
 
@@ -3373,9 +3404,40 @@ void MainController::sendSelectedFlowToAnalysis() {
     refreshSelectedFlowAnalysis();
 }
 
+void MainController::cancelSaveAnalysisIndex() {
+    if (!index_save_in_progress_ || index_save_cancel_requested_) {
+        return;
+    }
+
+    if (index_save_cancel_token_ != nullptr) {
+        index_save_cancel_token_->store(true, std::memory_order_relaxed);
+    }
+
+    const auto cancelling_text = index_save_progress_text_.isEmpty()
+        ? QStringLiteral("Cancelling index save...")
+        : index_save_progress_text_ + QStringLiteral(" Cancelling...");
+    setIndexSaveState(true, true, index_save_progress_percent_, cancelling_text);
+    setStatusText(QStringLiteral("Cancelling index save..."));
+}
+
 bool MainController::saveAnalysisIndex(const QString& path) {
-    if (smart_export_in_progress_) {
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (analysis_sequence_export_in_progress_ || analysis_sequence_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current analysis sequence export to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (is_opening_) {
+        setStatusText(QStringLiteral("Wait for the current open operation to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_ || index_save_thread_ != nullptr) {
+        setStatusText(QStringLiteral("An analysis index save is already in progress."), true);
         return false;
     }
 
@@ -3385,24 +3447,45 @@ bool MainController::saveAnalysisIndex(const QString& path) {
         return false;
     }
 
-    if (session_.is_partial_open()) {
-        setStatusText(QStringLiteral("Saving an index from a partial capture is not supported yet."), true);
-        return false;
-    }
-
     if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to save an analysis index."))) {
         return false;
     }
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    const bool saved = session_.save_index(filesystemPath);
-    if (!saved) {
-        setStatusText(QStringLiteral("Failed to save analysis index."), true);
-        return false;
-    }
-
     setLastDirectoryFromPath(filesystemPath);
-    setStatusText(QStringLiteral("Analysis index saved successfully."));
+
+    ++active_index_save_job_id_;
+    const auto job_id = active_index_save_job_id_;
+    index_save_cancel_token_ = std::make_shared<std::atomic_bool>(false);
+    index_save_cancel_requested_ = false;
+    setIndexSaveState(true, false, 0.0, QStringLiteral("Preparing index save..."));
+    setStatusText(QStringLiteral("Analysis index save started."));
+
+    const IndexSaveOptions options {
+        .progress_callback = [this, job_id](const IndexSaveProgress& progress) {
+            QMetaObject::invokeMethod(
+                this,
+                [this, job_id, progress]() {
+                    updateIndexSaveProgress(job_id, progress);
+                },
+                Qt::QueuedConnection
+            );
+        },
+        .cancel_requested = [token = index_save_cancel_token_]() {
+            return token != nullptr && token->load(std::memory_order_relaxed);
+        },
+    };
+
+    index_save_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath, options]() mutable {
+        std::string error_text {};
+        const bool saved = session_.save_index(filesystemPath, options, &error_text);
+        QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, saved, error = QString::fromStdString(error_text)]() {
+            completeIndexSave(job_id, trimmedPath, saved, error);
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(index_save_thread_, &QThread::finished, index_save_thread_, &QObject::deleteLater);
+    index_save_thread_->start();
     return true;
 }
 
@@ -3545,6 +3628,11 @@ bool MainController::exportSmartFlows(
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before starting smart export."), true);
+        return false;
+    }
+
     if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to export flows."))) {
         return false;
     }
@@ -5157,6 +5245,88 @@ void MainController::completeAnalysisSequenceExport(
     setAnalysisSequenceExportState(false, QStringLiteral("Flow sequence CSV exported: %1").arg(outputPath), false);
 }
 
+void MainController::updateIndexSaveProgress(const qulonglong jobId, const IndexSaveProgress& progress) {
+    if (jobId != active_index_save_job_id_) {
+        return;
+    }
+
+    const auto section_total_text = QString::number(progress.total_sections);
+    const auto completed_text = QString::number(progress.completed_sections);
+    QString progress_text = QString::fromStdString(progress.phase_text);
+    if (progress.total_sections > 0U) {
+        progress_text += QStringLiteral(" (%1 / %2 sections)")
+            .arg(completed_text, section_total_text);
+    }
+    if (progress.phase_items_total > 0U) {
+        progress_text += QStringLiteral(" [%1 / %2 items]")
+            .arg(QString::number(progress.phase_items_processed), QString::number(progress.phase_items_total));
+    }
+
+    double progress_percent {0.0};
+    if (progress.total_sections > 0U) {
+        const auto completed_sections = std::min(progress.completed_sections, progress.total_sections);
+        if (completed_sections >= progress.total_sections) {
+            progress_percent = 1.0;
+        } else {
+            const auto current_fraction =
+                progress.phase_items_total > 0U
+                    ? std::clamp(
+                          static_cast<double>(std::min(progress.phase_items_processed, progress.phase_items_total)) /
+                              static_cast<double>(progress.phase_items_total),
+                          0.0,
+                          1.0
+                      )
+                    : 0.0;
+            progress_percent = std::clamp(
+                (static_cast<double>(completed_sections) + current_fraction) /
+                    static_cast<double>(progress.total_sections),
+                0.0,
+                1.0
+            );
+        }
+    }
+
+    setIndexSaveState(
+        true,
+        index_save_cancel_requested_,
+        progress_percent,
+        index_save_cancel_requested_ ? progress_text + QStringLiteral(" Cancelling...") : progress_text
+    );
+}
+
+void MainController::completeIndexSave(
+    const qulonglong jobId,
+    const QString& outputPath,
+    const bool saved,
+    const QString& errorText
+) {
+    if (jobId != active_index_save_job_id_) {
+        return;
+    }
+
+    active_index_save_job_id_ = 0;
+    index_save_cancel_token_.reset();
+    const bool had_cancel_request = index_save_cancel_requested_;
+    index_save_cancel_requested_ = false;
+    cleanupIndexSaveThread();
+    setIndexSaveState(false, false, 0.0, {});
+
+    if (saved) {
+        setStatusText(QStringLiteral("Analysis index saved successfully: %1").arg(outputPath));
+        return;
+    }
+
+    if (had_cancel_request) {
+        setStatusText(QStringLiteral("Analysis index save cancelled."));
+        return;
+    }
+
+    const auto message = errorText.isEmpty()
+        ? QStringLiteral("Failed to save analysis index.")
+        : errorText;
+    setStatusText(message, true);
+}
+
 void MainController::updateSmartExportProgress(
     const qulonglong jobId,
     const SmartPerFlowExportPhase phase,
@@ -5266,6 +5436,18 @@ void MainController::cleanupAnalysisSequenceExportThread() {
     }
 
     analysis_sequence_export_thread_ = nullptr;
+}
+
+void MainController::cleanupIndexSaveThread() {
+    if (index_save_thread_ == nullptr) {
+        return;
+    }
+
+    if (index_save_thread_->isRunning()) {
+        index_save_thread_->wait();
+    }
+
+    index_save_thread_ = nullptr;
 }
 
 void MainController::cleanupSmartExportThread() {
@@ -5580,6 +5762,31 @@ void MainController::setSmartExportState(
     smart_export_progress_total_packets_ = totalPackets;
     smart_export_progress_text_ = progressText;
     emit smartExportStateChanged();
+    if (availability_changed) {
+        emit actionAvailabilityChanged();
+    }
+}
+
+void MainController::setIndexSaveState(
+    const bool inProgress,
+    const bool cancelRequested,
+    const double progressPercent,
+    const QString& progressText
+) {
+    const bool changed = index_save_in_progress_ != inProgress ||
+        index_save_cancel_requested_ != cancelRequested ||
+        index_save_progress_percent_ != progressPercent ||
+        index_save_progress_text_ != progressText;
+    if (!changed) {
+        return;
+    }
+
+    const bool availability_changed = index_save_in_progress_ != inProgress;
+    index_save_in_progress_ = inProgress;
+    index_save_cancel_requested_ = cancelRequested;
+    index_save_progress_percent_ = progressPercent;
+    index_save_progress_text_ = progressText;
+    emit indexSaveStateChanged();
     if (availability_changed) {
         emit actionAvailabilityChanged();
     }

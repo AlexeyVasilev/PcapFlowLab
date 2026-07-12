@@ -149,7 +149,10 @@ void run_unrecognized_packet_tests() {
 
         CaptureSession loaded_index_session {};
         PFL_EXPECT(loaded_index_session.load_index(index_path));
-        PFL_EXPECT(loaded_index_session.unrecognized_packet_count() == 0U);
+        PFL_EXPECT(loaded_index_session.unrecognized_packet_count() == 1U);
+        const auto loaded_rows = loaded_index_session.list_unrecognized_packets();
+        PFL_REQUIRE(loaded_rows.size() == 1U);
+        PFL_EXPECT(loaded_rows[0].reason_text == "TCP header truncated");
     }
 
     {

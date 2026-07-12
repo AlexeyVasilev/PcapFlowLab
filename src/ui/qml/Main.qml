@@ -29,7 +29,7 @@ ApplicationWindow {
     Action {
         id: openCaptureFastAction
         text: "Open Capture (Fast)"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress
+        enabled: !mainController.isOpening && !mainController.smartExportInProgress && !mainController.indexSaveInProgress
         shortcut: StandardKey.Open
         onTriggered: window.browseCaptureWithMode(0)
     }
@@ -37,7 +37,7 @@ ApplicationWindow {
     Action {
         id: openCaptureDeepAction
         text: "Open Capture (Deep)"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress
+        enabled: !mainController.isOpening && !mainController.smartExportInProgress && !mainController.indexSaveInProgress
         shortcut: "Ctrl+Shift+O"
         onTriggered: window.browseCaptureWithMode(1)
     }
@@ -45,7 +45,7 @@ ApplicationWindow {
     Action {
         id: openIndexAction
         text: "Open Index"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress
+        enabled: !mainController.isOpening && !mainController.smartExportInProgress && !mainController.indexSaveInProgress
         onTriggered: mainController.browseIndexFile()
     }
 
@@ -81,7 +81,8 @@ ApplicationWindow {
     Action {
         id: smartExportAction
         text: "Smart Export..."
-        enabled: mainController.hasCapture && mainController.hasSourceCapture && !mainController.smartExportInProgress
+        enabled: mainController.hasCapture && mainController.hasSourceCapture &&
+                 !mainController.smartExportInProgress && !mainController.indexSaveInProgress
         onTriggered: smartExportDialog.open()
     }
 
@@ -501,7 +502,9 @@ ApplicationWindow {
             Button {
                 id: openCaptureButton
                 text: "Open Capture..."
-                enabled: !mainController.isOpening && !mainController.smartExportInProgress
+                enabled: !mainController.isOpening &&
+                         !mainController.smartExportInProgress &&
+                         !mainController.indexSaveInProgress
                 implicitHeight: 40
                 leftPadding: 16
                 rightPadding: 18
@@ -548,7 +551,9 @@ ApplicationWindow {
 
             ComboBox {
                 id: captureModeComboBox
-                enabled: !mainController.isOpening && !mainController.smartExportInProgress
+                enabled: !mainController.isOpening &&
+                         !mainController.smartExportInProgress &&
+                         !mainController.indexSaveInProgress
                 model: ["Fast", "Deep"]
                 currentIndex: mainController.captureOpenMode
                 implicitHeight: openCaptureButton.implicitHeight
@@ -969,6 +974,50 @@ ApplicationWindow {
                     text: mainController.smartExportCancelRequested ? "Cancelling..." : "Cancel"
                     enabled: mainController.smartExportInProgress && !mainController.smartExportCancelRequested
                     onClicked: mainController.cancelSmartExport()
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.indexSaveInProgress
+            color: "#f8fafc"
+            border.color: "#cbd5e1"
+            radius: 6
+            implicitHeight: indexSaveProgressLayout.implicitHeight + 16
+
+            ColumnLayout {
+                id: indexSaveProgressLayout
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 4
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Analysis index save in progress"
+                    color: "#64748b"
+                    font.pixelSize: 12
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: mainController.indexSaveProgressText
+                    color: "#0f172a"
+                    wrapMode: Text.WordWrap
+                }
+
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 1
+                    value: mainController.indexSaveProgressPercent
+                    indeterminate: mainController.indexSaveProgressPercent <= 0.0
+                }
+
+                Button {
+                    text: mainController.indexSaveCancelRequested ? "Cancelling..." : "Cancel"
+                    enabled: mainController.indexSaveInProgress && !mainController.indexSaveCancelRequested
+                    onClicked: mainController.cancelSaveAnalysisIndex()
                 }
             }
         }

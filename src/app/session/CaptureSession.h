@@ -15,6 +15,7 @@
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
+#include "core/index/CaptureIndexWriter.h"
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
@@ -78,6 +79,9 @@ struct SmartPerFlowExportOptions {
 using SmartSingleFileExportProgress = MarkedPacketExportProgress;
 using SmartSingleFileExportProgressCallback = MarkedPacketExportProgressCallback;
 using SmartSingleFileExportOptions = MarkedPacketExportOptions;
+using IndexSaveProgress = CaptureIndexWriteProgress;
+using IndexSaveProgressCallback = CaptureIndexWriteProgressCallback;
+using IndexSaveOptions = CaptureIndexWriteOptions;
 
 struct SelectedFlowPacketCacheInfo {
     std::size_t flow_index {0};
@@ -111,6 +115,10 @@ struct CaptureStorageSummary {
 
 class CaptureSession {
 public:
+    using IndexSaveProgress = pfl::IndexSaveProgress;
+    using IndexSaveProgressCallback = pfl::IndexSaveProgressCallback;
+    using IndexSaveOptions = pfl::IndexSaveOptions;
+
     CaptureSession() = default;
     CaptureSession(CaptureSession&& other) noexcept;
     CaptureSession& operator=(CaptureSession&& other) noexcept;
@@ -122,6 +130,11 @@ public:
     bool open_input(const std::filesystem::path& path);
     bool open_input(const std::filesystem::path& path, OpenContext* ctx);
     bool save_index(const std::filesystem::path& index_path) const;
+    bool save_index(
+        const std::filesystem::path& index_path,
+        const IndexSaveOptions& options,
+        std::string* out_error_text
+    ) const;
     bool load_index(const std::filesystem::path& index_path);
     bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
     [[nodiscard]] bool has_capture() const noexcept;

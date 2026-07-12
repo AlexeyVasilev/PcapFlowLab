@@ -422,7 +422,7 @@ Static audit of the current format:
 
 Current implementation state:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 9`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 10`;
 - `src/core/index/Serialization.cpp` serializes:
   - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
@@ -444,6 +444,8 @@ When protocol-path-aware flow identity becomes part of the stable index format:
 - store one protocol-path table / registry per capture index;
 - store `protocol_path_id` at the flow identity / flow metadata level;
 - let each flow reference its interned `protocol_path_id`;
+- keep the protocol-path registry as a single dedicated section, not chunked per packet or per flow;
+- keep large connection data chunked at connection-section boundaries rather than as one monolithic multi-GB payload;
 - do not repeat full protocol paths in packet records;
 - do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, or TEID redundantly per packet if they are already represented by the flow's protocol path id.
 
@@ -471,6 +473,19 @@ Notes:
 - estimates intentionally exclude allocator overhead, hash-table node overhead, and transient UI/frontend copies;
 - `total_packets_seen` is reported as `recognized_packets + unrecognized_packets`, because the existing capture summary packet count tracks recognized packets only.
 - the Qt UI exposes the current text summary through `Help -> Capture Storage Diagnostics`.
+
+### Index Save Notes
+
+Current index-save behavior relevant to large protocol-path-aware captures:
+
+- Qt save-index now runs asynchronously with low-noise progress text and cooperative cancel;
+- index save writes to a same-directory temporary file and replaces the final target only after successful finalization;
+- index v10 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
+- each connection chunk remains self-contained and split only on connection boundaries; protocol-path registry data is still written once per capture;
+- the current index format does not write a separate footer/final-marker record; "finalized" currently means that all required sections parse cleanly through EOF;
+- interrupted or cancelled saves should leave the previous final `.idx` unchanged;
+- partial capture opens that imported at least one recognized or unrecognized packet remain saveable;
+- incomplete force-killed indexes are expected to fail reopen with an explicit incomplete/not-finalized style error rather than being recovered silently.
 
 ## Statistics Tree
 
