@@ -231,7 +231,7 @@ Packets that cannot be assigned to a normal flow are collected separately during
 - they do not participate in normal flow grouping;
 - they remain selectable for packet-details inspection;
 - stream reconstruction does not apply to them;
-- they are not currently persisted into saved index files, so reopening an index can lose the unrecognized-packet list.
+- they are now persisted into saved index files, so reopening a current-format index preserves the unrecognized-packet list.
 
 ### Stream items
 
