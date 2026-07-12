@@ -249,6 +249,7 @@ Implemented slice:
 - Flows/Analysis splitter positions are runtime-only in the current shell and are not persisted yet.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 - Large-capture performance work is still ongoing even though the two largest flow lists now use frontend virtualization/windowing.
+- Very large sessions currently keep open progress/cancel, overview loading, and statistics available, but the Tauri shell skips eager `get_flows()` loading above `250,000` flows to avoid hanging on multi-million-flow captures or very large indexes; Qt remains the recommended frontend for those sessions.
 - Packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred.
 - Shared backend packet-byte read behavior for very large selected flows remains a known optimization area.
 - The dev-only memory log is investigative only; it does not replace a future large-capture performance / virtualization pass.

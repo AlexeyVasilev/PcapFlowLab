@@ -18,6 +18,7 @@
   const flowVirtualOverscanRows = 12;
   const analysisFlowVirtualOverscanRows = 10;
   const protocolPathStatsVirtualOverscanRows = 12;
+  const tauriEagerFlowLoadLimit = 250000;
 
   const state = {
     memoryDiagnosticsEnabled: false,
@@ -73,6 +74,7 @@
     sourceAvailability: null,
     overview: null,
     flows: [],
+    flowLoadDeferredReasonText: "",
     flowFilterText: "",
     activeProtocolPathFilter: null,
     flowSortKey: "index",
@@ -1666,6 +1668,7 @@
 
   function clearOverview() {
     state.overview = null;
+    state.flowLoadDeferredReasonText = "";
     state.protocolPathStatsByMode = new Map();
     state.protocolPathStatsPendingByMode = new Map();
     state.protocolPathStatsVisibleRows = [];
@@ -1988,6 +1991,7 @@
 
   function clearFlows() {
     state.flows = [];
+    state.flowLoadDeferredReasonText = "";
     state.flowFilterText = "";
     resetFlowVirtualizationState();
     resetAnalysisFlowVirtualizationState();
@@ -3050,6 +3054,18 @@
       state.flowVirtualWindowEnd = 0;
       state.flowVirtualizationActive = false;
       elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${columnCount}">Open a capture or index to load flows.</td></tr>`;
+      return;
+    }
+
+    if (state.flowState === "deferred") {
+      const deferredText = state.flowLoadDeferredReasonText
+        || `This session exceeds the Tauri eager flow loading limit of ${formatNumber(tauriEagerFlowLoadLimit)} flows.`;
+      elements.flowMeta.textContent = deferredText;
+      elements.flowRenderCapBar.classList.remove("is-visible");
+      state.flowVirtualWindowStart = 0;
+      state.flowVirtualWindowEnd = 0;
+      state.flowVirtualizationActive = false;
+      elements.flowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="${columnCount}">${escapeHtml(deferredText)}</td></tr>`;
       return;
     }
 
@@ -4234,6 +4250,17 @@
       return;
     }
 
+    if (state.flowState === "deferred") {
+      const deferredText = state.flowLoadDeferredReasonText || "Tauri flow loading was skipped for this large session.";
+      elements.analysisFlowMeta.textContent = "Flow list loading was skipped for this large session.";
+      elements.analysisFlowRenderCapBar.classList.remove("is-visible");
+      state.analysisFlowVirtualWindowStart = 0;
+      state.analysisFlowVirtualWindowEnd = 0;
+      state.analysisFlowVirtualizationActive = false;
+      elements.analysisFlowTableBody.innerHTML = `<tr class="table-state-row"><td colspan="5">${escapeHtml(deferredText)}</td></tr>`;
+      return;
+    }
+
     if (flows.length === 0) {
       elements.analysisFlowMeta.textContent = "No flows are available for analysis.";
       elements.analysisFlowRenderCapBar.classList.remove("is-visible");
@@ -4366,6 +4393,13 @@
     if (state.flowState === "loaded" && state.flows.length === 0) {
       elements.analysisMeta.textContent = "No flows available.";
       elements.analysisStateText.textContent = "No flows are available for selected-flow analysis.";
+      elements.analysisContent.classList.add("is-hidden");
+      return;
+    }
+
+    if (state.flowState === "deferred") {
+      elements.analysisMeta.textContent = "Flow list loading skipped.";
+      elements.analysisStateText.textContent = state.flowLoadDeferredReasonText || "Tauri flow loading was skipped for this large session.";
       elements.analysisContent.classList.add("is-hidden");
       return;
     }
@@ -4626,14 +4660,12 @@
 
   async function loadOverviewAndFlows() {
     state.flowState = "loading";
+    state.flowLoadDeferredReasonText = "";
     state.protocolPathStatsByMode = new Map();
     state.protocolPathStatsPendingByMode = new Map();
     render();
 
-    const [overview, flows] = await Promise.all([
-      invoke("get_overview"),
-      invoke("get_flows"),
-    ]);
+    const overview = await invoke("get_overview");
 
     state.overview = overview;
     state.protocolPathPresentationsById = new Map(
@@ -4642,6 +4674,24 @@
         .filter(([protocolPathId]) => protocolPathId > 0)
     );
     await logMemoryPhase("after_get_overview");
+
+    const flowCount = Number(overview?.summary?.flow_count ?? 0);
+    if (flowCount > tauriEagerFlowLoadLimit) {
+      state.flows = [];
+      state.flowState = "deferred";
+      state.flowLoadDeferredReasonText =
+        `This session has ${formatNumber(flowCount)} flows. `
+        + `The Tauri UI currently skips eager flow loading above ${formatNumber(tauriEagerFlowLoadLimit)} flows `
+        + `to stay responsive. Use the Qt app for this capture or reopen a smaller session.`;
+      setStatus(state.flowLoadDeferredReasonText, "neutral");
+      await logMemoryPhase("flow_load_deferred");
+      if (state.activeTab === "statistics") {
+        await ensureProtocolPathStatsLoaded();
+      }
+      return;
+    }
+
+    const flows = await invoke("get_flows");
     state.flows = flows || [];
     state.flowState = "loaded";
     await logMemoryPhase("after_get_flows");
@@ -5277,7 +5327,9 @@
         state.currentSessionOpenedFromIndex = Boolean(result?.opened_from_index);
         await loadOverviewAndFlows();
         state.openState = "opened";
-        setStatus("", "neutral");
+        if (state.flowState !== "deferred") {
+          setStatus("", "neutral");
+        }
         render();
         await logMemoryPhase("after_render_flows", path);
         await logMemoryPhase("after_statistics_loaded", path);

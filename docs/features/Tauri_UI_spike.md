@@ -347,6 +347,7 @@ The Tauri UI is now functionally close to Qt for primary workflows, but it is st
   - fuller Qt analysis workspace parity
 - selected-flow packet and stream latency on very large flows remains a known issue
 - shared backend packet-byte read behavior for very large flows remains a known optimization area
+- very large sessions now keep the async open progress/cancel path, overview, and statistics available, but the shell skips eager full `get_flows()` loading above `250,000` flows to avoid hanging on multi-million-flow captures or very large indexes
 - packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred
 - memory diagnostics exist, but they are investigative only; they are not a substitute for a future large-capture performance / virtualization pass
 - frontend virtualization is now the first mitigation layer, but backend paging/filtering/sorting is still deferred for very large captures

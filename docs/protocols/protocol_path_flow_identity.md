@@ -119,6 +119,7 @@ Presentation notes:
 - full prefix path text remains available for tooltips/debug, while compact path text remains useful for badges and flow-list presentation;
 - the Qt tree now uses a dedicated list model plus `ListView` virtualization, keeps a bounded internal height so large captures do not instantiate every row eagerly, and loads the active statistics mode when the Statistics tab actually needs it;
 - the Tauri spike keeps the tree inside a bounded internal scroll block and now fetches protocol-path statistics rows per mode on demand instead of shipping all three modes in the initial overview payload;
+- for very large sessions, the Tauri spike now keeps async open progress/cancel plus overview/statistics available but skips eager full flow-row loading above `250,000` flows so multi-million-flow indexes do not hang the shell;
 - ordering is deterministic: descending `packet_count`, then descending `flow_count`, then path text.
 
 ### Structured Flow Filter
