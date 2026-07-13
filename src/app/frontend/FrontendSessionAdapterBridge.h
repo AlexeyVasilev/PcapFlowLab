@@ -58,6 +58,10 @@ char* pfl_frontend_session_adapter_export_selected_flows_json(
     const std::size_t* flow_indices,
     std::size_t flow_index_count
 );
+char* pfl_frontend_session_adapter_export_all_flows_info_csv_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+);
 char* pfl_frontend_session_adapter_export_smart_flows_json(
     PflFrontendSessionAdapterHandle* handle,
     const char* path_utf8,

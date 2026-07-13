@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -472,6 +472,38 @@ fn pick_smart_export_destination_folder(_app: AppHandle) -> Result<Option<String
 }
 
 #[tauri::command]
+fn pick_save_all_flows_info_csv_path(_app: AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(run_zenity_file_dialog(&[
+            "--file-selection".to_string(),
+            "--save".to_string(),
+            "--confirm-overwrite".to_string(),
+            "--title=Export All Flows Info to CSV".to_string(),
+            format!("--filename={}", current_dir_prefill("flows_manifest.csv")),
+            "--file-filter=CSV files | *.csv".to_string(),
+        ])?.map(|path| ensure_extension(PathBuf::from(path), "csv").to_string_lossy().into_owned()));
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let selected_path = _app
+            .dialog()
+            .file()
+            .add_filter("CSV files", &["csv"])
+            .set_file_name("flows_manifest.csv")
+            .blocking_save_file();
+
+        Ok(selected_path.map(|path| {
+            let display_fallback = path.to_string();
+            path.into_path()
+                .map(|resolved| ensure_extension(resolved, "csv").to_string_lossy().into_owned())
+                .unwrap_or(display_fallback)
+        }))
+    }
+}
+
+#[tauri::command]
 fn pick_save_analysis_sequence_csv_path(_app: AppHandle) -> Result<Option<String>, String> {
     #[cfg(target_os = "linux")]
     {
@@ -768,6 +800,17 @@ fn export_selected_flows(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+fn export_all_flows_info_csv(
+    state: State<'_, Mutex<AdapterState>>,
+    path: String,
+) -> Result<ExportAllFlowsInfoCsvResultDto, String> {
+    let state = state
+        .lock()
+        .map_err(|_| "Failed to lock adapter state.".to_string())?;
+    state.adapter.export_all_flows_info_csv(&path)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 #[allow(clippy::too_many_arguments)]
 fn export_smart_flows(
     state: State<'_, Mutex<AdapterState>>,
@@ -860,6 +903,7 @@ pub fn run() {
             pick_save_index_path,
             pick_save_flow_export_path,
             pick_smart_export_destination_folder,
+            pick_save_all_flows_info_csv_path,
             pick_save_analysis_sequence_csv_path,
             open_capture,
             start_open_capture,
@@ -869,6 +913,7 @@ pub fn run() {
             save_index,
             export_current_flow,
             export_selected_flows,
+            export_all_flows_info_csv,
             export_smart_flows,
             export_smart_unrecognized_packets,
             exit_app,

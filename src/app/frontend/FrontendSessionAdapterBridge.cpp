@@ -384,6 +384,16 @@ std::string export_selected_flows_result_json(const pfl::FrontendExportSelectedF
     return out.str();
 }
 
+std::string export_all_flows_info_csv_result_json(const pfl::FrontendExportAllFlowsInfoCsvResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"exported\":" << bool_json(result.exported) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string smart_export_result_json(const pfl::FrontendSmartExportResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -1186,6 +1196,18 @@ char* pfl_frontend_session_adapter_export_selected_flows_json(
     }
 
     return make_c_string(export_selected_flows_result_json(handle->adapter.export_selected_flows(path, indices)));
+}
+
+char* pfl_frontend_session_adapter_export_all_flows_info_csv_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(export_all_flows_info_csv_result_json(handle->adapter.export_all_flows_info_csv(path)));
 }
 
 char* pfl_frontend_session_adapter_export_smart_flows_json(

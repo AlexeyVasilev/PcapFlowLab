@@ -62,6 +62,7 @@
     },
     attachSourceInProgress: false,
     saveIndexInProgress: false,
+    exportAllFlowsInfoCsvInProgress: false,
     exportCurrentFlowInProgress: false,
     exportSelectedFlowsInProgress: false,
     exportUnselectedFlowsInProgress: false,
@@ -1231,6 +1232,7 @@
     const availability = currentSourceAvailability();
     return state.openState === "opened"
       && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1246,6 +1248,7 @@
       && availability.byte_backed_inspection_available
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1259,6 +1262,7 @@
       && availability.byte_backed_inspection_available
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1272,6 +1276,20 @@
       && availability.byte_backed_inspection_available
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
+      && !state.exportCurrentFlowInProgress
+      && !state.exportSelectedFlowsInProgress
+      && !state.exportUnselectedFlowsInProgress
+      && !state.smartExportInProgress;
+  }
+
+  function canExportAllFlowsInfoCsv() {
+    const flowCount = Number(state.overview?.summary?.flow_count ?? 0);
+    return state.openState === "opened"
+      && flowCount > 0
+      && !state.attachSourceInProgress
+      && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1284,6 +1302,7 @@
       && availability.byte_backed_inspection_available
       && !state.attachSourceInProgress
       && !state.saveIndexInProgress
+      && !state.exportAllFlowsInfoCsvInProgress
       && !state.exportCurrentFlowInProgress
       && !state.exportSelectedFlowsInProgress
       && !state.exportUnselectedFlowsInProgress
@@ -1986,6 +2005,7 @@
       && state.analysisState === "loaded"
       && Array.isArray(state.analysis?.sequence_preview_rows)
       && state.analysis.sequence_preview_rows.length > 0
+      && !state.exportAllFlowsInfoCsvInProgress
       && !state.analysisSequenceExportInProgress;
   }
 
@@ -2031,6 +2051,7 @@
     clearAnalysis();
     state.attachSourceInProgress = false;
     state.saveIndexInProgress = false;
+    state.exportAllFlowsInfoCsvInProgress = false;
     state.exportCurrentFlowInProgress = false;
     state.exportSelectedFlowsInProgress = false;
     state.exportUnselectedFlowsInProgress = false;
@@ -2098,6 +2119,11 @@
         if (action === "save-index") {
           item.disabled = !canSaveIndex();
           item.textContent = state.saveIndexInProgress ? "Saving Index..." : "Save Index";
+        } else if (action === "export-all-flows-info-csv") {
+          item.disabled = !canExportAllFlowsInfoCsv();
+          item.textContent = state.exportAllFlowsInfoCsvInProgress
+            ? "Exporting All Flows Info to CSV..."
+            : "Export All Flows Info to CSV...";
         } else if (action === "export-current-flow") {
           item.disabled = !canExportCurrentFlow();
           item.textContent = state.exportCurrentFlowInProgress ? "Exporting Current Flow..." : "Export Current Flow";
@@ -2118,6 +2144,7 @@
           item.disabled = state.openState === "opening"
             || state.attachSourceInProgress
             || state.saveIndexInProgress
+            || state.exportAllFlowsInfoCsvInProgress
             || state.exportCurrentFlowInProgress
             || state.exportSelectedFlowsInProgress
             || state.exportUnselectedFlowsInProgress
@@ -5645,6 +5672,41 @@
     }
   }
 
+  async function exportAllFlowsInfoCsvFromMenu() {
+    if (typeof invoke !== "function") {
+      setStatus("Tauri API is unavailable in this frontend.", "error");
+      render();
+      return;
+    }
+
+    if (!canExportAllFlowsInfoCsv()) {
+      return;
+    }
+
+    try {
+      const selectedPath = await invoke("pick_save_all_flows_info_csv_path");
+      if (!selectedPath) {
+        return;
+      }
+
+      state.exportAllFlowsInfoCsvInProgress = true;
+      setStatus("Exporting all flows info CSV...", "neutral");
+      render();
+
+      const result = await invoke("export_all_flows_info_csv", { path: selectedPath });
+      if (result?.exported) {
+        setStatus("All flows info CSV exported successfully.", "success");
+      } else {
+        setStatus(result?.error_text || "Failed to export all flows info CSV.", "error");
+      }
+    } catch (error) {
+      setStatus(`Failed to export all flows info CSV: ${String(error)}`, "error");
+    } finally {
+      state.exportAllFlowsInfoCsvInProgress = false;
+      render();
+    }
+  }
+
   async function openSettingsDialogFromMenu() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
@@ -6019,6 +6081,9 @@
         return;
       case "export-current-flow":
         await exportCurrentFlowFromMenu();
+        return;
+      case "export-all-flows-info-csv":
+        await exportAllFlowsInfoCsvFromMenu();
         return;
       case "export-selected-flows":
         await exportSelectedFlowsFromMenu();

@@ -84,6 +84,7 @@ The current Tauri UI now supports:
 - `Flow -> Export Current Flow` through the existing flow-export/session path
 - `Flow -> Export Selected Flows` through the existing batch flow-export/session path
 - `Flow -> Export Unselected Flows` through the existing batch flow-export/session path
+- `Flow -> Export All Flows Info to CSV...` through the shared flow-manifest CSV/session path
 - `Flow -> Smart Export...` through the existing smart-export/session path
 - `View -> Settings` for the currently shared safe runtime settings slice
 - source capture locate/attach workflow for index-backed or source-missing sessions
@@ -155,6 +156,7 @@ The `Flows` tab now supports:
   - `Flow -> Export Current Flow`
   - `Flow -> Export Selected Flows`
   - `Flow -> Export Unselected Flows`
+  - `Flow -> Export All Flows Info to CSV...`
   - `Flow -> Smart Export...`
   - `Help -> About`
   - `View -> Settings`
@@ -304,6 +306,13 @@ Open workflow:
 - currently keeps the existing session, selected flow, checked-flow state, packets, stream, statistics, and analysis intact after success, cancel, or failure
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still reuses one-shot invoke/session paths without detailed packet-level progress or cancellation
 - Tauri currently shows only busy/status-level Smart Export feedback, and this limitation applies to both flow-based Smart Export and `Unrecognized packets`
+
+`Flow -> Export All Flows Info to CSV...`:
+
+- reuses the shared backend flow-manifest CSV writer rather than duplicating CSV logic in JS/Rust
+- opens a native Save dialog with `flows_manifest.csv` as the default file name
+- exports all current session flows, including `protocol_path`, even when the shell skips eager flow-row loading for very large sessions
+- intentionally omits Smart Export specific columns such as `file_name` and `exported_*`
 
 Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.
 

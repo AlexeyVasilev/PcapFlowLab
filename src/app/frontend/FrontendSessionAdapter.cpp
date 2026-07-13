@@ -2041,6 +2041,37 @@ FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_selected_flows(
     return result;
 }
 
+FrontendExportAllFlowsInfoCsvResult FrontendSessionAdapter::export_all_flows_info_csv(
+    const std::filesystem::path& output_path
+) const {
+    FrontendExportAllFlowsInfoCsvResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (session_.summary().flow_count == 0U) {
+        result.error_text = "No flows available for CSV export.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_all_flows_info_csv(output_path, &error_text)) {
+        result.error_text = error_text.empty() ? "Failed to export all flows info CSV." : error_text;
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
 FrontendSmartExportResult FrontendSessionAdapter::export_smart_flows(
     const std::filesystem::path& output_path,
     const std::vector<std::size_t>& flow_indices,

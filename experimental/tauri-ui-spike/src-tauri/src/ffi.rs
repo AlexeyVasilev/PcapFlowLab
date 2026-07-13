@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
     ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
@@ -72,6 +72,10 @@ extern "C" {
         path_utf8: *const c_char,
         flow_indices: *const usize,
         flow_index_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_all_flows_info_csv_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_export_smart_flows_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -315,6 +319,17 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<ExportSelectedFlowsResultDto>(json)
+    }
+
+    pub fn export_all_flows_info_csv(
+        &self,
+        path: &str,
+    ) -> Result<ExportAllFlowsInfoCsvResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_all_flows_info_csv_json(self.handle, path.as_ptr())
+        };
+        parse_json_owned::<ExportAllFlowsInfoCsvResultDto>(json)
     }
 
     #[allow(clippy::too_many_arguments)]
