@@ -3476,13 +3476,14 @@ bool visit_smart_export_flow_packets(
     return true;
 }
 
-struct SmartPerFlowManifestRow {
+struct FlowManifestCsvRow {
     std::uint32_t export_flow_id {0};
     std::filesystem::path output_path {};
     std::string family {};
     std::string transport {};
     std::string protocol {};
     std::string protocol_hint {};
+    std::string protocol_path {};
     std::string src_ip {};
     std::uint16_t src_port {0};
     std::string dst_ip {};
@@ -3498,11 +3499,39 @@ struct SmartPerFlowManifestRow {
     std::uint64_t exported_original_bytes {0};
 };
 
+enum class FlowManifestCsvProfile {
+    smart_export,
+    all_flows_info,
+};
+
+constexpr std::string_view kSmartExportFlowManifestCsvHeader =
+    "flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,"
+    "packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,"
+    "exported_packet_count,exported_captured_bytes,exported_original_bytes,protocol_path\n";
+
+constexpr std::string_view kAllFlowsInfoCsvHeader =
+    "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,"
+    "packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path\n";
+
 std::string escape_csv_field(std::string_view text) {
     if (text.find_first_of(",\"\n\r") == std::string_view::npos) {
         return std::string(text);
     }
 
+    std::string escaped;
+    escaped.reserve(text.size() + 2U);
+    escaped.push_back('"');
+    for (const auto ch : text) {
+        if (ch == '"') {
+            escaped.push_back('"');
+        }
+        escaped.push_back(ch);
+    }
+    escaped.push_back('"');
+    return escaped;
+}
+
+std::string force_quote_csv_field(std::string_view text) {
     std::string escaped;
     escaped.reserve(text.size() + 2U);
     escaped.push_back('"');
@@ -3549,6 +3578,61 @@ std::string format_manifest_timestamp(const PacketRef& packet) {
 
 std::uint64_t packet_timestamp_us(const PacketRef& packet) noexcept {
     return static_cast<std::uint64_t>(packet.ts_sec) * 1'000'000ULL + static_cast<std::uint64_t>(packet.ts_usec);
+}
+
+std::string normalize_protocol_path_for_csv(std::string_view text) {
+    std::string single_line {};
+    single_line.reserve(text.size());
+
+    bool last_was_whitespace = false;
+    for (const auto ch : text) {
+        if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
+            if (!last_was_whitespace) {
+                single_line.push_back(' ');
+                last_was_whitespace = true;
+            }
+            continue;
+        }
+
+        single_line.push_back(ch);
+        last_was_whitespace = false;
+    }
+
+    while (!single_line.empty() && single_line.front() == ' ') {
+        single_line.erase(single_line.begin());
+    }
+    while (!single_line.empty() && single_line.back() == ' ') {
+        single_line.pop_back();
+    }
+
+    std::string compact {};
+    compact.reserve(single_line.size());
+    for (std::size_t index = 0; index < single_line.size(); ++index) {
+        const auto ch = single_line[index];
+        if (ch == ' ' &&
+            index + 3U < single_line.size() &&
+            single_line[index + 1U] == '-' &&
+            single_line[index + 2U] == '>' &&
+            single_line[index + 3U] == ' ') {
+            compact += "->";
+            index += 3U;
+            continue;
+        }
+
+        compact.push_back(ch);
+    }
+
+    return compact;
+}
+
+std::string manifest_protocol_path_text(const CaptureState& state, const ProtocolPathId protocol_path_id) {
+    if (protocol_path_id == kInvalidProtocolPathId || state.protocol_path_registry.find(protocol_path_id) == nullptr) {
+        return {};
+    }
+
+    return normalize_protocol_path_for_csv(
+        session_detail::build_protocol_path_presentation(state.protocol_path_registry, protocol_path_id).full_text
+    );
 }
 
 std::string sanitize_filename_component(std::string_view component) {
@@ -3666,12 +3750,107 @@ std::filesystem::path build_smart_per_flow_output_path(const FlowRow& row, const
     return output_directory / file_name.str();
 }
 
-bool write_smart_per_flow_manifest_csv(
-    const std::filesystem::path& output_directory,
-    std::span<const SmartPerFlowManifestRow> rows,
+std::optional<FlowManifestCsvRow> build_flow_manifest_csv_row(
+    const CaptureState& state,
+    const FlowRow& row,
+    const std::uint32_t export_flow_id,
+    std::span<const PacketRef> packets,
+    const std::filesystem::path& output_path
+) {
+    if (packets.empty()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t captured_bytes = 0U;
+    for (const auto& packet : packets) {
+        captured_bytes += packet.captured_length;
+    }
+
+    const auto first_timestamp = packet_timestamp_us(packets.front());
+    const auto last_timestamp = packet_timestamp_us(packets.back());
+
+    return FlowManifestCsvRow {
+        .export_flow_id = export_flow_id,
+        .output_path = output_path,
+        .family = family_text(row.family),
+        .transport = row.protocol_text.empty() ? std::string("unknown") : row.protocol_text,
+        .protocol = normalize_manifest_protocol(row),
+        .protocol_hint = normalize_manifest_protocol_hint(row),
+        .protocol_path = manifest_protocol_path_text(state, row.protocol_path_id),
+        .src_ip = row.address_a,
+        .src_port = row.port_a,
+        .dst_ip = row.address_b,
+        .dst_port = row.port_b,
+        .packet_count = row.packet_count,
+        .captured_bytes = captured_bytes,
+        .original_bytes = row.total_bytes,
+        .first_timestamp = format_manifest_timestamp(packets.front()),
+        .last_timestamp = format_manifest_timestamp(packets.back()),
+        .duration_us = last_timestamp >= first_timestamp ? last_timestamp - first_timestamp : 0U,
+    };
+}
+
+std::string_view flow_manifest_csv_header(const FlowManifestCsvProfile profile) noexcept {
+    switch (profile) {
+    case FlowManifestCsvProfile::smart_export:
+        return kSmartExportFlowManifestCsvHeader;
+    case FlowManifestCsvProfile::all_flows_info:
+        return kAllFlowsInfoCsvHeader;
+    }
+
+    return kSmartExportFlowManifestCsvHeader;
+}
+
+bool write_flow_manifest_csv_header(std::ostream& stream, const FlowManifestCsvProfile profile) {
+    stream << flow_manifest_csv_header(profile);
+    return stream.good();
+}
+
+bool write_flow_manifest_csv_row(
+    std::ostream& stream,
+    const FlowManifestCsvRow& row,
+    const FlowManifestCsvProfile profile
+) {
+    stream << row.export_flow_id << ',';
+
+    if (profile == FlowManifestCsvProfile::smart_export) {
+        stream << escape_csv_field(row.output_path.filename().string()) << ',';
+    }
+
+    stream << escape_csv_field(row.family) << ','
+           << escape_csv_field(row.transport) << ','
+           << escape_csv_field(row.protocol) << ','
+           << escape_csv_field(row.protocol_hint) << ','
+           << escape_csv_field(row.src_ip) << ','
+           << row.src_port << ','
+           << escape_csv_field(row.dst_ip) << ','
+           << row.dst_port << ','
+           << row.packet_count << ','
+           << row.captured_bytes << ','
+           << row.original_bytes << ','
+           << escape_csv_field(row.first_timestamp) << ','
+           << escape_csv_field(row.last_timestamp) << ','
+           << row.duration_us;
+
+    if (profile == FlowManifestCsvProfile::smart_export) {
+        stream << ','
+               << row.exported_packet_count << ','
+               << row.exported_captured_bytes << ','
+               << row.exported_original_bytes;
+    }
+
+    stream << ','
+           << force_quote_csv_field(row.protocol_path) << '\n';
+    return stream.good();
+}
+
+bool write_flow_manifest_csv(
+    const std::filesystem::path& output_path,
+    std::span<const FlowManifestCsvRow> rows,
+    const FlowManifestCsvProfile profile,
     std::string* out_error_text
 ) {
-    std::ofstream stream {output_directory / "flows_manifest.csv", std::ios::binary | std::ios::trunc};
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
     if (!stream.is_open()) {
         if (out_error_text != nullptr) {
             *out_error_text = "Failed to create flows manifest CSV.";
@@ -3679,27 +3858,20 @@ bool write_smart_per_flow_manifest_csv(
         return false;
     }
 
-    stream << "flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,exported_packet_count,exported_captured_bytes,exported_original_bytes\n";
+    if (!write_flow_manifest_csv_header(stream, profile)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
     for (const auto& row : rows) {
-        stream << row.export_flow_id << ','
-               << escape_csv_field(row.output_path.filename().string()) << ','
-               << escape_csv_field(row.family) << ','
-               << escape_csv_field(row.transport) << ','
-               << escape_csv_field(row.protocol) << ','
-               << escape_csv_field(row.protocol_hint) << ','
-               << escape_csv_field(row.src_ip) << ','
-               << row.src_port << ','
-               << escape_csv_field(row.dst_ip) << ','
-               << row.dst_port << ','
-               << row.packet_count << ','
-               << row.captured_bytes << ','
-               << row.original_bytes << ','
-               << escape_csv_field(row.first_timestamp) << ','
-               << escape_csv_field(row.last_timestamp) << ','
-               << row.duration_us << ','
-               << row.exported_packet_count << ','
-               << row.exported_captured_bytes << ','
-               << row.exported_original_bytes << '\n';
+        if (!write_flow_manifest_csv_row(stream, row, profile)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to write flows manifest CSV.";
+            }
+            return false;
+        }
     }
 
     if (!stream.good()) {
@@ -4086,7 +4258,7 @@ bool CaptureSession::export_smart_flows_to_folder(
     const auto listed_flows = list_flows();
     std::vector<std::uint32_t> packet_owner {};
     std::vector<PerFlowExportTarget> targets {};
-    std::vector<SmartPerFlowManifestRow> manifest_rows {};
+    std::vector<FlowManifestCsvRow> manifest_rows {};
     targets.reserve(request.flow_indices.size());
     manifest_rows.reserve(request.flow_indices.size());
 
@@ -4130,32 +4302,22 @@ bool CaptureSession::export_smart_flows_to_folder(
         }
 
         const auto& row = *listed_row;
-        std::uint64_t captured_bytes = 0U;
-        for (const auto& packet : *packets) {
-            captured_bytes += packet.captured_length;
+        const auto output_path = build_smart_per_flow_output_path(row, next_export_flow_id, output_directory);
+        const auto manifest_row = build_flow_manifest_csv_row(
+            state_,
+            row,
+            next_export_flow_id,
+            std::span<const PacketRef>(*packets),
+            output_path
+        );
+        if (!manifest_row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare manifest metadata for a selected flow during per-flow smart export.";
+            }
+            return false;
         }
 
-        const auto first_timestamp = packet_timestamp_us(packets->front());
-        const auto last_timestamp = packet_timestamp_us(packets->back());
-
-        manifest_rows.push_back(SmartPerFlowManifestRow {
-            .export_flow_id = next_export_flow_id,
-            .output_path = build_smart_per_flow_output_path(row, next_export_flow_id, output_directory),
-            .family = family_text(row.family),
-            .transport = row.protocol_text.empty() ? std::string("unknown") : row.protocol_text,
-            .protocol = normalize_manifest_protocol(row),
-            .protocol_hint = normalize_manifest_protocol_hint(row),
-            .src_ip = row.address_a,
-            .src_port = row.port_a,
-            .dst_ip = row.address_b,
-            .dst_port = row.port_b,
-            .packet_count = row.packet_count,
-            .captured_bytes = captured_bytes,
-            .original_bytes = row.total_bytes,
-            .first_timestamp = format_manifest_timestamp(packets->front()),
-            .last_timestamp = format_manifest_timestamp(packets->back()),
-            .duration_us = last_timestamp >= first_timestamp ? last_timestamp - first_timestamp : 0U,
-        });
+        manifest_rows.push_back(*manifest_row);
         targets.push_back(PerFlowExportTarget {
             .export_flow_id = next_export_flow_id,
             .output_path = manifest_rows.back().output_path,
@@ -4267,7 +4429,76 @@ bool CaptureSession::export_smart_flows_to_folder(
         return false;
     }
 
-    return write_smart_per_flow_manifest_csv(output_directory, manifest_rows, out_error_text);
+    return write_flow_manifest_csv(
+        output_directory / "flows_manifest.csv",
+        manifest_rows,
+        FlowManifestCsvProfile::smart_export,
+        out_error_text
+    );
+}
+
+bool CaptureSession::export_all_flows_info_csv(const std::filesystem::path& output_path) const {
+    return export_all_flows_info_csv(output_path, nullptr);
+}
+
+bool CaptureSession::export_all_flows_info_csv(
+    const std::filesystem::path& output_path,
+    std::string* out_error_text
+) const {
+    std::ofstream stream {output_path, std::ios::binary | std::ios::trunc};
+    if (!stream.is_open()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to create flows manifest CSV.";
+        }
+        return false;
+    }
+
+    if (!write_flow_manifest_csv_header(stream, FlowManifestCsvProfile::all_flows_info)) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    const auto connections = list_connections(state_);
+    std::uint32_t export_flow_id = 1U;
+    for (std::size_t index = 0; index < connections.size(); ++index) {
+        const auto row = make_flow_row(index, connections[index], analysis_settings_);
+        const auto packets = connections[index].family == FlowAddressFamily::ipv4
+            ? collect_packets(*connections[index].ipv4)
+            : collect_packets(*connections[index].ipv6);
+        const auto manifest_row = build_flow_manifest_csv_row(
+            state_,
+            row,
+            export_flow_id,
+            std::span<const PacketRef>(packets),
+            {}
+        );
+        if (!manifest_row.has_value()) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to prepare flow info CSV row.";
+            }
+            return false;
+        }
+
+        if (!write_flow_manifest_csv_row(stream, *manifest_row, FlowManifestCsvProfile::all_flows_info)) {
+            if (out_error_text != nullptr) {
+                *out_error_text = "Failed to write flows manifest CSV.";
+            }
+            return false;
+        }
+
+        ++export_flow_id;
+    }
+
+    if (!stream.good()) {
+        if (out_error_text != nullptr) {
+            *out_error_text = "Failed to write flows manifest CSV.";
+        }
+        return false;
+    }
+
+    return true;
 }
 
 std::optional<PacketRef> CaptureSession::find_packet(std::uint64_t packet_index) const {

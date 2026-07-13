@@ -263,6 +263,8 @@ public:
         const SmartPerFlowExportOptions& options,
         std::string* out_error_text
     ) const;
+    bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;
+    bool export_all_flows_info_csv(const std::filesystem::path& output_path, std::string* out_error_text) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
     [[nodiscard]] CaptureStorageSummary storage_summary() const;
     [[nodiscard]] CaptureState& state() noexcept;

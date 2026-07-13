@@ -1847,6 +1847,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(multi_flow_controller.selectedFlowCount() == 0U);
     UI_EXPECT(!multi_flow_controller.canExportSelectedFlows());
     UI_EXPECT(multi_flow_controller.canExportUnselectedFlows());
+    UI_EXPECT(multi_flow_controller.canExportAllFlowsInfoCsv());
 
     const int http_selected_flow_index = find_flow_index_by_protocol_hint(multi_flow_model, QStringLiteral("HTTP"));
     const int dns_selected_flow_index = find_flow_index_by_protocol_hint(multi_flow_model, QStringLiteral("DNS"));
@@ -1888,6 +1889,28 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(unselected_export_session.summary().flow_count == 1U);
     UI_EXPECT(unselected_export_session.summary().packet_count == 1U);
     UI_EXPECT(unselected_export_session.protocol_summary().hint_unknown.flow_count == 1U);
+
+    const auto flow_info_csv_path = std::filesystem::temp_directory_path() / "pfl_ui_all_flows_info.csv";
+    std::filesystem::remove(flow_info_csv_path, remove_error);
+    UI_EXPECT(multi_flow_controller.exportAllFlowsInfoCsv(QString::fromStdWString(flow_info_csv_path.wstring())));
+    UI_EXPECT(wait_until(app, [&multi_flow_controller]() {
+        return multi_flow_controller.statusText().contains(QStringLiteral("Flow info CSV exported:"));
+    }));
+    UI_EXPECT(!multi_flow_controller.statusIsError());
+    UI_EXPECT(std::filesystem::exists(flow_info_csv_path));
+    const auto flow_info_csv_lines = read_text_file_lines(flow_info_csv_path);
+    UI_EXPECT(flow_info_csv_lines.size() == 4U);
+    UI_REQUIRE(flow_info_csv_lines.size() >= 2U);
+    UI_EXPECT(flow_info_csv_lines.front() ==
+        "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+    UI_EXPECT(!QString::fromStdString(flow_info_csv_lines.front()).contains(QStringLiteral("file_name")));
+    UI_EXPECT(!QString::fromStdString(flow_info_csv_lines.front()).contains(QStringLiteral("exported_packet_count")));
+    UI_EXPECT(QString::fromStdString(flow_info_csv_lines[1]).contains(QStringLiteral("\"EthernetII->IPv4->TCP\"")));
+    UI_EXPECT(!QString::fromStdString(flow_info_csv_lines[1]).contains(QStringLiteral("EthernetII -> IPv4 -> TCP")));
+    const auto flow_info_first_row = split_csv_line(flow_info_csv_lines[1]);
+    UI_EXPECT(flow_info_first_row.size() == 16U);
+    UI_REQUIRE(flow_info_first_row.size() >= 16U);
+    UI_EXPECT(flow_info_first_row[15] == "EthernetII->IPv4->TCP");
 
     multi_flow_controller.clearSelectedFlows();
     UI_EXPECT(multi_flow_controller.selectedFlowCount() == 0U);

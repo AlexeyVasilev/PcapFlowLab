@@ -25,6 +25,7 @@ Current repository state:
 - both the Qt UI and the Tauri spike can consume the same C++ protocol-path presentation data for flow-list display;
 - flow-list protocol-path presentation is now resolved lazily or deduplicated per unique `ProtocolPathId` rather than materialized eagerly per flow row;
 - session flow rows now carry only `protocol_path_id` for protocol-path-aware flow-list presentation; full path text, compact text, and badges are resolved lazily from the capture-level registry when a frontend actually needs them;
+- the same lazily resolved full protocol-path text is now reused by flow-metadata CSV export, including Smart Export `flows_manifest.csv` and the Qt `Flow -> Export All Flows Info to CSV...` action, with CSV export normalizing the path into a single-cell single-line compact value such as `EthernetII->IPv4->TCP`;
 - both UI frontends now expose a protocol path legend derived from the centralized C++ presentation mapping;
 - the Tauri spike now supports runtime show/hide of the flow-list Path column;
 - runtime protocol-path statistics trees now exist in the Statistics tab for both UI frontends;

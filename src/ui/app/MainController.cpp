@@ -2083,6 +2083,7 @@ MainController::MainController(QObject* parent)
 }
 
 MainController::~MainController() {
+    cleanupFlowInfoExportThread();
     cleanupSmartExportThread();
     cleanupIndexSaveThread();
     cleanupAnalysisSequenceExportThread();
@@ -2131,12 +2132,22 @@ bool MainController::openedFromIndex() const noexcept {
 }
 
 bool MainController::canAttachSourceCapture() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ && session_.has_capture() && !hasSourceCapture();
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && session_.has_capture()
+        && !hasSourceCapture();
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && !analysis_sequence_export_in_progress_ && !index_save_in_progress_ &&
-           session_.has_capture() && hasSourceCapture();
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !analysis_sequence_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && session_.has_capture()
+        && hasSourceCapture();
 }
 
 bool MainController::partialOpen() const noexcept {
@@ -2150,7 +2161,12 @@ QString MainController::partialOpenWarningText() const {
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ && hasSourceCapture() && selected_flow_index_ >= 0;
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && hasSourceCapture()
+        && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::selectedFlowCount() const noexcept {
@@ -2158,12 +2174,31 @@ qulonglong MainController::selectedFlowCount() const noexcept {
 }
 
 bool MainController::canExportSelectedFlows() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && hasSourceCapture()
+        && flow_model_.checkedFlowCount() > 0;
 }
 
 bool MainController::canExportUnselectedFlows() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && !index_save_in_progress_ &&
-           hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && hasSourceCapture()
+        && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+}
+
+bool MainController::canExportAllFlowsInfoCsv() const noexcept {
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && flow_info_csv_export_thread_ == nullptr
+        && hasCapture()
+        && flow_model_.totalFlowCount() > 0;
 }
 
 bool MainController::isOpening() const noexcept {
@@ -2305,7 +2340,10 @@ QVariantList MainController::analysisRateSeriesBToA() const {
     return make_analysis_rate_series(current_flow_analysis_->rate_graph.points_b_to_a);
 }
 bool MainController::canExportAnalysisSequence() const noexcept {
-    return selected_flow_index_ >= 0 && !analysis_sequence_export_in_progress_ && !index_save_in_progress_;
+    return selected_flow_index_ >= 0
+        && !analysis_sequence_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_;
 }
 
 bool MainController::analysisSequenceExportInProgress() const noexcept {
@@ -2318,6 +2356,10 @@ QString MainController::analysisSequenceExportStatusText() const {
 
 bool MainController::analysisSequenceExportStatusIsError() const noexcept {
     return analysis_sequence_export_status_is_error_;
+}
+
+bool MainController::flowInfoCsvExportInProgress() const noexcept {
+    return flow_info_csv_export_in_progress_;
 }
 
 bool MainController::smartExportInProgress() const noexcept {
@@ -3287,6 +3329,10 @@ bool MainController::flowSortAscending() const noexcept {
 }
 
 bool MainController::openCaptureFile(const QString& path) {
+    if (flow_info_csv_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before opening another capture."), true);
+        return false;
+    }
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another capture."), true);
         return false;
@@ -3299,6 +3345,10 @@ bool MainController::openCaptureFile(const QString& path) {
 }
 
 bool MainController::openIndexFile(const QString& path) {
+    if (flow_info_csv_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before opening another session."), true);
+        return false;
+    }
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another session."), true);
         return false;
@@ -3311,6 +3361,10 @@ bool MainController::openIndexFile(const QString& path) {
 }
 
 bool MainController::attachSourceCapture(const QString& path) {
+    if (flow_info_csv_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before changing the source capture."), true);
+        return false;
+    }
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before changing the source capture."), true);
         return false;
@@ -3421,6 +3475,11 @@ void MainController::cancelSaveAnalysisIndex() {
 }
 
 bool MainController::saveAnalysisIndex(const QString& path) {
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before saving an analysis index."), true);
+        return false;
+    }
+
     if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before saving an analysis index."), true);
         return false;
@@ -3496,6 +3555,11 @@ bool MainController::exportFlows(
     const QString& failureMessage,
     const QString& successMessage
 ) {
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before exporting flows."), true);
+        return false;
+    }
+
     if (flowIndices.empty()) {
         setStatusText(emptySelectionMessage, true);
         return false;
@@ -3551,6 +3615,11 @@ bool MainController::exportSelectedFlow(const QString& path) {
 bool MainController::exportSelectedFlowSequenceCsv(const QString& path) {
     if (selected_flow_index_ < 0) {
         setAnalysisSequenceExportState(false, QStringLiteral("No flow selected for sequence export."), true);
+        return false;
+    }
+
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setAnalysisSequenceExportState(false, QStringLiteral("Wait for the current flow info CSV export to finish before exporting flow sequence."), true);
         return false;
     }
 
@@ -3616,6 +3685,59 @@ bool MainController::exportUnselectedFlows(const QString& path) {
     );
 }
 
+bool MainController::exportAllFlowsInfoCsv(const QString& path) {
+    if (is_opening_) {
+        setStatusText(QStringLiteral("Wait for the current open operation to finish before exporting flow info CSV."), true);
+        return false;
+    }
+
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before exporting flow info CSV."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_ || index_save_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before exporting flow info CSV."), true);
+        return false;
+    }
+
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Flow info CSV export is already in progress."), true);
+        return false;
+    }
+
+    if (!hasCapture() || flow_model_.totalFlowCount() == 0) {
+        setStatusText(QStringLiteral("No flows available for CSV export."), true);
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+    setStatusText(QStringLiteral("Exporting flow info CSV..."));
+    flow_info_csv_export_in_progress_ = true;
+    emit actionAvailabilityChanged();
+
+    ++active_flow_info_csv_export_job_id_;
+    const auto job_id = active_flow_info_csv_export_job_id_;
+    flow_info_csv_export_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath]() mutable {
+        std::string error_text {};
+        const bool exported = session_.export_all_flows_info_csv(filesystemPath, &error_text);
+        QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, error_text = QString::fromStdString(error_text)]() {
+            completeFlowInfoCsvExport(job_id, trimmedPath, exported, error_text);
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(flow_info_csv_export_thread_, &QThread::finished, flow_info_csv_export_thread_, &QObject::deleteLater);
+    flow_info_csv_export_thread_->start();
+    return true;
+}
+
 bool MainController::exportSmartFlows(
     const QString& path,
     const int outputMode,
@@ -3628,6 +3750,11 @@ bool MainController::exportSmartFlows(
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before starting smart export."), true);
+        return false;
+    }
+
     if (index_save_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current index save to finish before starting smart export."), true);
         return false;
@@ -4002,6 +4129,13 @@ void MainController::browseExportUnselectedFlows() {
     const QString path = chooseSaveFile(false);
     if (!path.isEmpty()) {
         exportUnselectedFlows(path);
+    }
+}
+
+void MainController::browseExportAllFlowsInfoCsv() {
+    const QString path = chooseFlowInfoCsvSaveFile();
+    if (!path.isEmpty()) {
+        exportAllFlowsInfoCsv(path);
     }
 }
 
@@ -5114,6 +5248,11 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
         return false;
     }
 
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before opening another session."), true);
+        return false;
+    }
+
     setOpenErrorText({});
     setStatusText({});
     active_open_input_path_ = trimmedPath;
@@ -5243,6 +5382,34 @@ void MainController::completeAnalysisSequenceExport(
     }
 
     setAnalysisSequenceExportState(false, QStringLiteral("Flow sequence CSV exported: %1").arg(outputPath), false);
+}
+
+void MainController::completeFlowInfoCsvExport(
+    const qulonglong jobId,
+    const QString& outputPath,
+    const bool exported,
+    const QString& errorText
+) {
+    if (jobId != active_flow_info_csv_export_job_id_) {
+        return;
+    }
+
+    active_flow_info_csv_export_job_id_ = 0;
+    flow_info_csv_export_in_progress_ = false;
+    cleanupFlowInfoExportThread();
+    emit actionAvailabilityChanged();
+
+    if (!exported) {
+        setStatusText(
+            errorText.isEmpty()
+                ? QStringLiteral("Failed to export flow info CSV.")
+                : errorText,
+            true
+        );
+        return;
+    }
+
+    setStatusText(QStringLiteral("Flow info CSV exported: %1").arg(outputPath));
 }
 
 void MainController::updateIndexSaveProgress(const qulonglong jobId, const IndexSaveProgress& progress) {
@@ -5436,6 +5603,18 @@ void MainController::cleanupAnalysisSequenceExportThread() {
     }
 
     analysis_sequence_export_thread_ = nullptr;
+}
+
+void MainController::cleanupFlowInfoExportThread() {
+    if (flow_info_csv_export_thread_ == nullptr) {
+        return;
+    }
+
+    if (flow_info_csv_export_thread_->isRunning()) {
+        flow_info_csv_export_thread_->wait();
+    }
+
+    flow_info_csv_export_thread_ = nullptr;
 }
 
 void MainController::cleanupIndexSaveThread() {
@@ -5855,6 +6034,25 @@ QString MainController::chooseSequenceCsvSaveFile() const {
     dialog.setWindowTitle(QStringLiteral("Export Flow Sequence CSV"));
     dialog.setNameFilter(QStringLiteral("CSV Files (*.csv);;All Files (*)"));
     dialog.setDefaultSuffix(QStringLiteral("csv"));
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseFlowInfoCsvSaveFile() const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(QStringLiteral("Export All Flows Info to CSV"));
+    dialog.setNameFilter(QStringLiteral("CSV Files (*.csv);;All Files (*)"));
+    dialog.setDefaultSuffix(QStringLiteral("csv"));
+    dialog.selectFile(QStringLiteral("flows_manifest.csv"));
 
     if (dialog.exec() != QFileDialog::Accepted) {
         return {};

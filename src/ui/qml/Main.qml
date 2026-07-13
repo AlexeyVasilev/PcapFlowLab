@@ -29,7 +29,10 @@ ApplicationWindow {
     Action {
         id: openCaptureFastAction
         text: "Open Capture (Fast)"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress && !mainController.indexSaveInProgress
+        enabled: !mainController.isOpening &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         shortcut: StandardKey.Open
         onTriggered: window.browseCaptureWithMode(0)
     }
@@ -37,7 +40,10 @@ ApplicationWindow {
     Action {
         id: openCaptureDeepAction
         text: "Open Capture (Deep)"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress && !mainController.indexSaveInProgress
+        enabled: !mainController.isOpening &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         shortcut: "Ctrl+Shift+O"
         onTriggered: window.browseCaptureWithMode(1)
     }
@@ -45,7 +51,10 @@ ApplicationWindow {
     Action {
         id: openIndexAction
         text: "Open Index"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress && !mainController.indexSaveInProgress
+        enabled: !mainController.isOpening &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         onTriggered: mainController.browseIndexFile()
     }
 
@@ -79,10 +88,19 @@ ApplicationWindow {
     }
 
     Action {
+        id: exportAllFlowsInfoCsvAction
+        text: "Export All Flows Info to CSV..."
+        enabled: mainController.canExportAllFlowsInfoCsv
+        onTriggered: mainController.browseExportAllFlowsInfoCsv()
+    }
+
+    Action {
         id: smartExportAction
         text: "Smart Export..."
         enabled: mainController.hasCapture && mainController.hasSourceCapture &&
-                 !mainController.smartExportInProgress && !mainController.indexSaveInProgress
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         onTriggered: smartExportDialog.open()
     }
 
@@ -138,6 +156,7 @@ ApplicationWindow {
             MenuItem { action: exportCurrentFlowAction }
             MenuItem { action: exportSelectedFlowsAction }
             MenuItem { action: exportUnselectedFlowsAction }
+            MenuItem { action: exportAllFlowsInfoCsvAction }
             MenuSeparator {}
             MenuItem { action: smartExportAction }
         }
@@ -504,7 +523,8 @@ ApplicationWindow {
                 text: "Open Capture..."
                 enabled: !mainController.isOpening &&
                          !mainController.smartExportInProgress &&
-                         !mainController.indexSaveInProgress
+                         !mainController.indexSaveInProgress &&
+                         !mainController.flowInfoCsvExportInProgress
                 implicitHeight: 40
                 leftPadding: 16
                 rightPadding: 18
@@ -553,7 +573,8 @@ ApplicationWindow {
                 id: captureModeComboBox
                 enabled: !mainController.isOpening &&
                          !mainController.smartExportInProgress &&
-                         !mainController.indexSaveInProgress
+                         !mainController.indexSaveInProgress &&
+                         !mainController.flowInfoCsvExportInProgress
                 model: ["Fast", "Deep"]
                 currentIndex: mainController.captureOpenMode
                 implicitHeight: openCaptureButton.implicitHeight
