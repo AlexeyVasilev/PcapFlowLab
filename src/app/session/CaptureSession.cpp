@@ -1309,6 +1309,7 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
     swap(selected_flow_packet_cache_, other.selected_flow_packet_cache_);
     swap(selected_flow_tcp_prefix_context_, other.selected_flow_tcp_prefix_context_);
     swap(listed_connections_cache_, other.listed_connections_cache_);
+    swap(protocol_path_summary_cache_, other.protocol_path_summary_cache_);
     swap(selected_flow_tcp_payload_suppression_, other.selected_flow_tcp_payload_suppression_);
 }
 

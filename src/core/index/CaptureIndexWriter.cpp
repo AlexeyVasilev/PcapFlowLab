@@ -1,6 +1,7 @@
 #include "core/index/CaptureIndexWriter.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <limits>
@@ -24,45 +25,6 @@ namespace {
 constexpr std::uint64_t kFixedIndexSectionCountExcludingConnections = 4U;
 constexpr std::uint64_t kMinimumConnectionSectionPayloadBytes = 8U;
 
-class CountingStreambuf final : public std::streambuf {
-public:
-    [[nodiscard]] std::uint64_t bytes_written() const noexcept {
-        return bytes_written_;
-    }
-
-protected:
-    std::streamsize xsputn(const char*, const std::streamsize count) override {
-        if (count > 0) {
-            bytes_written_ += static_cast<std::uint64_t>(count);
-        }
-        return count;
-    }
-
-    int overflow(const int ch) override {
-        if (ch != EOF) {
-            ++bytes_written_;
-        }
-        return ch;
-    }
-
-private:
-    std::uint64_t bytes_written_ {0};
-};
-
-class CountingOStream final : public std::ostream {
-public:
-    CountingOStream()
-        : std::ostream(&buffer_) {
-    }
-
-    [[nodiscard]] std::uint64_t bytes_written() const noexcept {
-        return buffer_.bytes_written();
-    }
-
-private:
-    CountingStreambuf buffer_ {};
-};
-
 [[nodiscard]] std::uint64_t stream_offset(std::ofstream& stream) {
     const auto current = stream.tellp();
     if (current < 0) {
@@ -82,7 +44,7 @@ void set_error_text(std::string* out_error_text, const std::string& message) {
     return options.cancel_requested && options.cancel_requested();
 }
 
-void report_progress(
+void deliver_progress(
     const CaptureIndexWriteOptions& options,
     const CaptureIndexWritePhase phase,
     const std::string& phase_text,
@@ -96,16 +58,87 @@ void report_progress(
         return;
     }
 
-    options.progress_callback(CaptureIndexWriteProgress {
-        .phase = phase,
-        .phase_text = phase_text,
-        .completed_sections = completed_sections,
-        .total_sections = total_sections,
-        .phase_items_processed = phase_items_processed,
-        .phase_items_total = phase_items_total,
-        .bytes_written = bytes_written,
-    });
+    CaptureIndexWriteProgress progress {};
+    progress.phase = phase;
+    progress.phase_text = phase_text;
+    progress.completed_sections = completed_sections;
+    progress.total_sections = total_sections;
+    progress.phase_items_processed = phase_items_processed;
+    progress.phase_items_total = phase_items_total;
+    progress.bytes_written = bytes_written;
+    options.progress_callback(progress);
 }
+
+class ThrottledProgressReporter final {
+public:
+    explicit ThrottledProgressReporter(const CaptureIndexWriteOptions& options)
+        : options_(options) {
+    }
+
+    void report(
+        const CaptureIndexWritePhase phase,
+        const std::string& phase_text,
+        const std::uint64_t completed_sections,
+        const std::uint64_t total_sections,
+        const std::uint64_t phase_items_processed,
+        const std::uint64_t phase_items_total,
+        const std::uint64_t bytes_written,
+        const bool force = false
+    ) {
+        if (!options_.progress_callback) {
+            return;
+        }
+
+        CaptureIndexWriteProgress progress {};
+        progress.phase = phase;
+        progress.phase_text = phase_text;
+        progress.completed_sections = completed_sections;
+        progress.total_sections = total_sections;
+        progress.phase_items_processed = phase_items_processed;
+        progress.phase_items_total = phase_items_total;
+        progress.bytes_written = bytes_written;
+
+        const auto now = std::chrono::steady_clock::now();
+        const bool first_report = !last_report_.has_value();
+        const bool phase_changed = first_report ||
+            last_report_->phase != progress.phase ||
+            last_report_->phase_text != progress.phase_text;
+        const bool section_progress_changed = first_report ||
+            last_report_->completed_sections != progress.completed_sections ||
+            last_report_->total_sections != progress.total_sections;
+        const bool item_space_changed = first_report ||
+            last_report_->phase_items_total != progress.phase_items_total ||
+            progress.phase_items_processed < last_report_->phase_items_processed;
+        const bool final_phase_progress =
+            (progress.phase_items_total > 0U && progress.phase_items_processed >= progress.phase_items_total) ||
+            (progress.total_sections > 0U && progress.completed_sections >= progress.total_sections);
+        const bool throttle_elapsed =
+            first_report || (now - last_emit_time_) >= kProgressThrottleInterval;
+
+        if (force || phase_changed || section_progress_changed || item_space_changed || final_phase_progress || throttle_elapsed) {
+            deliver_progress(
+                options_,
+                progress.phase,
+                progress.phase_text,
+                progress.completed_sections,
+                progress.total_sections,
+                progress.phase_items_processed,
+                progress.phase_items_total,
+                progress.bytes_written
+            );
+            last_emit_time_ = now;
+        }
+
+        last_report_ = progress;
+    }
+
+private:
+    static constexpr auto kProgressThrottleInterval = std::chrono::milliseconds(75);
+
+    const CaptureIndexWriteOptions& options_;
+    std::optional<CaptureIndexWriteProgress> last_report_ {};
+    std::chrono::steady_clock::time_point last_emit_time_ {};
+};
 
 [[nodiscard]] std::filesystem::path temp_index_path_for(const std::filesystem::path& index_path) {
     auto temp_path = index_path;
@@ -135,6 +168,45 @@ bool replace_file_atomically(const std::filesystem::path& source_path, const std
 
 template <typename Writer>
 bool compute_marshaled_section_size(std::uint64_t& out_size, Writer&& writer) {
+    class CountingStreambuf final : public std::streambuf {
+    public:
+        [[nodiscard]] std::uint64_t bytes_written() const noexcept {
+            return bytes_written_;
+        }
+
+    protected:
+        std::streamsize xsputn(const char*, const std::streamsize count) override {
+            if (count > 0) {
+                bytes_written_ += static_cast<std::uint64_t>(count);
+            }
+            return count;
+        }
+
+        int overflow(const int ch) override {
+            if (ch != EOF) {
+                ++bytes_written_;
+            }
+            return ch;
+        }
+
+    private:
+        std::uint64_t bytes_written_ {0};
+    };
+
+    class CountingOStream final : public std::ostream {
+    public:
+        CountingOStream()
+            : std::ostream(&buffer_) {
+        }
+
+        [[nodiscard]] std::uint64_t bytes_written() const noexcept {
+            return buffer_.bytes_written();
+        }
+
+    private:
+        CountingStreambuf buffer_ {};
+    };
+
     CountingOStream stream {};
     if (!writer(stream)) {
         return false;
@@ -153,6 +225,137 @@ template <typename Connection>
 [[nodiscard]] std::uint64_t connection_packet_ref_count(const Connection& connection) {
     return (connection.has_flow_a ? flow_packet_ref_count(connection.flow_a) : 0U) +
            (connection.has_flow_b ? flow_packet_ref_count(connection.flow_b) : 0U);
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_u8_size() noexcept {
+    return 1U;
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_u16_size() noexcept {
+    return 2U;
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_u32_size() noexcept {
+    return 4U;
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_u64_size() noexcept {
+    return 8U;
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_protocol_id_size() noexcept {
+    return serialized_u8_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_protocol_hint_size() noexcept {
+    return serialized_u8_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_endpoint_key_size(const EndpointKeyV4&) noexcept {
+    return serialized_u32_size() + serialized_u16_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_endpoint_key_size(const EndpointKeyV6&) noexcept {
+    return 16U + serialized_u16_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_flow_key_size(const FlowKeyV4&) noexcept {
+    return serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u16_size() +
+           serialized_u16_size() +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_flow_key_size(const FlowKeyV6&) noexcept {
+    return 16U +
+           16U +
+           serialized_u16_size() +
+           serialized_u16_size() +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_connection_key_size(const ConnectionKeyV4& key) noexcept {
+    return serialized_endpoint_key_size(key.first) +
+           serialized_endpoint_key_size(key.second) +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_connection_key_size(const ConnectionKeyV6& key) noexcept {
+    return serialized_endpoint_key_size(key.first) +
+           serialized_endpoint_key_size(key.second) +
+           serialized_protocol_id_size() +
+           serialized_u32_size();
+}
+
+[[nodiscard]] std::optional<std::uint64_t> serialized_string_size(const std::string& value) noexcept {
+    if (value.size() > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)())) {
+        return std::nullopt;
+    }
+
+    return serialized_u32_size() + static_cast<std::uint64_t>(value.size());
+}
+
+[[nodiscard]] constexpr std::uint64_t serialized_packet_ref_size() noexcept {
+    return serialized_u64_size() +
+           serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u64_size() +
+           serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u32_size() +
+           serialized_u8_size() +
+           serialized_u8_size();
+}
+
+template <typename Flow>
+[[nodiscard]] std::optional<std::uint64_t> serialized_flow_size(const Flow& flow) noexcept {
+    const auto packet_count = static_cast<std::uint64_t>(flow.packets.size());
+    return serialized_flow_key_size(flow.key) +
+           serialized_u64_size() +
+           serialized_u64_size() +
+           serialized_u64_size() +
+           (packet_count * serialized_packet_ref_size());
+}
+
+template <typename Connection>
+[[nodiscard]] std::optional<std::uint64_t> serialized_connection_size(const Connection& connection) noexcept {
+    const auto service_hint_size = serialized_string_size(connection.service_hint);
+    if (!service_hint_size.has_value()) {
+        return std::nullopt;
+    }
+
+    auto total = serialized_connection_key_size(connection.key) +
+        serialized_u8_size() +
+        serialized_u8_size() +
+        serialized_u64_size() +
+        serialized_u64_size() +
+        serialized_u8_size() +
+        serialized_u64_size() +
+        serialized_protocol_hint_size() +
+        *service_hint_size;
+
+    if (connection.has_flow_a) {
+        const auto flow_a_size = serialized_flow_size(connection.flow_a);
+        if (!flow_a_size.has_value()) {
+            return std::nullopt;
+        }
+        total += *flow_a_size;
+    }
+
+    if (connection.has_flow_b) {
+        const auto flow_b_size = serialized_flow_size(connection.flow_b);
+        if (!flow_b_size.has_value()) {
+            return std::nullopt;
+        }
+        total += *flow_b_size;
+    }
+
+    return total;
 }
 
 template <typename Connection>
@@ -200,6 +403,7 @@ template <typename Table, typename ConnectionPtr>
 std::optional<ConnectionChunkPlan<ConnectionPtr>> build_connection_chunk_plan(
     const Table& table,
     const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
     const std::string& label,
     const std::uint64_t completed_sections,
     const std::uint64_t total_sections
@@ -208,8 +412,7 @@ std::optional<ConnectionChunkPlan<ConnectionPtr>> build_connection_chunk_plan(
     plan.connections = detail::sorted_connections(table);
     const auto payload_limit = normalized_connection_section_payload_limit(options);
 
-    report_progress(
-        options,
+    progress_reporter.report(
         CaptureIndexWritePhase::preparing,
         "Preparing " + label,
         completed_sections,
@@ -237,15 +440,13 @@ std::optional<ConnectionChunkPlan<ConnectionPtr>> build_connection_chunk_plan(
         const auto* connection = plan.connections[index];
         plan.total_packets += connection_packet_ref_count(*connection);
 
-        std::uint64_t connection_size {0};
-        if (!compute_marshaled_section_size(connection_size, [&](std::ostream& payload) {
-                return detail::write_connection(payload, *connection);
-            })) {
+        const auto connection_size = serialized_connection_size(*connection);
+        if (!connection_size.has_value()) {
             return std::nullopt;
         }
 
         const bool would_exceed_limit =
-            chunk.connection_count > 0U && (chunk.payload_size + connection_size) > payload_limit;
+            chunk.connection_count > 0U && (chunk.payload_size + *connection_size) > payload_limit;
         if (would_exceed_limit) {
             plan.chunks.push_back(chunk);
             chunk = {};
@@ -254,11 +455,10 @@ std::optional<ConnectionChunkPlan<ConnectionPtr>> build_connection_chunk_plan(
             chunk.payload_size = kMinimumConnectionSectionPayloadBytes;
         }
 
-        chunk.payload_size += connection_size;
+        chunk.payload_size += *connection_size;
         ++chunk.connection_count;
 
-        report_progress(
-            options,
+        progress_reporter.report(
             CaptureIndexWritePhase::preparing,
             "Preparing " + label,
             completed_sections,
@@ -282,6 +482,7 @@ bool write_marshaled_section(
     std::ofstream& stream,
     const detail::CaptureIndexSectionId section_id,
     const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
     const std::string& label,
     const std::uint64_t completed_sections,
     const std::uint64_t total_sections,
@@ -289,8 +490,7 @@ bool write_marshaled_section(
     Writer&& writer,
     std::string* out_error_text
 ) {
-    report_progress(
-        options,
+    progress_reporter.report(
         CaptureIndexWritePhase::preparing,
         "Preparing " + label,
         completed_sections,
@@ -309,8 +509,7 @@ bool write_marshaled_section(
             return writer(
                 payload,
                 [&](const std::uint64_t processed, const std::uint64_t total) {
-                    report_progress(
-                        options,
+                    progress_reporter.report(
                         CaptureIndexWritePhase::preparing,
                         "Preparing " + label,
                         completed_sections,
@@ -331,8 +530,7 @@ bool write_marshaled_section(
         return false;
     }
 
-    report_progress(
-        options,
+    progress_reporter.report(
         CaptureIndexWritePhase::writing,
         "Writing " + label,
         completed_sections,
@@ -355,8 +553,7 @@ bool write_marshaled_section(
     if (!writer(
             stream,
             [&](const std::uint64_t processed, const std::uint64_t total) {
-                report_progress(
-                    options,
+                progress_reporter.report(
                     CaptureIndexWritePhase::writing,
                     "Writing " + label,
                     completed_sections,
@@ -376,15 +573,15 @@ bool write_marshaled_section(
         return false;
     }
 
-    report_progress(
-        options,
+    progress_reporter.report(
         CaptureIndexWritePhase::writing,
         "Writing " + label,
         completed_sections + 1U,
         total_sections,
         phase_items_total,
         phase_items_total,
-        stream_offset(stream)
+        stream_offset(stream),
+        true
     );
     return true;
 }
@@ -396,21 +593,22 @@ bool write_chunked_connection_sections(
     const std::string& label,
     const ConnectionChunkPlan<ConnectionPtr>& plan,
     const CaptureIndexWriteOptions& options,
+    ThrottledProgressReporter& progress_reporter,
     std::uint64_t& completed_sections,
     const std::uint64_t total_sections,
     std::string* out_error_text
 ) {
     std::uint64_t processed_packets {0};
     if (plan.total_packets == 0U) {
-        report_progress(
-            options,
+        progress_reporter.report(
             CaptureIndexWritePhase::writing,
             "Writing " + label,
             completed_sections,
             total_sections,
             0U,
             0U,
-            stream_offset(stream)
+            stream_offset(stream),
+            true
         );
     }
 
@@ -420,8 +618,7 @@ bool write_chunked_connection_sections(
             ? label + " chunk " + std::to_string(chunk_index + 1U) + "/" + std::to_string(plan.chunks.size())
             : label;
 
-        report_progress(
-            options,
+        progress_reporter.report(
             CaptureIndexWritePhase::writing,
             "Writing " + chunk_label,
             completed_sections,
@@ -452,8 +649,7 @@ bool write_chunked_connection_sections(
                     processed_packets,
                     plan.total_packets,
                     [&](const std::uint64_t processed, const std::uint64_t total) {
-                        report_progress(
-                            options,
+                        progress_reporter.report(
                             CaptureIndexWritePhase::writing,
                             "Writing " + chunk_label,
                             completed_sections,
@@ -474,15 +670,15 @@ bool write_chunked_connection_sections(
         }
 
         ++completed_sections;
-        report_progress(
-            options,
+        progress_reporter.report(
             CaptureIndexWritePhase::writing,
             "Writing " + chunk_label,
             completed_sections,
             total_sections,
             processed_packets,
             plan.total_packets,
-            stream_offset(stream)
+            stream_offset(stream),
+            true
         );
     }
 
@@ -507,6 +703,7 @@ bool CaptureIndexWriter::write(
     std::string* out_error_text
 ) const {
     set_error_text(out_error_text, std::string {});
+    ThrottledProgressReporter progress_reporter {options};
 
     CaptureSourceInfo source_info {};
     if (!read_capture_source_info(source_capture_path, source_info)) {
@@ -517,6 +714,7 @@ bool CaptureIndexWriter::write(
     const auto ipv4_chunk_plan = build_connection_chunk_plan<ConnectionTableV4, const ConnectionV4*>(
         state.ipv4_connections,
         options,
+        progress_reporter,
         "IPv4 connection section",
         0U,
         0U
@@ -533,6 +731,7 @@ bool CaptureIndexWriter::write(
     const auto ipv6_chunk_plan = build_connection_chunk_plan<ConnectionTableV6, const ConnectionV6*>(
         state.ipv6_connections,
         options,
+        progress_reporter,
         "IPv6 connection section",
         0U,
         0U
@@ -564,7 +763,7 @@ bool CaptureIndexWriter::write(
         remove_file_if_exists(temp_path);
     };
 
-    report_progress(options, CaptureIndexWritePhase::preparing, "Preparing index save", 0U, total_sections, 0U, 0U, 0U);
+    progress_reporter.report(CaptureIndexWritePhase::preparing, "Preparing index save", 0U, total_sections, 0U, 0U, 0U, true);
     if (should_cancel(options)) {
         cleanup_temp();
         set_error_text(out_error_text, "Index save cancelled by user.");
@@ -584,6 +783,7 @@ bool CaptureIndexWriter::write(
             stream,
             detail::CaptureIndexSectionId::source_info,
             options,
+            progress_reporter,
             "source info section",
             completed_sections,
             total_sections,
@@ -601,6 +801,7 @@ bool CaptureIndexWriter::write(
             stream,
             detail::CaptureIndexSectionId::summary,
             options,
+            progress_reporter,
             "summary section",
             completed_sections,
             total_sections,
@@ -618,6 +819,7 @@ bool CaptureIndexWriter::write(
             stream,
             detail::CaptureIndexSectionId::protocol_paths,
             options,
+            progress_reporter,
             "protocol path registry section",
             completed_sections,
             total_sections,
@@ -637,6 +839,7 @@ bool CaptureIndexWriter::write(
             "IPv4 connection section",
             *ipv4_chunk_plan,
             options,
+            progress_reporter,
             completed_sections,
             total_sections,
             out_error_text)) {
@@ -650,6 +853,7 @@ bool CaptureIndexWriter::write(
             "IPv6 connection section",
             *ipv6_chunk_plan,
             options,
+            progress_reporter,
             completed_sections,
             total_sections,
             out_error_text)) {
@@ -661,6 +865,7 @@ bool CaptureIndexWriter::write(
             stream,
             detail::CaptureIndexSectionId::unrecognized_packets,
             options,
+            progress_reporter,
             "unrecognized packet section",
             completed_sections,
             total_sections,
@@ -674,15 +879,15 @@ bool CaptureIndexWriter::write(
     }
     ++completed_sections;
 
-    report_progress(
-        options,
+    progress_reporter.report(
         CaptureIndexWritePhase::finalizing,
         "Finalizing temporary index file",
         completed_sections,
         total_sections,
         completed_sections,
         total_sections,
-        stream_offset(stream)
+        stream_offset(stream),
+        true
     );
     if (should_cancel(options)) {
         cleanup_temp();
@@ -706,15 +911,15 @@ bool CaptureIndexWriter::write(
 
     std::error_code temp_size_error {};
     const auto temp_size = std::filesystem::file_size(temp_path, temp_size_error);
-    report_progress(
-        options,
+    progress_reporter.report(
         CaptureIndexWritePhase::replacing_target,
         "Replacing target index file",
         completed_sections,
         total_sections,
         completed_sections,
         total_sections,
-        temp_size_error ? 0U : static_cast<std::uint64_t>(temp_size)
+        temp_size_error ? 0U : static_cast<std::uint64_t>(temp_size),
+        true
     );
     if (should_cancel(options)) {
         remove_file_if_exists(temp_path);

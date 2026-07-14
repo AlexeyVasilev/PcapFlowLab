@@ -426,6 +426,52 @@ void run_index_format_tests() {
         expect_matching_states(chunked_ipv6_state, loaded_chunked_ipv6_state);
     }
 
+    {
+        const auto oversized_single_connection_source_path = write_temp_pcap(
+            "pfl_index_oversized_single_connection_source.pcap",
+            make_classic_pcap({
+                {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 42000, 443)},
+                {200, make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 1), ipv4(10, 1, 0, 2), 42000, 443)},
+                {300, make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 0, 2), ipv4(10, 1, 0, 1), 443, 42000)},
+            })
+        );
+
+        CaptureState oversized_single_connection_state {};
+        PFL_EXPECT(importer.import_capture(oversized_single_connection_source_path, oversized_single_connection_state));
+
+        const auto oversized_single_connection_index_path =
+            std::filesystem::temp_directory_path() / "pfl_oversized_single_connection.idx";
+        std::filesystem::remove(oversized_single_connection_index_path);
+
+        CaptureIndexWriter oversized_single_connection_writer {};
+        PFL_EXPECT(oversized_single_connection_writer.write(
+            oversized_single_connection_index_path,
+            oversized_single_connection_state,
+            oversized_single_connection_source_path,
+            CaptureIndexWriteOptions {.max_connection_section_payload_bytes = 16U},
+            nullptr
+        ));
+
+        const auto oversized_single_connection_index_bytes = read_file_bytes(oversized_single_connection_index_path);
+        PFL_EXPECT(count_sections(
+            oversized_single_connection_index_bytes,
+            static_cast<std::uint32_t>(detail::CaptureIndexSectionId::ipv4_connections)
+        ) == 1U);
+
+        CaptureState loaded_oversized_single_connection_state {};
+        std::filesystem::path loaded_oversized_single_connection_capture_path {};
+        CaptureSourceInfo loaded_oversized_single_connection_source_info {};
+        PFL_EXPECT(index_reader.read(
+            oversized_single_connection_index_path,
+            loaded_oversized_single_connection_state,
+            loaded_oversized_single_connection_capture_path,
+            &loaded_oversized_single_connection_source_info
+        ));
+        PFL_EXPECT(loaded_oversized_single_connection_capture_path == oversized_single_connection_source_path);
+        PFL_EXPECT(loaded_oversized_single_connection_source_info.capture_path == oversized_single_connection_source_path);
+        expect_matching_states(oversized_single_connection_state, loaded_oversized_single_connection_state);
+    }
+
     const auto index_bytes = read_file_bytes(index_path);
     auto legacy_version_bytes = index_bytes;
     write_le16_at(legacy_version_bytes, 8U, static_cast<std::uint16_t>(kCaptureIndexVersion - 1U));
