@@ -487,6 +487,8 @@ inline bool mpls_has_resolved_inner_payload(const MplsParseStatus status) noexce
            status == MplsParseStatus::resolved_inner_arp;
 }
 
+inline MplsStackView parse_mpls_stack(std::span<const std::uint8_t> bytes, std::size_t offset);
+
 inline bool is_ipv6_extension_header(const std::uint8_t next_header) noexcept {
     return next_header == kIpProtocolHopByHop ||
            next_header == kIpProtocolRouting ||
@@ -1029,6 +1031,19 @@ inline std::optional<GrePayloadView> parse_gre_payload(
                     ? read_be16(bytes, cursor + 12U)
                     : 0U),
         };
+        return view;
+    }
+
+    if (view.protocol_type == kEtherTypeMplsUnicast) {
+        const auto mpls = parse_mpls_stack(bytes, cursor);
+        if (mpls_has_resolved_inner_payload(mpls.status)) {
+            view.resolved_supported_protocol = true;
+            view.resolved_protocol_type = mpls.inner_protocol_type;
+            view.resolved_payload_offset = mpls.inner_payload_offset;
+            if (mpls.bounded_packet_end.has_value()) {
+                view.bounded_packet_end = mpls.bounded_packet_end;
+            }
+        }
         return view;
     }
 

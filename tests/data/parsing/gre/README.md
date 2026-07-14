@@ -72,16 +72,16 @@ Notes:
 Implemented in the current GRE pass:
 - direct GRE version 0 inner IPv4/IPv6 plus TCP/UDP flow extraction;
 - GRE Transparent Ethernet Bridging (`0x6558`) inner Ethernet continuation, including inner VLAN preservation when the inner Ethernet continuation resolves it;
+- GRE MPLS unicast (`0x8847`) continuation using the existing MPLS stack classifier for direct inner IPv4/IPv6 and any already-safe pseudowire continuation that the shared MPLS helper resolves;
 - outer IPv4 and outer IPv6 GRE carriage;
 - optional GRE checksum/key/sequence field skipping for bounded inner decode;
 - outer VLAN/QinQ preservation before GRE when the existing outer-layer parser resolves those layers.
 
 Still staged for later work:
-- GRE MPLS payload continuation;
 - GRE sequence/checksum Packet Details presentation;
 - GRE version 1 / PPTP-like handling beyond conservative unsupported behavior.
 
-Active regression coverage now expects successful flow extraction for fixtures `01`-`14`, `21`, and `22`, excluding only the still-staged GRE/MPLS and unsupported/truncation cases.
+Active regression coverage now expects successful flow extraction for fixtures `01`-`15`, `21`, and `22`, excluding only the unsupported/truncation cases.
 GRE key-aware protocol-path identity is now supported when the GRE key flag is present and the full 32-bit key is available:
 - same inner tuple + different GRE keys split into distinct flows;
 - same inner tuple + same GRE key remains one flow;
@@ -177,7 +177,7 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE(MPLS) / MPLS / IPv4 / UDP
-- Expected future behavior: staged fixture target for GRE/MPLS continuation; path should become `EthernetII -> IPv4 -> GRE -> MPLS -> IPv4 -> UDP` once GRE/MPLS support exists.
+- Current behavior: supported; path `EthernetII -> IPv4 -> GRE -> MPLS(label=16030) -> IPv4 -> UDP`.
 
 ### 16_gre_unknown_protocol_type.pcap
 

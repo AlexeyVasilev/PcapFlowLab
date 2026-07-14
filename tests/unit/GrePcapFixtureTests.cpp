@@ -50,7 +50,7 @@ constexpr std::array<GreFixtureExpectation, 22> kGreFixtureExpectations {{
     {"22_gre_same_inner_tuple_same_key_two_packets.pcap", 2U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP", true},
 }};
 
-constexpr std::array<std::string_view, 16> kSupportedGreFixturesNow {{
+constexpr std::array<std::string_view, 17> kSupportedGreFixturesNow {{
     "01_gre_ipv4_tcp.pcap",
     "02_gre_ipv4_udp.pcap",
     "03_gre_ipv6_tcp.pcap",
@@ -65,12 +65,12 @@ constexpr std::array<std::string_view, 16> kSupportedGreFixturesNow {{
     "12_gre_teb_ethernet_vlan_ipv4_udp.pcap",
     "13_outer_vlan_gre_ipv4_udp.pcap",
     "14_outer_qinq_gre_ipv4_tcp.pcap",
+    "15_gre_mpls_ipv4_udp.pcap",
     "21_gre_same_inner_tuple_different_keys.pcap",
     "22_gre_same_inner_tuple_same_key_two_packets.pcap",
 }};
 
-constexpr std::array<std::string_view, 6> kUnsupportedGreFixturesNow {{
-    "15_gre_mpls_ipv4_udp.pcap",
+constexpr std::array<std::string_view, 5> kUnsupportedGreFixturesNow {{
     "16_gre_unknown_protocol_type.pcap",
     "17_gre_version1_pptp_like_unsupported.pcap",
     "18_gre_truncated_base_header.pcap",
@@ -230,8 +230,8 @@ void expect_gre_truncated_fixtures_import_without_crash() {
 }
 
 void run_future_gre_parser_expectation_tests() {
-    // Enable this once the staged GRE work lands as well:
-    // GRE TEB continuation and GRE/MPLS continuation.
+    // Keep this opt-in until the intentionally unsupported GRE cases in this fixture set
+    // gain stronger positive expectations.
     for (const auto& expectation : kGreFixtureExpectations) {
         if (expectation.expected_future_flow_count == 0U) {
             continue;

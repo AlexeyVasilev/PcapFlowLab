@@ -503,6 +503,21 @@ std::optional<DecodedPacket> try_decode_gre_inner_packet(
     if (gre->has_inner_ethernet) {
         push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, gre->inner_ethernet_offset);
         push_llc_snap_path_if_resolved(builder, gre->inner_ethernet, gre->resolved_protocol_type);
+    } else if (gre->protocol_type == detail::kEtherTypeMplsUnicast) {
+        const auto mpls = detail::parse_mpls_stack(packet_bytes, gre->payload_offset);
+        if (!detail::mpls_has_resolved_inner_payload(mpls.status)) {
+            return std::nullopt;
+        }
+
+        for (std::size_t index = 0U; index < mpls.label_count; ++index) {
+            static_cast<void>(builder.push(LayerKey::mpls(mpls.labels[index].label)));
+        }
+
+        if (mpls.has_inner_ethernet) {
+            static_cast<void>(builder.push(LayerKey::mpls_pw()));
+            push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, mpls.inner_ethernet_offset);
+            push_llc_snap_path_if_resolved(builder, mpls.inner_ethernet, mpls.inner_protocol_type);
+        }
     }
     return decode_supported_ip_transport_payload(
         packet_bytes,
