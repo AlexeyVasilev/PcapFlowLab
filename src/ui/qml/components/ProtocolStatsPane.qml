@@ -77,7 +77,7 @@ Frame {
     readonly property int pathTreePacketsColumnWidth: 150
     readonly property int pathTreeOriginalColumnWidth: 150
     readonly property int pathTreeTableWidth: pathTreeLabelColumnWidth + pathTreeFlowsColumnWidth + pathTreePacketsColumnWidth + pathTreeOriginalColumnWidth + (tableColumnSpacing * 3) + (tablePadding * 2)
-    readonly property int pathTreeViewportHeight: 420
+    readonly property int pathTreeViewportMaxHeight: 420
     readonly property int pathTreeIndentWidth: 18
     readonly property int pathTreeExpanderWidth: 16
     readonly property string protocolPathPrimaryColumnTitle: root.statisticsMode === 2 ? "Path" : "Layer"
@@ -1100,7 +1100,14 @@ Frame {
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: root.pathTreeViewportHeight
+                visible: root.hasCapture && root.protocolPathStatsModel && protocolPathListView.count > 0
+                implicitHeight: {
+                    const measuredContentHeight = protocolPathListView.contentHeight
+                    const fallbackContentHeight = protocolPathListView.count * root.tableRowHeight
+                    const contentDrivenHeight = (measuredContentHeight > 0 ? measuredContentHeight : fallbackContentHeight) + 2
+                    return Math.min(root.pathTreeViewportMaxHeight, Math.max(root.tableRowHeight + 2, contentDrivenHeight))
+                }
+                Layout.preferredHeight: implicitHeight
                 color: "#ffffff"
                 border.color: "#e2e8f0"
                 radius: 6
