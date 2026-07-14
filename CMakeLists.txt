@@ -309,6 +309,7 @@ if(BUILD_TESTING)
         tests/unit/VxlanPcapFixtureTests.cpp
         tests/unit/GenevePcapFixtureTests.cpp
         tests/unit/GtpuPcapFixtureTests.cpp
+        tests/unit/GrePcapFixtureTests.cpp
         tests/unit/SctpPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
