@@ -86,6 +86,7 @@ The current UI exposes three runtime view modes:
    - examples:
      - `VXLAN(vni=100)` and `VXLAN(vni=200)` aggregate under `VXLAN`;
      - `GTP-U(teid=...)` aggregates under `GTP-U`;
+     - `GRE(key=0x11111111)` and `GRE(key=0x22222222)` aggregate under `GRE`;
      - `MPLS(label=102)` and `MPLS(label=200)` aggregate under `MPLS`;
    - repeated layers remain positional, so `MPLS -> MPLS -> IPv4` stays a nested two-level MPLS stack.
 
@@ -302,7 +303,7 @@ Potential v1 layer kinds:
 - `VXLAN`
 - `Geneve`
 - `GTP-U`
-- `GRE` as future-facing reserved space if added later
+- `GRE`
 - `Unknown` or `Unsupported` only if later statistics/filter work needs an explicit conservative bucket
 
 The v1 design should keep the layer-key payload numeric and compact. No strings should be stored in hot-path structures.
@@ -424,7 +425,7 @@ Static audit of the current format:
 
 Current implementation state:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 10`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 11`;
 - `src/core/index/Serialization.cpp` serializes:
   - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
@@ -449,7 +450,7 @@ When protocol-path-aware flow identity becomes part of the stable index format:
 - keep the protocol-path registry as a single dedicated section, not chunked per packet or per flow;
 - keep large connection data chunked at connection-section boundaries rather than as one monolithic multi-GB payload;
 - do not repeat full protocol paths in packet records;
-- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, or TEID redundantly per packet if they are already represented by the flow's protocol path id.
+- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, TEID, or GRE key redundantly per packet if they are already represented by the flow's protocol path id.
 
 Rationale:
 
@@ -482,7 +483,7 @@ Current index-save behavior relevant to large protocol-path-aware captures:
 
 - Qt save-index now runs asynchronously with low-noise progress text and cooperative cancel;
 - index save writes to a same-directory temporary file and replaces the final target only after successful finalization;
-- index v10 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
+- index v11 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
 - each connection chunk remains self-contained and split only on connection boundaries; protocol-path registry data is still written once per capture;
 - the current index format does not write a separate footer/final-marker record; "finalized" currently means that all required sections parse cleanly through EOF;
 - interrupted or cancelled saves should leave the previous final `.idx` unchanged;
@@ -522,6 +523,7 @@ Future filter directions:
   - `vxlan.vni == 100`
   - `geneve.vni == 100`
   - `gtpu.teid == 0x01020384`
+  - `gre.key == 0x11111111`
 
 This document does not propose filter syntax beyond these examples.
 

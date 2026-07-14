@@ -46,11 +46,11 @@ constexpr std::array<GreFixtureExpectation, 22> kGreFixtureExpectations {{
     {"18_gre_truncated_base_header.pcap", 1U, 0U, "", false},
     {"19_gre_truncated_key_field.pcap", 1U, 0U, "", false},
     {"20_gre_truncated_inner_ipv4.pcap", 1U, 0U, "", false},
-    {"21_gre_same_inner_tuple_different_keys.pcap", 2U, 2U, "EthernetII -> IPv4 -> GRE(key=...) -> IPv4 -> UDP", true},
+    {"21_gre_same_inner_tuple_different_keys.pcap", 2U, 2U, "", true},
     {"22_gre_same_inner_tuple_same_key_two_packets.pcap", 2U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP", true},
 }};
 
-constexpr std::array<std::string_view, 12> kSupportedGreFixturesNow {{
+constexpr std::array<std::string_view, 14> kSupportedGreFixturesNow {{
     "01_gre_ipv4_tcp.pcap",
     "02_gre_ipv4_udp.pcap",
     "03_gre_ipv6_tcp.pcap",
@@ -63,6 +63,8 @@ constexpr std::array<std::string_view, 12> kSupportedGreFixturesNow {{
     "10_gre_checksum_key_sequence_ipv4_udp.pcap",
     "13_outer_vlan_gre_ipv4_udp.pcap",
     "14_outer_qinq_gre_ipv4_tcp.pcap",
+    "21_gre_same_inner_tuple_different_keys.pcap",
+    "22_gre_same_inner_tuple_same_key_two_packets.pcap",
 }};
 
 constexpr std::array<std::string_view, 8> kUnsupportedGreFixturesNow {{
@@ -74,11 +76,6 @@ constexpr std::array<std::string_view, 8> kUnsupportedGreFixturesNow {{
     "18_gre_truncated_base_header.pcap",
     "19_gre_truncated_key_field.pcap",
     "20_gre_truncated_inner_ipv4.pcap",
-}};
-
-constexpr std::array<std::string_view, 2> kStagedGreKeyIdentityFixtures {{
-    "21_gre_same_inner_tuple_different_keys.pcap",
-    "22_gre_same_inner_tuple_same_key_two_packets.pcap",
 }};
 
 std::filesystem::path fixture_dir() {
@@ -95,14 +92,6 @@ const GreFixtureExpectation& require_expectation(std::string_view file_name) {
     });
     PFL_REQUIRE(found != kGreFixtureExpectations.end());
     return *found;
-}
-
-std::string_view expected_current_protocol_path(std::string_view file_name) {
-    if (file_name == "07_gre_key_ipv4_udp.pcap" ||
-        file_name == "10_gre_checksum_key_sequence_ipv4_udp.pcap") {
-        return "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP";
-    }
-    return require_expectation(file_name).expected_future_protocol_path;
 }
 
 std::set<std::string> expected_fixture_file_names() {
@@ -170,7 +159,27 @@ void expect_supported_gre_v0_ip_fixtures_decode() {
         const auto rows = session.list_flows();
         PFL_EXPECT(rows.size() == static_cast<std::size_t>(expectation.expected_future_flow_count));
 
-        const auto expected_path = expected_current_protocol_path(fixture_name);
+        if (fixture_name == "21_gre_same_inner_tuple_different_keys.pcap") {
+            bool found_first_key = false;
+            bool found_second_key = false;
+            for (const auto& row : rows) {
+                if (row.protocol_path_id == kInvalidProtocolPathId) {
+                    continue;
+                }
+                const auto* path = session.state().protocol_path_registry.find(row.protocol_path_id);
+                if (path == nullptr) {
+                    continue;
+                }
+                const auto formatted = format_protocol_path(*path);
+                found_first_key = found_first_key || formatted == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP";
+                found_second_key = found_second_key || formatted == "EthernetII -> IPv4 -> GRE(key=0x22222222) -> IPv4 -> UDP";
+            }
+            PFL_EXPECT(found_first_key);
+            PFL_EXPECT(found_second_key);
+            continue;
+        }
+
+        const auto expected_path = require_expectation(fixture_name).expected_future_protocol_path;
         const bool found_expected_path = std::any_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
             if (row.protocol_path_id == kInvalidProtocolPathId) {
                 return false;
@@ -179,6 +188,11 @@ void expect_supported_gre_v0_ip_fixtures_decode() {
             return path != nullptr && format_protocol_path(*path) == expected_path;
         });
         PFL_EXPECT(found_expected_path);
+
+        if (fixture_name == "22_gre_same_inner_tuple_same_key_two_packets.pcap") {
+            PFL_REQUIRE(rows.size() == 1U);
+            PFL_EXPECT(rows[0].packet_count == 2U);
+        }
     }
 }
 
@@ -195,18 +209,6 @@ void expect_unsupported_gre_payloads_remain_unrecognized() {
         PFL_EXPECT(session.summary().packet_count == 0U);
         PFL_EXPECT(session.list_flows().empty());
         PFL_EXPECT(session.unrecognized_packet_count() == static_cast<std::size_t>(expectation.expected_total_packets));
-    }
-}
-
-void expect_staged_gre_key_identity_fixtures_import_without_strict_identity_assertions() {
-    for (const auto fixture_name : kStagedGreKeyIdentityFixtures) {
-        CaptureSession session {};
-        const auto& expectation = require_expectation(fixture_name);
-        PFL_REQUIRE(session.open_capture(fixture_path(fixture_name)));
-
-        const auto storage = session.storage_summary();
-        PFL_EXPECT(storage.total_packets_seen == expectation.expected_total_packets);
-        PFL_EXPECT(storage.total_packets_seen == storage.recognized_packets + storage.unrecognized_packets);
     }
 }
 
@@ -229,7 +231,7 @@ void expect_gre_truncated_fixtures_import_without_crash() {
 
 void run_future_gre_parser_expectation_tests() {
     // Enable this once the staged GRE work lands as well:
-    // key-aware identity, GRE TEB continuation, and GRE/MPLS continuation.
+    // GRE TEB continuation and GRE/MPLS continuation.
     for (const auto& expectation : kGreFixtureExpectations) {
         if (expectation.expected_future_flow_count == 0U) {
             continue;
@@ -263,7 +265,6 @@ void run_gre_pcap_fixture_tests() {
     expect_gre_fixtures_have_expected_total_packet_records();
     expect_supported_gre_v0_ip_fixtures_decode();
     expect_unsupported_gre_payloads_remain_unrecognized();
-    expect_staged_gre_key_identity_fixtures_import_without_strict_identity_assertions();
     expect_gre_truncated_fixtures_import_without_crash();
 
     if constexpr (kEnableGreParserExpectationTests) {

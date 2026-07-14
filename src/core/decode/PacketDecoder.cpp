@@ -499,7 +499,7 @@ std::optional<DecodedPacket> try_decode_gre_inner_packet(
         return std::nullopt;
     }
 
-    static_cast<void>(builder.push(LayerKey::gre()));
+    static_cast<void>(builder.push(gre->has_key ? LayerKey::gre(gre->key) : LayerKey::gre()));
     return decode_supported_ip_transport_payload(
         packet_bytes,
         gre->resolved_protocol_type,

@@ -88,6 +88,16 @@ std::optional<std::string> identifier_tooltip_text(const LayerKey& layer) {
              << layer.identifier.value;
         return text.str();
     }
+    case ProtocolLayerIdentifierKind::gre_key: {
+        std::ostringstream text {};
+        text << "Key: 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
     }
 
     return std::nullopt;
@@ -117,6 +127,16 @@ std::optional<std::string> identifier_display_suffix_text(const LayerKey& layer)
     case ProtocolLayerIdentifierKind::gtpu_teid: {
         std::ostringstream text {};
         text << "TEID 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    case ProtocolLayerIdentifierKind::gre_key: {
+        std::ostringstream text {};
+        text << "key 0x"
              << std::uppercase
              << std::hex
              << std::setw(8)

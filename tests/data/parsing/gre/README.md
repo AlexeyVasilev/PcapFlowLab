@@ -10,7 +10,7 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - unsupported or opaque GRE protocol types;
 - GRE version 1 / PPTP-like unsupported coverage;
 - malformed or truncated GRE headers, optional fields, and inner payloads;
-- future namespace coverage where identical inner tuples with different GRE keys should split if key-aware path identity is later enabled.
+- GRE key namespace coverage where identical inner tuples with different GRE keys should split.
 
 The local helper script that generates these pcaps is intentionally **not** committed.
 
@@ -76,13 +76,16 @@ Implemented in the current GRE pass:
 - outer VLAN/QinQ preservation before GRE when the existing outer-layer parser resolves those layers.
 
 Still staged for later work:
-- GRE key as protocol-path identity / flow-splitting input;
 - GRE Transparent Ethernet Bridging (`0x6558`) inner Ethernet continuation;
 - GRE MPLS payload continuation;
 - GRE sequence/checksum Packet Details presentation;
 - GRE version 1 / PPTP-like handling beyond conservative unsupported behavior.
 
-Active regression coverage now expects successful flow extraction for fixtures `01`-`10`, plus outer VLAN/QinQ carriage fixtures `13` and `14`. Key-identity fixtures `21` and `22` remain committed but intentionally staged until GRE key-aware path identity is implemented.
+Active regression coverage now expects successful flow extraction for fixtures `01`-`10`, `13`, `14`, `21`, and `22`.
+GRE key-aware protocol-path identity is now supported when the GRE key flag is present and the full 32-bit key is available:
+- same inner tuple + different GRE keys split into distinct flows;
+- same inner tuple + same GRE key remains one flow;
+- checksum and sequence metadata do not participate in flow identity.
 
 ### 01_gre_ipv4_tcp.pcap
 
@@ -125,7 +128,7 @@ Active regression coverage now expects successful flow extraction for fixtures `
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE(key) / IPv4 / UDP
 - GRE key: `0x11111111`
-- Expected future behavior: inner IPv4/UDP decoded; GRE key becomes a namespace/path detail if implemented.
+- Current behavior: inner IPv4/UDP decodes normally and the protocol path becomes `EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP`.
 
 ### 08_gre_sequence_ipv4_tcp.pcap
 
@@ -144,7 +147,7 @@ Active regression coverage now expects successful flow extraction for fixtures `
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE(checksum,key,sequence) / IPv4 / UDP
-- Expected future behavior: optional fields parsed in correct order; GRE key is a path-identity candidate if implemented later.
+- Current behavior: optional fields are skipped in order and the protocol path becomes `EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP`.
 
 ### 11_gre_teb_ethernet_ipv4_tcp.pcap
 
@@ -213,13 +216,14 @@ Active regression coverage now expects successful flow extraction for fixtures `
 - GRE keys:
   - packet 1: `0x11111111`
   - packet 2: `0x22222222`
-- Expected future behavior if GRE key participates in path identity: two distinct flows.
+- Current behavior: two distinct flows because GRE key participates in protocol-path identity.
 
 ### 22_gre_same_inner_tuple_same_key_two_packets.pcap
 
 - Packets: 2
 - Layer chain: Ethernet / IPv4 / GRE(key) / IPv4 / UDP
 - GRE key on both packets: `0x11111111`
+- Current behavior: one flow with packet count `2` because both packets share the same keyed GRE protocol path.
 - Expected future behavior: one normal flow with two packets.
 
 ## Expected generated file list
