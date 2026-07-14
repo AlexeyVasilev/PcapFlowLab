@@ -454,6 +454,8 @@ void expect_identifier_differences() {
 
 void expect_registry_interning() {
     ProtocolPathRegistry registry {};
+    ProtocolPathBuilder empty_builder {};
+    const ProtocolPath empty_path {};
 
     const ProtocolPath direct {
         LayerKey::ethernet_ii(),
@@ -476,6 +478,12 @@ void expect_registry_interning() {
     PFL_EXPECT(registry.size() == 0U);
     PFL_EXPECT(registry.find(kInvalidProtocolPathId) == nullptr);
     PFL_EXPECT(registry.find(999U) == nullptr);
+    PFL_EXPECT(registry.intern(empty_builder.view()) == kInvalidProtocolPathId);
+    PFL_EXPECT(registry.size() == 0U);
+    PFL_EXPECT(registry.intern(empty_path) == kInvalidProtocolPathId);
+    PFL_EXPECT(registry.size() == 0U);
+    PFL_EXPECT(registry.intern(ProtocolPath {}) == kInvalidProtocolPathId);
+    PFL_EXPECT(registry.size() == 0U);
 
     const auto direct_id = registry.intern(direct);
     const auto direct_copy_id = registry.intern(direct_copy);
@@ -488,6 +496,8 @@ void expect_registry_interning() {
     PFL_EXPECT(shim_id != kInvalidProtocolPathId);
     PFL_EXPECT(shim_id != direct_id);
     PFL_EXPECT(registry.size() == 2U);
+    PFL_EXPECT(registry.intern(ProtocolPath {}) == kInvalidProtocolPathId);
+    PFL_EXPECT(registry.size() == 2U);
 
     const auto* stored_direct = registry.find(direct_id);
     const auto* stored_shim = registry.find(shim_id);
@@ -499,6 +509,7 @@ void expect_registry_interning() {
 
 void expect_registry_view_interning() {
     ProtocolPathRegistry registry {};
+    ProtocolPathBuilder empty_builder {};
 
     ProtocolPathBuilder direct_builder {};
     PFL_EXPECT(direct_builder.push(LayerKey::ethernet_ii()));
@@ -517,6 +528,9 @@ void expect_registry_view_interning() {
     PFL_EXPECT(shim_builder.push(LayerKey::ipv4()));
     PFL_EXPECT(shim_builder.push(LayerKey::tcp()));
 
+    PFL_EXPECT(registry.intern(empty_builder.view()) == kInvalidProtocolPathId);
+    PFL_EXPECT(registry.size() == 0U);
+
     const auto direct_id = registry.intern(direct_builder.view());
     const auto direct_copy_id = registry.intern(direct_copy_builder.view());
     const auto shim_id = registry.intern(shim_builder.view());
@@ -524,6 +538,8 @@ void expect_registry_view_interning() {
     PFL_EXPECT(direct_id == 1U);
     PFL_EXPECT(direct_copy_id == direct_id);
     PFL_EXPECT(shim_id == 2U);
+    PFL_EXPECT(registry.size() == 2U);
+    PFL_EXPECT(registry.intern(empty_builder.view()) == kInvalidProtocolPathId);
     PFL_EXPECT(registry.size() == 2U);
 
     const auto* stored_direct = registry.find(direct_id);

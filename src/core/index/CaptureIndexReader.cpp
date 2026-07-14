@@ -58,7 +58,7 @@ void report_index_progress(OpenContext* ctx, std::ifstream& stream) {
     return ctx != nullptr && ctx->is_cancel_requested();
 }
 
-class MemoryStreambuf final : public std::streambuf {
+class MemoryStreambuf : public std::streambuf {
 public:
     explicit MemoryStreambuf(std::span<const std::uint8_t> bytes) {
         auto* begin = reinterpret_cast<char*>(const_cast<std::uint8_t*>(bytes.data()));
@@ -66,15 +66,12 @@ public:
     }
 };
 
-class MemoryIStream final : public std::istream {
+class MemoryIStream final : private MemoryStreambuf, public std::istream {
 public:
     explicit MemoryIStream(std::span<const std::uint8_t> bytes)
-        : std::istream(&buffer_)
-        , buffer_(bytes) {
+        : MemoryStreambuf(bytes)
+        , std::istream(static_cast<MemoryStreambuf*>(this)) {
     }
-
-private:
-    MemoryStreambuf buffer_;
 };
 
 template <typename Parser>

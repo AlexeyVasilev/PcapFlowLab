@@ -237,6 +237,10 @@ ProtocolPathId ProtocolPathRegistry::intern(const ProtocolPath& path) {
 }
 
 ProtocolPathId ProtocolPathRegistry::intern(ProtocolPath&& path) {
+    if (path.empty()) {
+        return kInvalidProtocolPathId;
+    }
+
     if (const auto found = ids_.find(path); found != ids_.end()) {
         return found->second;
     }
