@@ -67,16 +67,22 @@ Notes:
 - Outer QinQ service VLAN ID: `331`
 - Inner VLAN ID for TEB coverage: `130`
 
-## Current staged expectations
+## Current implementation status
 
-These fixtures are being committed **before** GRE parser support and GRE tests are added.
+Implemented in the current GRE pass:
+- direct GRE version 0 inner IPv4/IPv6 plus TCP/UDP flow extraction;
+- outer IPv4 and outer IPv6 GRE carriage;
+- optional GRE checksum/key/sequence field skipping for bounded inner decode;
+- outer VLAN/QinQ preservation before GRE when the existing outer-layer parser resolves those layers.
 
-Intended future behavior:
-- valid GRE version 0 carrying inner IPv4/IPv6 plus TCP/UDP should recover the inner tuple as the effective flow tuple;
-- outer VLAN/QinQ, GRE, inner Ethernet, and inner VLAN layers should be preserved in the protocol path when supported;
-- GRE key is an intended protocol-path namespace candidate, but not yet implemented in this fixture pass;
-- GRE sequence and checksum are intended Packet Details fields, not flow-identity fields;
-- GRE version 1 / PPTP-like packets should remain conservative and unsupported unless explicitly implemented later.
+Still staged for later work:
+- GRE key as protocol-path identity / flow-splitting input;
+- GRE Transparent Ethernet Bridging (`0x6558`) inner Ethernet continuation;
+- GRE MPLS payload continuation;
+- GRE sequence/checksum Packet Details presentation;
+- GRE version 1 / PPTP-like handling beyond conservative unsupported behavior.
+
+Active regression coverage now expects successful flow extraction for fixtures `01`-`10`, plus outer VLAN/QinQ carriage fixtures `13` and `14`. Key-identity fixtures `21` and `22` remain committed but intentionally staged until GRE key-aware path identity is implemented.
 
 ### 01_gre_ipv4_tcp.pcap
 

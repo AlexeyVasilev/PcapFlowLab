@@ -45,6 +45,7 @@ inline constexpr std::uint8_t kIpProtocolIcmp = 1;
 inline constexpr std::uint8_t kIpProtocolIgmp = 2;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
 inline constexpr std::uint8_t kIpProtocolUdp = 17;
+inline constexpr std::uint8_t kIpProtocolGre = 47;
 inline constexpr std::uint8_t kIpProtocolSctp = 132;
 inline constexpr std::uint8_t kIpProtocolRouting = 43;
 inline constexpr std::uint8_t kIpProtocolFragment = 44;
@@ -60,6 +61,8 @@ inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
 inline constexpr std::size_t kSctpCommonHeaderSize = 12;
+inline constexpr std::size_t kGreBaseHeaderSize = 4U;
+inline constexpr std::size_t kGreOptionalFieldSize = 4U;
 inline constexpr std::size_t kVxlanHeaderSize = 8U;
 inline constexpr std::size_t kGeneveHeaderSize = 8U;
 inline constexpr std::size_t kGtpuBaseHeaderSize = 8U;
@@ -80,6 +83,10 @@ inline constexpr std::uint16_t kUdpPortVxlan = 4789U;
 inline constexpr std::uint16_t kUdpPortGeneve = 6081U;
 inline constexpr std::uint16_t kUdpPortGtpu = 2152U;
 inline constexpr std::uint16_t kGeneveProtocolTypeEthernet = 0x6558U;
+inline constexpr std::uint16_t kGreFlagChecksum = 0x8000U;
+inline constexpr std::uint16_t kGreFlagKey = 0x2000U;
+inline constexpr std::uint16_t kGreFlagSequence = 0x1000U;
+inline constexpr std::uint16_t kGreVersionMask = 0x0007U;
 inline constexpr std::uint8_t kVxlanFlagI = 0x08U;
 inline constexpr std::uint8_t kGtpuFlagProtocolType = 0x10U;
 inline constexpr std::uint8_t kGtpuFlagExtensionHeader = 0x04U;
@@ -229,6 +236,22 @@ struct GtpuPayloadView {
     std::uint8_t npdu_number {0};
     std::uint8_t first_extension_header_type {0};
     std::size_t inner_payload_offset {0};
+    std::optional<std::size_t> bounded_packet_end {};
+    bool resolved_supported_protocol {false};
+    std::uint16_t resolved_protocol_type {0};
+    std::size_t resolved_payload_offset {0};
+};
+
+struct GrePayloadView {
+    std::uint16_t flags_version {0};
+    std::uint16_t protocol_type {0};
+    bool has_checksum {false};
+    bool has_key {false};
+    bool has_sequence {false};
+    std::uint16_t checksum {0};
+    std::uint32_t key {0};
+    std::uint32_t sequence_number {0};
+    std::size_t payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
     bool resolved_supported_protocol {false};
     std::uint16_t resolved_protocol_type {0};
@@ -897,6 +920,67 @@ inline std::optional<GtpuPayloadView> parse_gtpu_payload(
     } else if (inner_version == 6U) {
         view.resolved_supported_protocol = true;
         view.resolved_protocol_type = kEtherTypeIpv6;
+    }
+
+    return view;
+}
+
+inline std::optional<GrePayloadView> parse_gre_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t gre_offset,
+    const std::size_t gre_payload_end
+) {
+    if (gre_offset + kGreBaseHeaderSize > gre_payload_end ||
+        bytes.size() < gre_offset + kGreBaseHeaderSize) {
+        return std::nullopt;
+    }
+
+    GrePayloadView view {};
+    view.flags_version = read_be16(bytes, gre_offset);
+    view.protocol_type = read_be16(bytes, gre_offset + 2U);
+    view.has_checksum = (view.flags_version & kGreFlagChecksum) != 0U;
+    view.has_key = (view.flags_version & kGreFlagKey) != 0U;
+    view.has_sequence = (view.flags_version & kGreFlagSequence) != 0U;
+    view.bounded_packet_end = gre_payload_end;
+
+    if ((view.flags_version & kGreVersionMask) != 0U) {
+        return view;
+    }
+
+    auto cursor = gre_offset + kGreBaseHeaderSize;
+    if (view.has_checksum) {
+        if (cursor + kGreOptionalFieldSize > gre_payload_end ||
+            bytes.size() < cursor + kGreOptionalFieldSize) {
+            return std::nullopt;
+        }
+        view.checksum = read_be16(bytes, cursor);
+        cursor += kGreOptionalFieldSize;
+    }
+
+    if (view.has_key) {
+        if (cursor + kGreOptionalFieldSize > gre_payload_end ||
+            bytes.size() < cursor + kGreOptionalFieldSize) {
+            return std::nullopt;
+        }
+        view.key = read_be32(bytes, cursor);
+        cursor += kGreOptionalFieldSize;
+    }
+
+    if (view.has_sequence) {
+        if (cursor + kGreOptionalFieldSize > gre_payload_end ||
+            bytes.size() < cursor + kGreOptionalFieldSize) {
+            return std::nullopt;
+        }
+        view.sequence_number = read_be32(bytes, cursor);
+        cursor += kGreOptionalFieldSize;
+    }
+
+    view.payload_offset = cursor;
+    view.resolved_payload_offset = cursor;
+    if (view.protocol_type == kEtherTypeIpv4 ||
+        view.protocol_type == kEtherTypeIpv6) {
+        view.resolved_supported_protocol = true;
+        view.resolved_protocol_type = view.protocol_type;
     }
 
     return view;

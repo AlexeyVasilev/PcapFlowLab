@@ -487,6 +487,29 @@ std::optional<DecodedPacket> try_decode_gtpu_inner_packet(
     );
 }
 
+std::optional<DecodedPacket> try_decode_gre_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t gre_offset,
+    const std::size_t gre_payload_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, gre_payload_end);
+    if (!gre.has_value() || !gre->resolved_supported_protocol) {
+        return std::nullopt;
+    }
+
+    static_cast<void>(builder.push(LayerKey::gre()));
+    return decode_supported_ip_transport_payload(
+        packet_bytes,
+        gre->resolved_protocol_type,
+        gre->resolved_payload_offset,
+        gre->bounded_packet_end,
+        packet,
+        std::move(builder)
+    );
+}
+
 }  // namespace
 
 DecodedPacket PacketDecoder::decode_ethernet(const RawPcapPacket& packet) const noexcept {
@@ -740,6 +763,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             );
         }
 
+        if (protocol == detail::kIpProtocolGre) {
+            if (const auto gre_packet = try_decode_gre_inner_packet(
+                    bounded_bytes,
+                    transport_offset,
+                    packet_end,
+                    packet,
+                    ipv4_builder
+                );
+                gre_packet.has_value()) {
+                return *gre_packet;
+            }
+            return {};
+        }
+
         if (protocol == detail::kIpProtocolIcmp) {
             if (bounded_bytes.size() < transport_offset + 2U) {
                 return {};
@@ -972,6 +1009,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 },
                 builder
             );
+        }
+
+        if (payload->next_header == detail::kIpProtocolGre) {
+            if (const auto gre_packet = try_decode_gre_inner_packet(
+                    bounded_bytes,
+                    payload->payload_offset,
+                    packet_end,
+                    packet,
+                    ipv6_builder
+                );
+                gre_packet.has_value()) {
+                return *gre_packet;
+            }
+            return {};
         }
 
         if (payload->next_header == detail::kIpProtocolIcmpV6) {
