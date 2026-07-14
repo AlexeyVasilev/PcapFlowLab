@@ -108,6 +108,21 @@ struct ProtocolPathStatisticsAccumulatorNode {
     std::vector<FlowIndex> flow_indices {};
 };
 
+struct PrefixStepKey {
+    std::size_t parent_index {std::numeric_limits<std::size_t>::max()};
+    LayerKey layer {};
+
+    [[nodiscard]] friend bool operator==(const PrefixStepKey&, const PrefixStepKey&) = default;
+};
+
+struct PrefixStepKeyHash {
+    [[nodiscard]] std::size_t operator()(const PrefixStepKey& key) const noexcept {
+        auto seed = std::hash<std::size_t> {}(key.parent_index);
+        seed = detail::hash_combine(seed, LayerKeyHash {}(key.layer));
+        return seed;
+    }
+};
+
 std::string group_integer_part(std::string text) {
     const auto sign_offset = !text.empty() && text.front() == '-' ? std::size_t {1} : std::size_t {0};
     const auto decimal_pos = text.find('.');
@@ -202,15 +217,6 @@ LayerKey kind_only_layer_key(const LayerKey& layer) noexcept {
         .kind = layer.kind,
         .identifier = {},
     };
-}
-
-ProtocolPath kind_only_protocol_path(const ProtocolPath& path) {
-    std::vector<LayerKey> layers {};
-    layers.reserve(path.size());
-    for (const auto& layer : path.layers()) {
-        layers.push_back(kind_only_layer_key(layer));
-    }
-    return ProtocolPath {std::move(layers)};
 }
 
 void append_protocol_path_statistics_rows(
@@ -430,7 +436,8 @@ CaptureProtocolPathSummary build_protocol_path_summary(
         // unrecognized and intentionally excluded from the path tree.
         .total_packet_count = state.summary.packet_count,
     };
-    std::unordered_map<ProtocolPath, std::size_t, ProtocolPathHash> node_index_by_path {};
+    std::unordered_map<PrefixStepKey, std::size_t, PrefixStepKeyHash> node_index_by_prefix_step {};
+    std::unordered_map<ProtocolPathId, std::size_t> terminal_node_index_by_path_id {};
     std::vector<ProtocolPathStatisticsAccumulatorNode> nodes {};
 
     for (std::size_t connection_index = 0; connection_index < connections.size(); ++connection_index) {
@@ -450,17 +457,14 @@ CaptureProtocolPathSummary build_protocol_path_summary(
         const auto original_bytes_for_flow = total_bytes(connection);
         summary.total_original_byte_count += original_bytes_for_flow;
         const auto flow_index = static_cast<FlowIndex>(connection_index);
-        const auto effective_path = mode == ProtocolPathStatisticsMode::kind_overview
-            ? kind_only_protocol_path(*path)
-            : *path;
 
         if (mode == ProtocolPathStatisticsMode::terminal_paths) {
-            auto [it, inserted] = node_index_by_path.emplace(effective_path, nodes.size());
+            auto [it, inserted] = terminal_node_index_by_path_id.emplace(path_id, nodes.size());
             if (inserted) {
                 nodes.push_back(ProtocolPathStatisticsAccumulatorNode {
                     .depth = 0U,
-                    .layer = effective_path.layers().back(),
-                    .path = effective_path,
+                    .layer = path->layers().back(),
+                    .path = *path,
                     .is_terminal = true,
                 });
             }
@@ -474,21 +478,32 @@ CaptureProtocolPathSummary build_protocol_path_summary(
         }
 
         std::size_t parent_index = std::numeric_limits<std::size_t>::max();
-        for (std::size_t depth = 0; depth < effective_path.size(); ++depth) {
-            const auto prefix_layers = std::vector<LayerKey>(
-                effective_path.layers().begin(),
-                effective_path.layers().begin() + static_cast<std::ptrdiff_t>(depth + 1U)
-            );
-            ProtocolPath prefix_path {prefix_layers};
+        for (std::size_t depth = 0; depth < path->size(); ++depth) {
+            const auto layer = mode == ProtocolPathStatisticsMode::kind_overview
+                ? kind_only_layer_key((*path)[depth])
+                : (*path)[depth];
+            const PrefixStepKey key {
+                .parent_index = parent_index,
+                .layer = layer,
+            };
 
-            auto [it, inserted] = node_index_by_path.emplace(prefix_path, nodes.size());
+            auto [it, inserted] = node_index_by_prefix_step.emplace(key, nodes.size());
             if (inserted) {
+                ProtocolPath prefix_path {};
+                if (parent_index == std::numeric_limits<std::size_t>::max()) {
+                    prefix_path = ProtocolPath {{layer}};
+                } else {
+                    auto prefix_layers = nodes[parent_index].path.layers();
+                    prefix_layers.push_back(layer);
+                    prefix_path = ProtocolPath {std::move(prefix_layers)};
+                }
+
                 nodes.push_back(ProtocolPathStatisticsAccumulatorNode {
                     .depth = depth,
-                    .layer = prefix_layers.back(),
-                    .path = prefix_path,
+                    .layer = layer,
+                    .path = std::move(prefix_path),
                     .parent_index = parent_index,
-                    .is_terminal = depth + 1U >= effective_path.size(),
+                    .is_terminal = depth + 1U >= path->size(),
                 });
                 if (parent_index != std::numeric_limits<std::size_t>::max()) {
                     nodes[parent_index].child_indices.push_back(it->second);

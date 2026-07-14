@@ -518,7 +518,7 @@ const FlowListModel::CachedProtocolPathPresentation& FlowListModel::protocolPath
         presentation = protocol_path_presentation_resolver_(protocolPathId);
     }
 
-    auto [inserted, _] = protocol_path_presentation_cache_.emplace(
+    auto [it, inserted] = protocol_path_presentation_cache_.emplace(
         protocolPathId,
         CachedProtocolPathPresentation {
             .full_text = to_qstring(presentation.full_text),
@@ -526,7 +526,8 @@ const FlowListModel::CachedProtocolPathPresentation& FlowListModel::protocolPath
             .badges = to_protocol_path_badge_list(presentation.badges),
         }
     );
-    return inserted->second;
+    static_cast<void>(inserted);
+    return it->second;
 }
 
 void FlowListModel::rebuildVisibleItems() {
