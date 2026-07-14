@@ -50,7 +50,7 @@ constexpr std::array<GreFixtureExpectation, 22> kGreFixtureExpectations {{
     {"22_gre_same_inner_tuple_same_key_two_packets.pcap", 2U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP", true},
 }};
 
-constexpr std::array<std::string_view, 14> kSupportedGreFixturesNow {{
+constexpr std::array<std::string_view, 16> kSupportedGreFixturesNow {{
     "01_gre_ipv4_tcp.pcap",
     "02_gre_ipv4_udp.pcap",
     "03_gre_ipv6_tcp.pcap",
@@ -61,15 +61,15 @@ constexpr std::array<std::string_view, 14> kSupportedGreFixturesNow {{
     "08_gre_sequence_ipv4_tcp.pcap",
     "09_gre_checksum_ipv4_udp.pcap",
     "10_gre_checksum_key_sequence_ipv4_udp.pcap",
+    "11_gre_teb_ethernet_ipv4_tcp.pcap",
+    "12_gre_teb_ethernet_vlan_ipv4_udp.pcap",
     "13_outer_vlan_gre_ipv4_udp.pcap",
     "14_outer_qinq_gre_ipv4_tcp.pcap",
     "21_gre_same_inner_tuple_different_keys.pcap",
     "22_gre_same_inner_tuple_same_key_two_packets.pcap",
 }};
 
-constexpr std::array<std::string_view, 8> kUnsupportedGreFixturesNow {{
-    "11_gre_teb_ethernet_ipv4_tcp.pcap",
-    "12_gre_teb_ethernet_vlan_ipv4_udp.pcap",
+constexpr std::array<std::string_view, 6> kUnsupportedGreFixturesNow {{
     "15_gre_mpls_ipv4_udp.pcap",
     "16_gre_unknown_protocol_type.pcap",
     "17_gre_version1_pptp_like_unsupported.pcap",

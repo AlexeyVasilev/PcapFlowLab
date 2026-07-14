@@ -83,6 +83,7 @@ inline constexpr std::uint16_t kUdpPortVxlan = 4789U;
 inline constexpr std::uint16_t kUdpPortGeneve = 6081U;
 inline constexpr std::uint16_t kUdpPortGtpu = 2152U;
 inline constexpr std::uint16_t kGeneveProtocolTypeEthernet = 0x6558U;
+inline constexpr std::uint16_t kGreProtocolTypeTransparentEthernetBridging = 0x6558U;
 inline constexpr std::uint16_t kGreFlagChecksum = 0x8000U;
 inline constexpr std::uint16_t kGreFlagKey = 0x2000U;
 inline constexpr std::uint16_t kGreFlagSequence = 0x1000U;
@@ -253,6 +254,10 @@ struct GrePayloadView {
     std::uint32_t sequence_number {0};
     std::size_t payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
+    bool has_inner_ethernet {false};
+    bool inner_ethernet_truncated {false};
+    std::size_t inner_ethernet_offset {0};
+    LinkLayerPayloadView inner_ethernet {};
     bool resolved_supported_protocol {false};
     std::uint16_t resolved_protocol_type {0};
     std::size_t resolved_payload_offset {0};
@@ -981,6 +986,50 @@ inline std::optional<GrePayloadView> parse_gre_payload(
         view.protocol_type == kEtherTypeIpv6) {
         view.resolved_supported_protocol = true;
         view.resolved_protocol_type = view.protocol_type;
+        return view;
+    }
+
+    if (view.protocol_type == kGreProtocolTypeTransparentEthernetBridging) {
+        view.has_inner_ethernet = true;
+        view.inner_ethernet_offset = cursor;
+
+        if (gre_payload_end <= cursor) {
+            view.inner_ethernet_truncated = true;
+            return view;
+        }
+
+        const auto inner_payload_length = gre_payload_end - cursor;
+        if (inner_payload_length < kEthernetHeaderSize) {
+            view.inner_ethernet_truncated = true;
+            return view;
+        }
+
+        const auto inner_bytes = bytes.subspan(cursor, inner_payload_length);
+        if (const auto continuation = parse_ethernet_continuation(inner_bytes, 0U); continuation.has_value()) {
+            view.inner_ethernet = continuation->link_layer;
+            if (continuation->bounded_packet_end.has_value()) {
+                view.bounded_packet_end = cursor + *continuation->bounded_packet_end;
+            }
+            if (continuation->resolved_supported_protocol) {
+                view.resolved_supported_protocol = true;
+                view.resolved_protocol_type = continuation->resolved_protocol_type;
+                view.resolved_payload_offset = cursor + continuation->resolved_payload_offset;
+            }
+            return view;
+        }
+
+        view.inner_ethernet_truncated = true;
+        view.inner_ethernet = LinkLayerPayloadView {
+            .protocol_type = read_be16(bytes, cursor + 12U),
+            .payload_offset = cursor + kEthernetHeaderSize,
+            .is_ethernet = true,
+            .is_ieee_802_3 = read_be16(bytes, cursor + 12U) < kIeee8023LengthCutoff,
+            .declared_payload_length = static_cast<std::uint16_t>(
+                read_be16(bytes, cursor + 12U) < kIeee8023LengthCutoff
+                    ? read_be16(bytes, cursor + 12U)
+                    : 0U),
+        };
+        return view;
     }
 
     return view;

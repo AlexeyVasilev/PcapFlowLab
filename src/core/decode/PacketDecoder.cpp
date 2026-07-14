@@ -500,6 +500,10 @@ std::optional<DecodedPacket> try_decode_gre_inner_packet(
     }
 
     static_cast<void>(builder.push(gre->has_key ? LayerKey::gre(gre->key) : LayerKey::gre()));
+    if (gre->has_inner_ethernet) {
+        push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, gre->inner_ethernet_offset);
+        push_llc_snap_path_if_resolved(builder, gre->inner_ethernet, gre->resolved_protocol_type);
+    }
     return decode_supported_ip_transport_payload(
         packet_bytes,
         gre->resolved_protocol_type,
