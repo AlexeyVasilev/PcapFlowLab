@@ -339,14 +339,15 @@ void run_mpls_pcap_fixture_tests() {
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 1U);
+        PFL_EXPECT(!details->has_inner_ethernet);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
-        PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "mpls", "ipv4", "tcp"});
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 1U);
         PFL_EXPECT(find_layer(summary_layers, "mpls") != nullptr);
         PFL_EXPECT(find_layer(summary_layers, "ipv4") != nullptr);
         PFL_EXPECT(find_layer(summary_layers, "tcp") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ethernet-inner") == nullptr);
     }
 
     {
@@ -364,14 +365,15 @@ void run_mpls_pcap_fixture_tests() {
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_vlan);
         PFL_EXPECT(details->vlan_tags.size() == 2U);
+        PFL_EXPECT(!details->has_inner_ethernet);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        PFL_EXPECT(find_layer(summary_layers, "frame") != nullptr);
-        PFL_EXPECT(find_layer(summary_layers, "ethernet") != nullptr);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "vlan", "vlan", "mpls", "ipv4", "udp"});
         PFL_EXPECT(count_layers(summary_layers, "vlan") == 2U);
         PFL_EXPECT(find_layer(summary_layers, "mpls") != nullptr);
         PFL_EXPECT(find_layer(summary_layers, "ipv4") != nullptr);
         PFL_EXPECT(find_layer(summary_layers, "udp") != nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "ethernet-inner") == nullptr);
     }
 
     {

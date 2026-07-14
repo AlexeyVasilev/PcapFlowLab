@@ -980,6 +980,18 @@ void expect_decode_attaches_direct_and_shim_protocol_paths() {
     }
 
     {
+        const auto state = require_imported_capture_state(fixture_path("parsing/mpls/13_vlan_mpls_ipv4_tcp.pcap"));
+        PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "EthernetII -> VLAN(vid=100) -> MPLS(label=500) -> IPv4 -> TCP");
+    }
+
+    {
+        const auto state = require_imported_capture_state(fixture_path("parsing/mpls/14_qinq_mpls_ipv4_udp.pcap"));
+        PFL_EXPECT(
+            require_packet_protocol_path_text(state, 0U) ==
+            "EthernetII -> VLAN(vid=100) -> VLAN(vid=200) -> MPLS(label=501) -> IPv4 -> UDP");
+    }
+
+    {
         const auto state = require_imported_capture_state(fixture_path("parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap"));
         PFL_EXPECT(require_packet_protocol_path_text(state, 0U) == "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP");
     }

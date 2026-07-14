@@ -1617,15 +1617,20 @@ std::optional<PacketDetails> decode_packet_details(
             };
         }
 
-        populate_inner_ethernet_details(packet_bytes, mpls.inner_ethernet_offset, mpls.inner_ethernet, details);
-        populate_inner_ethernet_continuation_details(packet_bytes, mpls.inner_ethernet_offset, details);
-        if (mpls.status == detail::MplsParseStatus::unknown_inner_ether_type) {
-            populate_unknown_inner_ethernet_payload_preview(
-                packet_bytes,
-                mpls.inner_ethernet,
-                mpls.bounded_packet_end,
-                details
-            );
+        if (mpls.has_inner_ethernet) {
+            if (details.has_vlan) {
+                details.encapsulating_vlan_tags = details.vlan_tags;
+            }
+            populate_inner_ethernet_details(packet_bytes, mpls.inner_ethernet_offset, mpls.inner_ethernet, details);
+            populate_inner_ethernet_continuation_details(packet_bytes, mpls.inner_ethernet_offset, details);
+            if (mpls.status == detail::MplsParseStatus::unknown_inner_ether_type) {
+                populate_unknown_inner_ethernet_payload_preview(
+                    packet_bytes,
+                    mpls.inner_ethernet,
+                    mpls.bounded_packet_end,
+                    details
+                );
+            }
         }
 
         if (!detail::mpls_has_resolved_inner_payload(mpls.status)) {
