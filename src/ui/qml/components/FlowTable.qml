@@ -27,7 +27,8 @@ Frame {
     readonly property int protocolColumnWidth: 86
     readonly property int protocolHintColumnWidth: 98
     readonly property int serviceColumnWidth: 180
-    readonly property int protocolPathColumnWidth: 320
+    readonly property int protocolPathColumnWidth: 240
+    readonly property int protocolPathMaxBadgeHeight: 44
     readonly property int endpointColumnWidth: Math.ceil(endpointTextMetrics.width) + 16
     readonly property int fragColumnWidth: 56
     readonly property int packetsColumnWidth: 86
@@ -411,6 +412,9 @@ Frame {
                             readonly property bool selected: index === flowListView.currentIndex
                             readonly property string endpointAText: root.formatEndpoint(addressA, portA)
                             readonly property string endpointBText: root.formatEndpoint(addressB, portB)
+                            readonly property int protocolPathContentHeight: root.showProtocolPathColumn
+                                ? Math.min(protocolPathBadgeFlow.implicitHeight, root.protocolPathMaxBadgeHeight)
+                                : 20
 
                             onFlowCheckedChanged: {
                                 if (selectionCheckBox.checked !== flowChecked) {
@@ -419,7 +423,7 @@ Frame {
                             }
 
                             width: flowListView.width
-                            height: 32
+                            height: Math.max(32, protocolPathContentHeight + 8)
                             clip: true
                             color: selected
                                 ? "#dbeafe"
@@ -577,46 +581,64 @@ Frame {
                                         Layout.preferredWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
                                         Layout.minimumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
                                         Layout.maximumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
-                                        implicitHeight: 22
+                                        implicitHeight: flowRow.protocolPathContentHeight
                                         clip: true
 
-                                        Row {
+                                        Item {
                                             anchors.verticalCenter: parent.verticalCenter
-                                            spacing: 4
+                                            width: parent.width
+                                            height: flowRow.protocolPathContentHeight
+                                            clip: true
 
-                                            Repeater {
-                                                model: protocolPathBadges
+                                            Flow {
+                                                id: protocolPathBadgeFlow
+                                                width: parent.width
+                                                spacing: 4
+                                                flow: Flow.LeftToRight
 
-                                                delegate: Rectangle {
-                                                    required property var modelData
+                                                Repeater {
+                                                    model: protocolPathBadges
 
-                                                    radius: 10
-                                                    implicitHeight: 20
-                                                    implicitWidth: badgeLabel.implicitWidth + 12
-                                                    color: modelData.backgroundColor
-                                                    border.color: modelData.borderColor
-                                                    border.width: 1
+                                                    delegate: Rectangle {
+                                                        required property var modelData
 
-                                                    Label {
-                                                        id: badgeLabel
-                                                        anchors.centerIn: parent
-                                                        text: modelData.shortLabel
-                                                        color: modelData.textColor
-                                                        font.pixelSize: 10
-                                                        font.bold: true
+                                                        radius: 10
+                                                        implicitHeight: 20
+                                                        implicitWidth: badgeLabel.implicitWidth + 12
+                                                        color: modelData.backgroundColor
+                                                        border.color: modelData.borderColor
+                                                        border.width: 1
+
+                                                        Label {
+                                                            id: badgeLabel
+                                                            anchors.centerIn: parent
+                                                            text: modelData.shortLabel
+                                                            color: modelData.textColor
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                        }
+
+                                                        MouseArea {
+                                                            id: badgeHoverArea
+                                                            anchors.fill: parent
+                                                            acceptedButtons: Qt.NoButton
+                                                            hoverEnabled: true
+                                                        }
+
+                                                        ToolTip.visible: badgeHoverArea.containsMouse && modelData.tooltip.length > 0
+                                                        ToolTip.text: modelData.tooltip
                                                     }
-
-                                                    MouseArea {
-                                                        id: badgeHoverArea
-                                                        anchors.fill: parent
-                                                        acceptedButtons: Qt.NoButton
-                                                        hoverEnabled: true
-                                                    }
-
-                                                    ToolTip.visible: badgeHoverArea.containsMouse && modelData.tooltip.length > 0
-                                                    ToolTip.text: modelData.tooltip
                                                 }
                                             }
+                                        }
+
+                                        Label {
+                                            visible: protocolPathBadges.length === 0 && protocolPathCompactText.length > 0
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width
+                                            text: protocolPathCompactText
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
                                         }
 
                                         MouseArea {
