@@ -734,6 +734,12 @@ void expect_protocol_path_presentation_mapping() {
     const auto legend = session_detail::protocol_path_legend_entries();
     PFL_EXPECT(legend.size() == 22U);
     PFL_EXPECT(legend.front().short_label == "EII");
+    PFL_REQUIRE(legend.size() >= 6U);
+    PFL_EXPECT(legend[1].short_label == "802.3");
+    PFL_EXPECT(legend[2].short_label == "SLL");
+    PFL_EXPECT(legend[3].short_label == "SLL2");
+    PFL_EXPECT(legend[4].short_label == "LLC");
+    PFL_EXPECT(legend[5].short_label == "Vl");
     PFL_EXPECT(legend.back().short_label == "?");
     PFL_EXPECT(legend.back().full_name == "Unknown");
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "LLC"; }));
@@ -822,6 +828,12 @@ void expect_frontend_protocol_path_legend_exposure() {
 
     PFL_REQUIRE(legend.size() == 22U);
     PFL_EXPECT(legend.front().short_label == "EII");
+    PFL_REQUIRE(legend.size() >= 6U);
+    PFL_EXPECT(legend[1].short_label == "802.3");
+    PFL_EXPECT(legend[2].short_label == "SLL");
+    PFL_EXPECT(legend[3].short_label == "SLL2");
+    PFL_EXPECT(legend[4].short_label == "LLC");
+    PFL_EXPECT(legend[5].short_label == "Vl");
     PFL_EXPECT(legend.back().short_label == "?");
     PFL_EXPECT(legend.back().full_name == "Unknown");
 
