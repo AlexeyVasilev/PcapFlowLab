@@ -17,6 +17,7 @@
 #include "ui/app/FlowListModel.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/ProtocolPathStatsModel.h"
 #include "ui/app/StreamListModel.h"
 #include "ui/app/TopSummaryListModel.h"
 
@@ -44,6 +45,7 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong selectedFlowCount READ selectedFlowCount NOTIFY selectedFlowCountChanged)
     Q_PROPERTY(bool canExportSelectedFlows READ canExportSelectedFlows NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool canExportUnselectedFlows READ canExportUnselectedFlows NOTIFY actionAvailabilityChanged)
+    Q_PROPERTY(bool canExportAllFlowsInfoCsv READ canExportAllFlowsInfoCsv NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool isOpening READ isOpening NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressPackets READ openProgressPackets NOTIFY openProgressChanged)
     Q_PROPERTY(qulonglong openProgressBytes READ openProgressBytes NOTIFY openProgressChanged)
@@ -76,12 +78,17 @@ class MainController final : public QObject {
     Q_PROPERTY(bool analysisSequenceExportInProgress READ analysisSequenceExportInProgress NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(QString analysisSequenceExportStatusText READ analysisSequenceExportStatusText NOTIFY analysisSequenceExportStateChanged)
     Q_PROPERTY(bool analysisSequenceExportStatusIsError READ analysisSequenceExportStatusIsError NOTIFY analysisSequenceExportStateChanged)
+    Q_PROPERTY(bool flowInfoCsvExportInProgress READ flowInfoCsvExportInProgress NOTIFY actionAvailabilityChanged)
     Q_PROPERTY(bool smartExportInProgress READ smartExportInProgress NOTIFY smartExportStateChanged)
     Q_PROPERTY(bool smartExportCancelRequested READ smartExportCancelRequested NOTIFY smartExportStateChanged)
     Q_PROPERTY(qulonglong smartExportProgressPackets READ smartExportProgressPackets NOTIFY smartExportStateChanged)
     Q_PROPERTY(qulonglong smartExportProgressTotalPackets READ smartExportProgressTotalPackets NOTIFY smartExportStateChanged)
     Q_PROPERTY(double smartExportProgressPercent READ smartExportProgressPercent NOTIFY smartExportStateChanged)
     Q_PROPERTY(QString smartExportProgressText READ smartExportProgressText NOTIFY smartExportStateChanged)
+    Q_PROPERTY(bool indexSaveInProgress READ indexSaveInProgress NOTIFY indexSaveStateChanged)
+    Q_PROPERTY(bool indexSaveCancelRequested READ indexSaveCancelRequested NOTIFY indexSaveStateChanged)
+    Q_PROPERTY(double indexSaveProgressPercent READ indexSaveProgressPercent NOTIFY indexSaveStateChanged)
+    Q_PROPERTY(QString indexSaveProgressText READ indexSaveProgressText NOTIFY indexSaveStateChanged)
     Q_PROPERTY(QString analysisDurationText READ analysisDurationText NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineFirstPacketTime READ analysisTimelineFirstPacketTime NOTIFY analysisStateChanged)
     Q_PROPERTY(QString analysisTimelineLastPacketTime READ analysisTimelineLastPacketTime NOTIFY analysisStateChanged)
@@ -158,6 +165,8 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong originalBytes READ originalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong totalBytes READ totalBytes NOTIFY stateChanged)
     Q_PROPERTY(QVariantList protocolHintDistribution READ protocolHintDistribution NOTIFY stateChanged)
+    Q_PROPERTY(QVariantList protocolPathStatistics READ protocolPathStatistics NOTIFY stateChanged)
+    Q_PROPERTY(QObject* protocolPathStatsModel READ protocolPathStatsModel CONSTANT)
     Q_PROPERTY(qulonglong tcpFlowCount READ tcpFlowCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpPacketCount READ tcpPacketCount NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tcpCapturedBytes READ tcpCapturedBytes NOTIFY stateChanged)
@@ -207,8 +216,12 @@ class MainController final : public QObject {
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
     Q_PROPERTY(bool showWiresharkFilterForSelectedFlow READ showWiresharkFilterForSelectedFlow WRITE setShowWiresharkFilterForSelectedFlow NOTIFY showWiresharkFilterForSelectedFlowChanged)
+    Q_PROPERTY(bool showProtocolPathColumn READ showProtocolPathColumn WRITE setShowProtocolPathColumn NOTIFY showProtocolPathColumnChanged)
     Q_PROPERTY(QString selectedFlowWiresharkFilter READ selectedFlowWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
+    Q_PROPERTY(QVariantList protocolPathLegend READ protocolPathLegend CONSTANT)
     Q_PROPERTY(bool selectedFlowHasWiresharkFilter READ selectedFlowHasWiresharkFilter NOTIFY selectedFlowWiresharkFilterChanged)
+    Q_PROPERTY(bool hasProtocolPathFlowFilter READ hasProtocolPathFlowFilter NOTIFY protocolPathFlowFilterChanged)
+    Q_PROPERTY(QString protocolPathFlowFilterText READ protocolPathFlowFilterText NOTIFY protocolPathFlowFilterChanged)
     Q_PROPERTY(int currentTabIndex READ currentTabIndex WRITE setCurrentTabIndex NOTIFY currentTabIndexChanged)
     Q_PROPERTY(QObject* topEndpointsModel READ topEndpointsModel CONSTANT)
     Q_PROPERTY(QObject* topPortsModel READ topPortsModel CONSTANT)
@@ -247,6 +260,7 @@ public:
     [[nodiscard]] qulonglong selectedFlowCount() const noexcept;
     [[nodiscard]] bool canExportSelectedFlows() const noexcept;
     [[nodiscard]] bool canExportUnselectedFlows() const noexcept;
+    [[nodiscard]] bool canExportAllFlowsInfoCsv() const noexcept;
     [[nodiscard]] bool isOpening() const noexcept;
     [[nodiscard]] qulonglong openProgressPackets() const noexcept;
     [[nodiscard]] qulonglong openProgressBytes() const noexcept;
@@ -279,12 +293,17 @@ public:
     [[nodiscard]] bool analysisSequenceExportInProgress() const noexcept;
     [[nodiscard]] QString analysisSequenceExportStatusText() const;
     [[nodiscard]] bool analysisSequenceExportStatusIsError() const noexcept;
+    [[nodiscard]] bool flowInfoCsvExportInProgress() const noexcept;
     [[nodiscard]] bool smartExportInProgress() const noexcept;
     [[nodiscard]] bool smartExportCancelRequested() const noexcept;
     [[nodiscard]] qulonglong smartExportProgressPackets() const noexcept;
     [[nodiscard]] qulonglong smartExportProgressTotalPackets() const noexcept;
     [[nodiscard]] double smartExportProgressPercent() const noexcept;
     [[nodiscard]] QString smartExportProgressText() const;
+    [[nodiscard]] bool indexSaveInProgress() const noexcept;
+    [[nodiscard]] bool indexSaveCancelRequested() const noexcept;
+    [[nodiscard]] double indexSaveProgressPercent() const noexcept;
+    [[nodiscard]] QString indexSaveProgressText() const;
     [[nodiscard]] QString analysisDurationText() const;
     [[nodiscard]] QString analysisTimelineFirstPacketTime() const;
     [[nodiscard]] QString analysisTimelineLastPacketTime() const;
@@ -361,6 +380,8 @@ public:
     [[nodiscard]] qulonglong originalBytes() const noexcept;
     [[nodiscard]] qulonglong totalBytes() const noexcept;
     [[nodiscard]] QVariantList protocolHintDistribution() const;
+    [[nodiscard]] QVariantList protocolPathStatistics() const;
+    [[nodiscard]] QObject* protocolPathStatsModel() noexcept;
     [[nodiscard]] qulonglong tcpFlowCount() const noexcept;
     [[nodiscard]] qulonglong tcpPacketCount() const noexcept;
     [[nodiscard]] qulonglong tcpCapturedBytes() const noexcept;
@@ -410,8 +431,12 @@ public:
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
     [[nodiscard]] bool showWiresharkFilterForSelectedFlow() const noexcept;
+    [[nodiscard]] bool showProtocolPathColumn() const noexcept;
     [[nodiscard]] QString selectedFlowWiresharkFilter() const;
+    [[nodiscard]] QVariantList protocolPathLegend() const;
     [[nodiscard]] bool selectedFlowHasWiresharkFilter() const;
+    [[nodiscard]] bool hasProtocolPathFlowFilter() const noexcept;
+    [[nodiscard]] QString protocolPathFlowFilterText() const;
     [[nodiscard]] int currentTabIndex() const noexcept;
     [[nodiscard]] QObject* topEndpointsModel() noexcept;
     [[nodiscard]] QObject* topPortsModel() noexcept;
@@ -432,6 +457,7 @@ public:
     Q_INVOKABLE bool openIndexFile(const QString& path);
     Q_INVOKABLE bool attachSourceCapture(const QString& path);
     Q_INVOKABLE void cancelOpen();
+    Q_INVOKABLE void cancelSaveAnalysisIndex();
     Q_INVOKABLE void loadMorePackets();
     Q_INVOKABLE void loadMoreStreamItems();
     Q_INVOKABLE bool saveAnalysisIndex(const QString& path);
@@ -440,6 +466,7 @@ public:
     Q_INVOKABLE void clearSelectedFlows();
     Q_INVOKABLE bool exportSelectedFlows(const QString& path);
     Q_INVOKABLE bool exportUnselectedFlows(const QString& path);
+    Q_INVOKABLE bool exportAllFlowsInfoCsv(const QString& path);
     Q_INVOKABLE void browseCaptureFile();
     Q_INVOKABLE void browseIndexFile();
     Q_INVOKABLE void browseAttachSourceCapture();
@@ -448,6 +475,7 @@ public:
     Q_INVOKABLE void browseExportSelectedFlowSequenceCsv();
     Q_INVOKABLE void browseExportSelectedFlows();
     Q_INVOKABLE void browseExportUnselectedFlows();
+    Q_INVOKABLE void browseExportAllFlowsInfoCsv();
     Q_INVOKABLE bool browseSmartExportFlows(
         int outputMode,
         int flowScopeMode,
@@ -463,13 +491,18 @@ public:
     Q_INVOKABLE void cancelSmartExport();
     Q_INVOKABLE QString chooseSmartExportDestinationFolder() const;
     Q_INVOKABLE void copySelectedFlowWiresharkFilter();
+    Q_INVOKABLE void copyTextToClipboard(const QString& text);
     Q_INVOKABLE void sendSelectedFlowToAnalysis();
     Q_INVOKABLE void sortFlows(int column);
     Q_INVOKABLE void drillDownToFlows(const QString& filterText);
     Q_INVOKABLE void drillDownToEndpoint(const QString& endpointText);
     Q_INVOKABLE void drillDownToPort(quint32 port);
+    Q_INVOKABLE void showSelectedProtocolPathFlows();
+    Q_INVOKABLE void ensureProtocolPathStatisticsLoaded();
+    Q_INVOKABLE void clearProtocolPathFlowFilter();
     Q_INVOKABLE void setFlowDetailsTabIndex(int index);
     Q_INVOKABLE void selectUnrecognizedPackets();
+    Q_INVOKABLE QString captureStorageSummaryText() const;
 
     void setCaptureOpenMode(int mode);
     void setStatisticsMode(int mode);
@@ -477,6 +510,7 @@ public:
     void setUsePossibleTlsQuic(bool enabled);
     void setValidateSelectedPacketChecksums(bool enabled);
     void setShowWiresharkFilterForSelectedFlow(bool enabled);
+    void setShowProtocolPathColumn(bool enabled);
     void setCurrentTabIndex(int index);
     void setSelectedFlowIndex(int index);
     void setSelectedPacketIndex(qulonglong packetIndex);
@@ -495,7 +529,9 @@ signals:
     void usePossibleTlsQuicChanged();
     void validateSelectedPacketChecksumsChanged();
     void showWiresharkFilterForSelectedFlowChanged();
+    void showProtocolPathColumnChanged();
     void selectedFlowWiresharkFilterChanged();
+    void protocolPathFlowFilterChanged();
     void currentTabIndexChanged();
     void selectedFlowIndexChanged();
     void unrecognizedPacketsSelectionChanged();
@@ -510,6 +546,7 @@ signals:
     void analysisStateChanged();
     void analysisSequenceExportStateChanged();
     void smartExportStateChanged();
+    void indexSaveStateChanged();
     void sessionApplicationStateChanged();
 
 private:
@@ -539,10 +576,12 @@ private:
     void clearStreamSelection();
     void clearFlowSelection();
     void synchronizeFlowSelection();
+    bool clearProtocolPathFlowFilterState();
     void resetLoadedState();
     void applyLoadedState(const QString& path);
     void refreshTopSummaryModels();
     bool exportFlows(const QString& path, const std::vector<int>& flowIndices, const QString& emptySelectionMessage, const QString& failureMessage, const QString& successMessage);
+    void completeFlowInfoCsvExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     bool exportSmartFlows(
         const QString& path,
         int outputMode,
@@ -571,9 +610,13 @@ private:
         bool cancelled,
         const QString& errorText
     );
+    void updateIndexSaveProgress(qulonglong jobId, const IndexSaveProgress& progress);
+    void completeIndexSave(qulonglong jobId, const QString& outputPath, bool saved, const QString& errorText);
     void completeAnalysisSequenceExport(qulonglong jobId, const QString& outputPath, bool exported, const QString& errorText);
     void completeOpenJob(qulonglong jobId, const QString& path, bool asIndex, bool opened, bool cancelled, const QString& errorText, CaptureSession session);
+    void cleanupFlowInfoExportThread();
     void cleanupSmartExportThread();
+    void cleanupIndexSaveThread();
     void cleanupAnalysisSequenceExportThread();
     void cleanupOpenThread();
     void releaseOpenContext();
@@ -584,18 +627,22 @@ private:
     void setOpenErrorText(const QString& text);
     void setAnalysisSequenceExportState(bool inProgress, const QString& statusText, bool statusIsError);
     void setSmartExportState(bool inProgress, qulonglong packetsProcessed, qulonglong totalPackets, const QString& progressText);
+    void setIndexSaveState(bool inProgress, bool cancelRequested, double progressPercent, const QString& progressText);
     void setStatusText(const QString& text, bool isError = false);
     QString chooseFile(bool forIndex) const;
     QString chooseSaveFile(bool forIndex) const;
+    QString chooseFlowInfoCsvSaveFile() const;
     QString chooseSequenceCsvSaveFile() const;
     QString chooseDirectory(const QString& title) const;
     void setLastDirectoryFromPath(const std::filesystem::path& path);
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
+    CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};
     FlowListModel flow_model_ {};
+    ProtocolPathStatsModel protocol_path_stats_model_ {};
     TopSummaryListModel top_endpoints_model_ {};
     TopSummaryListModel top_ports_model_ {};
     PacketListModel packet_model_ {};
@@ -613,13 +660,20 @@ private:
     AnalysisSettings pending_analysis_settings_ {};
     bool validate_selected_packet_checksums_ {false};
     bool show_wireshark_filter_for_selected_flow_ {true};
+    bool show_protocol_path_column_ {true};
     int statistics_mode_ {0};
+    int loaded_protocol_path_statistics_mode_ {-1};
     int capture_open_mode_ {0};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
     qulonglong selected_stream_item_index_ {0};
     bool status_is_error_ {false};
+    bool has_active_protocol_path_filter_ {false};
+    ProtocolPathStatisticsMode active_protocol_path_filter_mode_ {ProtocolPathStatisticsMode::kind_overview};
+    std::uint64_t active_protocol_path_filter_node_id_ {kInvalidProtocolPathStatisticsNodeId};
+    QString active_protocol_path_filter_label_ {};
+    std::vector<int> active_protocol_path_filter_flow_indices_ {};
     bool is_opening_ {false};
     bool is_applying_session_ {false};
     bool packets_loading_ {false};
@@ -638,18 +692,25 @@ private:
     std::size_t prepared_tcp_contribution_packet_window_count_ {0U};
     bool analysis_loading_ {false};
     bool analysis_sequence_export_in_progress_ {false};
+    bool flow_info_csv_export_in_progress_ {false};
     bool smart_export_in_progress_ {false};
+    bool index_save_in_progress_ {false};
     bool smart_export_cancel_requested_ {false};
+    bool index_save_cancel_requested_ {false};
     std::optional<FlowAnalysisResult> current_flow_analysis_ {};
     QString analysis_sequence_export_status_text_ {};
     bool analysis_sequence_export_status_is_error_ {false};
     qulonglong smart_export_progress_packets_ {0};
     qulonglong smart_export_progress_total_packets_ {0};
     QString smart_export_progress_text_ {};
+    double index_save_progress_percent_ {0.0};
+    QString index_save_progress_text_ {};
     bool source_capture_unavailable_notice_shown_ {false};
     qulonglong active_analysis_request_id_ {0};
     qulonglong active_analysis_sequence_export_job_id_ {0};
+    qulonglong active_flow_info_csv_export_job_id_ {0};
     qulonglong active_smart_export_job_id_ {0};
+    qulonglong active_index_save_job_id_ {0};
     qulonglong open_progress_packets_ {0};
     qulonglong open_progress_bytes_ {0};
     qulonglong open_progress_total_bytes_ {0};
@@ -657,9 +718,12 @@ private:
     qulonglong active_open_job_id_ {0};
     bool active_open_as_index_ {false};
     QThread* analysis_sequence_export_thread_ {nullptr};
+    QThread* flow_info_csv_export_thread_ {nullptr};
     QThread* smart_export_thread_ {nullptr};
+    QThread* index_save_thread_ {nullptr};
     QThread* open_thread_ {nullptr};
     std::shared_ptr<std::atomic_bool> smart_export_cancel_token_ {};
+    std::shared_ptr<std::atomic_bool> index_save_cancel_token_ {};
     std::shared_ptr<OpenContext> active_open_context_ {};
     DetailsSelectionContext details_selection_context_ {DetailsSelectionContext::none};
 };

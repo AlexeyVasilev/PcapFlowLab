@@ -804,13 +804,9 @@ void run_flow_hints_tests() {
         PFL_EXPECT(rows[0].protocol_hint == "http");
         PFL_EXPECT(rows[0].service_hint == "www.example.com");
 
-        const auto* connection = session.state().ipv4_connections.find(make_connection_key(FlowKeyV4 {
-            .src_addr = ipv4(10, 20, 0, 1),
-            .dst_addr = ipv4(10, 20, 0, 2),
-            .src_port = 52000,
-            .dst_port = 80,
-            .protocol = ProtocolId::tcp,
-        }));
+        const auto connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto* connection = connections.front();
         PFL_EXPECT(connection != nullptr);
         PFL_EXPECT(connection->hint_detection_settled());
         PFL_EXPECT(connection->hint_search_state.unresolved_payload_attempt_count == 0U);
@@ -833,13 +829,9 @@ void run_flow_hints_tests() {
         PFL_EXPECT(rows[0].protocol_hint.empty());
         PFL_EXPECT(rows[0].service_hint.empty());
 
-        const auto* connection = session.state().ipv4_connections.find(make_connection_key(FlowKeyV4 {
-            .src_addr = ipv4(10, 21, 0, 1),
-            .dst_addr = ipv4(10, 21, 0, 2),
-            .src_port = 52001,
-            .dst_port = 8080,
-            .protocol = ProtocolId::tcp,
-        }));
+        const auto connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto* connection = connections.front();
         PFL_EXPECT(connection != nullptr);
         PFL_EXPECT(connection->hint_search_state.unresolved_payload_attempt_count ==
                    kMaxUnresolvedHintPayloadAttemptsPerConnection);

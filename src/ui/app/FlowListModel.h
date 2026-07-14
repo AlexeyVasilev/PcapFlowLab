@@ -4,8 +4,11 @@
 #include <QString>
 #include <QVariant>
 
+#include <functional>
+#include <unordered_map>
 #include <vector>
 
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/FlowRows.h"
 
 namespace pfl {
@@ -21,6 +24,9 @@ public:
         ProtocolRole,
         ProtocolHintRole,
         ServiceHintRole,
+        ProtocolPathTextRole,
+        ProtocolPathCompactTextRole,
+        ProtocolPathBadgesRole,
         HasFragmentedPacketsRole,
         FragmentedPacketCountRole,
         AddressARole,
@@ -61,12 +67,16 @@ public:
     void refresh(const std::vector<FlowRow>& rows);
     void clear();
     void resetViewState();
+    void setProtocolPathPresentationResolver(std::function<session_detail::ProtocolPathPresentation(ProtocolPathId)> resolver);
     void setFilterText(const QString& text);
+    void setAllowedFlowIndices(std::vector<int> flowIndices);
+    void clearAllowedFlowIndices();
     void setSortKey(SortKey key);
     void setSortAscending(bool ascending) noexcept;
     void setServiceHintForFlowIndex(int flowIndex, const QString& serviceHint);
 
     [[nodiscard]] const QString& filterText() const noexcept;
+    [[nodiscard]] bool hasAllowedFlowIndexFilter() const noexcept;
     [[nodiscard]] SortKey sortKey() const noexcept;
     [[nodiscard]] bool sortAscending() const noexcept;
     [[nodiscard]] bool containsFlowIndex(int flowIndex) const noexcept;
@@ -83,6 +93,7 @@ public:
         QString protocol {};
         QString protocol_hint {};
         QString service_hint {};
+        ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
         bool has_fragmented_packets {false};
         qulonglong fragmented_packets {0};
         QString address_a {};
@@ -99,11 +110,22 @@ signals:
     void checkedFlowsChanged();
 
 private:
+    struct CachedProtocolPathPresentation {
+        QString full_text {};
+        QString compact_text {};
+        QVariantList badges {};
+    };
+
+    [[nodiscard]] const CachedProtocolPathPresentation& protocolPathPresentation(ProtocolPathId protocolPathId) const;
     void rebuildVisibleItems();
 
     std::vector<Item> all_items_ {};
-    std::vector<Item> visible_items_ {};
+    std::vector<std::size_t> visible_item_indices_ {};
+    std::function<session_detail::ProtocolPathPresentation(ProtocolPathId)> protocol_path_presentation_resolver_ {};
+    mutable std::unordered_map<ProtocolPathId, CachedProtocolPathPresentation> protocol_path_presentation_cache_ {};
     QString filter_text_ {};
+    std::vector<int> allowed_flow_indices_ {};
+    bool has_allowed_flow_index_filter_ {false};
     SortKey sort_key_ {SortKey::index};
     bool sort_ascending_ {true};
 };

@@ -8,12 +8,14 @@
 #include <span>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFlowHelpers.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/PacketDetails.h"
 #include "core/index/CaptureIndex.h"
+#include "core/index/CaptureIndexWriter.h"
 #include "core/open_failure_info.h"
 #include "core/reassembly/ReassemblyTypes.h"
 #include "core/services/CaptureImporter.h"
@@ -77,6 +79,9 @@ struct SmartPerFlowExportOptions {
 using SmartSingleFileExportProgress = MarkedPacketExportProgress;
 using SmartSingleFileExportProgressCallback = MarkedPacketExportProgressCallback;
 using SmartSingleFileExportOptions = MarkedPacketExportOptions;
+using IndexSaveProgress = CaptureIndexWriteProgress;
+using IndexSaveProgressCallback = CaptureIndexWriteProgressCallback;
+using IndexSaveOptions = CaptureIndexWriteOptions;
 
 struct SelectedFlowPacketCacheInfo {
     std::size_t flow_index {0};
@@ -87,8 +92,37 @@ struct SelectedFlowPacketCacheInfo {
     bool window_fully_cached {false};
 };
 
+struct CaptureStorageSummary {
+    std::uint64_t total_packets_seen {0};
+    std::uint64_t recognized_packets {0};
+    std::uint64_t unrecognized_packets {0};
+    std::uint64_t ipv4_connection_count {0};
+    std::uint64_t ipv6_connection_count {0};
+    std::uint64_t flow_count {0};
+    std::uint64_t connection_packet_refs {0};
+    std::uint64_t unrecognized_packet_refs {0};
+    std::uint64_t unique_protocol_paths {0};
+    std::uint64_t protocol_path_layers_total {0};
+    std::uint64_t protocol_path_max_depth {0};
+    std::uint64_t sizeof_packet_ref {0};
+    std::uint64_t sizeof_unrecognized_packet_record {0};
+    std::uint64_t sizeof_layer_key {0};
+    std::uint64_t approx_connection_packet_ref_bytes {0};
+    std::uint64_t approx_unrecognized_record_bytes {0};
+    std::uint64_t approx_unrecognized_reason_text_bytes {0};
+    std::uint64_t approx_protocol_path_layer_payload_bytes {0};
+};
+
 class CaptureSession {
 public:
+    using IndexSaveProgress = pfl::IndexSaveProgress;
+    using IndexSaveProgressCallback = pfl::IndexSaveProgressCallback;
+    using IndexSaveOptions = pfl::IndexSaveOptions;
+
+    CaptureSession() = default;
+    CaptureSession(CaptureSession&& other) noexcept;
+    CaptureSession& operator=(CaptureSession&& other) noexcept;
+
     bool open_capture(const std::filesystem::path& path);
     bool open_capture(const std::filesystem::path& path, OpenContext* ctx);
     bool open_capture(const std::filesystem::path& path, const CaptureImportOptions& options);
@@ -96,6 +130,11 @@ public:
     bool open_input(const std::filesystem::path& path);
     bool open_input(const std::filesystem::path& path, OpenContext* ctx);
     bool save_index(const std::filesystem::path& index_path) const;
+    bool save_index(
+        const std::filesystem::path& index_path,
+        const IndexSaveOptions& options,
+        std::string* out_error_text
+    ) const;
     bool load_index(const std::filesystem::path& index_path);
     bool load_index(const std::filesystem::path& index_path, OpenContext* ctx);
     [[nodiscard]] bool has_capture() const noexcept;
@@ -112,6 +151,14 @@ public:
     [[nodiscard]] const std::filesystem::path& expected_source_capture_path() const noexcept;
     [[nodiscard]] const CaptureSummary& summary() const noexcept;
     [[nodiscard]] CaptureProtocolSummary protocol_summary() const noexcept;
+    [[nodiscard]] CaptureProtocolPathSummary protocol_path_summary(
+        ProtocolPathStatisticsMode mode = ProtocolPathStatisticsMode::kind_overview
+    ) const;
+    [[nodiscard]] std::vector<FlowIndex> protocol_path_summary_flow_indices(
+        ProtocolPathStatisticsMode mode,
+        std::uint64_t node_id
+    ) const;
+    void clear_runtime_caches_after_transfer() noexcept;
     void set_analysis_settings(const AnalysisSettings& settings) noexcept;
     [[nodiscard]] CaptureTopSummary top_summary(std::size_t limit = 5) const;
     [[nodiscard]] QuicRecognitionStats quic_recognition_stats() const noexcept;
@@ -216,7 +263,10 @@ public:
         const SmartPerFlowExportOptions& options,
         std::string* out_error_text
     ) const;
+    bool export_all_flows_info_csv(const std::filesystem::path& output_path) const;
+    bool export_all_flows_info_csv(const std::filesystem::path& output_path, std::string* out_error_text) const;
     [[nodiscard]] std::optional<PacketRef> find_packet(std::uint64_t packet_index) const;
+    [[nodiscard]] CaptureStorageSummary storage_summary() const;
     [[nodiscard]] CaptureState& state() noexcept;
     [[nodiscard]] const CaptureState& state() const noexcept;
 
@@ -313,6 +363,7 @@ private:
         std::uint64_t flow_packet_index
     ) const noexcept;
 
+    void swap(CaptureSession& other) noexcept;
     void reset_runtime_state() noexcept;
 
     std::filesystem::path capture_path_ {};
@@ -331,6 +382,7 @@ private:
     mutable std::optional<SelectedFlowPacketCache> selected_flow_packet_cache_ {};
     mutable std::optional<SelectedFlowTcpPrefixContext> selected_flow_tcp_prefix_context_ {};
     mutable std::optional<std::vector<session_detail::ListedConnectionRef>> listed_connections_cache_ {};
+    mutable std::array<std::optional<CaptureProtocolPathSummary>, 3> protocol_path_summary_cache_ {};
     std::optional<SelectedFlowTcpPayloadSuppression> selected_flow_tcp_payload_suppression_ {};
 };
 

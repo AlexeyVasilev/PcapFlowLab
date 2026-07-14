@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <iosfwd>
 #include <span>
 #include <string>
@@ -15,16 +16,19 @@ namespace pfl::detail {
 enum class CaptureIndexSectionId : std::uint32_t {
     source_info = 1,
     summary = 2,
-    ipv4_connections = 3,
-    ipv6_connections = 4,
+    protocol_paths = 3,
+    ipv4_connections = 4,
+    ipv6_connections = 5,
+    unrecognized_packets = 6,
 };
 
 enum class ImportCheckpointSectionId : std::uint32_t {
     source_info = 1,
     progress = 2,
     summary = 3,
-    ipv4_connections = 4,
-    ipv6_connections = 5,
+    protocol_paths = 4,
+    ipv4_connections = 5,
+    ipv6_connections = 6,
 };
 
 bool write_bytes(std::ostream& stream, std::span<const std::uint8_t> bytes);
@@ -53,6 +57,16 @@ bool read_capture_source_info(std::istream& stream, CaptureSourceInfo& source_in
 bool write_capture_summary(std::ostream& stream, const CaptureSummary& summary);
 bool read_capture_summary(std::istream& stream, CaptureSummary& summary);
 
+using SerializationProgressCallback = std::function<bool(std::uint64_t processed, std::uint64_t total)>;
+
+bool write_protocol_path_registry(std::ostream& stream, const ProtocolPathRegistry& registry);
+bool write_protocol_path_registry(
+    std::ostream& stream,
+    const ProtocolPathRegistry& registry,
+    const SerializationProgressCallback& progress_callback
+);
+bool read_protocol_path_registry(std::istream& stream, ProtocolPathRegistry& registry);
+
 bool write_packet_ref(std::ostream& stream, const PacketRef& packet);
 bool read_packet_ref(std::istream& stream, PacketRef& packet);
 
@@ -68,8 +82,31 @@ bool read_connection(std::istream& stream, ConnectionV6& connection);
 
 bool write_connection_table(std::ostream& stream, const ConnectionTableV4& table);
 bool write_connection_table(std::ostream& stream, const ConnectionTableV6& table);
+bool write_connection_table(
+    std::ostream& stream,
+    const ConnectionTableV4& table,
+    const SerializationProgressCallback& progress_callback
+);
+bool write_connection_table(
+    std::ostream& stream,
+    const ConnectionTableV6& table,
+    const SerializationProgressCallback& progress_callback
+);
+bool read_connection_table_chunk(std::istream& stream, ConnectionTableV4& table);
+bool read_connection_table_chunk(std::istream& stream, ConnectionTableV6& table);
 bool read_connection_table(std::istream& stream, ConnectionTableV4& table);
 bool read_connection_table(std::istream& stream, ConnectionTableV6& table);
+
+bool write_unrecognized_packet_records(
+    std::ostream& stream,
+    std::span<const UnrecognizedPacketRecord> records
+);
+bool write_unrecognized_packet_records(
+    std::ostream& stream,
+    std::span<const UnrecognizedPacketRecord> records,
+    const SerializationProgressCallback& progress_callback
+);
+bool read_unrecognized_packet_records(std::istream& stream, std::vector<UnrecognizedPacketRecord>& records);
 
 bool write_capture_state(std::ostream& stream, const CaptureState& state);
 bool read_capture_state(std::istream& stream, CaptureState& state);

@@ -8,6 +8,7 @@ std::size_t FlowKeyV4Hash::operator()(const FlowKeyV4& key) const noexcept {
     seed = detail::hash_combine(seed, std::hash<std::uint16_t> {}(key.src_port));
     seed = detail::hash_combine(seed, std::hash<std::uint16_t> {}(key.dst_port));
     seed = detail::hash_combine(seed, std::hash<std::uint8_t> {}(static_cast<std::uint8_t>(key.protocol)));
+    seed = detail::hash_combine(seed, std::hash<ProtocolPathId> {}(key.protocol_path_id));
     return seed;
 }
 
@@ -17,6 +18,7 @@ std::size_t FlowKeyV6Hash::operator()(const FlowKeyV6& key) const noexcept {
     seed = detail::hash_combine(seed, std::hash<std::uint16_t> {}(key.src_port));
     seed = detail::hash_combine(seed, std::hash<std::uint16_t> {}(key.dst_port));
     seed = detail::hash_combine(seed, std::hash<std::uint8_t> {}(static_cast<std::uint8_t>(key.protocol)));
+    seed = detail::hash_combine(seed, std::hash<ProtocolPathId> {}(key.protocol_path_id));
     return seed;
 }
 

@@ -1459,9 +1459,12 @@ void run_stream_query_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/ipv4_tls_constricted_1.pcap"), fast_options));
-
-        const auto rows = session.list_flow_stream_items(0);
-        PFL_EXPECT(rows.size() == 10U);
+        CaptureSession moved_session {std::move(session)};
+        moved_session.clear_runtime_caches_after_transfer();
+        const auto moved_packet_rows = moved_session.list_flow_packets(0U, 0U, 32U);
+        const auto rows = moved_session.list_flow_stream_items(0);
+        PFL_REQUIRE(moved_packet_rows.size() == 14U);
+        PFL_REQUIRE(rows.size() == 10U);
         PFL_EXPECT(rows[0].label == "TLS ClientHello");
         PFL_EXPECT(rows[0].byte_count == 666U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {3U});
@@ -1651,9 +1654,12 @@ void run_stream_query_tests() {
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_constricted_1.pcap"), fast_options));
-
-        const auto rows = session.list_flow_stream_items(0);
-        PFL_EXPECT(rows.size() == 21U);
+        CaptureSession moved_session {std::move(session)};
+        moved_session.clear_runtime_caches_after_transfer();
+        const auto moved_packet_rows = moved_session.list_flow_packets(0U, 0U, 32U);
+        const auto rows = moved_session.list_flow_stream_items(0);
+        PFL_REQUIRE(moved_packet_rows.size() == 18U);
+        PFL_REQUIRE(rows.size() == 21U);
 
         PFL_EXPECT(rows.size() > 20U);
         PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");

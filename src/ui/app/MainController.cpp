@@ -1,6 +1,7 @@
 ﻿#include "ui/app/MainController.h"
 
 #include "app/session/SelectedFlowPacketSemantics.h"
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "core/decode/PacketDecodeSupport.h"
 
@@ -48,9 +49,9 @@ constexpr int kSmartExportOutputModeSeparateFilePerFlow = 1;
 constexpr int kSmartExportBaseModeAllPackets = 0;
 constexpr int kSmartExportBaseModeFirstNPackets = 1;
 constexpr int kSmartExportBaseModeFirstMOriginalBytes = 2;
-constexpr int kStatisticsModeFlows = 0;
-constexpr int kStatisticsModePackets = 1;
-constexpr int kStatisticsModeBytes = 2;
+constexpr int kProtocolPathStatisticsModeKindOverview = 0;
+constexpr int kProtocolPathStatisticsModeIdentityTree = 1;
+constexpr int kProtocolPathStatisticsModeTerminalPaths = 2;
 constexpr std::size_t kInitialPacketRows = 30U;
 constexpr std::size_t kPacketRowBatchSize = 30U;
 constexpr std::size_t kInitialStreamItems = 15U;
@@ -170,6 +171,33 @@ QString formatProtocol(const std::uint8_t protocol) {
     default:
         return QStringLiteral("%1").arg(protocol);
     }
+}
+
+QString formatCaptureStorageSummaryText(const CaptureStorageSummary& summary) {
+    QStringList lines {};
+    lines << QStringLiteral("Capture storage summary");
+    lines << QStringLiteral("Total packets seen: %1").arg(summary.total_packets_seen);
+    lines << QStringLiteral("Recognized packets: %1").arg(summary.recognized_packets);
+    lines << QStringLiteral("Unrecognized packets: %1").arg(summary.unrecognized_packets);
+    lines << QStringLiteral("IPv4 connections: %1").arg(summary.ipv4_connection_count);
+    lines << QStringLiteral("IPv6 connections: %1").arg(summary.ipv6_connection_count);
+    lines << QStringLiteral("Flows: %1").arg(summary.flow_count);
+    lines << QStringLiteral("Connection packet refs: %1").arg(summary.connection_packet_refs);
+    lines << QStringLiteral("Unrecognized packet refs: %1").arg(summary.unrecognized_packet_refs);
+    lines << QStringLiteral("Unique protocol paths: %1").arg(summary.unique_protocol_paths);
+    lines << QStringLiteral("Protocol path layers total/max: %1 / %2")
+        .arg(summary.protocol_path_layers_total)
+        .arg(summary.protocol_path_max_depth);
+    lines << QStringLiteral("sizeof(PacketRef): %1").arg(summary.sizeof_packet_ref);
+    lines << QStringLiteral("sizeof(UnrecognizedPacketRecord): %1").arg(summary.sizeof_unrecognized_packet_record);
+    lines << QStringLiteral("sizeof(LayerKey): %1").arg(summary.sizeof_layer_key);
+    lines << QStringLiteral("Approx connection PacketRef bytes: %1").arg(summary.approx_connection_packet_ref_bytes);
+    lines << QStringLiteral("Approx unrecognized record bytes: %1").arg(summary.approx_unrecognized_record_bytes);
+    lines << QStringLiteral("Approx unrecognized reason text bytes: %1").arg(summary.approx_unrecognized_reason_text_bytes);
+    lines << QStringLiteral("Approx protocol path layer payload bytes: %1")
+        .arg(summary.approx_protocol_path_layer_payload_bytes);
+    lines << QStringLiteral("Notes: estimates exclude allocator, hash-node, and transient UI/frontend copy overhead.");
+    return lines.join(QLatin1Char('\n'));
 }
 
 QString selected_flow_service_hint(const FlowListModel& flow_model, const int selected_flow_index) {
@@ -518,6 +546,49 @@ void appendSection(QStringList& lines, const QString& title, const QStringList& 
     for (const auto& value : values) {
         lines.push_back(QStringLiteral("  %1").arg(value));
     }
+}
+
+ProtocolPathStatisticsMode protocol_path_statistics_mode_from_int(const int mode) noexcept {
+    switch (mode) {
+    case kProtocolPathStatisticsModeIdentityTree:
+        return ProtocolPathStatisticsMode::identity_tree;
+    case kProtocolPathStatisticsModeTerminalPaths:
+        return ProtocolPathStatisticsMode::terminal_paths;
+    case kProtocolPathStatisticsModeKindOverview:
+    default:
+        return ProtocolPathStatisticsMode::kind_overview;
+    }
+}
+
+QString protocol_path_statistics_mode_label(const ProtocolPathStatisticsMode mode) {
+    switch (mode) {
+    case ProtocolPathStatisticsMode::identity_tree:
+        return QStringLiteral("Identity tree");
+    case ProtocolPathStatisticsMode::terminal_paths:
+        return QStringLiteral("Terminal paths");
+    case ProtocolPathStatisticsMode::kind_overview:
+    default:
+        return QStringLiteral("Kind overview");
+    }
+}
+
+QVariantList protocol_path_legend_to_variant_list() {
+    QVariantList legend {};
+    const auto entries = session_detail::protocol_path_legend_entries();
+    legend.reserve(static_cast<qsizetype>(entries.size()));
+
+    for (const auto& entry : entries) {
+        QVariantMap row {};
+        row.insert(QStringLiteral("shortLabel"), QString::fromStdString(entry.short_label));
+        row.insert(QStringLiteral("fullName"), QString::fromStdString(entry.full_name));
+        row.insert(QStringLiteral("colorKey"), QString::fromStdString(entry.color_key));
+        row.insert(QStringLiteral("backgroundColor"), QString::fromStdString(entry.background_color));
+        row.insert(QStringLiteral("borderColor"), QString::fromStdString(entry.border_color));
+        row.insert(QStringLiteral("textColor"), QString::fromStdString(entry.text_color));
+        legend.push_back(row);
+    }
+
+    return legend;
 }
 
 enum class ChecksumValidationStatus {
@@ -2001,6 +2072,10 @@ MainController::MainController(QObject* parent)
     , capture_open_mode_(kCliFastImportModeIndex)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
+    flow_model_.setProtocolPathPresentationResolver([this](const ProtocolPathId protocol_path_id) {
+        return session_detail::build_protocol_path_presentation(session_.state().protocol_path_registry, protocol_path_id);
+    });
+
     QObject::connect(&flow_model_, &FlowListModel::checkedFlowsChanged, this, [this]() {
         emit selectedFlowCountChanged();
         emit actionAvailabilityChanged();
@@ -2008,7 +2083,9 @@ MainController::MainController(QObject* parent)
 }
 
 MainController::~MainController() {
+    cleanupFlowInfoExportThread();
     cleanupSmartExportThread();
+    cleanupIndexSaveThread();
     cleanupAnalysisSequenceExportThread();
     cleanupOpenThread();
 }
@@ -2055,11 +2132,22 @@ bool MainController::openedFromIndex() const noexcept {
 }
 
 bool MainController::canAttachSourceCapture() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && session_.has_capture() && !hasSourceCapture();
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && session_.has_capture()
+        && !hasSourceCapture();
 }
 
 bool MainController::canSaveIndex() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && session_.has_capture() && hasSourceCapture() && !session_.is_partial_open();
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !analysis_sequence_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && session_.has_capture()
+        && hasSourceCapture();
 }
 
 bool MainController::partialOpen() const noexcept {
@@ -2073,7 +2161,12 @@ QString MainController::partialOpenWarningText() const {
 }
 
 bool MainController::canExportSelectedFlow() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && selected_flow_index_ >= 0;
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && hasSourceCapture()
+        && selected_flow_index_ >= 0;
 }
 
 qulonglong MainController::selectedFlowCount() const noexcept {
@@ -2081,11 +2174,31 @@ qulonglong MainController::selectedFlowCount() const noexcept {
 }
 
 bool MainController::canExportSelectedFlows() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && flow_model_.checkedFlowCount() > 0;
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && hasSourceCapture()
+        && flow_model_.checkedFlowCount() > 0;
 }
 
 bool MainController::canExportUnselectedFlows() const noexcept {
-    return !is_opening_ && !smart_export_in_progress_ && hasSourceCapture() && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && hasSourceCapture()
+        && flow_model_.totalFlowCount() > flow_model_.checkedFlowCount();
+}
+
+bool MainController::canExportAllFlowsInfoCsv() const noexcept {
+    return !is_opening_
+        && !smart_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_
+        && flow_info_csv_export_thread_ == nullptr
+        && hasCapture()
+        && flow_model_.totalFlowCount() > 0;
 }
 
 bool MainController::isOpening() const noexcept {
@@ -2227,7 +2340,10 @@ QVariantList MainController::analysisRateSeriesBToA() const {
     return make_analysis_rate_series(current_flow_analysis_->rate_graph.points_b_to_a);
 }
 bool MainController::canExportAnalysisSequence() const noexcept {
-    return selected_flow_index_ >= 0 && !analysis_sequence_export_in_progress_;
+    return selected_flow_index_ >= 0
+        && !analysis_sequence_export_in_progress_
+        && !index_save_in_progress_
+        && !flow_info_csv_export_in_progress_;
 }
 
 bool MainController::analysisSequenceExportInProgress() const noexcept {
@@ -2240,6 +2356,10 @@ QString MainController::analysisSequenceExportStatusText() const {
 
 bool MainController::analysisSequenceExportStatusIsError() const noexcept {
     return analysis_sequence_export_status_is_error_;
+}
+
+bool MainController::flowInfoCsvExportInProgress() const noexcept {
+    return flow_info_csv_export_in_progress_;
 }
 
 bool MainController::smartExportInProgress() const noexcept {
@@ -2272,6 +2392,22 @@ double MainController::smartExportProgressPercent() const noexcept {
 
 QString MainController::smartExportProgressText() const {
     return smart_export_progress_text_;
+}
+
+bool MainController::indexSaveInProgress() const noexcept {
+    return index_save_in_progress_;
+}
+
+bool MainController::indexSaveCancelRequested() const noexcept {
+    return index_save_cancel_requested_;
+}
+
+double MainController::indexSaveProgressPercent() const noexcept {
+    return index_save_progress_percent_;
+}
+
+QString MainController::indexSaveProgressText() const {
+    return index_save_progress_text_;
 }
 
 QString MainController::analysisDurationText() const {
@@ -2874,6 +3010,39 @@ QVariantList MainController::protocolHintDistribution() const {
     return rows;
 }
 
+QVariantList MainController::protocolPathStatistics() const {
+    QVariantList rows {};
+    rows.reserve(static_cast<qsizetype>(protocol_path_summary_.rows.size()));
+
+    for (const auto& row : protocol_path_summary_.rows) {
+        QVariantMap item {};
+        item.insert(QStringLiteral("nodeId"), static_cast<qulonglong>(row.node_id));
+        item.insert(QStringLiteral("parentNodeId"), static_cast<qulonglong>(row.parent_node_id));
+        item.insert(QStringLiteral("depth"), static_cast<qulonglong>(row.depth));
+        item.insert(QStringLiteral("layerText"), QString::fromStdString(row.layer_text));
+        item.insert(QStringLiteral("pathText"), QString::fromStdString(row.path_text));
+        item.insert(QStringLiteral("compactText"), QString::fromStdString(row.compact_text));
+        item.insert(QStringLiteral("hasChildren"), row.has_children);
+        item.insert(QStringLiteral("isTerminal"), row.is_terminal);
+        item.insert(QStringLiteral("flowCount"), static_cast<qulonglong>(row.flow_count));
+        item.insert(QStringLiteral("packetCount"), static_cast<qulonglong>(row.packet_count));
+        item.insert(QStringLiteral("originalByteCount"), static_cast<qulonglong>(row.original_byte_count));
+        item.insert(QStringLiteral("flowPercent"), row.flow_percent);
+        item.insert(QStringLiteral("packetPercent"), row.packet_percent);
+        item.insert(QStringLiteral("originalBytePercent"), row.original_byte_percent);
+        item.insert(QStringLiteral("flowCountText"), QString::fromStdString(row.flow_count_text));
+        item.insert(QStringLiteral("packetCountText"), QString::fromStdString(row.packet_count_text));
+        item.insert(QStringLiteral("originalByteCountText"), QString::fromStdString(row.original_byte_count_text));
+        rows.push_back(item);
+    }
+
+    return rows;
+}
+
+QObject* MainController::protocolPathStatsModel() noexcept {
+    return &protocol_path_stats_model_;
+}
+
 qulonglong MainController::tcpFlowCount() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.tcp.flow_count);
 }
@@ -3071,6 +3240,10 @@ bool MainController::showWiresharkFilterForSelectedFlow() const noexcept {
     return show_wireshark_filter_for_selected_flow_;
 }
 
+bool MainController::showProtocolPathColumn() const noexcept {
+    return show_protocol_path_column_;
+}
+
 QString MainController::selectedFlowWiresharkFilter() const {
     if (!show_wireshark_filter_for_selected_flow_) {
         return {};
@@ -3079,9 +3252,22 @@ QString MainController::selectedFlowWiresharkFilter() const {
     return selected_flow_wireshark_filter(flow_model_, selected_flow_index_);
 }
 
+QVariantList MainController::protocolPathLegend() const {
+    return protocol_path_legend_to_variant_list();
+}
+
 bool MainController::selectedFlowHasWiresharkFilter() const {
     return !selectedFlowWiresharkFilter().isEmpty();
 }
+
+bool MainController::hasProtocolPathFlowFilter() const noexcept {
+    return has_active_protocol_path_filter_;
+}
+
+QString MainController::protocolPathFlowFilterText() const {
+    return active_protocol_path_filter_label_;
+}
+
 int MainController::currentTabIndex() const noexcept {
     return current_tab_index_;
 }
@@ -3143,24 +3329,48 @@ bool MainController::flowSortAscending() const noexcept {
 }
 
 bool MainController::openCaptureFile(const QString& path) {
+    if (flow_info_csv_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before opening another capture."), true);
+        return false;
+    }
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another capture."), true);
+        return false;
+    }
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before opening another capture."), true);
         return false;
     }
     return openPath(path, false);
 }
 
 bool MainController::openIndexFile(const QString& path) {
+    if (flow_info_csv_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before opening another session."), true);
+        return false;
+    }
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before opening another session."), true);
+        return false;
+    }
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before opening another session."), true);
         return false;
     }
     return openPath(path, true);
 }
 
 bool MainController::attachSourceCapture(const QString& path) {
+    if (flow_info_csv_export_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before changing the source capture."), true);
+        return false;
+    }
     if (smart_export_in_progress_) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before changing the source capture."), true);
+        return false;
+    }
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before changing the source capture."), true);
         return false;
     }
 
@@ -3248,9 +3458,45 @@ void MainController::sendSelectedFlowToAnalysis() {
     refreshSelectedFlowAnalysis();
 }
 
+void MainController::cancelSaveAnalysisIndex() {
+    if (!index_save_in_progress_ || index_save_cancel_requested_) {
+        return;
+    }
+
+    if (index_save_cancel_token_ != nullptr) {
+        index_save_cancel_token_->store(true, std::memory_order_relaxed);
+    }
+
+    const auto cancelling_text = index_save_progress_text_.isEmpty()
+        ? QStringLiteral("Cancelling index save...")
+        : index_save_progress_text_ + QStringLiteral(" Cancelling...");
+    setIndexSaveState(true, true, index_save_progress_percent_, cancelling_text);
+    setStatusText(QStringLiteral("Cancelling index save..."));
+}
+
 bool MainController::saveAnalysisIndex(const QString& path) {
-    if (smart_export_in_progress_) {
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
         setStatusText(QStringLiteral("Wait for the current smart export to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (analysis_sequence_export_in_progress_ || analysis_sequence_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current analysis sequence export to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (is_opening_) {
+        setStatusText(QStringLiteral("Wait for the current open operation to finish before saving an analysis index."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_ || index_save_thread_ != nullptr) {
+        setStatusText(QStringLiteral("An analysis index save is already in progress."), true);
         return false;
     }
 
@@ -3260,24 +3506,45 @@ bool MainController::saveAnalysisIndex(const QString& path) {
         return false;
     }
 
-    if (session_.is_partial_open()) {
-        setStatusText(QStringLiteral("Saving an index from a partial capture is not supported yet."), true);
-        return false;
-    }
-
     if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to save an analysis index."))) {
         return false;
     }
 
     const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
-    const bool saved = session_.save_index(filesystemPath);
-    if (!saved) {
-        setStatusText(QStringLiteral("Failed to save analysis index."), true);
-        return false;
-    }
-
     setLastDirectoryFromPath(filesystemPath);
-    setStatusText(QStringLiteral("Analysis index saved successfully."));
+
+    ++active_index_save_job_id_;
+    const auto job_id = active_index_save_job_id_;
+    index_save_cancel_token_ = std::make_shared<std::atomic_bool>(false);
+    index_save_cancel_requested_ = false;
+    setIndexSaveState(true, false, 0.0, QStringLiteral("Preparing index save..."));
+    setStatusText(QStringLiteral("Analysis index save started."));
+
+    const IndexSaveOptions options {
+        .progress_callback = [this, job_id](const IndexSaveProgress& progress) {
+            QMetaObject::invokeMethod(
+                this,
+                [this, job_id, progress]() {
+                    updateIndexSaveProgress(job_id, progress);
+                },
+                Qt::QueuedConnection
+            );
+        },
+        .cancel_requested = [token = index_save_cancel_token_]() {
+            return token != nullptr && token->load(std::memory_order_relaxed);
+        },
+    };
+
+    index_save_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath, options]() mutable {
+        std::string error_text {};
+        const bool saved = session_.save_index(filesystemPath, options, &error_text);
+        QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, saved, error = QString::fromStdString(error_text)]() {
+            completeIndexSave(job_id, trimmedPath, saved, error);
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(index_save_thread_, &QThread::finished, index_save_thread_, &QObject::deleteLater);
+    index_save_thread_->start();
     return true;
 }
 
@@ -3288,6 +3555,11 @@ bool MainController::exportFlows(
     const QString& failureMessage,
     const QString& successMessage
 ) {
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before exporting flows."), true);
+        return false;
+    }
+
     if (flowIndices.empty()) {
         setStatusText(emptySelectionMessage, true);
         return false;
@@ -3343,6 +3615,11 @@ bool MainController::exportSelectedFlow(const QString& path) {
 bool MainController::exportSelectedFlowSequenceCsv(const QString& path) {
     if (selected_flow_index_ < 0) {
         setAnalysisSequenceExportState(false, QStringLiteral("No flow selected for sequence export."), true);
+        return false;
+    }
+
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setAnalysisSequenceExportState(false, QStringLiteral("Wait for the current flow info CSV export to finish before exporting flow sequence."), true);
         return false;
     }
 
@@ -3408,6 +3685,59 @@ bool MainController::exportUnselectedFlows(const QString& path) {
     );
 }
 
+bool MainController::exportAllFlowsInfoCsv(const QString& path) {
+    if (is_opening_) {
+        setStatusText(QStringLiteral("Wait for the current open operation to finish before exporting flow info CSV."), true);
+        return false;
+    }
+
+    if (smart_export_in_progress_ || smart_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current smart export to finish before exporting flow info CSV."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_ || index_save_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before exporting flow info CSV."), true);
+        return false;
+    }
+
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Flow info CSV export is already in progress."), true);
+        return false;
+    }
+
+    if (!hasCapture() || flow_model_.totalFlowCount() == 0) {
+        setStatusText(QStringLiteral("No flows available for CSV export."), true);
+        return false;
+    }
+
+    const QString trimmedPath = path.trimmed();
+    if (trimmedPath.isEmpty()) {
+        setStatusText(QStringLiteral("No output file selected."), true);
+        return false;
+    }
+
+    const auto filesystemPath = std::filesystem::path {trimmedPath.toStdWString()};
+    setLastDirectoryFromPath(filesystemPath);
+    setStatusText(QStringLiteral("Exporting flow info CSV..."));
+    flow_info_csv_export_in_progress_ = true;
+    emit actionAvailabilityChanged();
+
+    ++active_flow_info_csv_export_job_id_;
+    const auto job_id = active_flow_info_csv_export_job_id_;
+    flow_info_csv_export_thread_ = QThread::create([this, job_id, trimmedPath, filesystemPath]() mutable {
+        std::string error_text {};
+        const bool exported = session_.export_all_flows_info_csv(filesystemPath, &error_text);
+        QMetaObject::invokeMethod(this, [this, job_id, trimmedPath, exported, error_text = QString::fromStdString(error_text)]() {
+            completeFlowInfoCsvExport(job_id, trimmedPath, exported, error_text);
+        }, Qt::QueuedConnection);
+    });
+
+    QObject::connect(flow_info_csv_export_thread_, &QThread::finished, flow_info_csv_export_thread_, &QObject::deleteLater);
+    flow_info_csv_export_thread_->start();
+    return true;
+}
+
 bool MainController::exportSmartFlows(
     const QString& path,
     const int outputMode,
@@ -3420,6 +3750,16 @@ bool MainController::exportSmartFlows(
     const bool includeEveryKthPacket,
     const QString& everyKText
 ) {
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before starting smart export."), true);
+        return false;
+    }
+
+    if (index_save_in_progress_) {
+        setStatusText(QStringLiteral("Wait for the current index save to finish before starting smart export."), true);
+        return false;
+    }
+
     if (!ensureSourceCaptureAvailable(QStringLiteral("Original source capture is unavailable. Reattach the capture file to export flows."))) {
         return false;
     }
@@ -3792,6 +4132,13 @@ void MainController::browseExportUnselectedFlows() {
     }
 }
 
+void MainController::browseExportAllFlowsInfoCsv() {
+    const QString path = chooseFlowInfoCsvSaveFile();
+    if (!path.isEmpty()) {
+        exportAllFlowsInfoCsv(path);
+    }
+}
+
 bool MainController::browseSmartExportFlows(
     const int outputMode,
     const int flowScopeMode,
@@ -3849,6 +4196,16 @@ void MainController::copySelectedFlowWiresharkFilter() {
     }
 }
 
+void MainController::copyTextToClipboard(const QString& text) {
+    if (text.isEmpty()) {
+        return;
+    }
+
+    if (auto* clipboard = QGuiApplication::clipboard(); clipboard != nullptr) {
+        clipboard->setText(text);
+    }
+}
+
 void MainController::sortFlows(const int column) {
     const auto requestedKey = sort_key_from_column(column);
 
@@ -3875,6 +4232,61 @@ void MainController::drillDownToEndpoint(const QString& endpointText) {
 
 void MainController::drillDownToPort(const quint32 port) {
     drillDownToFlows(QString::number(port));
+}
+
+void MainController::showSelectedProtocolPathFlows() {
+    if (!session_.has_capture() || !protocol_path_stats_model_.hasSelectedNode()) {
+        return;
+    }
+
+    const auto mode = protocol_path_statistics_mode_from_int(statistics_mode_);
+    const auto node_id = static_cast<std::uint64_t>(protocol_path_stats_model_.selectedNodeId());
+    const auto flow_indices = session_.protocol_path_summary_flow_indices(mode, node_id);
+
+    std::vector<int> snapshot_flow_indices {};
+    snapshot_flow_indices.reserve(flow_indices.size());
+    for (const auto flow_index : flow_indices) {
+        snapshot_flow_indices.push_back(static_cast<int>(flow_index));
+    }
+
+    has_active_protocol_path_filter_ = true;
+    active_protocol_path_filter_mode_ = mode;
+    active_protocol_path_filter_node_id_ = node_id;
+    active_protocol_path_filter_flow_indices_ = snapshot_flow_indices;
+    active_protocol_path_filter_label_ = QStringLiteral("%1 / %2").arg(
+        protocol_path_statistics_mode_label(mode),
+        protocol_path_stats_model_.selectedNodeFilterLabel()
+    );
+
+    flow_model_.setAllowedFlowIndices(std::move(snapshot_flow_indices));
+    setCurrentTabIndex(kFlowTabIndex);
+    synchronizeFlowSelection();
+    emit protocolPathFlowFilterChanged();
+}
+
+void MainController::ensureProtocolPathStatisticsLoaded() {
+    if (!session_.has_capture()) {
+        return;
+    }
+
+    const auto current_mode = protocol_path_statistics_mode_from_int(statistics_mode_);
+    if (loaded_protocol_path_statistics_mode_ == statistics_mode_) {
+        return;
+    }
+
+    protocol_path_summary_ = session_.protocol_path_summary(current_mode);
+    protocol_path_stats_model_.refresh(protocol_path_summary_);
+    loaded_protocol_path_statistics_mode_ = statistics_mode_;
+    emit stateChanged();
+}
+
+void MainController::clearProtocolPathFlowFilter() {
+    if (!clearProtocolPathFlowFilterState()) {
+        return;
+    }
+
+    synchronizeFlowSelection();
+    emit protocolPathFlowFilterChanged();
 }
 
 void MainController::setFlowDetailsTabIndex(const int index) {
@@ -3941,15 +4353,26 @@ void MainController::setCaptureOpenMode(const int mode) {
 }
 
 void MainController::setStatisticsMode(const int mode) {
-    const int normalizedMode = (mode == kStatisticsModePackets)
-        ? kStatisticsModePackets
-        : (mode == kStatisticsModeBytes ? kStatisticsModeBytes : kStatisticsModeFlows);
+    const int normalizedMode = (mode == kProtocolPathStatisticsModeIdentityTree)
+        ? kProtocolPathStatisticsModeIdentityTree
+        : (mode == kProtocolPathStatisticsModeTerminalPaths
+            ? kProtocolPathStatisticsModeTerminalPaths
+            : kProtocolPathStatisticsModeKindOverview);
 
     if (statistics_mode_ == normalizedMode) {
         return;
     }
 
     statistics_mode_ = normalizedMode;
+    protocol_path_summary_ = {};
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.clear();
+    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    if (session_.has_capture() && current_tab_index_ == kStatsTabIndex) {
+        ensureProtocolPathStatisticsLoaded();
+    } else {
+        emit stateChanged();
+    }
     emit statisticsModeChanged();
 }
 
@@ -4004,6 +4427,15 @@ void MainController::setShowWiresharkFilterForSelectedFlow(const bool enabled) {
     emit selectedFlowWiresharkFilterChanged();
 }
 
+void MainController::setShowProtocolPathColumn(const bool enabled) {
+    if (show_protocol_path_column_ == enabled) {
+        return;
+    }
+
+    show_protocol_path_column_ = enabled;
+    emit showProtocolPathColumnChanged();
+}
+
 void MainController::setCurrentTabIndex(const int index) {
     const int normalizedIndex = (index == kAnalysisTabIndex || index == kStatsTabIndex || index == kSettingsTabIndex)
         ? index
@@ -4024,6 +4456,9 @@ void MainController::setCurrentTabIndex(const int index) {
             analysis_loading_ = false;
             emit analysisStateChanged();
         }
+    }
+    if (current_tab_index_ == kStatsTabIndex) {
+        ensureProtocolPathStatisticsLoaded();
     }
     emit currentTabIndexChanged();
 }
@@ -4152,6 +4587,14 @@ void MainController::selectUnrecognizedPackets() {
 
     QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents, 5);
     refreshUnrecognizedPackets(true);
+}
+
+QString MainController::captureStorageSummaryText() const {
+    if (!session_.has_capture()) {
+        return QStringLiteral("No capture loaded.");
+    }
+
+    return formatCaptureStorageSummaryText(session_.storage_summary());
 }
 
 void MainController::setSelectedStreamItemIndex(const qulonglong streamItemIndex) {
@@ -4689,6 +5132,21 @@ void MainController::synchronizeFlowSelection() {
     }
 }
 
+bool MainController::clearProtocolPathFlowFilterState() {
+    const bool changed = has_active_protocol_path_filter_ ||
+        active_protocol_path_filter_node_id_ != kInvalidProtocolPathStatisticsNodeId ||
+        !active_protocol_path_filter_label_.isEmpty() ||
+        !active_protocol_path_filter_flow_indices_.empty();
+
+    has_active_protocol_path_filter_ = false;
+    active_protocol_path_filter_mode_ = ProtocolPathStatisticsMode::kind_overview;
+    active_protocol_path_filter_node_id_ = kInvalidProtocolPathStatisticsNodeId;
+    active_protocol_path_filter_label_.clear();
+    active_protocol_path_filter_flow_indices_.clear();
+    flow_model_.clearAllowedFlowIndices();
+    return changed;
+}
+
 void MainController::resetLoadedState() {
     setApplyingSession(false);
     source_capture_unavailable_notice_shown_ = false;
@@ -4696,6 +5154,10 @@ void MainController::resetLoadedState() {
     finishOpenProgress();
     session_ = {};
     protocol_summary_ = {};
+    protocol_path_summary_ = {};
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.clear();
+    clearProtocolPathFlowFilterState();
     quic_recognition_stats_ = {};
     tls_recognition_stats_ = {};
     flow_model_.clear();
@@ -4730,24 +5192,36 @@ void MainController::resetLoadedState() {
     emit analysisStateChanged();
     current_flow_analysis_.reset();
     setAnalysisSequenceExportState(false, {}, false);
+    emit protocolPathFlowFilterChanged();
 }
 
 void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
+    protocol_path_summary_ = {};
+    loaded_protocol_path_statistics_mode_ = -1;
+    protocol_path_stats_model_.clear();
+    protocol_path_stats_model_.resetExpandedStateForMode(statistics_mode_);
+    clearProtocolPathFlowFilterState();
     quic_recognition_stats_ = session_.quic_recognition_stats();
     tls_recognition_stats_ = session_.tls_recognition_stats();
+    // Clear any selected-flow state from the previous capture before publishing
+    // the new flow list, so re-selecting flow 0 after a reload always refreshes.
+    clearFlowSelection();
     flow_model_.clear();
     flow_model_.resetViewState();
     flow_model_.refresh(session_.list_flows());
     refreshTopSummaryModels();
-    clearFlowSelection();
+    if (current_tab_index_ == kStatsTabIndex) {
+        ensureProtocolPathStatisticsLoaded();
+    }
     setOpenErrorText({});
     setStatusText({});
     emit stateChanged();
     emit sourceAvailabilityChanged();
     emit actionAvailabilityChanged();
+    emit protocolPathFlowFilterChanged();
 }
 
 void MainController::refreshTopSummaryModels() {
@@ -4771,6 +5245,11 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
 
     if (is_opening_ || open_thread_ != nullptr) {
         setStatusText(QStringLiteral("Another open request is already in progress."), true);
+        return false;
+    }
+
+    if (flow_info_csv_export_in_progress_ || flow_info_csv_export_thread_ != nullptr) {
+        setStatusText(QStringLiteral("Wait for the current flow info CSV export to finish before opening another session."), true);
         return false;
     }
 
@@ -4846,6 +5325,10 @@ void MainController::completeOpenJob(
     releaseOpenContext();
 
     if (cancellationWon) {
+        if (clearProtocolPathFlowFilterState()) {
+            synchronizeFlowSelection();
+            emit protocolPathFlowFilterChanged();
+        }
         finishOpenProgress();
         setOpenErrorText({});
         setStatusText(QStringLiteral("Open cancelled."));
@@ -4853,6 +5336,10 @@ void MainController::completeOpenJob(
     }
 
     if (!opened) {
+        if (clearProtocolPathFlowFilterState()) {
+            synchronizeFlowSelection();
+            emit protocolPathFlowFilterChanged();
+        }
         finishOpenProgress();
         const QString genericError = asIndex
             ? QStringLiteral("Failed to open analysis index.")
@@ -4866,6 +5353,7 @@ void MainController::completeOpenJob(
     setApplyingSession(true);
     QTimer::singleShot(kSessionApplyOverlayDelayMs, this, [this, path, loadedSession]() mutable {
         session_ = std::move(*loadedSession);
+        session_.clear_runtime_caches_after_transfer();
         applyLoadedState(path);
         setApplyingSession(false);
         finishOpenProgress();
@@ -4894,6 +5382,116 @@ void MainController::completeAnalysisSequenceExport(
     }
 
     setAnalysisSequenceExportState(false, QStringLiteral("Flow sequence CSV exported: %1").arg(outputPath), false);
+}
+
+void MainController::completeFlowInfoCsvExport(
+    const qulonglong jobId,
+    const QString& outputPath,
+    const bool exported,
+    const QString& errorText
+) {
+    if (jobId != active_flow_info_csv_export_job_id_) {
+        return;
+    }
+
+    active_flow_info_csv_export_job_id_ = 0;
+    flow_info_csv_export_in_progress_ = false;
+    cleanupFlowInfoExportThread();
+    emit actionAvailabilityChanged();
+
+    if (!exported) {
+        setStatusText(
+            errorText.isEmpty()
+                ? QStringLiteral("Failed to export flow info CSV.")
+                : errorText,
+            true
+        );
+        return;
+    }
+
+    setStatusText(QStringLiteral("Flow info CSV exported: %1").arg(outputPath));
+}
+
+void MainController::updateIndexSaveProgress(const qulonglong jobId, const IndexSaveProgress& progress) {
+    if (jobId != active_index_save_job_id_) {
+        return;
+    }
+
+    const auto section_total_text = QString::number(progress.total_sections);
+    const auto completed_text = QString::number(progress.completed_sections);
+    QString progress_text = QString::fromStdString(progress.phase_text);
+    if (progress.total_sections > 0U) {
+        progress_text += QStringLiteral(" (%1 / %2 sections)")
+            .arg(completed_text, section_total_text);
+    }
+    if (progress.phase_items_total > 0U) {
+        progress_text += QStringLiteral(" [%1 / %2 items]")
+            .arg(QString::number(progress.phase_items_processed), QString::number(progress.phase_items_total));
+    }
+
+    double progress_percent {0.0};
+    if (progress.total_sections > 0U) {
+        const auto completed_sections = std::min(progress.completed_sections, progress.total_sections);
+        if (completed_sections >= progress.total_sections) {
+            progress_percent = 1.0;
+        } else {
+            const auto current_fraction =
+                progress.phase_items_total > 0U
+                    ? std::clamp(
+                          static_cast<double>(std::min(progress.phase_items_processed, progress.phase_items_total)) /
+                              static_cast<double>(progress.phase_items_total),
+                          0.0,
+                          1.0
+                      )
+                    : 0.0;
+            progress_percent = std::clamp(
+                (static_cast<double>(completed_sections) + current_fraction) /
+                    static_cast<double>(progress.total_sections),
+                0.0,
+                1.0
+            );
+        }
+    }
+
+    setIndexSaveState(
+        true,
+        index_save_cancel_requested_,
+        progress_percent,
+        index_save_cancel_requested_ ? progress_text + QStringLiteral(" Cancelling...") : progress_text
+    );
+}
+
+void MainController::completeIndexSave(
+    const qulonglong jobId,
+    const QString& outputPath,
+    const bool saved,
+    const QString& errorText
+) {
+    if (jobId != active_index_save_job_id_) {
+        return;
+    }
+
+    active_index_save_job_id_ = 0;
+    index_save_cancel_token_.reset();
+    const bool had_cancel_request = index_save_cancel_requested_;
+    index_save_cancel_requested_ = false;
+    cleanupIndexSaveThread();
+    setIndexSaveState(false, false, 0.0, {});
+
+    if (saved) {
+        setStatusText(QStringLiteral("Analysis index saved successfully: %1").arg(outputPath));
+        return;
+    }
+
+    if (had_cancel_request) {
+        setStatusText(QStringLiteral("Analysis index save cancelled."));
+        return;
+    }
+
+    const auto message = errorText.isEmpty()
+        ? QStringLiteral("Failed to save analysis index.")
+        : errorText;
+    setStatusText(message, true);
 }
 
 void MainController::updateSmartExportProgress(
@@ -5005,6 +5603,30 @@ void MainController::cleanupAnalysisSequenceExportThread() {
     }
 
     analysis_sequence_export_thread_ = nullptr;
+}
+
+void MainController::cleanupFlowInfoExportThread() {
+    if (flow_info_csv_export_thread_ == nullptr) {
+        return;
+    }
+
+    if (flow_info_csv_export_thread_->isRunning()) {
+        flow_info_csv_export_thread_->wait();
+    }
+
+    flow_info_csv_export_thread_ = nullptr;
+}
+
+void MainController::cleanupIndexSaveThread() {
+    if (index_save_thread_ == nullptr) {
+        return;
+    }
+
+    if (index_save_thread_->isRunning()) {
+        index_save_thread_->wait();
+    }
+
+    index_save_thread_ = nullptr;
 }
 
 void MainController::cleanupSmartExportThread() {
@@ -5324,6 +5946,31 @@ void MainController::setSmartExportState(
     }
 }
 
+void MainController::setIndexSaveState(
+    const bool inProgress,
+    const bool cancelRequested,
+    const double progressPercent,
+    const QString& progressText
+) {
+    const bool changed = index_save_in_progress_ != inProgress ||
+        index_save_cancel_requested_ != cancelRequested ||
+        index_save_progress_percent_ != progressPercent ||
+        index_save_progress_text_ != progressText;
+    if (!changed) {
+        return;
+    }
+
+    const bool availability_changed = index_save_in_progress_ != inProgress;
+    index_save_in_progress_ = inProgress;
+    index_save_cancel_requested_ = cancelRequested;
+    index_save_progress_percent_ = progressPercent;
+    index_save_progress_text_ = progressText;
+    emit indexSaveStateChanged();
+    if (availability_changed) {
+        emit actionAvailabilityChanged();
+    }
+}
+
 void MainController::setStatusText(const QString& text, const bool isError) {
     if (status_text_ == text && status_is_error_ == isError) {
         return;
@@ -5387,6 +6034,25 @@ QString MainController::chooseSequenceCsvSaveFile() const {
     dialog.setWindowTitle(QStringLiteral("Export Flow Sequence CSV"));
     dialog.setNameFilter(QStringLiteral("CSV Files (*.csv);;All Files (*)"));
     dialog.setDefaultSuffix(QStringLiteral("csv"));
+
+    if (dialog.exec() != QFileDialog::Accepted) {
+        return {};
+    }
+
+    const QStringList files = dialog.selectedFiles();
+    return files.isEmpty() ? QString {} : files.first();
+}
+
+QString MainController::chooseFlowInfoCsvSaveFile() const {
+    QFileDialog dialog {};
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setOption(QFileDialog::DontConfirmOverwrite, false);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDirectory(last_directory_path_);
+    dialog.setWindowTitle(QStringLiteral("Export All Flows Info to CSV"));
+    dialog.setNameFilter(QStringLiteral("CSV Files (*.csv);;All Files (*)"));
+    dialog.setDefaultSuffix(QStringLiteral("csv"));
+    dialog.selectFile(QStringLiteral("flows_manifest.csv"));
 
     if (dialog.exec() != QFileDialog::Accepted) {
         return {};

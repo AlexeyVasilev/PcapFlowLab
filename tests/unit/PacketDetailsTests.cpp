@@ -926,14 +926,9 @@ void run_packet_details_tests() {
         PFL_EXPECT(session.open_capture(path));
         PFL_EXPECT(session.state().ipv4_connections.size() == 1);
 
-        const auto key = make_connection_key(FlowKeyV4 {
-            .src_addr = ipv4(10, 0, 0, 1),
-            .dst_addr = ipv4(10, 0, 0, 2),
-            .src_port = 12345,
-            .dst_port = 443,
-            .protocol = ProtocolId::tcp,
-        });
-        const auto* connection = session.state().ipv4_connections.find(key);
+        const auto connections = session.state().ipv4_connections.list();
+        PFL_REQUIRE(connections.size() == 1U);
+        const auto* connection = connections.front();
         PFL_REQUIRE(connection != nullptr);
 
         const auto details = session.read_packet_details(connection->flow_a.packets.front());

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "PcapTestUtils.h"
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
@@ -100,6 +101,58 @@ void expect_layer_prefix(
         }
         search_index = static_cast<std::size_t>(std::distance(layers.begin(), found)) + 1U;
     }
+}
+
+std::vector<std::uint8_t> make_ethernet_frame_with_payload(
+    const std::uint16_t ether_type,
+    const std::vector<std::uint8_t>& payload
+) {
+    std::vector<std::uint8_t> bytes {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+    };
+    append_be16(bytes, ether_type);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+void append_mpls_label(
+    std::vector<std::uint8_t>& bytes,
+    const std::uint32_t label,
+    const bool bottom_of_stack,
+    const std::uint8_t ttl = 64U
+) {
+    const auto entry = (label << 12U) |
+        (static_cast<std::uint32_t>(bottom_of_stack ? 1U : 0U) << 8U) |
+        static_cast<std::uint32_t>(ttl);
+    append_be32(bytes, entry);
+}
+
+std::vector<std::uint8_t> make_outer_vlan_mpls_pw_inner_qinq_ipv4_udp_packet() {
+    const auto inner_ipv4_udp = add_vlan_tags(
+        make_ethernet_ipv4_udp_packet(
+            ipv4(192, 0, 2, 50),
+            ipv4(198, 51, 100, 50),
+            53560U,
+            443U
+        ),
+        {
+            {0x88A8U, 100U},
+            {0x8100U, 200U},
+        }
+    );
+
+    std::vector<std::uint8_t> mpls_payload {};
+    append_mpls_label(mpls_payload, 16000U, false);
+    append_mpls_label(mpls_payload, 16001U, true);
+    append_be16(mpls_payload, 0U);
+    append_be16(mpls_payload, 0x1234U);
+    mpls_payload.insert(mpls_payload.end(), inner_ipv4_udp.begin(), inner_ipv4_udp.end());
+
+    return add_vlan_tags(
+        make_ethernet_frame_with_payload(0x8847U, mpls_payload),
+        {{0x8100U, 300U}}
+    );
 }
 
 void expect_single_ip_flow(
@@ -343,6 +396,37 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
             true,
             2U
         );
+    }
+
+    {
+        CaptureSession session {};
+        const auto capture_path = write_temp_pcap(
+            "pfl_mpls_pw_outer_vlan_inner_qinq_ipv4_udp.pcap",
+            make_classic_pcap({{100U, make_outer_vlan_mpls_pw_inner_qinq_ipv4_udp_packet()}})
+        );
+        PFL_EXPECT(session.open_capture(capture_path));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_text == "UDP");
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_mpls);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->has_mpls_pseudowire_control_word);
+        PFL_REQUIRE(details->encapsulating_vlan_tags.size() == 1U);
+        PFL_REQUIRE(details->vlan_tags.size() == 2U);
+        PFL_EXPECT(details->encapsulating_vlan_tags[0].tci == 300U);
+        PFL_EXPECT(details->vlan_tags[0].tci == 100U);
+        PFL_EXPECT(details->vlan_tags[1].tci == 200U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(
+            summary_layers,
+            {"frame", "ethernet", "vlan", "mpls", "mpls", "mpls-pw-control-word", "ethernet-inner", "vlan", "vlan", "ipv4", "udp"}
+        );
+        PFL_EXPECT(count_layers(summary_layers, "vlan") == 3U);
     }
 
     {

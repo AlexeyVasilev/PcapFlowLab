@@ -3087,10 +3087,11 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     const bool has_nested_inner_ethernet = details.has_inner_ethernet && (details.has_mpls || details.has_pbb);
-    const auto& outer_vlan_tags = details.has_pbb ? details.encapsulating_vlan_tags : details.vlan_tags;
+    const bool uses_encapsulating_vlan_tags = details.has_pbb || (details.has_mpls && details.has_inner_ethernet);
+    const auto& outer_vlan_tags = uses_encapsulating_vlan_tags ? details.encapsulating_vlan_tags : details.vlan_tags;
     const bool has_outer_vlans = !outer_vlan_tags.empty();
 
-    if (details.has_pbb && has_outer_vlans) {
+    if (uses_encapsulating_vlan_tags && has_outer_vlans) {
         append_vlan_summary_layers(layers, outer_vlan_tags);
     } else if (has_outer_vlans && !has_nested_inner_ethernet) {
         append_vlan_summary_layers(layers, outer_vlan_tags);

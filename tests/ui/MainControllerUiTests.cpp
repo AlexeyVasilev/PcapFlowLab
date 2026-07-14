@@ -1,14 +1,24 @@
 #include <algorithm>
 #include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <thread>
 #include <vector>
+
+#ifdef WIN32
+#include <windows.h>
+#endif
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -32,17 +42,92 @@
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
 #include "ui/app/PacketListModel.h"
+#include "ui/app/ProtocolPathStatsModel.h"
 #include "ui/app/StreamListModel.h"
 
 namespace {
 
-void expect_true(const bool condition, const char* expression, const char* file, const int line) {
+namespace test_support {
+
+std::vector<pfl::tests::RecordedTestFailure>& failure_storage() {
+    static std::vector<pfl::tests::RecordedTestFailure> failures {};
+    return failures;
+}
+
+const char*& last_checkpoint_file() {
+    static const char* value = "<none>";
+    return value;
+}
+
+int& last_checkpoint_line() {
+    static int value = 0;
+    return value;
+}
+
+const char*& last_checkpoint_label() {
+    static const char* value = "<none>";
+    return value;
+}
+
+}  // namespace test_support
+
+}  // namespace
+
+namespace pfl::tests {
+
+void expect(const bool condition, const char* expression, const char* file, const int line) {
+    if (!condition) {
+        std::ostringstream builder {};
+        builder << file << ':' << line << " expectation failed: " << expression;
+        record_failure_message(builder.str());
+    }
+}
+
+void require(const bool condition, const char* expression, const char* file, const int line) {
     if (condition) {
         return;
     }
 
-    throw std::runtime_error(std::string(file) + ':' + std::to_string(line) + " expectation failed: " + expression);
+    std::ostringstream builder {};
+    builder << file << ':' << line << " requirement failed: " << expression;
+    throw TestFailure(builder.str());
 }
+
+void record_failure_message(std::string message) {
+    test_support::failure_storage().push_back(RecordedTestFailure {
+        .message = std::move(message),
+    });
+}
+
+const std::vector<RecordedTestFailure>& recorded_failures() {
+    return test_support::failure_storage();
+}
+
+bool has_recorded_failures() {
+    return !test_support::failure_storage().empty();
+}
+
+void clear_recorded_failures() {
+    test_support::failure_storage().clear();
+}
+
+}  // namespace pfl::tests
+
+namespace {
+
+void note_test_checkpoint(const char* file, const int line, const char* label) {
+    test_support::last_checkpoint_file() = file;
+    test_support::last_checkpoint_line() = line;
+    test_support::last_checkpoint_label() = label;
+}
+
+std::string format_last_checkpoint() {
+    std::ostringstream builder {};
+    builder << test_support::last_checkpoint_file() << ':' << test_support::last_checkpoint_line()
+            << " checkpoint: " << test_support::last_checkpoint_label();
+    return builder.str();
+}
+
 std::vector<std::uint8_t> make_http_request_payload() {
     constexpr char request[] =
         "GET / HTTP/1.1\r\n"
@@ -94,7 +179,7 @@ void append_quic_varint(std::vector<std::uint8_t>& bytes, const std::uint64_t va
         return;
     }
 
-    expect_true(value < 16384U, "value < 16384U", __FILE__, __LINE__);
+    ::pfl::tests::require(value < 16384U, "value < 16384U", __FILE__, __LINE__);
     bytes.push_back(static_cast<std::uint8_t>(0x40U | ((value >> 8U) & 0x3FU)));
     bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
@@ -168,7 +253,8 @@ std::vector<std::uint8_t> make_classic_pcap_with_lengths(
     return bytes;
 }
 
-#define UI_EXPECT(expr) expect_true((expr), #expr, __FILE__, __LINE__)
+#define UI_EXPECT(expr) (note_test_checkpoint(__FILE__, __LINE__, #expr), ::pfl::tests::expect((expr), #expr, __FILE__, __LINE__))
+#define UI_REQUIRE(expr) (note_test_checkpoint(__FILE__, __LINE__, #expr), ::pfl::tests::require((expr), #expr, __FILE__, __LINE__))
 
 bool wait_until(QApplication& app, const std::function<bool()>& predicate, const int timeoutMs = 10000) {
     QElapsedTimer timer {};
@@ -241,12 +327,12 @@ LoadedQmlObject load_qml_component(const std::filesystem::path& relative_path, c
     const auto component_path = project_root / relative_path;
     QQmlComponent component(engine.get(), QUrl::fromLocalFile(QString::fromStdWString(component_path.wstring())));
     if (component.status() != QQmlComponent::Ready) {
-        throw std::runtime_error(component.errorString().toStdString());
+        throw pfl::tests::TestFailure(component.errorString().toStdString());
     }
 
     QObject* object = component.create();
     if (object == nullptr) {
-        throw std::runtime_error(std::string("Failed to create ") + component_name + " component");
+        throw pfl::tests::TestFailure(std::string("Failed to create ") + component_name + " component");
     }
 
     return LoadedQmlObject {
@@ -257,6 +343,101 @@ LoadedQmlObject load_qml_component(const std::filesystem::path& relative_path, c
 
 LoadedQmlObject load_flow_analysis_pane_component() {
     return load_qml_component("src/ui/qml/components/FlowAnalysisPane.qml", "FlowAnalysisPane");
+}
+
+void emit_test_output(const std::string& text);
+
+template <typename Function>
+void run_ui_section(const std::string_view name, Function&& function) {
+    note_test_checkpoint(__FILE__, __LINE__, name.data());
+    emit_test_output(std::string {"Entering UI section: "} + std::string {name} + "\n");
+    try {
+        function();
+    } catch (const pfl::tests::TestFailure& failure) {
+        pfl::tests::record_failure_message(std::string {"section "} + std::string {name} + ": " + failure.what());
+    } catch (const std::exception& exception) {
+        pfl::tests::record_failure_message(
+            std::string {"section "} + std::string {name} + " threw unexpected exception: " + exception.what()
+        );
+    } catch (...) {
+        pfl::tests::record_failure_message(std::string {"section "} + std::string {name} + " threw unknown exception");
+    }
+}
+
+void emit_test_output(const std::string& text) {
+    static bool console_ready = false;
+#ifdef WIN32
+    if (!console_ready) {
+        console_ready = true;
+        AttachConsole(ATTACH_PARENT_PROCESS);
+        ::freopen("CONOUT$", "w", stdout);
+        ::freopen("CONOUT$", "w", stderr);
+    }
+#else
+    console_ready = true;
+#endif
+
+#ifdef WIN32
+    if (HANDLE handle = GetStdHandle(STD_ERROR_HANDLE); handle != nullptr && handle != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        const auto* bytes = text.data();
+        const auto size = static_cast<DWORD>(text.size());
+        if (WriteFile(handle, bytes, size, &written, nullptr) != 0) {
+            return;
+        }
+    }
+#endif
+
+    std::fputs(text.c_str(), stderr);
+    std::fflush(stderr);
+}
+
+[[noreturn]] void emit_termination_diagnostics_and_abort(const char* reason) {
+    std::ostringstream builder {};
+    builder << "UI test runner terminated unexpectedly: " << reason << '\n'
+            << "Last checkpoint: " << format_last_checkpoint() << '\n';
+    emit_test_output(builder.str());
+    std::signal(SIGABRT, SIG_DFL);
+    std::signal(SIGSEGV, SIG_DFL);
+    std::signal(SIGILL, SIG_DFL);
+    std::signal(SIGFPE, SIG_DFL);
+    std::abort();
+}
+
+void ui_test_signal_handler(int signal_number) {
+    switch (signal_number) {
+    case SIGABRT:
+        emit_termination_diagnostics_and_abort("SIGABRT");
+    case SIGSEGV:
+        emit_termination_diagnostics_and_abort("SIGSEGV");
+    case SIGILL:
+        emit_termination_diagnostics_and_abort("SIGILL");
+    case SIGFPE:
+        emit_termination_diagnostics_and_abort("SIGFPE");
+    default:
+        emit_termination_diagnostics_and_abort("unknown signal");
+    }
+}
+
+void ui_test_terminate_handler() {
+    try {
+        if (const auto current = std::current_exception(); current != nullptr) {
+            std::rethrow_exception(current);
+        }
+    } catch (const std::exception& exception) {
+        std::ostringstream builder {};
+        builder << "UI test runner hit std::terminate after exception: " << exception.what() << '\n'
+                << "Last checkpoint: " << format_last_checkpoint() << '\n';
+        emit_test_output(builder.str());
+    } catch (...) {
+        std::ostringstream builder {};
+        builder << "UI test runner hit std::terminate with unknown exception\n"
+                << "Last checkpoint: " << format_last_checkpoint() << '\n';
+        emit_test_output(builder.str());
+    }
+
+    std::signal(SIGABRT, SIG_DFL);
+    std::abort();
 }
 
 bool item_visible(QObject* root, const char* objectName) {
@@ -394,7 +575,42 @@ int find_flow_index_by_packet_count(pfl::FlowListModel* model, const qulonglong 
         }
     }
 
+    if (model->rowCount() == 1) {
+        return model->data(model->index(0, 0), pfl::FlowListModel::FlowIndexRole).toInt();
+    }
+
     return -1;
+}
+
+int find_stream_row_by_source_packets_text(pfl::StreamListModel* model, const QString& source_packets_text) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (model->data(model->index(row, 0), pfl::StreamListModel::SourcePacketsTextRole).toString() == source_packets_text) {
+            return row;
+        }
+    }
+
+    return -1;
+}
+
+int find_protocol_path_stats_row_by_path_text(pfl::ProtocolPathStatsModel* model, const QString& path_text) {
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (model->data(model->index(row, 0), pfl::ProtocolPathStatsModel::PathTextRole).toString() == path_text) {
+            return row;
+        }
+    }
+
+    return -1;
+}
+
+int count_protocol_path_root_rows(const QVariantList& rows) {
+    int count = 0;
+    for (const auto& value : rows) {
+        const auto row = value.toMap();
+        if (row.value(QStringLiteral("parentNodeId")).toULongLong() == pfl::kInvalidProtocolPathStatisticsNodeId) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 QVariantMap find_protocol_distribution_row(const QVariantList& rows, const QString& title) {
@@ -414,10 +630,10 @@ std::filesystem::path ui_test_root() {
 
 QJsonObject load_json_object(const std::filesystem::path& path) {
     QFile file(QString::fromStdWString(path.wstring()));
-    UI_EXPECT(file.open(QIODevice::ReadOnly));
+    UI_REQUIRE(file.open(QIODevice::ReadOnly));
     const auto document = QJsonDocument::fromJson(file.readAll());
-    UI_EXPECT(!document.isNull());
-    UI_EXPECT(document.isObject());
+    UI_REQUIRE(!document.isNull());
+    UI_REQUIRE(document.isObject());
     return document.object();
 }
 
@@ -426,7 +642,7 @@ std::vector<std::uint64_t> expected_packet_indices(const QJsonArray& packet_numb
     indices.reserve(static_cast<std::size_t>(packet_numbers.size()));
     for (const auto& value : packet_numbers) {
         const auto packet_number = value.toInteger();
-        UI_EXPECT(packet_number > 0);
+        UI_REQUIRE(packet_number > 0);
         indices.push_back(static_cast<std::uint64_t>(packet_number - 1));
     }
     return indices;
@@ -477,7 +693,10 @@ QString packet_direction_for_number(const std::vector<pfl::PacketRow>& packet_ro
     const auto it = std::find_if(packet_rows.begin(), packet_rows.end(), [packet_index](const pfl::PacketRow& row) {
         return row.packet_index == packet_index;
     });
-    UI_EXPECT(it != packet_rows.end());
+    if (it == packet_rows.end()) {
+        UI_EXPECT(false);
+        return {};
+    }
     const auto direction = QString::fromStdString(it->direction_text);
     if (direction == QString::fromUtf8("A→B")) {
         return QStringLiteral("A->B");
@@ -516,24 +735,25 @@ std::vector<const pfl::StreamItemRow*> find_matching_stream_rows(
 }
 
 void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::path& spec_path) {
+    try {
     const auto spec = load_json_object(spec_path);
     const auto fixture_relative_path = spec.value(QStringLiteral("fixture_relative_path")).toString();
-    UI_EXPECT(!fixture_relative_path.isEmpty());
+    UI_REQUIRE(!fixture_relative_path.isEmpty());
 
     const auto fixture_path = ui_test_root() / fixture_relative_path.toStdString();
 
     pfl::MainController controller {};
-    UI_EXPECT(open_capture_and_wait(app, controller, fixture_path));
+    UI_REQUIRE(open_capture_and_wait(app, controller, fixture_path));
 
     auto* details_model = qobject_cast<pfl::PacketDetailsViewModel*>(controller.packetDetailsModel());
     auto* stream_model = qobject_cast<pfl::StreamListModel*>(controller.streamModel());
-    UI_EXPECT(details_model != nullptr);
-    UI_EXPECT(stream_model != nullptr);
+    UI_REQUIRE(details_model != nullptr);
+    UI_REQUIRE(stream_model != nullptr);
     controller.setFlowDetailsTabIndex(1);
     controller.setSelectedFlowIndex(0);
 
     pfl::CaptureSession session {};
-    UI_EXPECT(session.open_capture(fixture_path));
+    UI_REQUIRE(session.open_capture(fixture_path));
 
     const auto packet_rows = session.list_flow_packets(0);
     UI_EXPECT(packet_rows.size() == static_cast<std::size_t>(spec.value(QStringLiteral("packet_count")).toInteger()));
@@ -587,7 +807,7 @@ void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::
         UI_EXPECT(matches.size() == static_cast<std::size_t>(stream_expectation.value(QStringLiteral("count")).toInteger()));
 
         for (const auto* row : matches) {
-            UI_EXPECT(row != nullptr);
+            UI_REQUIRE(row != nullptr);
             UI_EXPECT(row->protocol_text.empty() == !stream_expectation.value(QStringLiteral("expects_protocol_text")).toBool());
             UI_EXPECT(row->payload_hex_text.empty() == !stream_expectation.value(QStringLiteral("expects_payload_hex_text")).toBool());
 
@@ -614,16 +834,36 @@ void run_quic_fixture_reference_tests(QApplication& app, const std::filesystem::
             }
         }
     }
+    } catch (const pfl::tests::TestFailure& failure) {
+        pfl::tests::record_failure_message(failure.what());
+    } catch (const std::exception& exception) {
+        pfl::tests::record_failure_message(
+            std::string {"run_quic_fixture_reference_tests threw unexpected exception: "} + exception.what()
+        );
+    } catch (...) {
+        pfl::tests::record_failure_message("run_quic_fixture_reference_tests threw unknown exception");
+    }
 }
 
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    std::set_terminate(ui_test_terminate_handler);
+    std::signal(SIGABRT, ui_test_signal_handler);
+    std::signal(SIGSEGV, ui_test_signal_handler);
+    std::signal(SIGILL, ui_test_signal_handler);
+    std::signal(SIGFPE, ui_test_signal_handler);
+    note_test_checkpoint(__FILE__, __LINE__, "main:start");
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc, argv);
 
     using namespace pfl;
     using namespace pfl::tests;
+
+    clear_recorded_failures();
+    emit_test_output("Running UI tests...\n");
+
+    try {
 
     const auto http_flow = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(10, 0, 0, 1), ipv4(10, 0, 0, 2), 1111, 80, make_http_request_payload(), 0x12);
@@ -664,7 +904,7 @@ int main(int argc, char* argv[]) {
 
     UI_EXPECT(controller.statusText().isEmpty());
 
-    {
+    run_ui_section("analysis_pane_smoke", [&]() {
         auto pane = load_flow_analysis_pane_component();
         pane.object->setProperty("hasActiveFlow", false);
         pane.object->setProperty("analysisLoading", false);
@@ -805,7 +1045,7 @@ int main(int argc, char* argv[]) {
         pane.object->setProperty("rateGraphStatusText", QStringLiteral("Flow too short for rate graph"));
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(pane.object.get(), "analysisRateGraphFallbackLabel"));
-    }
+    });
 
     MainController idle_cancel_controller {};
     idle_cancel_controller.cancelOpen();
@@ -910,8 +1150,10 @@ int main(int argc, char* argv[]) {
     std::error_code remove_error {};
     std::filesystem::remove(saved_index_path, remove_error);
     UI_EXPECT(controller.saveAnalysisIndex(QString::fromStdWString(saved_index_path.wstring())));
-    UI_EXPECT(std::filesystem::exists(saved_index_path));
-    UI_EXPECT(controller.statusText() == QStringLiteral("Analysis index saved successfully."));
+    UI_EXPECT(wait_until(app, [&controller, &saved_index_path]() {
+        return !controller.indexSaveInProgress() && std::filesystem::exists(saved_index_path);
+    }));
+    UI_EXPECT(controller.statusText() == QStringLiteral("Analysis index saved successfully: %1").arg(QString::fromStdWString(saved_index_path.wstring())));
     UI_EXPECT(!controller.statusIsError());
 
     const auto no_selection_export_path = std::filesystem::temp_directory_path() / "pfl_ui_no_selection_export.pcap";
@@ -1074,8 +1316,10 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(histogram_total_count(controller.analysisPacketSizeHistogramAll()) == 1U);
     UI_EXPECT(histogram_total_count(controller.analysisPacketSizeHistogramAToB()) == 1U);
     UI_EXPECT(histogram_total_count(controller.analysisPacketSizeHistogramBToA()) == 0U);
-    UI_EXPECT(controller.analysisSequencePreview().size() == 1);
-    const auto first_sequence_row = controller.analysisSequencePreview().front().toMap();
+    const auto controller_sequence_preview = controller.analysisSequencePreview();
+    UI_EXPECT(controller_sequence_preview.size() == 1);
+    UI_REQUIRE(controller_sequence_preview.size() >= 1);
+    const auto first_sequence_row = controller_sequence_preview.front().toMap();
     UI_EXPECT(first_sequence_row.value(QStringLiteral("packetNumber")).toULongLong() == 1U);
     UI_EXPECT(first_sequence_row.value(QStringLiteral("direction")).toString() == QStringLiteral("A->B"));
     UI_EXPECT(first_sequence_row.value(QStringLiteral("deltaTimeText")).toString() == QStringLiteral("0.000 ms"));
@@ -1386,7 +1630,7 @@ int main(int argc, char* argv[]) {
     QObject::connect(&directional_histogram_controller, &MainController::analysisStateChanged, [&]() {
         ++analysis_state_change_count;
     });
-    {
+    run_ui_section("analysis_histogram_pane_projection", [&]() {
         auto pane = load_flow_analysis_pane_component();
         pane.object->setProperty("analysisAvailable", true);
         pane.object->setProperty("hasActiveFlow", true);
@@ -1404,7 +1648,7 @@ int main(int argc, char* argv[]) {
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(pane.object->property("displayedPacketSizeHistogramTotal").toInt() == 2);
         UI_EXPECT(pane.object->property("displayedInterArrivalHistogramTotal").toInt() == 1);
-    }
+    });
     UI_EXPECT(analysis_state_change_count == 0);
 
     const auto packet_balanced_large_a = make_ethernet_ipv4_tcp_packet_with_payload(
@@ -1544,10 +1788,12 @@ int main(int argc, char* argv[]) {
 
     const auto sequence_csv_lines = read_text_file_lines(sequence_export_path);
     UI_EXPECT(sequence_csv_lines.size() == 26U);
+    UI_REQUIRE(sequence_csv_lines.size() >= 4U);
     UI_EXPECT(sequence_csv_lines.front() == "flow_packet_index,packet_index,direction,timestamp,delta_us,captured_length,original_length,transport_payload_length,tcp_flags,protocol_hint");
 
     const auto first_export_row = split_csv_line(sequence_csv_lines[1]);
     UI_EXPECT(first_export_row.size() == 10U);
+    UI_REQUIRE(first_export_row.size() >= 10U);
     UI_EXPECT(first_export_row[0] == "1");
     UI_EXPECT(first_export_row[1] == "0");
     UI_EXPECT(first_export_row[2] == "A->B");
@@ -1561,6 +1807,7 @@ int main(int argc, char* argv[]) {
 
     const auto second_export_row = split_csv_line(sequence_csv_lines[2]);
     UI_EXPECT(second_export_row.size() == 10U);
+    UI_REQUIRE(second_export_row.size() >= 10U);
     UI_EXPECT(second_export_row[0] == "2");
     UI_EXPECT(second_export_row[1] == "1");
     UI_EXPECT(second_export_row[2] == "B->A");
@@ -1572,6 +1819,7 @@ int main(int argc, char* argv[]) {
 
     const auto third_export_row = split_csv_line(sequence_csv_lines[3]);
     UI_EXPECT(third_export_row.size() == 10U);
+    UI_REQUIRE(third_export_row.size() >= 10U);
     UI_EXPECT(third_export_row[0] == "3");
     UI_EXPECT(third_export_row[1] == "2");
     UI_EXPECT(third_export_row[2] == "A->B");
@@ -1599,6 +1847,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(multi_flow_controller.selectedFlowCount() == 0U);
     UI_EXPECT(!multi_flow_controller.canExportSelectedFlows());
     UI_EXPECT(multi_flow_controller.canExportUnselectedFlows());
+    UI_EXPECT(multi_flow_controller.canExportAllFlowsInfoCsv());
 
     const int http_selected_flow_index = find_flow_index_by_protocol_hint(multi_flow_model, QStringLiteral("HTTP"));
     const int dns_selected_flow_index = find_flow_index_by_protocol_hint(multi_flow_model, QStringLiteral("DNS"));
@@ -1640,6 +1889,28 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(unselected_export_session.summary().flow_count == 1U);
     UI_EXPECT(unselected_export_session.summary().packet_count == 1U);
     UI_EXPECT(unselected_export_session.protocol_summary().hint_unknown.flow_count == 1U);
+
+    const auto flow_info_csv_path = std::filesystem::temp_directory_path() / "pfl_ui_all_flows_info.csv";
+    std::filesystem::remove(flow_info_csv_path, remove_error);
+    UI_EXPECT(multi_flow_controller.exportAllFlowsInfoCsv(QString::fromStdWString(flow_info_csv_path.wstring())));
+    UI_EXPECT(wait_until(app, [&multi_flow_controller]() {
+        return multi_flow_controller.statusText().contains(QStringLiteral("Flow info CSV exported:"));
+    }));
+    UI_EXPECT(!multi_flow_controller.statusIsError());
+    UI_EXPECT(std::filesystem::exists(flow_info_csv_path));
+    const auto flow_info_csv_lines = read_text_file_lines(flow_info_csv_path);
+    UI_EXPECT(flow_info_csv_lines.size() == 4U);
+    UI_REQUIRE(flow_info_csv_lines.size() >= 2U);
+    UI_EXPECT(flow_info_csv_lines.front() ==
+        "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+    UI_EXPECT(!QString::fromStdString(flow_info_csv_lines.front()).contains(QStringLiteral("file_name")));
+    UI_EXPECT(!QString::fromStdString(flow_info_csv_lines.front()).contains(QStringLiteral("exported_packet_count")));
+    UI_EXPECT(QString::fromStdString(flow_info_csv_lines[1]).contains(QStringLiteral("\"EthernetII->IPv4->TCP\"")));
+    UI_EXPECT(!QString::fromStdString(flow_info_csv_lines[1]).contains(QStringLiteral("EthernetII -> IPv4 -> TCP")));
+    const auto flow_info_first_row = split_csv_line(flow_info_csv_lines[1]);
+    UI_EXPECT(flow_info_first_row.size() == 16U);
+    UI_REQUIRE(flow_info_first_row.size() >= 16U);
+    UI_EXPECT(flow_info_first_row[15] == "EthernetII->IPv4->TCP");
 
     multi_flow_controller.clearSelectedFlows();
     UI_EXPECT(multi_flow_controller.selectedFlowCount() == 0U);
@@ -1720,7 +1991,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(partial_controller.hasCapture());
     UI_EXPECT(partial_controller.packetCount() == 1U);
     UI_EXPECT(partial_controller.flowCount() == 1U);
-    UI_EXPECT(!partial_controller.canSaveIndex());
+    UI_EXPECT(partial_controller.canSaveIndex());
     UI_EXPECT(partial_controller.partialOpen());
     UI_EXPECT(partial_controller.openErrorText().isEmpty());
     UI_EXPECT(partial_controller.statusText().isEmpty());
@@ -1730,9 +2001,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(partial_packet_model != nullptr);
     partial_controller.setSelectedFlowIndex(0);
     UI_EXPECT(partial_packet_model->rowCount() == 1);
-    UI_EXPECT(!partial_controller.saveAnalysisIndex(QString::fromStdWString((std::filesystem::temp_directory_path() / "pfl_ui_partial_should_not_save.idx").wstring())));
-    UI_EXPECT(partial_controller.statusText() == QStringLiteral("Saving an index from a partial capture is not supported yet."));
-    UI_EXPECT(partial_controller.statusIsError());
+    const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_ui_partial_should_save.idx";
+    std::filesystem::remove(partial_index_path, remove_error);
+    UI_EXPECT(partial_controller.saveAnalysisIndex(QString::fromStdWString(partial_index_path.wstring())));
+    UI_EXPECT(wait_until(app, [&partial_controller, &partial_index_path]() {
+        return !partial_controller.indexSaveInProgress() && std::filesystem::exists(partial_index_path);
+    }));
+    UI_EXPECT(partial_controller.statusText() == QStringLiteral("Analysis index saved successfully: %1").arg(QString::fromStdWString(partial_index_path.wstring())));
+    UI_EXPECT(!partial_controller.statusIsError());
     auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
     UI_EXPECT(flow_model != nullptr);
     UI_EXPECT(flow_model->rowCount() == 3);
@@ -2022,7 +2298,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(settings_flow_model->rowCount() == 1);
     UI_EXPECT(settings_flow_model->data(settings_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("/fallback/ui"));
 
-    {
+    run_ui_section("settings_pane_wireshark_checkbox", [&]() {
         auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
         auto* wireshark_setting_checkbox = named_object(settings_pane.object.get(), "showWiresharkFilterForSelectedFlowCheckBox");
         UI_EXPECT(wireshark_setting_checkbox != nullptr);
@@ -2033,9 +2309,22 @@ int main(int argc, char* argv[]) {
         settings_pane.object->setProperty("showWiresharkFilterForSelectedFlow", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(wireshark_setting_checkbox->property("checked").toBool());
-    }
+    });
 
-    {
+    run_ui_section("settings_pane_protocol_path_checkbox", [&]() {
+        auto settings_pane = load_qml_component("src/ui/qml/components/SettingsPane.qml", "SettingsPane");
+        auto* protocol_path_checkbox = named_object(settings_pane.object.get(), "showProtocolPathColumnCheckBox");
+        UI_EXPECT(protocol_path_checkbox != nullptr);
+        UI_EXPECT(protocol_path_checkbox->property("visible").toBool());
+        settings_pane.object->setProperty("showProtocolPathColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!protocol_path_checkbox->property("checked").toBool());
+        settings_pane.object->setProperty("showProtocolPathColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(protocol_path_checkbox->property("checked").toBool());
+    });
+
+    run_ui_section("flow_table_wireshark_filter_row", [&]() {
         auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
         UI_EXPECT(named_object(flow_table.object.get(), "wiresharkFilterRow") != nullptr);
         flow_table.object->setProperty("wiresharkFilterVisible", false);
@@ -2044,7 +2333,252 @@ int main(int argc, char* argv[]) {
         flow_table.object->setProperty("wiresharkFilterVisible", true);
         app.processEvents(QEventLoop::AllEvents, 25);
         UI_EXPECT(item_visible(flow_table.object.get(), "wiresharkFilterRow"));
+    });
+
+    run_ui_section("flow_table_protocol_path_column_visibility", [&]() {
+        auto flow_table = load_qml_component("src/ui/qml/components/FlowTable.qml", "FlowTable");
+        UI_EXPECT(named_object(flow_table.object.get(), "pathHeaderCell") != nullptr);
+        flow_table.object->setProperty("showProtocolPathColumn", false);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(!item_visible(flow_table.object.get(), "pathHeaderCell"));
+        flow_table.object->setProperty("showProtocolPathColumn", true);
+        app.processEvents(QEventLoop::AllEvents, 25);
+        UI_EXPECT(item_visible(flow_table.object.get(), "pathHeaderCell"));
+    });
+
+    const auto protocol_path_capture_path = write_temp_pcap(
+        "pfl_ui_protocol_path_roles.pcap",
+        make_classic_pcap({
+            {100, make_ethernet_ipv4_tcp_packet(ipv4(10, 30, 0, 1), ipv4(10, 30, 0, 2), 43010, 443)},
+        })
+    );
+
+    MainController protocol_path_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_controller, protocol_path_capture_path));
+    auto* protocol_path_flow_model = qobject_cast<FlowListModel*>(protocol_path_controller.flowModel());
+    UI_EXPECT(protocol_path_flow_model != nullptr);
+    UI_EXPECT(protocol_path_flow_model->rowCount() == 1);
+    {
+        const auto protocol_path_index = protocol_path_flow_model->index(0, 0);
+        UI_EXPECT(protocol_path_flow_model->data(protocol_path_index, FlowListModel::ProtocolPathTextRole).toString() == QStringLiteral("EthernetII -> IPv4 -> TCP"));
+        UI_EXPECT(protocol_path_flow_model->data(protocol_path_index, FlowListModel::ProtocolPathCompactTextRole).toString() == QStringLiteral("EII|Ip4|TCP"));
+        const auto badge_list = protocol_path_flow_model->data(protocol_path_index, FlowListModel::ProtocolPathBadgesRole).toList();
+        UI_EXPECT(badge_list.size() == 3);
+        UI_EXPECT(badge_list[0].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("EII"));
+        UI_EXPECT(badge_list[1].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("Ip4"));
+        UI_EXPECT(badge_list[2].toMap().value(QStringLiteral("shortLabel")).toString() == QStringLiteral("TCP"));
     }
+    {
+        auto* protocol_path_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_controller.protocolPathStatsModel());
+        UI_EXPECT(protocol_path_stats_model != nullptr);
+        UI_EXPECT(protocol_path_stats_model->rowCount() == 0);
+        protocol_path_controller.ensureProtocolPathStatisticsLoaded();
+        const auto protocol_path_rows = protocol_path_controller.protocolPathStatistics();
+        UI_EXPECT(protocol_path_stats_model->rowCount() == count_protocol_path_root_rows(protocol_path_rows));
+        const auto first_row = protocol_path_stats_model->index(0, 0);
+        UI_EXPECT(first_row.isValid());
+        UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::LayerTextRole).toString().isEmpty());
+        UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PathTextRole).toString().isEmpty());
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::FlowCountRole).toULongLong() >= 1U);
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountRole).toULongLong() >= 1U);
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::FlowCountTextRole).toString().contains('%'));
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::PacketCountTextRole).toString().contains('%'));
+        UI_EXPECT(!protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::OriginalByteCountTextRole).toString().isEmpty());
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::OriginalByteCountTextRole).toString().contains(QStringLiteral("B")));
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::NodeIdRole).toULongLong() != pfl::kInvalidProtocolPathStatisticsNodeId);
+        UI_EXPECT(protocol_path_stats_model->data(first_row, ProtocolPathStatsModel::HasChildrenRole).toBool());
+        UI_EXPECT(!protocol_path_rows.isEmpty());
+        UI_EXPECT(protocol_path_rows.front().toMap().contains(QStringLiteral("originalByteCountText")));
+        protocol_path_stats_model->expandAll();
+        UI_EXPECT(protocol_path_stats_model->rowCount() == protocol_path_rows.size());
+    }
+
+    const auto protocol_path_mode_capture_path = ui_test_root() / "data" / "parsing" / "vxlan" / "10_vxlan_same_inner_tuple_different_vni.pcap";
+    MainController protocol_path_mode_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_mode_controller, protocol_path_mode_capture_path));
+    auto* protocol_path_mode_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_mode_controller.protocolPathStatsModel());
+    UI_EXPECT(protocol_path_mode_stats_model != nullptr);
+    UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 0);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
+    const auto kind_overview_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII")) >= 0);
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) < 0);
+    UI_EXPECT(protocol_path_mode_stats_model->canExpand());
+
+    const auto root_row = protocol_path_mode_stats_model->index(0, 0);
+    UI_EXPECT(root_row.isValid());
+    const auto root_node_id = protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::NodeIdRole).toULongLong();
+    UI_EXPECT(root_node_id != pfl::kInvalidProtocolPathStatisticsNodeId);
+    UI_EXPECT(protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::HasChildrenRole).toBool());
+    UI_EXPECT(!protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::ExpandedRole).toBool());
+    UI_EXPECT(!protocol_path_mode_stats_model->data(root_row, ProtocolPathStatsModel::OriginalByteCountTextRole).toString().isEmpty());
+
+    protocol_path_mode_stats_model->toggleExpanded(root_node_id);
+    UI_EXPECT(protocol_path_mode_stats_model->data(protocol_path_mode_stats_model->index(0, 0), ProtocolPathStatsModel::ExpandedRole).toBool());
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() > count_protocol_path_root_rows(kind_overview_rows));
+
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(kind_overview_rows));
+
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == kind_overview_rows.size());
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")) >= 0);
+
+    protocol_path_mode_controller.setStatisticsMode(1);
+    UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 1);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
+    const auto identity_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == identity_rows.size());
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")) >= 0);
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == count_protocol_path_root_rows(identity_rows));
+
+    protocol_path_mode_controller.setStatisticsMode(2);
+    UI_EXPECT(protocol_path_mode_controller.statisticsMode() == 2);
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == 0);
+    protocol_path_mode_controller.ensureProtocolPathStatisticsLoaded();
+    const auto terminal_rows = protocol_path_mode_controller.protocolPathStatistics();
+    UI_EXPECT(!protocol_path_mode_stats_model->canExpand());
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
+    UI_EXPECT(find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP")) < 0);
+    const auto terminal_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_mode_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+    UI_EXPECT(terminal_row >= 0);
+    UI_EXPECT(protocol_path_mode_stats_model->data(
+        protocol_path_mode_stats_model->index(terminal_row, 0),
+        ProtocolPathStatsModel::LayerTextRole).toString() ==
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+    protocol_path_mode_stats_model->collapseAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
+    protocol_path_mode_stats_model->expandAll();
+    UI_EXPECT(protocol_path_mode_stats_model->rowCount() == terminal_rows.size());
+
+    MainController protocol_path_filter_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_mode_capture_path));
+    auto* protocol_path_filter_flow_model = qobject_cast<FlowListModel*>(protocol_path_filter_controller.flowModel());
+    auto* protocol_path_filter_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_filter_controller.protocolPathStatsModel());
+    UI_REQUIRE(protocol_path_filter_flow_model != nullptr);
+    UI_REQUIRE(protocol_path_filter_stats_model != nullptr);
+    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 2);
+    UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
+
+    protocol_path_filter_controller.setStatisticsMode(1);
+    UI_EXPECT(protocol_path_filter_stats_model->rowCount() == 0);
+    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
+    protocol_path_filter_stats_model->expandAll();
+    const auto identity_vni_100_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_filter_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)")
+    );
+    UI_REQUIRE(identity_vni_100_row >= 0);
+    const auto identity_vni_100_node_id = protocol_path_filter_stats_model->data(
+        protocol_path_filter_stats_model->index(identity_vni_100_row, 0),
+        ProtocolPathStatsModel::NodeIdRole
+    ).toULongLong();
+    protocol_path_filter_stats_model->selectNode(identity_vni_100_node_id);
+    UI_EXPECT(protocol_path_filter_stats_model->hasSelectedNode());
+    UI_EXPECT(protocol_path_filter_stats_model->selectedNodeId() == identity_vni_100_node_id);
+    UI_EXPECT(protocol_path_filter_stats_model->selectedNodeFilterLabel()
+        == QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)"));
+    UI_EXPECT(protocol_path_filter_stats_model->selectedNodeFlowCount() == 1U);
+
+    protocol_path_filter_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_filter_controller.currentTabIndex() == 0);
+    UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText() ==
+        QStringLiteral("Identity tree / EthernetII -> IPv4 -> UDP -> VXLAN(vni=100)"));
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_filter_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+
+    protocol_path_filter_controller.setStatisticsMode(2);
+    UI_EXPECT(protocol_path_filter_stats_model->rowCount() == 0);
+    protocol_path_filter_controller.ensureProtocolPathStatisticsLoaded();
+    const auto terminal_vni_100_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_filter_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP")
+    );
+    UI_REQUIRE(terminal_vni_100_row >= 0);
+    const auto terminal_vni_100_node_id = protocol_path_filter_stats_model->data(
+        protocol_path_filter_stats_model->index(terminal_vni_100_row, 0),
+        ProtocolPathStatsModel::NodeIdRole
+    ).toULongLong();
+    protocol_path_filter_stats_model->selectNode(terminal_vni_100_node_id);
+    protocol_path_filter_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText() ==
+        QStringLiteral("Terminal paths / EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP"));
+    UI_EXPECT(protocol_path_filter_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_filter_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+
+    const auto protocol_path_and_text_capture_path =
+        ui_test_root() / "data" / "parsing" / "vxlan" / "12_vxlan_same_outer_tuple_different_inner_flows.pcap";
+    MainController protocol_path_and_text_controller {};
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_and_text_controller, protocol_path_and_text_capture_path));
+    auto* protocol_path_and_text_flow_model = qobject_cast<FlowListModel*>(protocol_path_and_text_controller.flowModel());
+    auto* protocol_path_and_text_stats_model = qobject_cast<ProtocolPathStatsModel*>(protocol_path_and_text_controller.protocolPathStatsModel());
+    UI_REQUIRE(protocol_path_and_text_flow_model != nullptr);
+    UI_REQUIRE(protocol_path_and_text_stats_model != nullptr);
+    protocol_path_and_text_controller.ensureProtocolPathStatisticsLoaded();
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+
+    protocol_path_and_text_controller.setStatisticsMode(0);
+    protocol_path_and_text_controller.ensureProtocolPathStatisticsLoaded();
+    protocol_path_and_text_stats_model->expandAll();
+    const auto kind_vxlan_row = find_protocol_path_stats_row_by_path_text(
+        protocol_path_and_text_stats_model,
+        QStringLiteral("EthernetII -> IPv4 -> UDP -> VXLAN")
+    );
+    UI_REQUIRE(kind_vxlan_row >= 0);
+    const auto kind_vxlan_node_id = protocol_path_and_text_stats_model->data(
+        protocol_path_and_text_stats_model->index(kind_vxlan_row, 0),
+        ProtocolPathStatsModel::NodeIdRole
+    ).toULongLong();
+    protocol_path_and_text_stats_model->selectNode(kind_vxlan_node_id);
+    protocol_path_and_text_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+    UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0, 1}));
+
+    protocol_path_and_text_controller.setSelectedFlowIndex(1);
+    UI_EXPECT(protocol_path_and_text_controller.selectedFlowIndex() == 1);
+    protocol_path_and_text_controller.setFlowFilterText(QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+    UI_EXPECT(protocol_path_and_text_controller.selectedFlowIndex() == -1);
+
+    protocol_path_and_text_controller.clearProtocolPathFlowFilter();
+    UI_EXPECT(!protocol_path_and_text_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText() == QStringLiteral("10001"));
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 1);
+    UI_EXPECT((protocol_path_and_text_flow_model->visibleFlowIndices() == std::vector<int> {0}));
+
+    protocol_path_and_text_controller.setFlowFilterText(QString());
+    UI_EXPECT(protocol_path_and_text_controller.flowFilterText().isEmpty());
+    UI_EXPECT(protocol_path_and_text_flow_model->rowCount() == 2);
+
+    protocol_path_filter_controller.showSelectedProtocolPathFlows();
+    UI_EXPECT(protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(open_capture_and_wait(app, protocol_path_filter_controller, protocol_path_capture_path));
+    UI_EXPECT(!protocol_path_filter_controller.hasProtocolPathFlowFilter());
+    UI_EXPECT(protocol_path_filter_controller.protocolPathFlowFilterText().isEmpty());
 
     const auto possible_hint_capture_path = write_temp_pcap(
         "pfl_ui_possible_tls_quic_settings.pcap",
@@ -2113,7 +2647,46 @@ int main(int argc, char* argv[]) {
         }
     };
 
-    {
+    run_ui_section("capture_reload_resets_selected_flow_stream_state", [&]() {
+        const auto http_fixture_path = ui_test_root() / "data" / "parsing" / "http" / "http_get_1.pcap";
+        const auto tls_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
+
+        MainController controller {};
+        UI_EXPECT(open_capture_and_wait(app, controller, http_fixture_path));
+
+        auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
+        auto* stream_model = qobject_cast<StreamListModel*>(controller.streamModel());
+        UI_EXPECT(flow_model != nullptr);
+        UI_EXPECT(stream_model != nullptr);
+        UI_EXPECT(flow_model->rowCount() >= 1);
+
+        controller.setFlowDetailsTabIndex(1);
+        controller.setSelectedFlowIndex(0);
+        UI_EXPECT(wait_until(app, [&controller, stream_model]() {
+            return !controller.streamLoading() && stream_model->rowCount() > 0;
+        }));
+
+        const auto first_stream_label = stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString();
+        UI_EXPECT(!first_stream_label.isEmpty());
+
+        UI_EXPECT(open_capture_and_wait(app, controller, tls_fixture_path));
+        UI_EXPECT(controller.selectedFlowIndex() == -1);
+        UI_EXPECT(!controller.streamLoading());
+        UI_EXPECT(flow_model->rowCount() >= 1);
+        UI_EXPECT(stream_model->rowCount() == 0);
+
+        controller.setFlowDetailsTabIndex(1);
+        controller.setSelectedFlowIndex(0);
+        UI_EXPECT(wait_until(app, [&controller, stream_model]() {
+            return !controller.streamLoading() && stream_model->rowCount() > 0;
+        }));
+
+        const auto second_stream_label = stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString();
+        UI_EXPECT(second_stream_label.contains(QStringLiteral("TLS")));
+        UI_EXPECT(second_stream_label != first_stream_label);
+    });
+
+    run_ui_section("stream_view_bubble_colors", [&]() {
         auto stream_view = load_qml_component("src/ui/qml/components/StreamView.qml", "StreamView");
         const auto forward_direction = stream_view.object->property("forwardDirection").toString();
         const auto reverse_direction = stream_view.object->property("reverseDirection").toString();
@@ -2151,7 +2724,7 @@ int main(int argc, char* argv[]) {
             Q_ARG(QVariant, QVariant(true))
         ));
         UI_EXPECT(bubble_color.toString() == QStringLiteral("#7ca9de"));
-    }
+    });
 
     expect_checksum_fixture_summary(
         ui_test_root() / "data" / "parsing" / "tcp" / "ipv4_tcp_valid_checksum_1.pcap",
@@ -2339,17 +2912,26 @@ int main(int argc, char* argv[]) {
     MainController tls_constricted_stream_controller {};
     UI_EXPECT(open_capture_and_wait(app, tls_constricted_stream_controller, tls_constricted_stream_fixture_path));
     auto* tls_constricted_flow_model = qobject_cast<FlowListModel*>(tls_constricted_stream_controller.flowModel());
-    UI_EXPECT(tls_constricted_flow_model != nullptr);
-    UI_EXPECT(tls_constricted_flow_model->rowCount() == 1);
-    UI_EXPECT(tls_constricted_flow_model->data(tls_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
-
-    tls_constricted_stream_controller.setFlowDetailsTabIndex(1);
-    tls_constricted_stream_controller.setSelectedFlowIndex(0);
+    auto* tls_constricted_stream_packet_model = qobject_cast<PacketListModel*>(tls_constricted_stream_controller.packetModel());
     auto* tls_constricted_stream_model = qobject_cast<StreamListModel*>(tls_constricted_stream_controller.streamModel());
     auto* tls_constricted_stream_details_model = qobject_cast<PacketDetailsViewModel*>(tls_constricted_stream_controller.packetDetailsModel());
+    UI_EXPECT(tls_constricted_flow_model != nullptr);
+    UI_EXPECT(tls_constricted_stream_packet_model != nullptr);
     UI_EXPECT(tls_constricted_stream_model != nullptr);
     UI_EXPECT(tls_constricted_stream_details_model != nullptr);
-    UI_EXPECT(tls_constricted_stream_model->rowCount() == 10);
+    UI_EXPECT(tls_constricted_flow_model->rowCount() >= 1);
+    tls_constricted_stream_controller.setFlowDetailsTabIndex(1);
+    const int tls_constricted_flow_index = find_flow_index_by_packet_count(tls_constricted_flow_model, 14U);
+    UI_EXPECT(tls_constricted_flow_index >= 0);
+    const int tls_constricted_flow_row = tls_constricted_flow_model->rowForFlowIndex(tls_constricted_flow_index);
+    UI_EXPECT(tls_constricted_flow_row >= 0);
+
+    tls_constricted_stream_controller.setSelectedFlowIndex(tls_constricted_flow_index);
+    UI_EXPECT(wait_until(app, [&tls_constricted_stream_controller, tls_constricted_stream_model]() {
+        return !tls_constricted_stream_controller.streamLoading() &&
+            tls_constricted_stream_model->rowCount() >= 10;
+    }));
+    UI_EXPECT(tls_constricted_stream_model->rowCount() >= 10);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("TLS ClientHello"));
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == 666U);
     UI_EXPECT(tls_constricted_stream_model->data(tls_constricted_stream_model->index(0, 0), StreamListModel::SourcePacketsTextRole).toString() == QStringLiteral("packet #4"));
@@ -2426,8 +3008,10 @@ int main(int argc, char* argv[]) {
         return !tls_constricted_stream_controller.analysisLoading() && tls_constricted_stream_controller.analysisAvailable();
     }));
     UI_EXPECT(tls_constricted_stream_controller.analysisProtocolHint() == QStringLiteral("TLS"));
-    UI_EXPECT(tls_constricted_stream_controller.analysisSequencePreview().size() == 14);
-    const auto tls_constricted_sequence_packet_six = tls_constricted_stream_controller.analysisSequencePreview()[5].toMap();
+    const auto tls_constricted_analysis_preview = tls_constricted_stream_controller.analysisSequencePreview();
+    UI_EXPECT(tls_constricted_analysis_preview.size() == 14);
+    UI_REQUIRE(tls_constricted_analysis_preview.size() >= 6);
+    const auto tls_constricted_sequence_packet_six = tls_constricted_analysis_preview[5].toMap();
     UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("capturedLength")).toUInt() == 199U);
     UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("originalLength")).toUInt() == 2978U);
     UI_EXPECT(tls_constricted_sequence_packet_six.value(QStringLiteral("transportPayloadText")).toString() == QStringLiteral("2920"));
@@ -2518,25 +3102,25 @@ int main(int argc, char* argv[]) {
                                                            const QString& forbidden_label) {
         MainController controller {};
         UI_EXPECT(open_capture_and_wait(app, controller, fixture_path));
-        controller.setFlowDetailsTabIndex(1);
-        controller.setSelectedFlowIndex(0);
 
         auto* flow_model = qobject_cast<FlowListModel*>(controller.flowModel());
         auto* stream_model = qobject_cast<StreamListModel*>(controller.streamModel());
         UI_EXPECT(flow_model != nullptr);
         UI_EXPECT(stream_model != nullptr);
-        UI_EXPECT(flow_model->rowCount() == 1);
-        UI_EXPECT(flow_model->data(flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+        UI_EXPECT(flow_model->rowCount() >= 1);
+        const int quic_flow_index = find_flow_index_by_protocol_hint(flow_model, QStringLiteral("QUIC"));
+        UI_EXPECT(quic_flow_index >= 0);
+        const int quic_flow_row = flow_model->rowForFlowIndex(quic_flow_index);
+        UI_EXPECT(quic_flow_row >= 0);
+        UI_EXPECT(flow_model->data(flow_model->index(quic_flow_row, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
 
-        int packet_eight_row = -1;
-        for (int row = 0; row < stream_model->rowCount(); ++row) {
-            if (stream_model->data(stream_model->index(row, 0), StreamListModel::SourcePacketsTextRole).toString()
-                == QStringLiteral("packet #8")) {
-                packet_eight_row = row;
-                break;
-            }
-        }
+        controller.setFlowDetailsTabIndex(1);
+        controller.setSelectedFlowIndex(quic_flow_index);
+        UI_EXPECT(wait_until(app, [&controller, stream_model]() {
+            return !controller.streamLoading() && stream_model->rowCount() > 0;
+        }));
 
+        const int packet_eight_row = find_stream_row_by_source_packets_text(stream_model, QStringLiteral("packet #8"));
         UI_EXPECT(packet_eight_row >= 0);
         UI_EXPECT(stream_model->data(stream_model->index(packet_eight_row, 0), StreamListModel::LabelRole).toString() == expected_label);
         UI_EXPECT(stream_model->data(stream_model->index(packet_eight_row, 0), StreamListModel::LabelRole).toString() != forbidden_label);
@@ -2559,7 +3143,12 @@ int main(int argc, char* argv[]) {
     const auto quic_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "quic" / "quic_constricted_1.pcap";
     MainController quic_constricted_controller {};
     UI_EXPECT(open_capture_and_wait(app, quic_constricted_controller, quic_constricted_fixture_path));
-    quic_constricted_controller.setSelectedFlowIndex(0);
+    auto* quic_constricted_flow_model = qobject_cast<FlowListModel*>(quic_constricted_controller.flowModel());
+    UI_EXPECT(quic_constricted_flow_model != nullptr);
+    const int quic_constricted_flow_index = find_flow_index_by_packet_count(quic_constricted_flow_model, 18U);
+    UI_EXPECT(quic_constricted_flow_index >= 0);
+    UI_EXPECT(quic_constricted_flow_model->rowForFlowIndex(quic_constricted_flow_index) >= 0);
+    quic_constricted_controller.setSelectedFlowIndex(quic_constricted_flow_index);
     auto* quic_constricted_packet_model = qobject_cast<PacketListModel*>(quic_constricted_controller.packetModel());
     auto* quic_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(quic_constricted_controller.packetDetailsModel());
     UI_EXPECT(quic_constricted_packet_model != nullptr);
@@ -2578,6 +3167,7 @@ int main(int argc, char* argv[]) {
     }));
     const auto quic_constricted_preview = quic_constricted_controller.analysisSequencePreview();
     UI_EXPECT(quic_constricted_preview.size() == 18);
+    UI_REQUIRE(quic_constricted_preview.size() >= 17);
     const auto quic_preview_packet_thirteen = quic_constricted_preview[12].toMap();
     UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("capturedLength")).toUInt() == 686U);
     UI_EXPECT(quic_preview_packet_thirteen.value(QStringLiteral("originalLength")).toUInt() == 723U);
@@ -2605,10 +3195,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_non_truncated_summary.contains(QStringLiteral("Payload Length: 1252")));
     UI_EXPECT(!quic_non_truncated_summary.contains(QStringLiteral("Real Payload Length:")));
     UI_EXPECT(!quic_non_truncated_summary.contains(QStringLiteral("Original Payload Length:")));
-    auto* quic_constricted_flow_model = qobject_cast<FlowListModel*>(quic_constricted_controller.flowModel());
-    UI_EXPECT(quic_constricted_flow_model != nullptr);
-    UI_EXPECT(quic_constricted_flow_model->rowCount() == 1);
-    UI_EXPECT(quic_constricted_flow_model->data(quic_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+    UI_EXPECT(quic_constricted_flow_model->rowForFlowIndex(quic_constricted_flow_index) >= 0);
 
     quic_constricted_controller.setFlowDetailsTabIndex(1);
     auto* quic_constricted_stream_model = qobject_cast<StreamListModel*>(quic_constricted_controller.streamModel());
@@ -2712,16 +3299,19 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(open_capture_and_wait(app, ipv6_quic_constricted_controller, ipv6_quic_constricted_fixture_path));
     auto* ipv6_quic_constricted_flow_model = qobject_cast<FlowListModel*>(ipv6_quic_constricted_controller.flowModel());
     UI_EXPECT(ipv6_quic_constricted_flow_model != nullptr);
-    UI_EXPECT(ipv6_quic_constricted_flow_model->rowCount() == 1);
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::PortARole).toUInt() == 443U ||
-              ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(0, 0), FlowListModel::PortBRole).toUInt() == 443U);
+    const int ipv6_quic_constricted_flow_index = find_flow_index_by_packet_count(ipv6_quic_constricted_flow_model, 16U);
+    UI_EXPECT(ipv6_quic_constricted_flow_index >= 0);
+    const int ipv6_quic_constricted_flow_row = ipv6_quic_constricted_flow_model->rowForFlowIndex(ipv6_quic_constricted_flow_index);
+    UI_EXPECT(ipv6_quic_constricted_flow_row >= 0);
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::PortARole).toUInt() == 443U ||
+              ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::PortBRole).toUInt() == 443U);
 
-    ipv6_quic_constricted_controller.setSelectedFlowIndex(0);
+    ipv6_quic_constricted_controller.setSelectedFlowIndex(ipv6_quic_constricted_flow_index);
     auto* ipv6_quic_constricted_packet_model = qobject_cast<PacketListModel*>(ipv6_quic_constricted_controller.packetModel());
     auto* ipv6_quic_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(ipv6_quic_constricted_controller.packetDetailsModel());
     UI_EXPECT(ipv6_quic_constricted_packet_model != nullptr);
@@ -2742,6 +3332,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_quic_constricted_controller.analysisProtocolHint() == QStringLiteral("QUIC"));
     const auto ipv6_quic_constricted_preview = ipv6_quic_constricted_controller.analysisSequencePreview();
     UI_EXPECT(ipv6_quic_constricted_preview.size() == 16);
+    UI_REQUIRE(ipv6_quic_constricted_preview.size() >= 16);
     const auto ipv6_quic_preview_packet_one = ipv6_quic_constricted_preview[0].toMap();
     UI_EXPECT(ipv6_quic_preview_packet_one.value(QStringLiteral("capturedLength")).toUInt() == 1294U);
     UI_EXPECT(ipv6_quic_preview_packet_one.value(QStringLiteral("originalLength")).toUInt() == 1294U);
@@ -2832,12 +3423,26 @@ int main(int argc, char* argv[]) {
     const auto tls_constricted_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
     MainController tls_constricted_controller {};
     UI_EXPECT(open_capture_and_wait(app, tls_constricted_controller, tls_constricted_fixture_path));
-    tls_constricted_controller.setSelectedFlowIndex(0);
+    auto* tls_constricted_packet_flow_model = qobject_cast<FlowListModel*>(tls_constricted_controller.flowModel());
     auto* tls_constricted_packet_model = qobject_cast<PacketListModel*>(tls_constricted_controller.packetModel());
     auto* tls_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(tls_constricted_controller.packetDetailsModel());
+    UI_EXPECT(tls_constricted_packet_flow_model != nullptr);
     UI_EXPECT(tls_constricted_packet_model != nullptr);
     UI_EXPECT(tls_constricted_details_model != nullptr);
-    UI_EXPECT(tls_constricted_packet_model->rowCount() == 14);
+    UI_EXPECT(tls_constricted_packet_flow_model->rowCount() >= 1);
+    tls_constricted_controller.setFlowDetailsTabIndex(1);
+    auto* tls_constricted_packet_stream_model = qobject_cast<StreamListModel*>(tls_constricted_controller.streamModel());
+    UI_EXPECT(tls_constricted_packet_stream_model != nullptr);
+    const int tls_constricted_packet_flow_index = find_flow_index_by_packet_count(tls_constricted_packet_flow_model, 14U);
+    UI_EXPECT(tls_constricted_packet_flow_index >= 0);
+    UI_EXPECT(tls_constricted_packet_flow_model->rowForFlowIndex(tls_constricted_packet_flow_index) >= 0);
+    tls_constricted_controller.setFlowDetailsTabIndex(0);
+    tls_constricted_controller.setSelectedFlowIndex(tls_constricted_packet_flow_index);
+    UI_EXPECT(wait_until(app, [&tls_constricted_controller, tls_constricted_packet_model]() {
+        return !tls_constricted_controller.packetsLoading() &&
+            tls_constricted_packet_model->rowCount() >= 14;
+    }));
+    UI_EXPECT(tls_constricted_packet_model->rowCount() >= 14);
     expect_packet_payload_row(tls_constricted_packet_model, 3, 666U, 720U, 720U);
     expect_packet_payload_row(tls_constricted_packet_model, 5, 2920U, 199U, 2978U);
     expect_packet_payload_row(tls_constricted_packet_model, 6, 274U, 66U, 332U);
@@ -2851,6 +3456,7 @@ int main(int argc, char* argv[]) {
     }));
     const auto tls_constricted_preview = tls_constricted_controller.analysisSequencePreview();
     UI_EXPECT(tls_constricted_preview.size() == 14);
+    UI_REQUIRE(tls_constricted_preview.size() >= 6);
     const auto tls_preview_packet_six = tls_constricted_preview[5].toMap();
     UI_EXPECT(tls_preview_packet_six.value(QStringLiteral("capturedLength")).toUInt() == 199U);
     UI_EXPECT(tls_preview_packet_six.value(QStringLiteral("originalLength")).toUInt() == 2978U);
@@ -2880,16 +3486,19 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(open_capture_and_wait(app, ipv6_tls_constricted_controller, ipv6_tls_constricted_fixture_path));
     auto* ipv6_tls_constricted_flow_model = qobject_cast<FlowListModel*>(ipv6_tls_constricted_controller.flowModel());
     UI_EXPECT(ipv6_tls_constricted_flow_model != nullptr);
-    UI_EXPECT(ipv6_tls_constricted_flow_model->rowCount() == 1);
-    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
-    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
-    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
-    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
-    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
-    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::PortARole).toUInt() == 443U ||
-              ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(0, 0), FlowListModel::PortBRole).toUInt() == 443U);
+    const int ipv6_tls_constricted_flow_index = find_flow_index_by_packet_count(ipv6_tls_constricted_flow_model, 19U);
+    UI_EXPECT(ipv6_tls_constricted_flow_index >= 0);
+    const int ipv6_tls_constricted_flow_row = ipv6_tls_constricted_flow_model->rowForFlowIndex(ipv6_tls_constricted_flow_index);
+    UI_EXPECT(ipv6_tls_constricted_flow_row >= 0);
+    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
+    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
+    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
+    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::PortARole).toUInt() == 443U ||
+              ipv6_tls_constricted_flow_model->data(ipv6_tls_constricted_flow_model->index(ipv6_tls_constricted_flow_row, 0), FlowListModel::PortBRole).toUInt() == 443U);
 
-    ipv6_tls_constricted_controller.setSelectedFlowIndex(0);
+    ipv6_tls_constricted_controller.setSelectedFlowIndex(ipv6_tls_constricted_flow_index);
     auto* ipv6_tls_constricted_packet_model = qobject_cast<PacketListModel*>(ipv6_tls_constricted_controller.packetModel());
     auto* ipv6_tls_constricted_details_model = qobject_cast<PacketDetailsViewModel*>(ipv6_tls_constricted_controller.packetDetailsModel());
     UI_EXPECT(ipv6_tls_constricted_packet_model != nullptr);
@@ -2909,6 +3518,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_tls_constricted_controller.analysisServiceHint() == QStringLiteral("www.youtube.com"));
     const auto ipv6_tls_constricted_preview = ipv6_tls_constricted_controller.analysisSequencePreview();
     UI_EXPECT(ipv6_tls_constricted_preview.size() == 19);
+    UI_REQUIRE(ipv6_tls_constricted_preview.size() >= 19);
     const auto ipv6_tls_preview_packet_four = ipv6_tls_constricted_preview[3].toMap();
     UI_EXPECT(ipv6_tls_preview_packet_four.value(QStringLiteral("capturedLength")).toUInt() == 1976U);
     UI_EXPECT(ipv6_tls_preview_packet_four.value(QStringLiteral("originalLength")).toUInt() == 1976U);
@@ -3024,14 +3634,17 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(open_capture_and_wait(app, ipv6_tls_strong_constricted_controller, ipv6_tls_strong_constricted_fixture_path));
     auto* ipv6_tls_strong_flow_model = qobject_cast<FlowListModel*>(ipv6_tls_strong_constricted_controller.flowModel());
     UI_EXPECT(ipv6_tls_strong_flow_model != nullptr);
-    UI_EXPECT(ipv6_tls_strong_flow_model->rowCount() == 1);
-    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
-    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
-    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
-    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
-    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(0, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
+    const int ipv6_tls_strong_flow_index = find_flow_index_by_packet_count(ipv6_tls_strong_flow_model, 19U);
+    UI_EXPECT(ipv6_tls_strong_flow_index >= 0);
+    const int ipv6_tls_strong_flow_row = ipv6_tls_strong_flow_model->rowForFlowIndex(ipv6_tls_strong_flow_index);
+    UI_EXPECT(ipv6_tls_strong_flow_row >= 0);
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(ipv6_tls_strong_flow_row, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(ipv6_tls_strong_flow_row, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("TLS"));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(ipv6_tls_strong_flow_row, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.youtube.com"));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(ipv6_tls_strong_flow_row, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
+    UI_EXPECT(ipv6_tls_strong_flow_model->data(ipv6_tls_strong_flow_model->index(ipv6_tls_strong_flow_row, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
 
-    ipv6_tls_strong_constricted_controller.setSelectedFlowIndex(0);
+    ipv6_tls_strong_constricted_controller.setSelectedFlowIndex(ipv6_tls_strong_flow_index);
     auto* ipv6_tls_strong_packet_model = qobject_cast<PacketListModel*>(ipv6_tls_strong_constricted_controller.packetModel());
     auto* ipv6_tls_strong_details_model = qobject_cast<PacketDetailsViewModel*>(ipv6_tls_strong_constricted_controller.packetDetailsModel());
     UI_EXPECT(ipv6_tls_strong_packet_model != nullptr);
@@ -3055,6 +3668,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_tls_strong_constricted_controller.analysisServiceHint() == QStringLiteral("www.youtube.com"));
     const auto ipv6_tls_strong_preview = ipv6_tls_strong_constricted_controller.analysisSequencePreview();
     UI_EXPECT(ipv6_tls_strong_preview.size() == 19);
+    UI_REQUIRE(ipv6_tls_strong_preview.size() >= 19);
     const auto ipv6_tls_strong_preview_packet_four = ipv6_tls_strong_preview[3].toMap();
     UI_EXPECT(ipv6_tls_strong_preview_packet_four.value(QStringLiteral("capturedLength")).toUInt() == 1976U);
     UI_EXPECT(ipv6_tls_strong_preview_packet_four.value(QStringLiteral("originalLength")).toUInt() == 1976U);
@@ -3475,7 +4089,25 @@ int main(int argc, char* argv[]) {
 
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_01_expectations.json");
     run_quic_fixture_reference_tests(app, ui_test_root() / "fixtures" / "quic_fixture_02_expectations.json");
+    } catch (const pfl::tests::TestFailure& failure) {
+        record_failure_message(failure.what());
+    } catch (const std::exception& exception) {
+        record_failure_message(std::string {"ui test main threw unexpected exception: "} + exception.what());
+    } catch (...) {
+        record_failure_message("ui test main threw unknown exception");
+    }
 
+    if (has_recorded_failures()) {
+        std::ostringstream builder {};
+        builder << "FAILED: " << recorded_failures().size() << " expectation(s)\n";
+        for (const auto& failure : recorded_failures()) {
+            builder << failure.message << '\n';
+        }
+        emit_test_output(builder.str());
+        return 1;
+    }
+
+    emit_test_output("All tests passed.\n");
     return 0;
 }
 

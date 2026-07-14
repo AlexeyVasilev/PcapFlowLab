@@ -1,5 +1,6 @@
 #include "app/frontend/FrontendSessionAdapter.h"
 
+#include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
 #include "core/decode/PacketDecodeSupport.h"
@@ -248,6 +249,56 @@ std::vector<FrontendTopPortDto> build_top_ports(const CaptureTopSummary& summary
             .port = port.port,
             .packet_count = port.packet_count,
             .total_bytes = port.total_bytes,
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FrontendProtocolPathStatsDto> build_protocol_path_statistics(const CaptureProtocolPathSummary& summary) {
+    std::vector<FrontendProtocolPathStatsDto> rows {};
+    rows.reserve(summary.rows.size());
+
+    for (const auto& row : summary.rows) {
+        rows.push_back(FrontendProtocolPathStatsDto {
+            .node_id = row.node_id,
+            .parent_node_id = row.parent_node_id,
+            .depth = row.depth,
+            .layer_text = row.layer_text,
+            .path_text = row.path_text,
+            .compact_text = row.compact_text,
+            .badges = row.badges,
+            .has_children = row.has_children,
+            .is_terminal = row.is_terminal,
+            .flow_count = row.flow_count,
+            .packet_count = row.packet_count,
+            .original_byte_count = row.original_byte_count,
+            .flow_percent = row.flow_percent,
+            .packet_percent = row.packet_percent,
+            .original_byte_percent = row.original_byte_percent,
+            .flow_count_text = row.flow_count_text,
+            .packet_count_text = row.packet_count_text,
+            .original_byte_count_text = row.original_byte_count_text,
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FrontendProtocolPathPresentationDto> build_protocol_path_presentations(const CaptureSession& session) {
+    std::vector<FrontendProtocolPathPresentationDto> rows {};
+    const auto& registry = session.state().protocol_path_registry;
+    rows.reserve(registry.size());
+
+    for (ProtocolPathId protocol_path_id = 1U;
+         protocol_path_id <= static_cast<ProtocolPathId>(registry.size());
+         ++protocol_path_id) {
+        const auto presentation = session_detail::build_protocol_path_presentation(registry, protocol_path_id);
+        rows.push_back(FrontendProtocolPathPresentationDto {
+            .protocol_path_id = protocol_path_id,
+            .path_text = std::move(presentation.full_text),
+            .compact_text = std::move(presentation.compact_text),
+            .badges = std::move(presentation.badges),
         });
     }
 
@@ -1891,11 +1942,6 @@ FrontendSaveIndexResult FrontendSessionAdapter::save_index(const std::filesystem
         return result;
     }
 
-    if (session_.is_partial_open()) {
-        result.error_text = "Saving an index from a partial capture is not supported yet.";
-        return result;
-    }
-
     if (!session_.has_source_capture() || !session_.source_capture_accessible()) {
         result.error_text = "Original source capture is unavailable. Reattach the capture file to save an analysis index.";
         return result;
@@ -1987,6 +2033,37 @@ FrontendExportSelectedFlowsResult FrontendSessionAdapter::export_selected_flows(
 
     if (!session_.export_flows_to_pcap(flow_indices, output_path)) {
         result.error_text = "Failed to export selected flows.";
+        return result;
+    }
+
+    result.exported = true;
+    result.output_path = path_to_string(output_path);
+    return result;
+}
+
+FrontendExportAllFlowsInfoCsvResult FrontendSessionAdapter::export_all_flows_info_csv(
+    const std::filesystem::path& output_path
+) const {
+    FrontendExportAllFlowsInfoCsvResult result {};
+
+    if (!session_.has_capture()) {
+        result.error_text = "No capture is open.";
+        return result;
+    }
+
+    if (session_.summary().flow_count == 0U) {
+        result.error_text = "No flows available for CSV export.";
+        return result;
+    }
+
+    if (output_path.empty()) {
+        result.error_text = "No output file selected.";
+        return result;
+    }
+
+    std::string error_text {};
+    if (!session_.export_all_flows_info_csv(output_path, &error_text)) {
+        result.error_text = error_text.empty() ? "Failed to export all flows info CSV." : error_text;
         return result;
     }
 
@@ -2120,6 +2197,7 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
+    const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
         .has_capture = session_.has_capture(),
@@ -2135,6 +2213,8 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .protocol_hints = build_protocol_hint_stats(protocol_summary),
         .top_endpoints = build_top_endpoints(top_summary),
         .top_ports = build_top_ports(top_summary),
+        .protocol_path_statistics_default_mode = ProtocolPathStatisticsMode::kind_overview,
+        .protocol_path_presentations = std::move(protocol_path_presentations),
     };
 }
 
@@ -2148,6 +2228,48 @@ std::vector<FrontendFlowDto> FrontendSessionAdapter::get_flows() const {
     }
 
     return flows;
+}
+
+std::vector<FrontendProtocolPathLegendEntryDto> FrontendSessionAdapter::get_protocol_path_legend() const {
+    const auto legend = session_detail::protocol_path_legend_entries();
+    std::vector<FrontendProtocolPathLegendEntryDto> rows {};
+    rows.reserve(legend.size());
+
+    for (const auto& entry : legend) {
+        rows.push_back(FrontendProtocolPathLegendEntryDto {
+            .short_label = entry.short_label,
+            .full_name = entry.full_name,
+            .tooltip = entry.tooltip,
+            .color_key = entry.color_key,
+            .background_color = entry.background_color,
+            .border_color = entry.border_color,
+            .text_color = entry.text_color,
+        });
+    }
+
+    return rows;
+}
+
+std::vector<FrontendProtocolPathStatsDto> FrontendSessionAdapter::get_protocol_path_statistics(
+    const ProtocolPathStatisticsMode mode
+) const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    return build_protocol_path_statistics(session_.protocol_path_summary(mode));
+}
+
+std::vector<std::size_t> FrontendSessionAdapter::get_protocol_path_summary_flow_indices(
+    const ProtocolPathStatisticsMode mode,
+    const std::uint64_t node_id
+) const {
+    if (!session_.has_capture()) {
+        return {};
+    }
+
+    const auto flow_indices = session_.protocol_path_summary_flow_indices(mode, node_id);
+    return {flow_indices.begin(), flow_indices.end()};
 }
 
 FrontendSelectionResultDto FrontendSessionAdapter::select_flow(const std::size_t flow_index) {
@@ -2889,6 +3011,7 @@ FrontendFlowDto FrontendSessionAdapter::to_frontend_flow(const FlowRow& row) {
         .protocol_hint = row.protocol_hint,
         .protocol_hint_display = format_protocol_hint_display(row.protocol_hint),
         .service_hint = row.service_hint,
+        .protocol_path_id = row.protocol_path_id,
         .has_fragmented_packets = row.has_fragmented_packets,
         .fragmented_packet_count = row.fragmented_packet_count,
         .address_a = row.address_a,

@@ -115,6 +115,116 @@ std::string protocol_stats_json(const pfl::ProtocolStats& stats) {
     return out.str();
 }
 
+std::string protocol_path_badge_json(const pfl::ProtocolPathBadgeRow& badge) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"short_label\":" << json_string(badge.short_label) << ','
+        << "\"full_name\":" << json_string(badge.full_name) << ','
+        << "\"tooltip\":" << json_string(badge.tooltip) << ','
+        << "\"color_key\":" << json_string(badge.color_key) << ','
+        << "\"background_color\":" << json_string(badge.background_color) << ','
+        << "\"border_color\":" << json_string(badge.border_color) << ','
+        << "\"text_color\":" << json_string(badge.text_color)
+        << '}';
+    return out.str();
+}
+
+std::string protocol_path_legend_entry_json(const pfl::FrontendProtocolPathLegendEntryDto& entry) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"short_label\":" << json_string(entry.short_label) << ','
+        << "\"full_name\":" << json_string(entry.full_name) << ','
+        << "\"tooltip\":" << json_string(entry.tooltip) << ','
+        << "\"color_key\":" << json_string(entry.color_key) << ','
+        << "\"background_color\":" << json_string(entry.background_color) << ','
+        << "\"border_color\":" << json_string(entry.border_color) << ','
+        << "\"text_color\":" << json_string(entry.text_color)
+        << '}';
+    return out.str();
+}
+
+std::string flow_indices_json(const std::vector<std::size_t>& flow_indices) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < flow_indices.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << flow_indices[index];
+    }
+    out << ']';
+    return out.str();
+}
+
+std::string protocol_path_stats_json(const pfl::FrontendProtocolPathStatsDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"node_id\":" << row.node_id << ','
+        << "\"parent_node_id\":" << row.parent_node_id << ','
+        << "\"depth\":" << row.depth << ','
+        << "\"layer_text\":" << json_string(row.layer_text) << ','
+        << "\"path_text\":" << json_string(row.path_text) << ','
+        << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"badges\":[";
+
+    for (std::size_t index = 0; index < row.badges.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_badge_json(row.badges[index]);
+    }
+
+    out << "],"
+        << "\"has_children\":" << bool_json(row.has_children) << ','
+        << "\"is_terminal\":" << bool_json(row.is_terminal) << ','
+        << "\"flow_count\":" << row.flow_count << ','
+        << "\"packet_count\":" << row.packet_count << ','
+        << "\"original_byte_count\":" << row.original_byte_count << ','
+        << "\"flow_percent\":" << row.flow_percent << ','
+        << "\"packet_percent\":" << row.packet_percent << ','
+        << "\"original_byte_percent\":" << row.original_byte_percent << ','
+        << "\"flow_count_text\":" << json_string(row.flow_count_text) << ','
+        << "\"packet_count_text\":" << json_string(row.packet_count_text) << ','
+        << "\"original_byte_count_text\":" << json_string(row.original_byte_count_text)
+        << '}';
+    return out.str();
+}
+
+std::string protocol_path_statistics_json(const std::vector<pfl::FrontendProtocolPathStatsDto>& rows) {
+    std::ostringstream out {};
+    out << '[';
+
+    for (std::size_t index = 0; index < rows.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        out << protocol_path_stats_json(rows[index]);
+    }
+
+    out << ']';
+    return out.str();
+}
+
+std::string protocol_path_presentation_json(const pfl::FrontendProtocolPathPresentationDto& row) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"protocol_path_id\":" << row.protocol_path_id << ','
+        << "\"path_text\":" << json_string(row.path_text) << ','
+        << "\"compact_text\":" << json_string(row.compact_text) << ','
+        << "\"badges\":[";
+
+    for (std::size_t index = 0; index < row.badges.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_badge_json(row.badges[index]);
+    }
+
+    out << "]}";
+    return out.str();
+}
+
 std::string source_availability_json(const pfl::FrontendSourceAvailabilityDto& source) {
     std::ostringstream out {};
     out << '{'
@@ -274,6 +384,16 @@ std::string export_selected_flows_result_json(const pfl::FrontendExportSelectedF
     return out.str();
 }
 
+std::string export_all_flows_info_csv_result_json(const pfl::FrontendExportAllFlowsInfoCsvResult& result) {
+    std::ostringstream out {};
+    out << '{'
+        << "\"exported\":" << bool_json(result.exported) << ','
+        << "\"output_path\":" << json_string(result.output_path) << ','
+        << "\"error_text\":" << json_string(result.error_text)
+        << '}';
+    return out.str();
+}
+
 std::string smart_export_result_json(const pfl::FrontendSmartExportResult& result) {
     std::ostringstream out {};
     out << '{'
@@ -371,6 +491,18 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
             << '}';
     }
 
+    out << "],"
+        << "\"protocol_path_statistics_default_mode\":" << static_cast<int>(overview.protocol_path_statistics_default_mode) << ','
+        << "\"protocol_path_presentations\":[";
+
+    for (std::size_t index = 0; index < overview.protocol_path_presentations.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+
+        out << protocol_path_presentation_json(overview.protocol_path_presentations[index]);
+    }
+
     out << ']'
         << '}';
     return out.str();
@@ -392,6 +524,7 @@ std::string flows_json(const std::vector<pfl::FrontendFlowDto>& flows) {
             << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
             << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
             << "\"service_hint\":" << json_string(flow.service_hint) << ','
+            << "\"protocol_path_id\":" << flow.protocol_path_id << ','
             << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
             << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
             << "\"address_a\":" << json_string(flow.address_a) << ','
@@ -418,6 +551,7 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
         << "\"protocol_hint\":" << json_string(flow.protocol_hint) << ','
         << "\"protocol_hint_display\":" << json_string(flow.protocol_hint_display) << ','
         << "\"service_hint\":" << json_string(flow.service_hint) << ','
+        << "\"protocol_path_id\":" << flow.protocol_path_id << ','
         << "\"has_fragmented_packets\":" << bool_json(flow.has_fragmented_packets) << ','
         << "\"fragmented_packet_count\":" << flow.fragmented_packet_count << ','
         << "\"address_a\":" << json_string(flow.address_a) << ','
@@ -430,6 +564,19 @@ std::string flow_json(const pfl::FrontendFlowDto& flow) {
         << "\"total_bytes\":" << flow.total_bytes << ','
         << "\"wireshark_display_filter\":" << json_string(flow.wireshark_display_filter)
         << '}';
+    return out.str();
+}
+
+std::string protocol_path_legend_json(const std::vector<pfl::FrontendProtocolPathLegendEntryDto>& legend) {
+    std::ostringstream out {};
+    out << '[';
+    for (std::size_t index = 0; index < legend.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << protocol_path_legend_entry_json(legend[index]);
+    }
+    out << ']';
     return out.str();
 }
 
@@ -953,6 +1100,51 @@ char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHa
     return make_c_string(settings_json(handle->adapter.get_settings()));
 }
 
+char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    return make_c_string(protocol_path_legend_json(handle->adapter.get_protocol_path_legend()));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode
+) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    const auto statistics_mode = mode == 1U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree
+        : (mode == 2U
+            ? pfl::ProtocolPathStatisticsMode::terminal_paths
+            : pfl::ProtocolPathStatisticsMode::kind_overview);
+    return make_c_string(protocol_path_statistics_json(
+        handle->adapter.get_protocol_path_statistics(statistics_mode)
+    ));
+}
+
+char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const std::uint8_t mode,
+    const std::uint64_t node_id
+) {
+    if (handle == nullptr) {
+        return make_c_string("[]");
+    }
+
+    const auto statistics_mode = mode == 1U
+        ? pfl::ProtocolPathStatisticsMode::identity_tree
+        : (mode == 2U
+            ? pfl::ProtocolPathStatisticsMode::terminal_paths
+            : pfl::ProtocolPathStatisticsMode::kind_overview);
+    return make_c_string(flow_indices_json(
+        handle->adapter.get_protocol_path_summary_flow_indices(statistics_mode, node_id)
+    ));
+}
+
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     const std::uint8_t http_use_path_as_service_hint,
@@ -1004,6 +1196,18 @@ char* pfl_frontend_session_adapter_export_selected_flows_json(
     }
 
     return make_c_string(export_selected_flows_result_json(handle->adapter.export_selected_flows(path, indices)));
+}
+
+char* pfl_frontend_session_adapter_export_all_flows_info_csv_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
+) {
+    if (handle == nullptr) {
+        return make_c_string("{\"exported\":false,\"output_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\"}");
+    }
+
+    const auto path = path_from_utf8(path_utf8);
+    return make_c_string(export_all_flows_info_csv_result_json(handle->adapter.export_all_flows_info_csv(path)));
 }
 
 char* pfl_frontend_session_adapter_export_smart_flows_json(

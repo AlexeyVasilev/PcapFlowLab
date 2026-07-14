@@ -48,6 +48,8 @@ Item {
     property var tlsVersion13: 0
     property var tlsVersionUnknown: 0
     property var protocolHintDistribution: []
+    property var protocolPathStatistics: []
+    property var protocolPathStatsModel: null
     property int statisticsMode: 0
     property var topEndpointsModel: null
     property var topPortsModel: null
@@ -56,6 +58,7 @@ Item {
     signal endpointActivated(string endpointText)
     signal portActivated(int port)
     signal statisticsModeChangedByUser(int mode)
+    signal showFlowsRequested()
 
     ScrollView {
         id: statisticsScroll
@@ -129,7 +132,14 @@ Item {
                     tlsVersion13: root.tlsVersion13
                     tlsVersionUnknown: root.tlsVersionUnknown
                     protocolHintDistribution: root.protocolHintDistribution
+                    protocolPathStatsModel: root.protocolPathStatsModel
                     statisticsMode: root.statisticsMode
+                    onStatisticsModeChangedByUser: function(mode) {
+                        root.statisticsModeChangedByUser(mode)
+                    }
+                    onShowFlowsRequested: function() {
+                        root.showFlowsRequested()
+                    }
                 }
 
                 TopTalkersPane {

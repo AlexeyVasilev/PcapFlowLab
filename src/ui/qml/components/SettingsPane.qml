@@ -9,11 +9,13 @@ Item {
     property bool usePossibleTlsQuic: false
     property bool validateSelectedPacketChecksums: false
     property bool showWiresharkFilterForSelectedFlow: true
+    property bool showProtocolPathColumn: true
 
     signal httpUsePathAsServiceHintChangedByUser(bool enabled)
     signal usePossibleTlsQuicChangedByUser(bool enabled)
     signal validateSelectedPacketChecksumsChangedByUser(bool enabled)
     signal showWiresharkFilterForSelectedFlowChangedByUser(bool enabled)
+    signal showProtocolPathColumnChangedByUser(bool enabled)
 
     implicitWidth: 560
     implicitHeight: contentColumn.implicitHeight + 24
@@ -113,6 +115,28 @@ Item {
                 color: "#64748b"
                 font.pixelSize: 12
                 text: "Applied immediately to the selected-flow view"
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            CheckBox {
+                objectName: "showProtocolPathColumnCheckBox"
+                Layout.fillWidth: true
+                text: "Show protocol path column in Flows"
+                checked: root.showProtocolPathColumn
+                onToggled: root.showProtocolPathColumnChangedByUser(checked)
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                wrapMode: Text.WordWrap
+                color: "#64748b"
+                font.pixelSize: 12
+                text: "Shows compact flow-identity path badges such as VLAN, MPLS, VXLAN VNI, or GTP-U TEID context"
             }
         }
 

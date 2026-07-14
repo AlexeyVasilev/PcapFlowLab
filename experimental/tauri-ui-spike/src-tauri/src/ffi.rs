@@ -2,8 +2,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
-    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
-    SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
+    AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
+    ProtocolPathLegendEntryDto, ProtocolPathStatsDto, SelectedFlowPacketsDto, SelectedFlowStreamDto, SelectionResultDto, StreamItemDto, UnrecognizedPacketsDto,
     SettingsDto,
     SmartExportResultDto,
 };
@@ -44,6 +44,18 @@ extern "C" {
     fn pfl_frontend_session_adapter_get_settings_json(
         handle: *mut PflFrontendSessionAdapterHandle,
     ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_legend_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_statistics_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        mode: c_uchar,
+        node_id: u64,
+    ) -> *mut c_char;
     fn pfl_frontend_session_adapter_update_settings_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         http_use_path_as_service_hint: c_uchar,
@@ -60,6 +72,10 @@ extern "C" {
         path_utf8: *const c_char,
         flow_indices: *const usize,
         flow_index_count: usize,
+    ) -> *mut c_char;
+    fn pfl_frontend_session_adapter_export_all_flows_info_csv_json(
+        handle: *mut PflFrontendSessionAdapterHandle,
+        path_utf8: *const c_char,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_export_smart_flows_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -238,6 +254,31 @@ impl CppFrontendSessionAdapter {
         parse_json_owned::<SettingsDto>(json)
     }
 
+    pub fn get_protocol_path_legend(&self) -> Result<Vec<ProtocolPathLegendEntryDto>, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_legend_json(self.handle) };
+        parse_json_owned::<Vec<ProtocolPathLegendEntryDto>>(json)
+    }
+
+    pub fn get_protocol_path_statistics(&self, mode: u8) -> Result<Vec<ProtocolPathStatsDto>, String> {
+        let json = unsafe { pfl_frontend_session_adapter_get_protocol_path_statistics_json(self.handle, mode) };
+        parse_json_owned::<Vec<ProtocolPathStatsDto>>(json)
+    }
+
+    pub fn get_protocol_path_summary_flow_indices(
+        &self,
+        mode: u8,
+        node_id: u64,
+    ) -> Result<Vec<usize>, String> {
+        let json = unsafe {
+            pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+                self.handle,
+                mode,
+                node_id,
+            )
+        };
+        parse_json_owned::<Vec<usize>>(json)
+    }
+
     pub fn update_settings(
         &mut self,
         http_use_path_as_service_hint: bool,
@@ -278,6 +319,17 @@ impl CppFrontendSessionAdapter {
             )
         };
         parse_json_owned::<ExportSelectedFlowsResultDto>(json)
+    }
+
+    pub fn export_all_flows_info_csv(
+        &self,
+        path: &str,
+    ) -> Result<ExportAllFlowsInfoCsvResultDto, String> {
+        let path = CString::new(path).map_err(|_| "Export path contains an embedded NUL byte.".to_string())?;
+        let json = unsafe {
+            pfl_frontend_session_adapter_export_all_flows_info_csv_json(self.handle, path.as_ptr())
+        };
+        parse_json_owned::<ExportAllFlowsInfoCsvResultDto>(json)
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -8,8 +8,11 @@ Frame {
     property var flowModel: null
     property int selectedFlowIndex: -1
     property string filterText: ""
+    property string protocolPathFilterText: ""
+    property bool protocolPathFilterVisible: false
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
+    property bool showProtocolPathColumn: true
     property bool unrecognizedPacketsSelected: false
     property int unrecognizedPacketCount: 0
     property int sortColumn: 0
@@ -24,11 +27,13 @@ Frame {
     readonly property int protocolColumnWidth: 86
     readonly property int protocolHintColumnWidth: 98
     readonly property int serviceColumnWidth: 180
+    readonly property int protocolPathColumnWidth: 240
+    readonly property int protocolPathMaxBadgeHeight: 44
     readonly property int endpointColumnWidth: Math.ceil(endpointTextMetrics.width) + 16
     readonly property int fragColumnWidth: 56
     readonly property int packetsColumnWidth: 86
     readonly property int bytesColumnWidth: 92
-    readonly property int flowTableColumnCount: 11
+    readonly property int flowTableColumnCount: root.showProtocolPathColumn ? 12 : 11
     readonly property int flowTableBaseWidth:
         root.tableContentLeftMargin
         + root.tableContentRightMargin
@@ -38,6 +43,7 @@ Frame {
         + root.protocolColumnWidth
         + root.protocolHintColumnWidth
         + root.serviceColumnWidth
+        + (root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0)
         + root.endpointColumnWidth
         + root.endpointColumnWidth
         + root.fragColumnWidth
@@ -48,6 +54,8 @@ Frame {
 
     signal flowSelected(int flowIndex)
     signal filterTextEdited(string text)
+    signal clearTextFilterRequested()
+    signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
     signal sendFlowToAnalysisRequested()
@@ -173,9 +181,58 @@ Frame {
             }
 
             Button {
+                objectName: "flowTextFilterClearButton"
+                text: "Clear"
+                enabled: root.filterText.length > 0
+                onClicked: root.clearTextFilterRequested()
+            }
+
+            Button {
                 text: "Send flow to Analysis"
                 enabled: root.selectedFlowIndex >= 0
                 onClicked: root.sendFlowToAnalysisRequested()
+            }
+        }
+
+        Rectangle {
+            objectName: "protocolPathFilterRow"
+            Layout.fillWidth: true
+            visible: root.protocolPathFilterVisible
+            implicitHeight: protocolPathFilterLayout.implicitHeight + 10
+            radius: 6
+            color: "#f8fafc"
+            border.color: "#cbd5e1"
+
+            RowLayout {
+                id: protocolPathFilterLayout
+                anchors.fill: parent
+                anchors.margins: 5
+                spacing: 8
+
+                Label {
+                    text: "Protocol path filter:"
+                    color: "#475569"
+                }
+
+                Label {
+                    id: protocolPathFilterTextLabel
+                    Layout.fillWidth: true
+                    text: root.protocolPathFilterText
+                    color: "#0f172a"
+                    elide: Text.ElideRight
+                    ToolTip.visible: protocolPathFilterHoverHandler.hovered && implicitWidth > width + 1
+                    ToolTip.text: text
+
+                    HoverHandler {
+                        id: protocolPathFilterHoverHandler
+                    }
+                }
+
+                Button {
+                    objectName: "protocolPathFilterClearButton"
+                    text: "Clear"
+                    onClicked: root.clearProtocolPathFilterRequested()
+                }
             }
         }
 
@@ -289,6 +346,15 @@ Frame {
                             Button { text: "Service" + root.sortIndicator(4); Layout.preferredWidth: root.serviceColumnWidth; Layout.minimumWidth: root.serviceColumnWidth; Layout.maximumWidth: root.serviceColumnWidth; onClicked: root.sortRequested(4) }
                             Button { text: "Endpoint A" + root.sortIndicator(6); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(6) }
                             Button { text: "Endpoint B" + root.sortIndicator(8); Layout.preferredWidth: root.endpointColumnWidth; Layout.minimumWidth: root.endpointColumnWidth; Layout.maximumWidth: root.endpointColumnWidth; onClicked: root.sortRequested(8) }
+                            Label {
+                                objectName: "pathHeaderCell"
+                                text: "Path"
+                                visible: root.showProtocolPathColumn
+                                Layout.preferredWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                Layout.minimumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                Layout.maximumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                verticalAlignment: Text.AlignVCenter
+                            }
                             Button { text: "Frag" + root.sortIndicator(5); Layout.preferredWidth: root.fragColumnWidth; onClicked: root.sortRequested(5) }
                             Button { text: "Packets" + root.sortIndicator(10); Layout.preferredWidth: root.packetsColumnWidth; onClicked: root.sortRequested(10) }
                             Button { text: "Bytes" + root.sortIndicator(11); Layout.preferredWidth: root.bytesColumnWidth; onClicked: root.sortRequested(11) }
@@ -331,6 +397,9 @@ Frame {
                             required property string protocol
                             required property string protocolHint
                             required property string serviceHint
+                            required property string protocolPathText
+                            required property string protocolPathCompactText
+                            required property var protocolPathBadges
                             required property bool hasFragmentedPackets
                             required property string fragmentedPacketCount
                             required property string addressA
@@ -343,6 +412,9 @@ Frame {
                             readonly property bool selected: index === flowListView.currentIndex
                             readonly property string endpointAText: root.formatEndpoint(addressA, portA)
                             readonly property string endpointBText: root.formatEndpoint(addressB, portB)
+                            readonly property int protocolPathContentHeight: root.showProtocolPathColumn
+                                ? Math.min(protocolPathBadgeFlow.implicitHeight, root.protocolPathMaxBadgeHeight)
+                                : 20
 
                             onFlowCheckedChanged: {
                                 if (selectionCheckBox.checked !== flowChecked) {
@@ -351,7 +423,7 @@ Frame {
                             }
 
                             width: flowListView.width
-                            height: 32
+                            height: Math.max(32, protocolPathContentHeight + 8)
                             clip: true
                             color: selected
                                 ? "#dbeafe"
@@ -503,6 +575,81 @@ Frame {
                                             && endpointBText.length > 0
                                             && endpointBLabel.implicitWidth > endpointBLabel.width + 1
                                         ToolTip.text: endpointBText
+                                    }
+                                    Item {
+                                        visible: root.showProtocolPathColumn
+                                        Layout.preferredWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                        Layout.minimumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                        Layout.maximumWidth: root.showProtocolPathColumn ? root.protocolPathColumnWidth : 0
+                                        implicitHeight: flowRow.protocolPathContentHeight
+                                        clip: true
+
+                                        Item {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width
+                                            height: flowRow.protocolPathContentHeight
+                                            clip: true
+
+                                            Flow {
+                                                id: protocolPathBadgeFlow
+                                                width: parent.width
+                                                spacing: 4
+                                                flow: Flow.LeftToRight
+
+                                                Repeater {
+                                                    model: protocolPathBadges
+
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+
+                                                        radius: 10
+                                                        implicitHeight: 20
+                                                        implicitWidth: badgeLabel.implicitWidth + 12
+                                                        color: modelData.backgroundColor
+                                                        border.color: modelData.borderColor
+                                                        border.width: 1
+
+                                                        Label {
+                                                            id: badgeLabel
+                                                            anchors.centerIn: parent
+                                                            text: modelData.shortLabel
+                                                            color: modelData.textColor
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                        }
+
+                                                        MouseArea {
+                                                            id: badgeHoverArea
+                                                            anchors.fill: parent
+                                                            acceptedButtons: Qt.NoButton
+                                                            hoverEnabled: true
+                                                        }
+
+                                                        ToolTip.visible: badgeHoverArea.containsMouse && modelData.tooltip.length > 0
+                                                        ToolTip.text: modelData.tooltip
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Label {
+                                            visible: protocolPathBadges.length === 0 && protocolPathCompactText.length > 0
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width
+                                            text: protocolPathCompactText
+                                            elide: Text.ElideRight
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        MouseArea {
+                                            id: protocolPathHoverArea
+                                            anchors.fill: parent
+                                            acceptedButtons: Qt.NoButton
+                                            hoverEnabled: true
+                                        }
+
+                                        ToolTip.visible: protocolPathHoverArea.containsMouse && protocolPathText.length > 0
+                                        ToolTip.text: protocolPathText
                                     }
                                     Rectangle {
                                         Layout.preferredWidth: root.fragColumnWidth

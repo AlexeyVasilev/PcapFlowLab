@@ -5,17 +5,15 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - malformed or truncated VXLAN headers;
 - malformed or truncated inner Ethernet / IPv4 payload after VXLAN;
 - unsupported inner Ethernet payloads behind a valid VXLAN header;
-- the known branch limitation where identical inner 5-tuples from different VNIs may still merge.
+- namespace-collision coverage where identical inner 5-tuples from different VNIs must now split into distinct flows.
 - future bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
 - same-outer-tuple cases that split by the inner tuple instead of the outer UDP carrier tuple;
 - recursive continuation from VXLAN into an inner VLAN-tagged Ethernet payload;
 - outer IPv6 VXLAN carriage and UDP port-gating negative controls.
 
-These fixtures are for the `feature/overlay-inner-flow-tuples` branch.
-
-Current branch intent:
+Supported behavior covered by these fixtures:
 - supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
-- VXLAN VNI is presentation metadata for now, not part of flow identity;
+- VXLAN VNI now participates in protocol-path-aware flow identity;
 - malformed VXLAN cases should remain conservative and should not fabricate inner flow tuples.
 
 Current implemented status:
@@ -23,7 +21,7 @@ Current implemented status:
 - valid inner Ethernet plus VLAN plus IPv4 plus TCP continuation is also expected to work through the existing inner Ethernet/VLAN path;
 - selected-packet Summary / Protocol details now expose VXLAN metadata, including flags, VNI flag state, and VNI, and Summary continues with sequential inner Ethernet plus VLAN/IP/TCP/UDP layers whose inner titles include addresses/ports where applicable;
 - selected-packet details are intentionally more lenient than flow extraction for UDP/4789 traffic, so malformed or invalid VXLAN-like packets can still show best-effort VXLAN metadata and bounded inner warnings without producing an inner flow tuple;
-- VNI is still not part of flow identity, so identical inner tuples from different VNIs may still merge.
+- VNI-aware protocol-path flow identity now keeps identical inner tuples from different VNIs in distinct flows.
 
 ## Local generation
 
@@ -73,13 +71,13 @@ Notes:
 - Default VNI: `100`
 - Alternate VNI for collision case: `200`
 
-## Current branch behavior summary
+## Current behavior summary
 
 Current VXLAN behavior in this branch:
 - valid VXLAN over UDP/4789 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
 - selected-packet Summary / Protocol details preserve outer IPv4/IPv6 plus UDP, show a VXLAN layer with VNI metadata, and then continue with sequential inner Ethernet/VLAN/IP/TCP/UDP layers when safely available;
 - malformed or truncated VXLAN / inner payload cases remain conservative for strict flow extraction and do not fabricate normal inner flows;
-- identical inner tuples from different VNIs are a known limitation in this branch because VNI is not yet part of flow identity.
+- identical inner tuples from different VNIs now split because VNI participates in protocol-path-aware flow identity.
 
 ---
 
@@ -172,7 +170,7 @@ Current VXLAN behavior in this branch:
   - packet 1: `100`
 - packet 2: `200`
 - Inner tuple for both packets: `10.40.0.10:49440 -> 10.40.0.20:443`
-- Expected current behavior: known limitation case; current branch may merge both packets into one flow because VNI is not part of flow identity yet.
+- Expected current behavior: the two packets split into distinct flows because VNI is part of protocol-path-aware flow identity.
 
 ### 11_vxlan_inner_ipv4_tcp_bidirectional.pcap
 
@@ -239,7 +237,7 @@ Current VXLAN behavior in this branch:
 - Inner tuples:
   - packet 1: `10.40.0.10:49440 -> 10.40.0.20:443`
   - packet 2: `10.40.0.11:10001 -> 10.40.0.21:443`
-- Expected current behavior: VXLAN metadata extraction preserves and displays VNI boundary values. VNI still remains outside flow identity in this branch.
+- Expected current behavior: VXLAN metadata extraction preserves and displays VNI boundary values. Valid packets continue to form normal flows, and VNI participates in protocol-path-aware flow identity when tuples would otherwise collide.
 
 ## Expected generated file list
 

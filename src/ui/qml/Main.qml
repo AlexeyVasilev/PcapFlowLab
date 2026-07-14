@@ -29,7 +29,10 @@ ApplicationWindow {
     Action {
         id: openCaptureFastAction
         text: "Open Capture (Fast)"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress
+        enabled: !mainController.isOpening &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         shortcut: StandardKey.Open
         onTriggered: window.browseCaptureWithMode(0)
     }
@@ -37,7 +40,10 @@ ApplicationWindow {
     Action {
         id: openCaptureDeepAction
         text: "Open Capture (Deep)"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress
+        enabled: !mainController.isOpening &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         shortcut: "Ctrl+Shift+O"
         onTriggered: window.browseCaptureWithMode(1)
     }
@@ -45,7 +51,10 @@ ApplicationWindow {
     Action {
         id: openIndexAction
         text: "Open Index"
-        enabled: !mainController.isOpening && !mainController.smartExportInProgress
+        enabled: !mainController.isOpening &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         onTriggered: mainController.browseIndexFile()
     }
 
@@ -79,9 +88,19 @@ ApplicationWindow {
     }
 
     Action {
+        id: exportAllFlowsInfoCsvAction
+        text: "Export All Flows Info to CSV..."
+        enabled: mainController.canExportAllFlowsInfoCsv
+        onTriggered: mainController.browseExportAllFlowsInfoCsv()
+    }
+
+    Action {
         id: smartExportAction
         text: "Smart Export..."
-        enabled: mainController.hasCapture && mainController.hasSourceCapture && !mainController.smartExportInProgress
+        enabled: mainController.hasCapture && mainController.hasSourceCapture &&
+                 !mainController.smartExportInProgress &&
+                 !mainController.indexSaveInProgress &&
+                 !mainController.flowInfoCsvExportInProgress
         onTriggered: smartExportDialog.open()
     }
 
@@ -89,6 +108,21 @@ ApplicationWindow {
         id: showSettingsAction
         text: "Settings"
         onTriggered: settingsDialog.open()
+    }
+
+    Action {
+        id: showProtocolPathLegendAction
+        text: "Protocol Path Legend"
+        onTriggered: protocolPathLegendDialog.open()
+    }
+
+    Action {
+        id: showCaptureStorageDiagnosticsAction
+        text: "Capture Storage Diagnostics"
+        onTriggered: {
+            captureStorageDiagnosticsDialog.diagnosticsText = mainController.captureStorageSummaryText()
+            captureStorageDiagnosticsDialog.open()
+        }
     }
 
     Action {
@@ -122,6 +156,7 @@ ApplicationWindow {
             MenuItem { action: exportCurrentFlowAction }
             MenuItem { action: exportSelectedFlowsAction }
             MenuItem { action: exportUnselectedFlowsAction }
+            MenuItem { action: exportAllFlowsInfoCsvAction }
             MenuSeparator {}
             MenuItem { action: smartExportAction }
         }
@@ -131,7 +166,66 @@ ApplicationWindow {
 
             MenuItem { action: showSettingsAction }
             MenuSeparator {}
+            MenuItem { action: showProtocolPathLegendAction }
+        }
+
+        Menu {
+            title: "Help"
+
+            MenuItem { action: showCaptureStorageDiagnosticsAction }
+            MenuSeparator {}
             MenuItem { action: showAboutAction }
+        }
+    }
+
+    Dialog {
+        id: captureStorageDiagnosticsDialog
+        property string diagnosticsText: ""
+
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 760
+        height: 520
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        title: "Capture Storage Diagnostics"
+
+        contentItem: ScrollView {
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+            TextArea {
+                readOnly: true
+                selectByMouse: true
+                textFormat: TextEdit.PlainText
+                wrapMode: TextEdit.NoWrap
+                text: captureStorageDiagnosticsDialog.diagnosticsText
+                font.family: "Consolas"
+                font.pixelSize: 12
+                color: "#0f172a"
+                padding: 14
+                background: Rectangle {
+                    color: "#f8fafc"
+                    border.color: "#e2e8f0"
+                    radius: 8
+                }
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Close
+
+            Button {
+                text: "Copy"
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                enabled: captureStorageDiagnosticsDialog.diagnosticsText.length > 0
+                onClicked: mainController.copyTextToClipboard(captureStorageDiagnosticsDialog.diagnosticsText)
+            }
+
+            onRejected: captureStorageDiagnosticsDialog.close()
         }
     }
 
@@ -260,6 +354,7 @@ ApplicationWindow {
                 usePossibleTlsQuic: mainController.usePossibleTlsQuic
                 validateSelectedPacketChecksums: mainController.validateSelectedPacketChecksums
                 showWiresharkFilterForSelectedFlow: mainController.showWiresharkFilterForSelectedFlow
+                showProtocolPathColumn: mainController.showProtocolPathColumn
                 onHttpUsePathAsServiceHintChangedByUser: function(enabled) {
                     mainController.httpUsePathAsServiceHint = enabled
                 }
@@ -272,6 +367,9 @@ ApplicationWindow {
                 onShowWiresharkFilterForSelectedFlowChangedByUser: function(enabled) {
                     mainController.showWiresharkFilterForSelectedFlow = enabled
                 }
+                onShowProtocolPathColumnChangedByUser: function(enabled) {
+                    mainController.showProtocolPathColumn = enabled
+                }
             }
         }
 
@@ -279,6 +377,110 @@ ApplicationWindow {
             standardButtons: DialogButtonBox.Ok | DialogButtonBox.Cancel
             onAccepted: settingsDialog.close()
             onRejected: settingsDialog.close()
+        }
+    }
+
+    Dialog {
+        id: protocolPathLegendDialog
+        parent: window.contentItem
+        x: Math.round((window.width - width) / 2)
+        y: Math.round((window.height - height) / 2)
+        width: 640
+        height: 520
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        title: "Protocol Path Legend"
+
+        contentItem: ScrollView {
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            ColumnLayout {
+                width: parent.width
+                spacing: 12
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: "#475569"
+                    text: "Compact flow-list badges explain FlowKeyV2 path identity. They show only current flow-identity layers, not higher-level application hints."
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 18
+                    rowSpacing: 10
+
+                    Repeater {
+                        model: mainController.protocolPathLegend
+
+                        delegate: RowLayout {
+                            required property var modelData
+
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            spacing: 12
+
+                            Rectangle {
+                                Layout.preferredWidth: 58
+                                implicitHeight: 24
+                                radius: 12
+                                color: modelData.backgroundColor
+                                border.color: modelData.borderColor
+                                border.width: 1
+
+                                Label {
+                                    anchors.centerIn: parent
+                                    text: modelData.shortLabel
+                                    color: modelData.textColor
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                spacing: 2
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: modelData.fullName
+                                    color: "#0f172a"
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    text: "Category: " + modelData.colorKey
+                                    color: "#64748b"
+                                    font.pixelSize: 12
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    color: "#64748b"
+                    font.pixelSize: 12
+                    text: "Identifiers such as VLAN VID, MPLS label, VXLAN VNI, Geneve VNI, and GTP-U TEID appear in badge tooltips and the full path text."
+                }
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Ok
+            onAccepted: protocolPathLegendDialog.close()
         }
     }
 
@@ -319,7 +521,10 @@ ApplicationWindow {
             Button {
                 id: openCaptureButton
                 text: "Open Capture..."
-                enabled: !mainController.isOpening && !mainController.smartExportInProgress
+                enabled: !mainController.isOpening &&
+                         !mainController.smartExportInProgress &&
+                         !mainController.indexSaveInProgress &&
+                         !mainController.flowInfoCsvExportInProgress
                 implicitHeight: 40
                 leftPadding: 16
                 rightPadding: 18
@@ -366,7 +571,10 @@ ApplicationWindow {
 
             ComboBox {
                 id: captureModeComboBox
-                enabled: !mainController.isOpening && !mainController.smartExportInProgress
+                enabled: !mainController.isOpening &&
+                         !mainController.smartExportInProgress &&
+                         !mainController.indexSaveInProgress &&
+                         !mainController.flowInfoCsvExportInProgress
                 model: ["Fast", "Deep"]
                 currentIndex: mainController.captureOpenMode
                 implicitHeight: openCaptureButton.implicitHeight
@@ -791,6 +999,50 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: mainController.indexSaveInProgress
+            color: "#f8fafc"
+            border.color: "#cbd5e1"
+            radius: 6
+            implicitHeight: indexSaveProgressLayout.implicitHeight + 16
+
+            ColumnLayout {
+                id: indexSaveProgressLayout
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 4
+
+                Label {
+                    Layout.fillWidth: true
+                    text: "Analysis index save in progress"
+                    color: "#64748b"
+                    font.pixelSize: 12
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: mainController.indexSaveProgressText
+                    color: "#0f172a"
+                    wrapMode: Text.WordWrap
+                }
+
+                ProgressBar {
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 1
+                    value: mainController.indexSaveProgressPercent
+                    indeterminate: mainController.indexSaveProgressPercent <= 0.0
+                }
+
+                Button {
+                    text: mainController.indexSaveCancelRequested ? "Cancelling..." : "Cancel"
+                    enabled: mainController.indexSaveInProgress && !mainController.indexSaveCancelRequested
+                    onClicked: mainController.cancelSaveAnalysisIndex()
+                }
+            }
+        }
+
         TabBar {
             id: mainTabs
             Layout.fillWidth: true
@@ -887,8 +1139,11 @@ ApplicationWindow {
                 unrecognizedPacketCount: mainController.unrecognizedPacketCount
                 sourceCaptureAvailable: mainController.hasSourceCapture
                 filterText: mainController.flowFilterText
+                protocolPathFilterText: mainController.protocolPathFlowFilterText
+                protocolPathFilterVisible: mainController.hasProtocolPathFlowFilter
                 wiresharkFilterText: mainController.selectedFlowWiresharkFilter
                 wiresharkFilterVisible: mainController.selectedFlowHasWiresharkFilter
+                showProtocolPathColumn: mainController.showProtocolPathColumn
                 sortColumn: mainController.flowSortColumn
                 sortAscending: mainController.flowSortAscending
                 packetModel: mainController.packetModel
@@ -916,6 +1171,12 @@ ApplicationWindow {
                 }
                 onFilterTextEdited: function(text) {
                     mainController.flowFilterText = text
+                }
+                onClearTextFilterRequested: function() {
+                    mainController.flowFilterText = ""
+                }
+                onClearProtocolPathFilterRequested: function() {
+                    mainController.clearProtocolPathFlowFilter()
                 }
                 onCopyWiresharkFilterRequested: function() {
                     mainController.copySelectedFlowWiresharkFilter()
@@ -1079,10 +1340,11 @@ ApplicationWindow {
                 tlsWithSni: mainController.tlsWithSni
                 tlsWithoutSni: mainController.tlsWithoutSni
                 tlsVersion12: mainController.tlsVersion12
-                tlsVersion13: mainController.tlsVersion13
-                tlsVersionUnknown: mainController.tlsVersionUnknown
-                protocolHintDistribution: mainController.protocolHintDistribution
-                statisticsMode: mainController.statisticsMode
+                    tlsVersion13: mainController.tlsVersion13
+                    tlsVersionUnknown: mainController.tlsVersionUnknown
+                    protocolHintDistribution: mainController.protocolHintDistribution
+                    protocolPathStatsModel: mainController.protocolPathStatsModel
+                    statisticsMode: mainController.statisticsMode
                 topEndpointsModel: mainController.topEndpointsModel
                 topPortsModel: mainController.topPortsModel
                 onEndpointActivated: function(endpointText) {
@@ -1093,6 +1355,9 @@ ApplicationWindow {
                 }
                 onStatisticsModeChangedByUser: function(mode) {
                     mainController.statisticsMode = mode
+                }
+                onShowFlowsRequested: function() {
+                    mainController.showSelectedProtocolPathFlows()
                 }
             }
         }

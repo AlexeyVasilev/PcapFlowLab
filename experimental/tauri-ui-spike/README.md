@@ -19,6 +19,7 @@ Implemented slice:
 - `Flow -> Export Current Flow` through the existing session flow-export path
 - `Flow -> Export Selected Flows` through the existing session batch flow-export path
 - `Flow -> Export Unselected Flows` through the existing session batch flow-export path
+- `Flow -> Export All Flows Info to CSV...` through the shared session flow-manifest CSV path
 - `Flow -> Smart Export...` through the existing session smart-export path
 - `View -> Settings` for the currently shared safe runtime settings slice
 - locate/attach source capture for index-backed or source-missing sessions
@@ -108,6 +109,7 @@ Implemented slice:
 - `Flow -> Export Current Flow` reuses the existing session flow-export path and a native Save dialog with `.pcap` default suffix.
 - `Flow -> Export Selected Flows` reuses the existing session batch flow-export path, the checked-flow set, and the same native `.pcap` Save dialog behavior.
 - `Flow -> Export Unselected Flows` reuses the existing session batch flow-export path, the inverse of checked-flow selection over the full loaded flow list, and the same native `.pcap` Save dialog behavior.
+- `Flow -> Export All Flows Info to CSV...` reuses the shared backend flow-manifest CSV writer, opens a native `.csv` Save dialog, and works from the open backend session even when the Tauri shell skips eager flow-row loading for very large captures.
 - `Flow -> Smart Export...` reuses the existing smart-export session path and a compact Tauri dialog that mirrors the existing flow-scope, base-selection, and output-mode semantics.
 - `View -> Settings` now exposes the currently shared runtime-safe settings slice.
 - `Flow -> Export Current Flow` is selected-flow-only and requires the original source capture to be readable.
@@ -194,16 +196,17 @@ Implemented slice:
 
 ## Deferred items
 
-- Tauri now supports six narrow save/export workflows:
+- Tauri now supports seven narrow save/export workflows:
   - `File -> Save Index`
   - `Flow -> Export Current Flow`
   - `Flow -> Export Selected Flows`
   - `Flow -> Export Unselected Flows`
+  - `Flow -> Export All Flows Info to CSV...`
   - `Flow -> Smart Export...`
   - selected-flow Analysis sequence CSV export
 - Checked-flow selection exists in the Flows table and now powers `Flow -> Export Selected Flows`.
 - `Flow -> Export Unselected Flows` now exports the inverse of checked-flow selection.
-- Other export workflows are still absent in Tauri.
+- Broader export parity is still incomplete in Tauri.
 - Qt single-file Smart Export now has async/progress/cancel in the desktop UI, but Tauri Smart Export still uses one-shot command paths with only busy/status-level feedback.
 - This limitation applies to all Smart Export targets, including flow-based export and `Unrecognized packets`.
 - Follow-up: add async Smart Export progress/cancel support to the Tauri spike, likely using the same start/poll/cancel pattern already used for capture opening. This should cover both flow-based Smart Export and Unrecognized packets Smart Export.
@@ -249,6 +252,7 @@ Implemented slice:
 - Flows/Analysis splitter positions are runtime-only in the current shell and are not persisted yet.
 - Clipboard copy is best-effort; if the browser clipboard API is unavailable or fails, the shell only shows a small non-fatal message.
 - Large-capture performance work is still ongoing even though the two largest flow lists now use frontend virtualization/windowing.
+- Very large sessions currently keep open progress/cancel, overview loading, and statistics available, but the Tauri shell skips eager `get_flows()` loading above `250,000` flows to avoid hanging on multi-million-flow captures or very large indexes; Qt remains the recommended frontend for those sessions.
 - Packet virtualization, stream virtualization, and backend paging/filtering/sorting for very large captures are still deferred.
 - Shared backend packet-byte read behavior for very large selected flows remains a known optimization area.
 - The dev-only memory log is investigative only; it does not replace a future large-capture performance / virtualization pass.

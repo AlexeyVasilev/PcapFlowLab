@@ -31,6 +31,16 @@ char* pfl_frontend_session_adapter_save_index_json(
     const char* path_utf8
 );
 char* pfl_frontend_session_adapter_get_settings_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_protocol_path_legend_json(PflFrontendSessionAdapterHandle* handle);
+char* pfl_frontend_session_adapter_get_protocol_path_statistics_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode
+);
+char* pfl_frontend_session_adapter_get_protocol_path_summary_flow_indices_json(
+    PflFrontendSessionAdapterHandle* handle,
+    std::uint8_t mode,
+    std::uint64_t node_id
+);
 char* pfl_frontend_session_adapter_update_settings_json(
     PflFrontendSessionAdapterHandle* handle,
     std::uint8_t http_use_path_as_service_hint,
@@ -47,6 +57,10 @@ char* pfl_frontend_session_adapter_export_selected_flows_json(
     const char* path_utf8,
     const std::size_t* flow_indices,
     std::size_t flow_index_count
+);
+char* pfl_frontend_session_adapter_export_all_flows_info_csv_json(
+    PflFrontendSessionAdapterHandle* handle,
+    const char* path_utf8
 );
 char* pfl_frontend_session_adapter_export_smart_flows_json(
     PflFrontendSessionAdapterHandle* handle,

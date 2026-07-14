@@ -314,6 +314,8 @@ struct NetworkPayloadView {
     std::uint16_t protocol_type {0};
     std::size_t payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
+    bool has_pppoe {false};
+    std::uint16_t ppp_protocol {0};
     bool has_mpls {false};
     std::uint16_t mpls_ether_type {0};
     MplsStackView mpls {};
@@ -1182,6 +1184,8 @@ inline void resolve_pppoe_inner_payload(std::span<const std::uint8_t> bytes, Net
     }
 
     if (const auto pppoe = parse_pppoe_session_payload(bytes, view.payload_offset); pppoe.has_value()) {
+        view.has_pppoe = true;
+        view.ppp_protocol = pppoe->ppp_protocol;
         if (pppoe->ppp_protocol == kPppProtocolIpv4) {
             view.protocol_type = kEtherTypeIpv4;
             view.payload_offset = pppoe->payload_offset;

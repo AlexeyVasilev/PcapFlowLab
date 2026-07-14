@@ -11,8 +11,11 @@ Item {
     property int unrecognizedPacketCount: 0
     property bool sourceCaptureAvailable: true
     property string filterText: ""
+    property string protocolPathFilterText: ""
+    property bool protocolPathFilterVisible: false
     property string wiresharkFilterText: ""
     property bool wiresharkFilterVisible: false
+    property bool showProtocolPathColumn: true
     property int sortColumn: 0
     property bool sortAscending: true
     property var packetModel: null
@@ -84,6 +87,8 @@ Item {
     signal flowSelected(int flowIndex)
     signal unrecognizedPacketsRequested()
     signal filterTextEdited(string text)
+    signal clearTextFilterRequested()
+    signal clearProtocolPathFilterRequested()
     signal copyWiresharkFilterRequested()
     signal sortRequested(int column)
     signal sendFlowToAnalysisRequested()
@@ -113,8 +118,11 @@ Item {
             unrecognizedPacketsSelected: root.unrecognizedPacketsSelected
             unrecognizedPacketCount: root.unrecognizedPacketCount
             filterText: root.filterText
+            protocolPathFilterText: root.protocolPathFilterText
+            protocolPathFilterVisible: root.protocolPathFilterVisible
             wiresharkFilterText: root.wiresharkFilterText
             wiresharkFilterVisible: root.wiresharkFilterVisible
+            showProtocolPathColumn: root.showProtocolPathColumn
             sortColumn: root.sortColumn
             sortAscending: root.sortAscending
             onFlowSelected: function(flowIndex) {
@@ -122,6 +130,12 @@ Item {
             }
             onFilterTextEdited: function(text) {
                 root.filterTextEdited(text)
+            }
+            onClearTextFilterRequested: function() {
+                root.clearTextFilterRequested()
+            }
+            onClearProtocolPathFilterRequested: function() {
+                root.clearProtocolPathFilterRequested()
             }
             onCopyWiresharkFilterRequested: function() {
                 root.copyWiresharkFilterRequested()

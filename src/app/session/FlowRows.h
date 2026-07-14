@@ -2,13 +2,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include "core/domain/ConnectionKey.h"
+#include "core/domain/ProtocolPath.h"
 
 namespace pfl {
+
+using FlowIndex = std::uint32_t;
 
 enum class FlowAddressFamily : std::uint8_t {
     ipv4,
@@ -17,10 +21,21 @@ enum class FlowAddressFamily : std::uint8_t {
 
 using FlowConnectionKey = std::variant<ConnectionKeyV4, ConnectionKeyV6>;
 
+struct ProtocolPathBadgeRow {
+    std::string short_label {};
+    std::string full_name {};
+    std::string tooltip {};
+    std::string color_key {};
+    std::string background_color {};
+    std::string border_color {};
+    std::string text_color {};
+};
+
 struct FlowRow {
     std::size_t index {0};
     FlowAddressFamily family {FlowAddressFamily::ipv4};
     FlowConnectionKey key {ConnectionKeyV4 {}};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
     std::string protocol_text {};
     std::string protocol_hint {};
     std::string service_hint {};
@@ -138,9 +153,55 @@ struct TlsRecognitionStats {
     std::uint64_t version_unknown {0};
 };
 
+enum class ProtocolPathStatisticsMode : std::uint8_t {
+    kind_overview = 0,
+    identity_tree = 1,
+    terminal_paths = 2,
+};
+
+inline constexpr std::uint64_t kInvalidProtocolPathStatisticsNodeId = 0U;
+
 struct CaptureTopSummary {
     std::vector<TopEndpointRow> endpoints_by_bytes {};
     std::vector<TopPortRow> ports_by_bytes {};
+};
+
+struct ProtocolPathStatisticsRow {
+    std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
+    std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};
+    std::size_t depth {0};
+    LayerKey layer {};
+    ProtocolPath path {};
+    std::string layer_text {};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+    bool has_children {false};
+    bool is_terminal {false};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t original_byte_count {0};
+    double flow_percent {0.0};
+    double packet_percent {0.0};
+    double original_byte_percent {0.0};
+    std::string flow_count_text {};
+    std::string packet_count_text {};
+    std::string original_byte_count_text {};
+};
+
+struct ProtocolPathStatisticsNodeMembershipRange {
+    std::size_t offset {0};
+    std::size_t count {0};
+};
+
+struct CaptureProtocolPathSummary {
+    ProtocolPathStatisticsMode mode {ProtocolPathStatisticsMode::kind_overview};
+    std::uint64_t total_flow_count {0};
+    std::uint64_t total_packet_count {0};
+    std::uint64_t total_original_byte_count {0};
+    std::vector<ProtocolPathStatisticsRow> rows {};
+    std::vector<FlowIndex> flow_index_pool {};
+    std::vector<ProtocolPathStatisticsNodeMembershipRange> node_membership_ranges {};
 };
 
 }  // namespace pfl

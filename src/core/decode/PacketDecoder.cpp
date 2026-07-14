@@ -4,6 +4,7 @@
 #include <array>
 #include <optional>
 #include <span>
+#include <utility>
 
 #include "core/decode/PacketDecodeSupport.h"
 
@@ -26,11 +27,118 @@ PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragment
     };
 }
 
+DecodedPacket make_decoded_packet(const IngestedPacketV4& packet, const ProtocolPathBuilder& builder) {
+    return DecodedPacket {
+        .ipv4 = packet,
+        .protocol_path_builder = builder,
+    };
+}
+
+DecodedPacket make_decoded_packet(const IngestedPacketV6& packet, const ProtocolPathBuilder& builder) {
+    return DecodedPacket {
+        .ipv6 = packet,
+        .protocol_path_builder = builder,
+    };
+}
+
+void push_link_layer_path(
+    ProtocolPathBuilder& builder,
+    std::span<const std::uint8_t> packet_bytes,
+    const std::uint32_t data_link_type,
+    const std::size_t link_layer_offset
+) {
+    if (data_link_type == kLinkTypeEthernet) {
+        if (packet_bytes.size() < link_layer_offset + detail::kEthernetHeaderSize) {
+            return;
+        }
+
+        std::uint16_t protocol_type = detail::read_be16(packet_bytes, link_layer_offset + 12U);
+        auto payload_offset = link_layer_offset + detail::kEthernetHeaderSize;
+        static_cast<void>(
+            builder.push(protocol_type < detail::kIeee8023LengthCutoff ? LayerKey::ieee8023() : LayerKey::ethernet_ii()));
+
+        std::size_t vlan_count = 0U;
+        while (detail::is_vlan_ether_type(protocol_type)) {
+            if (vlan_count == detail::kMaxVlanTags ||
+                packet_bytes.size() < payload_offset + detail::kVlanHeaderSize) {
+                return;
+            }
+
+            const auto tci = detail::read_be16(packet_bytes, payload_offset);
+            static_cast<void>(builder.push(LayerKey::vlan(static_cast<std::uint16_t>(tci & 0x0FFFU))));
+            protocol_type = detail::read_be16(packet_bytes, payload_offset + 2U);
+            payload_offset += detail::kVlanHeaderSize;
+            ++vlan_count;
+        }
+        return;
+    }
+
+    if (data_link_type == kLinkTypeLinuxSll) {
+        static_cast<void>(builder.push(LayerKey::linux_sll()));
+        return;
+    }
+
+    if (data_link_type == kLinkTypeLinuxSll2) {
+        static_cast<void>(builder.push(LayerKey::linux_sll2()));
+    }
+}
+
+void push_llc_snap_path_if_resolved(
+    ProtocolPathBuilder& builder,
+    const detail::LinkLayerPayloadView& link_layer,
+    const std::uint16_t resolved_protocol_type
+) {
+    if (link_layer.is_ieee_802_3 &&
+        (resolved_protocol_type == detail::kEtherTypeArp ||
+         resolved_protocol_type == detail::kEtherTypeIpv4 ||
+         resolved_protocol_type == detail::kEtherTypeIpv6)) {
+        static_cast<void>(builder.push(LayerKey::llc_snap()));
+    }
+}
+
+void push_outer_protocol_path(
+    ProtocolPathBuilder& builder,
+    std::span<const std::uint8_t> packet_bytes,
+    const detail::NetworkPayloadView& network,
+    const std::uint32_t data_link_type
+) {
+    push_link_layer_path(builder, packet_bytes, data_link_type, 0U);
+    push_llc_snap_path_if_resolved(builder, network.link_layer, network.protocol_type);
+
+    if (network.has_pppoe &&
+        (network.ppp_protocol == detail::kPppProtocolIpv4 ||
+         network.ppp_protocol == detail::kPppProtocolIpv6)) {
+        static_cast<void>(builder.push(LayerKey::pppoe()));
+        static_cast<void>(builder.push(LayerKey::ppp()));
+    }
+
+    if (network.has_mpls) {
+        for (std::size_t index = 0U; index < network.mpls.label_count; ++index) {
+            static_cast<void>(builder.push(LayerKey::mpls(network.mpls.labels[index].label)));
+        }
+
+        if (network.mpls.has_inner_ethernet) {
+            static_cast<void>(builder.push(LayerKey::mpls_pw()));
+            push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, network.mpls.inner_ethernet_offset);
+            push_llc_snap_path_if_resolved(builder, network.mpls.inner_ethernet, network.mpls.inner_protocol_type);
+        }
+    }
+
+    if (network.has_pbb && detail::pbb_has_resolved_inner_payload(network.pbb.status)) {
+        static_cast<void>(builder.push(LayerKey::pbb(network.pbb.isid)));
+        if (network.pbb.has_inner_ethernet) {
+            push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, network.pbb.inner_ethernet_offset);
+            push_llc_snap_path_if_resolved(builder, network.pbb.inner_ethernet, network.pbb.inner_protocol_type);
+        }
+    }
+}
+
 std::optional<DecodedPacket> decode_ipv4_transport_payload(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t ipv4_offset,
     const std::optional<std::size_t> bounded_packet_end,
-    const RawPcapPacket& packet
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
 ) {
     const auto bounded_bytes = bounded_packet_end.has_value()
         ? packet_bytes.first(std::min(*bounded_packet_end, packet_bytes.size()))
@@ -73,13 +181,16 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
         packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
+        static_cast<void>(builder.push(LayerKey::ipv4()));
+        static_cast<void>(builder.push(LayerKey::tcp()));
 
-        return DecodedPacket {
-            .ipv4 = IngestedPacketV4 {
+        return make_decoded_packet(
+            IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-        };
+            builder
+        );
     }
 
     if (protocol == detail::kIpProtocolUdp) {
@@ -104,13 +215,16 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
 
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        static_cast<void>(builder.push(LayerKey::ipv4()));
+        static_cast<void>(builder.push(LayerKey::udp()));
 
-        return DecodedPacket {
-            .ipv4 = IngestedPacketV4 {
+        return make_decoded_packet(
+            IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-        };
+            builder
+        );
     }
 
     if (protocol == detail::kIpProtocolSctp) {
@@ -129,13 +243,16 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
 
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+        static_cast<void>(builder.push(LayerKey::ipv4()));
+        static_cast<void>(builder.push(LayerKey::sctp()));
 
-        return DecodedPacket {
-            .ipv4 = IngestedPacketV4 {
+        return make_decoded_packet(
+            IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-        };
+            builder
+        );
     }
 
     return std::nullopt;
@@ -145,7 +262,8 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t ipv6_offset,
     const std::optional<std::size_t> bounded_packet_end,
-    const RawPcapPacket& packet
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
 ) {
     const auto bounded_bytes = bounded_packet_end.has_value()
         ? packet_bytes.first(std::min(*bounded_packet_end, packet_bytes.size()))
@@ -193,13 +311,16 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
         packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
+        static_cast<void>(builder.push(LayerKey::ipv6()));
+        static_cast<void>(builder.push(LayerKey::tcp()));
 
-        return DecodedPacket {
-            .ipv6 = IngestedPacketV6 {
+        return make_decoded_packet(
+            IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-        };
+            builder
+        );
     }
 
     if (payload->next_header == detail::kIpProtocolUdp) {
@@ -223,13 +344,16 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
 
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        static_cast<void>(builder.push(LayerKey::ipv6()));
+        static_cast<void>(builder.push(LayerKey::udp()));
 
-        return DecodedPacket {
-            .ipv6 = IngestedPacketV6 {
+        return make_decoded_packet(
+            IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-        };
+            builder
+        );
     }
 
     if (payload->next_header == detail::kIpProtocolSctp) {
@@ -248,13 +372,16 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
 
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
+        static_cast<void>(builder.push(LayerKey::ipv6()));
+        static_cast<void>(builder.push(LayerKey::sctp()));
 
-        return DecodedPacket {
-            .ipv6 = IngestedPacketV6 {
+        return make_decoded_packet(
+            IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-        };
+            builder
+        );
     }
 
     return std::nullopt;
@@ -265,13 +392,14 @@ std::optional<DecodedPacket> decode_supported_ip_transport_payload(
     const std::uint16_t protocol_type,
     const std::size_t payload_offset,
     const std::optional<std::size_t> bounded_packet_end,
-    const RawPcapPacket& packet
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
 ) {
     if (protocol_type == detail::kEtherTypeIpv4) {
-        return decode_ipv4_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet);
+        return decode_ipv4_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet, std::move(builder));
     }
     if (protocol_type == detail::kEtherTypeIpv6) {
-        return decode_ipv6_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet);
+        return decode_ipv6_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet, std::move(builder));
     }
     return std::nullopt;
 }
@@ -280,7 +408,8 @@ std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t udp_payload_offset,
     const std::size_t udp_payload_length,
-    const RawPcapPacket& packet
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
 ) {
     const auto udp_payload_end = udp_payload_offset + udp_payload_length;
     const auto vxlan = detail::parse_vxlan_payload(packet_bytes, udp_payload_offset, udp_payload_end);
@@ -288,12 +417,19 @@ std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
         return std::nullopt;
     }
 
+    static_cast<void>(builder.push(LayerKey::vxlan(vxlan->vni)));
+    if (vxlan->has_inner_ethernet) {
+        push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, vxlan->inner_ethernet_offset);
+        push_llc_snap_path_if_resolved(builder, vxlan->inner_ethernet, vxlan->resolved_protocol_type);
+    }
+
     return decode_supported_ip_transport_payload(
         packet_bytes,
         vxlan->resolved_protocol_type,
         vxlan->resolved_payload_offset,
         vxlan->bounded_packet_end,
-        packet
+        packet,
+        std::move(builder)
     );
 }
 
@@ -301,7 +437,8 @@ std::optional<DecodedPacket> try_decode_geneve_inner_packet(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t udp_payload_offset,
     const std::size_t udp_payload_length,
-    const RawPcapPacket& packet
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
 ) {
     const auto udp_payload_end = udp_payload_offset + udp_payload_length;
     const auto geneve = detail::parse_geneve_payload(packet_bytes, udp_payload_offset, udp_payload_end);
@@ -309,12 +446,19 @@ std::optional<DecodedPacket> try_decode_geneve_inner_packet(
         return std::nullopt;
     }
 
+    static_cast<void>(builder.push(LayerKey::geneve(geneve->vni)));
+    if (geneve->has_inner_ethernet) {
+        push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, geneve->inner_ethernet_offset);
+        push_llc_snap_path_if_resolved(builder, geneve->inner_ethernet, geneve->resolved_protocol_type);
+    }
+
     return decode_supported_ip_transport_payload(
         packet_bytes,
         geneve->resolved_protocol_type,
         geneve->resolved_payload_offset,
         geneve->bounded_packet_end,
-        packet
+        packet,
+        std::move(builder)
     );
 }
 
@@ -322,7 +466,8 @@ std::optional<DecodedPacket> try_decode_gtpu_inner_packet(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t udp_payload_offset,
     const std::size_t udp_payload_length,
-    const RawPcapPacket& packet
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
 ) {
     const auto udp_payload_end = udp_payload_offset + udp_payload_length;
     const auto gtpu = detail::parse_gtpu_payload(packet_bytes, udp_payload_offset, udp_payload_end);
@@ -330,12 +475,15 @@ std::optional<DecodedPacket> try_decode_gtpu_inner_packet(
         return std::nullopt;
     }
 
+    static_cast<void>(builder.push(LayerKey::gtpu(gtpu->teid)));
+
     return decode_supported_ip_transport_payload(
         packet_bytes,
         gtpu->resolved_protocol_type,
         gtpu->resolved_payload_offset,
         gtpu->bounded_packet_end,
-        packet
+        packet,
+        std::move(builder)
     );
 }
 
@@ -353,6 +501,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
     if (!network.has_value()) {
         return {};
     }
+    ProtocolPathBuilder base_builder {};
+    push_outer_protocol_path(base_builder, packet_bytes, *network, packet.data_link_type);
     const auto bounded_bytes = network->bounded_packet_end.has_value()
         ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
         : packet_bytes;
@@ -386,13 +536,14 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             .dst_port = 0,
             .protocol = ProtocolId::arp,
         };
-
-        return DecodedPacket {
-            .ipv4 = IngestedPacketV4 {
+        auto builder = base_builder;
+        return make_decoded_packet(
+            IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = make_packet_ref(packet),
             },
-        };
+            builder
+        );
     }
 
     if (network->protocol_type == detail::kEtherTypeIpv4) {
@@ -412,6 +563,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             .src_addr = detail::read_be32(bounded_bytes, ipv4_offset + 12U),
             .dst_addr = detail::read_be32(bounded_bytes, ipv4_offset + 16U),
         };
+        auto ipv4_builder = base_builder;
+        static_cast<void>(ipv4_builder.push(LayerKey::ipv4()));
 
         if (is_fragmented) {
             switch (protocol) {
@@ -434,12 +587,13 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 return {};
             }
 
-            return DecodedPacket {
-                .ipv4 = IngestedPacketV4 {
+            return make_decoded_packet(
+                IngestedPacketV4 {
                     .flow_key = flow_base,
                     .packet_ref = make_packet_ref(packet, true),
                 },
-            };
+                ipv4_builder
+            );
         }
 
         if (protocol == detail::kIpProtocolTcp) {
@@ -463,13 +617,15 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             auto packet_ref = make_packet_ref(packet);
             packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
             packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
-
-            return DecodedPacket {
-                .ipv4 = IngestedPacketV4 {
+            auto builder = ipv4_builder;
+            static_cast<void>(builder.push(LayerKey::tcp()));
+            return make_decoded_packet(
+                IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-            };
+                builder
+            );
         }
 
         if (protocol == detail::kIpProtocolUdp) {
@@ -487,6 +643,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.src_port = detail::read_be16(bounded_bytes, transport_offset);
             flow_key.dst_port = detail::read_be16(bounded_bytes, transport_offset + 2U);
             flow_key.protocol = ProtocolId::udp;
+            auto udp_builder = ipv4_builder;
+            static_cast<void>(udp_builder.push(LayerKey::udp()));
             const auto udp_payload =
                 detail::parse_udp_payload_bounds(bounded_bytes, transport_offset, ipv4_bounds->nominal_packet_end);
 
@@ -499,7 +657,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                                 bounded_bytes,
                                 udp_payload->payload_offset,
                                 udp_payload->payload_length,
-                                packet
+                                packet,
+                                udp_builder
                             );
                             vxlan_packet.has_value()) {
                             return *vxlan_packet;
@@ -509,7 +668,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                                 bounded_bytes,
                                 udp_payload->payload_offset,
                                 udp_payload->payload_length,
-                                packet
+                                packet,
+                                udp_builder
                             );
                             geneve_packet.has_value()) {
                             return *geneve_packet;
@@ -519,7 +679,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                                 bounded_bytes,
                                 udp_payload->payload_offset,
                                 udp_payload->payload_length,
-                                packet
+                                packet,
+                                udp_builder
                             );
                             gtpu_packet.has_value()) {
                             return *gtpu_packet;
@@ -542,12 +703,13 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                     packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
             }
 
-            return DecodedPacket {
-                .ipv4 = IngestedPacketV4 {
+            return make_decoded_packet(
+                IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-            };
+                udp_builder
+            );
         }
 
         if (protocol == detail::kIpProtocolSctp) {
@@ -567,13 +729,15 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
             auto packet_ref = make_packet_ref(packet);
             packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
-
-            return DecodedPacket {
-                .ipv4 = IngestedPacketV4 {
+            auto builder = ipv4_builder;
+            static_cast<void>(builder.push(LayerKey::sctp()));
+            return make_decoded_packet(
+                IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-            };
+                builder
+            );
         }
 
         if (protocol == detail::kIpProtocolIcmp) {
@@ -583,13 +747,14 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
             auto flow_key = flow_base;
             flow_key.protocol = ProtocolId::icmp;
-
-            return DecodedPacket {
-                .ipv4 = IngestedPacketV4 {
+            auto builder = ipv4_builder;
+            return make_decoded_packet(
+                IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = make_packet_ref(packet),
                 },
-            };
+                builder
+            );
         }
 
         if (protocol == detail::kIpProtocolIgmp) {
@@ -601,13 +766,13 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             auto flow_key = flow_base;
             flow_key.dst_addr = detail::igmp_effective_group_address(*igmp, flow_base.dst_addr);
             flow_key.protocol = ProtocolId::igmp;
-
-            return DecodedPacket {
-                .ipv4 = IngestedPacketV4 {
+            return make_decoded_packet(
+                IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = make_packet_ref(packet),
                 },
-            };
+                ipv4_builder
+            );
         }
 
         return {};
@@ -637,6 +802,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.src_addr[index] = bounded_bytes[ipv6_offset + 8U + index];
             flow_key.dst_addr[index] = bounded_bytes[ipv6_offset + 24U + index];
         }
+        auto ipv6_builder = base_builder;
+        static_cast<void>(ipv6_builder.push(LayerKey::ipv6()));
 
         if (payload->has_fragment_header) {
             switch (payload->next_header) {
@@ -656,12 +823,13 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 return {};
             }
 
-            return DecodedPacket {
-                .ipv6 = IngestedPacketV6 {
+            return make_decoded_packet(
+                IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = make_packet_ref(packet, true),
                 },
-            };
+                ipv6_builder
+            );
         }
 
         if (payload->next_header == detail::kIpProtocolTcp) {
@@ -684,13 +852,15 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             auto packet_ref = make_packet_ref(packet);
             packet_ref.payload_length = static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
             packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
-
-            return DecodedPacket {
-                .ipv6 = IngestedPacketV6 {
+            auto builder = ipv6_builder;
+            static_cast<void>(builder.push(LayerKey::tcp()));
+            return make_decoded_packet(
+                IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-            };
+                builder
+            );
         }
 
         if (payload->next_header == detail::kIpProtocolUdp) {
@@ -707,6 +877,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             flow_key.src_port = detail::read_be16(bounded_bytes, payload->payload_offset);
             flow_key.dst_port = detail::read_be16(bounded_bytes, payload->payload_offset + 2U);
             flow_key.protocol = ProtocolId::udp;
+            auto udp_builder = ipv6_builder;
+            static_cast<void>(udp_builder.push(LayerKey::udp()));
             const auto udp_payload = detail::parse_udp_payload_bounds(
                 bounded_bytes,
                 payload->payload_offset,
@@ -722,7 +894,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                                 bounded_bytes,
                                 udp_payload->payload_offset,
                                 udp_payload->payload_length,
-                                packet
+                                packet,
+                                udp_builder
                             );
                             vxlan_packet.has_value()) {
                             return *vxlan_packet;
@@ -732,7 +905,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                                 bounded_bytes,
                                 udp_payload->payload_offset,
                                 udp_payload->payload_length,
-                                packet
+                                packet,
+                                udp_builder
                             );
                             geneve_packet.has_value()) {
                             return *geneve_packet;
@@ -742,7 +916,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                                 bounded_bytes,
                                 udp_payload->payload_offset,
                                 udp_payload->payload_length,
-                                packet
+                                packet,
+                                udp_builder
                             );
                             gtpu_packet.has_value()) {
                             return *gtpu_packet;
@@ -763,12 +938,13 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                     packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
             }
 
-            return DecodedPacket {
-                .ipv6 = IngestedPacketV6 {
+            return make_decoded_packet(
+                IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-            };
+                udp_builder
+            );
         }
 
         if (payload->next_header == detail::kIpProtocolSctp) {
@@ -787,13 +963,15 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
             auto packet_ref = make_packet_ref(packet);
             packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
-
-            return DecodedPacket {
-                .ipv6 = IngestedPacketV6 {
+            auto builder = ipv6_builder;
+            static_cast<void>(builder.push(LayerKey::sctp()));
+            return make_decoded_packet(
+                IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-            };
+                builder
+            );
         }
 
         if (payload->next_header == detail::kIpProtocolIcmpV6) {
@@ -802,12 +980,14 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             }
 
             flow_key.protocol = ProtocolId::icmpv6;
-            return DecodedPacket {
-                .ipv6 = IngestedPacketV6 {
+            auto builder = ipv6_builder;
+            return make_decoded_packet(
+                IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = make_packet_ref(packet),
                 },
-            };
+                builder
+            );
         }
 
         return {};

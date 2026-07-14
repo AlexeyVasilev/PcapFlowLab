@@ -53,6 +53,60 @@ std::vector<std::filesystem::path> list_exported_pcaps(const std::filesystem::pa
     return paths;
 }
 
+std::vector<std::string> read_text_file_lines(const std::filesystem::path& path) {
+    std::ifstream stream {path, std::ios::binary};
+    PFL_EXPECT(stream.is_open());
+
+    std::vector<std::string> lines {};
+    std::string line {};
+    while (std::getline(stream, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> fields {};
+    std::string field {};
+    bool in_quotes = false;
+
+    for (std::size_t index = 0; index < line.size(); ++index) {
+        const char ch = line[index];
+        if (in_quotes) {
+            if (ch == '"') {
+                if (index + 1U < line.size() && line[index + 1U] == '"') {
+                    field.push_back('"');
+                    ++index;
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                field.push_back(ch);
+            }
+            continue;
+        }
+
+        if (ch == '"') {
+            in_quotes = true;
+            continue;
+        }
+
+        if (ch == ',') {
+            fields.push_back(field);
+            field.clear();
+            continue;
+        }
+
+        field.push_back(ch);
+    }
+
+    fields.push_back(field);
+    return fields;
+}
+
 }  // namespace
 
 void run_export_tests() {
@@ -637,7 +691,15 @@ void run_export_tests() {
         std::ifstream manifest_stream {manifest_path, std::ios::binary};
         PFL_EXPECT(manifest_stream.is_open());
         const std::string manifest_text {std::istreambuf_iterator<char>(manifest_stream), std::istreambuf_iterator<char>()};
-        PFL_EXPECT(manifest_text.find("flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,exported_packet_count,exported_captured_bytes,exported_original_bytes") != std::string::npos);
+        PFL_EXPECT(manifest_text.find("flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,exported_packet_count,exported_captured_bytes,exported_original_bytes,protocol_path") != std::string::npos);
+        PFL_EXPECT(manifest_text.find("\"EthernetII->IPv4->TCP\"") != std::string::npos);
+        PFL_EXPECT(manifest_text.find("\"EthernetII->IPv4->UDP\"") != std::string::npos);
+        PFL_EXPECT(manifest_text.find("EthernetII -> IPv4 -> TCP") == std::string::npos);
+        const auto manifest_lines = read_text_file_lines(manifest_path);
+        PFL_REQUIRE(manifest_lines.size() >= 3U);
+        const auto first_manifest_row = split_csv_line(manifest_lines[1]);
+        PFL_REQUIRE(first_manifest_row.size() == 20U);
+        PFL_EXPECT(first_manifest_row.back() == "EthernetII->IPv4->TCP");
 
         std::vector<std::filesystem::path> exported_pcaps {};
         for (const auto& entry : std::filesystem::directory_iterator(output_directory)) {
@@ -664,6 +726,60 @@ void run_export_tests() {
 
         PFL_EXPECT(found_tcp_flow);
         PFL_EXPECT(found_udp_flow);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")));
+
+        const auto output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_vxlan.csv";
+        std::filesystem::remove(output_path);
+        PFL_EXPECT(session.export_all_flows_info_csv(output_path));
+
+        const auto csv_lines = read_text_file_lines(output_path);
+        PFL_REQUIRE(csv_lines.size() >= 3U);
+        PFL_EXPECT(csv_lines.front() ==
+            "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+        PFL_EXPECT(csv_lines.front().find("file_name") == std::string::npos);
+        PFL_EXPECT(csv_lines.front().find("exported_packet_count") == std::string::npos);
+        PFL_EXPECT(csv_lines[1].find("\"EthernetII->IPv4->UDP->VXLAN(vni=100)") != std::string::npos);
+        PFL_EXPECT(csv_lines[2].find("\"EthernetII->IPv4->UDP->VXLAN(vni=200)") != std::string::npos);
+        PFL_EXPECT(csv_lines[1].find("EthernetII ->") == std::string::npos);
+        const auto first_row = split_csv_line(csv_lines[1]);
+        PFL_REQUIRE(first_row.size() == 16U);
+        PFL_EXPECT(first_row[15].find("EthernetII->IPv4->UDP->VXLAN(vni=100)") != std::string::npos);
+    }
+
+    {
+        const auto output_directory = std::filesystem::temp_directory_path() / "pfl_smart_export_manifest_header_parity";
+        std::filesystem::remove_all(output_directory);
+
+        CaptureSession smart_session {};
+        PFL_REQUIRE(smart_session.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap")));
+        SmartFlowExportRequest request {};
+        request.flow_indices.push_back(0U);
+        request.base_mode = SmartFlowExportBaseMode::all_packets;
+        PFL_EXPECT(smart_session.export_smart_flows_to_folder(request, output_directory));
+
+        const auto manifest_lines = read_text_file_lines(output_directory / "flows_manifest.csv");
+        PFL_REQUIRE(!manifest_lines.empty());
+
+        const auto standalone_output_path = std::filesystem::temp_directory_path() / "pfl_all_flows_info_direct.csv";
+        std::filesystem::remove(standalone_output_path);
+        PFL_EXPECT(smart_session.export_all_flows_info_csv(standalone_output_path));
+        const auto standalone_lines = read_text_file_lines(standalone_output_path);
+        PFL_REQUIRE(!standalone_lines.empty());
+
+        PFL_EXPECT(manifest_lines.front() ==
+            "flow_id,file_name,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,exported_packet_count,exported_captured_bytes,exported_original_bytes,protocol_path");
+        PFL_EXPECT(standalone_lines.front() ==
+            "flow_id,family,transport,protocol,protocol_hint,src_ip,src_port,dst_ip,dst_port,packet_count,captured_bytes,original_bytes,first_timestamp,last_timestamp,duration_us,protocol_path");
+        PFL_EXPECT(manifest_lines.front().find("file_name") != std::string::npos);
+        PFL_EXPECT(standalone_lines.front().find("file_name") == std::string::npos);
+        PFL_EXPECT(manifest_lines[1].find("\"EthernetII->IPv4->UDP->VXLAN(vni=100)->EthernetII->IPv4->TCP\"") != std::string::npos);
+        const auto standalone_first_row = split_csv_line(standalone_lines[1]);
+        PFL_REQUIRE(standalone_first_row.size() == 16U);
+        PFL_EXPECT(standalone_first_row.back() == "EthernetII->IPv4->UDP->VXLAN(vni=100)->EthernetII->IPv4->TCP");
     }
 
     {

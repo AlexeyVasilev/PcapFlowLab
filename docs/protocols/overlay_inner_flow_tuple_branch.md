@@ -22,8 +22,8 @@ Fixture-preparation status:
 
 This branch does not aim to:
 
-- extend flow identity with tunnel namespace fields such as VNI, TEID, or GRE key;
-- solve flow-key collisions across different tunnel namespaces;
+- extend flow identity beyond the current namespace-bearing path metadata to include GRE keys or outer tunnel endpoints;
+- solve the remaining flow-key collisions across different outer tunnel carriers that still share the same namespace id plus inner tuple;
 - add decapsulated export;
 - add outer-plus-inner dual flow table modes;
 - add full tunnel session tracking;
@@ -31,7 +31,7 @@ This branch does not aim to:
 - add application-layer parsers beyond existing inner IPv4/IPv6 TCP/UDP/SCTP handling;
 - make open/import materially more expensive through deep recursive packet materialization.
 
-## Known limitation: tunnel namespace collisions
+## Historical branch limitation: tunnel namespace collisions
 
 The initial branch rule is to use the deepest successfully decoded inner IPv4/IPv6 plus TCP/UDP/SCTP tuple as the effective flow tuple.
 
@@ -40,12 +40,12 @@ This can merge traffic from different tunnel namespaces when the inner tuple is 
 - VXLAN VNI 100 inner `10.0.0.1:1234 -> 10.0.0.2:443`
 - VXLAN VNI 200 inner `10.0.0.1:1234 -> 10.0.0.2:443`
 
-Both would currently collapse to the same flow if only the inner 5-tuple is used.
+This was the original branch limitation when only the inner 5-tuple was used.
 
-Accepted branch limitation:
+Current follow-up limitation after protocol-path-aware flow identity:
 
-- initial flow grouping uses only the effective deepest inner IPv4/IPv6 plus TCP/UDP/SCTP tuple;
-- future flow identity should include an optional tunnel discriminator such as VXLAN VNI, Geneve VNI, GTP-U TEID, GRE key, or similar namespace metadata.
+- flow identity now includes protocol-path namespace identifiers such as VXLAN VNI, Geneve VNI, and GTP-U TEID;
+- future follow-up work may still decide whether outer carrier endpoints or GRE keys should also participate in identity where that matters.
 
 ## Effective tuple rule
 
@@ -229,7 +229,7 @@ Recommended fixture cases per protocol:
 - malformed / truncated overlay header
 - malformed / truncated inner Ethernet or inner IP
 - unsupported inner payload cases
-- namespace-collision documentation fixture pair, if practical, even if grouping remains intentionally merged for this branch
+- namespace-collision documentation fixture pair, if practical, to prove that namespace-bearing identifiers split same-inner-tuple traffic
 
 Recommended assertion shape:
 
@@ -304,8 +304,8 @@ Implemented in this branch so far:
 
 Still intentionally not solved:
 
-- VNI is not part of flow identity
-- TEID is not part of flow identity
+- outer tunnel carrier endpoints are not part of v1 flow identity
+- GRE keys and other future tunnel discriminators are still outside the current identity model
 - invalid/truncated/unsupported VXLAN payloads fall back to existing outer behavior instead of fabricating an inner flow
 - invalid/truncated/unsupported Geneve payloads fall back to existing outer behavior instead of fabricating an inner flow
 - invalid/truncated/unsupported GTP-U payloads fall back to existing outer behavior instead of fabricating an inner flow
@@ -326,7 +326,7 @@ Still intentionally not solved:
 
 ## Risks and unknowns
 
-- inner-tuple-only grouping can merge traffic from distinct tunnel namespaces;
+- before protocol-path-aware flow identity, inner-tuple-only grouping could merge traffic from distinct tunnel namespaces;
 - Geneve option handling may require a strict bounded parser even if options are not deeply interpreted;
 - GTP-U has multiple message types and optional extension-header paths, so the first pass should stay narrow;
 - hint detection currently assumes the chosen flow key already reflects the effective conversation, so tunnel parsing must happen before ingest;
@@ -368,8 +368,8 @@ What is supported in this branch:
 
 Known limitations intentionally left for future work:
 
-- VNI and TEID are displayed but are not part of flow identity yet;
-- identical inner 5-tuples from different overlay namespaces may still merge;
+- outer tunnel source/destination endpoints are still excluded from v1 flow identity, so same namespace id plus same inner tuple can still merge across different carriers;
+- GRE keys and other future tunnel discriminators are still outside the current identity model;
 - no decapsulated export;
 - no outer-plus-inner dual flow table mode;
 - no deep GTP-U extension-header parsing;

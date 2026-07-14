@@ -48,6 +48,9 @@ bool ImportCheckpointWriter::write(const std::filesystem::path& checkpoint_path,
         !write_marshaled_section(stream, detail::ImportCheckpointSectionId::summary, [&](std::ostream& payload) {
             return detail::write_capture_summary(payload, checkpoint.state.summary);
         }) ||
+        !write_marshaled_section(stream, detail::ImportCheckpointSectionId::protocol_paths, [&](std::ostream& payload) {
+            return detail::write_protocol_path_registry(payload, checkpoint.state.protocol_path_registry);
+        }) ||
         !write_marshaled_section(stream, detail::ImportCheckpointSectionId::ipv4_connections, [&](std::ostream& payload) {
             return detail::write_connection_table(payload, checkpoint.state.ipv4_connections);
         }) ||

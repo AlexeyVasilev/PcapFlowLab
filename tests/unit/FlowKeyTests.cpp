@@ -54,6 +54,44 @@ void run_flow_key_tests() {
     PFL_EXPECT(flow_v4_ab == flow_v4_ab);
     PFL_EXPECT(flow_v4_ab != flow_v4_ba);
 
+    const auto flow_v4_path_1 = FlowKeyV4 {
+        .src_addr = flow_v4_ab.src_addr,
+        .dst_addr = flow_v4_ab.dst_addr,
+        .src_port = flow_v4_ab.src_port,
+        .dst_port = flow_v4_ab.dst_port,
+        .protocol = flow_v4_ab.protocol,
+        .protocol_path_id = 1U,
+    };
+    const auto flow_v4_path_1_copy = FlowKeyV4 {
+        .src_addr = flow_v4_ab.src_addr,
+        .dst_addr = flow_v4_ab.dst_addr,
+        .src_port = flow_v4_ab.src_port,
+        .dst_port = flow_v4_ab.dst_port,
+        .protocol = flow_v4_ab.protocol,
+        .protocol_path_id = 1U,
+    };
+    const auto flow_v4_path_2 = FlowKeyV4 {
+        .src_addr = flow_v4_ab.src_addr,
+        .dst_addr = flow_v4_ab.dst_addr,
+        .src_port = flow_v4_ab.src_port,
+        .dst_port = flow_v4_ab.dst_port,
+        .protocol = flow_v4_ab.protocol,
+        .protocol_path_id = 2U,
+    };
+    const auto reverse_flow_v4_path_1 = FlowKeyV4 {
+        .src_addr = flow_v4_ba.src_addr,
+        .dst_addr = flow_v4_ba.dst_addr,
+        .src_port = flow_v4_ba.src_port,
+        .dst_port = flow_v4_ba.dst_port,
+        .protocol = flow_v4_ba.protocol,
+        .protocol_path_id = 1U,
+    };
+
+    PFL_EXPECT(flow_v4_path_1 == flow_v4_path_1_copy);
+    PFL_EXPECT(flow_v4_path_1 != flow_v4_path_2);
+    PFL_EXPECT(make_connection_key(flow_v4_path_1) == make_connection_key(reverse_flow_v4_path_1));
+    PFL_EXPECT(make_connection_key(flow_v4_path_1) != make_connection_key(flow_v4_path_2));
+
     const FlowKeyV6 flow_v6_ab {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
         .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),
@@ -75,6 +113,35 @@ void run_flow_key_tests() {
     PFL_EXPECT(connection_v6_ab == connection_v6_ba);
     PFL_EXPECT(resolve_direction(connection_v6_ab, flow_v6_ab) == Direction::a_to_b);
     PFL_EXPECT(resolve_direction(connection_v6_ab, flow_v6_ba) == Direction::b_to_a);
+
+    const auto flow_v6_path_1 = FlowKeyV6 {
+        .src_addr = flow_v6_ab.src_addr,
+        .dst_addr = flow_v6_ab.dst_addr,
+        .src_port = flow_v6_ab.src_port,
+        .dst_port = flow_v6_ab.dst_port,
+        .protocol = flow_v6_ab.protocol,
+        .protocol_path_id = 11U,
+    };
+    const auto flow_v6_path_2 = FlowKeyV6 {
+        .src_addr = flow_v6_ab.src_addr,
+        .dst_addr = flow_v6_ab.dst_addr,
+        .src_port = flow_v6_ab.src_port,
+        .dst_port = flow_v6_ab.dst_port,
+        .protocol = flow_v6_ab.protocol,
+        .protocol_path_id = 12U,
+    };
+    const auto reverse_flow_v6_path_1 = FlowKeyV6 {
+        .src_addr = flow_v6_ba.src_addr,
+        .dst_addr = flow_v6_ba.dst_addr,
+        .src_port = flow_v6_ba.src_port,
+        .dst_port = flow_v6_ba.dst_port,
+        .protocol = flow_v6_ba.protocol,
+        .protocol_path_id = 11U,
+    };
+
+    PFL_EXPECT(flow_v6_path_1 != flow_v6_path_2);
+    PFL_EXPECT(make_connection_key(flow_v6_path_1) == make_connection_key(reverse_flow_v6_path_1));
+    PFL_EXPECT(make_connection_key(flow_v6_path_1) != make_connection_key(flow_v6_path_2));
 
     const auto flow_v4_hash_1 = std::hash<FlowKeyV4> {}(flow_v4_ab);
     const auto flow_v4_hash_2 = std::hash<FlowKeyV4> {}(flow_v4_ab);

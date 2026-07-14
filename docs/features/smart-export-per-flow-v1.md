@@ -137,12 +137,21 @@ The manifest should contain at least:
 - `first_timestamp`
 - `last_timestamp`
 - `duration_us`
+- `protocol_path`
 
 Strongly recommended additional fields:
 
 - `exported_packet_count`
 - `exported_captured_bytes`
 - `exported_original_bytes`
+
+Current implementation notes:
+
+- `protocol_path` is appended at the end of `flows_manifest.csv`, is normalized to a single-line compact value for CSV export, and uses identifier-aware path text when available.
+- CSV export uses `->` without surrounding spaces, for example `EthernetII->IPv4->TCP`, to keep the path in a single spreadsheet cell more reliably.
+- Smart Export `flows_manifest.csv` keeps Smart Export specific columns such as `file_name`, `exported_packet_count`, `exported_captured_bytes`, and `exported_original_bytes`.
+- Qt and the Tauri spike both expose `Flow -> Export All Flows Info to CSV...`, which writes flow inventory metadata for all current flows without exporting per-flow PCAP files.
+- The standalone all-flows CSV intentionally omits Smart Export output-file columns such as `file_name` and the `exported_*` counters.
 
 ## Performance model
 

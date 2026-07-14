@@ -40,6 +40,7 @@ endif()
 add_library(
     pcap_flow_lab_core
     src/core/domain/FlowKey.cpp
+    src/core/domain/ProtocolPath.cpp
     src/core/domain/ConnectionKey.cpp
     src/core/domain/Flow.cpp
     src/core/domain/Connection.cpp
@@ -83,6 +84,7 @@ add_library(
     src/core/services/HexDumpService.cpp
     src/app/frontend/FrontendSessionAdapter.cpp
     src/app/session/CaptureSession.cpp
+    src/app/session/ProtocolPathPresentation.cpp
     src/app/session/SelectedFlowPacketSemantics.cpp
     src/app/session/SessionFlowHelpers.cpp
     src/app/session/SessionFormatting.cpp
@@ -136,6 +138,8 @@ if(PFL_BUILD_UI)
             src/ui/app/MainController.h
             src/ui/app/FlowListModel.cpp
             src/ui/app/FlowListModel.h
+            src/ui/app/ProtocolPathStatsModel.cpp
+            src/ui/app/ProtocolPathStatsModel.h
             src/ui/app/TopSummaryListModel.cpp
             src/ui/app/TopSummaryListModel.h
             src/ui/app/PacketListModel.cpp
@@ -228,11 +232,28 @@ if(PFL_BUILD_UI)
                 tests/ui/MainControllerUiTests.cpp
                 src/ui/app/MainController.cpp
                 src/ui/app/FlowListModel.cpp
+                src/ui/app/ProtocolPathStatsModel.cpp
                 src/ui/app/TopSummaryListModel.cpp
                 src/ui/app/PacketListModel.cpp
                 src/ui/app/PacketDetailsViewModel.cpp
                 src/ui/app/StreamListModel.cpp
             )
+
+            if(WIN32)
+                set_target_properties(
+                    pcap_flow_lab_ui_tests
+                    PROPERTIES
+                        WIN32_EXECUTABLE FALSE
+                )
+
+                if(MINGW)
+                    target_link_options(
+                        pcap_flow_lab_ui_tests
+                        PRIVATE
+                            -mconsole
+                    )
+                endif()
+            endif()
 
             target_link_libraries(
                 pcap_flow_lab_ui_tests
@@ -263,6 +284,7 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         tests/unit/test_main.cpp
         tests/unit/FlowKeyTests.cpp
+        tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp

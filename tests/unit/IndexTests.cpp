@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <variant>
 #include <vector>
@@ -13,6 +14,10 @@ namespace pfl::tests {
 
 namespace {
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
 void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<FlowRow>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
@@ -21,6 +26,7 @@ void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<Fl
         PFL_EXPECT(left[index].packet_count == right[index].packet_count);
         PFL_EXPECT(left[index].total_bytes == right[index].total_bytes);
         PFL_EXPECT(left[index].key == right[index].key);
+        PFL_EXPECT(left[index].protocol_path_id == right[index].protocol_path_id);
         PFL_EXPECT(left[index].protocol_hint == right[index].protocol_hint);
         PFL_EXPECT(left[index].service_hint == right[index].service_hint);
         PFL_EXPECT(left[index].has_fragmented_packets == right[index].has_fragmented_packets);
@@ -31,7 +37,16 @@ void expect_matching_rows(const std::vector<FlowRow>& left, const std::vector<Fl
 void expect_matching_packets(const std::vector<PacketRef>& left, const std::vector<PacketRef>& right) {
     PFL_EXPECT(left.size() == right.size());
     for (std::size_t index = 0; index < left.size(); ++index) {
-        PFL_EXPECT(left[index] == right[index]);
+        PFL_EXPECT(left[index].packet_index == right[index].packet_index);
+        PFL_EXPECT(left[index].byte_offset == right[index].byte_offset);
+        PFL_EXPECT(left[index].data_link_type == right[index].data_link_type);
+        PFL_EXPECT(left[index].captured_length == right[index].captured_length);
+        PFL_EXPECT(left[index].original_length == right[index].original_length);
+        PFL_EXPECT(left[index].ts_sec == right[index].ts_sec);
+        PFL_EXPECT(left[index].ts_usec == right[index].ts_usec);
+        PFL_EXPECT(left[index].payload_length == right[index].payload_length);
+        PFL_EXPECT(left[index].tcp_flags == right[index].tcp_flags);
+        PFL_EXPECT(left[index].is_ip_fragmented == right[index].is_ip_fragmented);
     }
 }
 
@@ -69,6 +84,44 @@ std::vector<std::uint8_t> make_tls_handshake_record_for_index_test(const std::ui
     append_be16(record, static_cast<std::uint16_t>(handshake.size()));
     record.insert(record.end(), handshake.begin(), handshake.end());
     return record;
+}
+
+void expect_index_roundtrip_preserves_protocol_path_identity(
+    const std::filesystem::path& relative_fixture_path,
+    const std::size_t expected_flow_count
+) {
+    auto fixture_stem = relative_fixture_path.filename().string();
+    std::replace(fixture_stem.begin(), fixture_stem.end(), '.', '_');
+    const auto index_path =
+        std::filesystem::temp_directory_path() / ("pfl_protocol_path_roundtrip_" + fixture_stem + ".idx");
+    std::filesystem::remove(index_path);
+
+    CaptureSession original_session {};
+    PFL_REQUIRE(original_session.open_capture(fixture_path(relative_fixture_path)));
+    const auto original_rows = original_session.list_flows();
+    PFL_EXPECT(original_rows.size() == expected_flow_count);
+    std::vector<std::vector<PacketRef>> original_packets_by_flow {};
+    original_packets_by_flow.reserve(original_rows.size());
+    for (std::size_t flow_index = 0; flow_index < original_rows.size(); ++flow_index) {
+        const auto packets = original_session.flow_packets(flow_index);
+        PFL_REQUIRE(packets.has_value());
+        original_packets_by_flow.push_back(*packets);
+    }
+
+    PFL_REQUIRE(original_session.save_index(index_path));
+
+    CaptureSession loaded_session {};
+    PFL_REQUIRE(loaded_session.load_index(index_path));
+    PFL_EXPECT(loaded_session.opened_from_index());
+    const auto loaded_rows = loaded_session.list_flows();
+    PFL_EXPECT(loaded_rows.size() == expected_flow_count);
+    expect_matching_rows(loaded_rows, original_rows);
+
+    for (std::size_t flow_index = 0; flow_index < loaded_rows.size(); ++flow_index) {
+        const auto loaded_packets = loaded_session.flow_packets(flow_index);
+        PFL_REQUIRE(loaded_packets.has_value());
+        expect_matching_packets(*loaded_packets, original_packets_by_flow[flow_index]);
+    }
 }
 }  // namespace
 
@@ -210,6 +263,7 @@ void run_index_tests() {
         const auto truncated_index_path = write_temp_binary_file("pfl_capture_state_truncated.idx", {0x50, 0x46, 0x4c});
         CaptureSession session {};
         PFL_EXPECT(!session.load_index(truncated_index_path));
+        PFL_EXPECT(session.last_open_error_text().find("incomplete or was not finalized") != std::string::npos);
 
         CaptureIndexReader reader {};
         CaptureState state {};
@@ -328,18 +382,79 @@ void run_index_tests() {
         PFL_EXPECT(loaded_stream_session.summary().total_bytes == original_stream_session.summary().total_bytes);
     }
 
+    expect_index_roundtrip_preserves_protocol_path_identity(
+        std::filesystem::path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"),
+        2U
+    );
+    expect_index_roundtrip_preserves_protocol_path_identity(
+        std::filesystem::path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap"),
+        2U
+    );
+    expect_index_roundtrip_preserves_protocol_path_identity(
+        std::filesystem::path("parsing/mpls/23_mpls_same_inner_flow_different_labels.pcap"),
+        2U
+    );
+
     {
         auto truncated_bytes = make_classic_pcap({{100, forward_packet}, {200, reverse_packet}});
         truncated_bytes.resize(truncated_bytes.size() - 5U);
-        const auto partial_capture_path = write_temp_pcap("pfl_partial_index_rejected.pcap", truncated_bytes);
-        const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_partial_index_rejected.idx";
+        const auto partial_capture_path = write_temp_pcap("pfl_partial_index_allowed.pcap", truncated_bytes);
+        const auto partial_index_path = std::filesystem::temp_directory_path() / "pfl_partial_index_allowed.idx";
         std::filesystem::remove(partial_index_path);
 
         CaptureSession partial_session {};
         PFL_EXPECT(partial_session.open_capture(partial_capture_path));
         PFL_EXPECT(partial_session.is_partial_open());
-        PFL_EXPECT(!partial_session.save_index(partial_index_path));
-        PFL_EXPECT(!std::filesystem::exists(partial_index_path));
+        PFL_EXPECT(partial_session.save_index(partial_index_path));
+        PFL_EXPECT(std::filesystem::exists(partial_index_path));
+
+        CaptureSession reloaded_partial_session {};
+        PFL_EXPECT(reloaded_partial_session.load_index(partial_index_path));
+        PFL_EXPECT(reloaded_partial_session.summary().packet_count == 1U);
+        PFL_EXPECT(reloaded_partial_session.summary().flow_count == 1U);
+    }
+
+    {
+        const auto existing_index_path = std::filesystem::temp_directory_path() / "pfl_index_atomic_existing.idx";
+        const auto cancelled_index_path = std::filesystem::temp_directory_path() / "pfl_index_atomic_cancelled.idx";
+        std::filesystem::remove(existing_index_path);
+        std::filesystem::remove(cancelled_index_path);
+
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(source_path));
+        PFL_REQUIRE(session.save_index(existing_index_path));
+
+        {
+            std::ifstream baseline_stream(existing_index_path, std::ios::binary);
+            std::ofstream cancelled_stream(cancelled_index_path, std::ios::binary | std::ios::trunc);
+            cancelled_stream << baseline_stream.rdbuf();
+        }
+
+        bool saw_progress = false;
+        bool cancel_requested = false;
+        const CaptureSession::IndexSaveOptions options {
+            .progress_callback = [&](const CaptureSession::IndexSaveProgress& progress) {
+                saw_progress = true;
+                (void)progress;
+            },
+            .cancel_requested = [&cancel_requested]() {
+                const bool result = cancel_requested;
+                cancel_requested = true;
+                return result;
+            },
+        };
+
+        std::string error_text {};
+        PFL_EXPECT(!session.save_index(cancelled_index_path, options, &error_text));
+        PFL_EXPECT(saw_progress);
+        PFL_EXPECT(error_text == "Index save cancelled by user.");
+        PFL_EXPECT(std::filesystem::exists(cancelled_index_path));
+        PFL_EXPECT(validate_index_magic(cancelled_index_path));
+
+        CaptureSession cancelled_loaded_session {};
+        PFL_EXPECT(cancelled_loaded_session.load_index(cancelled_index_path));
+        PFL_EXPECT(cancelled_loaded_session.summary().packet_count == 2U);
+        PFL_EXPECT(cancelled_loaded_session.summary().flow_count == 1U);
     }
 }
 

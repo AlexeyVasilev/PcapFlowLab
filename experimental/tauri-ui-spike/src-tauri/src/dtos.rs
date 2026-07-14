@@ -94,6 +94,13 @@ pub struct ExportSelectedFlowsResultDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportAllFlowsInfoCsvResultDto {
+    pub exported: bool,
+    pub output_path: String,
+    pub error_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartExportResultDto {
     pub exported: bool,
     pub output_path: String,
@@ -173,6 +180,36 @@ pub struct TopPortDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathStatsDto {
+    pub node_id: u64,
+    pub parent_node_id: u64,
+    pub depth: usize,
+    pub layer_text: String,
+    pub path_text: String,
+    pub compact_text: String,
+    pub badges: Vec<ProtocolPathBadgeDto>,
+    pub has_children: bool,
+    pub is_terminal: bool,
+    pub flow_count: u64,
+    pub packet_count: u64,
+    pub original_byte_count: u64,
+    pub flow_percent: f64,
+    pub packet_percent: f64,
+    pub original_byte_percent: f64,
+    pub flow_count_text: String,
+    pub packet_count_text: String,
+    pub original_byte_count_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathPresentationDto {
+    pub protocol_path_id: u32,
+    pub path_text: String,
+    pub compact_text: String,
+    pub badges: Vec<ProtocolPathBadgeDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverviewDto {
     pub has_capture: bool,
     pub unrecognized_packet_count: u64,
@@ -183,6 +220,8 @@ pub struct OverviewDto {
     pub protocol_hints: Vec<ProtocolHintStatsDto>,
     pub top_endpoints: Vec<TopEndpointDto>,
     pub top_ports: Vec<TopPortDto>,
+    pub protocol_path_statistics_default_mode: u8,
+    pub protocol_path_presentations: Vec<ProtocolPathPresentationDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +232,7 @@ pub struct FlowDto {
     pub protocol_hint: String,
     pub protocol_hint_display: String,
     pub service_hint: String,
+    pub protocol_path_id: u32,
     pub has_fragmented_packets: bool,
     pub fragmented_packet_count: u64,
     pub address_a: String,
@@ -204,6 +244,28 @@ pub struct FlowDto {
     pub packet_count: u64,
     pub total_bytes: u64,
     pub wireshark_display_filter: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathBadgeDto {
+    pub short_label: String,
+    pub full_name: String,
+    pub tooltip: String,
+    pub color_key: String,
+    pub background_color: String,
+    pub border_color: String,
+    pub text_color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolPathLegendEntryDto {
+    pub short_label: String,
+    pub full_name: String,
+    pub tooltip: String,
+    pub color_key: String,
+    pub background_color: String,
+    pub border_color: String,
+    pub text_color: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

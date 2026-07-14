@@ -95,6 +95,12 @@ struct FrontendExportSelectedFlowsResult {
     std::string error_text {};
 };
 
+struct FrontendExportAllFlowsInfoCsvResult {
+    bool exported {false};
+    std::string output_path {};
+    std::string error_text {};
+};
+
 enum class FrontendSmartExportOutputMode : std::uint8_t {
     single_file = 0,
     separate_file_per_flow = 1,
@@ -144,6 +150,34 @@ struct FrontendTopPortDto {
     std::uint64_t total_bytes {0};
 };
 
+struct FrontendProtocolPathStatsDto {
+    std::uint64_t node_id {kInvalidProtocolPathStatisticsNodeId};
+    std::uint64_t parent_node_id {kInvalidProtocolPathStatisticsNodeId};
+    std::size_t depth {0};
+    std::string layer_text {};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+    bool has_children {false};
+    bool is_terminal {false};
+    std::uint64_t flow_count {0};
+    std::uint64_t packet_count {0};
+    std::uint64_t original_byte_count {0};
+    double flow_percent {0.0};
+    double packet_percent {0.0};
+    double original_byte_percent {0.0};
+    std::string flow_count_text {};
+    std::string packet_count_text {};
+    std::string original_byte_count_text {};
+};
+
+struct FrontendProtocolPathPresentationDto {
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
+    std::string path_text {};
+    std::string compact_text {};
+    std::vector<ProtocolPathBadgeRow> badges {};
+};
+
 struct FrontendOverviewDto {
     bool has_capture {false};
     CaptureSummary summary {};
@@ -156,6 +190,8 @@ struct FrontendOverviewDto {
     std::vector<FrontendProtocolHintStatsDto> protocol_hints {};
     std::vector<FrontendTopEndpointDto> top_endpoints {};
     std::vector<FrontendTopPortDto> top_ports {};
+    ProtocolPathStatisticsMode protocol_path_statistics_default_mode {ProtocolPathStatisticsMode::kind_overview};
+    std::vector<FrontendProtocolPathPresentationDto> protocol_path_presentations {};
 };
 
 struct FrontendFlowDto {
@@ -165,6 +201,7 @@ struct FrontendFlowDto {
     std::string protocol_hint {};
     std::string protocol_hint_display {};
     std::string service_hint {};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
     bool has_fragmented_packets {false};
     std::uint64_t fragmented_packet_count {0};
     std::string address_a {};
@@ -176,6 +213,16 @@ struct FrontendFlowDto {
     std::uint64_t packet_count {0};
     std::uint64_t total_bytes {0};
     std::string wireshark_display_filter {};
+};
+
+struct FrontendProtocolPathLegendEntryDto {
+    std::string short_label {};
+    std::string full_name {};
+    std::string tooltip {};
+    std::string color_key {};
+    std::string background_color {};
+    std::string border_color {};
+    std::string text_color {};
 };
 
 struct FrontendSelectionResultDto {

@@ -7,6 +7,7 @@
 #include <functional>
 
 #include "core/domain/ProtocolId.h"
+#include "core/domain/ProtocolPath.h"
 
 namespace pfl {
 
@@ -33,6 +34,7 @@ struct FlowKeyV4 {
     std::uint16_t src_port {0};
     std::uint16_t dst_port {0};
     ProtocolId protocol {ProtocolId::unknown};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
 
     [[nodiscard]] friend constexpr bool operator==(const FlowKeyV4&, const FlowKeyV4&) = default;
     [[nodiscard]] friend constexpr auto operator<=>(const FlowKeyV4&, const FlowKeyV4&) = default;
@@ -44,6 +46,7 @@ struct FlowKeyV6 {
     std::uint16_t src_port {0};
     std::uint16_t dst_port {0};
     ProtocolId protocol {ProtocolId::unknown};
+    ProtocolPathId protocol_path_id {kInvalidProtocolPathId};
 
     [[nodiscard]] friend constexpr bool operator==(const FlowKeyV6&, const FlowKeyV6&) = default;
     [[nodiscard]] friend constexpr auto operator<=>(const FlowKeyV6&, const FlowKeyV6&) = default;

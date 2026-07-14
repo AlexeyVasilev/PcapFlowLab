@@ -7,16 +7,14 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - unsupported non-T-PDU GTP-U message types;
 - malformed or truncated inner IPv4 / IPv6 payload after GTP-U;
 - unknown inner payload bytes behind a valid-looking GTP-U T-PDU;
-- the known branch limitation where identical inner 5-tuples from different TEIDs may still merge;
+- namespace-collision coverage where identical inner 5-tuples from different TEIDs must now split into distinct flows;
 - bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
 - same-outer-tuple cases that should split by the inner tuple instead of the outer UDP carrier tuple;
 - outer IPv6 GTP-U carriage, UDP port-gating negative controls, TEID boundary values, and bounded optional-field coverage.
 
-These fixtures are for the `feature/overlay-inner-flow-tuples` branch.
-
-Current branch intent:
+Supported behavior covered by these fixtures:
 - supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
-- GTP-U TEID is presentation metadata for now, not part of flow identity;
+- GTP-U TEID now participates in protocol-path-aware flow identity;
 - malformed or unsupported GTP-U cases should remain conservative and should not fabricate inner flow tuples.
 
 Current implemented status:
@@ -24,7 +22,7 @@ Current implemented status:
 - valid UDP/2152 GTPv1-U T-PDU carrying direct inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
 - the optional 4-byte sequence / N-PDU / next-extension-header block is bounded-skipped when the E/S/PN flags require it;
 - the deterministic extension-header fixture is bounded-skipped conservatively for tuple extraction;
-- TEID is parsed as metadata, but it is not part of flow identity in this branch yet;
+- TEID is parsed as metadata and now participates in protocol-path-aware flow identity;
 - selected-packet Summary / Protocol details for GTP-U are implemented with a dedicated GTP-U layer plus sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available.
 
 ## Local generation
@@ -75,14 +73,14 @@ Notes:
 - T-PDU message type: `0xff`
 - Example unsupported message type fixture value: `0x01` (Echo Request)
 
-## Current branch behavior and remaining follow-up
+## Current behavior and remaining follow-up
 
-Current GTP-U behavior in this branch:
+Current GTP-U behavior:
 - valid GTPv1-U T-PDU over UDP/2152 with a valid direct inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
 - strict tuple extraction requires GTP version `1`, PT set, message type `0xff` T-PDU, bounded base header, bounded optional fields when E/S/PN are set, and a bounded extension-header chain when `E=1`;
 - inner payload starts directly with IPv4 or IPv6 in the basic supported path; there is no inner Ethernet continuation in this first pass;
 - malformed, unsupported, or truncated GTP-U / inner payload cases remain conservative and do not fabricate normal inner flows;
-- identical inner tuples from different TEIDs are a known limitation in this branch because TEID is not yet part of flow identity;
+- identical inner tuples from different TEIDs now split because TEID participates in protocol-path-aware flow identity;
 - selected-packet Summary / Protocol details now show a GTP-U layer with TEID / flags / message metadata for both outer IPv4 and outer IPv6 UDP carriers, then sequential direct inner IPv4/IPv6 and TCP/UDP layers when safely available;
 - known GTP-U message types and known next-extension-header types are displayed by name when recognized, while extension headers still remain shallow skip-only presentation;
 - malformed, truncated, invalid-version, unsupported-message-type, and unknown-inner-payload GTP-U cases can still surface lenient selected-packet metadata and warnings on UDP/2152 without changing flow grouping.
@@ -267,7 +265,7 @@ Current GTP-U behavior in this branch:
 - Inner tuples:
   - packet 1: `10.60.0.10:49660 -> 10.60.0.20:443`
   - packet 2: `10.60.0.11:10021 -> 10.60.0.21:443`
-- Expected current behavior: valid GTP-U packets produce inner flows for both TEID boundary values. TEID still remains outside flow identity in this branch.
+- Expected current behavior: valid GTP-U packets produce inner flows for both TEID boundary values, and TEID participates in protocol-path-aware flow identity when tuples would otherwise collide.
 
 ### 16_gtpu_with_sequence_inner_ipv4_tcp.pcap
 
@@ -336,7 +334,7 @@ Current GTP-U behavior in this branch:
   - packet 1: `0x01020304`
   - packet 2: `0x11223344`
 - Inner tuple for both packets: `10.60.0.10:49660 -> 10.60.0.20:443`
-- Expected current behavior for this branch: known limitation case; current branch may merge both packets into one flow because TEID is not part of flow identity yet.
+- Expected current behavior: the two packets split into distinct flows because TEID is part of protocol-path-aware flow identity.
 
 ## Expected generated file list
 
