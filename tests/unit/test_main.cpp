@@ -69,6 +69,7 @@ void run_vxlan_pcap_fixture_tests();
 void run_geneve_pcap_fixture_tests();
 void run_gtpu_pcap_fixture_tests();
 void run_gre_pcap_fixture_tests();
+void run_esp_pcap_fixture_tests();
 void run_sctp_pcap_fixture_tests();
 
 void expect(bool condition, const char* expression, const char* file, int line) {
@@ -171,6 +172,7 @@ int main() {
         {"geneve_pcap_fixtures", pfl::tests::run_geneve_pcap_fixture_tests},
         {"gtpu_pcap_fixtures", pfl::tests::run_gtpu_pcap_fixture_tests},
         {"gre_pcap_fixtures", pfl::tests::run_gre_pcap_fixture_tests},
+        {"esp_pcap_fixtures", pfl::tests::run_esp_pcap_fixture_tests},
         {"sctp_pcap_fixtures", pfl::tests::run_sctp_pcap_fixture_tests},
     };
 
