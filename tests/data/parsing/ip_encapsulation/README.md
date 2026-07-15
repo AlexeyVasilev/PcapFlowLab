@@ -30,7 +30,9 @@ Notes:
 - the helpers are local-only and should not be treated as production tooling;
 - they write classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values;
 - truncation fixtures are written manually so captured length and original wire length can differ when useful;
-- parser implementation and active parser expectation tests are intentionally **not** added in this pass.
+- fixture integrity and import/accounting tests now exist for this directory;
+- parser expectations remain deferred until the parser implementation iterations;
+- plain IP encapsulation parsing is still not implemented by this test-only pass.
 
 ## Protocol basics
 

@@ -17,13 +17,11 @@ namespace pfl::tests {
 
 namespace {
 
-constexpr bool kEnableGreParserExpectationTests = false;
-
 struct GreFixtureExpectation {
     std::string_view file_name;
     std::uint64_t expected_total_packets;
-    std::uint64_t expected_future_flow_count;
-    std::string_view expected_future_protocol_path;
+    std::uint64_t expected_flow_count;
+    std::string_view expected_protocol_path;
     bool is_positive_decode_fixture;
 };
 
@@ -196,7 +194,7 @@ void expect_gre_fixture_files_exist() {
     }
 }
 
-void expect_gre_future_expectation_table_covers_all_fixtures() {
+void expect_gre_expectation_table_covers_all_fixtures() {
     PFL_EXPECT(expected_fixture_file_names() == actual_fixture_file_names());
 }
 
@@ -232,7 +230,7 @@ void expect_supported_gre_v0_ip_fixtures_decode() {
         PFL_EXPECT(session.summary().packet_count == expectation.expected_total_packets);
 
         const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == static_cast<std::size_t>(expectation.expected_future_flow_count));
+        PFL_EXPECT(rows.size() == static_cast<std::size_t>(expectation.expected_flow_count));
 
         if (fixture_name == "21_gre_same_inner_tuple_different_keys.pcap") {
             bool found_first_key = false;
@@ -254,7 +252,7 @@ void expect_supported_gre_v0_ip_fixtures_decode() {
             continue;
         }
 
-        const auto expected_path = require_expectation(fixture_name).expected_future_protocol_path;
+        const auto expected_path = require_expectation(fixture_name).expected_protocol_path;
         const bool found_expected_path = std::any_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
             if (row.protocol_path_id == kInvalidProtocolPathId) {
                 return false;
@@ -710,38 +708,11 @@ void expect_gre_warning_packet_details_are_conservative() {
     );
 }
 
-void run_future_gre_parser_expectation_tests() {
-    // Keep this opt-in until the intentionally unsupported GRE cases in this fixture set
-    // gain stronger positive expectations.
-    for (const auto& expectation : kGreFixtureExpectations) {
-        if (expectation.expected_future_flow_count == 0U) {
-            continue;
-        }
-
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path(expectation.file_name)));
-
-        const auto rows = session.list_flows();
-        PFL_EXPECT(rows.size() == static_cast<std::size_t>(expectation.expected_future_flow_count));
-
-        if (!expectation.expected_future_protocol_path.empty()) {
-            const bool found_expected_path = std::any_of(rows.begin(), rows.end(), [&](const FlowRow& row) {
-                if (row.protocol_path_id == kInvalidProtocolPathId) {
-                    return false;
-                }
-                const auto* path = session.state().protocol_path_registry.find(row.protocol_path_id);
-                return path != nullptr && format_protocol_path(*path) == expectation.expected_future_protocol_path;
-            });
-            PFL_EXPECT(found_expected_path);
-        }
-    }
-}
-
 }  // namespace
 
 void run_gre_pcap_fixture_tests() {
     expect_gre_fixture_files_exist();
-    expect_gre_future_expectation_table_covers_all_fixtures();
+    expect_gre_expectation_table_covers_all_fixtures();
     expect_gre_fixtures_import_without_crash();
     expect_gre_fixtures_have_expected_total_packet_records();
     expect_supported_gre_v0_ip_fixtures_decode();
@@ -749,10 +720,6 @@ void run_gre_pcap_fixture_tests() {
     expect_gre_truncated_fixtures_import_without_crash();
     expect_gre_packet_details_summary_and_protocol_text();
     expect_gre_warning_packet_details_are_conservative();
-
-    if constexpr (kEnableGreParserExpectationTests) {
-        run_future_gre_parser_expectation_tests();
-    }
 }
 
 }  // namespace pfl::tests
