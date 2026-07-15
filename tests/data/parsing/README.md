@@ -169,3 +169,65 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 `esp/18_ipv4_esp_two_directions_different_spi.pcap`
 - Purpose: opposite-direction ESP packets with different SPI values for future directional identity coverage.
+
+## IP Encapsulation
+
+`ip_encapsulation/01_ipv4_in_ipv4_tcp.pcap`
+- Purpose: outer IPv4 protocol `4` carrying inner IPv4/TCP.
+
+`ip_encapsulation/02_ipv4_in_ipv4_udp.pcap`
+- Purpose: outer IPv4 protocol `4` carrying inner IPv4/UDP.
+
+`ip_encapsulation/03_ipv6_in_ipv4_tcp.pcap`
+- Purpose: outer IPv4 protocol `41` carrying inner IPv6/TCP.
+
+`ip_encapsulation/04_ipv6_in_ipv4_udp.pcap`
+- Purpose: outer IPv4 protocol `41` carrying inner IPv6/UDP.
+
+`ip_encapsulation/05_ipv4_in_ipv6_tcp.pcap`
+- Purpose: outer IPv6 next-header `4` carrying inner IPv4/TCP.
+
+`ip_encapsulation/06_ipv4_in_ipv6_udp.pcap`
+- Purpose: outer IPv6 next-header `4` carrying inner IPv4/UDP.
+
+`ip_encapsulation/07_ipv6_in_ipv6_tcp.pcap`
+- Purpose: outer IPv6 next-header `41` carrying inner IPv6/TCP.
+
+`ip_encapsulation/08_ipv6_in_ipv6_udp.pcap`
+- Purpose: outer IPv6 next-header `41` carrying inner IPv6/UDP.
+
+`ip_encapsulation/09_outer_vlan_ipv4_in_ipv4_udp.pcap`
+- Purpose: outer VLAN preserved before outer IPv4 protocol `4` and inner IPv4/UDP.
+
+`ip_encapsulation/10_outer_qinq_ipv6_in_ipv4_tcp.pcap`
+- Purpose: outer QinQ preserved before outer IPv4 protocol `41` and inner IPv6/TCP.
+
+`ip_encapsulation/11_outer_vlan_ipv4_in_ipv6_udp.pcap`
+- Purpose: outer VLAN preserved before outer IPv6 next-header `4` and inner IPv4/UDP.
+
+`ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap`
+- Purpose: repeated nested IPv4 layers for future positional protocol-path coverage.
+
+`ip_encapsulation/13_same_inner_tuple_different_outer_ipv4_tunnels.pcap`
+- Purpose: same inner IPv4/UDP tuple through two different outer IPv4 tunnel endpoint pairs to document the accepted v1 merge tradeoff.
+
+`ip_encapsulation/14_same_inner_tuple_same_outer_ipv4_two_packets.pcap`
+- Purpose: same outer and inner IPv4/UDP tuple repeated twice as a future one-flow/two-packet baseline.
+
+`ip_encapsulation/15_ipv4_in_ipv4_inner_icmp.pcap`
+- Purpose: outer IPv4 protocol `4` carrying inner IPv4 ICMP echo request.
+
+`ip_encapsulation/16_ipv6_in_ipv4_inner_icmpv6.pcap`
+- Purpose: outer IPv4 protocol `41` carrying inner IPv6 ICMPv6 echo request.
+
+`ip_encapsulation/17_truncated_inner_ipv4_header.pcap`
+- Purpose: outer IPv4 protocol `4` with a snaplen-truncated inner IPv4 header.
+
+`ip_encapsulation/18_truncated_inner_ipv6_header.pcap`
+- Purpose: outer IPv4 protocol `41` with a snaplen-truncated inner IPv6 header.
+
+`ip_encapsulation/19_outer_ipv4_proto4_payload_too_short.pcap`
+- Purpose: outer IPv4 protocol `4` with too-short payload that must not fabricate an inner flow.
+
+`ip_encapsulation/20_ipv6_next41_payload_too_short.pcap`
+- Purpose: outer IPv6 next-header `41` with too-short payload that must not fabricate an inner flow.
