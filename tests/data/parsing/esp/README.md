@@ -66,31 +66,38 @@ Future parser intent for this branch family:
 
 ## Current implementation status
 
-This pass commits only fixture documentation and generated pcaps.
+Current committed behavior now supports:
+- direct IPv4 protocol `50` / IPv6 next-header `50` ESP recognition when the full 8-byte ESP lead-in is available;
+- conservative parsing of:
+  - SPI;
+  - Sequence Number;
+  - opaque payload length after the ESP lead-in;
+- protocol path identity with SPI, for example:
+  - `EthernetII -> IPv4 -> ESP(spi=0x01020304)`
+  - `EthernetII -> IPv6 -> ESP(spi=0x01020304)`
+- same-endpoint different-SPI split behavior;
+- same-SPI multi-packet grouping;
+- minimal selected-packet Summary / Protocol details for ESP.
 
-Still staged for later work:
-- active ESP parser implementation;
-- protocol-path model / presentation updates for ESP and ESP SPI;
-- selected-packet ESP Summary / Protocol Details;
+Still staged / deferred:
 - UDP/4500 NAT-T ESP detection and Non-ESP Marker handling;
-- any interpretation of SPI `0` beyond conservative formatting;
+- any interpretation of SPI `0` beyond conservative formatting/identity;
+- ESP trailer, padding, or authentication-data parsing;
 - any decryption or inner decode behind ESP.
-
-No active future-behavior tests are added in this pass.
 
 ### 01_ipv4_esp_basic.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / ESP / opaque payload
 - ESP metadata: SPI `0x01020304`, Sequence `1`
-- Expected future behavior: path `EthernetII -> IPv4 -> ESP(spi=0x01020304)` with conservative opaque-payload handling.
+- Current behavior: path `EthernetII -> IPv4 -> ESP(spi=0x01020304)` with conservative opaque-payload handling.
 
 ### 02_ipv6_esp_basic.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / ESP / opaque payload
 - ESP metadata: SPI `0x01020304`, Sequence `1`
-- Expected future behavior: path `EthernetII -> IPv6 -> ESP(spi=0x01020304)`.
+- Current behavior: path `EthernetII -> IPv6 -> ESP(spi=0x01020304)`.
 
 ### 03_ipv4_esp_same_hosts_different_spi.pcap
 
@@ -99,7 +106,7 @@ No active future-behavior tests are added in this pass.
 - ESP metadata:
   - packet 1: SPI `0x01020304`, Sequence `1`
   - packet 2: SPI `0x11121314`, Sequence `1`
-- Expected future behavior: separate identity if SPI participates in protocol-path identity.
+- Current behavior: separate identity because SPI participates in protocol-path identity.
 
 ### 04_ipv4_esp_same_spi_two_packets.pcap
 
@@ -108,7 +115,7 @@ No active future-behavior tests are added in this pass.
 - ESP metadata:
   - packet 1: SPI `0x01020304`, Sequence `1`
   - packet 2: SPI `0x01020304`, Sequence `2`
-- Expected future behavior: one future ESP flow / grouping bucket if SPI participates but sequence does not.
+- Current behavior: one ESP flow / grouping bucket because SPI participates but sequence does not.
 
 ### 05_ipv6_esp_same_hosts_different_spi.pcap
 
@@ -117,27 +124,27 @@ No active future-behavior tests are added in this pass.
 - ESP metadata:
   - packet 1: SPI `0x01020304`, Sequence `1`
   - packet 2: SPI `0x11121314`, Sequence `1`
-- Expected future behavior: IPv6 analogue of fixture `03`.
+- Current behavior: IPv6 analogue of fixture `03`.
 
 ### 06_outer_vlan_ipv4_esp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN / IPv4 / ESP / opaque payload
 - VLAN ID: `550`
-- Expected future behavior: outer VLAN preserved before IPv4 / ESP.
+- Current behavior: outer VLAN preserved before IPv4 / ESP.
 
 ### 07_outer_qinq_ipv4_esp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN / VLAN / IPv4 / ESP / opaque payload
 - VLAN IDs: `551`, `552`
-- Expected future behavior: outer QinQ preserved before IPv4 / ESP.
+- Current behavior: outer QinQ preserved before IPv4 / ESP.
 
 ### 08_ipv4_esp_large_opaque_payload.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / ESP / larger opaque payload
-- Expected future behavior: payload remains opaque; no inner decode.
+- Current behavior: payload remains opaque; no inner decode.
 
 ### 09_ipv4_esp_minimal_header_only.pcap
 
@@ -145,35 +152,35 @@ No active future-behavior tests are added in this pass.
 - Layer chain: Ethernet / IPv4 / ESP
 - ESP metadata: SPI `0x01020304`, Sequence `1`
 - Opaque payload length after the 8-byte ESP lead-in: `0`
-- Expected future behavior: header recognized with zero opaque payload length.
+- Current behavior: header recognized with zero opaque payload length.
 
 ### 10_ipv4_esp_truncated_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / partial ESP
 - Captured ESP bytes after IP header: fewer than `8`
-- Expected future behavior: conservative truncated-ESP handling; no crash and no fabricated flow.
+- Current behavior: conservative truncated-ESP handling; no crash and no fabricated flow.
 
 ### 11_ipv4_esp_truncated_spi_only.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / partial ESP
 - Captured ESP bytes after IP header: exactly `4`
-- Expected future behavior: conservative partial-SPI handling; no fabricated flow.
+- Current behavior: conservative partial-SPI handling; no fabricated flow.
 
 ### 12_ipv6_esp_truncated_header.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / partial ESP
 - Captured ESP bytes after IPv6 header: fewer than `8`
-- Expected future behavior: conservative truncated handling; no crash.
+- Current behavior: conservative truncated handling; no crash.
 
 ### 13_ipv4_esp_zero_spi.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / ESP / opaque payload
 - ESP metadata: SPI `0x00000000`, Sequence `1`
-- Expected future behavior: recognized conservatively with SPI shown as `0x00000000`.
+- Current behavior: recognized conservatively with SPI shown as `0x00000000`.
 - Staged note: any special semantic treatment for SPI `0` remains deferred.
 
 ### 14_ipv4_esp_high_spi_value.pcap
@@ -181,7 +188,7 @@ No active future-behavior tests are added in this pass.
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / ESP / opaque payload
 - ESP metadata: SPI `0xffffffff`, Sequence `1`
-- Expected future behavior: formatting handles full 32-bit SPI range.
+- Current behavior: formatting handles full 32-bit SPI range.
 
 ### 15_ipv4_esp_sequence_wrapish_values.pcap
 
@@ -190,7 +197,7 @@ No active future-behavior tests are added in this pass.
 - ESP metadata:
   - packet 1: SPI `0x01020304`, Sequence `0xfffffffe`
   - packet 2: SPI `0x01020304`, Sequence `0xffffffff`
-- Expected future behavior: sequence is displayed as details-only metadata and does not split identity.
+- Current behavior: sequence is displayed as details-only metadata and does not split identity.
 
 ### 16_udp4500_nat_t_esp_non_ike_marker.pcap
 
@@ -215,7 +222,7 @@ No active future-behavior tests are added in this pass.
 - ESP metadata:
   - client -> server: SPI `0x01020304`, Sequence `1`
   - server -> client: SPI `0x21222324`, Sequence `1`
-- Expected future behavior: two directional ESP identities are acceptable v1 behavior if SPI participates in protocol-path identity, similar to TEID-based or key-based tunnel namespace splits.
+- Current behavior: two directional ESP identities are acceptable v1 behavior when SPI participates in protocol-path identity, similar to TEID-based or key-based tunnel namespace splits.
 
 ## Expected generated file list
 

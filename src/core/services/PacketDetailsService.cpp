@@ -205,6 +205,35 @@ void populate_sctp_details(
     populate_sctp_details_fields(packet_bytes, sctp_offset, packet_end, details.sctp);
 }
 
+void populate_esp_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t esp_offset,
+    const std::size_t packet_end,
+    PacketDetails& details
+) {
+    details.has_esp = true;
+    details.esp = {};
+    details.esp.present = true;
+
+    const auto bounded_packet_end = std::min(packet_end, packet_bytes.size());
+    const auto available_header_bytes = esp_offset < bounded_packet_end
+        ? std::min<std::size_t>(detail::kEspBaseHeaderSize, bounded_packet_end - esp_offset)
+        : 0U;
+    details.esp.available_header_bytes = static_cast<std::uint8_t>(available_header_bytes);
+    details.esp.header_truncated = available_header_bytes < detail::kEspBaseHeaderSize;
+
+    if (available_header_bytes >= 4U) {
+        details.esp.spi = detail::read_be32(packet_bytes, esp_offset);
+    }
+    if (available_header_bytes >= 8U) {
+        details.esp.sequence_number = detail::read_be32(packet_bytes, esp_offset + 4U);
+        const auto payload_offset = esp_offset + detail::kEspBaseHeaderSize;
+        details.esp.opaque_payload_length = bounded_packet_end > payload_offset
+            ? (bounded_packet_end - payload_offset)
+            : 0U;
+    }
+}
+
 void populate_vxlan_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t vxlan_offset,
@@ -1804,6 +1833,8 @@ std::optional<PacketDetails> decode_packet_details(
     details.gtpu = {};
     details.has_gre = false;
     details.gre = {};
+    details.has_esp = false;
+    details.esp = {};
     details.has_inner_ethernet = false;
     details.inner_ethernet = {};
     details.has_unknown_inner_ethernet_payload = false;
@@ -2262,6 +2293,11 @@ std::optional<PacketDetails> decode_packet_details(
             return details;
         }
 
+        if (details.ipv4.protocol == detail::kIpProtocolEsp) {
+            populate_esp_details(network_packet_bytes, transport_offset, packet_end, details);
+            return details;
+        }
+
         if (details.ipv4.protocol == detail::kIpProtocolSctp) {
             populate_sctp_details(network_packet_bytes, transport_offset, packet_end, details);
             if (details.sctp.common_header_truncated && mode == DecodeMode::strict) {
@@ -2480,6 +2516,11 @@ std::optional<PacketDetails> decode_packet_details(
 
         if (payload->next_header == detail::kIpProtocolGre) {
             populate_lenient_gre_details(network_packet_bytes, payload->payload_offset, packet_end, details);
+            return details;
+        }
+
+        if (payload->next_header == detail::kIpProtocolEsp) {
+            populate_esp_details(network_packet_bytes, payload->payload_offset, packet_end, details);
             return details;
         }
 

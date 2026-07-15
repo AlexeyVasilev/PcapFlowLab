@@ -78,6 +78,8 @@ namespace {
         return "GTP-U";
     case ProtocolLayerKind::gre:
         return "GRE";
+    case ProtocolLayerKind::esp:
+        return "ESP";
     case ProtocolLayerKind::unknown:
     default:
         return "Unknown";
@@ -301,6 +303,8 @@ std::string format_protocol_layer_key(const LayerKey& key) {
         return protocol_layer_kind_label(key.kind) + "(teid=" + format_hex_value(key.identifier.value, 8) + ")";
     case ProtocolLayerIdentifierKind::gre_key:
         return protocol_layer_kind_label(key.kind) + "(key=" + format_hex_value(key.identifier.value, 8) + ")";
+    case ProtocolLayerIdentifierKind::esp_spi:
+        return protocol_layer_kind_label(key.kind) + "(spi=" + format_hex_value(key.identifier.value, 8) + ")";
     }
 
     return protocol_layer_kind_label(key.kind);

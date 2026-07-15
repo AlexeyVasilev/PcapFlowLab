@@ -422,6 +422,8 @@ std::string format_protocol_value(const std::uint8_t protocol) {
         return "TCP";
     case detail::kIpProtocolUdp:
         return "UDP";
+    case detail::kIpProtocolEsp:
+        return "ESP";
     case detail::kIpProtocolIcmpV6:
         return "ICMPv6";
     default:

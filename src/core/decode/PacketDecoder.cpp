@@ -782,6 +782,32 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             );
         }
 
+        if (protocol == detail::kIpProtocolEsp) {
+            const auto esp = detail::parse_esp_header(
+                bounded_bytes,
+                transport_offset,
+                ipv4_bounds->nominal_packet_end
+            );
+            if (!esp.has_value()) {
+                return {};
+            }
+
+            auto flow_key = flow_base;
+            flow_key.protocol = ProtocolId::esp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(esp->payload_length);
+            auto builder = ipv4_builder;
+            static_cast<void>(builder.push(LayerKey::esp(esp->spi)));
+            return make_decoded_packet(
+                IngestedPacketV4 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
+                },
+                builder
+            );
+        }
+
         if (protocol == detail::kIpProtocolGre) {
             if (const auto gre_packet = try_decode_gre_inner_packet(
                     bounded_bytes,
@@ -1021,6 +1047,31 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
             auto builder = ipv6_builder;
             static_cast<void>(builder.push(LayerKey::sctp()));
+            return make_decoded_packet(
+                IngestedPacketV6 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
+                },
+                builder
+            );
+        }
+
+        if (payload->next_header == detail::kIpProtocolEsp) {
+            const auto esp = detail::parse_esp_header(
+                bounded_bytes,
+                payload->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+            );
+            if (!esp.has_value()) {
+                return {};
+            }
+
+            flow_key.protocol = ProtocolId::esp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(esp->payload_length);
+            auto builder = ipv6_builder;
+            static_cast<void>(builder.push(LayerKey::esp(esp->spi)));
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,

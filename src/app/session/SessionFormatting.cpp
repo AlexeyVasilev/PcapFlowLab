@@ -145,6 +145,8 @@ std::string format_protocol_summary_value(const std::uint8_t protocol) {
         return "TCP";
     case 17U:
         return "UDP";
+    case 50U:
+        return "ESP";
     case 132U:
         return "SCTP";
     case 58U:
@@ -1328,6 +1330,14 @@ std::string format_gre_summary_title(const GreDetails& gre) {
         return "GRE, unsupported protocol type";
     }
     return "GRE";
+}
+
+std::string format_esp_summary_title(const EspDetails& esp) {
+    if (esp.header_truncated) {
+        return "ESP, malformed";
+    }
+
+    return std::string {"ESP, SPI: "} + format_hex_value(esp.spi, 8);
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -3884,6 +3894,38 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_esp) {
+        std::vector<PacketSummaryField> esp_fields {};
+        if (details.esp.available_header_bytes >= 4U) {
+            esp_fields.push_back(make_summary_field("SPI", format_hex_value(details.esp.spi, 8)));
+        }
+        if (details.esp.available_header_bytes >= 8U) {
+            esp_fields.push_back(make_summary_field(
+                "Sequence Number",
+                format_hex_value(details.esp.sequence_number, 8) + " (" + std::to_string(details.esp.sequence_number) + ")"
+            ));
+            esp_fields.push_back(make_summary_field(
+                "Opaque Payload Length",
+                std::to_string(details.esp.opaque_payload_length) + " bytes"
+            ));
+        }
+        if (details.esp.header_truncated) {
+            esp_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.esp.available_header_bytes)) + " / 8"
+            ));
+            esp_fields.push_back(make_summary_field("Warning", "ESP base header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "esp",
+            .title = format_esp_summary_title(details.esp),
+            .fields = std::move(esp_fields),
+            .warning = details.esp.header_truncated,
+            .marker_text = details.esp.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
     if (details.has_gre) {
         std::vector<PacketSummaryField> gre_fields {};
         if (details.gre.available_base_header_bytes >= 2U) {
@@ -4501,6 +4543,26 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         }
         if (details.sctp.data_metadata_truncated) {
             builder << '\n' << '\t' << "Warning: SCTP DATA chunk metadata is truncated.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_esp) {
+        builder << "Protocol: ESP";
+        if (details.esp.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "SPI: " << format_hex_value(details.esp.spi, 8);
+        }
+        if (details.esp.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.esp.sequence_number, 8)
+                    << " (" << details.esp.sequence_number << ')'
+                    << '\n' << '\t' << "Opaque Payload Length: "
+                    << details.esp.opaque_payload_length << " bytes";
+        }
+        if (details.esp.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.esp.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: ESP base header is truncated.";
         }
         return builder.str();
     }

@@ -50,6 +50,8 @@ std::string protocol_text(const ProtocolId protocol) {
         return "TCP";
     case ProtocolId::udp:
         return "UDP";
+    case ProtocolId::esp:
+        return "ESP";
     case ProtocolId::sctp:
         return "SCTP";
     case ProtocolId::icmpv6:

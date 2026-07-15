@@ -60,6 +60,7 @@ inline constexpr std::size_t kIpv6HeaderSize = 40;
 inline constexpr std::size_t kTransportPortsSize = 4;
 inline constexpr std::size_t kTcpMinimumHeaderSize = 20;
 inline constexpr std::size_t kUdpHeaderSize = 8;
+inline constexpr std::size_t kEspBaseHeaderSize = 8;
 inline constexpr std::size_t kSctpCommonHeaderSize = 12;
 inline constexpr std::size_t kGreBaseHeaderSize = 4U;
 inline constexpr std::size_t kGreOptionalFieldSize = 4U;
@@ -142,6 +143,13 @@ struct SctpCommonHeaderView {
     std::uint16_t dst_port {0};
     std::uint32_t verification_tag {0};
     std::uint32_t checksum {0};
+    std::size_t payload_offset {0};
+    std::size_t payload_length {0};
+};
+
+struct EspHeaderView {
+    std::uint32_t spi {0};
+    std::uint32_t sequence_number {0};
     std::size_t payload_offset {0};
     std::size_t payload_length {0};
 };
@@ -1549,6 +1557,24 @@ inline std::optional<SctpCommonHeaderView> parse_sctp_common_header(std::span<co
         .dst_port = read_be16(bytes, sctp_offset + 2U),
         .verification_tag = read_be32(bytes, sctp_offset + 4U),
         .checksum = read_be32(bytes, sctp_offset + 8U),
+        .payload_offset = payload_offset,
+        .payload_length = payload_length,
+    };
+}
+
+inline std::optional<EspHeaderView> parse_esp_header(std::span<const std::uint8_t> bytes,
+                                                     const std::size_t esp_offset,
+                                                     const std::size_t nominal_packet_end) {
+    const auto packet_end = std::min(nominal_packet_end, bytes.size());
+    if (esp_offset + kEspBaseHeaderSize > packet_end) {
+        return std::nullopt;
+    }
+
+    const auto payload_offset = esp_offset + kEspBaseHeaderSize;
+    const auto payload_length = packet_end > payload_offset ? (packet_end - payload_offset) : 0U;
+    return EspHeaderView {
+        .spi = read_be32(bytes, esp_offset),
+        .sequence_number = read_be32(bytes, esp_offset + 4U),
         .payload_offset = payload_offset,
         .payload_length = payload_length,
     };

@@ -304,6 +304,7 @@ Potential v1 layer kinds:
 - `Geneve`
 - `GTP-U`
 - `GRE`
+- `ESP`
 - `Unknown` or `Unsupported` only if later statistics/filter work needs an explicit conservative bucket
 
 The v1 design should keep the layer-key payload numeric and compact. No strings should be stored in hot-path structures.
@@ -328,6 +329,8 @@ These identifiers should affect flow identity in v1:
 - VXLAN VNI
 - Geneve VNI
 - GTP-U TEID
+- GRE key
+- ESP SPI
 
 Rules:
 
@@ -335,6 +338,7 @@ Rules:
 - MPLS label stacks appear as multiple `MPLS` layer keys in order;
 - inner Ethernet continuation is represented explicitly in the path where applicable;
 - VNI and TEID are no longer presentation-only fields once `FlowKeyV2` is enabled.
+- GRE key and ESP SPI are also stable namespace-bearing identifiers once present.
 
 ## What Does Not Enter FlowKeyV2 In V1
 
@@ -352,17 +356,18 @@ Do not include:
 - selected-packet presentation labels
 - Wireshark-like deep protocol fields
 
-Stop the protocol path at the terminal effective L4:
+Stop the protocol path at the terminal effective transport or terminal recognized no-port IP protocol:
 
 - TCP
 - UDP
 - SCTP
+- ESP
 
 Do not include protocols below the terminal effective transport layer such as TLS or HTTP.
 
 Path-presentation cleanup follows the same rule:
 
-- the Path column keeps intermediate link / shim / overlay layers plus terminal TCP / UDP / SCTP where applicable;
+- the Path column keeps intermediate link / shim / overlay layers plus terminal TCP / UDP / SCTP / ESP where applicable;
 - it does not duplicate terminal control protocols such as ARP, ICMP, or ICMPv6, which are already visible in the Protocol column.
 
 ## Tunnel Endpoint Policy
@@ -425,7 +430,7 @@ Static audit of the current format:
 
 Current implementation state:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 11`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 12`;
 - `src/core/index/Serialization.cpp` serializes:
   - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
@@ -450,7 +455,7 @@ When protocol-path-aware flow identity becomes part of the stable index format:
 - keep the protocol-path registry as a single dedicated section, not chunked per packet or per flow;
 - keep large connection data chunked at connection-section boundaries rather than as one monolithic multi-GB payload;
 - do not repeat full protocol paths in packet records;
-- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, TEID, or GRE key redundantly per packet if they are already represented by the flow's protocol path id.
+- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, TEID, GRE key, or ESP SPI redundantly per packet if they are already represented by the flow's protocol path id.
 
 Rationale:
 
@@ -483,7 +488,7 @@ Current index-save behavior relevant to large protocol-path-aware captures:
 
 - Qt save-index now runs asynchronously with low-noise progress text and cooperative cancel;
 - index save writes to a same-directory temporary file and replaces the final target only after successful finalization;
-- index v11 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
+- index v12 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
 - each connection chunk remains self-contained and split only on connection boundaries; protocol-path registry data is still written once per capture;
 - the current index format does not write a separate footer/final-marker record; "finalized" currently means that all required sections parse cleanly through EOF;
 - interrupted or cancelled saves should leave the previous final `.idx` unchanged;
@@ -751,6 +756,8 @@ Relevant existing fixture families:
   - VXLAN VNI
   - Geneve VNI
   - GTP-U TEID
+  - GRE key
+  - ESP SPI
 - outer tunnel endpoints are intentionally excluded from v1 identity
 - `ProtocolPathRegistry` should intern full path values and assign compact ids
 - exact path changes should eventually require an index format bump

@@ -38,6 +38,7 @@ enum class ProtocolLayerKind : std::uint16_t {
     geneve,
     gtpu,
     gre,
+    esp,
 };
 
 enum class ProtocolLayerIdentifierKind : std::uint8_t {
@@ -49,6 +50,7 @@ enum class ProtocolLayerIdentifierKind : std::uint8_t {
     geneve_vni,
     gtpu_teid,
     gre_key,
+    esp_spi,
 };
 
 struct ProtocolLayerIdentifier {
@@ -87,6 +89,7 @@ struct LayerKey {
     [[nodiscard]] static constexpr LayerKey arp() noexcept;
     [[nodiscard]] static constexpr LayerKey gre() noexcept;
     [[nodiscard]] static constexpr LayerKey gre(std::uint32_t key) noexcept;
+    [[nodiscard]] static constexpr LayerKey esp(std::uint32_t spi) noexcept;
     [[nodiscard]] static constexpr LayerKey vlan(std::uint16_t vid) noexcept;
     [[nodiscard]] static constexpr LayerKey mpls(std::uint32_t label) noexcept;
     [[nodiscard]] static constexpr LayerKey vxlan(std::uint32_t vni) noexcept;
@@ -295,6 +298,16 @@ constexpr LayerKey LayerKey::gre(const std::uint32_t key) noexcept {
         .identifier = ProtocolLayerIdentifier {
             .kind = ProtocolLayerIdentifierKind::gre_key,
             .value = key,
+        },
+    };
+}
+
+constexpr LayerKey LayerKey::esp(const std::uint32_t spi) noexcept {
+    return LayerKey {
+        .kind = ProtocolLayerKind::esp,
+        .identifier = ProtocolLayerIdentifier {
+            .kind = ProtocolLayerIdentifierKind::esp_spi,
+            .value = spi,
         },
     };
 }

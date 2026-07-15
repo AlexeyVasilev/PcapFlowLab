@@ -227,6 +227,15 @@ struct GreDetails {
     std::shared_ptr<GreInnerPacketDetails> inner_packet {};
 };
 
+struct EspDetails {
+    bool present {false};
+    std::uint8_t available_header_bytes {0};
+    bool header_truncated {false};
+    std::uint32_t spi {0};
+    std::uint32_t sequence_number {0};
+    std::size_t opaque_payload_length {0};
+};
+
 struct PppoeTagDetails {
     std::uint16_t type {0};
     std::uint16_t declared_length {0};
@@ -515,6 +524,8 @@ struct PacketDetails {
     GtpuDetails gtpu {};
     bool has_gre {false};
     GreDetails gre {};
+    bool has_esp {false};
+    EspDetails esp {};
     bool has_inner_ethernet {false};
     InnerEthernetDetails inner_ethernet {};
     bool has_unknown_inner_ethernet_payload {false};
