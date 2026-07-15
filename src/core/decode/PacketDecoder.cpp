@@ -460,6 +460,32 @@ std::optional<DecodedPacket> try_decode_plain_ipv4_encapsulated_inner_packet(
         return std::nullopt;
     }
 
+    const auto inner_protocol = bounded_bytes[inner_ipv4_offset + 9U];
+    if (inner_protocol == detail::kIpProtocolIcmp) {
+        const auto transport_offset = inner_ipv4_offset + middle_ipv4_bounds->header_length;
+        if (transport_offset + 2U > middle_ipv4_bounds->packet_end ||
+            bounded_bytes.size() < transport_offset + 2U) {
+            return std::nullopt;
+        }
+
+        auto builder_with_inner_ipv4 = builder;
+        static_cast<void>(builder_with_inner_ipv4.push(LayerKey::ipv4()));
+
+        return make_decoded_packet(
+            IngestedPacketV4 {
+                .flow_key = FlowKeyV4 {
+                    .src_addr = detail::read_be32(bounded_bytes, inner_ipv4_offset + 12U),
+                    .dst_addr = detail::read_be32(bounded_bytes, inner_ipv4_offset + 16U),
+                    .src_port = 0U,
+                    .dst_port = 0U,
+                    .protocol = ProtocolId::icmp,
+                },
+                .packet_ref = make_packet_ref(packet),
+            },
+            builder_with_inner_ipv4
+        );
+    }
+
     const auto middle_protocol = bounded_bytes[inner_ipv4_offset + 9U];
     if (middle_protocol != detail::kIpProtocolIpv4Encapsulation) {
         return std::nullopt;
@@ -523,6 +549,67 @@ std::optional<DecodedPacket> try_decode_ipv6_encapsulated_inner_packet(
     }
 
     return decoded;
+}
+
+std::optional<DecodedPacket> try_decode_plain_ipv6_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv6_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    if (const auto direct = try_decode_ipv6_encapsulated_inner_packet(
+            packet_bytes,
+            inner_ipv6_offset,
+            outer_ipv4_packet_end,
+            packet,
+            builder
+        );
+        direct.has_value()) {
+        return direct;
+    }
+
+    const auto bounded_bytes = packet_bytes.first(std::min(outer_ipv4_packet_end, packet_bytes.size()));
+    if (bounded_bytes.size() < inner_ipv6_offset + detail::kIpv6HeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto version = static_cast<std::uint8_t>(bounded_bytes[inner_ipv6_offset] >> 4U);
+    if (version != 6U) {
+        return std::nullopt;
+    }
+
+    const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, inner_ipv6_offset + 4U));
+    const auto packet_end =
+        std::min(inner_ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_bytes.size());
+
+    const auto payload = detail::parse_ipv6_payload(bounded_bytes, inner_ipv6_offset);
+    if (!payload.has_value() ||
+        payload->payload_offset > packet_end ||
+        payload->has_fragment_header ||
+        payload->next_header != detail::kIpProtocolIcmpV6 ||
+        payload->payload_offset + 2U > packet_end ||
+        bounded_bytes.size() < payload->payload_offset + 2U) {
+        return std::nullopt;
+    }
+
+    FlowKeyV6 flow_key {};
+    for (std::size_t index = 0; index < 16U; ++index) {
+        flow_key.src_addr[index] = bounded_bytes[inner_ipv6_offset + 8U + index];
+        flow_key.dst_addr[index] = bounded_bytes[inner_ipv6_offset + 24U + index];
+    }
+    flow_key.protocol = ProtocolId::icmpv6;
+
+    auto builder_with_inner_ipv6 = builder;
+    static_cast<void>(builder_with_inner_ipv6.push(LayerKey::ipv6()));
+
+    return make_decoded_packet(
+        IngestedPacketV6 {
+            .flow_key = flow_key,
+            .packet_ref = make_packet_ref(packet),
+        },
+        builder_with_inner_ipv6
+    );
 }
 
 std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
@@ -774,7 +861,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         }
 
         if (protocol == detail::kIpProtocolIpv6Encapsulation) {
-            if (const auto inner_packet = try_decode_ipv6_encapsulated_inner_packet(
+            if (const auto inner_packet = try_decode_plain_ipv6_encapsulated_inner_packet(
                     bounded_bytes,
                     transport_offset,
                     packet_end,

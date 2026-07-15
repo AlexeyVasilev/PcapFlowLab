@@ -36,7 +36,8 @@ Notes:
 - outer IPv6 effective next-header `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `05`, `06`, and `11`;
 - outer IPv6 effective next-header `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `07` and `08`, with conservative malformed handling for fixture `20`;
 - one specifically bounded nested plain-IP case is now implemented for fixture `12`: `IPv4 -> IPv4 -> IPv4 -> UDP`;
-- broader nesting and control-protocol continuation remain deferred.
+- plain outer IPv4 control-protocol continuation is now implemented for fixtures `15` and `16`;
+- broader nesting and outer-IPv6 control-protocol continuation remain deferred.
 
 ## Current parser iteration
 
@@ -48,13 +49,16 @@ Implemented in the current narrow parser pass:
 - one direct inner IPv4 packet;
 - one direct inner IPv6 packet;
 - one additional bounded nested IPv4 encapsulation layer for fixture `12`;
-- inner TCP / UDP continuation only;
+- inner TCP / UDP continuation for all four direct family combinations;
+- inner IPv4 ICMP continuation for fixture `15`;
+- inner IPv6 ICMPv6 continuation for fixture `16`;
 - conservative rejection for malformed or too-short inner IPv4/IPv6 payloads;
 - accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
 
 Still deferred:
 - arbitrary recursive or mixed-family nested encapsulation;
-- inner ICMP / ICMPv6 continuation;
+- inner ICMP / ICMPv6 continuation through outer IPv6;
+- inner ICMP / ICMPv6 continuation inside deeper nesting;
 - SCTP continuation;
 - Packet Details / Summary continuation.
 
@@ -65,20 +69,26 @@ Still deferred:
 - IPv6 next-header `4`: inner IPv4 over IPv6
 - IPv6 next-header `41`: inner IPv6 over IPv6
 
-Expected future parser behavior:
+Current parser behavior:
 - outer IP header remains part of the protocol path;
-- the innermost recognized IPv4/IPv6 + TCP/UDP/SCTP tuple should drive flow extraction;
-- inner ICMP / ICMPv6 should follow existing control-protocol handling;
+- the innermost recognized IPv4/IPv6 + TCP/UDP tuple drives flow extraction for the currently implemented direct cases;
+- inner IPv4 ICMP and inner IPv6 ICMPv6 through outer IPv4 follow the existing zero-port control-protocol flow model;
 - outer VLAN/QinQ should remain preserved before the outer IP layer;
 - no tunnel namespace identifier is added in v1 for basic IP-in-IP encapsulation;
 - same inner tuple through different outer tunnel endpoints may merge in v1 because outer tunnel endpoints are not intended to participate in protocol-path identity.
 
-Expected future paths include:
+Current implemented paths include:
 - `EthernetII -> IPv4 -> IPv4 -> TCP`
 - `EthernetII -> IPv4 -> IPv6 -> UDP`
 - `EthernetII -> IPv6 -> IPv4 -> TCP`
 - `EthernetII -> IPv6 -> IPv6 -> UDP`
+- `EthernetII -> IPv4 -> IPv4`
+- `EthernetII -> IPv4 -> IPv6`
 - repeated nested IP layers such as `EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP`
+
+Control-protocol note:
+- inner ICMP / ICMPv6 flows intentionally use zero ports;
+- terminal ICMP / ICMPv6 layers are intentionally absent from protocol-path presentation in this branch.
 
 ## Shared constants
 
@@ -194,15 +204,15 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=4) / inner IPv4 / ICMP echo request
-- Expected future path: `EthernetII -> IPv4 -> IPv4`
-- Terminal ICMP layer may remain outside path presentation if project policy continues to exclude terminal control badges.
+- Current path: `EthernetII -> IPv4 -> IPv4`
+- Current behavior: recognized as one zero-port ICMP flow keyed by the inner IPv4 endpoints.
 
 ### 16_ipv6_in_ipv4_inner_icmpv6.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=41) / inner IPv6 / ICMPv6 echo request
-- Expected future path: `EthernetII -> IPv4 -> IPv6`
-- Terminal ICMPv6 layer may remain outside path presentation if project policy continues to exclude terminal control badges.
+- Current path: `EthernetII -> IPv4 -> IPv6`
+- Current behavior: recognized as one zero-port ICMPv6 flow keyed by the inner IPv6 endpoints.
 
 ### 17_truncated_inner_ipv4_header.pcap
 
@@ -250,3 +260,5 @@ Expected future paths include:
 - `18_truncated_inner_ipv6_header.pcap`
 - `19_outer_ipv4_proto4_payload_too_short.pcap`
 - `20_ipv6_next41_payload_too_short.pcap`
+
+All 20 fixtures in this directory now have active positive or conservative parser coverage.

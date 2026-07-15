@@ -239,6 +239,33 @@ constexpr std::array<SupportedIpEncapsulationExpectation, 2> kSupportedIpv6InIpv
     },
 }};
 
+constexpr std::array<SupportedIpEncapsulationExpectation, 2> kSupportedPlainIpControlFixturesNow {{
+    {
+        "15_ipv4_in_ipv4_inner_icmp.pcap",
+        1U,
+        1U,
+        FlowAddressFamily::ipv4,
+        "ICMP",
+        "10.60.0.10",
+        0U,
+        "10.60.0.20",
+        0U,
+        "EthernetII -> IPv4 -> IPv4",
+    },
+    {
+        "16_ipv6_in_ipv4_inner_icmpv6.pcap",
+        1U,
+        1U,
+        FlowAddressFamily::ipv6,
+        "ICMPv6",
+        "2001:0db8:0061:0000:0000:0000:0000:0010",
+        0U,
+        "2001:0db8:0061:0000:0000:0000:0000:0020",
+        0U,
+        "EthernetII -> IPv4 -> IPv6",
+    },
+}};
+
 constexpr std::array<std::string_view, 4> kConservativeMalformedFixturesNow {{
     "17_truncated_inner_ipv4_header.pcap",
     "18_truncated_inner_ipv6_header.pcap",
@@ -520,6 +547,35 @@ void expect_malformed_inner_ip_remains_unrecognized() {
     }
 }
 
+void expect_supported_plain_ip_control_decode() {
+    for (const auto& expectation : kSupportedPlainIpControlFixturesNow) {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(expectation.file_name)));
+
+        const auto storage = session.storage_summary();
+        PFL_EXPECT(storage.total_packets_seen == expectation.expected_total_packets);
+        PFL_EXPECT(storage.recognized_packets == expectation.expected_total_packets);
+        PFL_EXPECT(storage.unrecognized_packets == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+
+        const auto* flow = find_flow_by_tuple(
+            rows,
+            expectation.family,
+            expectation.protocol_text,
+            expectation.address_a,
+            expectation.port_a,
+            expectation.address_b,
+            expectation.port_b
+        );
+        PFL_REQUIRE(flow != nullptr);
+        PFL_EXPECT(flow->packet_count == expectation.expected_flow_packets);
+        PFL_EXPECT(has_protocol_path(session, *flow, expectation.expected_protocol_path));
+    }
+}
+
 }  // namespace
 
 void run_ip_encapsulation_pcap_fixture_tests() {
@@ -532,6 +588,7 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_supported_ipv6_in_ipv4_tcp_udp_decode();
     expect_supported_ipv4_in_ipv6_tcp_udp_decode();
     expect_supported_ipv6_in_ipv6_tcp_udp_decode();
+    expect_supported_plain_ip_control_decode();
     expect_malformed_inner_ip_remains_unrecognized();
 }
 
