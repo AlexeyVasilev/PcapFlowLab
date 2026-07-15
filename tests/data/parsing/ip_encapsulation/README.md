@@ -32,15 +32,18 @@ Notes:
 - truncation fixtures are written manually so captured length and original wire length can differ when useful;
 - fixture integrity and import/accounting tests now exist for this directory;
 - direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, `14`, `17`, and `19`;
-- IPv4 protocol `41`, outer IPv6 encapsulation, nesting, and control-protocol continuation remain deferred.
+- direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, `10`, and `18`;
+- outer IPv6 encapsulation, nesting, and control-protocol continuation remain deferred.
 
 ## Current parser iteration
 
 Implemented in the current narrow parser pass:
 - outer IPv4 protocol `4`;
+- outer IPv4 protocol `41`;
 - one direct inner IPv4 packet;
+- one direct inner IPv6 packet;
 - inner TCP / UDP continuation only;
-- conservative rejection for malformed or too-short inner IPv4 payloads;
+- conservative rejection for malformed or too-short inner IPv4/IPv6 payloads;
 - accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
 
 Still deferred:
@@ -114,13 +117,13 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=41) / inner IPv6 / TCP
-- Expected future path: `EthernetII -> IPv4 -> IPv6 -> TCP`
+- Current path: `EthernetII -> IPv4 -> IPv6 -> TCP`
 
 ### 04_ipv6_in_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=41) / inner IPv6 / UDP
-- Expected future path: `EthernetII -> IPv4 -> IPv6 -> UDP`
+- Current path: `EthernetII -> IPv4 -> IPv6 -> UDP`
 
 ### 05_ipv4_in_ipv6_tcp.pcap
 
@@ -156,7 +159,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN(661) / VLAN(662) / outer IPv4(proto=41) / inner IPv6 / TCP
-- Expected future path: `EthernetII -> VLAN(vid=661) -> VLAN(vid=662) -> IPv4 -> IPv6 -> TCP`
+- Current path: `EthernetII -> VLAN(vid=661) -> VLAN(vid=662) -> IPv4 -> IPv6 -> TCP`
 
 ### 11_outer_vlan_ipv4_in_ipv6_udp.pcap
 
@@ -207,7 +210,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=41) / partial inner IPv6
-- Expected future behavior: conservative handling only; no crash.
+- Current behavior: conservative handling only; no crash and no fabricated inner TCP/UDP flow.
 
 ### 19_outer_ipv4_proto4_payload_too_short.pcap
 

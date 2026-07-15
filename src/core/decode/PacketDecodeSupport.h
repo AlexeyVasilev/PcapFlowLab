@@ -46,6 +46,7 @@ inline constexpr std::uint8_t kIpProtocolIgmp = 2;
 inline constexpr std::uint8_t kIpProtocolIpv4Encapsulation = 4;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
 inline constexpr std::uint8_t kIpProtocolUdp = 17;
+inline constexpr std::uint8_t kIpProtocolIpv6Encapsulation = 41;
 inline constexpr std::uint8_t kIpProtocolGre = 47;
 inline constexpr std::uint8_t kIpProtocolSctp = 132;
 inline constexpr std::uint8_t kIpProtocolRouting = 43;

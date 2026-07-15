@@ -430,6 +430,32 @@ std::optional<DecodedPacket> try_decode_ipv4_encapsulated_inner_packet(
     return decoded;
 }
 
+std::optional<DecodedPacket> try_decode_ipv6_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv6_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    const auto decoded = decode_ipv6_transport_payload(
+        packet_bytes,
+        inner_ipv6_offset,
+        outer_ipv4_packet_end,
+        packet,
+        std::move(builder)
+    );
+    if (!decoded.has_value() || !decoded->ipv6.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto protocol = decoded->ipv6->flow_key.protocol;
+    if (protocol != ProtocolId::tcp && protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    return decoded;
+}
+
 std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t udp_payload_offset,
@@ -666,6 +692,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
         if (protocol == detail::kIpProtocolIpv4Encapsulation) {
             if (const auto inner_packet = try_decode_ipv4_encapsulated_inner_packet(
+                    bounded_bytes,
+                    transport_offset,
+                    packet_end,
+                    packet,
+                    ipv4_builder
+                );
+                inner_packet.has_value()) {
+                return *inner_packet;
+            }
+            return {};
+        }
+
+        if (protocol == detail::kIpProtocolIpv6Encapsulation) {
+            if (const auto inner_packet = try_decode_ipv6_encapsulated_inner_packet(
                     bounded_bytes,
                     transport_offset,
                     packet_end,
