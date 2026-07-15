@@ -994,6 +994,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             );
         }
 
+        if (payload->next_header == detail::kIpProtocolIpv4Encapsulation) {
+            if (const auto inner_packet = try_decode_ipv4_encapsulated_inner_packet(
+                    bounded_bytes,
+                    payload->payload_offset,
+                    packet_end,
+                    packet,
+                    ipv6_builder
+                );
+                inner_packet.has_value()) {
+                return *inner_packet;
+            }
+            return {};
+        }
+
         if (payload->next_header == detail::kIpProtocolTcp) {
             if (payload->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 bounded_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {

@@ -33,13 +33,15 @@ Notes:
 - fixture integrity and import/accounting tests now exist for this directory;
 - direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, `14`, `17`, and `19`;
 - direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, `10`, and `18`;
-- outer IPv6 encapsulation, nesting, and control-protocol continuation remain deferred.
+- outer IPv6 effective next-header `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `05`, `06`, and `11`;
+- outer IPv6 next-header `41`, nesting, and control-protocol continuation remain deferred.
 
 ## Current parser iteration
 
 Implemented in the current narrow parser pass:
 - outer IPv4 protocol `4`;
 - outer IPv4 protocol `41`;
+- outer IPv6 effective next-header `4`;
 - one direct inner IPv4 packet;
 - one direct inner IPv6 packet;
 - inner TCP / UDP continuation only;
@@ -129,13 +131,13 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv6(next-header=4) / inner IPv4 / TCP
-- Expected future path: `EthernetII -> IPv6 -> IPv4 -> TCP`
+- Current path: `EthernetII -> IPv6 -> IPv4 -> TCP`
 
 ### 06_ipv4_in_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv6(next-header=4) / inner IPv4 / UDP
-- Expected future path: `EthernetII -> IPv6 -> IPv4 -> UDP`
+- Current path: `EthernetII -> IPv6 -> IPv4 -> UDP`
 
 ### 07_ipv6_in_ipv6_tcp.pcap
 
@@ -165,7 +167,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN(660) / outer IPv6(next-header=4) / inner IPv4 / UDP
-- Expected future path: `EthernetII -> VLAN(vid=660) -> IPv6 -> IPv4 -> UDP`
+- Current path: `EthernetII -> VLAN(vid=660) -> IPv6 -> IPv4 -> UDP`
 
 ### 12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap
 
