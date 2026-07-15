@@ -34,7 +34,8 @@ Notes:
 - direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, `14`, `17`, and `19`;
 - direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, `10`, and `18`;
 - outer IPv6 effective next-header `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `05`, `06`, and `11`;
-- outer IPv6 next-header `41`, nesting, and control-protocol continuation remain deferred.
+- outer IPv6 effective next-header `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `07` and `08`, with conservative malformed handling for fixture `20`;
+- nesting and control-protocol continuation remain deferred.
 
 ## Current parser iteration
 
@@ -42,6 +43,7 @@ Implemented in the current narrow parser pass:
 - outer IPv4 protocol `4`;
 - outer IPv4 protocol `41`;
 - outer IPv6 effective next-header `4`;
+- outer IPv6 effective next-header `41`;
 - one direct inner IPv4 packet;
 - one direct inner IPv6 packet;
 - inner TCP / UDP continuation only;
@@ -49,8 +51,6 @@ Implemented in the current narrow parser pass:
 - accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
 
 Still deferred:
-- IPv4 protocol `41`;
-- outer IPv6 next-header `4` / `41`;
 - nested encapsulation such as fixture `12`;
 - inner ICMP / ICMPv6 continuation;
 - SCTP continuation;
@@ -143,13 +143,13 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv6(next-header=41) / inner IPv6 / TCP
-- Expected future path: `EthernetII -> IPv6 -> IPv6 -> TCP`
+- Current path: `EthernetII -> IPv6 -> IPv6 -> TCP`
 
 ### 08_ipv6_in_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv6(next-header=41) / inner IPv6 / UDP
-- Expected future path: `EthernetII -> IPv6 -> IPv6 -> UDP`
+- Current path: `EthernetII -> IPv6 -> IPv6 -> UDP`
 
 ### 09_outer_vlan_ipv4_in_ipv4_udp.pcap
 
@@ -224,7 +224,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv6(next-header=41) / tiny non-header payload
-- Expected future behavior: no crash and no fabricated inner flow.
+- Current behavior: no crash and no fabricated inner TCP/UDP flow.
 
 ## Expected generated file list
 
