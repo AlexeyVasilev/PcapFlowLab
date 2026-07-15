@@ -891,6 +891,246 @@ std::optional<GtpuInnerPacketDetails> decode_gtpu_inner_packet_details(
     return std::nullopt;
 }
 
+InnerEthernetDetails make_inner_ethernet_details(const EthernetDetails& ethernet) {
+    InnerEthernetDetails inner {};
+    inner.src_mac = ethernet.src_mac;
+    inner.dst_mac = ethernet.dst_mac;
+    inner.ether_type = ethernet.ether_type;
+    inner.uses_length_field = ethernet.uses_length_field;
+    inner.available_header_bytes = static_cast<std::uint8_t>(detail::kEthernetHeaderSize);
+    inner.header_truncated = false;
+    return inner;
+}
+
+bool gre_inner_packet_has_content(const GreInnerPacketDetails& inner) noexcept {
+    return inner.has_inner_ethernet ||
+        inner.has_vlan ||
+        inner.has_llc ||
+        inner.has_snap ||
+        inner.has_mpls ||
+        inner.has_mpls_pseudowire_control_word ||
+        inner.has_unknown_inner_ethernet_payload ||
+        inner.has_ipv4 ||
+        inner.has_ipv6 ||
+        inner.has_tcp ||
+        inner.has_udp ||
+        inner.has_sctp;
+}
+
+std::shared_ptr<GreInnerPacketDetails> make_gre_inner_packet_details(
+    const PacketDetails& details,
+    const bool preserve_outer_ethernet
+) {
+    auto inner = std::make_shared<GreInnerPacketDetails>();
+    if (preserve_outer_ethernet && details.has_ethernet) {
+        inner->has_inner_ethernet = true;
+        inner->inner_ethernet = make_inner_ethernet_details(details.ethernet);
+    } else if (details.has_inner_ethernet) {
+        inner->has_inner_ethernet = true;
+        inner->inner_ethernet = details.inner_ethernet;
+    }
+    inner->has_vlan = details.has_vlan;
+    inner->vlan_tags = details.vlan_tags;
+    inner->has_llc = details.has_llc;
+    inner->llc = details.llc;
+    inner->has_snap = details.has_snap;
+    inner->snap = details.snap;
+    inner->has_mpls = details.has_mpls;
+    inner->mpls_ether_type = details.mpls_ether_type;
+    inner->mpls_labels = details.mpls_labels;
+    inner->has_mpls_pseudowire_control_word = details.has_mpls_pseudowire_control_word;
+    inner->mpls_pseudowire_control_word = details.mpls_pseudowire_control_word;
+    inner->has_unknown_inner_ethernet_payload = details.has_unknown_inner_ethernet_payload;
+    inner->unknown_inner_ethernet_payload = details.unknown_inner_ethernet_payload;
+    inner->has_ipv4 = details.has_ipv4;
+    inner->ipv4 = details.ipv4;
+    inner->ipv4_truncated = details.has_ipv4 &&
+        (details.ipv4.header_truncated ||
+         details.ipv4.invalid_header_length ||
+         details.ipv4.total_length_invalid ||
+         details.ipv4.header_length_bytes > details.ipv4.available_header_bytes ||
+         (details.ipv4.total_length != 0U && details.ipv4.total_length > details.ipv4.available_packet_bytes));
+    inner->has_ipv6 = details.has_ipv6;
+    inner->ipv6 = details.ipv6;
+    inner->has_tcp = details.has_tcp;
+    inner->tcp = details.tcp;
+    inner->has_udp = details.has_udp;
+    inner->udp = details.udp;
+    inner->has_sctp = details.has_sctp;
+    inner->sctp = details.sctp;
+    return inner;
+}
+
+std::optional<GreInnerPacketDetails> decode_gre_inner_packet_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const detail::GrePayloadView& gre
+) {
+    const auto bounded_end = std::min(gre.bounded_packet_end.value_or(packet_bytes.size()), packet_bytes.size());
+    if (gre.protocol_type == detail::kGreProtocolTypeTransparentEthernetBridging) {
+        if (!gre.has_inner_ethernet || gre.inner_ethernet_truncated || gre.inner_ethernet_offset >= bounded_end) {
+            return std::nullopt;
+        }
+
+        const auto inner_length = bounded_end - gre.inner_ethernet_offset;
+        PacketRef synthetic_packet_ref {
+            .packet_index = 0U,
+            .data_link_type = kLinkTypeEthernet,
+            .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
+            .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(inner_length, 0xFFFFFFFFU)),
+            .ts_sec = 0U,
+            .ts_usec = 0U,
+        };
+        const auto inner_bytes = packet_bytes.subspan(gre.inner_ethernet_offset, inner_length);
+        const auto decoded_inner = decode_packet_details(inner_bytes, synthetic_packet_ref, DecodeMode::best_effort);
+        if (!decoded_inner.has_value()) {
+            return std::nullopt;
+        }
+
+        const auto inner = make_gre_inner_packet_details(*decoded_inner, true);
+        return gre_inner_packet_has_content(*inner) ? std::optional<GreInnerPacketDetails> {*inner} : std::nullopt;
+    }
+
+    if ((gre.protocol_type != detail::kEtherTypeIpv4 &&
+         gre.protocol_type != detail::kEtherTypeIpv6 &&
+         gre.protocol_type != detail::kEtherTypeMplsUnicast) ||
+        gre.payload_offset >= bounded_end) {
+        return std::nullopt;
+    }
+
+    const auto inner_length = bounded_end - gre.payload_offset;
+    std::vector<std::uint8_t> synthetic_packet(detail::kEthernetHeaderSize + inner_length, 0U);
+    synthetic_packet[12] = static_cast<std::uint8_t>(gre.protocol_type >> 8U);
+    synthetic_packet[13] = static_cast<std::uint8_t>(gre.protocol_type & 0x00FFU);
+    std::copy_n(
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(gre.payload_offset),
+        inner_length,
+        synthetic_packet.begin() + static_cast<std::ptrdiff_t>(detail::kEthernetHeaderSize)
+    );
+
+    PacketRef synthetic_packet_ref {
+        .packet_index = 0U,
+        .data_link_type = kLinkTypeEthernet,
+        .captured_length = static_cast<std::uint32_t>(std::min<std::size_t>(synthetic_packet.size(), 0xFFFFFFFFU)),
+        .original_length = static_cast<std::uint32_t>(std::min<std::size_t>(synthetic_packet.size(), 0xFFFFFFFFU)),
+        .ts_sec = 0U,
+        .ts_usec = 0U,
+    };
+    const auto decoded_inner = decode_packet_details(
+        std::span<const std::uint8_t> {synthetic_packet},
+        synthetic_packet_ref,
+        DecodeMode::best_effort
+    );
+    if (!decoded_inner.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto inner = make_gre_inner_packet_details(*decoded_inner, false);
+    return gre_inner_packet_has_content(*inner) ? std::optional<GreInnerPacketDetails> {*inner} : std::nullopt;
+}
+
+void populate_lenient_gre_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t gre_offset,
+    const std::size_t gre_payload_end,
+    PacketDetails& details
+) {
+    details.has_gre = true;
+    details.gre = {};
+    details.gre.present = true;
+
+    const auto bounded_payload_end = std::min(gre_payload_end, packet_bytes.size());
+    const auto available_base_header_bytes = gre_offset < bounded_payload_end
+        ? std::min<std::size_t>(detail::kGreBaseHeaderSize, bounded_payload_end - gre_offset)
+        : 0U;
+    details.gre.available_base_header_bytes = static_cast<std::uint8_t>(available_base_header_bytes);
+    details.gre.header_truncated = available_base_header_bytes < detail::kGreBaseHeaderSize;
+
+    if (available_base_header_bytes >= 2U) {
+        details.gre.flags_version = detail::read_be16(packet_bytes, gre_offset);
+        details.gre.version = static_cast<std::uint8_t>(details.gre.flags_version & detail::kGreVersionMask);
+        details.gre.has_checksum = (details.gre.flags_version & detail::kGreFlagChecksum) != 0U;
+        details.gre.has_key = (details.gre.flags_version & detail::kGreFlagKey) != 0U;
+        details.gre.has_sequence = (details.gre.flags_version & detail::kGreFlagSequence) != 0U;
+    }
+    if (available_base_header_bytes >= 4U) {
+        details.gre.protocol_type = detail::read_be16(packet_bytes, gre_offset + 2U);
+        details.gre.protocol_type_supported =
+            details.gre.protocol_type == detail::kEtherTypeIpv4 ||
+            details.gre.protocol_type == detail::kEtherTypeIpv6 ||
+            details.gre.protocol_type == detail::kGreProtocolTypeTransparentEthernetBridging ||
+            details.gre.protocol_type == detail::kEtherTypeMplsUnicast;
+    }
+
+    if (details.gre.header_truncated) {
+        return;
+    }
+
+    auto cursor = gre_offset + detail::kGreBaseHeaderSize;
+    if (details.gre.has_checksum) {
+        if (cursor + detail::kGreOptionalFieldSize > bounded_payload_end ||
+            packet_bytes.size() < cursor + detail::kGreOptionalFieldSize) {
+            details.gre.optional_fields_truncated = true;
+            return;
+        }
+        details.gre.checksum = detail::read_be16(packet_bytes, cursor);
+        cursor += detail::kGreOptionalFieldSize;
+    }
+    if (details.gre.has_key) {
+        if (cursor + detail::kGreOptionalFieldSize > bounded_payload_end ||
+            packet_bytes.size() < cursor + detail::kGreOptionalFieldSize) {
+            details.gre.optional_fields_truncated = true;
+            return;
+        }
+        if (details.gre.version == 1U) {
+            details.gre.payload_length = detail::read_be16(packet_bytes, cursor);
+            details.gre.payload_length_present = true;
+            details.gre.call_id = detail::read_be16(packet_bytes, cursor + 2U);
+            details.gre.call_id_present = true;
+        } else {
+            details.gre.key = detail::read_be32(packet_bytes, cursor);
+        }
+        cursor += detail::kGreOptionalFieldSize;
+    }
+    if (details.gre.has_sequence) {
+        if (cursor + detail::kGreOptionalFieldSize > bounded_payload_end ||
+            packet_bytes.size() < cursor + detail::kGreOptionalFieldSize) {
+            details.gre.optional_fields_truncated = true;
+            return;
+        }
+        details.gre.sequence_number = detail::read_be32(packet_bytes, cursor);
+        cursor += detail::kGreOptionalFieldSize;
+    }
+
+    if (details.gre.version != 0U) {
+        return;
+    }
+
+    if (!details.gre.protocol_type_supported) {
+        return;
+    }
+
+    const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, bounded_payload_end);
+    if (!gre.has_value()) {
+        details.gre.optional_fields_truncated = true;
+        return;
+    }
+
+    if (gre->protocol_type == detail::kGreProtocolTypeTransparentEthernetBridging) {
+        details.gre.has_inner_ethernet = gre->has_inner_ethernet;
+        details.gre.inner_ethernet_truncated = gre->inner_ethernet_truncated;
+        if (gre->has_inner_ethernet) {
+            populate_inner_ethernet_details(packet_bytes, gre->inner_ethernet_offset, gre->inner_ethernet, details);
+        }
+    }
+
+    if (const auto inner = decode_gre_inner_packet_details(packet_bytes, *gre); inner.has_value()) {
+        details.gre.has_inner_packet = true;
+        details.gre.inner_packet = std::make_shared<GreInnerPacketDetails>(*inner);
+    } else if (gre->protocol_type != detail::kGreProtocolTypeTransparentEthernetBridging) {
+        details.gre.unknown_inner_payload = true;
+    }
+}
+
 void populate_lenient_gtpu_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t gtpu_offset,
@@ -1562,6 +1802,8 @@ std::optional<PacketDetails> decode_packet_details(
     details.geneve = {};
     details.has_gtpu = false;
     details.gtpu = {};
+    details.has_gre = false;
+    details.gre = {};
     details.has_inner_ethernet = false;
     details.inner_ethernet = {};
     details.has_unknown_inner_ethernet_payload = false;
@@ -2015,6 +2257,11 @@ std::optional<PacketDetails> decode_packet_details(
             return details;
         }
 
+        if (details.ipv4.protocol == detail::kIpProtocolGre) {
+            populate_lenient_gre_details(network_packet_bytes, transport_offset, packet_end, details);
+            return details;
+        }
+
         if (details.ipv4.protocol == detail::kIpProtocolSctp) {
             populate_sctp_details(network_packet_bytes, transport_offset, packet_end, details);
             if (details.sctp.common_header_truncated && mode == DecodeMode::strict) {
@@ -2228,6 +2475,11 @@ std::optional<PacketDetails> decode_packet_details(
                     }
                 }
             }
+            return details;
+        }
+
+        if (payload->next_header == detail::kIpProtocolGre) {
+            populate_lenient_gre_details(network_packet_bytes, payload->payload_offset, packet_end, details);
             return details;
         }
 
