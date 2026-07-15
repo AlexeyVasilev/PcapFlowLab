@@ -113,3 +113,59 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 
 `gre/22_gre_same_inner_tuple_same_key_two_packets.pcap`
 - Purpose: same-key, same-inner-tuple two-packet grouping baseline for future GRE tests.
+
+## ESP
+
+`esp/01_ipv4_esp_basic.pcap`
+- Purpose: outer IPv4 ESP baseline with deterministic SPI and Sequence Number.
+
+`esp/02_ipv6_esp_basic.pcap`
+- Purpose: outer IPv6 ESP baseline with deterministic SPI and Sequence Number.
+
+`esp/03_ipv4_esp_same_hosts_different_spi.pcap`
+- Purpose: same IPv4 endpoints but different SPI values for future SPI-aware identity coverage.
+
+`esp/04_ipv4_esp_same_spi_two_packets.pcap`
+- Purpose: same SPI two-packet grouping baseline with sequence-only variation.
+
+`esp/05_ipv6_esp_same_hosts_different_spi.pcap`
+- Purpose: IPv6 analogue of same-endpoint different-SPI coverage.
+
+`esp/06_outer_vlan_ipv4_esp.pcap`
+- Purpose: outer VLAN preserved before IPv4 ESP.
+
+`esp/07_outer_qinq_ipv4_esp.pcap`
+- Purpose: outer QinQ preserved before IPv4 ESP.
+
+`esp/08_ipv4_esp_large_opaque_payload.pcap`
+- Purpose: larger opaque ESP payload that should remain undecoded.
+
+`esp/09_ipv4_esp_minimal_header_only.pcap`
+- Purpose: exactly 8 ESP bytes with no opaque payload after the lead-in header.
+
+`esp/10_ipv4_esp_truncated_header.pcap`
+- Purpose: truncated IPv4 ESP header robustness with fewer than 8 bytes after the IP header.
+
+`esp/11_ipv4_esp_truncated_spi_only.pcap`
+- Purpose: partial-SPI robustness with exactly 4 ESP bytes captured.
+
+`esp/12_ipv6_esp_truncated_header.pcap`
+- Purpose: truncated IPv6 ESP header robustness with fewer than 8 bytes after the IPv6 header.
+
+`esp/13_ipv4_esp_zero_spi.pcap`
+- Purpose: SPI zero boundary-value coverage.
+
+`esp/14_ipv4_esp_high_spi_value.pcap`
+- Purpose: full-range `0xffffffff` SPI formatting coverage.
+
+`esp/15_ipv4_esp_sequence_wrapish_values.pcap`
+- Purpose: high-range sequence-number coverage without changing SPI.
+
+`esp/16_udp4500_nat_t_esp_non_ike_marker.pcap`
+- Purpose: staged UDP/4500 NAT-T ESP-like payload with no Non-ESP Marker.
+
+`esp/17_udp4500_nat_t_ike_marker_staged.pcap`
+- Purpose: staged UDP/4500 Non-ESP Marker negative control for future NAT-T detection.
+
+`esp/18_ipv4_esp_two_directions_different_spi.pcap`
+- Purpose: opposite-direction ESP packets with different SPI values for future directional identity coverage.
