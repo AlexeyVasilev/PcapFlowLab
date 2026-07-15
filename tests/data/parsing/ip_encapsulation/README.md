@@ -31,8 +31,25 @@ Notes:
 - they write classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values;
 - truncation fixtures are written manually so captured length and original wire length can differ when useful;
 - fixture integrity and import/accounting tests now exist for this directory;
-- parser expectations remain deferred until the parser implementation iterations;
-- plain IP encapsulation parsing is still not implemented by this test-only pass.
+- direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, `14`, `17`, and `19`;
+- IPv4 protocol `41`, outer IPv6 encapsulation, nesting, and control-protocol continuation remain deferred.
+
+## Current parser iteration
+
+Implemented in the current narrow parser pass:
+- outer IPv4 protocol `4`;
+- one direct inner IPv4 packet;
+- inner TCP / UDP continuation only;
+- conservative rejection for malformed or too-short inner IPv4 payloads;
+- accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
+
+Still deferred:
+- IPv4 protocol `41`;
+- outer IPv6 next-header `4` / `41`;
+- nested encapsulation such as fixture `12`;
+- inner ICMP / ICMPv6 continuation;
+- SCTP continuation;
+- Packet Details / Summary continuation.
 
 ## Protocol basics
 
@@ -85,13 +102,13 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=4) / inner IPv4 / TCP
-- Expected future path: `EthernetII -> IPv4 -> IPv4 -> TCP`
+- Current path: `EthernetII -> IPv4 -> IPv4 -> TCP`
 
 ### 02_ipv4_in_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=4) / inner IPv4 / UDP
-- Expected future path: `EthernetII -> IPv4 -> IPv4 -> UDP`
+- Current path: `EthernetII -> IPv4 -> IPv4 -> UDP`
 
 ### 03_ipv6_in_ipv4_tcp.pcap
 
@@ -133,7 +150,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN(660) / outer IPv4(proto=4) / inner IPv4 / UDP
-- Expected future path: `EthernetII -> VLAN(vid=660) -> IPv4 -> IPv4 -> UDP`
+- Current path: `EthernetII -> VLAN(vid=660) -> IPv4 -> IPv4 -> UDP`
 
 ### 10_outer_qinq_ipv6_in_ipv4_tcp.pcap
 
@@ -158,13 +175,13 @@ Expected future paths include:
 
 - Packets: 2
 - Same inner IPv4/UDP tuple appears through two different outer IPv4 tunnel endpoint pairs.
-- Accepted v1 tradeoff: these may later merge into one flow because outer tunnel endpoints are not intended to participate in protocol-path identity.
+- Current accepted v1 tradeoff: these merge into one flow because outer tunnel endpoints do not participate in flow identity.
 
 ### 14_same_inner_tuple_same_outer_ipv4_two_packets.pcap
 
 - Packets: 2
 - Same outer IPv4 endpoints and same inner IPv4/UDP tuple.
-- Expected future behavior: one flow with two packets.
+- Current behavior: one flow with two packets.
 
 ### 15_ipv4_in_ipv4_inner_icmp.pcap
 
@@ -184,7 +201,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=4) / partial inner IPv4
-- Expected future behavior: conservative handling only; no crash and no fabricated inner TCP/UDP flow.
+- Current behavior: conservative handling only; no crash and no fabricated inner TCP/UDP flow.
 
 ### 18_truncated_inner_ipv6_header.pcap
 
@@ -196,7 +213,7 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=4) / tiny non-header payload
-- Expected future behavior: no crash and no fabricated inner flow.
+- Current behavior: no crash and no fabricated inner flow.
 
 ### 20_ipv6_next41_payload_too_short.pcap
 

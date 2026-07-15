@@ -43,6 +43,7 @@ inline constexpr std::uint8_t kLlcSnapSsap = 0xaaU;
 inline constexpr std::uint8_t kLlcUnnumberedInformationControl = 0x03U;
 inline constexpr std::uint8_t kIpProtocolIcmp = 1;
 inline constexpr std::uint8_t kIpProtocolIgmp = 2;
+inline constexpr std::uint8_t kIpProtocolIpv4Encapsulation = 4;
 inline constexpr std::uint8_t kIpProtocolTcp = 6;
 inline constexpr std::uint8_t kIpProtocolUdp = 17;
 inline constexpr std::uint8_t kIpProtocolGre = 47;
