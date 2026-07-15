@@ -119,6 +119,21 @@ constexpr std::array<SupportedIpEncapsulationExpectation, 5> kSupportedIpEncapsu
     },
 }};
 
+constexpr std::array<SupportedIpEncapsulationExpectation, 1> kSupportedNestedIpv4InIpv4FixturesNow {{
+    {
+        "12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap",
+        1U,
+        1U,
+        FlowAddressFamily::ipv4,
+        "UDP",
+        "10.60.0.10",
+        53600U,
+        "10.60.0.20",
+        443U,
+        "EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP",
+    },
+}};
+
 constexpr std::array<SupportedIpEncapsulationExpectation, 3> kSupportedIpv6InIpv4FixturesNow {{
     {
         "03_ipv6_in_ipv4_tcp.pcap",
@@ -375,6 +390,35 @@ void expect_supported_ipv4_in_ipv4_tcp_udp_decode() {
     }
 }
 
+void expect_supported_nested_ipv4_in_ipv4_udp_decode() {
+    for (const auto& expectation : kSupportedNestedIpv4InIpv4FixturesNow) {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(expectation.file_name)));
+
+        const auto storage = session.storage_summary();
+        PFL_EXPECT(storage.total_packets_seen == expectation.expected_total_packets);
+        PFL_EXPECT(storage.recognized_packets == expectation.expected_total_packets);
+        PFL_EXPECT(storage.unrecognized_packets == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const auto rows = session.list_flows();
+        PFL_EXPECT(rows.size() == 1U);
+
+        const auto* flow = find_flow_by_tuple(
+            rows,
+            expectation.family,
+            expectation.protocol_text,
+            expectation.address_a,
+            expectation.port_a,
+            expectation.address_b,
+            expectation.port_b
+        );
+        PFL_REQUIRE(flow != nullptr);
+        PFL_EXPECT(flow->packet_count == expectation.expected_flow_packets);
+        PFL_EXPECT(has_protocol_path(session, *flow, expectation.expected_protocol_path));
+    }
+}
+
 void expect_supported_ipv6_in_ipv4_tcp_udp_decode() {
     for (const auto& expectation : kSupportedIpv6InIpv4FixturesNow) {
         CaptureSession session {};
@@ -484,6 +528,7 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_fixtures_import_without_crash();
     expect_total_packet_accounting();
     expect_supported_ipv4_in_ipv4_tcp_udp_decode();
+    expect_supported_nested_ipv4_in_ipv4_udp_decode();
     expect_supported_ipv6_in_ipv4_tcp_udp_decode();
     expect_supported_ipv4_in_ipv6_tcp_udp_decode();
     expect_supported_ipv6_in_ipv6_tcp_udp_decode();

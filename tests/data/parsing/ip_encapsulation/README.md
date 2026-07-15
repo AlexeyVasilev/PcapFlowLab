@@ -35,7 +35,8 @@ Notes:
 - direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, `10`, and `18`;
 - outer IPv6 effective next-header `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `05`, `06`, and `11`;
 - outer IPv6 effective next-header `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `07` and `08`, with conservative malformed handling for fixture `20`;
-- nesting and control-protocol continuation remain deferred.
+- one specifically bounded nested plain-IP case is now implemented for fixture `12`: `IPv4 -> IPv4 -> IPv4 -> UDP`;
+- broader nesting and control-protocol continuation remain deferred.
 
 ## Current parser iteration
 
@@ -46,12 +47,13 @@ Implemented in the current narrow parser pass:
 - outer IPv6 effective next-header `41`;
 - one direct inner IPv4 packet;
 - one direct inner IPv6 packet;
+- one additional bounded nested IPv4 encapsulation layer for fixture `12`;
 - inner TCP / UDP continuation only;
 - conservative rejection for malformed or too-short inner IPv4/IPv6 payloads;
 - accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
 
 Still deferred:
-- nested encapsulation such as fixture `12`;
+- arbitrary recursive or mixed-family nested encapsulation;
 - inner ICMP / ICMPv6 continuation;
 - SCTP continuation;
 - Packet Details / Summary continuation.
@@ -173,8 +175,8 @@ Expected future paths include:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4(proto=4) / middle IPv4(proto=4) / inner IPv4 / UDP
-- Expected future path: `EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP`
-- Purpose: repeated inner IPv4 layers should remain positional in the protocol path.
+- Current path: `EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP`
+- Current scope: exactly one additional nested IPv4 encapsulation layer is supported here; this is not arbitrary recursive nesting.
 
 ### 13_same_inner_tuple_different_outer_ipv4_tunnels.pcap
 

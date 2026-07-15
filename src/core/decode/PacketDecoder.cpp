@@ -430,6 +430,75 @@ std::optional<DecodedPacket> try_decode_ipv4_encapsulated_inner_packet(
     return decoded;
 }
 
+std::optional<DecodedPacket> try_decode_plain_ipv4_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv4_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    if (const auto direct = try_decode_ipv4_encapsulated_inner_packet(
+            packet_bytes,
+            inner_ipv4_offset,
+            outer_ipv4_packet_end,
+            packet,
+            builder
+        );
+        direct.has_value()) {
+        return direct;
+    }
+
+    const auto bounded_bytes = packet_bytes.first(std::min(outer_ipv4_packet_end, packet_bytes.size()));
+    const auto middle_ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, inner_ipv4_offset);
+    if (!middle_ipv4_bounds.has_value() ||
+        middle_ipv4_bounds->nominal_packet_end > bounded_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto middle_flags_fragment = detail::read_be16(bounded_bytes, inner_ipv4_offset + 6U);
+    if ((middle_flags_fragment & 0x3FFFU) != 0U) {
+        return std::nullopt;
+    }
+
+    const auto middle_protocol = bounded_bytes[inner_ipv4_offset + 9U];
+    if (middle_protocol != detail::kIpProtocolIpv4Encapsulation) {
+        return std::nullopt;
+    }
+
+    const auto inner_ipv4_nested_offset = inner_ipv4_offset + middle_ipv4_bounds->header_length;
+    if (inner_ipv4_nested_offset >= middle_ipv4_bounds->packet_end) {
+        return std::nullopt;
+    }
+
+    const auto middle_bounded_bytes = bounded_bytes.first(middle_ipv4_bounds->packet_end);
+    const auto inner_ipv4_bounds = detail::parse_ipv4_packet_bounds(middle_bounded_bytes, inner_ipv4_nested_offset);
+    if (!inner_ipv4_bounds.has_value() ||
+        inner_ipv4_bounds->nominal_packet_end > middle_ipv4_bounds->packet_end) {
+        return std::nullopt;
+    }
+
+    auto nested_builder = builder;
+    static_cast<void>(nested_builder.push(LayerKey::ipv4()));
+
+    const auto decoded = decode_ipv4_transport_payload(
+        packet_bytes,
+        inner_ipv4_nested_offset,
+        middle_ipv4_bounds->packet_end,
+        packet,
+        std::move(nested_builder)
+    );
+    if (!decoded.has_value() || !decoded->ipv4.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto protocol = decoded->ipv4->flow_key.protocol;
+    if (protocol != ProtocolId::tcp && protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    return decoded;
+}
+
 std::optional<DecodedPacket> try_decode_ipv6_encapsulated_inner_packet(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t inner_ipv6_offset,
@@ -691,7 +760,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         }
 
         if (protocol == detail::kIpProtocolIpv4Encapsulation) {
-            if (const auto inner_packet = try_decode_ipv4_encapsulated_inner_packet(
+            if (const auto inner_packet = try_decode_plain_ipv4_encapsulated_inner_packet(
                     bounded_bytes,
                     transport_offset,
                     packet_end,
