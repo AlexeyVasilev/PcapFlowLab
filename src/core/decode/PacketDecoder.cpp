@@ -410,6 +410,26 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
     auto builder = ipv4_builder;
     static_cast<void>(builder.push(LayerKey::ah(ah->spi)));
 
+    if (ah->next_header == detail::kIpProtocolIpv4Encapsulation) {
+        return decode_ipv4_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            ipv4_bounds.nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolIpv6Encapsulation) {
+        return decode_ipv6_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            ipv4_bounds.nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
     if (ah->next_header == detail::kIpProtocolTcp) {
         if (ah->payload_offset + detail::kTcpMinimumHeaderSize > ipv4_bounds.packet_end ||
             bounded_bytes.size() < ah->payload_offset + detail::kTcpMinimumHeaderSize) {
@@ -501,6 +521,26 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
 
     auto builder = ipv6_builder;
     static_cast<void>(builder.push(LayerKey::ah(ah->spi)));
+
+    if (ah->next_header == detail::kIpProtocolIpv4Encapsulation) {
+        return decode_ipv4_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolIpv6Encapsulation) {
+        return decode_ipv6_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            nominal_packet_end,
+            packet,
+            builder
+        );
+    }
 
     if (ah->next_header == detail::kIpProtocolTcp) {
         if (ah->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||

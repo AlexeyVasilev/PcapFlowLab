@@ -395,9 +395,15 @@ TransportPayloadLengths resolve_transport_payload_lengths(
         return {};
     }
 
+    const auto original_payload_length = derive_transport_payload_length_from_headers(packet_bytes, packet);
+    const auto captured_payload_length =
+        (details.has_ah && original_payload_length.has_value())
+        ? original_payload_length
+        : std::optional<std::uint32_t> {packet.payload_length};
+
     return TransportPayloadLengths {
-        .real_payload_length = packet.payload_length,
-        .original_payload_length = derive_transport_payload_length_from_headers(packet_bytes, packet),
+        .real_payload_length = captured_payload_length,
+        .original_payload_length = original_payload_length,
     };
 }
 
@@ -5716,7 +5722,7 @@ void MainController::reloadSelectedPacketDetails() {
                     }
                     return it->second;
                 }(),
-                .transport_payload_length = packet->payload_length,
+                .transport_payload_length = payload_lengths.real_payload_length,
                 .original_transport_payload_length = payload_lengths.original_payload_length,
                 .protocol_details_text = protocolText.toStdString(),
                 .checksum_summary_lines = [&]() {

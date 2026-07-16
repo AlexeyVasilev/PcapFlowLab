@@ -11,6 +11,7 @@
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
+#include "app/session/SelectedFlowPacketSemantics.h"
 #include "app/session/SessionFormatting.h"
 #include "core/domain/ProtocolPath.h"
 
@@ -38,10 +39,10 @@ constexpr std::array<AhFixtureExpectation, 20> kAhFixtureExpectations {{
     {"09_outer_vlan_ipv4_ah_udp.pcap", 1U, 1U, "UDP", "EthernetII -> VLAN(vid=770) -> IPv4 -> AH(spi=0x11111111) -> UDP"},
     {"10_outer_qinq_ipv4_ah_tcp.pcap", 1U, 1U, "TCP", "EthernetII -> VLAN(vid=771) -> VLAN(vid=772) -> IPv4 -> AH(spi=0x11111111) -> TCP"},
     {"11_ipv6_hop_by_hop_ah_udp.pcap", 1U, 1U, "UDP", "EthernetII -> IPv6 -> AH(spi=0x11111111) -> UDP"},
-    {"12_ipv4_ah_inner_ipv4_udp.pcap", 1U, 0U, "", ""},
-    {"13_ipv4_ah_inner_ipv6_tcp.pcap", 1U, 0U, "", ""},
-    {"14_ipv6_ah_inner_ipv4_udp.pcap", 1U, 0U, "", ""},
-    {"15_ipv6_ah_inner_ipv6_tcp.pcap", 1U, 0U, "", ""},
+    {"12_ipv4_ah_inner_ipv4_udp.pcap", 1U, 1U, "UDP", "EthernetII -> IPv4 -> AH(spi=0x11111111) -> IPv4 -> UDP"},
+    {"13_ipv4_ah_inner_ipv6_tcp.pcap", 1U, 1U, "TCP", "EthernetII -> IPv4 -> AH(spi=0x11111111) -> IPv6 -> TCP"},
+    {"14_ipv6_ah_inner_ipv4_udp.pcap", 1U, 1U, "UDP", "EthernetII -> IPv6 -> AH(spi=0x11111111) -> IPv4 -> UDP"},
+    {"15_ipv6_ah_inner_ipv6_tcp.pcap", 1U, 1U, "TCP", "EthernetII -> IPv6 -> AH(spi=0x11111111) -> IPv6 -> TCP"},
     {"16_ah_truncated_fixed_header.pcap", 1U, 0U, "", ""},
     {"17_ah_invalid_payload_length_too_small.pcap", 1U, 0U, "", ""},
     {"18_ah_payload_length_exceeds_packet.pcap", 1U, 0U, "", ""},
@@ -49,7 +50,7 @@ constexpr std::array<AhFixtureExpectation, 20> kAhFixtureExpectations {{
     {"20_ah_unsupported_next_header.pcap", 1U, 0U, "", ""},
 }};
 
-constexpr std::array<std::string_view, 11> kSupportedAhFixturesNow {{
+constexpr std::array<std::string_view, 15> kSupportedAhFixturesNow {{
     "01_ipv4_ah_tcp.pcap",
     "02_ipv4_ah_udp.pcap",
     "03_ipv6_ah_tcp.pcap",
@@ -61,9 +62,6 @@ constexpr std::array<std::string_view, 11> kSupportedAhFixturesNow {{
     "09_outer_vlan_ipv4_ah_udp.pcap",
     "10_outer_qinq_ipv4_ah_tcp.pcap",
     "11_ipv6_hop_by_hop_ah_udp.pcap",
-}};
-
-constexpr std::array<std::string_view, 4> kDeferredTunnelModeFixturesNow {{
     "12_ipv4_ah_inner_ipv4_udp.pcap",
     "13_ipv4_ah_inner_ipv6_tcp.pcap",
     "14_ipv6_ah_inner_ipv4_udp.pcap",
@@ -182,6 +180,16 @@ bool layer_has_field_containing(
     return std::any_of(layer.fields.begin(), layer.fields.end(), [&](const auto& field) {
         return field.label == label && field.value.find(fragment) != std::string::npos;
     });
+}
+
+const session_detail::PacketSummaryField* find_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label
+) {
+    const auto found = std::find_if(layer.fields.begin(), layer.fields.end(), [&](const auto& field) {
+        return field.label == label;
+    });
+    return found != layer.fields.end() ? &*found : nullptr;
 }
 
 bool title_contains_all(
@@ -325,17 +333,154 @@ void expect_ah_spi_splits_identity() {
     }
 }
 
-void expect_deferred_ah_tunnel_mode_fixtures_remain_conservative() {
-    for (const auto fixture_name : kDeferredTunnelModeFixturesNow) {
+void expect_ah_tunnel_mode_fixtures_decode_and_present_inner_transport() {
+    struct TunnelCase {
+        std::string_view file_name;
+        std::string_view expected_protocol_text;
+        std::string_view expected_path_text;
+        std::string expected_outer_layer_id;
+        std::string expected_inner_layer_id;
+        std::string expected_inner_transport_layer_id;
+        std::string expected_next_header_fragment;
+        std::string expected_inner_heading;
+        std::string expected_source_address;
+        std::string expected_destination_address;
+        std::uint16_t expected_src_port;
+        std::uint16_t expected_dst_port;
+    };
+
+    const std::array<TunnelCase, 4> cases {{
+        {
+            "12_ipv4_ah_inner_ipv4_udp.pcap",
+            "UDP",
+            "EthernetII -> IPv4 -> AH(spi=0x11111111) -> IPv4 -> UDP",
+            "ipv4",
+            "ipv4-inner",
+            "udp-inner",
+            "IPv4 (4)",
+            "Inner IPv4:",
+            "10.70.0.10",
+            "10.70.0.20",
+            53700U,
+            443U,
+        },
+        {
+            "13_ipv4_ah_inner_ipv6_tcp.pcap",
+            "TCP",
+            "EthernetII -> IPv4 -> AH(spi=0x11111111) -> IPv6 -> TCP",
+            "ipv4",
+            "ipv6-inner",
+            "tcp-inner",
+            "IPv6 (41)",
+            "Inner IPv6:",
+            "2001:0db8:0071:0000:0000:0000:0000:0010",
+            "2001:0db8:0071:0000:0000:0000:0000:0020",
+            49170U,
+            443U,
+        },
+        {
+            "14_ipv6_ah_inner_ipv4_udp.pcap",
+            "UDP",
+            "EthernetII -> IPv6 -> AH(spi=0x11111111) -> IPv4 -> UDP",
+            "ipv6",
+            "ipv4-inner",
+            "udp-inner",
+            "IPv4 (4)",
+            "Inner IPv4:",
+            "10.70.0.10",
+            "10.70.0.20",
+            53700U,
+            443U,
+        },
+        {
+            "15_ipv6_ah_inner_ipv6_tcp.pcap",
+            "TCP",
+            "EthernetII -> IPv6 -> AH(spi=0x11111111) -> IPv6 -> TCP",
+            "ipv6",
+            "ipv6-inner",
+            "tcp-inner",
+            "IPv6 (41)",
+            "Inner IPv6:",
+            "2001:0db8:0071:0000:0000:0000:0000:0010",
+            "2001:0db8:0071:0000:0000:0000:0000:0020",
+            49170U,
+            443U,
+        },
+    }};
+
+    for (const auto& test_case : cases) {
         CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path(fixture_name)));
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
 
         const auto storage = session.storage_summary();
         PFL_EXPECT(storage.total_packets_seen == 1U);
-        PFL_EXPECT(storage.recognized_packets == 0U);
-        PFL_EXPECT(storage.unrecognized_packets == 1U);
-        PFL_EXPECT(session.list_flows().empty());
-        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        PFL_EXPECT(storage.recognized_packets == 1U);
+        PFL_EXPECT(storage.unrecognized_packets == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_text == test_case.expected_protocol_text);
+        const auto path_text = protocol_path_text_for_row(session, rows[0]);
+        PFL_REQUIRE(path_text.has_value());
+        PFL_EXPECT(*path_text == test_case.expected_path_text);
+
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto details = session.read_packet_details(*packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_ah);
+        PFL_REQUIRE(details->ah.has_inner_packet);
+        PFL_REQUIRE(details->ah.inner_packet != nullptr);
+        PFL_EXPECT(!details->has_tcp);
+        PFL_EXPECT(!details->has_udp);
+
+        const auto layers = session_detail::build_packet_summary_layers(*details, *packet);
+        const auto* outer_layer = find_top_level_layer(layers, test_case.expected_outer_layer_id);
+        const auto* ah_layer = find_top_level_layer(layers, "ah");
+        const auto* inner_network_layer = find_top_level_layer(layers, test_case.expected_inner_layer_id);
+        const auto* inner_transport_layer = find_top_level_layer(layers, test_case.expected_inner_transport_layer_id);
+        PFL_REQUIRE(outer_layer != nullptr);
+        PFL_REQUIRE(ah_layer != nullptr);
+        PFL_REQUIRE(inner_network_layer != nullptr);
+        PFL_REQUIRE(inner_transport_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*ah_layer, "Next Header", test_case.expected_next_header_fragment));
+        PFL_EXPECT(layer_has_field_containing(
+            *ah_layer,
+            "Inner Payload",
+            test_case.expected_inner_layer_id == "ipv4-inner" ? "IPv4" : "IPv6"
+        ));
+
+        const auto outer_index = find_top_level_layer_index(layers, test_case.expected_outer_layer_id);
+        const auto ah_index = find_top_level_layer_index(layers, "ah");
+        const auto inner_network_index = find_top_level_layer_index(layers, test_case.expected_inner_layer_id);
+        const auto inner_transport_index = find_top_level_layer_index(layers, test_case.expected_inner_transport_layer_id);
+        PFL_REQUIRE(outer_index < layers.size());
+        PFL_REQUIRE(ah_index < layers.size());
+        PFL_REQUIRE(inner_network_index < layers.size());
+        PFL_REQUIRE(inner_transport_index < layers.size());
+        PFL_EXPECT(outer_index < ah_index);
+        PFL_EXPECT(ah_index < inner_network_index);
+        PFL_EXPECT(inner_network_index < inner_transport_index);
+
+        PFL_EXPECT(inner_network_layer->title.find(test_case.expected_source_address) != std::string::npos);
+        PFL_EXPECT(inner_network_layer->title.find(test_case.expected_destination_address) != std::string::npos);
+        PFL_EXPECT(inner_transport_layer->title.find(std::to_string(test_case.expected_src_port)) != std::string::npos);
+        PFL_EXPECT(inner_transport_layer->title.find(std::to_string(test_case.expected_dst_port)) != std::string::npos);
+
+        const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
+        PFL_EXPECT(protocol_text.find("Protocol: AH") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Next Header: " + test_case.expected_next_header_fragment) != std::string::npos);
+        PFL_EXPECT(protocol_text.find(test_case.expected_inner_heading) != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Source Address: " + test_case.expected_source_address) != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Destination Address: " + test_case.expected_destination_address) != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Source Port: " + std::to_string(test_case.expected_src_port)) != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Destination Port: " + std::to_string(test_case.expected_dst_port)) != std::string::npos);
+        if (test_case.expected_inner_transport_layer_id == "udp-inner") {
+            PFL_EXPECT(protocol_text.find("Payload Length: 4 bytes") != std::string::npos);
+        } else {
+            PFL_EXPECT(protocol_text.find("Payload Length: 0 bytes") != std::string::npos);
+        }
     }
 }
 
@@ -394,6 +539,7 @@ void expect_direct_ah_packet_details_summary_and_protocol_text() {
 
         PFL_EXPECT(title_contains_all(*ah_layer, {"AH", "SPI: 0x11111111"}));
         PFL_EXPECT(layer_has_field_containing(*ah_layer, "Next Header", test_case.expected_next_header_fragment));
+        PFL_EXPECT(layer_has_field_containing(*ah_layer, "Payload Length", "4"));
         PFL_EXPECT(layer_has_field_containing(*ah_layer, "SPI", "0x11111111"));
         PFL_EXPECT(layer_has_field_containing(*ah_layer, "Sequence Number", "0x00000001"));
         PFL_EXPECT(layer_has_field_containing(*ah_layer, "Header Length", "24 bytes"));
@@ -414,10 +560,173 @@ void expect_direct_ah_packet_details_summary_and_protocol_text() {
         const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
         PFL_EXPECT(protocol_text.find(test_case.expected_protocol_text_fragment) != std::string::npos);
         PFL_EXPECT(protocol_text.find("Next Header: " + test_case.expected_next_header_fragment) != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Payload Length: 4") != std::string::npos);
         PFL_EXPECT(protocol_text.find("SPI: 0x11111111") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Sequence Number: 0x00000001 (1)") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Header Length: 24 bytes") != std::string::npos);
         PFL_EXPECT(protocol_text.find("ICV Length: 12 bytes") != std::string::npos);
+    }
+}
+
+void expect_ah_effective_packet_payload_lengths_follow_terminal_transport() {
+    struct PayloadCase {
+        std::string_view file_name;
+        std::uint32_t expected_payload_length;
+        bool expect_syn_flag {false};
+    };
+
+    const std::array<PayloadCase, 8> cases {{
+        {"01_ipv4_ah_tcp.pcap", 0U, true},
+        {"02_ipv4_ah_udp.pcap", 4U, false},
+        {"03_ipv6_ah_tcp.pcap", 0U, false},
+        {"04_ipv6_ah_udp.pcap", 4U, false},
+        {"12_ipv4_ah_inner_ipv4_udp.pcap", 4U, false},
+        {"13_ipv4_ah_inner_ipv6_tcp.pcap", 0U, false},
+        {"14_ipv6_ah_inner_ipv4_udp.pcap", 4U, false},
+        {"15_ipv6_ah_inner_ipv6_tcp.pcap", 0U, false},
+    }};
+
+    for (const auto& test_case : cases) {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
+
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+
+        const auto derived_payload_length = session_detail::derive_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(derived_payload_length.has_value());
+        PFL_EXPECT(*derived_payload_length == test_case.expected_payload_length);
+
+        const auto raw_rows = session.list_flow_packets(0U);
+        PFL_REQUIRE(raw_rows.size() == 1U);
+
+        auto enriched_rows = raw_rows;
+        session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
+        PFL_REQUIRE(enriched_rows.size() == 1U);
+        PFL_EXPECT(enriched_rows[0].payload_length == test_case.expected_payload_length);
+
+        if (test_case.expect_syn_flag) {
+            PFL_EXPECT(enriched_rows[0].tcp_flags_text.find("SYN") != std::string::npos);
+        }
+    }
+}
+
+void expect_ah_selected_packet_summary_payload_lengths() {
+    struct DirectCase {
+        std::string_view file_name;
+        std::string transport_layer_id;
+        std::uint32_t expected_payload_length;
+        std::optional<std::uint32_t> expected_captured_frame_length {};
+        bool expect_syn_flag {false};
+    };
+
+    const std::array<DirectCase, 6> cases {{
+        {"01_ipv4_ah_tcp.pcap", "tcp", 0U, std::nullopt, true},
+        {"02_ipv4_ah_udp.pcap", "udp", 4U, std::nullopt, false},
+        {"03_ipv6_ah_tcp.pcap", "tcp", 0U, std::nullopt, false},
+        {"04_ipv6_ah_udp.pcap", "udp", 4U, std::nullopt, false},
+        {"09_outer_vlan_ipv4_ah_udp.pcap", "udp", 4U, std::nullopt, false},
+        {"10_outer_qinq_ipv4_ah_tcp.pcap", "tcp", 0U, 86U, true},
+    }};
+
+    for (const auto& test_case : cases) {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
+
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto details = session.read_packet_details(*packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_ah);
+
+        const auto effective_payload_length = session_detail::derive_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(effective_payload_length.has_value());
+        PFL_EXPECT(*effective_payload_length == test_case.expected_payload_length);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
+            .source_capture_accessible = true,
+            .transport_payload_length = effective_payload_length,
+            .original_transport_payload_length = effective_payload_length,
+            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
+        });
+
+        const auto* frame_layer = find_top_level_layer(summary_layers, "frame");
+        const auto* transport_layer = find_top_level_layer(summary_layers, test_case.transport_layer_id);
+        const auto* ah_layer = find_top_level_layer(summary_layers, "ah");
+        PFL_REQUIRE(frame_layer != nullptr);
+        PFL_REQUIRE(transport_layer != nullptr);
+        PFL_REQUIRE(ah_layer != nullptr);
+
+        if (test_case.expected_captured_frame_length.has_value()) {
+            const auto* captured_length_field = find_summary_field(*frame_layer, "Captured Length");
+            PFL_REQUIRE(captured_length_field != nullptr);
+            PFL_EXPECT(captured_length_field->value == std::to_string(*test_case.expected_captured_frame_length) + " bytes");
+        }
+
+        const auto* payload_length_field = find_summary_field(*transport_layer, "Payload Length");
+        const auto* captured_payload_length_field = find_summary_field(*transport_layer, "Captured Payload Length");
+        const auto* original_payload_length_field = find_summary_field(*transport_layer, "Original Payload Length");
+        PFL_REQUIRE(payload_length_field != nullptr);
+        PFL_EXPECT(payload_length_field->value == std::to_string(test_case.expected_payload_length) + " bytes");
+        PFL_EXPECT(captured_payload_length_field == nullptr);
+        PFL_EXPECT(original_payload_length_field == nullptr);
+
+        PFL_EXPECT(layer_has_field_containing(*ah_layer, "Payload Length", "4"));
+        PFL_EXPECT(layer_has_field_containing(*ah_layer, "Header Length", "24 bytes"));
+
+        if (test_case.expect_syn_flag) {
+            PFL_EXPECT(layer_has_field_containing(*transport_layer, "Flags", "SYN"));
+        }
+    }
+}
+
+void expect_ah_tunnel_mode_selected_packet_effective_payload_lengths() {
+    struct TunnelCase {
+        std::string_view file_name;
+        std::string transport_layer_id;
+        std::uint32_t expected_payload_length;
+        bool expect_tcp {false};
+        bool expect_udp {false};
+    };
+
+    const std::array<TunnelCase, 4> cases {{
+        {"12_ipv4_ah_inner_ipv4_udp.pcap", "udp-inner", 4U, false, true},
+        {"13_ipv4_ah_inner_ipv6_tcp.pcap", "tcp-inner", 0U, true, false},
+        {"14_ipv6_ah_inner_ipv4_udp.pcap", "udp-inner", 4U, false, true},
+        {"15_ipv6_ah_inner_ipv6_tcp.pcap", "tcp-inner", 0U, true, false},
+    }};
+
+    for (const auto& test_case : cases) {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
+
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto details = session.read_packet_details(*packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_ah);
+        PFL_REQUIRE(details->ah.has_inner_packet);
+        PFL_REQUIRE(details->ah.inner_packet != nullptr);
+
+        const auto effective_payload_length = session_detail::derive_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(effective_payload_length.has_value());
+        PFL_EXPECT(*effective_payload_length == test_case.expected_payload_length);
+
+        PFL_EXPECT(details->has_tcp == false);
+        PFL_EXPECT(details->has_udp == false);
+        PFL_EXPECT(details->ah.inner_packet->has_tcp == test_case.expect_tcp);
+        PFL_EXPECT(details->ah.inner_packet->has_udp == test_case.expect_udp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+        const auto* inner_transport_layer = find_top_level_layer(summary_layers, test_case.transport_layer_id);
+        PFL_REQUIRE(inner_transport_layer != nullptr);
+        const auto* payload_length_field = find_summary_field(*inner_transport_layer, "Payload Length");
+        const auto* captured_payload_length_field = find_summary_field(*inner_transport_layer, "Captured Payload Length");
+        const auto* original_payload_length_field = find_summary_field(*inner_transport_layer, "Original Payload Length");
+        PFL_REQUIRE(payload_length_field != nullptr);
+        PFL_EXPECT(payload_length_field->value == std::to_string(test_case.expected_payload_length) + " bytes");
+        PFL_EXPECT(captured_payload_length_field == nullptr);
+        PFL_EXPECT(original_payload_length_field == nullptr);
     }
 }
 
@@ -426,33 +735,51 @@ void expect_conservative_ah_packet_details_for_malformed_or_unsupported_cases() 
         std::string_view file_name;
         std::vector<std::string> required_summary_fragments;
         std::vector<std::string> required_protocol_fragments;
+        std::vector<std::string> forbidden_protocol_fragments;
     };
 
     const std::array<NegativeCase, 5> cases {{
         {
             "16_ah_truncated_fixed_header.pcap",
             {"AH", "malformed"},
-            {"Protocol: AH", "Available Header Bytes: 10 / ", "Warning: AH header is truncated."}
+            {"Protocol: AH", "Available Header Bytes: 10 / ", "Warning: AH header is truncated."},
+            {}
         },
         {
             "17_ah_invalid_payload_length_too_small.pcap",
             {"AH", "malformed"},
-            {"Protocol: AH", "Payload Length: 0", "Warning: AH computed header length is invalid."}
+            {"Protocol: AH", "Next Header: TCP (6)", "Payload Length: 0", "Header Length: 8 bytes", "Warning: AH computed header length is invalid."},
+            {"Warning: AH next header is not supported.", "Protocol: TCP", "Source Port:"}
         },
         {
             "18_ah_payload_length_exceeds_packet.pcap",
             {"AH", "malformed"},
-            {"Protocol: AH", "Available Header Bytes: 36 / 40", "Warning: AH header is truncated."}
+            {"Protocol: AH", "Available Header Bytes: 36 / 40", "Warning: AH header is truncated."},
+            {}
         },
         {
             "19_ah_truncated_icv.pcap",
             {"AH", "malformed"},
-            {"Protocol: AH", "Available Header Bytes: 20 / 24", "Warning: AH header is truncated."}
+            {
+                "Protocol: AH",
+                "Next Header: UDP (17)",
+                "Payload Length: 4",
+                "SPI: 0x11111111",
+                "Sequence Number: 0x00000001 (1)",
+                "Header Length: 24 bytes",
+                "Required Fixed Header Bytes: 12",
+                "ICV Length: 12 bytes",
+                "Available Header Bytes: 20 / 24",
+                "Available ICV Bytes: 8 / 12",
+                "Warning: AH header is truncated."
+            },
+            {"Protocol: UDP", "Source Port:"}
         },
         {
             "20_ah_unsupported_next_header.pcap",
             {"AH", "unsupported next header"},
-            {"Protocol: AH", "Next Header: 99", "Warning: AH next header is not supported."}
+            {"Protocol: AH", "Next Header: 99", "Warning: AH next header is not supported."},
+            {}
         },
     }};
 
@@ -470,10 +797,59 @@ void expect_conservative_ah_packet_details_for_malformed_or_unsupported_cases() 
         PFL_REQUIRE(details.has_value());
         if (details->has_ah) {
             const auto layers = session_detail::build_packet_summary_layers(*details, *packet);
+            if (test_case.file_name == "17_ah_invalid_payload_length_too_small.pcap") {
+                PFL_EXPECT(details->ah.malformed);
+                PFL_EXPECT(!details->ah.truncated);
+                PFL_EXPECT(details->ah.header_length == 8U);
+                PFL_EXPECT(details->ah.next_header == 6U);
+                PFL_EXPECT(details->has_tcp == false);
+                PFL_EXPECT(details->has_udp == false);
+            }
+            if (test_case.file_name == "19_ah_truncated_icv.pcap") {
+                PFL_EXPECT(details->has_ipv6);
+                PFL_EXPECT(details->ipv6.next_header == 51U);
+                PFL_EXPECT(details->ipv6.payload_length == 20U);
+                PFL_EXPECT(details->ah.truncated);
+                PFL_EXPECT(!details->ah.malformed);
+                PFL_EXPECT(details->ah.next_header == 17U);
+                PFL_EXPECT(details->ah.payload_length == 4U);
+                PFL_EXPECT(details->ah.header_length == 24U);
+                PFL_EXPECT(details->ah.available_header_bytes == 20U);
+                PFL_EXPECT(details->ah.icv_length == 12U);
+                PFL_EXPECT(details->ah.available_icv_bytes == 8U);
+                PFL_EXPECT(details->has_udp == false);
+                const auto* ipv6_layer = find_top_level_layer(layers, "ipv6");
+                PFL_REQUIRE(ipv6_layer != nullptr);
+                PFL_EXPECT(layer_has_field_containing(*ipv6_layer, "Next Header", "AH (51)"));
+                const auto frame_index = find_top_level_layer_index(layers, "frame");
+                const auto ethernet_index = find_top_level_layer_index(layers, "ethernet");
+                const auto* ah_layer_order = find_top_level_layer(layers, "ah");
+                PFL_REQUIRE(ah_layer_order != nullptr);
+                const auto ipv6_index = find_top_level_layer_index(layers, "ipv6");
+                const auto ah_index = find_top_level_layer_index(layers, "ah");
+                PFL_REQUIRE(frame_index < layers.size());
+                PFL_REQUIRE(ethernet_index < layers.size());
+                PFL_REQUIRE(ipv6_index < layers.size());
+                PFL_REQUIRE(ah_index < layers.size());
+                PFL_EXPECT(frame_index < ethernet_index);
+                PFL_EXPECT(ethernet_index < ipv6_index);
+                PFL_EXPECT(ipv6_index < ah_index);
+                PFL_EXPECT(find_top_level_layer(layers, "udp") == nullptr);
+                PFL_EXPECT(find_top_level_layer(layers, "udp-inner") == nullptr);
+            }
             const auto* ah_layer = find_top_level_layer(layers, "ah");
             PFL_REQUIRE(ah_layer != nullptr);
             for (const auto& fragment : test_case.required_summary_fragments) {
                 PFL_EXPECT(ah_layer->title.find(fragment) != std::string::npos);
+            }
+            if (test_case.file_name == "17_ah_invalid_payload_length_too_small.pcap") {
+                PFL_EXPECT(layer_has_field_containing(*ah_layer, "Next Header", "TCP (6)"));
+                PFL_EXPECT(!layer_has_field_containing(*ah_layer, "Warning", "AH next header is not supported"));
+            }
+            if (test_case.file_name == "19_ah_truncated_icv.pcap") {
+                PFL_EXPECT(layer_has_field_containing(*ah_layer, "Next Header", "UDP (17)"));
+                PFL_EXPECT(layer_has_field_containing(*ah_layer, "Required Fixed Header Bytes", "12"));
+                PFL_EXPECT(layer_has_field_containing(*ah_layer, "Available ICV Bytes", "8 / 12"));
             }
         }
 
@@ -483,6 +859,9 @@ void expect_conservative_ah_packet_details_for_malformed_or_unsupported_cases() 
         if (details->has_ah) {
             for (const auto& fragment : test_case.required_protocol_fragments) {
                 PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
+            }
+            for (const auto& fragment : test_case.forbidden_protocol_fragments) {
+                PFL_EXPECT(protocol_text.find(fragment) == std::string::npos);
             }
         } else {
             PFL_EXPECT(!protocol_text.empty());
@@ -502,9 +881,12 @@ void run_ah_pcap_fixture_tests() {
     expect_outer_qinq_ah_path_decodes();
     expect_wrapped_ah_paths_have_valid_identity();
     expect_ah_spi_splits_identity();
-    expect_deferred_ah_tunnel_mode_fixtures_remain_conservative();
+    expect_ah_tunnel_mode_fixtures_decode_and_present_inner_transport();
     expect_malformed_or_unsupported_ah_fixtures_remain_conservative();
     expect_direct_ah_packet_details_summary_and_protocol_text();
+    expect_ah_effective_packet_payload_lengths_follow_terminal_transport();
+    expect_ah_selected_packet_summary_payload_lengths();
+    expect_ah_tunnel_mode_selected_packet_effective_payload_lengths();
     expect_conservative_ah_packet_details_for_malformed_or_unsupported_cases();
 }
 

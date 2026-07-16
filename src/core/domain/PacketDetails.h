@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace pfl {
@@ -132,6 +133,7 @@ struct VxlanInnerPacketDetails;
 struct GeneveInnerPacketDetails;
 struct GtpuInnerPacketDetails;
 struct GreInnerPacketDetails;
+struct AhInnerPacketDetails;
 
 struct VxlanDetails {
     bool present {false};
@@ -249,6 +251,9 @@ struct AhDetails {
     std::uint32_t sequence_number {0};
     std::size_t header_length {0};
     std::size_t icv_length {0};
+    std::size_t available_icv_bytes {0};
+    bool has_inner_packet {false};
+    std::shared_ptr<AhInnerPacketDetails> inner_packet {};
 };
 
 struct PppoeTagDetails {
@@ -454,6 +459,22 @@ struct GtpuInnerPacketDetails {
     UdpDetails udp {};
     bool has_sctp {false};
     SctpDetails sctp {};
+};
+
+struct AhInnerPacketDetails {
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool ipv4_truncated {false};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    std::uint16_t ipv6_available_bytes {0};
+    bool ipv6_truncated {false};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+    std::optional<std::uint32_t> transport_payload_length;
+    std::optional<std::uint32_t> original_transport_payload_length;
 };
 
 struct IpEncapsulatedLayerDetails {

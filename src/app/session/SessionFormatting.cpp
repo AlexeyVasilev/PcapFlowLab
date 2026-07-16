@@ -167,6 +167,17 @@ std::string format_protocol_summary_value_with_number(const std::uint8_t protoco
     return label + " (" + std::to_string(protocol) + ")";
 }
 
+std::string format_ah_next_header_value(const std::uint8_t protocol) {
+    switch (protocol) {
+    case 4U:
+        return "IPv4 (4)";
+    case 41U:
+        return "IPv6 (41)";
+    default:
+        return format_protocol_summary_value_with_number(protocol);
+    }
+}
+
 std::string format_inner_transport_name(
     const bool has_tcp,
     const bool has_udp,
@@ -654,6 +665,48 @@ PacketSummaryLayer build_udp_summary_layer(const UdpDetails& details) {
     };
 }
 
+void append_transport_payload_summary_fields(
+    std::vector<PacketSummaryField>& fields,
+    const std::optional<std::uint32_t>& captured_payload_length,
+    const std::optional<std::uint32_t>& original_payload_length
+) {
+    if (original_payload_length.has_value()) {
+        if (captured_payload_length.has_value() &&
+            *captured_payload_length != *original_payload_length) {
+            fields.push_back(make_summary_field("Captured Payload Length", std::to_string(*captured_payload_length) + " bytes"));
+            fields.push_back(make_summary_field("Original Payload Length", std::to_string(*original_payload_length) + " bytes"));
+        } else {
+            fields.push_back(make_summary_field("Payload Length", std::to_string(*original_payload_length) + " bytes"));
+        }
+        return;
+    }
+
+    if (captured_payload_length.has_value()) {
+        fields.push_back(make_summary_field("Payload Length", std::to_string(*captured_payload_length) + " bytes"));
+    }
+}
+
+void append_transport_payload_protocol_details(
+    std::ostringstream& builder,
+    const std::optional<std::uint32_t>& captured_payload_length,
+    const std::optional<std::uint32_t>& original_payload_length
+) {
+    if (original_payload_length.has_value()) {
+        if (captured_payload_length.has_value() &&
+            *captured_payload_length != *original_payload_length) {
+            builder << '\n' << '\t' << '\t' << "Captured Payload Length: " << *captured_payload_length << " bytes"
+                    << '\n' << '\t' << '\t' << "Original Payload Length: " << *original_payload_length << " bytes";
+        } else {
+            builder << '\n' << '\t' << '\t' << "Payload Length: " << *original_payload_length << " bytes";
+        }
+        return;
+    }
+
+    if (captured_payload_length.has_value()) {
+        builder << '\n' << '\t' << '\t' << "Payload Length: " << *captured_payload_length << " bytes";
+    }
+}
+
 PacketSummaryLayer build_sctp_summary_layer(const SctpDetails& details) {
     std::vector<PacketSummaryField> sctp_fields {};
     if (details.available_common_header_bytes >= 2U) {
@@ -804,6 +857,74 @@ void append_ip_encapsulation_protocol_details(
     }
 }
 
+void append_ah_inner_protocol_details(
+    std::ostringstream& builder,
+    const AhInnerPacketDetails& inner
+) {
+    if (inner.has_ipv4) {
+        builder << '\n' << '\t' << "Inner IPv4:"
+                << '\n' << '\t' << '\t' << "Version: 4";
+        if (inner.ipv4.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << '\t' << "Total Length: " << inner.ipv4.total_length << " bytes";
+        }
+        if (inner.ipv4.available_header_bytes >= 10U) {
+            builder << '\n' << '\t' << '\t' << "Protocol: "
+                    << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+        }
+        if (inner.ipv4.available_header_bytes >= 16U) {
+            builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr);
+        }
+        if (inner.ipv4.available_header_bytes >= 20U) {
+            builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr);
+        }
+        if (inner.ipv4_truncated) {
+            builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                    << inner.ipv4.available_packet_bytes << " / 20"
+                    << '\n' << '\t' << '\t' << "Warning: Inner IPv4 header is truncated.";
+        }
+    } else if (inner.has_ipv6) {
+        builder << '\n' << '\t' << "Inner IPv6:"
+                << '\n' << '\t' << '\t' << "Version: 6";
+        if (inner.ipv6_available_bytes >= 8U) {
+            builder << '\n' << '\t' << '\t' << "Next Header: "
+                    << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+        }
+        if (inner.ipv6_available_bytes >= 24U) {
+            builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr);
+        }
+        if (inner.ipv6_available_bytes >= 40U) {
+            builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr);
+        }
+        if (inner.ipv6_truncated) {
+            builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                    << inner.ipv6_available_bytes << " / 40"
+                    << '\n' << '\t' << '\t' << "Warning: Inner IPv6 header is truncated.";
+        }
+    }
+
+    if (inner.has_tcp) {
+        builder << '\n' << '\t' << "Inner TCP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << inner.tcp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << inner.tcp.dst_port
+                << '\n' << '\t' << '\t' << "Flags: " << format_tcp_flags_text(inner.tcp.flags);
+        append_transport_payload_protocol_details(
+            builder,
+            inner.transport_payload_length,
+            inner.original_transport_payload_length
+        );
+    } else if (inner.has_udp) {
+        builder << '\n' << '\t' << "Inner UDP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << inner.udp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << inner.udp.dst_port
+                << '\n' << '\t' << '\t' << "Length: " << inner.udp.length << " bytes";
+        append_transport_payload_protocol_details(
+            builder,
+            inner.transport_payload_length,
+            inner.original_transport_payload_length
+        );
+    }
+}
+
 std::optional<PacketSummaryLayer> build_sctp_chunk_summary_layer(const SctpDetails& details) {
     if (!details.first_chunk_present) {
         return std::nullopt;
@@ -937,21 +1058,31 @@ PacketSummaryLayer build_inner_ipv6_summary_layer(const IPv6Details& details) {
     return layer;
 }
 
-PacketSummaryLayer build_inner_tcp_summary_layer(const TcpDetails& details) {
+PacketSummaryLayer build_inner_tcp_summary_layer(
+    const TcpDetails& details,
+    const std::optional<std::uint32_t>& captured_payload_length = std::nullopt,
+    const std::optional<std::uint32_t>& original_payload_length = std::nullopt
+) {
     auto layer = build_tcp_summary_layer(details);
     layer.id = "tcp-inner";
     layer.title = "Inner TCP, Src Port: " +
         std::to_string(details.src_port) +
         ", Dst Port: " + std::to_string(details.dst_port);
+    append_transport_payload_summary_fields(layer.fields, captured_payload_length, original_payload_length);
     return layer;
 }
 
-PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
+PacketSummaryLayer build_inner_udp_summary_layer(
+    const UdpDetails& details,
+    const std::optional<std::uint32_t>& captured_payload_length = std::nullopt,
+    const std::optional<std::uint32_t>& original_payload_length = std::nullopt
+) {
     auto layer = build_udp_summary_layer(details);
     layer.id = "udp-inner";
     layer.title = "Inner UDP, Src Port: " +
         std::to_string(details.src_port) +
         ", Dst Port: " + std::to_string(details.dst_port);
+    append_transport_payload_summary_fields(layer.fields, captured_payload_length, original_payload_length);
     return layer;
 }
 
@@ -1246,6 +1377,99 @@ void append_gtpu_inner_summary_layers(
             if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
                 layers.push_back(*ppid_layer);
             }
+        }
+    }
+}
+
+void append_ah_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const AhInnerPacketDetails& inner
+) {
+    if (inner.has_ipv4) {
+        auto layer = build_inner_ipv4_summary_layer(inner.ipv4);
+        if (inner.ipv4_truncated &&
+            std::none_of(layer.fields.begin(), layer.fields.end(), [](const auto& field) {
+                return field.label == "Warning" &&
+                    field.value.find("Inner IPv4 packet is truncated") != std::string::npos;
+            })) {
+            layer.title += ", truncated";
+            layer.fields.push_back(make_summary_field(
+                "Available Bytes",
+                std::to_string(inner.ipv4.available_packet_bytes) + " bytes"
+            ));
+            layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+            layer.warning = true;
+            layer.marker_text = "Warning";
+        }
+        layers.push_back(std::move(layer));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        if (inner.ipv6_truncated) {
+            std::vector<PacketSummaryField> fields {
+                make_summary_field("Version", "6"),
+            };
+            if (inner.ipv6_available_bytes >= 8U) {
+                fields.push_back(make_summary_field("Traffic Class", format_hex_value(inner.ipv6.traffic_class, 2)));
+                fields.push_back(make_summary_field("Flow Label", format_hex_value(inner.ipv6.flow_label)));
+                fields.push_back(make_summary_field("Payload Length", std::to_string(inner.ipv6.payload_length) + " bytes"));
+                fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                fields.push_back(make_summary_field("Hop Limit", std::to_string(inner.ipv6.hop_limit)));
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                fields.push_back(make_summary_field("Source Address", format_ipv6_address(inner.ipv6.src_addr)));
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                fields.push_back(make_summary_field("Destination Address", format_ipv6_address(inner.ipv6.dst_addr)));
+            }
+            fields.push_back(make_summary_field("Warning", "Inner IPv6 packet is truncated"));
+
+            std::string title = "Inner IPv6, truncated";
+            if (inner.ipv6_available_bytes >= 24U) {
+                title = "Inner IPv6, Src: " + format_ipv6_address(inner.ipv6.src_addr);
+                if (inner.ipv6_available_bytes >= 40U) {
+                    title += ", Dst: " + format_ipv6_address(inner.ipv6.dst_addr);
+                }
+                title += ", truncated";
+            }
+
+            layers.push_back(PacketSummaryLayer {
+                .id = "ipv6-inner",
+                .title = std::move(title),
+                .fields = std::move(fields),
+                .warning = true,
+                .marker_text = "Warning",
+            });
+        } else {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
+
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
         }
     }
 }
@@ -4015,9 +4239,14 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
     }
 
     if (details.has_ah) {
+        const bool ah_next_header_unsupported =
+            !details.ah.truncated &&
+            !details.ah.malformed &&
+            details.ah.available_header_bytes >= 1U &&
+            !details.ah.next_header_supported;
         std::vector<PacketSummaryField> ah_fields {};
         if (details.ah.available_header_bytes >= 1U) {
-            ah_fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(details.ah.next_header)));
+            ah_fields.push_back(make_summary_field("Next Header", format_ah_next_header_value(details.ah.next_header)));
         }
         if (details.ah.available_header_bytes >= 2U) {
             ah_fields.push_back(make_summary_field("Payload Length", std::to_string(static_cast<unsigned>(details.ah.payload_length))));
@@ -4034,6 +4263,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 format_hex_value(details.ah.sequence_number, 8) + " (" + std::to_string(details.ah.sequence_number) + ")"
             ));
             ah_fields.push_back(make_summary_field("Header Length", std::to_string(details.ah.header_length) + " bytes"));
+            ah_fields.push_back(make_summary_field("Required Fixed Header Bytes", "12"));
             ah_fields.push_back(make_summary_field("ICV Length", std::to_string(details.ah.icv_length) + " bytes"));
         }
         if (details.ah.truncated) {
@@ -4042,24 +4272,42 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
                 "Available Header Bytes",
                 std::to_string(static_cast<unsigned>(details.ah.available_header_bytes)) + " / " + std::to_string(required_header_bytes)
             ));
+            if (details.ah.available_header_bytes >= 12U && details.ah.icv_length > 0U) {
+                ah_fields.push_back(make_summary_field(
+                    "Available ICV Bytes",
+                    std::to_string(details.ah.available_icv_bytes) + " / " + std::to_string(details.ah.icv_length)
+                ));
+            }
             ah_fields.push_back(make_summary_field("Warning", "AH header is truncated"));
         }
         if (details.ah.malformed) {
             ah_fields.push_back(make_summary_field("Warning", "AH computed header length is invalid"));
         }
-        if (!details.ah.next_header_supported && details.ah.available_header_bytes >= 1U) {
+        if (ah_next_header_unsupported) {
             ah_fields.push_back(make_summary_field("Warning", "AH next header is not supported"));
+        }
+        if (details.ah.has_inner_packet && details.ah.inner_packet) {
+            ah_fields.push_back(make_summary_field(
+                "Inner Payload",
+                details.ah.inner_packet->has_ipv4 ? "IPv4" :
+                    details.ah.inner_packet->has_ipv6 ? "IPv6" :
+                    "Unknown"
+            ));
         }
 
         append_layer_if_not_empty(layers, PacketSummaryLayer {
             .id = "ah",
             .title = format_ah_summary_title(details.ah),
             .fields = std::move(ah_fields),
-            .warning = details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported,
-            .marker_text = (details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported)
+            .warning = details.ah.truncated || details.ah.malformed || ah_next_header_unsupported,
+            .marker_text = (details.ah.truncated || details.ah.malformed || ah_next_header_unsupported)
                 ? std::string {"Warning"}
                 : std::string {},
         });
+
+        if (details.ah.has_inner_packet && details.ah.inner_packet) {
+            append_ah_inner_summary_layers(layers, *details.ah.inner_packet);
+        }
     }
 
     if (details.has_tcp) {
@@ -4803,10 +5051,15 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
     }
 
     if (details.has_ah) {
+        const bool ah_next_header_unsupported =
+            !details.ah.truncated &&
+            !details.ah.malformed &&
+            details.ah.available_header_bytes >= 1U &&
+            !details.ah.next_header_supported;
         builder << "Protocol: AH";
         if (details.ah.available_header_bytes >= 1U) {
             builder << '\n' << '\t' << "Next Header: "
-                    << format_protocol_summary_value_with_number(details.ah.next_header);
+                    << format_ah_next_header_value(details.ah.next_header);
         }
         if (details.ah.available_header_bytes >= 2U) {
             builder << '\n' << '\t' << "Payload Length: "
@@ -4826,20 +5079,28 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                     << " (" << details.ah.sequence_number << ')'
                     << '\n' << '\t' << "Header Length: "
                     << details.ah.header_length << " bytes"
+                    << '\n' << '\t' << "Required Fixed Header Bytes: 12"
                     << '\n' << '\t' << "ICV Length: "
                     << details.ah.icv_length << " bytes";
         }
         if (details.ah.truncated) {
             const auto required_header_bytes = details.ah.header_length > 0U ? details.ah.header_length : 12U;
             builder << '\n' << '\t' << "Available Header Bytes: "
-                    << static_cast<unsigned>(details.ah.available_header_bytes) << " / " << required_header_bytes
-                    << '\n' << '\t' << "Warning: AH header is truncated.";
+                    << static_cast<unsigned>(details.ah.available_header_bytes) << " / " << required_header_bytes;
+            if (details.ah.available_header_bytes >= 12U && details.ah.icv_length > 0U) {
+                builder << '\n' << '\t' << "Available ICV Bytes: "
+                        << details.ah.available_icv_bytes << " / " << details.ah.icv_length;
+            }
+            builder << '\n' << '\t' << "Warning: AH header is truncated.";
         }
         if (details.ah.malformed) {
             builder << '\n' << '\t' << "Warning: AH computed header length is invalid.";
         }
-        if (!details.ah.next_header_supported && details.ah.available_header_bytes >= 1U) {
+        if (ah_next_header_unsupported) {
             builder << '\n' << '\t' << "Warning: AH next header is not supported.";
+        }
+        if (details.ah.has_inner_packet && details.ah.inner_packet) {
+            append_ah_inner_protocol_details(builder, *details.ah.inner_packet);
         }
         return builder.str();
     }

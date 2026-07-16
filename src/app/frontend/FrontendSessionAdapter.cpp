@@ -387,6 +387,21 @@ std::string format_transport_summary(const PacketDetails& details) {
         return out.str();
     }
 
+    if (details.has_ah && details.ah.has_inner_packet && details.ah.inner_packet) {
+        if (details.ah.inner_packet->has_tcp) {
+            out << "Inner TCP "
+                << details.ah.inner_packet->tcp.src_port << " -> " << details.ah.inner_packet->tcp.dst_port
+                << " Flags: " << session_detail::format_tcp_flags_text(details.ah.inner_packet->tcp.flags);
+            return out.str();
+        }
+
+        if (details.ah.inner_packet->has_udp) {
+            out << "Inner UDP "
+                << details.ah.inner_packet->udp.src_port << " -> " << details.ah.inner_packet->udp.dst_port;
+            return out.str();
+        }
+    }
+
     if (details.has_ip_encapsulation) {
         if (details.ip_encapsulation.has_tcp) {
             out << "Inner TCP "
@@ -3021,6 +3036,13 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     }
 
     if (details.has_value()) {
+        const auto original_transport_payload_length =
+            session_detail::derive_transport_payload_length_from_headers(session_, packet);
+        const auto captured_transport_payload_length =
+            (details->has_ah && original_transport_payload_length.has_value())
+            ? original_transport_payload_length
+            : std::optional<std::uint32_t> {packet.payload_length};
+
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
         result.link_summary_text = format_link_summary(*details);
@@ -3029,8 +3051,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .source_capture_accessible = true,
             .flow_packet_index = flow_packet_index,
-            .transport_payload_length = packet.payload_length,
-            .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
+            .transport_payload_length = captured_transport_payload_length,
+            .original_transport_payload_length = original_transport_payload_length,
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,

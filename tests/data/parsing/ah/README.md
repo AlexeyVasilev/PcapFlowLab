@@ -5,7 +5,7 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - SPI and sequence-number identity baselines for future AH-aware protocol-path work;
 - outer VLAN / QinQ preservation before AH;
 - IPv6 Hop-by-Hop placement before AH;
-- staged tunnel-mode AH carriage with inner IPv4 / IPv6 payloads;
+- AH tunnel-mode carriage with inner IPv4 / IPv6 payloads;
 - malformed and truncated AH robustness cases.
 
 The local helper script that generates these pcaps is intentionally local-only under `tmp/`.
@@ -75,14 +75,14 @@ Implemented in the current branch:
 - direct IPv4 AH followed by TCP or UDP;
 - direct IPv6 AH followed by TCP or UDP;
 - IPv6 Hop-by-Hop followed by AH and terminal UDP;
+- AH tunnel-mode inner IPv4 / IPv6 flow extraction for fixtures `12`-`15`;
 - SPI-based protocol-path identity:
   - `AH(spi=0x...)`
 - outer VLAN / QinQ preservation before AH;
-- selected-packet AH Summary / Protocol Details;
+- selected-packet AH Summary / Protocol Details, including AH-owned inner IPv4 / IPv6 + TCP / UDP presentation;
 - exact index-version bump for AH protocol-path serialization.
 
 Still intentionally deferred:
-- AH tunnel-mode flow decoding for fixtures `12`-`15`;
 - AH followed by SCTP;
 - AH followed by ICMP / ICMPv6;
 - nested AH chains;
@@ -161,25 +161,25 @@ Still intentionally deferred:
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / AH / inner IPv4 / UDP
-- Purpose: staged tunnel-mode IPv4 AH carrying inner IPv4 / UDP.
+- Purpose: tunnel-mode IPv4 AH carrying inner IPv4 / UDP.
 
 ### 13_ipv4_ah_inner_ipv6_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / AH / inner IPv6 / TCP
-- Purpose: staged tunnel-mode IPv4 AH carrying inner IPv6 / TCP.
+- Purpose: tunnel-mode IPv4 AH carrying inner IPv6 / TCP.
 
 ### 14_ipv6_ah_inner_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / AH / inner IPv4 / UDP
-- Purpose: staged tunnel-mode IPv6 AH carrying inner IPv4 / UDP.
+- Purpose: tunnel-mode IPv6 AH carrying inner IPv4 / UDP.
 
 ### 15_ipv6_ah_inner_ipv6_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / AH / inner IPv6 / TCP
-- Purpose: staged tunnel-mode IPv6 AH carrying inner IPv6 / TCP.
+- Purpose: tunnel-mode IPv6 AH carrying inner IPv6 / TCP.
 
 ### 16_ah_truncated_fixed_header.pcap
 
