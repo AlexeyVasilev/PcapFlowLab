@@ -741,16 +741,43 @@ void append_ip_encapsulation_protocol_details(
     for (const auto& inner : encapsulation.inner_ip_layers) {
         if (inner.has_ipv4) {
             builder << '\n' << '\t' << "Inner IPv4:"
-                    << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr)
-                    << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr)
-                    << '\n' << '\t' << '\t' << "Protocol: "
-                    << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+                    << '\n' << '\t' << '\t' << "Version: 4";
+            if (inner.ipv4.available_header_bytes >= 4U) {
+                builder << '\n' << '\t' << '\t' << "Total Length: " << inner.ipv4.total_length << " bytes";
+            }
+            if (inner.ipv4.available_header_bytes >= 10U) {
+                builder << '\n' << '\t' << '\t' << "Protocol: "
+                        << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+            }
+            if (inner.ipv4.available_header_bytes >= 16U) {
+                builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr);
+            }
+            if (inner.ipv4.available_header_bytes >= 20U) {
+                builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr);
+            }
+            if (inner.ipv4_truncated || encapsulation.inner_header_truncated) {
+                builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                        << encapsulation.available_inner_bytes << " / " << encapsulation.required_inner_header_bytes
+                        << '\n' << '\t' << '\t' << "Warning: Inner IPv4 header is truncated.";
+            }
         } else if (inner.has_ipv6) {
             builder << '\n' << '\t' << "Inner IPv6:"
-                    << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr)
-                    << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr)
-                    << '\n' << '\t' << '\t' << "Next Header: "
-                    << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+                    << '\n' << '\t' << '\t' << "Version: 6";
+            if (inner.ipv6_available_bytes >= 8U) {
+                builder << '\n' << '\t' << '\t' << "Next Header: "
+                        << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr);
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr);
+            }
+            if (inner.ipv6_truncated || encapsulation.inner_header_truncated) {
+                builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                        << encapsulation.available_inner_bytes << " / " << encapsulation.required_inner_header_bytes
+                        << '\n' << '\t' << '\t' << "Warning: Inner IPv6 header is truncated.";
+            }
         }
     }
 
@@ -764,6 +791,14 @@ void append_ip_encapsulation_protocol_details(
                 << '\n' << '\t' << '\t' << "Source Port: " << encapsulation.udp.src_port
                 << '\n' << '\t' << '\t' << "Destination Port: " << encapsulation.udp.dst_port
                 << '\n' << '\t' << '\t' << "Length: " << encapsulation.udp.length << " bytes";
+    } else if (encapsulation.has_icmp) {
+        builder << '\n' << '\t' << "Inner ICMP:"
+                << '\n' << '\t' << '\t' << "Type: " << static_cast<unsigned>(encapsulation.icmp.type)
+                << '\n' << '\t' << '\t' << "Code: " << static_cast<unsigned>(encapsulation.icmp.code);
+    } else if (encapsulation.has_icmpv6) {
+        builder << '\n' << '\t' << "Inner ICMPv6:"
+                << '\n' << '\t' << '\t' << "Type: " << static_cast<unsigned>(encapsulation.icmpv6.type)
+                << '\n' << '\t' << '\t' << "Code: " << static_cast<unsigned>(encapsulation.icmpv6.code);
     }
 }
 
@@ -916,6 +951,96 @@ PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
         std::to_string(details.src_port) +
         ", Dst Port: " + std::to_string(details.dst_port);
     return layer;
+}
+
+PacketSummaryLayer build_inner_icmp_summary_layer(const IcmpDetails& details) {
+    return PacketSummaryLayer {
+        .id = "icmp-inner",
+        .title = "Inner ICMP",
+        .fields = {
+            make_summary_field("Type", std::to_string(details.type)),
+            make_summary_field("Code", std::to_string(details.code)),
+        },
+    };
+}
+
+PacketSummaryLayer build_inner_icmpv6_summary_layer(const IcmpV6Details& details) {
+    return PacketSummaryLayer {
+        .id = "icmpv6-inner",
+        .title = "Inner ICMPv6",
+        .fields = {
+            make_summary_field("Type", std::to_string(details.type)),
+            make_summary_field("Code", std::to_string(details.code)),
+        },
+    };
+}
+
+PacketSummaryLayer build_truncated_plain_ip_inner_summary_layer(const IpEncapsulationDetails& encapsulation) {
+    const auto& inner = encapsulation.inner_ip_layers.back();
+    const bool is_ipv4 = encapsulation.expected_inner_family == NetworkAddressFamily::ipv4;
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Version", is_ipv4 ? "4" : "6"),
+    };
+
+    std::string title = is_ipv4 ? "Inner IPv4, truncated" : "Inner IPv6, truncated";
+    if (is_ipv4 && inner.has_ipv4) {
+        if (encapsulation.available_inner_bytes >= 4U) {
+            fields.push_back(make_summary_field("Total Length", std::to_string(inner.ipv4.total_length) + " bytes"));
+        }
+        if (encapsulation.available_inner_bytes >= 10U) {
+            fields.push_back(make_summary_field(
+                "Protocol",
+                format_protocol_summary_value_with_number(inner.ipv4.protocol)
+            ));
+        }
+        if (encapsulation.available_inner_bytes >= 16U) {
+            const auto source = format_ipv4_address(inner.ipv4.src_addr);
+            title = "Inner IPv4, Src: " + source;
+            fields.push_back(make_summary_field("Source Address", source));
+        }
+        if (encapsulation.available_inner_bytes >= 20U) {
+            const auto destination = format_ipv4_address(inner.ipv4.dst_addr);
+            title += ", Dst: " + destination;
+            fields.push_back(make_summary_field("Destination Address", destination));
+        }
+        title += ", truncated";
+    } else if (!is_ipv4 && inner.has_ipv6) {
+        if (encapsulation.available_inner_bytes >= 8U) {
+            fields.push_back(make_summary_field(
+                "Next Header",
+                format_protocol_summary_value_with_number(inner.ipv6.next_header)
+            ));
+        }
+        if (encapsulation.available_inner_bytes >= 24U) {
+            const auto source = format_ipv6_address(inner.ipv6.src_addr);
+            title = "Inner IPv6, Src: " + source;
+            fields.push_back(make_summary_field("Source Address", source));
+        }
+        if (encapsulation.available_inner_bytes >= 40U) {
+            const auto destination = format_ipv6_address(inner.ipv6.dst_addr);
+            title += ", Dst: " + destination;
+            fields.push_back(make_summary_field("Destination Address", destination));
+        }
+        title += ", truncated";
+    }
+
+    fields.push_back(make_summary_field(
+        "Available Header Bytes",
+        std::to_string(encapsulation.available_inner_bytes) + " / " +
+            std::to_string(encapsulation.required_inner_header_bytes)
+    ));
+    fields.push_back(make_summary_field(
+        "Warning",
+        is_ipv4 ? "Inner IPv4 header is truncated" : "Inner IPv6 header is truncated"
+    ));
+
+    return PacketSummaryLayer {
+        .id = is_ipv4 ? "ipv4-inner" : "ipv6-inner",
+        .title = std::move(title),
+        .fields = std::move(fields),
+        .warning = true,
+        .marker_text = "Warning",
+    };
 }
 
 PacketSummaryLayer build_inner_sctp_summary_layer(const SctpDetails& details) {
@@ -1127,6 +1252,11 @@ void append_ip_encapsulation_summary_layers(
     std::vector<PacketSummaryLayer>& layers,
     const IpEncapsulationDetails& encapsulation
 ) {
+    if (encapsulation.inner_header_truncated && !encapsulation.inner_ip_layers.empty()) {
+        layers.push_back(build_truncated_plain_ip_inner_summary_layer(encapsulation));
+        return;
+    }
+
     for (const auto& inner : encapsulation.inner_ip_layers) {
         if (inner.has_ipv4) {
             layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
@@ -1139,6 +1269,10 @@ void append_ip_encapsulation_summary_layers(
         layers.push_back(build_inner_tcp_summary_layer(encapsulation.tcp));
     } else if (encapsulation.has_udp) {
         layers.push_back(build_inner_udp_summary_layer(encapsulation.udp));
+    } else if (encapsulation.has_icmp) {
+        layers.push_back(build_inner_icmp_summary_layer(encapsulation.icmp));
+    } else if (encapsulation.has_icmpv6) {
+        layers.push_back(build_inner_icmpv6_summary_layer(encapsulation.icmpv6));
     }
 }
 

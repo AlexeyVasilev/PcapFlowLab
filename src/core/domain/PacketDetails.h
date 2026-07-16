@@ -377,6 +377,16 @@ struct SctpDetails {
     std::uint32_t ppid {0};
 };
 
+struct IcmpDetails {
+    std::uint8_t type {0};
+    std::uint8_t code {0};
+};
+
+struct IcmpV6Details {
+    std::uint8_t type {0};
+    std::uint8_t code {0};
+};
+
 struct VxlanInnerPacketDetails {
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
@@ -444,10 +454,18 @@ struct IpEncapsulatedLayerDetails {
 
 struct IpEncapsulationDetails {
     std::vector<IpEncapsulatedLayerDetails> inner_ip_layers {};
+    NetworkAddressFamily expected_inner_family {NetworkAddressFamily::unknown};
+    std::uint16_t available_inner_bytes {0};
+    std::uint16_t required_inner_header_bytes {0};
+    bool inner_header_truncated {false};
     bool has_tcp {false};
     TcpDetails tcp {};
     bool has_udp {false};
     UdpDetails udp {};
+    bool has_icmp {false};
+    IcmpDetails icmp {};
+    bool has_icmpv6 {false};
+    IcmpV6Details icmpv6 {};
 };
 
 struct GreInnerPacketDetails {
@@ -479,16 +497,6 @@ struct GreInnerPacketDetails {
     UdpDetails udp {};
     bool has_sctp {false};
     SctpDetails sctp {};
-};
-
-struct IcmpDetails {
-    std::uint8_t type {0};
-    std::uint8_t code {0};
-};
-
-struct IcmpV6Details {
-    std::uint8_t type {0};
-    std::uint8_t code {0};
 };
 
 struct IgmpDetails {

@@ -400,6 +400,18 @@ std::string format_transport_summary(const PacketDetails& details) {
                 << details.ip_encapsulation.udp.src_port << " -> " << details.ip_encapsulation.udp.dst_port;
             return out.str();
         }
+
+        if (details.ip_encapsulation.has_icmp) {
+            out << "Inner ICMP type " << static_cast<unsigned>(details.ip_encapsulation.icmp.type)
+                << ", code " << static_cast<unsigned>(details.ip_encapsulation.icmp.code);
+            return out.str();
+        }
+
+        if (details.ip_encapsulation.has_icmpv6) {
+            out << "Inner ICMPv6 type " << static_cast<unsigned>(details.ip_encapsulation.icmpv6.type)
+                << ", code " << static_cast<unsigned>(details.ip_encapsulation.icmpv6.code);
+            return out.str();
+        }
     }
 
     if (details.has_icmp) {
@@ -535,17 +547,51 @@ std::string build_frontend_packet_summary_text(
     if (details->has_ip_encapsulation && !details->ip_encapsulation.inner_ip_layers.empty()) {
         for (const auto& inner : details->ip_encapsulation.inner_ip_layers) {
             if (inner.has_ipv4) {
-                append_summary_section(lines, "Inner IPv4", {
-                    "Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr),
-                    "Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr),
-                    "Protocol: " + format_protocol_value(inner.ipv4.protocol),
-                });
+                auto section_lines = std::vector<std::string> {};
+                if (details->ip_encapsulation.inner_header_truncated) {
+                    section_lines.push_back(
+                        "Available Header Bytes: " + std::to_string(details->ip_encapsulation.available_inner_bytes) +
+                        " / " + std::to_string(details->ip_encapsulation.required_inner_header_bytes)
+                    );
+                    if (details->ip_encapsulation.available_inner_bytes >= 10U) {
+                        section_lines.push_back("Protocol: " + format_protocol_value(inner.ipv4.protocol));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 16U) {
+                        section_lines.push_back("Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 20U) {
+                        section_lines.push_back("Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr));
+                    }
+                    section_lines.push_back("Warning: Inner IPv4 header is truncated");
+                } else {
+                    section_lines.push_back("Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr));
+                    section_lines.push_back("Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr));
+                    section_lines.push_back("Protocol: " + format_protocol_value(inner.ipv4.protocol));
+                }
+                append_summary_section(lines, "Inner IPv4", section_lines);
             } else if (inner.has_ipv6) {
-                append_summary_section(lines, "Inner IPv6", {
-                    "Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr),
-                    "Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr),
-                    "Next Header: " + format_protocol_value(inner.ipv6.next_header),
-                });
+                auto section_lines = std::vector<std::string> {};
+                if (details->ip_encapsulation.inner_header_truncated) {
+                    section_lines.push_back(
+                        "Available Header Bytes: " + std::to_string(details->ip_encapsulation.available_inner_bytes) +
+                        " / " + std::to_string(details->ip_encapsulation.required_inner_header_bytes)
+                    );
+                    if (details->ip_encapsulation.available_inner_bytes >= 8U) {
+                        section_lines.push_back("Next Header: " + format_protocol_value(inner.ipv6.next_header));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 24U) {
+                        section_lines.push_back("Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 40U) {
+                        section_lines.push_back("Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr));
+                    }
+                    section_lines.push_back("Warning: Inner IPv6 header is truncated");
+                } else {
+                    section_lines.push_back("Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr));
+                    section_lines.push_back("Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr));
+                    section_lines.push_back("Next Header: " + format_protocol_value(inner.ipv6.next_header));
+                }
+                append_summary_section(lines, "Inner IPv6", section_lines);
             }
         }
     }
@@ -582,6 +628,20 @@ std::string build_frontend_packet_summary_text(
             "Source Port: " + std::to_string(details->ip_encapsulation.udp.src_port),
             "Destination Port: " + std::to_string(details->ip_encapsulation.udp.dst_port),
             "Length: " + std::to_string(details->ip_encapsulation.udp.length),
+        });
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_icmp) {
+        append_summary_section(lines, "Inner ICMP", {
+            "Type: " + std::to_string(details->ip_encapsulation.icmp.type),
+            "Code: " + std::to_string(details->ip_encapsulation.icmp.code),
+        });
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_icmpv6) {
+        append_summary_section(lines, "Inner ICMPv6", {
+            "Type: " + std::to_string(details->ip_encapsulation.icmpv6.type),
+            "Code: " + std::to_string(details->ip_encapsulation.icmpv6.code),
         });
     }
 

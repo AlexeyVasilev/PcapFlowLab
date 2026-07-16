@@ -390,6 +390,19 @@ bool title_contains_all(
     return true;
 }
 
+bool has_field_value_fragment(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string& label,
+    const std::string& fragment
+) {
+    for (const auto& field : layer.fields) {
+        if (field.label == label && field.value.find(fragment) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void expect_layer_prefix(
     const std::vector<session_detail::PacketSummaryLayer>& layers,
     const std::vector<std::string>& expected_ids
@@ -397,6 +410,27 @@ void expect_layer_prefix(
     PFL_REQUIRE(layers.size() >= expected_ids.size());
     for (std::size_t index = 0; index < expected_ids.size(); ++index) {
         PFL_EXPECT(layers[index].id == expected_ids[index]);
+    }
+}
+
+void expect_layer_subsequence(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::vector<std::string>& expected_ids
+) {
+    PFL_REQUIRE(layers.size() >= expected_ids.size());
+
+    std::size_t search_index = 0U;
+    for (const auto& expected_id : expected_ids) {
+        bool found = false;
+        while (search_index < layers.size()) {
+            if (layers[search_index].id == expected_id) {
+                found = true;
+                ++search_index;
+                break;
+            }
+            ++search_index;
+        }
+        PFL_EXPECT(found);
     }
 }
 
@@ -493,6 +527,161 @@ void expect_direct_plain_ip_packet_details_present(
     PFL_EXPECT(protocol_text.find(outer_is_ipv4 ? "Protocol: IPv4" : "Protocol: IPv6") != std::string::npos);
     PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
     PFL_EXPECT(protocol_text.find(inner_is_tcp ? "Inner TCP:" : "Inner UDP:") != std::string::npos);
+}
+
+void expect_direct_plain_ip_control_packet_details_present(
+    const std::string_view file_name,
+    const bool inner_is_ipv4
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(file_name)));
+
+    const auto packet = session.find_packet(0U);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+
+    PFL_EXPECT(details->has_ip_encapsulation);
+    PFL_EXPECT(details->ip_encapsulation.inner_ip_layers.size() == 1U);
+    PFL_EXPECT(!details->has_tcp);
+    PFL_EXPECT(!details->has_udp);
+    PFL_EXPECT(!details->has_icmp);
+    PFL_EXPECT(!details->has_icmpv6);
+    PFL_EXPECT(!details->ip_encapsulation.has_tcp);
+    PFL_EXPECT(!details->ip_encapsulation.has_udp);
+
+    const auto& inner = details->ip_encapsulation.inner_ip_layers.front();
+    if (inner_is_ipv4) {
+        PFL_EXPECT(inner.has_ipv4);
+        PFL_EXPECT(!inner.has_ipv6);
+        PFL_EXPECT(details->ip_encapsulation.has_icmp);
+        PFL_EXPECT(!details->ip_encapsulation.has_icmpv6);
+        PFL_EXPECT(details->ip_encapsulation.icmp.type == 8U);
+        PFL_EXPECT(details->ip_encapsulation.icmp.code == 0U);
+        PFL_EXPECT(session_detail::format_ipv4_address(inner.ipv4.src_addr) == "10.60.0.10");
+        PFL_EXPECT(session_detail::format_ipv4_address(inner.ipv4.dst_addr) == "10.60.0.20");
+    } else {
+        PFL_EXPECT(!inner.has_ipv4);
+        PFL_EXPECT(inner.has_ipv6);
+        PFL_EXPECT(!details->ip_encapsulation.has_icmp);
+        PFL_EXPECT(details->ip_encapsulation.has_icmpv6);
+        PFL_EXPECT(details->ip_encapsulation.icmpv6.type == 128U);
+        PFL_EXPECT(details->ip_encapsulation.icmpv6.code == 0U);
+        PFL_EXPECT(session_detail::format_ipv6_address(inner.ipv6.src_addr) ==
+            "2001:0db8:0061:0000:0000:0000:0000:0010");
+        PFL_EXPECT(session_detail::format_ipv6_address(inner.ipv6.dst_addr) ==
+            "2001:0db8:0061:0000:0000:0000:0000:0020");
+    }
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    expect_layer_prefix(summary_layers, inner_is_ipv4
+        ? std::vector<std::string> {"frame", "ethernet", "ipv4", "ipv4-inner", "icmp-inner"}
+        : std::vector<std::string> {"frame", "ethernet", "ipv4", "ipv6-inner", "icmpv6-inner"});
+
+    const auto* inner_network_layer = find_top_level_layer(summary_layers, inner_is_ipv4 ? "ipv4-inner" : "ipv6-inner");
+    PFL_REQUIRE(inner_network_layer != nullptr);
+    if (inner_is_ipv4) {
+        PFL_EXPECT(title_contains_all(*inner_network_layer, {"Inner IPv4", "10.60.0.10", "10.60.0.20"}));
+    } else {
+        PFL_EXPECT(title_contains_all(*inner_network_layer, {
+            "Inner IPv6",
+            "2001:0db8:0061:0000:0000:0000:0000:0010",
+            "2001:0db8:0061:0000:0000:0000:0000:0020",
+        }));
+    }
+
+    const auto* inner_control_layer = find_top_level_layer(summary_layers, inner_is_ipv4 ? "icmp-inner" : "icmpv6-inner");
+    PFL_REQUIRE(inner_control_layer != nullptr);
+    PFL_EXPECT(has_field_value_fragment(*inner_control_layer, "Type", inner_is_ipv4 ? "8" : "128"));
+    PFL_EXPECT(has_field_value_fragment(*inner_control_layer, "Code", "0"));
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    PFL_EXPECT(protocol_text.find("Protocol: IPv4") != std::string::npos);
+    PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
+    PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner ICMP:" : "Inner ICMPv6:") != std::string::npos);
+}
+
+void expect_malformed_plain_ip_packet_details_present(
+    const std::string_view file_name,
+    const bool outer_is_ipv4,
+    const bool expected_inner_is_ipv4,
+    const std::uint16_t expected_available_inner_bytes
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(file_name)));
+
+    const auto packet = session.find_packet(0U);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+
+    PFL_EXPECT(details->has_ip_encapsulation);
+    PFL_EXPECT(details->ip_encapsulation.inner_ip_layers.size() == 1U);
+    PFL_EXPECT(details->ip_encapsulation.inner_header_truncated);
+    PFL_EXPECT(details->ip_encapsulation.available_inner_bytes == expected_available_inner_bytes);
+    PFL_EXPECT(details->ip_encapsulation.required_inner_header_bytes == (expected_inner_is_ipv4 ? 20U : 40U));
+    PFL_EXPECT(details->ip_encapsulation.expected_inner_family == (
+        expected_inner_is_ipv4 ? NetworkAddressFamily::ipv4 : NetworkAddressFamily::ipv6
+    ));
+    PFL_EXPECT(!details->ip_encapsulation.has_tcp);
+    PFL_EXPECT(!details->ip_encapsulation.has_udp);
+    PFL_EXPECT(!details->ip_encapsulation.has_icmp);
+    PFL_EXPECT(!details->ip_encapsulation.has_icmpv6);
+    PFL_EXPECT(!details->has_tcp);
+    PFL_EXPECT(!details->has_udp);
+    PFL_EXPECT(!details->has_icmp);
+    PFL_EXPECT(!details->has_icmpv6);
+
+    const auto& inner = details->ip_encapsulation.inner_ip_layers.front();
+    if (expected_inner_is_ipv4) {
+        PFL_EXPECT(inner.has_ipv4);
+        PFL_EXPECT(!inner.has_ipv6);
+        PFL_EXPECT(inner.ipv4_truncated);
+        PFL_EXPECT(inner.ipv4.available_packet_bytes == expected_available_inner_bytes);
+    } else {
+        PFL_EXPECT(!inner.has_ipv4);
+        PFL_EXPECT(inner.has_ipv6);
+        PFL_EXPECT(inner.ipv6_truncated);
+        PFL_EXPECT(inner.ipv6_available_bytes == expected_available_inner_bytes);
+    }
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    expect_layer_subsequence(summary_layers, outer_is_ipv4
+        ? (expected_inner_is_ipv4
+            ? std::vector<std::string> {"frame", "ethernet", "ipv4", "ipv4-inner"}
+            : std::vector<std::string> {"frame", "ethernet", "ipv4", "ipv6-inner"})
+        : std::vector<std::string> {"frame", "ethernet", "ipv6", "ipv6-inner"});
+
+    const auto* inner_layer = find_top_level_layer(summary_layers, expected_inner_is_ipv4 ? "ipv4-inner" : "ipv6-inner");
+    PFL_REQUIRE(inner_layer != nullptr);
+    PFL_EXPECT(inner_layer->warning);
+    PFL_EXPECT(inner_layer->title.find("truncated") != std::string::npos);
+    PFL_EXPECT(has_field_value_fragment(
+        *inner_layer,
+        "Available Header Bytes",
+        std::to_string(expected_available_inner_bytes) + " / " + (expected_inner_is_ipv4 ? "20" : "40")
+    ));
+    PFL_EXPECT(has_field_value_fragment(
+        *inner_layer,
+        "Warning",
+        expected_inner_is_ipv4 ? "Inner IPv4 header is truncated" : "Inner IPv6 header is truncated"
+    ));
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    PFL_EXPECT(protocol_text.find(outer_is_ipv4 ? "Protocol: IPv4" : "Protocol: IPv6") != std::string::npos);
+    PFL_EXPECT(protocol_text.find(expected_inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
+    PFL_EXPECT(protocol_text.find(
+        "Available Header Bytes: " + std::to_string(expected_available_inner_bytes) + " / " +
+        (expected_inner_is_ipv4 ? std::string {"20"} : std::string {"40"})
+    ) != std::string::npos);
+    PFL_EXPECT(protocol_text.find(
+        expected_inner_is_ipv4 ? "Warning: Inner IPv4 header is truncated."
+                               : "Warning: Inner IPv6 header is truncated."
+    ) != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner TCP:") == std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner UDP:") == std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner ICMP:") == std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner ICMPv6:") == std::string::npos);
 }
 
 void expect_nested_plain_ip_packet_details_summary_and_protocol_text() {
@@ -837,6 +1026,18 @@ void expect_direct_plain_ip_packet_details_summary_and_protocol_text() {
     );
 }
 
+void expect_direct_plain_ip_control_packet_details_summary_and_protocol_text() {
+    expect_direct_plain_ip_control_packet_details_present("15_ipv4_in_ipv4_inner_icmp.pcap", true);
+    expect_direct_plain_ip_control_packet_details_present("16_ipv6_in_ipv4_inner_icmpv6.pcap", false);
+}
+
+void expect_malformed_plain_ip_packet_details_summary_and_protocol_text() {
+    expect_malformed_plain_ip_packet_details_present("17_truncated_inner_ipv4_header.pcap", true, true, 12U);
+    expect_malformed_plain_ip_packet_details_present("18_truncated_inner_ipv6_header.pcap", true, false, 24U);
+    expect_malformed_plain_ip_packet_details_present("19_outer_ipv4_proto4_payload_too_short.pcap", true, true, 4U);
+    expect_malformed_plain_ip_packet_details_present("20_ipv6_next41_payload_too_short.pcap", false, false, 6U);
+}
+
 }  // namespace
 
 void run_ip_encapsulation_pcap_fixture_tests() {
@@ -851,8 +1052,10 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_supported_ipv6_in_ipv6_tcp_udp_decode();
     expect_supported_plain_ip_control_decode();
     expect_direct_plain_ip_packet_details_summary_and_protocol_text();
+    expect_direct_plain_ip_control_packet_details_summary_and_protocol_text();
     expect_nested_plain_ip_packet_details_summary_and_protocol_text();
     expect_malformed_inner_ip_remains_unrecognized();
+    expect_malformed_plain_ip_packet_details_summary_and_protocol_text();
 }
 
 }  // namespace pfl::tests

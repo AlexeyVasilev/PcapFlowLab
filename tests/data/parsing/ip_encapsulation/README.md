@@ -31,8 +31,8 @@ Notes:
 - they write classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values;
 - truncation fixtures are written manually so captured length and original wire length can differ when useful;
 - fixture integrity and import/accounting tests now exist for this directory;
-- direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, `14`, `17`, and `19`;
-- direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, `10`, and `18`;
+- direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, and `14`, with conservative malformed presentation coverage for fixtures `17` and `19`;
+- direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, and `10`, with conservative malformed presentation coverage for fixture `18`;
 - outer IPv6 effective next-header `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `05`, `06`, and `11`;
 - outer IPv6 effective next-header `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `07` and `08`, with conservative malformed handling for fixture `20`;
 - one specifically bounded nested plain-IP case is now implemented for fixture `12`: `IPv4 -> IPv4 -> IPv4 -> UDP`;
@@ -60,9 +60,7 @@ Still deferred:
 - inner ICMP / ICMPv6 continuation through outer IPv6;
 - inner ICMP / ICMPv6 continuation inside deeper nesting;
 - SCTP continuation;
-- selected-packet Packet Details / Summary continuation for nested encapsulation;
-- selected-packet Packet Details / Summary continuation for ICMP / ICMPv6 terminal inner payloads;
-- selected-packet Packet Details / Summary continuation for malformed or truncated inner IP payloads.
+- selected-packet Packet Details / Summary continuation beyond the specifically bounded nested/plain-control cases covered below.
 
 Selected-packet presentation now covers the direct non-nested TCP/UDP cases used by fixtures
 `01`, `04`, `05`, `08`, `10`, and `11`. Summary shows the outer IP layer followed by flat
@@ -74,11 +72,23 @@ Selected-packet presentation now also covers the specifically bounded nested fix
 ordered inner IP layers for plain IP encapsulation, with terminal TCP/UDP attached only to the
 deepest inner layer.
 
+Selected-packet presentation now also covers the plain-control fixtures
+`15_ipv4_in_ipv4_inner_icmp.pcap` and `16_ipv6_in_ipv4_inner_icmpv6.pcap`. Summary shows the
+outer IP layer followed by flat `Inner IPv4` / `Inner IPv6` and `Inner ICMP` / `Inner ICMPv6`
+layers. Protocol Details text includes matching outer, inner-network, and inner-control sections.
+
+Selected-packet presentation now also covers the conservative malformed/truncated fixtures
+`17_truncated_inner_ipv4_header.pcap`, `18_truncated_inner_ipv6_header.pcap`,
+`19_outer_ipv4_proto4_payload_too_short.pcap`, and `20_ipv6_next41_payload_too_short.pcap`.
+These remain unrecognized for flow extraction, but Packet Details now shows the outer IP layer
+plus one contextual truncated `Inner IPv4` / `Inner IPv6` layer with exact available-header-byte
+counts and no fabricated terminal transport/control layer.
+
 Still unsupported for selected-packet presentation:
 - arbitrary deeper nesting beyond two inner IP layers;
 - mixed-family deeper nesting;
-- inner ICMP / ICMPv6 presentation;
-- malformed or truncated inner IP presentation.
+- inner ICMP / ICMPv6 continuation through outer IPv6;
+- inner ICMP / ICMPv6 continuation inside deeper nesting.
 
 ## Protocol basics
 
