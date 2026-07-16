@@ -533,19 +533,20 @@ std::string build_frontend_packet_summary_text(
     }
 
     if (details->has_ip_encapsulation && !details->ip_encapsulation.inner_ip_layers.empty()) {
-        const auto& inner = details->ip_encapsulation.inner_ip_layers.front();
-        if (inner.has_ipv4) {
-            append_summary_section(lines, "Inner IPv4", {
-                "Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr),
-                "Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr),
-                "Protocol: " + format_protocol_value(inner.ipv4.protocol),
-            });
-        } else if (inner.has_ipv6) {
-            append_summary_section(lines, "Inner IPv6", {
-                "Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr),
-                "Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr),
-                "Next Header: " + format_protocol_value(inner.ipv6.next_header),
-            });
+        for (const auto& inner : details->ip_encapsulation.inner_ip_layers) {
+            if (inner.has_ipv4) {
+                append_summary_section(lines, "Inner IPv4", {
+                    "Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr),
+                    "Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr),
+                    "Protocol: " + format_protocol_value(inner.ipv4.protocol),
+                });
+            } else if (inner.has_ipv6) {
+                append_summary_section(lines, "Inner IPv6", {
+                    "Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr),
+                    "Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr),
+                    "Next Header: " + format_protocol_value(inner.ipv6.next_header),
+                });
+            }
         }
     }
 

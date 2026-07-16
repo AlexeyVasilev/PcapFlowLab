@@ -738,21 +738,20 @@ void append_ip_encapsulation_protocol_details(
         return;
     }
 
-    const auto& inner = encapsulation.inner_ip_layers.front();
-    if (inner.has_ipv4) {
-        builder << '\n' << '\t' << "Inner IPv4:"
-                << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr)
-                << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr)
-                << '\n' << '\t' << '\t' << "Protocol: "
-                << format_protocol_summary_value_with_number(inner.ipv4.protocol);
-    } else if (inner.has_ipv6) {
-        builder << '\n' << '\t' << "Inner IPv6:"
-                << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr)
-                << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr)
-                << '\n' << '\t' << '\t' << "Next Header: "
-                << format_protocol_summary_value_with_number(inner.ipv6.next_header);
-    } else {
-        return;
+    for (const auto& inner : encapsulation.inner_ip_layers) {
+        if (inner.has_ipv4) {
+            builder << '\n' << '\t' << "Inner IPv4:"
+                    << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr)
+                    << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr)
+                    << '\n' << '\t' << '\t' << "Protocol: "
+                    << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+        } else if (inner.has_ipv6) {
+            builder << '\n' << '\t' << "Inner IPv6:"
+                    << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr)
+                    << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr)
+                    << '\n' << '\t' << '\t' << "Next Header: "
+                    << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+        }
     }
 
     if (encapsulation.has_tcp) {
@@ -1128,17 +1127,12 @@ void append_ip_encapsulation_summary_layers(
     std::vector<PacketSummaryLayer>& layers,
     const IpEncapsulationDetails& encapsulation
 ) {
-    if (encapsulation.inner_ip_layers.empty()) {
-        return;
-    }
-
-    const auto& inner = encapsulation.inner_ip_layers.front();
-    if (inner.has_ipv4) {
-        layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
-    } else if (inner.has_ipv6) {
-        layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
-    } else {
-        return;
+    for (const auto& inner : encapsulation.inner_ip_layers) {
+        if (inner.has_ipv4) {
+            layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+        } else if (inner.has_ipv6) {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
     }
 
     if (encapsulation.has_tcp) {

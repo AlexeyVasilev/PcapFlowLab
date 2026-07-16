@@ -369,6 +369,15 @@ const session_detail::PacketSummaryLayer* find_top_level_layer(
     return nullptr;
 }
 
+std::size_t count_top_level_layers(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    return static_cast<std::size_t>(std::count_if(layers.begin(), layers.end(), [&](const auto& layer) {
+        return layer.id == id;
+    }));
+}
+
 bool title_contains_all(
     const session_detail::PacketSummaryLayer& layer,
     const std::initializer_list<std::string> fragments
@@ -484,6 +493,75 @@ void expect_direct_plain_ip_packet_details_present(
     PFL_EXPECT(protocol_text.find(outer_is_ipv4 ? "Protocol: IPv4" : "Protocol: IPv6") != std::string::npos);
     PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
     PFL_EXPECT(protocol_text.find(inner_is_tcp ? "Inner TCP:" : "Inner UDP:") != std::string::npos);
+}
+
+void expect_nested_plain_ip_packet_details_summary_and_protocol_text() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap")));
+
+    const auto packet = session.find_packet(0U);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+
+    PFL_EXPECT(details->has_ipv4);
+    PFL_EXPECT(!details->has_ipv6);
+    PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.src_addr) == "192.0.2.60");
+    PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.dst_addr) == "198.51.100.60");
+
+    PFL_EXPECT(details->has_ip_encapsulation);
+    PFL_EXPECT(details->ip_encapsulation.inner_ip_layers.size() == 2U);
+    PFL_EXPECT(details->has_tcp == false);
+    PFL_EXPECT(details->has_udp == false);
+    PFL_EXPECT(details->ip_encapsulation.has_tcp == false);
+    PFL_EXPECT(details->ip_encapsulation.has_udp);
+    PFL_EXPECT(details->ip_encapsulation.udp.src_port == 53600U);
+    PFL_EXPECT(details->ip_encapsulation.udp.dst_port == 443U);
+
+    const auto& first_inner = details->ip_encapsulation.inner_ip_layers[0];
+    const auto& second_inner = details->ip_encapsulation.inner_ip_layers[1];
+    PFL_EXPECT(first_inner.has_ipv4);
+    PFL_EXPECT(!first_inner.has_ipv6);
+    PFL_EXPECT(second_inner.has_ipv4);
+    PFL_EXPECT(!second_inner.has_ipv6);
+
+    PFL_EXPECT(session_detail::format_ipv4_address(first_inner.ipv4.src_addr) == "10.60.0.10");
+    PFL_EXPECT(session_detail::format_ipv4_address(first_inner.ipv4.dst_addr) == "10.60.0.20");
+    PFL_EXPECT(first_inner.ipv4.protocol == 4U);
+
+    PFL_EXPECT(session_detail::format_ipv4_address(second_inner.ipv4.src_addr) == "10.60.0.10");
+    PFL_EXPECT(session_detail::format_ipv4_address(second_inner.ipv4.dst_addr) == "10.60.0.20");
+    PFL_EXPECT(second_inner.ipv4.protocol == 17U);
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    expect_layer_prefix(summary_layers, {"frame", "ethernet", "ipv4", "ipv4-inner", "ipv4-inner", "udp-inner"});
+    PFL_EXPECT(count_top_level_layers(summary_layers, "ipv4") == 1U);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "ipv4-inner") == 2U);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "udp-inner") == 1U);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "tcp-inner") == 0U);
+    PFL_EXPECT(find_top_level_layer(summary_layers, "ip-encapsulation") == nullptr);
+
+    const auto* first_inner_layer = &summary_layers[3];
+    const auto* second_inner_layer = &summary_layers[4];
+    const auto* udp_layer = &summary_layers[5];
+    PFL_EXPECT(title_contains_all(*first_inner_layer, {"Inner IPv4", "10.60.0.10", "10.60.0.20"}));
+    PFL_EXPECT(title_contains_all(*second_inner_layer, {"Inner IPv4", "10.60.0.10", "10.60.0.20"}));
+    PFL_EXPECT(title_contains_all(*udp_layer, {"Inner UDP", "53600", "443"}));
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    const auto outer_pos = protocol_text.find("Protocol: IPv4");
+    PFL_REQUIRE(outer_pos != std::string::npos);
+    const auto inner_first_pos = protocol_text.find("Inner IPv4:");
+    PFL_REQUIRE(inner_first_pos != std::string::npos);
+    const auto inner_second_pos = protocol_text.find("Inner IPv4:", inner_first_pos + 1U);
+    PFL_REQUIRE(inner_second_pos != std::string::npos);
+    const auto udp_pos = protocol_text.find("Inner UDP:");
+    PFL_REQUIRE(udp_pos != std::string::npos);
+    PFL_EXPECT(outer_pos < inner_first_pos);
+    PFL_EXPECT(inner_first_pos < inner_second_pos);
+    PFL_EXPECT(inner_second_pos < udp_pos);
+    PFL_EXPECT(protocol_text.find("Protocol: 4", inner_first_pos) != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Protocol: UDP (17)", inner_second_pos) != std::string::npos);
 }
 
 void expect_fixture_files_exist() {
@@ -773,6 +851,7 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_supported_ipv6_in_ipv6_tcp_udp_decode();
     expect_supported_plain_ip_control_decode();
     expect_direct_plain_ip_packet_details_summary_and_protocol_text();
+    expect_nested_plain_ip_packet_details_summary_and_protocol_text();
     expect_malformed_inner_ip_remains_unrecognized();
 }
 

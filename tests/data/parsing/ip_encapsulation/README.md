@@ -69,6 +69,17 @@ Selected-packet presentation now covers the direct non-nested TCP/UDP cases used
 `Inner IPv4` / `Inner IPv6` and `Inner TCP` / `Inner UDP` layers. Protocol Details text also
 includes matching outer and inner sections for these direct cases.
 
+Selected-packet presentation now also covers the specifically bounded nested fixture
+`12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap`. In this pass, Packet Details may expose up to two
+ordered inner IP layers for plain IP encapsulation, with terminal TCP/UDP attached only to the
+deepest inner layer.
+
+Still unsupported for selected-packet presentation:
+- arbitrary deeper nesting beyond two inner IP layers;
+- mixed-family deeper nesting;
+- inner ICMP / ICMPv6 presentation;
+- malformed or truncated inner IP presentation.
+
 ## Protocol basics
 
 - IPv4 protocol `4`: IPv4-in-IP
