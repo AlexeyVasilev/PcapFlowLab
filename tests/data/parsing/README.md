@@ -46,6 +46,68 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: truly truncated UDP packet with preserved captured/original packet lengths.
 - Used by: import visibility regression and UI checksum/details regression for conservative truncation handling.
 
+## AH
+
+`ah/01_ipv4_ah_tcp.pcap`
+- Purpose: direct IPv4 AH baseline carrying TCP.
+
+`ah/02_ipv4_ah_udp.pcap`
+- Purpose: direct IPv4 AH baseline carrying UDP.
+
+`ah/03_ipv6_ah_tcp.pcap`
+- Purpose: direct IPv6 AH baseline carrying TCP.
+
+`ah/04_ipv6_ah_udp.pcap`
+- Purpose: direct IPv6 AH baseline carrying UDP.
+
+`ah/05_ipv4_ah_same_tuple_different_spi.pcap`
+- Purpose: same IPv4 tuple with different AH SPI values for future identity coverage.
+
+`ah/06_ipv4_ah_same_spi_two_packets.pcap`
+- Purpose: same-SPI repeated two-packet grouping baseline.
+
+`ah/07_ipv6_ah_same_tuple_different_spi.pcap`
+- Purpose: IPv6 analogue of same-tuple different-SPI coverage.
+
+`ah/08_ipv4_ah_same_spi_different_sequence.pcap`
+- Purpose: same-SPI sequence variation baseline for future details-only sequence handling.
+
+`ah/09_outer_vlan_ipv4_ah_udp.pcap`
+- Purpose: outer VLAN preserved before IPv4 AH.
+
+`ah/10_outer_qinq_ipv4_ah_tcp.pcap`
+- Purpose: valid QinQ preserved before IPv4 AH.
+
+`ah/11_ipv6_hop_by_hop_ah_udp.pcap`
+- Purpose: IPv6 Hop-by-Hop placement immediately before AH.
+
+`ah/12_ipv4_ah_inner_ipv4_udp.pcap`
+- Purpose: staged tunnel-mode IPv4 AH carrying inner IPv4 / UDP.
+
+`ah/13_ipv4_ah_inner_ipv6_tcp.pcap`
+- Purpose: staged tunnel-mode IPv4 AH carrying inner IPv6 / TCP.
+
+`ah/14_ipv6_ah_inner_ipv4_udp.pcap`
+- Purpose: staged tunnel-mode IPv6 AH carrying inner IPv4 / UDP.
+
+`ah/15_ipv6_ah_inner_ipv6_tcp.pcap`
+- Purpose: staged tunnel-mode IPv6 AH carrying inner IPv6 / TCP.
+
+`ah/16_ah_truncated_fixed_header.pcap`
+- Purpose: snaplen-style truncation before the full 12-byte AH fixed header is available.
+
+`ah/17_ah_invalid_payload_length_too_small.pcap`
+- Purpose: malformed AH with a payload-length field below the minimum valid size.
+
+`ah/18_ah_payload_length_exceeds_packet.pcap`
+- Purpose: malformed AH with a payload-length field that exceeds packet bytes.
+
+`ah/19_ah_truncated_icv.pcap`
+- Purpose: malformed AH with bytes ending inside the declared ICV.
+
+`ah/20_ah_unsupported_next_header.pcap`
+- Purpose: unsupported AH next-header value with otherwise well-formed AH structure.
+
 ## GRE
 
 `gre/01_gre_ipv4_tcp.pcap`
