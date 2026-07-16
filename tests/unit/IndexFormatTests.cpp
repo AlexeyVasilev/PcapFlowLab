@@ -294,8 +294,15 @@ void run_index_format_tests() {
         LayerKey::ipv4(),
         LayerKey::esp(0x01020304U),
     });
+    const auto ah_path_id = state.protocol_path_registry.intern(ProtocolPath {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
+    });
     PFL_REQUIRE(gre_key_path_id != kInvalidProtocolPathId);
     PFL_REQUIRE(esp_path_id != kInvalidProtocolPathId);
+    PFL_REQUIRE(ah_path_id != kInvalidProtocolPathId);
 
     const auto index_path = std::filesystem::temp_directory_path() / "pfl_sectioned_index.idx";
     const auto checkpoint_path = std::filesystem::temp_directory_path() / "pfl_sectioned_checkpoint.ckp";
@@ -315,10 +322,13 @@ void run_index_format_tests() {
     expect_matching_states(state, loaded_state);
     const auto* loaded_gre_key_path = loaded_state.protocol_path_registry.find(gre_key_path_id);
     const auto* loaded_esp_path = loaded_state.protocol_path_registry.find(esp_path_id);
+    const auto* loaded_ah_path = loaded_state.protocol_path_registry.find(ah_path_id);
     PFL_REQUIRE(loaded_gre_key_path != nullptr);
     PFL_REQUIRE(loaded_esp_path != nullptr);
+    PFL_REQUIRE(loaded_ah_path != nullptr);
     PFL_EXPECT(format_protocol_path(*loaded_gre_key_path) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
     PFL_EXPECT(format_protocol_path(*loaded_esp_path) == "EthernetII -> IPv4 -> ESP(spi=0x01020304)");
+    PFL_EXPECT(format_protocol_path(*loaded_ah_path) == "EthernetII -> IPv4 -> AH(spi=0x01020304) -> TCP");
 
     {
         const auto chunked_ipv4_source_path = write_temp_pcap(

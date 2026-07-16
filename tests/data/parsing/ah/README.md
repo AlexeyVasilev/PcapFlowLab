@@ -71,19 +71,23 @@ Notes:
 
 ## Current implementation status
 
-Current committed behavior in this preparation step is intentionally limited to fixture validation only:
-- every AH fixture must exist and import through `CaptureSession`;
-- expectation filenames must be unique and must match the exact `.pcap` set in this directory;
-- `storage_summary().total_packets_seen` must match the expectation table;
-- accounting invariant must hold:
-  - `recognized_packets + unrecognized_packets == total_packets_seen`
+Implemented in the current branch:
+- direct IPv4 AH followed by TCP or UDP;
+- direct IPv6 AH followed by TCP or UDP;
+- IPv6 Hop-by-Hop followed by AH and terminal UDP;
+- SPI-based protocol-path identity:
+  - `AH(spi=0x...)`
+- outer VLAN / QinQ preservation before AH;
+- selected-packet AH Summary / Protocol Details;
+- exact index-version bump for AH protocol-path serialization.
 
 Still intentionally deferred:
-- AH parser support;
-- AH protocol enum / protocol-path identity integration;
-- AH flow extraction;
-- AH selected-packet Summary / Protocol Details;
-- AH index serialization changes.
+- AH tunnel-mode flow decoding for fixtures `12`-`15`;
+- AH followed by SCTP;
+- AH followed by ICMP / ICMPv6;
+- nested AH chains;
+- AH inside GRE, VXLAN, Geneve, GTP-U, or plain IP encapsulation;
+- ICV verification / cryptographic validation.
 
 ## Fixture list
 

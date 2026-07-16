@@ -236,6 +236,21 @@ struct EspDetails {
     std::size_t opaque_payload_length {0};
 };
 
+struct AhDetails {
+    bool present {false};
+    std::uint8_t available_header_bytes {0};
+    bool truncated {false};
+    bool malformed {false};
+    bool next_header_supported {false};
+    std::uint8_t next_header {0};
+    std::uint8_t payload_length {0};
+    std::uint16_t reserved {0};
+    std::uint32_t spi {0};
+    std::uint32_t sequence_number {0};
+    std::size_t header_length {0};
+    std::size_t icv_length {0};
+};
+
 struct PppoeTagDetails {
     std::uint16_t type {0};
     std::uint16_t declared_length {0};
@@ -551,6 +566,8 @@ struct PacketDetails {
     GtpuDetails gtpu {};
     bool has_gre {false};
     GreDetails gre {};
+    bool has_ah {false};
+    AhDetails ah {};
     bool has_esp {false};
     EspDetails esp {};
     bool has_inner_ethernet {false};

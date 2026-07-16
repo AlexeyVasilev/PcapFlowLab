@@ -156,6 +156,25 @@ struct EspHeaderView {
     std::size_t payload_length {0};
 };
 
+struct AhHeaderView {
+    std::uint8_t next_header {0};
+    std::uint8_t payload_length_field {0};
+    std::uint16_t reserved {0};
+    std::uint32_t spi {0};
+    std::uint32_t sequence_number {0};
+    std::size_t header_length {0};
+    std::size_t icv_length {0};
+    std::size_t payload_offset {0};
+    std::size_t payload_length {0};
+};
+
+struct Ipv6AuthenticationPayloadView {
+    std::size_t ah_offset {0};
+    std::size_t payload_offset {0};
+    std::uint8_t next_header {0};
+    bool has_fragment_header {false};
+};
+
 struct Ipv4PacketBounds {
     std::size_t header_length {0};
     std::uint16_t total_length {0};
@@ -1580,6 +1599,97 @@ inline std::optional<EspHeaderView> parse_esp_header(std::span<const std::uint8_
         .payload_offset = payload_offset,
         .payload_length = payload_length,
     };
+}
+
+inline std::optional<AhHeaderView> parse_ah_header(std::span<const std::uint8_t> bytes,
+                                                   const std::size_t ah_offset,
+                                                   const std::size_t nominal_packet_end) {
+    const auto packet_end = std::min(nominal_packet_end, bytes.size());
+    if (ah_offset + 12U > packet_end) {
+        return std::nullopt;
+    }
+
+    const auto payload_length_field = bytes[ah_offset + 1U];
+    const auto header_length = static_cast<std::size_t>(payload_length_field + 2U) * 4U;
+    if (header_length < 12U || ah_offset + header_length > packet_end) {
+        return std::nullopt;
+    }
+
+    const auto payload_offset = ah_offset + header_length;
+    const auto payload_length = packet_end > payload_offset ? (packet_end - payload_offset) : 0U;
+    return AhHeaderView {
+        .next_header = bytes[ah_offset],
+        .payload_length_field = payload_length_field,
+        .reserved = read_be16(bytes, ah_offset + 2U),
+        .spi = read_be32(bytes, ah_offset + 4U),
+        .sequence_number = read_be32(bytes, ah_offset + 8U),
+        .header_length = header_length,
+        .icv_length = header_length - 12U,
+        .payload_offset = payload_offset,
+        .payload_length = payload_length,
+    };
+}
+
+inline std::optional<Ipv6AuthenticationPayloadView> parse_ipv6_authentication_payload(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t ipv6_offset
+) {
+    if (bytes.size() < ipv6_offset + kIpv6HeaderSize) {
+        return std::nullopt;
+    }
+
+    std::uint8_t next_header = bytes[ipv6_offset + 6U];
+    std::size_t payload_offset = ipv6_offset + kIpv6HeaderSize;
+    bool has_fragment_header = false;
+
+    for (std::size_t extension_count = 0; extension_count < kMaxIpv6ExtensionHeaders; ++extension_count) {
+        if (next_header == kIpProtocolAh) {
+            if (bytes.size() < payload_offset + 2U) {
+                return std::nullopt;
+            }
+
+            const auto header_length = static_cast<std::size_t>(bytes[payload_offset + 1U] + 2U) * 4U;
+            if (header_length < 12U || bytes.size() < payload_offset + header_length) {
+                return std::nullopt;
+            }
+
+            return Ipv6AuthenticationPayloadView {
+                .ah_offset = payload_offset,
+                .payload_offset = payload_offset + header_length,
+                .next_header = bytes[payload_offset],
+                .has_fragment_header = has_fragment_header,
+            };
+        }
+
+        if (!is_ipv6_extension_header(next_header)) {
+            return std::nullopt;
+        }
+
+        if (bytes.size() < payload_offset + 2U) {
+            return std::nullopt;
+        }
+
+        if (next_header == kIpProtocolFragment) {
+            if (bytes.size() < payload_offset + 8U) {
+                return std::nullopt;
+            }
+
+            has_fragment_header = true;
+            next_header = bytes[payload_offset];
+            payload_offset += 8U;
+            continue;
+        }
+
+        const auto header_length = static_cast<std::size_t>(bytes[payload_offset + 1U] + 1U) * 8U;
+        if (header_length < 8U || bytes.size() < payload_offset + header_length) {
+            return std::nullopt;
+        }
+
+        next_header = bytes[payload_offset];
+        payload_offset += header_length;
+    }
+
+    return std::nullopt;
 }
 
 inline std::optional<IgmpHeaderView> parse_igmp_header(std::span<const std::uint8_t> bytes,

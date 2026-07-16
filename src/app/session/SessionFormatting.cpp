@@ -145,6 +145,8 @@ std::string format_protocol_summary_value(const std::uint8_t protocol) {
         return "TCP";
     case 17U:
         return "UDP";
+    case 51U:
+        return "AH";
     case 50U:
         return "ESP";
     case 132U:
@@ -1528,6 +1530,17 @@ std::string format_esp_summary_title(const EspDetails& esp) {
     }
 
     return std::string {"ESP, SPI: "} + format_hex_value(esp.spi, 8);
+}
+
+std::string format_ah_summary_title(const AhDetails& ah) {
+    if (ah.truncated || ah.malformed) {
+        return "AH, malformed";
+    }
+    if (!ah.next_header_supported && ah.available_header_bytes >= 1U) {
+        return "AH, unsupported next header";
+    }
+
+    return std::string {"AH, SPI: "} + format_hex_value(ah.spi, 8);
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -4001,6 +4014,54 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *igmp_layer);
     }
 
+    if (details.has_ah) {
+        std::vector<PacketSummaryField> ah_fields {};
+        if (details.ah.available_header_bytes >= 1U) {
+            ah_fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(details.ah.next_header)));
+        }
+        if (details.ah.available_header_bytes >= 2U) {
+            ah_fields.push_back(make_summary_field("Payload Length", std::to_string(static_cast<unsigned>(details.ah.payload_length))));
+        }
+        if (details.ah.available_header_bytes >= 4U) {
+            ah_fields.push_back(make_summary_field("Reserved", format_hex16_value(details.ah.reserved)));
+        }
+        if (details.ah.available_header_bytes >= 8U) {
+            ah_fields.push_back(make_summary_field("SPI", format_hex_value(details.ah.spi, 8)));
+        }
+        if (details.ah.available_header_bytes >= 12U) {
+            ah_fields.push_back(make_summary_field(
+                "Sequence Number",
+                format_hex_value(details.ah.sequence_number, 8) + " (" + std::to_string(details.ah.sequence_number) + ")"
+            ));
+            ah_fields.push_back(make_summary_field("Header Length", std::to_string(details.ah.header_length) + " bytes"));
+            ah_fields.push_back(make_summary_field("ICV Length", std::to_string(details.ah.icv_length) + " bytes"));
+        }
+        if (details.ah.truncated) {
+            const auto required_header_bytes = details.ah.header_length > 0U ? details.ah.header_length : 12U;
+            ah_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.ah.available_header_bytes)) + " / " + std::to_string(required_header_bytes)
+            ));
+            ah_fields.push_back(make_summary_field("Warning", "AH header is truncated"));
+        }
+        if (details.ah.malformed) {
+            ah_fields.push_back(make_summary_field("Warning", "AH computed header length is invalid"));
+        }
+        if (!details.ah.next_header_supported && details.ah.available_header_bytes >= 1U) {
+            ah_fields.push_back(make_summary_field("Warning", "AH next header is not supported"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ah",
+            .title = format_ah_summary_title(details.ah),
+            .fields = std::move(ah_fields),
+            .warning = details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported,
+            .marker_text = (details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported)
+                ? std::string {"Warning"}
+                : std::string {},
+        });
+    }
+
     if (details.has_tcp) {
         std::vector<PacketSummaryField> tcp_fields {
             make_summary_field("Source Port", std::to_string(details.tcp.src_port)),
@@ -4737,6 +4798,48 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         }
         if (details.sctp.data_metadata_truncated) {
             builder << '\n' << '\t' << "Warning: SCTP DATA chunk metadata is truncated.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_ah) {
+        builder << "Protocol: AH";
+        if (details.ah.available_header_bytes >= 1U) {
+            builder << '\n' << '\t' << "Next Header: "
+                    << format_protocol_summary_value_with_number(details.ah.next_header);
+        }
+        if (details.ah.available_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "Payload Length: "
+                    << static_cast<unsigned>(details.ah.payload_length);
+        }
+        if (details.ah.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Reserved: "
+                    << format_hex16_value(details.ah.reserved);
+        }
+        if (details.ah.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "SPI: "
+                    << format_hex_value(details.ah.spi, 8);
+        }
+        if (details.ah.available_header_bytes >= 12U) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.ah.sequence_number, 8)
+                    << " (" << details.ah.sequence_number << ')'
+                    << '\n' << '\t' << "Header Length: "
+                    << details.ah.header_length << " bytes"
+                    << '\n' << '\t' << "ICV Length: "
+                    << details.ah.icv_length << " bytes";
+        }
+        if (details.ah.truncated) {
+            const auto required_header_bytes = details.ah.header_length > 0U ? details.ah.header_length : 12U;
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.ah.available_header_bytes) << " / " << required_header_bytes
+                    << '\n' << '\t' << "Warning: AH header is truncated.";
+        }
+        if (details.ah.malformed) {
+            builder << '\n' << '\t' << "Warning: AH computed header length is invalid.";
+        }
+        if (!details.ah.next_header_supported && details.ah.available_header_bytes >= 1U) {
+            builder << '\n' << '\t' << "Warning: AH next header is not supported.";
         }
         return builder.str();
     }

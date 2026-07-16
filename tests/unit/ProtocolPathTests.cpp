@@ -349,6 +349,8 @@ void expect_layer_key_equality() {
     PFL_EXPECT(LayerKey::gre(0x11111111U) == LayerKey::gre(0x11111111U));
     PFL_EXPECT(LayerKey::gre() != LayerKey::gre(0x11111111U));
     PFL_EXPECT(LayerKey::gre(0x11111111U) != LayerKey::gre(0x22222222U));
+    PFL_EXPECT(LayerKey::ah(0x11111111U) == LayerKey::ah(0x11111111U));
+    PFL_EXPECT(LayerKey::ah(0x11111111U) != LayerKey::ah(0x22222222U));
     PFL_EXPECT(LayerKey::vxlan(100U) != LayerKey::geneve(100U));
     PFL_EXPECT(LayerKey::mpls(102U) != LayerKey::vlan(102U));
 
@@ -551,6 +553,12 @@ void expect_registry_view_interning() {
     PFL_EXPECT(esp_builder.push(LayerKey::ipv4()));
     PFL_EXPECT(esp_builder.push(LayerKey::esp(0x01020304U)));
 
+    ProtocolPathBuilder ah_builder {};
+    PFL_EXPECT(ah_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(ah_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(ah_builder.push(LayerKey::ah(0x01020304U)));
+    PFL_EXPECT(ah_builder.push(LayerKey::tcp()));
+
     ProtocolPathBuilder esp_copy_builder {};
     PFL_EXPECT(esp_copy_builder.push(LayerKey::ethernet_ii()));
     PFL_EXPECT(esp_copy_builder.push(LayerKey::ipv4()));
@@ -572,6 +580,7 @@ void expect_registry_view_interning() {
     const auto esp_id = registry.intern(esp_builder.view());
     const auto esp_copy_id = registry.intern(esp_copy_builder.view());
     const auto esp_other_id = registry.intern(esp_other_builder.view());
+    const auto ah_id = registry.intern(ah_builder.view());
 
     PFL_EXPECT(direct_id == 1U);
     PFL_EXPECT(direct_copy_id == direct_id);
@@ -581,9 +590,10 @@ void expect_registry_view_interning() {
     PFL_EXPECT(esp_id == 4U);
     PFL_EXPECT(esp_copy_id == esp_id);
     PFL_EXPECT(esp_other_id == 5U);
-    PFL_EXPECT(registry.size() == 5U);
+    PFL_EXPECT(ah_id == 6U);
+    PFL_EXPECT(registry.size() == 6U);
     PFL_EXPECT(registry.intern(empty_builder.view()) == kInvalidProtocolPathId);
-    PFL_EXPECT(registry.size() == 5U);
+    PFL_EXPECT(registry.size() == 6U);
 
     const auto* stored_direct = registry.find(direct_id);
     const auto* stored_shim = registry.find(shim_id);
@@ -676,6 +686,12 @@ void expect_formatting() {
         LayerKey::ethernet_ii(),
         LayerKey::ipv4(),
         LayerKey::esp(0x01020304U),
+    };
+    const ProtocolPath ah {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
     };
 
     PFL_EXPECT(format_protocol_layer_key(LayerKey::ethernet_ii()) == "EthernetII");
@@ -777,6 +793,12 @@ void expect_protocol_path_presentation_mapping() {
         LayerKey::ipv4(),
         LayerKey::esp(0x01020304U),
     };
+    const ProtocolPath ah {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
+    };
 
     const auto direct_presentation = session_detail::build_protocol_path_presentation(&direct);
     PFL_EXPECT(direct_presentation.full_text == "EthernetII -> IPv4 -> TCP");
@@ -831,6 +853,12 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(esp_presentation.badges[2].tooltip == "ESP\nSPI: 0x01020304");
     PFL_EXPECT(esp_presentation.badges[2].color_key == "security");
 
+    const auto ah_presentation = session_detail::build_protocol_path_presentation(&ah);
+    PFL_EXPECT(ah_presentation.compact_text == "EII|Ip4|AH|TCP");
+    PFL_EXPECT(ah_presentation.badges[2].short_label == "AH");
+    PFL_EXPECT(ah_presentation.badges[2].tooltip == "AH\nSPI: 0x01020304");
+    PFL_EXPECT(ah_presentation.badges[2].color_key == "security");
+
     const auto unknown_presentation = session_detail::build_protocol_path_presentation(nullptr);
     PFL_EXPECT(unknown_presentation.full_text == "Unknown protocol path");
     PFL_EXPECT(unknown_presentation.compact_text == "?");
@@ -838,7 +866,7 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(unknown_presentation.badges[0].short_label == "?");
 
     const auto legend = session_detail::protocol_path_legend_entries();
-    PFL_EXPECT(legend.size() == 23U);
+    PFL_EXPECT(legend.size() == 24U);
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_REQUIRE(legend.size() >= 6U);
     PFL_EXPECT(legend[1].short_label == "802.3");
@@ -854,6 +882,7 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PPPoE"; }));
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PPP"; }));
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "MS"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "AH"; }));
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ESP"; }));
     PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ARP"; }));
     PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ICMP"; }));
@@ -874,6 +903,7 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::geneve(100U)) == "Geneve (VNI 100)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::gtpu(0x01020384U)) == "GTP-U (TEID 0x01020384)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::gre(0x11111111U)) == "GRE (key 0x11111111)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ah(0x01020304U)) == "AH (SPI 0x01020304)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::esp(0x01020304U)) == "ESP (SPI 0x01020304)");
 }
 
@@ -935,7 +965,7 @@ void expect_frontend_protocol_path_legend_exposure() {
     FrontendSessionAdapter adapter {};
     const auto legend = adapter.get_protocol_path_legend();
 
-    PFL_REQUIRE(legend.size() == 23U);
+    PFL_REQUIRE(legend.size() == 24U);
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_REQUIRE(legend.size() >= 6U);
     PFL_EXPECT(legend[1].short_label == "802.3");
@@ -961,6 +991,7 @@ void expect_frontend_protocol_path_legend_exposure() {
     PFL_EXPECT(contains_short_label("PPPoE"));
     PFL_EXPECT(contains_short_label("PPP"));
     PFL_EXPECT(contains_short_label("MS"));
+    PFL_EXPECT(contains_short_label("AH"));
     PFL_EXPECT(contains_short_label("ESP"));
     PFL_EXPECT(contains_short_label("Ip4"));
     PFL_EXPECT(contains_short_label("UDP"));

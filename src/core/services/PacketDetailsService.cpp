@@ -810,6 +810,60 @@ void populate_esp_details(
     }
 }
 
+void populate_ah_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t ah_offset,
+    const std::size_t packet_end,
+    PacketDetails& details
+) {
+    details.has_ah = true;
+    details.ah = {};
+    details.ah.present = true;
+
+    const auto bounded_packet_end = std::min(packet_end, packet_bytes.size());
+    const auto available_header_bytes = ah_offset < bounded_packet_end
+        ? (bounded_packet_end - ah_offset)
+        : 0U;
+    details.ah.available_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(available_header_bytes, 0xFFU));
+
+    if (available_header_bytes >= 1U) {
+        details.ah.next_header = packet_bytes[ah_offset];
+    }
+    if (available_header_bytes >= 2U) {
+        details.ah.payload_length = packet_bytes[ah_offset + 1U];
+        details.ah.header_length = static_cast<std::size_t>(details.ah.payload_length + 2U) * 4U;
+        if (details.ah.header_length >= 12U) {
+            details.ah.icv_length = details.ah.header_length - 12U;
+        }
+    }
+    if (available_header_bytes >= 4U) {
+        details.ah.reserved = detail::read_be16(packet_bytes, ah_offset + 2U);
+    }
+    if (available_header_bytes >= 8U) {
+        details.ah.spi = detail::read_be32(packet_bytes, ah_offset + 4U);
+    }
+    if (available_header_bytes >= 12U) {
+        details.ah.sequence_number = detail::read_be32(packet_bytes, ah_offset + 8U);
+    }
+
+    if (available_header_bytes < 12U) {
+        details.ah.truncated = true;
+        return;
+    }
+    if (details.ah.header_length < 12U) {
+        details.ah.malformed = true;
+        return;
+    }
+    if (available_header_bytes < details.ah.header_length) {
+        details.ah.truncated = true;
+        return;
+    }
+
+    details.ah.next_header_supported =
+        details.ah.next_header == detail::kIpProtocolTcp ||
+        details.ah.next_header == detail::kIpProtocolUdp;
+}
+
 void populate_vxlan_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t vxlan_offset,
@@ -2900,6 +2954,76 @@ std::optional<PacketDetails> decode_packet_details(
             return details;
         }
 
+        if (details.ipv4.protocol == detail::kIpProtocolAh) {
+            populate_ah_details(network_packet_bytes, transport_offset, packet_end, details);
+            if (details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported) {
+                return details;
+            }
+
+            const auto ah_payload_offset = transport_offset + details.ah.header_length;
+            if (details.ah.next_header == detail::kIpProtocolTcp) {
+                if (ah_payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+                    network_packet_bytes.size() < ah_payload_offset + detail::kTcpMinimumHeaderSize) {
+                    return details;
+                }
+
+                const auto tcp_header_length =
+                    static_cast<std::size_t>((network_packet_bytes[ah_payload_offset + 12U] >> 4U) * 4U);
+                if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+                    ah_payload_offset + tcp_header_length > packet_end ||
+                    network_packet_bytes.size() < ah_payload_offset + tcp_header_length) {
+                    return details;
+                }
+
+                details.has_tcp = true;
+                details.tcp = TcpDetails {
+                    .src_port = detail::read_be16(network_packet_bytes, ah_payload_offset),
+                    .dst_port = detail::read_be16(network_packet_bytes, ah_payload_offset + 2U),
+                    .seq_number = detail::read_be32(network_packet_bytes, ah_payload_offset + 4U),
+                    .ack_number = detail::read_be32(network_packet_bytes, ah_payload_offset + 8U),
+                    .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
+                    .flags = network_packet_bytes[ah_payload_offset + 13U],
+                    .window = detail::read_be16(network_packet_bytes, ah_payload_offset + 14U),
+                    .checksum = detail::read_be16(network_packet_bytes, ah_payload_offset + 16U),
+                    .urgent_pointer = detail::read_be16(network_packet_bytes, ah_payload_offset + 18U),
+                };
+                if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
+                    details.tcp.options_bytes.assign(
+                        network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + detail::kTcpMinimumHeaderSize),
+                        network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + tcp_header_length)
+                    );
+                }
+                return details;
+            }
+
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                network_packet_bytes,
+                ah_payload_offset,
+                ipv4_bounds->nominal_packet_end
+            );
+            if (ah_payload_offset + detail::kUdpHeaderSize > packet_end ||
+                network_packet_bytes.size() < ah_payload_offset + detail::kUdpHeaderSize) {
+                return details;
+            }
+
+            const auto udp_length = detail::read_be16(network_packet_bytes, ah_payload_offset + 4U);
+            const auto declared_udp_payload_length = udp_length >= detail::kUdpHeaderSize
+                ? static_cast<std::size_t>(udp_length - detail::kUdpHeaderSize)
+                : 0U;
+            const bool udp_payload_truncated =
+                !udp_payload.has_value() ||
+                (udp_payload->payload_length < declared_udp_payload_length);
+            details.has_udp = true;
+            details.udp = UdpDetails {
+                .src_port = detail::read_be16(network_packet_bytes, ah_payload_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, ah_payload_offset + 2U),
+                .length = udp_length,
+                .checksum = detail::read_be16(network_packet_bytes, ah_payload_offset + 6U),
+                .payload_truncated = udp_payload_truncated,
+            };
+            return details;
+        }
+
         if (details.ipv4.protocol == detail::kIpProtocolEsp) {
             populate_esp_details(network_packet_bytes, transport_offset, packet_end, details);
             return details;
@@ -2986,6 +3110,150 @@ std::optional<PacketDetails> decode_packet_details(
 
         details.ipv6.next_header = payload->next_header;
         if (payload->has_fragment_header) {
+            return details;
+        }
+
+        if (network_packet_bytes[ipv6_offset + 6U] == detail::kIpProtocolAh) {
+            details.ipv6.next_header = detail::kIpProtocolAh;
+            const auto ah_offset = ipv6_offset + detail::kIpv6HeaderSize;
+            populate_ah_details(network_packet_bytes, ah_offset, packet_end, details);
+            if (details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported) {
+                return details;
+            }
+
+            const auto ah_payload_offset = ah_offset + details.ah.header_length;
+            if (details.ah.next_header == detail::kIpProtocolTcp) {
+                if (ah_payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+                    network_packet_bytes.size() < ah_payload_offset + detail::kTcpMinimumHeaderSize) {
+                    return details;
+                }
+
+                const auto tcp_header_length =
+                    static_cast<std::size_t>((network_packet_bytes[ah_payload_offset + 12U] >> 4U) * 4U);
+                if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+                    ah_payload_offset + tcp_header_length > packet_end ||
+                    network_packet_bytes.size() < ah_payload_offset + tcp_header_length) {
+                    return details;
+                }
+
+                details.has_tcp = true;
+                details.tcp = TcpDetails {
+                    .src_port = detail::read_be16(network_packet_bytes, ah_payload_offset),
+                    .dst_port = detail::read_be16(network_packet_bytes, ah_payload_offset + 2U),
+                    .seq_number = detail::read_be32(network_packet_bytes, ah_payload_offset + 4U),
+                    .ack_number = detail::read_be32(network_packet_bytes, ah_payload_offset + 8U),
+                    .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
+                    .flags = network_packet_bytes[ah_payload_offset + 13U],
+                    .window = detail::read_be16(network_packet_bytes, ah_payload_offset + 14U),
+                    .checksum = detail::read_be16(network_packet_bytes, ah_payload_offset + 16U),
+                    .urgent_pointer = detail::read_be16(network_packet_bytes, ah_payload_offset + 18U),
+                };
+                if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
+                    details.tcp.options_bytes.assign(
+                        network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + detail::kTcpMinimumHeaderSize),
+                        network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + tcp_header_length)
+                    );
+                }
+                return details;
+            }
+
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                network_packet_bytes,
+                ah_payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)
+            );
+            if (ah_payload_offset + detail::kUdpHeaderSize > packet_end ||
+                network_packet_bytes.size() < ah_payload_offset + detail::kUdpHeaderSize) {
+                return details;
+            }
+
+            const auto udp_length = detail::read_be16(network_packet_bytes, ah_payload_offset + 4U);
+            const auto declared_udp_payload_length = udp_length >= detail::kUdpHeaderSize
+                ? static_cast<std::size_t>(udp_length - detail::kUdpHeaderSize)
+                : 0U;
+            const bool udp_payload_truncated =
+                !udp_payload.has_value() ||
+                (udp_payload->payload_length < declared_udp_payload_length);
+            details.has_udp = true;
+            details.udp = UdpDetails {
+                .src_port = detail::read_be16(network_packet_bytes, ah_payload_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, ah_payload_offset + 2U),
+                .length = udp_length,
+                .checksum = detail::read_be16(network_packet_bytes, ah_payload_offset + 6U),
+                .payload_truncated = udp_payload_truncated,
+            };
+            return details;
+        }
+
+        if (const auto ah_payload = detail::parse_ipv6_authentication_payload(network_packet_bytes, ipv6_offset);
+            ah_payload.has_value() && !ah_payload->has_fragment_header) {
+            details.ipv6.next_header = detail::kIpProtocolAh;
+            populate_ah_details(network_packet_bytes, ah_payload->ah_offset, packet_end, details);
+            if (details.ah.truncated || details.ah.malformed || !details.ah.next_header_supported) {
+                return details;
+            }
+
+            const auto ah_payload_offset = ah_payload->payload_offset;
+            if (details.ah.next_header == detail::kIpProtocolTcp) {
+                if (ah_payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+                    network_packet_bytes.size() < ah_payload_offset + detail::kTcpMinimumHeaderSize) {
+                    return details;
+                }
+
+                const auto tcp_header_length =
+                    static_cast<std::size_t>((network_packet_bytes[ah_payload_offset + 12U] >> 4U) * 4U);
+                if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+                    ah_payload_offset + tcp_header_length > packet_end ||
+                    network_packet_bytes.size() < ah_payload_offset + tcp_header_length) {
+                    return details;
+                }
+
+                details.has_tcp = true;
+                details.tcp = TcpDetails {
+                    .src_port = detail::read_be16(network_packet_bytes, ah_payload_offset),
+                    .dst_port = detail::read_be16(network_packet_bytes, ah_payload_offset + 2U),
+                    .seq_number = detail::read_be32(network_packet_bytes, ah_payload_offset + 4U),
+                    .ack_number = detail::read_be32(network_packet_bytes, ah_payload_offset + 8U),
+                    .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
+                    .flags = network_packet_bytes[ah_payload_offset + 13U],
+                    .window = detail::read_be16(network_packet_bytes, ah_payload_offset + 14U),
+                    .checksum = detail::read_be16(network_packet_bytes, ah_payload_offset + 16U),
+                    .urgent_pointer = detail::read_be16(network_packet_bytes, ah_payload_offset + 18U),
+                };
+                if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
+                    details.tcp.options_bytes.assign(
+                        network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + detail::kTcpMinimumHeaderSize),
+                        network_packet_bytes.begin() + static_cast<std::ptrdiff_t>(ah_payload_offset + tcp_header_length)
+                    );
+                }
+                return details;
+            }
+
+            const auto udp_payload = detail::parse_udp_payload_bounds(
+                network_packet_bytes,
+                ah_payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(details.ipv6.payload_length)
+            );
+            if (ah_payload_offset + detail::kUdpHeaderSize > packet_end ||
+                network_packet_bytes.size() < ah_payload_offset + detail::kUdpHeaderSize) {
+                return details;
+            }
+
+            const auto udp_length = detail::read_be16(network_packet_bytes, ah_payload_offset + 4U);
+            const auto declared_udp_payload_length = udp_length >= detail::kUdpHeaderSize
+                ? static_cast<std::size_t>(udp_length - detail::kUdpHeaderSize)
+                : 0U;
+            const bool udp_payload_truncated =
+                !udp_payload.has_value() ||
+                (udp_payload->payload_length < declared_udp_payload_length);
+            details.has_udp = true;
+            details.udp = UdpDetails {
+                .src_port = detail::read_be16(network_packet_bytes, ah_payload_offset),
+                .dst_port = detail::read_be16(network_packet_bytes, ah_payload_offset + 2U),
+                .length = udp_length,
+                .checksum = detail::read_be16(network_packet_bytes, ah_payload_offset + 6U),
+                .payload_truncated = udp_payload_truncated,
+            };
             return details;
         }
 
