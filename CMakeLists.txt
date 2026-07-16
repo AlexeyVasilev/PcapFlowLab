@@ -312,6 +312,7 @@ if(BUILD_TESTING)
         tests/unit/GrePcapFixtureTests.cpp
         tests/unit/EspPcapFixtureTests.cpp
         tests/unit/AhPcapFixtureTests.cpp
+        tests/unit/EoipPcapFixtureTests.cpp
         tests/unit/IpEncapsulationPcapFixtureTests.cpp
         tests/unit/SctpPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp

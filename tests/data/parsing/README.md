@@ -232,6 +232,62 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 `esp/18_ipv4_esp_two_directions_different_spi.pcap`
 - Purpose: opposite-direction ESP packets with different SPI values for future directional identity coverage.
 
+## EoIP
+
+`eoip/01_ipv4_eoip_inner_ipv4_udp.pcap`
+- Purpose: baseline EoIP over outer IPv4 carrying inner Ethernet / IPv4 / UDP.
+
+`eoip/02_ipv4_eoip_inner_ipv4_tcp.pcap`
+- Purpose: baseline EoIP over outer IPv4 carrying inner Ethernet / IPv4 / TCP.
+
+`eoip/03_ipv4_eoip_inner_ipv6_udp.pcap`
+- Purpose: EoIP carrying inner Ethernet / IPv6 / UDP.
+
+`eoip/04_ipv4_eoip_inner_vlan_ipv4_udp.pcap`
+- Purpose: EoIP carrying inner Ethernet / VLAN / IPv4 / UDP.
+
+`eoip/05_ipv4_eoip_inner_qinq_ipv6_tcp.pcap`
+- Purpose: EoIP carrying inner Ethernet / QinQ / IPv6 / TCP.
+
+`eoip/06_outer_vlan_ipv4_eoip_inner_ipv4_udp.pcap`
+- Purpose: outer VLAN preserved before outer IPv4 / GRE / EoIP.
+
+`eoip/07_outer_vlan_mpls2_ipv4_eoip_inner_vlan_ipv4_udp.pcap`
+- Purpose: deterministic real-shape coverage for outer VLAN + two MPLS labels before outer IPv4 / EoIP plus inner VLAN / IPv4 / UDP.
+
+`eoip/08_same_inner_tuple_different_tunnel_ids.pcap`
+- Purpose: future tunnel-ID identity split baseline for the same inner tuple through tunnel IDs `6400` and `6401`.
+
+`eoip/09_same_tunnel_id_different_inner_payload_lengths.pcap`
+- Purpose: future payload-length normalization baseline proving packet-dependent EoIP payload length must not split identity.
+
+`eoip/10_same_tunnel_id_two_packets.pcap`
+- Purpose: same-tunnel two-packet grouping baseline for future parser expectations.
+
+`eoip/11_max_tunnel_id.pcap`
+- Purpose: `65535` tunnel-ID boundary-value coverage.
+
+`eoip/12_truncated_eoip_key_word.pcap`
+- Purpose: truncated EoIP payload-length / tunnel-ID word robustness.
+
+`eoip/13_eoip_payload_length_exceeds_available.pcap`
+- Purpose: declared EoIP payload length exceeds available inner Ethernet bytes.
+
+`eoip/14_eoip_payload_length_smaller_than_inner_frame.pcap`
+- Purpose: declared EoIP payload length is shorter than the following bytes and must bound future parsing.
+
+`eoip/15_eoip_missing_key_bit.pcap`
+- Purpose: GRE version-1 negative control with protocol type `0x6400` but GRE K bit clear.
+
+`eoip/16_gre_v1_unsupported_protocol_type.pcap`
+- Purpose: GRE version-1 unsupported-protocol negative control with protocol type `0x1234`.
+
+`eoip/17_eoip_truncated_inner_ethernet.pcap`
+- Purpose: valid EoIP header followed by fewer than 14 bytes of inner Ethernet.
+
+`eoip/18_eoip_truncated_inner_vlan.pcap`
+- Purpose: valid EoIP header plus inner Ethernet addresses and a truncated inner VLAN header.
+
 ## IP Encapsulation
 
 `ip_encapsulation/01_ipv4_in_ipv4_tcp.pcap`
