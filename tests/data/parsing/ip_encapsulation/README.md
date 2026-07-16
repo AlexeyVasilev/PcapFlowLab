@@ -60,7 +60,14 @@ Still deferred:
 - inner ICMP / ICMPv6 continuation through outer IPv6;
 - inner ICMP / ICMPv6 continuation inside deeper nesting;
 - SCTP continuation;
-- Packet Details / Summary continuation.
+- selected-packet Packet Details / Summary continuation for nested encapsulation;
+- selected-packet Packet Details / Summary continuation for ICMP / ICMPv6 terminal inner payloads;
+- selected-packet Packet Details / Summary continuation for malformed or truncated inner IP payloads.
+
+Selected-packet presentation now covers the direct non-nested TCP/UDP cases used by fixtures
+`01`, `04`, `05`, `08`, `10`, and `11`. Summary shows the outer IP layer followed by flat
+`Inner IPv4` / `Inner IPv6` and `Inner TCP` / `Inner UDP` layers. Protocol Details text also
+includes matching outer and inner sections for these direct cases.
 
 ## Protocol basics
 

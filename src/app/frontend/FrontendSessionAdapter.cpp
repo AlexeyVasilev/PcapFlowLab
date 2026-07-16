@@ -387,6 +387,21 @@ std::string format_transport_summary(const PacketDetails& details) {
         return out.str();
     }
 
+    if (details.has_ip_encapsulation) {
+        if (details.ip_encapsulation.has_tcp) {
+            out << "Inner TCP "
+                << details.ip_encapsulation.tcp.src_port << " -> " << details.ip_encapsulation.tcp.dst_port
+                << " Flags: " << session_detail::format_tcp_flags_text(details.ip_encapsulation.tcp.flags);
+            return out.str();
+        }
+
+        if (details.ip_encapsulation.has_udp) {
+            out << "Inner UDP "
+                << details.ip_encapsulation.udp.src_port << " -> " << details.ip_encapsulation.udp.dst_port;
+            return out.str();
+        }
+    }
+
     if (details.has_icmp) {
         out << "ICMP type " << static_cast<unsigned>(details.icmp.type)
             << ", code " << static_cast<unsigned>(details.icmp.code);
@@ -517,6 +532,23 @@ std::string build_frontend_packet_summary_text(
         });
     }
 
+    if (details->has_ip_encapsulation && !details->ip_encapsulation.inner_ip_layers.empty()) {
+        const auto& inner = details->ip_encapsulation.inner_ip_layers.front();
+        if (inner.has_ipv4) {
+            append_summary_section(lines, "Inner IPv4", {
+                "Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr),
+                "Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr),
+                "Protocol: " + format_protocol_value(inner.ipv4.protocol),
+            });
+        } else if (inner.has_ipv6) {
+            append_summary_section(lines, "Inner IPv6", {
+                "Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr),
+                "Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr),
+                "Next Header: " + format_protocol_value(inner.ipv6.next_header),
+            });
+        }
+    }
+
     if (details->has_tcp) {
         auto tcp_lines = std::vector<std::string> {
             "Source Port: " + std::to_string(details->tcp.src_port),
@@ -534,6 +566,22 @@ std::string build_frontend_packet_summary_text(
             "Payload Length: " + std::to_string(packet.payload_length),
         };
         append_summary_section(lines, "UDP", udp_lines);
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_tcp) {
+        append_summary_section(lines, "Inner TCP", {
+            "Source Port: " + std::to_string(details->ip_encapsulation.tcp.src_port),
+            "Destination Port: " + std::to_string(details->ip_encapsulation.tcp.dst_port),
+            "Flags: " + session_detail::format_tcp_flags_text(details->ip_encapsulation.tcp.flags),
+        });
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_udp) {
+        append_summary_section(lines, "Inner UDP", {
+            "Source Port: " + std::to_string(details->ip_encapsulation.udp.src_port),
+            "Destination Port: " + std::to_string(details->ip_encapsulation.udp.dst_port),
+            "Length: " + std::to_string(details->ip_encapsulation.udp.length),
+        });
     }
 
     if (details->has_icmp) {

@@ -431,6 +431,25 @@ struct GtpuInnerPacketDetails {
     SctpDetails sctp {};
 };
 
+struct IpEncapsulatedLayerDetails {
+    NetworkAddressFamily address_family {NetworkAddressFamily::unknown};
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool ipv4_truncated {false};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    std::uint16_t ipv6_available_bytes {0};
+    bool ipv6_truncated {false};
+};
+
+struct IpEncapsulationDetails {
+    std::vector<IpEncapsulatedLayerDetails> inner_ip_layers {};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+};
+
 struct GreInnerPacketDetails {
     bool has_inner_ethernet {false};
     InnerEthernetDetails inner_ethernet {};
@@ -544,6 +563,8 @@ struct PacketDetails {
 
     bool has_ipv6 {false};
     IPv6Details ipv6 {};
+    bool has_ip_encapsulation {false};
+    IpEncapsulationDetails ip_encapsulation {};
 
     bool has_tcp {false};
     TcpDetails tcp {};

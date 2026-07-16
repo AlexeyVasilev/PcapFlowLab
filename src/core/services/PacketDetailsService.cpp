@@ -205,6 +205,219 @@ void populate_sctp_details(
     populate_sctp_details_fields(packet_bytes, sctp_offset, packet_end, details.sctp);
 }
 
+void populate_ip_encapsulation_tcp_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t transport_offset,
+    const std::size_t packet_end,
+    PacketDetails& details
+) {
+    if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+        packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
+        return;
+    }
+
+    const auto tcp_header_length = static_cast<std::size_t>((packet_bytes[transport_offset + 12U] >> 4U) * 4U);
+    if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+        transport_offset + tcp_header_length > packet_end ||
+        packet_bytes.size() < transport_offset + tcp_header_length) {
+        return;
+    }
+
+    details.has_ip_encapsulation = true;
+    details.ip_encapsulation.has_tcp = true;
+    details.ip_encapsulation.tcp = TcpDetails {
+        .src_port = detail::read_be16(packet_bytes, transport_offset),
+        .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
+        .seq_number = detail::read_be32(packet_bytes, transport_offset + 4U),
+        .ack_number = detail::read_be32(packet_bytes, transport_offset + 8U),
+        .header_length_bytes = static_cast<std::uint8_t>(tcp_header_length),
+        .flags = packet_bytes[transport_offset + 13U],
+        .window = detail::read_be16(packet_bytes, transport_offset + 14U),
+        .checksum = detail::read_be16(packet_bytes, transport_offset + 16U),
+        .urgent_pointer = detail::read_be16(packet_bytes, transport_offset + 18U),
+    };
+    if (tcp_header_length > detail::kTcpMinimumHeaderSize) {
+        details.ip_encapsulation.tcp.options_bytes.assign(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + detail::kTcpMinimumHeaderSize),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(transport_offset + tcp_header_length)
+        );
+    }
+}
+
+void populate_ip_encapsulation_udp_details(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t transport_offset,
+    const std::size_t packet_end,
+    const std::size_t nominal_packet_end,
+    PacketDetails& details
+) {
+    if (transport_offset + detail::kUdpHeaderSize > packet_end ||
+        packet_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
+        return;
+    }
+
+    const auto udp_payload = detail::parse_udp_payload_bounds(packet_bytes, transport_offset, nominal_packet_end);
+    const auto udp_length = detail::read_be16(packet_bytes, transport_offset + 4U);
+    const auto declared_udp_payload_length = udp_length >= detail::kUdpHeaderSize
+        ? static_cast<std::size_t>(udp_length - detail::kUdpHeaderSize)
+        : 0U;
+    const bool udp_payload_truncated =
+        !udp_payload.has_value() ||
+        (udp_payload->payload_length < declared_udp_payload_length);
+
+    details.has_ip_encapsulation = true;
+    details.ip_encapsulation.has_udp = true;
+    details.ip_encapsulation.udp = UdpDetails {
+        .src_port = detail::read_be16(packet_bytes, transport_offset),
+        .dst_port = detail::read_be16(packet_bytes, transport_offset + 2U),
+        .length = udp_length,
+        .checksum = detail::read_be16(packet_bytes, transport_offset + 6U),
+        .payload_truncated = udp_payload_truncated,
+    };
+}
+
+bool try_populate_plain_ip_encapsulation_inner_ipv4(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv4_offset,
+    PacketDetails& details
+) {
+    const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(packet_bytes, inner_ipv4_offset);
+    if (!ipv4_bounds.has_value()) {
+        return false;
+    }
+
+    const auto claimed_header_length = static_cast<std::uint8_t>((packet_bytes[inner_ipv4_offset] & 0x0FU) * 4U);
+    const auto flags_fragment = detail::read_be16(packet_bytes, inner_ipv4_offset + 6U);
+    if ((flags_fragment & 0x3FFFU) != 0U) {
+        return false;
+    }
+
+    auto inner_layer = IpEncapsulatedLayerDetails {};
+    inner_layer.address_family = NetworkAddressFamily::ipv4;
+    inner_layer.has_ipv4 = true;
+    inner_layer.ipv4 = IPv4Details {
+        .available_header_bytes = static_cast<std::uint8_t>(std::min<std::size_t>(
+            claimed_header_length,
+            ipv4_bounds->packet_end - inner_ipv4_offset
+        )),
+        .available_packet_bytes = static_cast<std::uint16_t>(std::min<std::size_t>(
+            ipv4_bounds->packet_end - inner_ipv4_offset,
+            0xFFFFU
+        )),
+        .src_addr = detail::read_be32(packet_bytes, inner_ipv4_offset + 12U),
+        .dst_addr = detail::read_be32(packet_bytes, inner_ipv4_offset + 16U),
+        .header_length_bytes = claimed_header_length,
+        .differentiated_services_field = packet_bytes[inner_ipv4_offset + 1U],
+        .protocol = packet_bytes[inner_ipv4_offset + 9U],
+        .ttl = packet_bytes[inner_ipv4_offset + 8U],
+        .identification = detail::read_be16(packet_bytes, inner_ipv4_offset + 4U),
+        .flags = static_cast<std::uint8_t>((flags_fragment >> 13U) & 0x07U),
+        .fragment_offset = static_cast<std::uint16_t>(flags_fragment & 0x1FFFU),
+        .total_length = detail::read_be16(packet_bytes, inner_ipv4_offset + 2U),
+        .header_checksum = detail::read_be16(packet_bytes, inner_ipv4_offset + 10U),
+    };
+
+    if (claimed_header_length > detail::kIpv4MinimumHeaderSize) {
+        inner_layer.ipv4.options_bytes.assign(
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(inner_ipv4_offset + detail::kIpv4MinimumHeaderSize),
+            packet_bytes.begin() + static_cast<std::ptrdiff_t>(inner_ipv4_offset + claimed_header_length)
+        );
+    }
+
+    const auto transport_offset = inner_ipv4_offset + claimed_header_length;
+    if (inner_layer.ipv4.protocol == detail::kIpProtocolTcp) {
+        populate_ip_encapsulation_tcp_details(packet_bytes, transport_offset, ipv4_bounds->packet_end, details);
+    } else if (inner_layer.ipv4.protocol == detail::kIpProtocolUdp) {
+        populate_ip_encapsulation_udp_details(
+            packet_bytes,
+            transport_offset,
+            ipv4_bounds->packet_end,
+            ipv4_bounds->nominal_packet_end,
+            details
+        );
+    } else {
+        return false;
+    }
+
+    if (!details.has_ip_encapsulation) {
+        return false;
+    }
+
+    details.ip_encapsulation.inner_ip_layers.push_back(std::move(inner_layer));
+    return true;
+}
+
+bool try_populate_plain_ip_encapsulation_inner_ipv6(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv6_offset,
+    PacketDetails& details
+) {
+    if (packet_bytes.size() < inner_ipv6_offset + detail::kIpv6HeaderSize) {
+        return false;
+    }
+
+    const auto payload = detail::parse_ipv6_payload(packet_bytes, inner_ipv6_offset);
+    if (!payload.has_value() || payload->has_fragment_header) {
+        return false;
+    }
+
+    auto inner_layer = IpEncapsulatedLayerDetails {};
+    inner_layer.address_family = NetworkAddressFamily::ipv6;
+    inner_layer.has_ipv6 = true;
+    inner_layer.ipv6_available_bytes = static_cast<std::uint16_t>(std::min<std::size_t>(
+        (inner_ipv6_offset < packet_bytes.size()) ? (packet_bytes.size() - inner_ipv6_offset) : 0U,
+        0xFFFFU
+    ));
+
+    const auto version_traffic_flow = detail::read_be32(packet_bytes, inner_ipv6_offset);
+    inner_layer.ipv6 = IPv6Details {
+        .traffic_class = static_cast<std::uint8_t>((version_traffic_flow >> 20U) & 0xFFU),
+        .next_header = payload->next_header,
+        .hop_limit = packet_bytes[inner_ipv6_offset + 7U],
+        .flow_label = version_traffic_flow & 0x000FFFFFU,
+        .payload_length = detail::read_be16(packet_bytes, inner_ipv6_offset + 4U),
+    };
+    std::copy_n(
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(inner_ipv6_offset + 8U),
+        16U,
+        inner_layer.ipv6.src_addr.begin()
+    );
+    std::copy_n(
+        packet_bytes.begin() + static_cast<std::ptrdiff_t>(inner_ipv6_offset + 24U),
+        16U,
+        inner_layer.ipv6.dst_addr.begin()
+    );
+
+    const auto packet_end = std::min(
+        inner_ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner_layer.ipv6.payload_length),
+        packet_bytes.size()
+    );
+    if (payload->payload_offset > packet_end) {
+        return false;
+    }
+
+    if (payload->next_header == detail::kIpProtocolTcp) {
+        populate_ip_encapsulation_tcp_details(packet_bytes, payload->payload_offset, packet_end, details);
+    } else if (payload->next_header == detail::kIpProtocolUdp) {
+        populate_ip_encapsulation_udp_details(
+            packet_bytes,
+            payload->payload_offset,
+            packet_end,
+            inner_ipv6_offset + detail::kIpv6HeaderSize + static_cast<std::size_t>(inner_layer.ipv6.payload_length),
+            details
+        );
+    } else {
+        return false;
+    }
+
+    if (!details.has_ip_encapsulation) {
+        return false;
+    }
+
+    details.ip_encapsulation.inner_ip_layers.push_back(std::move(inner_layer));
+    return true;
+}
+
 void populate_esp_details(
     std::span<const std::uint8_t> packet_bytes,
     const std::size_t esp_offset,
@@ -2155,6 +2368,16 @@ std::optional<PacketDetails> decode_packet_details(
         }
 
         const auto transport_offset = ipv4_offset + claimed_header_length;
+        if (details.ipv4.protocol == detail::kIpProtocolIpv4Encapsulation &&
+            try_populate_plain_ip_encapsulation_inner_ipv4(network_packet_bytes, transport_offset, details)) {
+            return details;
+        }
+
+        if (details.ipv4.protocol == detail::kIpProtocolIpv6Encapsulation &&
+            try_populate_plain_ip_encapsulation_inner_ipv6(network_packet_bytes, transport_offset, details)) {
+            return details;
+        }
+
         if (details.ipv4.protocol == detail::kIpProtocolTcp) {
             if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
                 network_packet_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
@@ -2379,6 +2602,16 @@ std::optional<PacketDetails> decode_packet_details(
 
         details.ipv6.next_header = payload->next_header;
         if (payload->has_fragment_header) {
+            return details;
+        }
+
+        if (payload->next_header == detail::kIpProtocolIpv4Encapsulation &&
+            try_populate_plain_ip_encapsulation_inner_ipv4(network_packet_bytes, payload->payload_offset, details)) {
+            return details;
+        }
+
+        if (payload->next_header == detail::kIpProtocolIpv6Encapsulation &&
+            try_populate_plain_ip_encapsulation_inner_ipv6(network_packet_bytes, payload->payload_offset, details)) {
             return details;
         }
 

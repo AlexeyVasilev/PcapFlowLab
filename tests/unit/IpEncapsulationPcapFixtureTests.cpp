@@ -1,14 +1,17 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <initializer_list>
 #include <set>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
+#include "core/domain/PacketDetails.h"
 #include "core/domain/ProtocolPath.h"
 
 namespace pfl::tests {
@@ -354,6 +357,135 @@ bool has_protocol_path(const CaptureSession& session, const FlowRow& row, const 
     return path != nullptr && format_protocol_path(*path) == expected_path;
 }
 
+const session_detail::PacketSummaryLayer* find_top_level_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string& id
+) {
+    for (const auto& layer : layers) {
+        if (layer.id == id) {
+            return &layer;
+        }
+    }
+    return nullptr;
+}
+
+bool title_contains_all(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::initializer_list<std::string> fragments
+) {
+    for (const auto& fragment : fragments) {
+        if (layer.title.find(fragment) == std::string::npos) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void expect_layer_prefix(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::vector<std::string>& expected_ids
+) {
+    PFL_REQUIRE(layers.size() >= expected_ids.size());
+    for (std::size_t index = 0; index < expected_ids.size(); ++index) {
+        PFL_EXPECT(layers[index].id == expected_ids[index]);
+    }
+}
+
+void expect_direct_plain_ip_packet_details_present(
+    const std::string_view file_name,
+    const bool outer_is_ipv4,
+    const bool inner_is_ipv4,
+    const bool inner_is_tcp,
+    const std::vector<std::string>& expected_summary_prefix,
+    const bool expect_no_inner_vlan_layers
+) {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path(file_name)));
+
+    const auto packet = session.find_packet(0U);
+    PFL_REQUIRE(packet.has_value());
+    const auto details = session.read_packet_details(*packet);
+    PFL_REQUIRE(details.has_value());
+
+    PFL_EXPECT(details->has_ip_encapsulation);
+    PFL_EXPECT(details->ip_encapsulation.inner_ip_layers.size() == 1U);
+    PFL_EXPECT(details->has_tcp == false);
+    PFL_EXPECT(details->has_udp == false);
+
+    if (outer_is_ipv4) {
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+        PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.src_addr) == "192.0.2.60");
+        PFL_EXPECT(session_detail::format_ipv4_address(details->ipv4.dst_addr) == "198.51.100.60");
+    } else {
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(details->has_ipv6);
+        PFL_EXPECT(session_detail::format_ipv6_address(details->ipv6.src_addr) ==
+            "2001:0db8:0060:0000:0000:0000:0000:0001");
+        PFL_EXPECT(session_detail::format_ipv6_address(details->ipv6.dst_addr) ==
+            "2001:0db8:0060:0000:0000:0000:0000:0002");
+    }
+
+    const auto& inner = details->ip_encapsulation.inner_ip_layers.front();
+    if (inner_is_ipv4) {
+        PFL_EXPECT(inner.has_ipv4);
+        PFL_EXPECT(!inner.has_ipv6);
+        PFL_EXPECT(session_detail::format_ipv4_address(inner.ipv4.src_addr) == "10.60.0.10");
+        PFL_EXPECT(session_detail::format_ipv4_address(inner.ipv4.dst_addr) == "10.60.0.20");
+    } else {
+        PFL_EXPECT(!inner.has_ipv4);
+        PFL_EXPECT(inner.has_ipv6);
+        PFL_EXPECT(session_detail::format_ipv6_address(inner.ipv6.src_addr) ==
+            "2001:0db8:0061:0000:0000:0000:0000:0010");
+        PFL_EXPECT(session_detail::format_ipv6_address(inner.ipv6.dst_addr) ==
+            "2001:0db8:0061:0000:0000:0000:0000:0020");
+    }
+
+    if (inner_is_tcp) {
+        PFL_EXPECT(details->ip_encapsulation.has_tcp);
+        PFL_EXPECT(!details->ip_encapsulation.has_udp);
+        PFL_EXPECT(details->ip_encapsulation.tcp.src_port == 49160U);
+        PFL_EXPECT(details->ip_encapsulation.tcp.dst_port == 443U);
+    } else {
+        PFL_EXPECT(!details->ip_encapsulation.has_tcp);
+        PFL_EXPECT(details->ip_encapsulation.has_udp);
+        PFL_EXPECT(details->ip_encapsulation.udp.src_port == 53600U);
+        PFL_EXPECT(details->ip_encapsulation.udp.dst_port == 443U);
+    }
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+    expect_layer_prefix(summary_layers, expected_summary_prefix);
+
+    const auto* inner_network_layer = find_top_level_layer(summary_layers, inner_is_ipv4 ? "ipv4-inner" : "ipv6-inner");
+    PFL_REQUIRE(inner_network_layer != nullptr);
+    if (inner_is_ipv4) {
+        PFL_EXPECT(title_contains_all(*inner_network_layer, {"Inner IPv4", "10.60.0.10", "10.60.0.20"}));
+    } else {
+        PFL_EXPECT(title_contains_all(*inner_network_layer, {
+            "Inner IPv6",
+            "2001:0db8:0061:0000:0000:0000:0000:0010",
+            "2001:0db8:0061:0000:0000:0000:0000:0020",
+        }));
+    }
+
+    const auto* inner_transport_layer = find_top_level_layer(summary_layers, inner_is_tcp ? "tcp-inner" : "udp-inner");
+    PFL_REQUIRE(inner_transport_layer != nullptr);
+    if (inner_is_tcp) {
+        PFL_EXPECT(title_contains_all(*inner_transport_layer, {"Inner TCP", "49160", "443"}));
+    } else {
+        PFL_EXPECT(title_contains_all(*inner_transport_layer, {"Inner UDP", "53600", "443"}));
+    }
+
+    if (expect_no_inner_vlan_layers) {
+        PFL_EXPECT(find_top_level_layer(summary_layers, "vlan-inner") == nullptr);
+    }
+
+    const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+    PFL_EXPECT(protocol_text.find(outer_is_ipv4 ? "Protocol: IPv4" : "Protocol: IPv6") != std::string::npos);
+    PFL_EXPECT(protocol_text.find(inner_is_ipv4 ? "Inner IPv4:" : "Inner IPv6:") != std::string::npos);
+    PFL_EXPECT(protocol_text.find(inner_is_tcp ? "Inner TCP:" : "Inner UDP:") != std::string::npos);
+}
+
 void expect_fixture_files_exist() {
     for (const auto& expectation : kIpEncapsulationFixtureExpectations) {
         PFL_EXPECT(std::filesystem::exists(fixture_path(expectation.file_name)));
@@ -576,6 +708,57 @@ void expect_supported_plain_ip_control_decode() {
     }
 }
 
+void expect_direct_plain_ip_packet_details_summary_and_protocol_text() {
+    expect_direct_plain_ip_packet_details_present(
+        "01_ipv4_in_ipv4_tcp.pcap",
+        true,
+        true,
+        true,
+        {"frame", "ethernet", "ipv4", "ipv4-inner", "tcp-inner"},
+        false
+    );
+    expect_direct_plain_ip_packet_details_present(
+        "04_ipv6_in_ipv4_udp.pcap",
+        true,
+        false,
+        false,
+        {"frame", "ethernet", "ipv4", "ipv6-inner", "udp-inner"},
+        false
+    );
+    expect_direct_plain_ip_packet_details_present(
+        "05_ipv4_in_ipv6_tcp.pcap",
+        false,
+        true,
+        true,
+        {"frame", "ethernet", "ipv6", "ipv4-inner", "tcp-inner"},
+        false
+    );
+    expect_direct_plain_ip_packet_details_present(
+        "08_ipv6_in_ipv6_udp.pcap",
+        false,
+        false,
+        false,
+        {"frame", "ethernet", "ipv6", "ipv6-inner", "udp-inner"},
+        false
+    );
+    expect_direct_plain_ip_packet_details_present(
+        "10_outer_qinq_ipv6_in_ipv4_tcp.pcap",
+        true,
+        false,
+        true,
+        {"frame", "ethernet", "vlan", "vlan", "ipv4", "ipv6-inner", "tcp-inner"},
+        true
+    );
+    expect_direct_plain_ip_packet_details_present(
+        "11_outer_vlan_ipv4_in_ipv6_udp.pcap",
+        false,
+        true,
+        false,
+        {"frame", "ethernet", "vlan", "ipv6", "ipv4-inner", "udp-inner"},
+        true
+    );
+}
+
 }  // namespace
 
 void run_ip_encapsulation_pcap_fixture_tests() {
@@ -589,6 +772,7 @@ void run_ip_encapsulation_pcap_fixture_tests() {
     expect_supported_ipv4_in_ipv6_tcp_udp_decode();
     expect_supported_ipv6_in_ipv6_tcp_udp_decode();
     expect_supported_plain_ip_control_decode();
+    expect_direct_plain_ip_packet_details_summary_and_protocol_text();
     expect_malformed_inner_ip_remains_unrecognized();
 }
 

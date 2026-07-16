@@ -730,6 +730,44 @@ void append_inner_sctp_protocol_details(
     }
 }
 
+void append_ip_encapsulation_protocol_details(
+    std::ostringstream& builder,
+    const IpEncapsulationDetails& encapsulation
+) {
+    if (encapsulation.inner_ip_layers.empty()) {
+        return;
+    }
+
+    const auto& inner = encapsulation.inner_ip_layers.front();
+    if (inner.has_ipv4) {
+        builder << '\n' << '\t' << "Inner IPv4:"
+                << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr)
+                << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr)
+                << '\n' << '\t' << '\t' << "Protocol: "
+                << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+    } else if (inner.has_ipv6) {
+        builder << '\n' << '\t' << "Inner IPv6:"
+                << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr)
+                << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr)
+                << '\n' << '\t' << '\t' << "Next Header: "
+                << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+    } else {
+        return;
+    }
+
+    if (encapsulation.has_tcp) {
+        builder << '\n' << '\t' << "Inner TCP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << encapsulation.tcp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << encapsulation.tcp.dst_port
+                << '\n' << '\t' << '\t' << "Flags: " << format_tcp_flags_text(encapsulation.tcp.flags);
+    } else if (encapsulation.has_udp) {
+        builder << '\n' << '\t' << "Inner UDP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << encapsulation.udp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << encapsulation.udp.dst_port
+                << '\n' << '\t' << '\t' << "Length: " << encapsulation.udp.length << " bytes";
+    }
+}
+
 std::optional<PacketSummaryLayer> build_sctp_chunk_summary_layer(const SctpDetails& details) {
     if (!details.first_chunk_present) {
         return std::nullopt;
@@ -1083,6 +1121,30 @@ void append_gtpu_inner_summary_layers(
                 layers.push_back(*ppid_layer);
             }
         }
+    }
+}
+
+void append_ip_encapsulation_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const IpEncapsulationDetails& encapsulation
+) {
+    if (encapsulation.inner_ip_layers.empty()) {
+        return;
+    }
+
+    const auto& inner = encapsulation.inner_ip_layers.front();
+    if (inner.has_ipv4) {
+        layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+    } else if (inner.has_ipv6) {
+        layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+    } else {
+        return;
+    }
+
+    if (encapsulation.has_tcp) {
+        layers.push_back(build_inner_tcp_summary_layer(encapsulation.tcp));
+    } else if (encapsulation.has_udp) {
+        layers.push_back(build_inner_udp_summary_layer(encapsulation.udp));
     }
 }
 
@@ -4311,6 +4373,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_ip_encapsulation) {
+        append_ip_encapsulation_summary_layers(layers, details.ip_encapsulation);
+    }
+
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
         append_layer_if_not_empty(layers, *trailer_layer);
     }
@@ -5043,6 +5109,26 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                     << "Source: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
                     << "Destination: " << format_ipv6_address(details.ipv6.dst_addr);
         }
+        return builder.str();
+    }
+
+    if (details.has_ip_encapsulation && details.has_ipv4) {
+        builder << "Protocol: IPv4\n"
+                << '\t' << "Version: 4\n"
+                << '\t' << "Source Address: " << format_ipv4_address(details.ipv4.src_addr) << '\n'
+                << '\t' << "Destination Address: " << format_ipv4_address(details.ipv4.dst_addr) << '\n'
+                << '\t' << "Protocol: " << format_protocol_summary_value_with_number(details.ipv4.protocol);
+        append_ip_encapsulation_protocol_details(builder, details.ip_encapsulation);
+        return builder.str();
+    }
+
+    if (details.has_ip_encapsulation && details.has_ipv6) {
+        builder << "Protocol: IPv6\n"
+                << '\t' << "Version: 6\n"
+                << '\t' << "Source Address: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
+                << '\t' << "Destination Address: " << format_ipv6_address(details.ipv6.dst_addr) << '\n'
+                << '\t' << "Next Header: " << format_protocol_summary_value_with_number(details.ipv6.next_header);
+        append_ip_encapsulation_protocol_details(builder, details.ip_encapsulation);
         return builder.str();
     }
 
