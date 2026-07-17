@@ -8,7 +8,9 @@
 #include <string_view>
 #include <vector>
 
+#include "PcapTestUtils.h"
 #include "TestSupport.h"
+#include "app/frontend/FrontendSessionAdapter.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SelectedFlowPacketSemantics.h"
@@ -82,6 +84,59 @@ std::filesystem::path fixture_dir() {
 
 std::filesystem::path fixture_path(std::string_view file_name) {
     return fixture_dir() / std::filesystem::path(file_name);
+}
+
+std::vector<std::uint8_t> make_ipv4_ah_udp_packet_with_payload(const std::vector<std::uint8_t>& payload) {
+    std::vector<std::uint8_t> bytes {
+        0x02, 0x00, 0x00, 0x00, 0x70, 0x02,
+        0x02, 0x00, 0x00, 0x00, 0x70, 0x01,
+        0x08, 0x00,
+        0x45, 0x00,
+    };
+
+    append_be16(bytes, static_cast<std::uint16_t>(20U + 24U + 8U + payload.size()));
+    append_be16(bytes, 0U);
+    append_be16(bytes, 0U);
+    bytes.push_back(64U);
+    bytes.push_back(51U);
+    append_be16(bytes, 0U);
+    append_be32(bytes, ipv4(192, 0, 2, 70));
+    append_be32(bytes, ipv4(198, 51, 100, 70));
+
+    bytes.push_back(17U);
+    bytes.push_back(4U);
+    append_be16(bytes, 0U);
+    append_be32(bytes, 0x11111111U);
+    append_be32(bytes, 1U);
+    bytes.insert(bytes.end(), {
+        0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab
+    });
+
+    append_be16(bytes, 53700U);
+    append_be16(bytes, 443U);
+    append_be16(bytes, static_cast<std::uint16_t>(8U + payload.size()));
+    append_be16(bytes, 0U);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::filesystem::path make_truncated_ah_udp_payload_capture() {
+    const auto full_packet = make_ipv4_ah_udp_packet_with_payload({
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b
+    });
+    auto captured_packet = full_packet;
+    captured_packet.resize(full_packet.size() - 8U);
+
+    return write_temp_pcap(
+        "pfl_ah_truncated_udp_payload.pcap",
+        make_classic_pcap_with_captured_lengths({
+            {
+                .ts_usec = 100U,
+                .captured_bytes = captured_packet,
+                .original_length = static_cast<std::uint32_t>(full_packet.size()),
+            },
+        })
+    );
 }
 
 std::set<std::string> expected_fixture_file_names() {
@@ -592,13 +647,21 @@ void expect_ah_effective_packet_payload_lengths_follow_terminal_transport() {
 
         const auto packet = session.find_packet(0U);
         PFL_REQUIRE(packet.has_value());
+        PFL_EXPECT(packet->payload_length == test_case.expected_payload_length);
 
-        const auto derived_payload_length = session_detail::derive_transport_payload_length_from_headers(session, *packet);
-        PFL_REQUIRE(derived_payload_length.has_value());
-        PFL_EXPECT(*derived_payload_length == test_case.expected_payload_length);
+        const auto captured_payload_length =
+            session_detail::derive_captured_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(captured_payload_length.has_value());
+        PFL_EXPECT(*captured_payload_length == test_case.expected_payload_length);
+
+        const auto original_payload_length =
+            session_detail::derive_original_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(original_payload_length.has_value());
+        PFL_EXPECT(*original_payload_length == test_case.expected_payload_length);
 
         const auto raw_rows = session.list_flow_packets(0U);
         PFL_REQUIRE(raw_rows.size() == 1U);
+        PFL_EXPECT(raw_rows[0].payload_length == test_case.expected_payload_length);
 
         auto enriched_rows = raw_rows;
         session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
@@ -639,14 +702,15 @@ void expect_ah_selected_packet_summary_payload_lengths() {
         PFL_REQUIRE(details.has_value());
         PFL_REQUIRE(details->has_ah);
 
-        const auto effective_payload_length = session_detail::derive_transport_payload_length_from_headers(session, *packet);
-        PFL_REQUIRE(effective_payload_length.has_value());
-        PFL_EXPECT(*effective_payload_length == test_case.expected_payload_length);
+        const auto original_payload_length =
+            session_detail::derive_original_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(original_payload_length.has_value());
+        PFL_EXPECT(*original_payload_length == test_case.expected_payload_length);
 
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
             .source_capture_accessible = true,
-            .transport_payload_length = effective_payload_length,
-            .original_transport_payload_length = effective_payload_length,
+            .transport_payload_length = std::optional<std::uint32_t> {packet->payload_length},
+            .original_transport_payload_length = original_payload_length,
             .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
         });
 
@@ -708,16 +772,22 @@ void expect_ah_tunnel_mode_selected_packet_effective_payload_lengths() {
         PFL_REQUIRE(details->ah.has_inner_packet);
         PFL_REQUIRE(details->ah.inner_packet != nullptr);
 
-        const auto effective_payload_length = session_detail::derive_transport_payload_length_from_headers(session, *packet);
-        PFL_REQUIRE(effective_payload_length.has_value());
-        PFL_EXPECT(*effective_payload_length == test_case.expected_payload_length);
+        const auto original_payload_length =
+            session_detail::derive_original_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(original_payload_length.has_value());
+        PFL_EXPECT(*original_payload_length == test_case.expected_payload_length);
 
         PFL_EXPECT(details->has_tcp == false);
         PFL_EXPECT(details->has_udp == false);
         PFL_EXPECT(details->ah.inner_packet->has_tcp == test_case.expect_tcp);
         PFL_EXPECT(details->ah.inner_packet->has_udp == test_case.expect_udp);
 
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
+            .source_capture_accessible = true,
+            .transport_payload_length = std::optional<std::uint32_t> {packet->payload_length},
+            .original_transport_payload_length = original_payload_length,
+            .protocol_details_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {}),
+        });
         const auto* inner_transport_layer = find_top_level_layer(summary_layers, test_case.transport_layer_id);
         PFL_REQUIRE(inner_transport_layer != nullptr);
         const auto* payload_length_field = find_summary_field(*inner_transport_layer, "Payload Length");
@@ -869,6 +939,92 @@ void expect_conservative_ah_packet_details_for_malformed_or_unsupported_cases() 
     }
 }
 
+void expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths() {
+    const auto capture_path = make_truncated_ah_udp_payload_capture();
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(capture_path));
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].protocol_text == "UDP");
+
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        PFL_EXPECT(packet->payload_length == 4U);
+
+        const auto details = session.read_packet_details(*packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_ah);
+        PFL_REQUIRE(details->has_udp);
+
+        const auto captured_payload_length =
+            session_detail::derive_captured_transport_payload_length_from_headers(session, *packet);
+        const auto original_payload_length =
+            session_detail::derive_original_transport_payload_length_from_headers(session, *packet);
+        PFL_REQUIRE(captured_payload_length.has_value());
+        PFL_REQUIRE(original_payload_length.has_value());
+        PFL_EXPECT(*captured_payload_length == 4U);
+        PFL_EXPECT(*original_payload_length == 12U);
+        PFL_EXPECT(*captured_payload_length < *original_payload_length);
+
+        const auto raw_rows = session.list_flow_packets(0U);
+        PFL_REQUIRE(raw_rows.size() == 1U);
+        PFL_EXPECT(raw_rows[0].payload_length == 4U);
+
+        auto enriched_rows = raw_rows;
+        session_detail::apply_original_transport_payload_lengths(session, enriched_rows);
+        PFL_REQUIRE(enriched_rows.size() == 1U);
+        PFL_EXPECT(enriched_rows[0].payload_length == 12U);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet, {
+            .source_capture_accessible = true,
+            .transport_payload_length = captured_payload_length,
+            .original_transport_payload_length = original_payload_length,
+            .protocol_details_text = session.read_packet_protocol_details_text(*packet),
+        });
+        const auto* udp_layer = find_top_level_layer(summary_layers, "udp");
+        PFL_REQUIRE(udp_layer != nullptr);
+        PFL_EXPECT(find_summary_field(*udp_layer, "Payload Length") == nullptr);
+        const auto* captured_payload_field = find_summary_field(*udp_layer, "Captured Payload Length");
+        const auto* original_payload_field = find_summary_field(*udp_layer, "Original Payload Length");
+        PFL_REQUIRE(captured_payload_field != nullptr);
+        PFL_REQUIRE(original_payload_field != nullptr);
+        PFL_EXPECT(captured_payload_field->value == "4 bytes");
+        PFL_EXPECT(original_payload_field->value == "12 bytes");
+    }
+
+    FrontendSessionAdapter adapter {};
+    const auto open_result = adapter.open_capture(capture_path, FrontendOpenMode::fast);
+    PFL_REQUIRE(open_result.opened);
+
+    const auto frontend_flows = adapter.get_flows();
+    PFL_REQUIRE(frontend_flows.size() == 1U);
+    const auto selection = adapter.select_flow(frontend_flows[0].flow_index);
+    PFL_REQUIRE(selection.selected);
+
+    const auto frontend_packets = adapter.get_selected_flow_packets(0U, 4U);
+    PFL_REQUIRE(frontend_packets.packets.size() == 1U);
+    const auto frontend_details = adapter.get_selected_flow_packet_details(
+        frontend_packets.packets[0].packet_index,
+        frontend_packets.packets[0].row_number
+    );
+    PFL_REQUIRE(frontend_details.details_available);
+    PFL_EXPECT(frontend_details.payload_length == 4U);
+
+    const auto* frontend_udp_layer = find_top_level_layer(frontend_details.summary_layers, "udp");
+    PFL_REQUIRE(frontend_udp_layer != nullptr);
+    const auto* frontend_captured_payload_field =
+        find_summary_field(*frontend_udp_layer, "Captured Payload Length");
+    const auto* frontend_original_payload_field =
+        find_summary_field(*frontend_udp_layer, "Original Payload Length");
+    PFL_REQUIRE(frontend_captured_payload_field != nullptr);
+    PFL_REQUIRE(frontend_original_payload_field != nullptr);
+    PFL_EXPECT(frontend_captured_payload_field->value == "4 bytes");
+    PFL_EXPECT(frontend_original_payload_field->value == "12 bytes");
+}
+
 }  // namespace
 
 void run_ah_pcap_fixture_tests() {
@@ -888,6 +1044,7 @@ void run_ah_pcap_fixture_tests() {
     expect_ah_selected_packet_summary_payload_lengths();
     expect_ah_tunnel_mode_selected_packet_effective_payload_lengths();
     expect_conservative_ah_packet_details_for_malformed_or_unsupported_cases();
+    expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths();
 }
 
 }  // namespace pfl::tests

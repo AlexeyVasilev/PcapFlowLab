@@ -1765,7 +1765,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session, packet),
+            .transport_payload_length = session_detail::derive_original_transport_payload_length_from_headers(session, packet),
             .tcp_flags_text = packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
@@ -3041,11 +3041,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
 
     if (details.has_value()) {
         const auto original_transport_payload_length =
-            session_detail::derive_transport_payload_length_from_headers(session_, packet);
-        const auto captured_transport_payload_length =
-            (details->has_ah && original_transport_payload_length.has_value())
-            ? original_transport_payload_length
-            : std::optional<std::uint32_t> {packet.payload_length};
+            session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
+        const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);

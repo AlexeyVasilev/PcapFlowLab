@@ -372,18 +372,18 @@ std::optional<std::uint64_t> parse_positive_u64(const QString& text) {
     return static_cast<std::uint64_t>(value);
 }
 
-std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
+std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 ) {
-    return session_detail::derive_transport_payload_length_from_headers(packet_bytes, packet);
+    return session_detail::derive_original_transport_payload_length_from_headers(packet_bytes, packet);
 }
 
-std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
+std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
     const CaptureSession& session,
     const PacketRef& packet
 ) {
-    return session_detail::derive_transport_payload_length_from_headers(session, packet);
+    return session_detail::derive_original_transport_payload_length_from_headers(session, packet);
 }
 
 TransportPayloadLengths resolve_transport_payload_lengths(
@@ -395,11 +395,8 @@ TransportPayloadLengths resolve_transport_payload_lengths(
         return {};
     }
 
-    const auto original_payload_length = derive_transport_payload_length_from_headers(packet_bytes, packet);
-    const auto captured_payload_length =
-        (details.has_ah && original_payload_length.has_value())
-        ? original_payload_length
-        : std::optional<std::uint32_t> {packet.payload_length};
+    const auto original_payload_length = derive_original_transport_payload_length_from_headers(packet_bytes, packet);
+    const auto captured_payload_length = std::optional<std::uint32_t> {packet.payload_length};
 
     return TransportPayloadLengths {
         .real_payload_length = captured_payload_length,
@@ -447,7 +444,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = derive_transport_payload_length_from_headers(session, packet),
+            .transport_payload_length = derive_original_transport_payload_length_from_headers(session, packet),
             .tcp_flags_text = packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
@@ -2944,7 +2941,7 @@ QVariantList MainController::analysisSequencePreview() const {
         const auto& preview_row = current_flow_analysis_->sequence_preview_rows[index];
         QString transport_payload_text {QStringLiteral("-")};
         if (index < ordered_packets.size()) {
-            if (const auto transport_payload_length = derive_transport_payload_length_from_headers(session_, ordered_packets[index]);
+            if (const auto transport_payload_length = derive_original_transport_payload_length_from_headers(session_, ordered_packets[index]);
                 transport_payload_length.has_value()) {
                 transport_payload_text = QString::number(*transport_payload_length);
             }
