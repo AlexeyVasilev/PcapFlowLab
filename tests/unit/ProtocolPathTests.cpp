@@ -345,6 +345,12 @@ void expect_layer_key_equality() {
     PFL_EXPECT(LayerKey::ipv4() != LayerKey::ipv6());
     PFL_EXPECT(LayerKey::vlan(100U) == LayerKey::vlan(100U));
     PFL_EXPECT(LayerKey::vlan(100U) != LayerKey::vlan(200U));
+    PFL_EXPECT(LayerKey::gre() == LayerKey::gre());
+    PFL_EXPECT(LayerKey::gre(0x11111111U) == LayerKey::gre(0x11111111U));
+    PFL_EXPECT(LayerKey::gre() != LayerKey::gre(0x11111111U));
+    PFL_EXPECT(LayerKey::gre(0x11111111U) != LayerKey::gre(0x22222222U));
+    PFL_EXPECT(LayerKey::ah(0x11111111U) == LayerKey::ah(0x11111111U));
+    PFL_EXPECT(LayerKey::ah(0x11111111U) != LayerKey::ah(0x22222222U));
     PFL_EXPECT(LayerKey::vxlan(100U) != LayerKey::geneve(100U));
     PFL_EXPECT(LayerKey::mpls(102U) != LayerKey::vlan(102U));
 
@@ -528,26 +534,82 @@ void expect_registry_view_interning() {
     PFL_EXPECT(shim_builder.push(LayerKey::ipv4()));
     PFL_EXPECT(shim_builder.push(LayerKey::tcp()));
 
+    ProtocolPathBuilder gre_key_builder {};
+    PFL_EXPECT(gre_key_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(gre_key_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(gre_key_builder.push(LayerKey::gre(0x11111111U)));
+    PFL_EXPECT(gre_key_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(gre_key_builder.push(LayerKey::udp()));
+
+    ProtocolPathBuilder gre_key_copy_builder {};
+    PFL_EXPECT(gre_key_copy_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(gre_key_copy_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(gre_key_copy_builder.push(LayerKey::gre(0x11111111U)));
+    PFL_EXPECT(gre_key_copy_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(gre_key_copy_builder.push(LayerKey::udp()));
+
+    ProtocolPathBuilder esp_builder {};
+    PFL_EXPECT(esp_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(esp_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(esp_builder.push(LayerKey::esp(0x01020304U)));
+
+    ProtocolPathBuilder ah_builder {};
+    PFL_EXPECT(ah_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(ah_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(ah_builder.push(LayerKey::ah(0x01020304U)));
+    PFL_EXPECT(ah_builder.push(LayerKey::tcp()));
+
+    ProtocolPathBuilder esp_copy_builder {};
+    PFL_EXPECT(esp_copy_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(esp_copy_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(esp_copy_builder.push(LayerKey::esp(0x01020304U)));
+
+    ProtocolPathBuilder esp_other_builder {};
+    PFL_EXPECT(esp_other_builder.push(LayerKey::ethernet_ii()));
+    PFL_EXPECT(esp_other_builder.push(LayerKey::ipv4()));
+    PFL_EXPECT(esp_other_builder.push(LayerKey::esp(0x11121314U)));
+
     PFL_EXPECT(registry.intern(empty_builder.view()) == kInvalidProtocolPathId);
     PFL_EXPECT(registry.size() == 0U);
 
     const auto direct_id = registry.intern(direct_builder.view());
     const auto direct_copy_id = registry.intern(direct_copy_builder.view());
     const auto shim_id = registry.intern(shim_builder.view());
+    const auto gre_key_id = registry.intern(gre_key_builder.view());
+    const auto gre_key_copy_id = registry.intern(gre_key_copy_builder.view());
+    const auto esp_id = registry.intern(esp_builder.view());
+    const auto esp_copy_id = registry.intern(esp_copy_builder.view());
+    const auto esp_other_id = registry.intern(esp_other_builder.view());
+    const auto ah_id = registry.intern(ah_builder.view());
 
     PFL_EXPECT(direct_id == 1U);
     PFL_EXPECT(direct_copy_id == direct_id);
     PFL_EXPECT(shim_id == 2U);
-    PFL_EXPECT(registry.size() == 2U);
+    PFL_EXPECT(gre_key_id == 3U);
+    PFL_EXPECT(gre_key_copy_id == gre_key_id);
+    PFL_EXPECT(esp_id == 4U);
+    PFL_EXPECT(esp_copy_id == esp_id);
+    PFL_EXPECT(esp_other_id == 5U);
+    PFL_EXPECT(ah_id == 6U);
+    PFL_EXPECT(registry.size() == 6U);
     PFL_EXPECT(registry.intern(empty_builder.view()) == kInvalidProtocolPathId);
-    PFL_EXPECT(registry.size() == 2U);
+    PFL_EXPECT(registry.size() == 6U);
 
     const auto* stored_direct = registry.find(direct_id);
     const auto* stored_shim = registry.find(shim_id);
+    const auto* stored_gre_key = registry.find(gre_key_id);
+    const auto* stored_esp = registry.find(esp_id);
+    const auto* stored_other_esp = registry.find(esp_other_id);
     PFL_REQUIRE(stored_direct != nullptr);
     PFL_REQUIRE(stored_shim != nullptr);
+    PFL_REQUIRE(stored_gre_key != nullptr);
+    PFL_REQUIRE(stored_esp != nullptr);
+    PFL_REQUIRE(stored_other_esp != nullptr);
     PFL_EXPECT(format_protocol_path(*stored_direct) == "EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(*stored_shim) == "EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP");
+    PFL_EXPECT(format_protocol_path(*stored_gre_key) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
+    PFL_EXPECT(format_protocol_path(*stored_esp) == "EthernetII -> IPv4 -> ESP(spi=0x01020304)");
+    PFL_EXPECT(format_protocol_path(*stored_other_esp) == "EthernetII -> IPv4 -> ESP(spi=0x11121314)");
 }
 
 void expect_formatting() {
@@ -579,6 +641,13 @@ void expect_formatting() {
         LayerKey::gtpu(0x01020384U),
         LayerKey::ipv4(),
         LayerKey::sctp(),
+    };
+    const ProtocolPath gre_key {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::gre(0x11111111U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
     };
     const ProtocolPath llc_snap {
         LayerKey::ieee8023(),
@@ -613,6 +682,17 @@ void expect_formatting() {
         LayerKey::ethernet_ii(),
         LayerKey::macsec(),
     };
+    const ProtocolPath esp {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::esp(0x01020304U),
+    };
+    const ProtocolPath ah {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
+    };
 
     PFL_EXPECT(format_protocol_layer_key(LayerKey::ethernet_ii()) == "EthernetII");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::ieee8023()) == "IEEE 802.3");
@@ -629,17 +709,21 @@ void expect_formatting() {
     PFL_EXPECT(format_protocol_layer_key(LayerKey::vxlan(100U)) == "VXLAN(vni=100)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::geneve(200U)) == "Geneve(vni=200)");
     PFL_EXPECT(format_protocol_layer_key(LayerKey::gtpu(0x01020384U)) == "GTP-U(teid=0x01020384)");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::gre(0x11111111U)) == "GRE(key=0x11111111)");
+    PFL_EXPECT(format_protocol_layer_key(LayerKey::esp(0x01020304U)) == "ESP(spi=0x01020304)");
 
     PFL_EXPECT(format_protocol_path(direct) == "EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(shim) == "EthernetII -> MPLS(label=102) -> VLAN(vid=200) -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(vxlan) == "EthernetII -> IPv4 -> UDP -> VXLAN(vni=100) -> EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(gtpu) == "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020384) -> IPv4 -> SCTP");
+    PFL_EXPECT(format_protocol_path(gre_key) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
     PFL_EXPECT(format_protocol_path(llc_snap) == "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(mpls_pw)
         == "EthernetII -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(pbb) == "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(pppoe) == "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP");
     PFL_EXPECT(format_protocol_path(macsec) == "EthernetII -> MACsec");
+    PFL_EXPECT(format_protocol_path(esp) == "EthernetII -> IPv4 -> ESP(spi=0x01020304)");
 }
 
 void expect_protocol_path_presentation_mapping() {
@@ -664,6 +748,13 @@ void expect_protocol_path_presentation_mapping() {
         LayerKey::gtpu(0x01020384U),
         LayerKey::ipv4(),
         LayerKey::sctp(),
+    };
+    const ProtocolPath gre_key {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::gre(0x11111111U),
+        LayerKey::ipv4(),
+        LayerKey::udp(),
     };
     const ProtocolPath mpls {
         LayerKey::ethernet_ii(),
@@ -697,6 +788,17 @@ void expect_protocol_path_presentation_mapping() {
         LayerKey::ethernet_ii(),
         LayerKey::macsec(),
     };
+    const ProtocolPath esp {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::esp(0x01020304U),
+    };
+    const ProtocolPath ah {
+        LayerKey::ethernet_ii(),
+        LayerKey::ipv4(),
+        LayerKey::ah(0x01020304U),
+        LayerKey::tcp(),
+    };
 
     const auto direct_presentation = session_detail::build_protocol_path_presentation(&direct);
     PFL_EXPECT(direct_presentation.full_text == "EthernetII -> IPv4 -> TCP");
@@ -714,6 +816,10 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(gtpu_presentation.badges[3].short_label == "GTP-U");
     PFL_EXPECT(gtpu_presentation.badges[3].tooltip == "GTP-U\nTEID: 0x01020384");
     PFL_EXPECT(gtpu_presentation.badges.back().short_label == "SCTP");
+
+    const auto gre_key_presentation = session_detail::build_protocol_path_presentation(&gre_key);
+    PFL_EXPECT(gre_key_presentation.compact_text == "EII|Ip4|GRE|Ip4|UDP");
+    PFL_EXPECT(gre_key_presentation.badges[2].tooltip == "GRE\nKey: 0x11111111");
 
     const auto mpls_presentation = session_detail::build_protocol_path_presentation(&mpls);
     PFL_EXPECT(badge_short_labels(mpls_presentation.badges) == std::vector<std::string>({"EII", "M", "M", "Ip4", "TCP"}));
@@ -741,6 +847,18 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(macsec_presentation.badges[1].full_name == "MACsec");
     PFL_EXPECT(macsec_presentation.badges[1].color_key == "security");
 
+    const auto esp_presentation = session_detail::build_protocol_path_presentation(&esp);
+    PFL_EXPECT(esp_presentation.compact_text == "EII|Ip4|ESP");
+    PFL_EXPECT(esp_presentation.badges[2].short_label == "ESP");
+    PFL_EXPECT(esp_presentation.badges[2].tooltip == "ESP\nSPI: 0x01020304");
+    PFL_EXPECT(esp_presentation.badges[2].color_key == "security");
+
+    const auto ah_presentation = session_detail::build_protocol_path_presentation(&ah);
+    PFL_EXPECT(ah_presentation.compact_text == "EII|Ip4|AH|TCP");
+    PFL_EXPECT(ah_presentation.badges[2].short_label == "AH");
+    PFL_EXPECT(ah_presentation.badges[2].tooltip == "AH\nSPI: 0x01020304");
+    PFL_EXPECT(ah_presentation.badges[2].color_key == "security");
+
     const auto unknown_presentation = session_detail::build_protocol_path_presentation(nullptr);
     PFL_EXPECT(unknown_presentation.full_text == "Unknown protocol path");
     PFL_EXPECT(unknown_presentation.compact_text == "?");
@@ -748,7 +866,7 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(unknown_presentation.badges[0].short_label == "?");
 
     const auto legend = session_detail::protocol_path_legend_entries();
-    PFL_EXPECT(legend.size() == 22U);
+    PFL_EXPECT(legend.size() == 24U);
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_REQUIRE(legend.size() >= 6U);
     PFL_EXPECT(legend[1].short_label == "802.3");
@@ -764,6 +882,8 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PPPoE"; }));
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "PPP"; }));
     PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "MS"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "AH"; }));
+    PFL_EXPECT(std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ESP"; }));
     PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ARP"; }));
     PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ICMP"; }));
     PFL_EXPECT(!std::any_of(legend.begin(), legend.end(), [](const auto& entry) { return entry.short_label == "ICMP6"; }));
@@ -782,6 +902,9 @@ void expect_protocol_path_presentation_mapping() {
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::vxlan(100U)) == "VXLAN (VNI 100)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::geneve(100U)) == "Geneve (VNI 100)");
     PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::gtpu(0x01020384U)) == "GTP-U (TEID 0x01020384)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::gre(0x11111111U)) == "GRE (key 0x11111111)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::ah(0x01020304U)) == "AH (SPI 0x01020304)");
+    PFL_EXPECT(session_detail::format_protocol_path_layer_display_text(LayerKey::esp(0x01020304U)) == "ESP (SPI 0x01020304)");
 }
 
 void expect_flow_rows_expose_protocol_path_presentation() {
@@ -842,7 +965,7 @@ void expect_frontend_protocol_path_legend_exposure() {
     FrontendSessionAdapter adapter {};
     const auto legend = adapter.get_protocol_path_legend();
 
-    PFL_REQUIRE(legend.size() == 22U);
+    PFL_REQUIRE(legend.size() == 24U);
     PFL_EXPECT(legend.front().short_label == "EII");
     PFL_REQUIRE(legend.size() >= 6U);
     PFL_EXPECT(legend[1].short_label == "802.3");
@@ -868,6 +991,8 @@ void expect_frontend_protocol_path_legend_exposure() {
     PFL_EXPECT(contains_short_label("PPPoE"));
     PFL_EXPECT(contains_short_label("PPP"));
     PFL_EXPECT(contains_short_label("MS"));
+    PFL_EXPECT(contains_short_label("AH"));
+    PFL_EXPECT(contains_short_label("ESP"));
     PFL_EXPECT(contains_short_label("Ip4"));
     PFL_EXPECT(contains_short_label("UDP"));
     PFL_EXPECT(contains_short_label("Vx"));

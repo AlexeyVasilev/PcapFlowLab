@@ -22,6 +22,7 @@ constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
 constexpr std::uint16_t kEtherTypeMacsec = 0x88E5U;
 constexpr std::uint16_t kEtherTypePppoeDiscovery = 0x8863U;
 constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
+constexpr std::uint16_t kGreProtocolTypeEoip = 0x6400U;
 constexpr std::uint16_t kIeee8023LengthCutoff = 0x0600U;
 constexpr std::uint16_t kArpHardwareTypeEthernet = 1U;
 constexpr std::uint16_t kArpProtocolTypeIpv4 = 0x0800U;
@@ -145,6 +146,10 @@ std::string format_protocol_summary_value(const std::uint8_t protocol) {
         return "TCP";
     case 17U:
         return "UDP";
+    case 51U:
+        return "AH";
+    case 50U:
+        return "ESP";
     case 132U:
         return "SCTP";
     case 58U:
@@ -161,6 +166,17 @@ std::string format_protocol_summary_value_with_number(const std::uint8_t protoco
     }
 
     return label + " (" + std::to_string(protocol) + ")";
+}
+
+std::string format_ah_next_header_value(const std::uint8_t protocol) {
+    switch (protocol) {
+    case 4U:
+        return "IPv4 (4)";
+    case 41U:
+        return "IPv6 (41)";
+    default:
+        return format_protocol_summary_value_with_number(protocol);
+    }
 }
 
 std::string format_inner_transport_name(
@@ -650,6 +666,48 @@ PacketSummaryLayer build_udp_summary_layer(const UdpDetails& details) {
     };
 }
 
+void append_transport_payload_summary_fields(
+    std::vector<PacketSummaryField>& fields,
+    const std::optional<std::uint32_t>& captured_payload_length,
+    const std::optional<std::uint32_t>& original_payload_length
+) {
+    if (original_payload_length.has_value()) {
+        if (captured_payload_length.has_value() &&
+            *captured_payload_length != *original_payload_length) {
+            fields.push_back(make_summary_field("Captured Payload Length", std::to_string(*captured_payload_length) + " bytes"));
+            fields.push_back(make_summary_field("Original Payload Length", std::to_string(*original_payload_length) + " bytes"));
+        } else {
+            fields.push_back(make_summary_field("Payload Length", std::to_string(*original_payload_length) + " bytes"));
+        }
+        return;
+    }
+
+    if (captured_payload_length.has_value()) {
+        fields.push_back(make_summary_field("Payload Length", std::to_string(*captured_payload_length) + " bytes"));
+    }
+}
+
+void append_transport_payload_protocol_details(
+    std::ostringstream& builder,
+    const std::optional<std::uint32_t>& captured_payload_length,
+    const std::optional<std::uint32_t>& original_payload_length
+) {
+    if (original_payload_length.has_value()) {
+        if (captured_payload_length.has_value() &&
+            *captured_payload_length != *original_payload_length) {
+            builder << '\n' << '\t' << '\t' << "Captured Payload Length: " << *captured_payload_length << " bytes"
+                    << '\n' << '\t' << '\t' << "Original Payload Length: " << *original_payload_length << " bytes";
+        } else {
+            builder << '\n' << '\t' << '\t' << "Payload Length: " << *original_payload_length << " bytes";
+        }
+        return;
+    }
+
+    if (captured_payload_length.has_value()) {
+        builder << '\n' << '\t' << '\t' << "Payload Length: " << *captured_payload_length << " bytes";
+    }
+}
+
 PacketSummaryLayer build_sctp_summary_layer(const SctpDetails& details) {
     std::vector<PacketSummaryField> sctp_fields {};
     if (details.available_common_header_bytes >= 2U) {
@@ -725,6 +783,146 @@ void append_inner_sctp_protocol_details(
     }
     if (details.data_metadata_truncated) {
         builder << '\n' << '\t' << "Warning: Inner SCTP DATA chunk metadata is truncated.";
+    }
+}
+
+void append_ip_encapsulation_protocol_details(
+    std::ostringstream& builder,
+    const IpEncapsulationDetails& encapsulation
+) {
+    if (encapsulation.inner_ip_layers.empty()) {
+        return;
+    }
+
+    for (const auto& inner : encapsulation.inner_ip_layers) {
+        if (inner.has_ipv4) {
+            builder << '\n' << '\t' << "Inner IPv4:"
+                    << '\n' << '\t' << '\t' << "Version: 4";
+            if (inner.ipv4.available_header_bytes >= 4U) {
+                builder << '\n' << '\t' << '\t' << "Total Length: " << inner.ipv4.total_length << " bytes";
+            }
+            if (inner.ipv4.available_header_bytes >= 10U) {
+                builder << '\n' << '\t' << '\t' << "Protocol: "
+                        << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+            }
+            if (inner.ipv4.available_header_bytes >= 16U) {
+                builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr);
+            }
+            if (inner.ipv4.available_header_bytes >= 20U) {
+                builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr);
+            }
+            if (inner.ipv4_truncated || encapsulation.inner_header_truncated) {
+                builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                        << encapsulation.available_inner_bytes << " / " << encapsulation.required_inner_header_bytes
+                        << '\n' << '\t' << '\t' << "Warning: Inner IPv4 header is truncated.";
+            }
+        } else if (inner.has_ipv6) {
+            builder << '\n' << '\t' << "Inner IPv6:"
+                    << '\n' << '\t' << '\t' << "Version: 6";
+            if (inner.ipv6_available_bytes >= 8U) {
+                builder << '\n' << '\t' << '\t' << "Next Header: "
+                        << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr);
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr);
+            }
+            if (inner.ipv6_truncated || encapsulation.inner_header_truncated) {
+                builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                        << encapsulation.available_inner_bytes << " / " << encapsulation.required_inner_header_bytes
+                        << '\n' << '\t' << '\t' << "Warning: Inner IPv6 header is truncated.";
+            }
+        }
+    }
+
+    if (encapsulation.has_tcp) {
+        builder << '\n' << '\t' << "Inner TCP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << encapsulation.tcp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << encapsulation.tcp.dst_port
+                << '\n' << '\t' << '\t' << "Flags: " << format_tcp_flags_text(encapsulation.tcp.flags);
+    } else if (encapsulation.has_udp) {
+        builder << '\n' << '\t' << "Inner UDP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << encapsulation.udp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << encapsulation.udp.dst_port
+                << '\n' << '\t' << '\t' << "Length: " << encapsulation.udp.length << " bytes";
+    } else if (encapsulation.has_icmp) {
+        builder << '\n' << '\t' << "Inner ICMP:"
+                << '\n' << '\t' << '\t' << "Type: " << static_cast<unsigned>(encapsulation.icmp.type)
+                << '\n' << '\t' << '\t' << "Code: " << static_cast<unsigned>(encapsulation.icmp.code);
+    } else if (encapsulation.has_icmpv6) {
+        builder << '\n' << '\t' << "Inner ICMPv6:"
+                << '\n' << '\t' << '\t' << "Type: " << static_cast<unsigned>(encapsulation.icmpv6.type)
+                << '\n' << '\t' << '\t' << "Code: " << static_cast<unsigned>(encapsulation.icmpv6.code);
+    }
+}
+
+void append_ah_inner_protocol_details(
+    std::ostringstream& builder,
+    const AhInnerPacketDetails& inner
+) {
+    if (inner.has_ipv4) {
+        builder << '\n' << '\t' << "Inner IPv4:"
+                << '\n' << '\t' << '\t' << "Version: 4";
+        if (inner.ipv4.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << '\t' << "Total Length: " << inner.ipv4.total_length << " bytes";
+        }
+        if (inner.ipv4.available_header_bytes >= 10U) {
+            builder << '\n' << '\t' << '\t' << "Protocol: "
+                    << format_protocol_summary_value_with_number(inner.ipv4.protocol);
+        }
+        if (inner.ipv4.available_header_bytes >= 16U) {
+            builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv4_address(inner.ipv4.src_addr);
+        }
+        if (inner.ipv4.available_header_bytes >= 20U) {
+            builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv4_address(inner.ipv4.dst_addr);
+        }
+        if (inner.ipv4_truncated) {
+            builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                    << inner.ipv4.available_packet_bytes << " / 20"
+                    << '\n' << '\t' << '\t' << "Warning: Inner IPv4 header is truncated.";
+        }
+    } else if (inner.has_ipv6) {
+        builder << '\n' << '\t' << "Inner IPv6:"
+                << '\n' << '\t' << '\t' << "Version: 6";
+        if (inner.ipv6_available_bytes >= 8U) {
+            builder << '\n' << '\t' << '\t' << "Next Header: "
+                    << format_protocol_summary_value_with_number(inner.ipv6.next_header);
+        }
+        if (inner.ipv6_available_bytes >= 24U) {
+            builder << '\n' << '\t' << '\t' << "Source Address: " << format_ipv6_address(inner.ipv6.src_addr);
+        }
+        if (inner.ipv6_available_bytes >= 40U) {
+            builder << '\n' << '\t' << '\t' << "Destination Address: " << format_ipv6_address(inner.ipv6.dst_addr);
+        }
+        if (inner.ipv6_truncated) {
+            builder << '\n' << '\t' << '\t' << "Available Header Bytes: "
+                    << inner.ipv6_available_bytes << " / 40"
+                    << '\n' << '\t' << '\t' << "Warning: Inner IPv6 header is truncated.";
+        }
+    }
+
+    if (inner.has_tcp) {
+        builder << '\n' << '\t' << "Inner TCP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << inner.tcp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << inner.tcp.dst_port
+                << '\n' << '\t' << '\t' << "Flags: " << format_tcp_flags_text(inner.tcp.flags);
+        append_transport_payload_protocol_details(
+            builder,
+            inner.transport_payload_length,
+            inner.original_transport_payload_length
+        );
+    } else if (inner.has_udp) {
+        builder << '\n' << '\t' << "Inner UDP:"
+                << '\n' << '\t' << '\t' << "Source Port: " << inner.udp.src_port
+                << '\n' << '\t' << '\t' << "Destination Port: " << inner.udp.dst_port
+                << '\n' << '\t' << '\t' << "Length: " << inner.udp.length << " bytes";
+        append_transport_payload_protocol_details(
+            builder,
+            inner.transport_payload_length,
+            inner.original_transport_payload_length
+        );
     }
 }
 
@@ -825,6 +1023,30 @@ PacketSummaryLayer build_inner_vlan_summary_layer(const VlanTagDetails& tag) {
     return layer;
 }
 
+PacketSummaryLayer build_partial_inner_vlan_summary_layer(
+    const std::uint16_t tpid,
+    const std::uint16_t tci,
+    const std::uint8_t available_header_bytes
+) {
+    PacketSummaryLayer layer {};
+    layer.id = "vlan-inner";
+    layer.title = "Inner VLAN, ID: " + std::to_string(vlan_identifier(tci)) + ", truncated";
+    layer.fields.push_back(make_summary_field("TPID", format_ether_type_value(tpid)));
+    if (available_header_bytes >= 2U) {
+        layer.fields.push_back(make_summary_field("Priority", std::to_string(static_cast<unsigned>((tci >> 13U) & 0x7U))));
+        layer.fields.push_back(make_summary_field("Drop Eligible", std::to_string(static_cast<unsigned>((tci >> 12U) & 0x1U))));
+        layer.fields.push_back(make_summary_field("VLAN ID", std::to_string(vlan_identifier(tci))));
+    }
+    layer.fields.push_back(make_summary_field(
+        "Available Header Bytes",
+        std::to_string(static_cast<unsigned>(available_header_bytes)) + " / 4"
+    ));
+    layer.fields.push_back(make_summary_field("Warning", "Inner VLAN header is truncated"));
+    layer.warning = true;
+    layer.marker_text = "Warning";
+    return layer;
+}
+
 PacketSummaryLayer build_inner_ipv4_summary_layer(const IPv4Details& details) {
     auto layer = build_ipv4_summary_layer(details);
     layer.id = "ipv4-inner";
@@ -861,22 +1083,122 @@ PacketSummaryLayer build_inner_ipv6_summary_layer(const IPv6Details& details) {
     return layer;
 }
 
-PacketSummaryLayer build_inner_tcp_summary_layer(const TcpDetails& details) {
+PacketSummaryLayer build_inner_tcp_summary_layer(
+    const TcpDetails& details,
+    const std::optional<std::uint32_t>& captured_payload_length = std::nullopt,
+    const std::optional<std::uint32_t>& original_payload_length = std::nullopt
+) {
     auto layer = build_tcp_summary_layer(details);
     layer.id = "tcp-inner";
     layer.title = "Inner TCP, Src Port: " +
         std::to_string(details.src_port) +
         ", Dst Port: " + std::to_string(details.dst_port);
+    append_transport_payload_summary_fields(layer.fields, captured_payload_length, original_payload_length);
     return layer;
 }
 
-PacketSummaryLayer build_inner_udp_summary_layer(const UdpDetails& details) {
+PacketSummaryLayer build_inner_udp_summary_layer(
+    const UdpDetails& details,
+    const std::optional<std::uint32_t>& captured_payload_length = std::nullopt,
+    const std::optional<std::uint32_t>& original_payload_length = std::nullopt
+) {
     auto layer = build_udp_summary_layer(details);
     layer.id = "udp-inner";
     layer.title = "Inner UDP, Src Port: " +
         std::to_string(details.src_port) +
         ", Dst Port: " + std::to_string(details.dst_port);
+    append_transport_payload_summary_fields(layer.fields, captured_payload_length, original_payload_length);
     return layer;
+}
+
+PacketSummaryLayer build_inner_icmp_summary_layer(const IcmpDetails& details) {
+    return PacketSummaryLayer {
+        .id = "icmp-inner",
+        .title = "Inner ICMP",
+        .fields = {
+            make_summary_field("Type", std::to_string(details.type)),
+            make_summary_field("Code", std::to_string(details.code)),
+        },
+    };
+}
+
+PacketSummaryLayer build_inner_icmpv6_summary_layer(const IcmpV6Details& details) {
+    return PacketSummaryLayer {
+        .id = "icmpv6-inner",
+        .title = "Inner ICMPv6",
+        .fields = {
+            make_summary_field("Type", std::to_string(details.type)),
+            make_summary_field("Code", std::to_string(details.code)),
+        },
+    };
+}
+
+PacketSummaryLayer build_truncated_plain_ip_inner_summary_layer(const IpEncapsulationDetails& encapsulation) {
+    const auto& inner = encapsulation.inner_ip_layers.back();
+    const bool is_ipv4 = encapsulation.expected_inner_family == NetworkAddressFamily::ipv4;
+    std::vector<PacketSummaryField> fields {
+        make_summary_field("Version", is_ipv4 ? "4" : "6"),
+    };
+
+    std::string title = is_ipv4 ? "Inner IPv4, truncated" : "Inner IPv6, truncated";
+    if (is_ipv4 && inner.has_ipv4) {
+        if (encapsulation.available_inner_bytes >= 4U) {
+            fields.push_back(make_summary_field("Total Length", std::to_string(inner.ipv4.total_length) + " bytes"));
+        }
+        if (encapsulation.available_inner_bytes >= 10U) {
+            fields.push_back(make_summary_field(
+                "Protocol",
+                format_protocol_summary_value_with_number(inner.ipv4.protocol)
+            ));
+        }
+        if (encapsulation.available_inner_bytes >= 16U) {
+            const auto source = format_ipv4_address(inner.ipv4.src_addr);
+            title = "Inner IPv4, Src: " + source;
+            fields.push_back(make_summary_field("Source Address", source));
+        }
+        if (encapsulation.available_inner_bytes >= 20U) {
+            const auto destination = format_ipv4_address(inner.ipv4.dst_addr);
+            title += ", Dst: " + destination;
+            fields.push_back(make_summary_field("Destination Address", destination));
+        }
+        title += ", truncated";
+    } else if (!is_ipv4 && inner.has_ipv6) {
+        if (encapsulation.available_inner_bytes >= 8U) {
+            fields.push_back(make_summary_field(
+                "Next Header",
+                format_protocol_summary_value_with_number(inner.ipv6.next_header)
+            ));
+        }
+        if (encapsulation.available_inner_bytes >= 24U) {
+            const auto source = format_ipv6_address(inner.ipv6.src_addr);
+            title = "Inner IPv6, Src: " + source;
+            fields.push_back(make_summary_field("Source Address", source));
+        }
+        if (encapsulation.available_inner_bytes >= 40U) {
+            const auto destination = format_ipv6_address(inner.ipv6.dst_addr);
+            title += ", Dst: " + destination;
+            fields.push_back(make_summary_field("Destination Address", destination));
+        }
+        title += ", truncated";
+    }
+
+    fields.push_back(make_summary_field(
+        "Available Header Bytes",
+        std::to_string(encapsulation.available_inner_bytes) + " / " +
+            std::to_string(encapsulation.required_inner_header_bytes)
+    ));
+    fields.push_back(make_summary_field(
+        "Warning",
+        is_ipv4 ? "Inner IPv4 header is truncated" : "Inner IPv6 header is truncated"
+    ));
+
+    return PacketSummaryLayer {
+        .id = is_ipv4 ? "ipv4-inner" : "ipv6-inner",
+        .title = std::move(title),
+        .fields = std::move(fields),
+        .warning = true,
+        .marker_text = "Warning",
+    };
 }
 
 PacketSummaryLayer build_inner_sctp_summary_layer(const SctpDetails& details) {
@@ -1084,6 +1406,286 @@ void append_gtpu_inner_summary_layers(
     }
 }
 
+void append_ah_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const AhInnerPacketDetails& inner
+) {
+    if (inner.has_ipv4) {
+        auto layer = build_inner_ipv4_summary_layer(inner.ipv4);
+        if (inner.ipv4_truncated &&
+            std::none_of(layer.fields.begin(), layer.fields.end(), [](const auto& field) {
+                return field.label == "Warning" &&
+                    field.value.find("Inner IPv4 packet is truncated") != std::string::npos;
+            })) {
+            layer.title += ", truncated";
+            layer.fields.push_back(make_summary_field(
+                "Available Bytes",
+                std::to_string(inner.ipv4.available_packet_bytes) + " bytes"
+            ));
+            layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+            layer.warning = true;
+            layer.marker_text = "Warning";
+        }
+        layers.push_back(std::move(layer));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        if (inner.ipv6_truncated) {
+            std::vector<PacketSummaryField> fields {
+                make_summary_field("Version", "6"),
+            };
+            if (inner.ipv6_available_bytes >= 8U) {
+                fields.push_back(make_summary_field("Traffic Class", format_hex_value(inner.ipv6.traffic_class, 2)));
+                fields.push_back(make_summary_field("Flow Label", format_hex_value(inner.ipv6.flow_label)));
+                fields.push_back(make_summary_field("Payload Length", std::to_string(inner.ipv6.payload_length) + " bytes"));
+                fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                fields.push_back(make_summary_field("Hop Limit", std::to_string(inner.ipv6.hop_limit)));
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                fields.push_back(make_summary_field("Source Address", format_ipv6_address(inner.ipv6.src_addr)));
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                fields.push_back(make_summary_field("Destination Address", format_ipv6_address(inner.ipv6.dst_addr)));
+            }
+            fields.push_back(make_summary_field("Warning", "Inner IPv6 packet is truncated"));
+
+            std::string title = "Inner IPv6, truncated";
+            if (inner.ipv6_available_bytes >= 24U) {
+                title = "Inner IPv6, Src: " + format_ipv6_address(inner.ipv6.src_addr);
+                if (inner.ipv6_available_bytes >= 40U) {
+                    title += ", Dst: " + format_ipv6_address(inner.ipv6.dst_addr);
+                }
+                title += ", truncated";
+            }
+
+            layers.push_back(PacketSummaryLayer {
+                .id = "ipv6-inner",
+                .title = std::move(title),
+                .fields = std::move(fields),
+                .warning = true,
+                .marker_text = "Warning",
+            });
+        } else {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
+
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        }
+    }
+}
+
+void append_ip_encapsulation_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const IpEncapsulationDetails& encapsulation
+) {
+    if (encapsulation.inner_header_truncated && !encapsulation.inner_ip_layers.empty()) {
+        layers.push_back(build_truncated_plain_ip_inner_summary_layer(encapsulation));
+        return;
+    }
+
+    for (const auto& inner : encapsulation.inner_ip_layers) {
+        if (inner.has_ipv4) {
+            layers.push_back(build_inner_ipv4_summary_layer(inner.ipv4));
+        } else if (inner.has_ipv6) {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
+    }
+
+    if (encapsulation.has_tcp) {
+        layers.push_back(build_inner_tcp_summary_layer(encapsulation.tcp));
+    } else if (encapsulation.has_udp) {
+        layers.push_back(build_inner_udp_summary_layer(encapsulation.udp));
+    } else if (encapsulation.has_icmp) {
+        layers.push_back(build_inner_icmp_summary_layer(encapsulation.icmp));
+    } else if (encapsulation.has_icmpv6) {
+        layers.push_back(build_inner_icmpv6_summary_layer(encapsulation.icmpv6));
+    }
+}
+
+void append_gre_inner_summary_layers(
+    std::vector<PacketSummaryLayer>& layers,
+    const GreInnerPacketDetails& inner
+) {
+    if (inner.has_inner_ethernet) {
+        layers.push_back(build_inner_ethernet_summary_layer(inner.inner_ethernet));
+    }
+
+    for (const auto& tag : inner.vlan_tags) {
+        layers.push_back(build_inner_vlan_summary_layer(tag));
+    }
+
+    if (inner.has_mpls) {
+        for (const auto& label : inner.mpls_labels) {
+            std::vector<PacketSummaryField> mpls_fields {
+                make_summary_field("Label", std::to_string(label.label)),
+                make_summary_field("Traffic Class", std::to_string(label.traffic_class)),
+                make_summary_field("Bottom of Stack", label.bottom_of_stack ? "1" : "0"),
+                make_summary_field("TTL", std::to_string(label.ttl)),
+            };
+            if (const auto label_name = format_mpls_label_name(label.label); label_name.has_value()) {
+                mpls_fields.push_back(make_summary_field("Label Name", *label_name));
+            }
+
+            layers.push_back(PacketSummaryLayer {
+                .id = "mpls",
+                .title = "MPLS Label, Label: " + std::to_string(label.label) +
+                    ", TC: " + std::to_string(label.traffic_class) +
+                    ", BoS: " + std::string(label.bottom_of_stack ? "1" : "0") +
+                    ", TTL: " + std::to_string(label.ttl),
+                .fields = std::move(mpls_fields),
+            });
+        }
+    }
+
+    if (inner.has_mpls_pseudowire_control_word) {
+        auto control_word_fields = std::vector<PacketSummaryField> {};
+        if (inner.mpls_pseudowire_control_word.available_bytes >= 2U) {
+            control_word_fields.push_back(make_summary_field("Flags", format_hex16_value(inner.mpls_pseudowire_control_word.flags)));
+        }
+        if (inner.mpls_pseudowire_control_word.available_bytes >= 4U) {
+            control_word_fields.push_back(make_summary_field("Sequence", std::to_string(inner.mpls_pseudowire_control_word.sequence)));
+        }
+        if (inner.mpls_pseudowire_control_word.truncated) {
+            control_word_fields.push_back(make_summary_field("Warning", "MPLS pseudowire control word is truncated"));
+        }
+        layers.push_back(PacketSummaryLayer {
+            .id = "mpls-pw-control-word",
+            .title = "MPLS Pseudowire Control Word",
+            .fields = std::move(control_word_fields),
+            .warning = inner.mpls_pseudowire_control_word.truncated,
+            .marker_text = inner.mpls_pseudowire_control_word.truncated ? "Warning" : std::string {},
+        });
+    }
+
+    if (inner.has_ipv4) {
+        auto layer = build_inner_ipv4_summary_layer(inner.ipv4);
+        if (inner.ipv4_truncated &&
+            std::none_of(layer.fields.begin(), layer.fields.end(), [](const auto& field) {
+                return field.label == "Warning" &&
+                    field.value.find("Inner IPv4 packet is truncated") != std::string::npos;
+            })) {
+            layer.title += ", truncated";
+            layer.fields.push_back(make_summary_field(
+                "Available Bytes",
+                std::to_string(inner.ipv4.available_packet_bytes) + " bytes"
+            ));
+            layer.fields.push_back(make_summary_field("Warning", "Inner IPv4 packet is truncated"));
+            layer.warning = true;
+            layer.marker_text = "Warning";
+        }
+        layers.push_back(std::move(layer));
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
+        }
+        return;
+    }
+
+    if (inner.has_ipv6) {
+        if (inner.ipv6_truncated) {
+            std::vector<PacketSummaryField> fields {
+                make_summary_field("Version", "6"),
+            };
+            if (inner.ipv6_available_bytes >= 8U) {
+                fields.push_back(make_summary_field("Traffic Class", format_hex_value(inner.ipv6.traffic_class, 2)));
+                fields.push_back(make_summary_field("Flow Label", format_hex_value(inner.ipv6.flow_label)));
+                fields.push_back(make_summary_field("Payload Length", std::to_string(inner.ipv6.payload_length) + " bytes"));
+                fields.push_back(make_summary_field("Next Header", format_protocol_summary_value_with_number(inner.ipv6.next_header)));
+                fields.push_back(make_summary_field("Hop Limit", std::to_string(inner.ipv6.hop_limit)));
+            }
+            if (inner.ipv6_available_bytes >= 24U) {
+                fields.push_back(make_summary_field("Source Address", format_ipv6_address(inner.ipv6.src_addr)));
+            }
+            if (inner.ipv6_available_bytes >= 40U) {
+                fields.push_back(make_summary_field("Destination Address", format_ipv6_address(inner.ipv6.dst_addr)));
+            }
+            fields.push_back(make_summary_field("Warning", "Inner IPv6 packet is truncated"));
+
+            std::string title = "Inner IPv6, truncated";
+            if (inner.ipv6_available_bytes >= 24U) {
+                title = "Inner IPv6, Src: " + format_ipv6_address(inner.ipv6.src_addr);
+                if (inner.ipv6_available_bytes >= 40U) {
+                    title += ", Dst: " + format_ipv6_address(inner.ipv6.dst_addr);
+                }
+                title += ", truncated";
+            }
+
+            layers.push_back(PacketSummaryLayer {
+                .id = "ipv6-inner",
+                .title = std::move(title),
+                .fields = std::move(fields),
+                .warning = true,
+                .marker_text = "Warning",
+            });
+        } else {
+            layers.push_back(build_inner_ipv6_summary_layer(inner.ipv6));
+        }
+        if (inner.has_tcp) {
+            layers.push_back(build_inner_tcp_summary_layer(
+                inner.tcp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_udp) {
+            layers.push_back(build_inner_udp_summary_layer(
+                inner.udp,
+                inner.transport_payload_length,
+                inner.original_transport_payload_length
+            ));
+        } else if (inner.has_sctp) {
+            layers.push_back(build_inner_sctp_summary_layer(inner.sctp));
+            if (const auto chunk_layer = build_sctp_chunk_summary_layer(inner.sctp); chunk_layer.has_value()) {
+                layers.push_back(*chunk_layer);
+            }
+            if (const auto ppid_layer = build_sctp_ppid_summary_layer(inner.sctp); ppid_layer.has_value()) {
+                layers.push_back(*ppid_layer);
+            }
+        }
+    }
+}
+
 std::string format_geneve_protocol_type(const std::uint16_t protocol_type) {
     switch (protocol_type) {
     case 0x0800U:
@@ -1157,6 +1759,61 @@ std::string format_gtpu_summary_title(const GtpuDetails& gtpu) {
         return "GTP-U, unknown inner payload";
     }
     return std::string {"GTP-U, TEID: "} + format_hex_value(gtpu.teid, 8);
+}
+
+std::string format_gre_protocol_type(const std::uint16_t protocol_type) {
+    switch (protocol_type) {
+    case kEtherTypeIpv4:
+        return "IPv4 (0x0800)";
+    case kEtherTypeIpv6:
+        return "IPv6 (0x86dd)";
+    case kGreProtocolTypeEoip:
+        return "EoIP (0x6400)";
+    case 0x6558U:
+        return "Transparent Ethernet Bridging (0x6558)";
+    case kEtherTypeMplsUnicast:
+        return "MPLS Unicast (0x8847)";
+    default:
+        return format_hex16_value(protocol_type);
+    }
+}
+
+std::string format_gre_summary_title(const GreDetails& gre) {
+    if (gre.header_truncated || gre.optional_fields_truncated || gre.eoip_header_truncated) {
+        return "GRE, malformed";
+    }
+    if (gre.is_eoip && gre.eoip_declared_frame_exceeds_available) {
+        return "GRE / EoIP, malformed";
+    }
+    if (gre.is_eoip) {
+        return std::string {"GRE / EoIP, Tunnel ID: "} + std::to_string(gre.eoip_tunnel_id);
+    }
+    if (gre.version != 0U) {
+        return "GRE, unsupported version";
+    }
+    if (!gre.protocol_type_supported && gre.available_base_header_bytes >= 4U) {
+        return "GRE, unsupported protocol type";
+    }
+    return "GRE";
+}
+
+std::string format_esp_summary_title(const EspDetails& esp) {
+    if (esp.header_truncated) {
+        return "ESP, malformed";
+    }
+
+    return std::string {"ESP, SPI: "} + format_hex_value(esp.spi, 8);
+}
+
+std::string format_ah_summary_title(const AhDetails& ah) {
+    if (ah.truncated || ah.malformed) {
+        return "AH, malformed";
+    }
+    if (!ah.next_header_supported && ah.available_header_bytes >= 1U) {
+        return "AH, unsupported next header";
+    }
+
+    return std::string {"AH, SPI: "} + format_hex_value(ah.spi, 8);
 }
 
 std::string format_ppp_protocol(const std::uint16_t protocol) {
@@ -3228,7 +3885,7 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         });
     }
 
-    if (details.has_inner_ethernet && !details.has_vxlan && !details.has_geneve) {
+    if (details.has_inner_ethernet && !details.has_vxlan && !details.has_geneve && !details.has_gre) {
         append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
     }
 
@@ -3630,6 +4287,78 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *igmp_layer);
     }
 
+    if (details.has_ah) {
+        const bool ah_next_header_unsupported =
+            !details.ah.truncated &&
+            !details.ah.malformed &&
+            details.ah.available_header_bytes >= 1U &&
+            !details.ah.next_header_supported;
+        std::vector<PacketSummaryField> ah_fields {};
+        if (details.ah.available_header_bytes >= 1U) {
+            ah_fields.push_back(make_summary_field("Next Header", format_ah_next_header_value(details.ah.next_header)));
+        }
+        if (details.ah.available_header_bytes >= 2U) {
+            ah_fields.push_back(make_summary_field("Payload Length", std::to_string(static_cast<unsigned>(details.ah.payload_length))));
+        }
+        if (details.ah.available_header_bytes >= 4U) {
+            ah_fields.push_back(make_summary_field("Reserved", format_hex16_value(details.ah.reserved)));
+        }
+        if (details.ah.available_header_bytes >= 8U) {
+            ah_fields.push_back(make_summary_field("SPI", format_hex_value(details.ah.spi, 8)));
+        }
+        if (details.ah.available_header_bytes >= 12U) {
+            ah_fields.push_back(make_summary_field(
+                "Sequence Number",
+                format_hex_value(details.ah.sequence_number, 8) + " (" + std::to_string(details.ah.sequence_number) + ")"
+            ));
+            ah_fields.push_back(make_summary_field("Header Length", std::to_string(details.ah.header_length) + " bytes"));
+            ah_fields.push_back(make_summary_field("Required Fixed Header Bytes", "12"));
+            ah_fields.push_back(make_summary_field("ICV Length", std::to_string(details.ah.icv_length) + " bytes"));
+        }
+        if (details.ah.truncated) {
+            const auto required_header_bytes = details.ah.header_length > 0U ? details.ah.header_length : 12U;
+            ah_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.ah.available_header_bytes)) + " / " + std::to_string(required_header_bytes)
+            ));
+            if (details.ah.available_header_bytes >= 12U && details.ah.icv_length > 0U) {
+                ah_fields.push_back(make_summary_field(
+                    "Available ICV Bytes",
+                    std::to_string(details.ah.available_icv_bytes) + " / " + std::to_string(details.ah.icv_length)
+                ));
+            }
+            ah_fields.push_back(make_summary_field("Warning", "AH header is truncated"));
+        }
+        if (details.ah.malformed) {
+            ah_fields.push_back(make_summary_field("Warning", "AH computed header length is invalid"));
+        }
+        if (ah_next_header_unsupported) {
+            ah_fields.push_back(make_summary_field("Warning", "AH next header is not supported"));
+        }
+        if (details.ah.has_inner_packet && details.ah.inner_packet) {
+            ah_fields.push_back(make_summary_field(
+                "Inner Payload",
+                details.ah.inner_packet->has_ipv4 ? "IPv4" :
+                    details.ah.inner_packet->has_ipv6 ? "IPv6" :
+                    "Unknown"
+            ));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "ah",
+            .title = format_ah_summary_title(details.ah),
+            .fields = std::move(ah_fields),
+            .warning = details.ah.truncated || details.ah.malformed || ah_next_header_unsupported,
+            .marker_text = (details.ah.truncated || details.ah.malformed || ah_next_header_unsupported)
+                ? std::string {"Warning"}
+                : std::string {},
+        });
+
+        if (details.ah.has_inner_packet && details.ah.inner_packet) {
+            append_ah_inner_summary_layers(layers, *details.ah.inner_packet);
+        }
+    }
+
     if (details.has_tcp) {
         std::vector<PacketSummaryField> tcp_fields {
             make_summary_field("Source Port", std::to_string(details.tcp.src_port)),
@@ -3710,6 +4439,199 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
         if (const auto ppid_layer = build_sctp_ppid_summary_layer(details.sctp); ppid_layer.has_value()) {
             append_layer_if_not_empty(layers, *ppid_layer);
+        }
+    }
+
+    if (details.has_esp) {
+        std::vector<PacketSummaryField> esp_fields {};
+        if (details.esp.available_header_bytes >= 4U) {
+            esp_fields.push_back(make_summary_field("SPI", format_hex_value(details.esp.spi, 8)));
+        }
+        if (details.esp.available_header_bytes >= 8U) {
+            esp_fields.push_back(make_summary_field(
+                "Sequence Number",
+                format_hex_value(details.esp.sequence_number, 8) + " (" + std::to_string(details.esp.sequence_number) + ")"
+            ));
+            esp_fields.push_back(make_summary_field(
+                "Opaque Payload Length",
+                std::to_string(details.esp.opaque_payload_length) + " bytes"
+            ));
+        }
+        if (details.esp.header_truncated) {
+            esp_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.esp.available_header_bytes)) + " / 8"
+            ));
+            esp_fields.push_back(make_summary_field("Warning", "ESP base header is truncated"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "esp",
+            .title = format_esp_summary_title(details.esp),
+            .fields = std::move(esp_fields),
+            .warning = details.esp.header_truncated,
+            .marker_text = details.esp.header_truncated ? std::string {"Warning"} : std::string {},
+        });
+    }
+
+    if (details.has_gre) {
+        const bool show_gre_key_presence =
+            details.gre.version == 0U ||
+            details.gre.is_eoip ||
+            (details.gre.has_key && !details.gre.version1_pptp_like);
+        const bool show_gre_version_warning =
+            !details.gre.is_eoip &&
+            !details.gre.eoip_missing_key_bit &&
+            details.gre.version != 0U &&
+            (details.gre.version != 1U || details.gre.version1_pptp_like || details.gre.protocol_type_supported);
+        const bool gre_is_warning =
+            details.gre.header_truncated ||
+            details.gre.optional_fields_truncated ||
+            details.gre.eoip_header_truncated ||
+            details.gre.eoip_declared_frame_exceeds_available ||
+            show_gre_version_warning ||
+            (!details.gre.is_eoip && !details.gre.protocol_type_supported && !details.gre.eoip_missing_key_bit) ||
+            details.gre.eoip_missing_key_bit ||
+            details.gre.inner_ethernet_truncated ||
+            details.gre.inner_vlan_truncated ||
+            details.gre.unknown_inner_payload;
+        std::vector<PacketSummaryField> gre_fields {};
+        if (details.gre.available_base_header_bytes >= 2U) {
+            gre_fields.push_back(make_summary_field("Flags / Version", format_hex16_value(details.gre.flags_version)));
+            gre_fields.push_back(make_summary_field("Version", std::to_string(static_cast<unsigned>(details.gre.version))));
+            gre_fields.push_back(make_summary_field("Checksum Present", details.gre.has_checksum ? "Yes" : "No"));
+            if (show_gre_key_presence) {
+                gre_fields.push_back(make_summary_field("Key Present", details.gre.has_key ? "Yes" : "No"));
+            }
+            gre_fields.push_back(make_summary_field("Sequence Present", details.gre.has_sequence ? "Yes" : "No"));
+        }
+        if (details.gre.available_base_header_bytes >= 4U) {
+            gre_fields.push_back(make_summary_field("Protocol Type", format_gre_protocol_type(details.gre.protocol_type)));
+        }
+        if (details.gre.has_checksum && !details.gre.optional_fields_truncated) {
+            gre_fields.push_back(make_summary_field("Checksum", format_hex16_value(details.gre.checksum)));
+        }
+        if (details.gre.version == 0U && details.gre.has_key && !details.gre.optional_fields_truncated && !details.gre.is_eoip) {
+            gre_fields.push_back(make_summary_field("Key", format_hex_value(details.gre.key, 8)));
+        }
+        if (details.gre.is_eoip && !details.gre.eoip_header_truncated) {
+            if (details.gre.has_key) {
+                gre_fields.push_back(make_summary_field("Raw GRE Key", format_hex_value(details.gre.key, 8)));
+            }
+            gre_fields.push_back(make_summary_field(
+                "EoIP Frame Length",
+                std::to_string(details.gre.eoip_frame_length) + " bytes"
+            ));
+            gre_fields.push_back(make_summary_field(
+                "Tunnel ID",
+                std::to_string(details.gre.eoip_tunnel_id) + " (" + format_hex16_value(details.gre.eoip_tunnel_id) + ')'
+            ));
+            gre_fields.push_back(make_summary_field(
+                "Identity Key",
+                format_hex_value(static_cast<std::uint32_t>(details.gre.eoip_tunnel_id), 8)
+            ));
+        } else if (details.gre.version == 1U && details.gre.version1_pptp_like && !details.gre.optional_fields_truncated) {
+            if (details.gre.payload_length_present) {
+                gre_fields.push_back(make_summary_field("Payload Length", std::to_string(details.gre.payload_length)));
+            }
+            if (details.gre.call_id_present) {
+                gre_fields.push_back(make_summary_field("Call ID", std::to_string(details.gre.call_id)));
+            }
+        } else if (details.gre.version != 0U && details.gre.has_key && !details.gre.optional_fields_truncated) {
+            gre_fields.push_back(make_summary_field("Raw GRE Key", format_hex_value(details.gre.key, 8)));
+        }
+        if (details.gre.has_sequence && !details.gre.optional_fields_truncated) {
+            gre_fields.push_back(make_summary_field("Sequence Number", format_hex_value(details.gre.sequence_number, 8)));
+        }
+        if (details.gre.has_inner_ethernet) {
+            gre_fields.push_back(make_summary_field("Inner Payload", "Ethernet"));
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    gre_fields.push_back(make_summary_field(
+                        "Inner Length",
+                        std::to_string(details.inner_ethernet.ether_type) + " bytes"
+                    ));
+                } else {
+                    gre_fields.push_back(make_summary_field(
+                        "Inner EtherType",
+                        format_ether_type_value(details.inner_ethernet.ether_type)
+                    ));
+                }
+            }
+        } else if (details.gre.has_inner_packet && details.gre.inner_packet) {
+            if (details.gre.inner_packet->has_mpls) {
+                gre_fields.push_back(make_summary_field("Inner Payload", "MPLS"));
+            } else if (details.gre.inner_packet->has_ipv4) {
+                gre_fields.push_back(make_summary_field("Inner Payload", "IPv4"));
+            } else if (details.gre.inner_packet->has_ipv6) {
+                gre_fields.push_back(make_summary_field("Inner Payload", "IPv6"));
+            }
+        }
+        if (details.gre.header_truncated) {
+            gre_fields.push_back(make_summary_field(
+                "Available Header Bytes",
+                std::to_string(static_cast<unsigned>(details.gre.available_base_header_bytes)) + " / 4"
+            ));
+            gre_fields.push_back(make_summary_field("Warning", "GRE base header is truncated"));
+        }
+        if (details.gre.optional_fields_truncated) {
+            gre_fields.push_back(make_summary_field("Warning", "GRE optional fields are truncated"));
+        }
+        if (details.gre.eoip_header_truncated) {
+            gre_fields.push_back(make_summary_field(
+                "Available EoIP Header Bytes",
+                std::to_string(static_cast<unsigned>(details.gre.eoip_available_header_bytes)) + " / 4"
+            ));
+            gre_fields.push_back(make_summary_field("Warning", "EoIP header is truncated"));
+        }
+        if (details.gre.eoip_declared_frame_exceeds_available) {
+            gre_fields.push_back(make_summary_field(
+                "Available Inner Frame Bytes",
+                std::to_string(details.gre.eoip_available_inner_frame_bytes) + " / " +
+                    std::to_string(details.gre.eoip_frame_length)
+            ));
+            gre_fields.push_back(make_summary_field("Warning", "EoIP payload length exceeds available inner frame bytes"));
+        }
+        if (!details.gre.is_eoip && details.gre.version != 0U) {
+            gre_fields.push_back(make_summary_field("Warning", "GRE version is not supported"));
+        }
+        if (!details.gre.is_eoip && !details.gre.protocol_type_supported && details.gre.available_base_header_bytes >= 4U) {
+            gre_fields.push_back(make_summary_field("Warning", "GRE protocol type is not supported"));
+        }
+        if (details.gre.inner_ethernet_truncated) {
+            gre_fields.push_back(make_summary_field("Warning", "Inner Ethernet header is truncated"));
+        }
+        if (details.gre.inner_vlan_truncated) {
+            gre_fields.push_back(make_summary_field("Warning", "Inner VLAN header is truncated"));
+        }
+        if (details.gre.eoip_missing_key_bit) {
+            gre_fields.push_back(make_summary_field("Warning", "EoIP requires the GRE key bit"));
+        }
+        if (details.gre.unknown_inner_payload && details.gre.protocol_type_supported) {
+            gre_fields.push_back(make_summary_field("Warning", "GRE inner payload type is not supported"));
+        }
+
+        append_layer_if_not_empty(layers, PacketSummaryLayer {
+            .id = "gre",
+            .title = format_gre_summary_title(details.gre),
+            .fields = std::move(gre_fields),
+            .warning = gre_is_warning,
+            .marker_text = gre_is_warning
+                ? "Warning"
+                : std::string {},
+        });
+
+        if (details.gre.has_inner_packet && details.gre.inner_packet) {
+            append_gre_inner_summary_layers(layers, *details.gre.inner_packet);
+        } else if (details.gre.has_inner_ethernet) {
+            append_layer_if_not_empty(layers, build_inner_ethernet_summary_layer(details.inner_ethernet));
+        }
+        if (details.gre.partial_inner_vlan_present) {
+            append_layer_if_not_empty(layers, build_partial_inner_vlan_summary_layer(
+                details.gre.partial_inner_vlan_tpid,
+                details.gre.partial_inner_vlan_tci,
+                details.gre.partial_inner_vlan_available_header_bytes
+            ));
         }
     }
 
@@ -3993,6 +4915,10 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         }
     }
 
+    if (details.has_ip_encapsulation) {
+        append_ip_encapsulation_summary_layers(layers, details.ip_encapsulation);
+    }
+
     if (const auto trailer_layer = build_ieee_802_3_trailer_layer(details); trailer_layer.has_value()) {
         append_layer_if_not_empty(layers, *trailer_layer);
     }
@@ -4225,6 +5151,262 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         }
         if (details.sctp.data_metadata_truncated) {
             builder << '\n' << '\t' << "Warning: SCTP DATA chunk metadata is truncated.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_ah) {
+        const bool ah_next_header_unsupported =
+            !details.ah.truncated &&
+            !details.ah.malformed &&
+            details.ah.available_header_bytes >= 1U &&
+            !details.ah.next_header_supported;
+        builder << "Protocol: AH";
+        if (details.ah.available_header_bytes >= 1U) {
+            builder << '\n' << '\t' << "Next Header: "
+                    << format_ah_next_header_value(details.ah.next_header);
+        }
+        if (details.ah.available_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "Payload Length: "
+                    << static_cast<unsigned>(details.ah.payload_length);
+        }
+        if (details.ah.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Reserved: "
+                    << format_hex16_value(details.ah.reserved);
+        }
+        if (details.ah.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "SPI: "
+                    << format_hex_value(details.ah.spi, 8);
+        }
+        if (details.ah.available_header_bytes >= 12U) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.ah.sequence_number, 8)
+                    << " (" << details.ah.sequence_number << ')'
+                    << '\n' << '\t' << "Header Length: "
+                    << details.ah.header_length << " bytes"
+                    << '\n' << '\t' << "Required Fixed Header Bytes: 12"
+                    << '\n' << '\t' << "ICV Length: "
+                    << details.ah.icv_length << " bytes";
+        }
+        if (details.ah.truncated) {
+            const auto required_header_bytes = details.ah.header_length > 0U ? details.ah.header_length : 12U;
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.ah.available_header_bytes) << " / " << required_header_bytes;
+            if (details.ah.available_header_bytes >= 12U && details.ah.icv_length > 0U) {
+                builder << '\n' << '\t' << "Available ICV Bytes: "
+                        << details.ah.available_icv_bytes << " / " << details.ah.icv_length;
+            }
+            builder << '\n' << '\t' << "Warning: AH header is truncated.";
+        }
+        if (details.ah.malformed) {
+            builder << '\n' << '\t' << "Warning: AH computed header length is invalid.";
+        }
+        if (ah_next_header_unsupported) {
+            builder << '\n' << '\t' << "Warning: AH next header is not supported.";
+        }
+        if (details.ah.has_inner_packet && details.ah.inner_packet) {
+            append_ah_inner_protocol_details(builder, *details.ah.inner_packet);
+        }
+        return builder.str();
+    }
+
+    if (details.has_esp) {
+        builder << "Protocol: ESP";
+        if (details.esp.available_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "SPI: " << format_hex_value(details.esp.spi, 8);
+        }
+        if (details.esp.available_header_bytes >= 8U) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.esp.sequence_number, 8)
+                    << " (" << details.esp.sequence_number << ')'
+                    << '\n' << '\t' << "Opaque Payload Length: "
+                    << details.esp.opaque_payload_length << " bytes";
+        }
+        if (details.esp.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.esp.available_header_bytes) << " / 8"
+                    << '\n' << '\t' << "Warning: ESP base header is truncated.";
+        }
+        return builder.str();
+    }
+
+    if (details.has_gre) {
+        const bool show_gre_key_presence =
+            details.gre.version == 0U ||
+            details.gre.is_eoip ||
+            (details.gre.has_key && !details.gre.version1_pptp_like);
+        const bool show_gre_version_warning =
+            !details.gre.is_eoip &&
+            !details.gre.eoip_missing_key_bit &&
+            details.gre.version != 0U &&
+            (details.gre.version != 1U || details.gre.version1_pptp_like || details.gre.protocol_type_supported);
+        builder << (details.gre.is_eoip ? "Protocol: GRE / EoIP" : "Protocol: GRE");
+        if (details.gre.available_base_header_bytes >= 2U) {
+            builder << '\n' << '\t' << "Flags / Version: "
+                    << format_hex16_value(details.gre.flags_version)
+                    << '\n' << '\t' << "Version: "
+                    << static_cast<unsigned>(details.gre.version)
+                    << '\n' << '\t' << "Checksum Present: "
+                    << (details.gre.has_checksum ? "Yes" : "No");
+            if (show_gre_key_presence) {
+                builder << '\n' << '\t' << "Key Present: "
+                        << (details.gre.has_key ? "Yes" : "No");
+            }
+            builder << '\n' << '\t' << "Sequence Present: "
+                    << (details.gre.has_sequence ? "Yes" : "No");
+        }
+        if (details.gre.available_base_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Protocol Type: "
+                    << format_gre_protocol_type(details.gre.protocol_type);
+        }
+        if (details.gre.has_checksum && !details.gre.optional_fields_truncated) {
+            builder << '\n' << '\t' << "Checksum: "
+                    << format_hex16_value(details.gre.checksum);
+        }
+        if (details.gre.version == 0U && details.gre.has_key && !details.gre.optional_fields_truncated && !details.gre.is_eoip) {
+            builder << '\n' << '\t' << "Key: "
+                    << format_hex_value(details.gre.key, 8);
+        }
+        if (details.gre.is_eoip && !details.gre.eoip_header_truncated) {
+            if (details.gre.has_key) {
+                builder << '\n' << '\t' << "Raw GRE Key: "
+                        << format_hex_value(details.gre.key, 8);
+            }
+            builder << '\n' << '\t' << "EoIP Frame Length: " << details.gre.eoip_frame_length << " bytes"
+                    << '\n' << '\t' << "Tunnel ID: " << details.gre.eoip_tunnel_id
+                    << " (" << format_hex16_value(details.gre.eoip_tunnel_id) << ')';
+            if (details.gre.has_key) {
+                builder << '\n' << '\t' << "Identity Key: "
+                        << format_hex_value(static_cast<std::uint32_t>(details.gre.eoip_tunnel_id), 8);
+            }
+        } else if (details.gre.version == 1U && details.gre.version1_pptp_like && !details.gre.optional_fields_truncated) {
+            if (details.gre.payload_length_present) {
+                builder << '\n' << '\t' << "Payload Length: "
+                        << details.gre.payload_length;
+            }
+            if (details.gre.call_id_present) {
+                builder << '\n' << '\t' << "Call ID: "
+                        << details.gre.call_id;
+            }
+        } else if (details.gre.version != 0U && details.gre.has_key && !details.gre.optional_fields_truncated) {
+            builder << '\n' << '\t' << "Raw GRE Key: "
+                    << format_hex_value(details.gre.key, 8);
+        }
+        if (details.gre.has_sequence && !details.gre.optional_fields_truncated) {
+            builder << '\n' << '\t' << "Sequence Number: "
+                    << format_hex_value(details.gre.sequence_number, 8);
+        }
+        if (details.gre.has_inner_ethernet) {
+            builder << '\n' << '\t' << "Inner Payload: Ethernet";
+            if (details.inner_ethernet.available_header_bytes >= 14U) {
+                if (details.inner_ethernet.uses_length_field) {
+                    builder << '\n' << '\t' << "Inner Length: "
+                            << details.inner_ethernet.ether_type << " bytes";
+                } else {
+                    builder << '\n' << '\t' << "Inner EtherType: "
+                            << format_ether_type_value(details.inner_ethernet.ether_type);
+                }
+            }
+        }
+        if (details.gre.has_inner_packet && details.gre.inner_packet) {
+            const auto& inner = *details.gre.inner_packet;
+            if (inner.has_mpls) {
+                builder << '\n' << '\t' << "Inner Payload: MPLS";
+                if (!inner.mpls_labels.empty()) {
+                    builder << '\n' << '\t' << "MPLS Top Label: "
+                            << inner.mpls_labels.front().label;
+                }
+            }
+            if (inner.has_ipv4) {
+                builder << '\n' << '\t' << "Inner Payload: IPv4"
+                        << '\n' << '\t' << "Inner IPv4: "
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv4.protocol);
+                if (inner.ipv4_truncated) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv4 packet is truncated.";
+                }
+            } else if (inner.has_ipv6) {
+                builder << '\n' << '\t' << "Inner Payload: IPv6"
+                        << '\n' << '\t' << "Inner IPv6: "
+                        << format_inner_transport_name(inner.has_tcp, inner.has_udp, inner.has_sctp, inner.ipv6.next_header);
+                if (inner.ipv6_truncated) {
+                    builder << '\n' << '\t' << "Warning: Inner IPv6 packet is truncated.";
+                }
+            }
+            if (inner.has_tcp) {
+                builder << '\n' << '\t' << "Inner TCP:"
+                        << '\n' << '\t' << '\t' << "Source Port: " << inner.tcp.src_port
+                        << '\n' << '\t' << '\t' << "Destination Port: " << inner.tcp.dst_port
+                        << '\n' << '\t' << '\t' << "Flags: " << format_tcp_flags_text(inner.tcp.flags);
+                append_transport_payload_protocol_details(
+                    builder,
+                    inner.transport_payload_length,
+                    inner.original_transport_payload_length
+                );
+            } else if (inner.has_udp) {
+                builder << '\n' << '\t' << "Inner UDP:"
+                        << '\n' << '\t' << '\t' << "Source Port: " << inner.udp.src_port
+                        << '\n' << '\t' << '\t' << "Destination Port: " << inner.udp.dst_port
+                        << '\n' << '\t' << '\t' << "Length: " << inner.udp.length << " bytes";
+                append_transport_payload_protocol_details(
+                    builder,
+                    inner.transport_payload_length,
+                    inner.original_transport_payload_length
+                );
+            }
+            if (inner.has_sctp) {
+                append_inner_sctp_protocol_details(builder, inner.sctp);
+            }
+        }
+        if (details.gre.partial_inner_vlan_present) {
+            builder << '\n' << '\t' << "Inner VLAN: " << vlan_identifier(details.gre.partial_inner_vlan_tci)
+                    << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.gre.partial_inner_vlan_available_header_bytes) << " / 4"
+                    << '\n' << '\t' << "Warning: Inner VLAN header is truncated.";
+        } else if (!details.gre.has_inner_packet || !details.gre.inner_packet) {
+            if (details.gre.unknown_inner_payload) {
+                builder << '\n' << '\t' << "Inner Payload: Unknown";
+            }
+        } else if (details.gre.unknown_inner_payload) {
+            builder << '\n' << '\t' << "Inner Payload: Unknown";
+        }
+        if (details.gre.header_truncated) {
+            builder << '\n' << '\t' << "Available Header Bytes: "
+                    << static_cast<unsigned>(details.gre.available_base_header_bytes) << " / 4"
+                    << '\n' << '\t' << "Warning: GRE base header is truncated.";
+        }
+        if (details.gre.optional_fields_truncated) {
+            builder << '\n' << '\t' << "Warning: GRE optional fields are truncated.";
+        }
+        if (details.gre.eoip_header_truncated) {
+            builder << '\n' << '\t' << "Available EoIP Header Bytes: "
+                    << static_cast<unsigned>(details.gre.eoip_available_header_bytes) << " / 4"
+                    << '\n' << '\t' << "Warning: EoIP header is truncated.";
+        }
+        if (details.gre.eoip_declared_frame_exceeds_available) {
+            builder << '\n' << '\t' << "Available Inner Frame Bytes: "
+                    << details.gre.eoip_available_inner_frame_bytes << " / " << details.gre.eoip_frame_length
+                    << '\n' << '\t' << "Warning: EoIP payload length exceeds available inner frame bytes.";
+        }
+        if (show_gre_version_warning) {
+            builder << '\n' << '\t' << "Warning: GRE version is not supported.";
+        }
+        if (!details.gre.is_eoip &&
+            !details.gre.protocol_type_supported &&
+            !details.gre.eoip_missing_key_bit &&
+            details.gre.available_base_header_bytes >= 4U) {
+            builder << '\n' << '\t' << "Warning: GRE protocol type is not supported.";
+        }
+        if (details.gre.inner_ethernet_truncated) {
+            builder << '\n' << '\t' << "Warning: Inner Ethernet header is truncated.";
+        }
+        if (details.gre.inner_vlan_truncated) {
+            builder << '\n' << '\t' << "Warning: Inner VLAN header is truncated.";
+        }
+        if (details.gre.eoip_missing_key_bit) {
+            builder << '\n' << '\t' << "Warning: EoIP requires the GRE key bit.";
+        }
+        if (details.gre.unknown_inner_payload && details.gre.protocol_type_supported) {
+            builder << '\n' << '\t' << "Warning: GRE inner payload type is not supported.";
         }
         return builder.str();
     }
@@ -4598,6 +5780,26 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
                     << "Source: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
                     << "Destination: " << format_ipv6_address(details.ipv6.dst_addr);
         }
+        return builder.str();
+    }
+
+    if (details.has_ip_encapsulation && details.has_ipv4) {
+        builder << "Protocol: IPv4\n"
+                << '\t' << "Version: 4\n"
+                << '\t' << "Source Address: " << format_ipv4_address(details.ipv4.src_addr) << '\n'
+                << '\t' << "Destination Address: " << format_ipv4_address(details.ipv4.dst_addr) << '\n'
+                << '\t' << "Protocol: " << format_protocol_summary_value_with_number(details.ipv4.protocol);
+        append_ip_encapsulation_protocol_details(builder, details.ip_encapsulation);
+        return builder.str();
+    }
+
+    if (details.has_ip_encapsulation && details.has_ipv6) {
+        builder << "Protocol: IPv6\n"
+                << '\t' << "Version: 6\n"
+                << '\t' << "Source Address: " << format_ipv6_address(details.ipv6.src_addr) << '\n'
+                << '\t' << "Destination Address: " << format_ipv6_address(details.ipv6.dst_addr) << '\n'
+                << '\t' << "Next Header: " << format_protocol_summary_value_with_number(details.ipv6.next_header);
+        append_ip_encapsulation_protocol_details(builder, details.ip_encapsulation);
         return builder.str();
     }
 

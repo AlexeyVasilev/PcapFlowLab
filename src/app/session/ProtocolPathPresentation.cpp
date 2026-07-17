@@ -19,7 +19,7 @@ struct ProtocolPathLayerPresentationDescriptor {
     const char* text_color {""};
 };
 
-constexpr std::array<ProtocolPathLayerPresentationDescriptor, 25> kProtocolPathDescriptors {{
+constexpr std::array<ProtocolPathLayerPresentationDescriptor, 27> kProtocolPathDescriptors {{
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ethernet_ii, "EII", "Ethernet II", "link", "#FFF1EC", "#1E3A8A", "#1E3A8A"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ieee8023, "802.3", "IEEE 802.3", "link", "#FFF1EC", "#047857", "#047857"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::linux_sll, "SLL", "Linux SLL", "link", "#FFF1EC", "#B45309", "#B45309"},
@@ -44,6 +44,8 @@ constexpr std::array<ProtocolPathLayerPresentationDescriptor, 25> kProtocolPathD
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::geneve, "Gnv", "Geneve", "overlay", "#E7F7F5", "#0F766E", "#0F766E"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::gtpu, "GTP-U", "GTP-U", "overlay", "#E6F7FB", "#0891B2", "#0891B2"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::gre, "GRE", "GRE", "shim", "#FFF8D6", "#7C2D12", "#7C2D12"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::ah, "AH", "AH", "security", "#EEF3F5", "#546E7A", "#546E7A"},
+    ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::esp, "ESP", "ESP", "security", "#EEF3F5", "#546E7A", "#546E7A"},
     ProtocolPathLayerPresentationDescriptor {ProtocolLayerKind::unknown, "?", "Unknown", "unknown", "#F3F4F6", "#6B7280", "#6B7280"},
 }};
 
@@ -88,6 +90,36 @@ std::optional<std::string> identifier_tooltip_text(const LayerKey& layer) {
              << layer.identifier.value;
         return text.str();
     }
+    case ProtocolLayerIdentifierKind::gre_key: {
+        std::ostringstream text {};
+        text << "Key: 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    case ProtocolLayerIdentifierKind::ah_spi: {
+        std::ostringstream text {};
+        text << "SPI: 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    case ProtocolLayerIdentifierKind::esp_spi: {
+        std::ostringstream text {};
+        text << "SPI: 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
     }
 
     return std::nullopt;
@@ -117,6 +149,36 @@ std::optional<std::string> identifier_display_suffix_text(const LayerKey& layer)
     case ProtocolLayerIdentifierKind::gtpu_teid: {
         std::ostringstream text {};
         text << "TEID 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    case ProtocolLayerIdentifierKind::gre_key: {
+        std::ostringstream text {};
+        text << "key 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    case ProtocolLayerIdentifierKind::ah_spi: {
+        std::ostringstream text {};
+        text << "SPI 0x"
+             << std::uppercase
+             << std::hex
+             << std::setw(8)
+             << std::setfill('0')
+             << layer.identifier.value;
+        return text.str();
+    }
+    case ProtocolLayerIdentifierKind::esp_spi: {
+        std::ostringstream text {};
+        text << "SPI 0x"
              << std::uppercase
              << std::hex
              << std::setw(8)

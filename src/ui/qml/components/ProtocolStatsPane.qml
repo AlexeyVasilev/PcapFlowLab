@@ -31,6 +31,9 @@ Frame {
     property var ipv6PacketCount: 0
     property var ipv6CapturedBytes: 0
     property var ipv6OriginalBytes: 0
+    property var unrecognizedStatsPacketCount: 0
+    property var unrecognizedStatsCapturedBytes: 0
+    property var unrecognizedStatsOriginalBytes: 0
     property var quicTotalFlows: 0
     property var quicWithSni: 0
     property var quicWithoutSni: 0
@@ -211,6 +214,10 @@ Frame {
 
     function totalIpOriginalBytes() {
         return Number(ipv4OriginalBytes || 0) + Number(ipv6OriginalBytes || 0)
+    }
+
+    function hasUnrecognizedPacketStatistics() {
+        return Number(root.unrecognizedStatsPacketCount || 0) > 0
     }
 
     function protocolHintGroup(title) {
@@ -878,6 +885,71 @@ Frame {
                 tableWidth: root.transportTableWidth
                 rowIndex: 1
                 firstColor: "#0f172a"
+            }
+        }
+
+        SectionFrame {
+            visible: root.hasUnrecognizedPacketStatistics()
+
+            Label {
+                text: "Unrecognized Packets"
+                font.bold: true
+            }
+
+            Label {
+                text: "Packets that could not be assigned to a flow"
+                color: "#64748b"
+                font.pixelSize: 12
+            }
+
+            ThreeColumnHeader {
+                firstTitle: "Packets"
+                secondTitle: "Captured Bytes"
+                thirdTitle: "Original Bytes"
+                firstWidth: 180
+                secondWidth: 180
+                thirdWidth: 180
+                tableWidth: (180 * 3) + (root.tableColumnSpacing * 2) + (root.tablePadding * 2)
+            }
+
+            Rectangle {
+                width: Math.min((180 * 3) + (root.tableColumnSpacing * 2) + (root.tablePadding * 2), parent ? parent.width : (180 * 3))
+                height: root.tableRowHeight
+                radius: 4
+                color: "transparent"
+
+                Item {
+                    anchors.fill: parent
+                    anchors.leftMargin: root.tablePadding
+                    anchors.rightMargin: root.tablePadding
+
+                    Label {
+                        x: 0
+                        width: 180
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.groupInteger(root.unrecognizedStatsPacketCount || 0)
+                        color: "#0f172a"
+                        font.bold: true
+                    }
+
+                    Label {
+                        x: 180 + root.tableColumnSpacing
+                        width: 180
+                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: root.formatBytes(root.unrecognizedStatsCapturedBytes || 0)
+                        color: "#334155"
+                    }
+
+                    Label {
+                        x: 180 + root.tableColumnSpacing + 180 + root.tableColumnSpacing
+                        width: 180
+                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: root.formatBytes(root.unrecognizedStatsOriginalBytes || 0)
+                        color: "#334155"
+                    }
+                }
             }
         }
 

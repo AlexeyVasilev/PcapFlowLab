@@ -103,10 +103,12 @@ Current decode and import support includes:
 - Ethernet II
 - Linux cooked captures `SLL` and `SLL2`
 - up to two VLAN tags
+- bounded intermediate and encapsulation support including GRE, ESP, AH, plain IPv4/IPv6 encapsulation, and MikroTik EoIP
 - ARP
 - IPv4 and IPv6
 - ICMP and ICMPv6
 - TCP and UDP
+- SCTP
 - conservative traversal of common IPv6 extension headers
 - always-on IP fragmentation detection as diagnostic metadata
 
@@ -196,7 +198,6 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 ## Developer note
 
 Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is developer-only instrumentation for local regression tracking and has no effect in normal usage.
-
 
 
 

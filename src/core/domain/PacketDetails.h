@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace pfl {
@@ -131,6 +132,8 @@ struct MplsPseudowirePayloadDetails {
 struct VxlanInnerPacketDetails;
 struct GeneveInnerPacketDetails;
 struct GtpuInnerPacketDetails;
+struct GreInnerPacketDetails;
+struct AhInnerPacketDetails;
 
 struct VxlanDetails {
     bool present {false};
@@ -198,6 +201,73 @@ struct GtpuDetails {
     bool unknown_inner_payload {false};
     bool has_inner_packet {false};
     std::shared_ptr<GtpuInnerPacketDetails> inner_packet {};
+};
+
+struct GreDetails {
+    bool present {false};
+    std::uint16_t flags_version {0};
+    std::uint8_t version {0};
+    std::uint16_t protocol_type {0};
+    std::uint8_t available_base_header_bytes {0};
+    bool header_truncated {false};
+    bool optional_fields_truncated {false};
+    bool has_checksum {false};
+    bool has_key {false};
+    bool has_sequence {false};
+    bool is_eoip {false};
+    std::uint16_t checksum {0};
+    std::uint32_t key {0};
+    bool version1_pptp_like {false};
+    bool payload_length_present {false};
+    std::uint16_t payload_length {0};
+    bool call_id_present {false};
+    std::uint16_t call_id {0};
+    bool eoip_missing_key_bit {false};
+    std::uint8_t eoip_available_header_bytes {0};
+    bool eoip_header_truncated {false};
+    std::uint16_t eoip_frame_length {0};
+    std::uint16_t eoip_tunnel_id {0};
+    std::uint16_t eoip_available_inner_frame_bytes {0};
+    bool eoip_declared_frame_exceeds_available {false};
+    std::uint32_t sequence_number {0};
+    bool protocol_type_supported {false};
+    bool unknown_inner_payload {false};
+    bool has_inner_ethernet {false};
+    bool inner_ethernet_truncated {false};
+    bool inner_vlan_truncated {false};
+    bool partial_inner_vlan_present {false};
+    std::uint16_t partial_inner_vlan_tpid {0};
+    std::uint16_t partial_inner_vlan_tci {0};
+    std::uint8_t partial_inner_vlan_available_header_bytes {0};
+    bool has_inner_packet {false};
+    std::shared_ptr<GreInnerPacketDetails> inner_packet {};
+};
+
+struct EspDetails {
+    bool present {false};
+    std::uint8_t available_header_bytes {0};
+    bool header_truncated {false};
+    std::uint32_t spi {0};
+    std::uint32_t sequence_number {0};
+    std::size_t opaque_payload_length {0};
+};
+
+struct AhDetails {
+    bool present {false};
+    std::uint8_t available_header_bytes {0};
+    bool truncated {false};
+    bool malformed {false};
+    bool next_header_supported {false};
+    std::uint8_t next_header {0};
+    std::uint8_t payload_length {0};
+    std::uint16_t reserved {0};
+    std::uint32_t spi {0};
+    std::uint32_t sequence_number {0};
+    std::size_t header_length {0};
+    std::size_t icv_length {0};
+    std::size_t available_icv_bytes {0};
+    bool has_inner_packet {false};
+    std::shared_ptr<AhInnerPacketDetails> inner_packet {};
 };
 
 struct PppoeTagDetails {
@@ -341,6 +411,16 @@ struct SctpDetails {
     std::uint32_t ppid {0};
 };
 
+struct IcmpDetails {
+    std::uint8_t type {0};
+    std::uint8_t code {0};
+};
+
+struct IcmpV6Details {
+    std::uint8_t type {0};
+    std::uint8_t code {0};
+};
+
 struct VxlanInnerPacketDetails {
     bool has_vlan {false};
     std::vector<VlanTagDetails> vlan_tags {};
@@ -395,14 +475,80 @@ struct GtpuInnerPacketDetails {
     SctpDetails sctp {};
 };
 
-struct IcmpDetails {
-    std::uint8_t type {0};
-    std::uint8_t code {0};
+struct AhInnerPacketDetails {
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool ipv4_truncated {false};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    std::uint16_t ipv6_available_bytes {0};
+    bool ipv6_truncated {false};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+    std::optional<std::uint32_t> transport_payload_length;
+    std::optional<std::uint32_t> original_transport_payload_length;
 };
 
-struct IcmpV6Details {
-    std::uint8_t type {0};
-    std::uint8_t code {0};
+struct IpEncapsulatedLayerDetails {
+    NetworkAddressFamily address_family {NetworkAddressFamily::unknown};
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool ipv4_truncated {false};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    std::uint16_t ipv6_available_bytes {0};
+    bool ipv6_truncated {false};
+};
+
+struct IpEncapsulationDetails {
+    std::vector<IpEncapsulatedLayerDetails> inner_ip_layers {};
+    NetworkAddressFamily expected_inner_family {NetworkAddressFamily::unknown};
+    std::uint16_t available_inner_bytes {0};
+    std::uint16_t required_inner_header_bytes {0};
+    bool inner_header_truncated {false};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+    bool has_icmp {false};
+    IcmpDetails icmp {};
+    bool has_icmpv6 {false};
+    IcmpV6Details icmpv6 {};
+};
+
+struct GreInnerPacketDetails {
+    bool has_inner_ethernet {false};
+    InnerEthernetDetails inner_ethernet {};
+    bool has_vlan {false};
+    std::vector<VlanTagDetails> vlan_tags {};
+    bool has_llc {false};
+    LlcDetails llc {};
+    bool has_snap {false};
+    SnapDetails snap {};
+    bool has_mpls {false};
+    std::uint16_t mpls_ether_type {0};
+    std::vector<MplsLabelDetails> mpls_labels {};
+    bool has_mpls_pseudowire_control_word {false};
+    MplsPseudowireControlWordDetails mpls_pseudowire_control_word {};
+    bool has_unknown_inner_ethernet_payload {false};
+    MplsPseudowirePayloadDetails unknown_inner_ethernet_payload {};
+    bool has_ipv4 {false};
+    IPv4Details ipv4 {};
+    bool ipv4_truncated {false};
+    bool has_ipv6 {false};
+    IPv6Details ipv6 {};
+    std::uint16_t ipv6_available_bytes {0};
+    bool ipv6_truncated {false};
+    bool has_tcp {false};
+    TcpDetails tcp {};
+    bool has_udp {false};
+    UdpDetails udp {};
+    bool has_sctp {false};
+    SctpDetails sctp {};
+    std::optional<std::uint32_t> transport_payload_length {};
+    std::optional<std::uint32_t> original_transport_payload_length {};
 };
 
 struct IgmpDetails {
@@ -455,6 +601,12 @@ struct PacketDetails {
     GeneveDetails geneve {};
     bool has_gtpu {false};
     GtpuDetails gtpu {};
+    bool has_gre {false};
+    GreDetails gre {};
+    bool has_ah {false};
+    AhDetails ah {};
+    bool has_esp {false};
+    EspDetails esp {};
     bool has_inner_ethernet {false};
     InnerEthernetDetails inner_ethernet {};
     bool has_unknown_inner_ethernet_payload {false};
@@ -473,6 +625,8 @@ struct PacketDetails {
 
     bool has_ipv6 {false};
     IPv6Details ipv6 {};
+    bool has_ip_encapsulation {false};
+    IpEncapsulationDetails ip_encapsulation {};
 
     bool has_tcp {false};
     TcpDetails tcp {};

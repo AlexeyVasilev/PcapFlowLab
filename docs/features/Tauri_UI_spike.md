@@ -189,6 +189,7 @@ The `Statistics` tab now supports:
 - overview cards
 - transport summary
 - IP family summary
+- optional `Unrecognized Packets` summary block sourced from retained session/index metadata and hidden when the count is zero
 - detected protocol hints
 - QUIC recognition
 - TLS recognition

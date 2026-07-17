@@ -1050,6 +1050,12 @@ void report_open_progress(OpenContext* ctx) {
             return std::nullopt;
         }
 
+        const auto outer_protocol = bounded_bytes[ipv4_offset + 9U];
+        if ((protocol == ProtocolId::tcp && outer_protocol != detail::kIpProtocolTcp) ||
+            (protocol == ProtocolId::udp && outer_protocol != detail::kIpProtocolUdp)) {
+            return std::nullopt;
+        }
+
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
         auto packet_end = std::min(
             ipv4_bounds->nominal_packet_end,
@@ -1106,6 +1112,11 @@ void report_open_progress(OpenContext* ctx) {
             static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
         const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
         if (!payload.has_value()) {
+            return std::nullopt;
+        }
+
+        if ((protocol == ProtocolId::tcp && payload->next_header != detail::kIpProtocolTcp) ||
+            (protocol == ProtocolId::udp && payload->next_header != detail::kIpProtocolUdp)) {
             return std::nullopt;
         }
 

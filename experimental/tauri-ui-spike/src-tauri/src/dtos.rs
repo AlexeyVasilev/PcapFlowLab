@@ -135,6 +135,13 @@ pub struct OverviewProtocolSummaryDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnrecognizedPacketStatisticsDto {
+    pub packet_count: u64,
+    pub captured_bytes: u64,
+    pub original_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuicRecognitionDto {
     pub total_flows: u64,
     pub with_sni: u64,
@@ -213,6 +220,7 @@ pub struct ProtocolPathPresentationDto {
 pub struct OverviewDto {
     pub has_capture: bool,
     pub unrecognized_packet_count: u64,
+    pub unrecognized_packets: Option<UnrecognizedPacketStatisticsDto>,
     pub summary: OverviewSummaryDto,
     pub protocol_summary: OverviewProtocolSummaryDto,
     pub quic_recognition: QuicRecognitionDto,

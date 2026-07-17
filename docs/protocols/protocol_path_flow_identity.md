@@ -86,6 +86,7 @@ The current UI exposes three runtime view modes:
    - examples:
      - `VXLAN(vni=100)` and `VXLAN(vni=200)` aggregate under `VXLAN`;
      - `GTP-U(teid=...)` aggregates under `GTP-U`;
+     - `GRE(key=0x11111111)` and `GRE(key=0x22222222)` aggregate under `GRE`;
      - `MPLS(label=102)` and `MPLS(label=200)` aggregate under `MPLS`;
    - repeated layers remain positional, so `MPLS -> MPLS -> IPv4` stays a nested two-level MPLS stack.
 
@@ -212,7 +213,7 @@ The same metadata is also needed for future:
 - `protocol path registry`
   - An interned mapping from `ProtocolPath` value objects to compact `ProtocolPathId` integers.
 - `protocol path id`
-  - A compact stable-per-session identifier used in `FlowKeyV2`, packet metadata, and later statistics/filter structures.
+  - A compact stable-per-session identifier used in `FlowKeyV2`, flow/connection metadata, and later statistics/filter structures.
 - `flow namespace`
   - The identity context created by the ordered protocol path and its namespace identifiers, distinct from the endpoint tuple alone.
 - `prefix path`
@@ -302,7 +303,8 @@ Potential v1 layer kinds:
 - `VXLAN`
 - `Geneve`
 - `GTP-U`
-- `GRE` as future-facing reserved space if added later
+- `GRE`
+- `ESP`
 - `Unknown` or `Unsupported` only if later statistics/filter work needs an explicit conservative bucket
 
 The v1 design should keep the layer-key payload numeric and compact. No strings should be stored in hot-path structures.
@@ -327,6 +329,8 @@ These identifiers should affect flow identity in v1:
 - VXLAN VNI
 - Geneve VNI
 - GTP-U TEID
+- GRE key
+- ESP SPI
 
 Rules:
 
@@ -334,6 +338,7 @@ Rules:
 - MPLS label stacks appear as multiple `MPLS` layer keys in order;
 - inner Ethernet continuation is represented explicitly in the path where applicable;
 - VNI and TEID are no longer presentation-only fields once `FlowKeyV2` is enabled.
+- GRE key and ESP SPI are also stable namespace-bearing identifiers once present.
 
 ## What Does Not Enter FlowKeyV2 In V1
 
@@ -351,17 +356,18 @@ Do not include:
 - selected-packet presentation labels
 - Wireshark-like deep protocol fields
 
-Stop the protocol path at the terminal effective L4:
+Stop the protocol path at the terminal effective transport or terminal recognized no-port IP protocol:
 
 - TCP
 - UDP
 - SCTP
+- ESP
 
 Do not include protocols below the terminal effective transport layer such as TLS or HTTP.
 
 Path-presentation cleanup follows the same rule:
 
-- the Path column keeps intermediate link / shim / overlay layers plus terminal TCP / UDP / SCTP where applicable;
+- the Path column keeps intermediate link / shim / overlay layers plus terminal TCP / UDP / SCTP / ESP where applicable;
 - it does not duplicate terminal control protocols such as ARP, ICMP, or ICMPv6, which are already visible in the Protocol column.
 
 ## Tunnel Endpoint Policy
@@ -409,7 +415,7 @@ Recommended implementation idea:
 
 1. Build a small bounded inline path while decoding the packet.
 2. Look up or insert the path in a session-owned registry.
-3. Store only `protocol_path_id` on packet/flow metadata.
+3. Store only `protocol_path_id` on flow/connection identity metadata.
 4. Use hashing for lookup, but verify full path equality before reusing an existing id.
 
 ## Index Serialization Compatibility
@@ -424,7 +430,7 @@ Static audit of the current format:
 
 Current implementation state:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 10`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 13`;
 - `src/core/index/Serialization.cpp` serializes:
   - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
@@ -449,7 +455,7 @@ When protocol-path-aware flow identity becomes part of the stable index format:
 - keep the protocol-path registry as a single dedicated section, not chunked per packet or per flow;
 - keep large connection data chunked at connection-section boundaries rather than as one monolithic multi-GB payload;
 - do not repeat full protocol paths in packet records;
-- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, or TEID redundantly per packet if they are already represented by the flow's protocol path id.
+- do not repeat namespace identifiers such as VLAN VID, MPLS label, VNI, TEID, GRE key, or ESP SPI redundantly per packet if they are already represented by the flow's protocol path id.
 
 Rationale:
 
@@ -482,7 +488,7 @@ Current index-save behavior relevant to large protocol-path-aware captures:
 
 - Qt save-index now runs asynchronously with low-noise progress text and cooperative cancel;
 - index save writes to a same-directory temporary file and replaces the final target only after successful finalization;
-- index v10 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
+- index v13 allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
 - each connection chunk remains self-contained and split only on connection boundaries; protocol-path registry data is still written once per capture;
 - the current index format does not write a separate footer/final-marker record; "finalized" currently means that all required sections parse cleanly through EOF;
 - interrupted or cancelled saves should leave the previous final `.idx` unchanged;
@@ -522,6 +528,7 @@ Future filter directions:
   - `vxlan.vni == 100`
   - `geneve.vni == 100`
   - `gtpu.teid == 0x01020384`
+  - `gre.key == 0x11111111`
 
 This document does not propose filter syntax beyond these examples.
 
@@ -749,6 +756,8 @@ Relevant existing fixture families:
   - VXLAN VNI
   - Geneve VNI
   - GTP-U TEID
+  - GRE key
+  - ESP SPI
 - outer tunnel endpoints are intentionally excluded from v1 identity
 - `ProtocolPathRegistry` should intern full path values and assign compact ids
 - exact path changes should eventually require an index format bump

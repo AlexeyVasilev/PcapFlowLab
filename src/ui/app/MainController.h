@@ -197,6 +197,9 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong ipv6CapturedBytes READ ipv6CapturedBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6OriginalBytes READ ipv6OriginalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong ipv6TotalBytes READ ipv6TotalBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong unrecognizedStatsPacketCount READ unrecognizedStatsPacketCount NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong unrecognizedStatsCapturedBytes READ unrecognizedStatsCapturedBytes NOTIFY stateChanged)
+    Q_PROPERTY(qulonglong unrecognizedStatsOriginalBytes READ unrecognizedStatsOriginalBytes NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicTotalFlows READ quicTotalFlows NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicWithSni READ quicWithSni NOTIFY stateChanged)
     Q_PROPERTY(qulonglong quicWithoutSni READ quicWithoutSni NOTIFY stateChanged)
@@ -412,6 +415,9 @@ public:
     [[nodiscard]] qulonglong ipv6CapturedBytes() const noexcept;
     [[nodiscard]] qulonglong ipv6OriginalBytes() const noexcept;
     [[nodiscard]] qulonglong ipv6TotalBytes() const noexcept;
+    [[nodiscard]] qulonglong unrecognizedStatsPacketCount() const noexcept;
+    [[nodiscard]] qulonglong unrecognizedStatsCapturedBytes() const noexcept;
+    [[nodiscard]] qulonglong unrecognizedStatsOriginalBytes() const noexcept;
     [[nodiscard]] qulonglong quicTotalFlows() const noexcept;
     [[nodiscard]] qulonglong quicWithSni() const noexcept;
     [[nodiscard]] qulonglong quicWithoutSni() const noexcept;
@@ -638,6 +644,7 @@ private:
 
     CaptureSession session_ {};
     CaptureProtocolSummary protocol_summary_ {};
+    UnrecognizedPacketStatistics unrecognized_packet_statistics_ {};
     CaptureProtocolPathSummary protocol_path_summary_ {};
     QuicRecognitionStats quic_recognition_stats_ {};
     TlsRecognitionStats tls_recognition_stats_ {};

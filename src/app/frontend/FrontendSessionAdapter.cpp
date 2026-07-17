@@ -387,6 +387,48 @@ std::string format_transport_summary(const PacketDetails& details) {
         return out.str();
     }
 
+    if (details.has_ah && details.ah.has_inner_packet && details.ah.inner_packet) {
+        if (details.ah.inner_packet->has_tcp) {
+            out << "Inner TCP "
+                << details.ah.inner_packet->tcp.src_port << " -> " << details.ah.inner_packet->tcp.dst_port
+                << " Flags: " << session_detail::format_tcp_flags_text(details.ah.inner_packet->tcp.flags);
+            return out.str();
+        }
+
+        if (details.ah.inner_packet->has_udp) {
+            out << "Inner UDP "
+                << details.ah.inner_packet->udp.src_port << " -> " << details.ah.inner_packet->udp.dst_port;
+            return out.str();
+        }
+    }
+
+    if (details.has_ip_encapsulation) {
+        if (details.ip_encapsulation.has_tcp) {
+            out << "Inner TCP "
+                << details.ip_encapsulation.tcp.src_port << " -> " << details.ip_encapsulation.tcp.dst_port
+                << " Flags: " << session_detail::format_tcp_flags_text(details.ip_encapsulation.tcp.flags);
+            return out.str();
+        }
+
+        if (details.ip_encapsulation.has_udp) {
+            out << "Inner UDP "
+                << details.ip_encapsulation.udp.src_port << " -> " << details.ip_encapsulation.udp.dst_port;
+            return out.str();
+        }
+
+        if (details.ip_encapsulation.has_icmp) {
+            out << "Inner ICMP type " << static_cast<unsigned>(details.ip_encapsulation.icmp.type)
+                << ", code " << static_cast<unsigned>(details.ip_encapsulation.icmp.code);
+            return out.str();
+        }
+
+        if (details.ip_encapsulation.has_icmpv6) {
+            out << "Inner ICMPv6 type " << static_cast<unsigned>(details.ip_encapsulation.icmpv6.type)
+                << ", code " << static_cast<unsigned>(details.ip_encapsulation.icmpv6.code);
+            return out.str();
+        }
+    }
+
     if (details.has_icmp) {
         out << "ICMP type " << static_cast<unsigned>(details.icmp.type)
             << ", code " << static_cast<unsigned>(details.icmp.code);
@@ -422,6 +464,8 @@ std::string format_protocol_value(const std::uint8_t protocol) {
         return "TCP";
     case detail::kIpProtocolUdp:
         return "UDP";
+    case detail::kIpProtocolEsp:
+        return "ESP";
     case detail::kIpProtocolIcmpV6:
         return "ICMPv6";
     default:
@@ -515,6 +559,58 @@ std::string build_frontend_packet_summary_text(
         });
     }
 
+    if (details->has_ip_encapsulation && !details->ip_encapsulation.inner_ip_layers.empty()) {
+        for (const auto& inner : details->ip_encapsulation.inner_ip_layers) {
+            if (inner.has_ipv4) {
+                auto section_lines = std::vector<std::string> {};
+                if (details->ip_encapsulation.inner_header_truncated) {
+                    section_lines.push_back(
+                        "Available Header Bytes: " + std::to_string(details->ip_encapsulation.available_inner_bytes) +
+                        " / " + std::to_string(details->ip_encapsulation.required_inner_header_bytes)
+                    );
+                    if (details->ip_encapsulation.available_inner_bytes >= 10U) {
+                        section_lines.push_back("Protocol: " + format_protocol_value(inner.ipv4.protocol));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 16U) {
+                        section_lines.push_back("Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 20U) {
+                        section_lines.push_back("Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr));
+                    }
+                    section_lines.push_back("Warning: Inner IPv4 header is truncated");
+                } else {
+                    section_lines.push_back("Source: " + session_detail::format_ipv4_address(inner.ipv4.src_addr));
+                    section_lines.push_back("Destination: " + session_detail::format_ipv4_address(inner.ipv4.dst_addr));
+                    section_lines.push_back("Protocol: " + format_protocol_value(inner.ipv4.protocol));
+                }
+                append_summary_section(lines, "Inner IPv4", section_lines);
+            } else if (inner.has_ipv6) {
+                auto section_lines = std::vector<std::string> {};
+                if (details->ip_encapsulation.inner_header_truncated) {
+                    section_lines.push_back(
+                        "Available Header Bytes: " + std::to_string(details->ip_encapsulation.available_inner_bytes) +
+                        " / " + std::to_string(details->ip_encapsulation.required_inner_header_bytes)
+                    );
+                    if (details->ip_encapsulation.available_inner_bytes >= 8U) {
+                        section_lines.push_back("Next Header: " + format_protocol_value(inner.ipv6.next_header));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 24U) {
+                        section_lines.push_back("Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr));
+                    }
+                    if (details->ip_encapsulation.available_inner_bytes >= 40U) {
+                        section_lines.push_back("Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr));
+                    }
+                    section_lines.push_back("Warning: Inner IPv6 header is truncated");
+                } else {
+                    section_lines.push_back("Source: " + session_detail::format_ipv6_address(inner.ipv6.src_addr));
+                    section_lines.push_back("Destination: " + session_detail::format_ipv6_address(inner.ipv6.dst_addr));
+                    section_lines.push_back("Next Header: " + format_protocol_value(inner.ipv6.next_header));
+                }
+                append_summary_section(lines, "Inner IPv6", section_lines);
+            }
+        }
+    }
+
     if (details->has_tcp) {
         auto tcp_lines = std::vector<std::string> {
             "Source Port: " + std::to_string(details->tcp.src_port),
@@ -532,6 +628,36 @@ std::string build_frontend_packet_summary_text(
             "Payload Length: " + std::to_string(packet.payload_length),
         };
         append_summary_section(lines, "UDP", udp_lines);
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_tcp) {
+        append_summary_section(lines, "Inner TCP", {
+            "Source Port: " + std::to_string(details->ip_encapsulation.tcp.src_port),
+            "Destination Port: " + std::to_string(details->ip_encapsulation.tcp.dst_port),
+            "Flags: " + session_detail::format_tcp_flags_text(details->ip_encapsulation.tcp.flags),
+        });
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_udp) {
+        append_summary_section(lines, "Inner UDP", {
+            "Source Port: " + std::to_string(details->ip_encapsulation.udp.src_port),
+            "Destination Port: " + std::to_string(details->ip_encapsulation.udp.dst_port),
+            "Length: " + std::to_string(details->ip_encapsulation.udp.length),
+        });
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_icmp) {
+        append_summary_section(lines, "Inner ICMP", {
+            "Type: " + std::to_string(details->ip_encapsulation.icmp.type),
+            "Code: " + std::to_string(details->ip_encapsulation.icmp.code),
+        });
+    }
+
+    if (details->has_ip_encapsulation && details->ip_encapsulation.has_icmpv6) {
+        append_summary_section(lines, "Inner ICMPv6", {
+            "Type: " + std::to_string(details->ip_encapsulation.icmpv6.type),
+            "Code: " + std::to_string(details->ip_encapsulation.icmpv6.code),
+        });
     }
 
     if (details->has_icmp) {
@@ -1639,7 +1765,7 @@ std::optional<std::vector<AnalysisSequenceExportRow>> build_analysis_sequence_ex
             .delta_us = delta_us,
             .captured_length = packet.captured_length,
             .original_length = packet.original_length,
-            .transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session, packet),
+            .transport_payload_length = session_detail::derive_original_transport_payload_length_from_headers(session, packet),
             .tcp_flags_text = packet_row.tcp_flags_text,
             .protocol_hint_text = protocol_hint_text,
         });
@@ -2197,6 +2323,7 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
+    const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
@@ -2207,6 +2334,9 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
             protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
+        .unrecognized_packets = unrecognized_packets.packet_count > 0U
+            ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
+            : std::nullopt,
         .protocol_summary = protocol_summary,
         .quic_recognition = session_.quic_recognition_stats(),
         .tls_recognition = session_.tls_recognition_stats(),
@@ -2910,6 +3040,10 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
     }
 
     if (details.has_value()) {
+        const auto original_transport_payload_length =
+            session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
+        const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
+
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
         result.link_summary_text = format_link_summary(*details);
@@ -2918,8 +3052,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         result.summary_layers = session_detail::build_packet_summary_layers(*details, packet, {
             .source_capture_accessible = true,
             .flow_packet_index = flow_packet_index,
-            .transport_payload_length = packet.payload_length,
-            .original_transport_payload_length = session_detail::derive_transport_payload_length_from_headers(session_, packet),
+            .transport_payload_length = captured_transport_payload_length,
+            .original_transport_payload_length = original_transport_payload_length,
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,

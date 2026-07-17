@@ -34,6 +34,9 @@ Item {
     property var ipv6PacketCount: 0
     property var ipv6CapturedBytes: 0
     property var ipv6OriginalBytes: 0
+    property var unrecognizedStatsPacketCount: 0
+    property var unrecognizedStatsCapturedBytes: 0
+    property var unrecognizedStatsOriginalBytes: 0
     property var quicTotalFlows: 0
     property var quicWithSni: 0
     property var quicWithoutSni: 0
@@ -118,6 +121,9 @@ Item {
                     ipv6PacketCount: root.ipv6PacketCount
                     ipv6CapturedBytes: root.ipv6CapturedBytes
                     ipv6OriginalBytes: root.ipv6OriginalBytes
+                    unrecognizedStatsPacketCount: root.unrecognizedStatsPacketCount
+                    unrecognizedStatsCapturedBytes: root.unrecognizedStatsCapturedBytes
+                    unrecognizedStatsOriginalBytes: root.unrecognizedStatsOriginalBytes
                     quicTotalFlows: root.quicTotalFlows
                     quicWithSni: root.quicWithSni
                     quicWithoutSni: root.quicWithoutSni

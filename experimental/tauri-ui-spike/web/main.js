@@ -352,6 +352,8 @@
     metricOriginalBytes: document.getElementById("metricOriginalBytes"),
     transportStatsBody: document.getElementById("transportStatsBody"),
     familyStatsBody: document.getElementById("familyStatsBody"),
+    unrecognizedStatsSection: document.getElementById("unrecognizedStatsSection"),
+    unrecognizedStatsBody: document.getElementById("unrecognizedStatsBody"),
     protocolHintStatsBody: document.getElementById("protocolHintStatsBody"),
     protocolPathStatsModeKindOverview: document.getElementById("protocolPathStatsModeKindOverview"),
     protocolPathStatsModeIdentityTree: document.getElementById("protocolPathStatsModeIdentityTree"),
@@ -2617,6 +2619,7 @@
   function clearStatisticsDom() {
     elements.transportStatsBody && (elements.transportStatsBody.innerHTML = "");
     elements.familyStatsBody && (elements.familyStatsBody.innerHTML = "");
+    elements.unrecognizedStatsBody && (elements.unrecognizedStatsBody.innerHTML = "");
     elements.protocolHintStatsBody && (elements.protocolHintStatsBody.innerHTML = "");
     elements.protocolPathStatsBody && (elements.protocolPathStatsBody.innerHTML = "");
     state.protocolPathStatsVisibleRows = [];
@@ -2844,6 +2847,7 @@
       ["IPv6", overview.protocol_summary?.ipv6],
     ] : [];
     const protocolHintRows = Array.isArray(overview?.protocol_hints) ? overview.protocol_hints : [];
+    const unrecognizedStats = overview?.unrecognized_packets || null;
     const topEndpoints = Array.isArray(overview?.top_endpoints) ? overview.top_endpoints : [];
     const topPorts = Array.isArray(overview?.top_ports) ? overview.top_ports : [];
     const topTalkersVisible = Number(overview?.summary?.flow_count ?? 0) > 30;
@@ -2859,6 +2863,10 @@
       elements.overviewMeta.textContent = "Loading overview...";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Loading transport statistics...");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Loading IP family statistics...");
+      elements.unrecognizedStatsSection?.classList.add("is-hidden");
+      if (elements.unrecognizedStatsBody) {
+        elements.unrecognizedStatsBody.innerHTML = "";
+      }
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Loading protocol-hint statistics...");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Loading top endpoints...");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Loading top ports...");
@@ -2888,6 +2896,19 @@
             </tr>
           `)
           .join("");
+      if (elements.unrecognizedStatsSection && elements.unrecognizedStatsBody) {
+        const hasUnrecognizedStats = Number(unrecognizedStats?.packet_count || 0) > 0;
+        elements.unrecognizedStatsSection.classList.toggle("is-hidden", !hasUnrecognizedStats);
+        elements.unrecognizedStatsBody.innerHTML = hasUnrecognizedStats
+          ? `
+            <tr>
+              <td>${formatNumber(unrecognizedStats?.packet_count)}</td>
+              <td>${formatNumber(unrecognizedStats?.captured_bytes)}</td>
+              <td>${formatNumber(unrecognizedStats?.original_bytes)}</td>
+            </tr>
+          `
+          : "";
+      }
       elements.protocolHintStatsBody.innerHTML = protocolHintRows.length > 0
         ? protocolHintRows
           .map((row) => `
@@ -3004,6 +3025,10 @@
       elements.overviewMeta.textContent = "No overview or protocol-path statistics available after open failure.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No transport statistics were loaded.", "error");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open failed. No IP family statistics were loaded.", "error");
+      elements.unrecognizedStatsSection?.classList.add("is-hidden");
+      if (elements.unrecognizedStatsBody) {
+        elements.unrecognizedStatsBody.innerHTML = "";
+      }
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open failed. No protocol-hint statistics were loaded.", "error");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-endpoint summary was loaded.", "error");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open failed. No top-port summary was loaded.", "error");
@@ -3013,6 +3038,10 @@
       elements.overviewMeta.textContent = "No capture loaded.";
       elements.transportStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load transport statistics.");
       elements.familyStatsBody.innerHTML = renderStatsStateRow(5, "Open a capture or index to load IP family statistics.");
+      elements.unrecognizedStatsSection?.classList.add("is-hidden");
+      if (elements.unrecognizedStatsBody) {
+        elements.unrecognizedStatsBody.innerHTML = "";
+      }
       elements.protocolHintStatsBody.innerHTML = renderStatsStateRow(6, "Open a capture or index to load protocol-hint statistics.");
       elements.topEndpointsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top endpoints.");
       elements.topPortsBody.innerHTML = renderStatsStateRow(3, "Open a capture or index to load top ports.");

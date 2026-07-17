@@ -10,6 +10,7 @@ enum class ProtocolId : std::uint8_t {
     igmp = 2,
     tcp = 6,
     udp = 17,
+    esp = 50,
     icmpv6 = 58,
     sctp = 132,
     arp = 253,

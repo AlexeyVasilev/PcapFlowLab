@@ -2561,13 +2561,19 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         return std::string {kFragmentedProtocolDetailsMessage};
     }
 
-    if (packet.captured_length < packet.original_length) {
-        return std::string {kNoProtocolDetailsMessage};
-    }
-
     const auto bytes = read_packet_data(packet);
     if (bytes.empty()) {
         return std::string {kUnavailableProtocolDetailsMessage};
+    }
+
+    if (packet.captured_length < packet.original_length) {
+        PacketDetailsService details_service {};
+        if (const auto details = details_service.decode_best_effort(bytes, packet); details.has_value()) {
+            if (const auto generic_details = build_basic_protocol_details_text(*details); generic_details.has_value()) {
+                return *generic_details;
+            }
+        }
+        return std::string {kNoProtocolDetailsMessage};
     }
 
     TlsPacketProtocolAnalyzer tls_analyzer {};
@@ -2597,8 +2603,7 @@ std::string CaptureSession::read_packet_protocol_details_text(const PacketRef& p
         }
     }
 
-    if (const auto details = details_service.decode_best_effort(bytes, packet);
-        details.has_value() && (details->has_pbb || details->has_macsec || details->has_sctp)) {
+    if (const auto details = details_service.decode_best_effort(bytes, packet); details.has_value()) {
         if (const auto generic_details = build_basic_protocol_details_text(*details); generic_details.has_value()) {
             return *generic_details;
         }
@@ -3131,6 +3136,18 @@ std::size_t CaptureSession::flow_packet_count(const std::size_t flow_index) cons
 
 std::size_t CaptureSession::unrecognized_packet_count() const noexcept {
     return state_.unrecognized_packets.size();
+}
+
+UnrecognizedPacketStatistics CaptureSession::unrecognized_packet_statistics() const noexcept {
+    UnrecognizedPacketStatistics summary {};
+    summary.packet_count = static_cast<std::uint64_t>(state_.unrecognized_packets.size());
+
+    for (const auto& record : state_.unrecognized_packets) {
+        summary.captured_bytes += record.packet.captured_length;
+        summary.original_bytes += record.packet.original_length;
+    }
+
+    return summary;
 }
 
 std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::size_t flow_index) const {

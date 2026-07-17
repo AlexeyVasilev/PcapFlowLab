@@ -16,12 +16,22 @@ class CaptureSession;
 
 namespace pfl::session_detail {
 
-[[nodiscard]] std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
+[[nodiscard]] std::optional<std::uint32_t> derive_captured_transport_payload_length_from_headers(
     std::span<const std::uint8_t> packet_bytes,
     const PacketRef& packet
 );
 
-[[nodiscard]] std::optional<std::uint32_t> derive_transport_payload_length_from_headers(
+[[nodiscard]] std::optional<std::uint32_t> derive_captured_transport_payload_length_from_headers(
+    const CaptureSession& session,
+    const PacketRef& packet
+);
+
+[[nodiscard]] std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
+    std::span<const std::uint8_t> packet_bytes,
+    const PacketRef& packet
+);
+
+[[nodiscard]] std::optional<std::uint32_t> derive_original_transport_payload_length_from_headers(
     const CaptureSession& session,
     const PacketRef& packet
 );

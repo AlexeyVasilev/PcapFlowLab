@@ -99,6 +99,10 @@ void run_unrecognized_packet_tests() {
         const auto overview = adapter.get_overview();
         PFL_EXPECT(overview.has_capture);
         PFL_EXPECT(overview.unrecognized_packet_count == 1U);
+        PFL_REQUIRE(overview.unrecognized_packets.has_value());
+        PFL_EXPECT(overview.unrecognized_packets->packet_count == 1U);
+        PFL_EXPECT(overview.unrecognized_packets->captured_bytes > 0U);
+        PFL_EXPECT(overview.unrecognized_packets->original_bytes >= overview.unrecognized_packets->captured_bytes);
 
         const auto packets = adapter.get_unrecognized_packets(0U, 30U);
         PFL_EXPECT(packets.has_capture);
@@ -135,14 +139,32 @@ void run_unrecognized_packet_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(normal_tcp_fixture));
         PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto stats = session.unrecognized_packet_statistics();
+        PFL_EXPECT(stats.packet_count == 0U);
+        PFL_EXPECT(stats.captured_bytes == 0U);
+        PFL_EXPECT(stats.original_bytes == 0U);
         PFL_EXPECT(session.list_unrecognized_packets().empty());
         PFL_EXPECT(session.list_flows().size() == 1U);
+    }
+
+    {
+        FrontendSessionAdapter adapter {};
+        const auto open_result = adapter.open_capture(normal_tcp_fixture, FrontendOpenMode::fast);
+        PFL_EXPECT(open_result.opened);
+
+        const auto overview = adapter.get_overview();
+        PFL_EXPECT(overview.unrecognized_packet_count == 0U);
+        PFL_EXPECT(!overview.unrecognized_packets.has_value());
     }
 
     {
         CaptureSession source_session {};
         PFL_EXPECT(source_session.open_capture(truncated_tcp_fixture));
         PFL_EXPECT(source_session.unrecognized_packet_count() == 1U);
+        const auto source_unrecognized_stats = source_session.unrecognized_packet_statistics();
+        PFL_EXPECT(source_unrecognized_stats.packet_count == 1U);
+        PFL_EXPECT(source_unrecognized_stats.captured_bytes > 0U);
+        PFL_EXPECT(source_unrecognized_stats.original_bytes >= source_unrecognized_stats.captured_bytes);
 
         const auto index_path = std::filesystem::temp_directory_path() / "pfl_unrecognized_packets_roundtrip.idx";
         PFL_EXPECT(source_session.save_index(index_path));
@@ -150,6 +172,10 @@ void run_unrecognized_packet_tests() {
         CaptureSession loaded_index_session {};
         PFL_EXPECT(loaded_index_session.load_index(index_path));
         PFL_EXPECT(loaded_index_session.unrecognized_packet_count() == 1U);
+        const auto loaded_unrecognized_stats = loaded_index_session.unrecognized_packet_statistics();
+        PFL_EXPECT(loaded_unrecognized_stats.packet_count == source_unrecognized_stats.packet_count);
+        PFL_EXPECT(loaded_unrecognized_stats.captured_bytes == source_unrecognized_stats.captured_bytes);
+        PFL_EXPECT(loaded_unrecognized_stats.original_bytes == source_unrecognized_stats.original_bytes);
         const auto loaded_rows = loaded_index_session.list_unrecognized_packets();
         PFL_REQUIRE(loaded_rows.size() == 1U);
         PFL_EXPECT(loaded_rows[0].reason_text == "TCP header truncated");

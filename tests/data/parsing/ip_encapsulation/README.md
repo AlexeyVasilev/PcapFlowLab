@@ -1,0 +1,292 @@
+Synthetic IP encapsulation parsing fixtures for regression tests.
+
+This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
+- outer IPv4 protocol `4` carrying inner IPv4;
+- outer IPv4 protocol `41` carrying inner IPv6;
+- outer IPv6 next-header `4` carrying inner IPv4;
+- outer IPv6 next-header `41` carrying inner IPv6;
+- outer VLAN / QinQ before the outer IP header;
+- repeated nested inner IP layers;
+- same-inner-tuple grouping tradeoffs across different outer tunnel endpoints;
+- conservative handling for truncated or too-short inner payloads.
+
+The local helper scripts that generate these pcaps are intentionally **not** committed as project artifacts. They are local stdlib-only helpers under `tmp/`.
+
+## Local generation
+
+Preferred local helper:
+
+```bash
+python3 tmp/generate_ip_encapsulation_pcaps.py tests/data/parsing/ip_encapsulation --force
+```
+
+PowerShell fallback used in environments without a Python launcher:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tmp/generate_ip_encapsulation_pcaps.ps1 tests/data/parsing/ip_encapsulation
+```
+
+Notes:
+- the helpers are local-only and should not be treated as production tooling;
+- they write classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values;
+- truncation fixtures are written manually so captured length and original wire length can differ when useful;
+- fixture integrity and import/accounting tests now exist for this directory;
+- direct outer IPv4 protocol `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `01`, `02`, `09`, `13`, and `14`, with conservative malformed presentation coverage for fixtures `17` and `19`;
+- direct outer IPv4 protocol `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `03`, `04`, and `10`, with conservative malformed presentation coverage for fixture `18`;
+- outer IPv6 effective next-header `4` with one inner IPv4 TCP/UDP packet is now implemented and actively covered for fixtures `05`, `06`, and `11`;
+- outer IPv6 effective next-header `41` with one inner IPv6 TCP/UDP packet is now implemented and actively covered for fixtures `07` and `08`, with conservative malformed handling for fixture `20`;
+- one specifically bounded nested plain-IP case is now implemented for fixture `12`: `IPv4 -> IPv4 -> IPv4 -> UDP`;
+- plain outer IPv4 control-protocol continuation is now implemented for fixtures `15` and `16`;
+- broader nesting and outer-IPv6 control-protocol continuation remain deferred.
+
+## Current parser iteration
+
+Implemented in the current narrow parser pass:
+- outer IPv4 protocol `4`;
+- outer IPv4 protocol `41`;
+- outer IPv6 effective next-header `4`;
+- outer IPv6 effective next-header `41`;
+- one direct inner IPv4 packet;
+- one direct inner IPv6 packet;
+- one additional bounded nested IPv4 encapsulation layer for fixture `12`;
+- inner TCP / UDP continuation for all four direct family combinations;
+- inner IPv4 ICMP continuation for fixture `15`;
+- inner IPv6 ICMPv6 continuation for fixture `16`;
+- conservative rejection for malformed or too-short inner IPv4/IPv6 payloads;
+- accepted v1 merge tradeoff where identical inner tuples through different outer tunnel endpoints may merge into one flow.
+
+Still deferred:
+- arbitrary recursive or mixed-family nested encapsulation;
+- inner ICMP / ICMPv6 continuation through outer IPv6;
+- inner ICMP / ICMPv6 continuation inside deeper nesting;
+- SCTP continuation;
+- selected-packet Packet Details / Summary continuation beyond the specifically bounded nested/plain-control cases covered below.
+
+Selected-packet presentation now covers the direct non-nested TCP/UDP cases used by fixtures
+`01`, `04`, `05`, `08`, `10`, and `11`. Summary shows the outer IP layer followed by flat
+`Inner IPv4` / `Inner IPv6` and `Inner TCP` / `Inner UDP` layers. Protocol Details text also
+includes matching outer and inner sections for these direct cases.
+
+Selected-packet presentation now also covers the specifically bounded nested fixture
+`12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap`. In this pass, Packet Details may expose up to two
+ordered inner IP layers for plain IP encapsulation, with terminal TCP/UDP attached only to the
+deepest inner layer.
+
+Selected-packet presentation now also covers the plain-control fixtures
+`15_ipv4_in_ipv4_inner_icmp.pcap` and `16_ipv6_in_ipv4_inner_icmpv6.pcap`. Summary shows the
+outer IP layer followed by flat `Inner IPv4` / `Inner IPv6` and `Inner ICMP` / `Inner ICMPv6`
+layers. Protocol Details text includes matching outer, inner-network, and inner-control sections.
+
+Selected-packet presentation now also covers the conservative malformed/truncated fixtures
+`17_truncated_inner_ipv4_header.pcap`, `18_truncated_inner_ipv6_header.pcap`,
+`19_outer_ipv4_proto4_payload_too_short.pcap`, and `20_ipv6_next41_payload_too_short.pcap`.
+These remain unrecognized for flow extraction, but Packet Details now shows the outer IP layer
+plus one contextual truncated `Inner IPv4` / `Inner IPv6` layer with exact available-header-byte
+counts and no fabricated terminal transport/control layer.
+
+Still unsupported for selected-packet presentation:
+- arbitrary deeper nesting beyond two inner IP layers;
+- mixed-family deeper nesting;
+- inner ICMP / ICMPv6 continuation through outer IPv6;
+- inner ICMP / ICMPv6 continuation inside deeper nesting.
+
+## Protocol basics
+
+- IPv4 protocol `4`: IPv4-in-IP
+- IPv4 protocol `41`: IPv6 encapsulation over IPv4
+- IPv6 next-header `4`: inner IPv4 over IPv6
+- IPv6 next-header `41`: inner IPv6 over IPv6
+
+Current parser behavior:
+- outer IP header remains part of the protocol path;
+- the innermost recognized IPv4/IPv6 + TCP/UDP tuple drives flow extraction for the currently implemented direct cases;
+- inner IPv4 ICMP and inner IPv6 ICMPv6 through outer IPv4 follow the existing zero-port control-protocol flow model;
+- outer VLAN/QinQ should remain preserved before the outer IP layer;
+- no tunnel namespace identifier is added in v1 for basic IP-in-IP encapsulation;
+- same inner tuple through different outer tunnel endpoints may merge in v1 because outer tunnel endpoints are not intended to participate in protocol-path identity.
+
+Current implemented paths include:
+- `EthernetII -> IPv4 -> IPv4 -> TCP`
+- `EthernetII -> IPv4 -> IPv6 -> UDP`
+- `EthernetII -> IPv6 -> IPv4 -> TCP`
+- `EthernetII -> IPv6 -> IPv6 -> UDP`
+- `EthernetII -> IPv4 -> IPv4`
+- `EthernetII -> IPv4 -> IPv6`
+- repeated nested IP layers such as `EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP`
+
+Control-protocol note:
+- inner ICMP / ICMPv6 flows intentionally use zero ports;
+- terminal ICMP / ICMPv6 layers are intentionally absent from protocol-path presentation in this branch.
+
+## Shared constants
+
+- Outer client MAC: `02:00:00:00:60:01`
+- Outer server MAC: `02:00:00:00:60:02`
+- Outer IPv4 client A: `192.0.2.60`
+- Outer IPv4 server A: `198.51.100.60`
+- Outer IPv4 client B: `192.0.2.61`
+- Outer IPv4 server B: `198.51.100.61`
+- Inner IPv4 client: `10.60.0.10`
+- Inner IPv4 server: `10.60.0.20`
+- Outer IPv6 client A: `2001:db8:60::1`
+- Outer IPv6 server A: `2001:db8:60::2`
+- Outer IPv6 client B: `2001:db8:60::11`
+- Outer IPv6 server B: `2001:db8:60::12`
+- Inner IPv6 client: `2001:db8:61::10`
+- Inner IPv6 server: `2001:db8:61::20`
+- TCP client port: `49160`
+- TCP server port: `443`
+- UDP client port: `53600`
+- UDP server port: `443`
+- Outer VLAN ID: `660`
+- Outer QinQ VLAN IDs: `661`, `662`
+
+## Fixture descriptions
+
+### 01_ipv4_in_ipv4_tcp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=4) / inner IPv4 / TCP
+- Current path: `EthernetII -> IPv4 -> IPv4 -> TCP`
+
+### 02_ipv4_in_ipv4_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=4) / inner IPv4 / UDP
+- Current path: `EthernetII -> IPv4 -> IPv4 -> UDP`
+
+### 03_ipv6_in_ipv4_tcp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=41) / inner IPv6 / TCP
+- Current path: `EthernetII -> IPv4 -> IPv6 -> TCP`
+
+### 04_ipv6_in_ipv4_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=41) / inner IPv6 / UDP
+- Current path: `EthernetII -> IPv4 -> IPv6 -> UDP`
+
+### 05_ipv4_in_ipv6_tcp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv6(next-header=4) / inner IPv4 / TCP
+- Current path: `EthernetII -> IPv6 -> IPv4 -> TCP`
+
+### 06_ipv4_in_ipv6_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv6(next-header=4) / inner IPv4 / UDP
+- Current path: `EthernetII -> IPv6 -> IPv4 -> UDP`
+
+### 07_ipv6_in_ipv6_tcp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv6(next-header=41) / inner IPv6 / TCP
+- Current path: `EthernetII -> IPv6 -> IPv6 -> TCP`
+
+### 08_ipv6_in_ipv6_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv6(next-header=41) / inner IPv6 / UDP
+- Current path: `EthernetII -> IPv6 -> IPv6 -> UDP`
+
+### 09_outer_vlan_ipv4_in_ipv4_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / VLAN(660) / outer IPv4(proto=4) / inner IPv4 / UDP
+- Current path: `EthernetII -> VLAN(vid=660) -> IPv4 -> IPv4 -> UDP`
+
+### 10_outer_qinq_ipv6_in_ipv4_tcp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / VLAN(661) / VLAN(662) / outer IPv4(proto=41) / inner IPv6 / TCP
+- Current path: `EthernetII -> VLAN(vid=661) -> VLAN(vid=662) -> IPv4 -> IPv6 -> TCP`
+
+### 11_outer_vlan_ipv4_in_ipv6_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / VLAN(660) / outer IPv6(next-header=4) / inner IPv4 / UDP
+- Current path: `EthernetII -> VLAN(vid=660) -> IPv6 -> IPv4 -> UDP`
+
+### 12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=4) / middle IPv4(proto=4) / inner IPv4 / UDP
+- Current path: `EthernetII -> IPv4 -> IPv4 -> IPv4 -> UDP`
+- Current scope: exactly one additional nested IPv4 encapsulation layer is supported here; this is not arbitrary recursive nesting.
+
+### 13_same_inner_tuple_different_outer_ipv4_tunnels.pcap
+
+- Packets: 2
+- Same inner IPv4/UDP tuple appears through two different outer IPv4 tunnel endpoint pairs.
+- Current accepted v1 tradeoff: these merge into one flow because outer tunnel endpoints do not participate in flow identity.
+
+### 14_same_inner_tuple_same_outer_ipv4_two_packets.pcap
+
+- Packets: 2
+- Same outer IPv4 endpoints and same inner IPv4/UDP tuple.
+- Current behavior: one flow with two packets.
+
+### 15_ipv4_in_ipv4_inner_icmp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=4) / inner IPv4 / ICMP echo request
+- Current path: `EthernetII -> IPv4 -> IPv4`
+- Current behavior: recognized as one zero-port ICMP flow keyed by the inner IPv4 endpoints.
+
+### 16_ipv6_in_ipv4_inner_icmpv6.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=41) / inner IPv6 / ICMPv6 echo request
+- Current path: `EthernetII -> IPv4 -> IPv6`
+- Current behavior: recognized as one zero-port ICMPv6 flow keyed by the inner IPv6 endpoints.
+
+### 17_truncated_inner_ipv4_header.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=4) / partial inner IPv4
+- Current behavior: conservative handling only; no crash and no fabricated inner TCP/UDP flow.
+
+### 18_truncated_inner_ipv6_header.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=41) / partial inner IPv6
+- Current behavior: conservative handling only; no crash and no fabricated inner TCP/UDP flow.
+
+### 19_outer_ipv4_proto4_payload_too_short.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv4(proto=4) / tiny non-header payload
+- Current behavior: no crash and no fabricated inner flow.
+
+### 20_ipv6_next41_payload_too_short.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / outer IPv6(next-header=41) / tiny non-header payload
+- Current behavior: no crash and no fabricated inner TCP/UDP flow.
+
+## Expected generated file list
+
+- `01_ipv4_in_ipv4_tcp.pcap`
+- `02_ipv4_in_ipv4_udp.pcap`
+- `03_ipv6_in_ipv4_tcp.pcap`
+- `04_ipv6_in_ipv4_udp.pcap`
+- `05_ipv4_in_ipv6_tcp.pcap`
+- `06_ipv4_in_ipv6_udp.pcap`
+- `07_ipv6_in_ipv6_tcp.pcap`
+- `08_ipv6_in_ipv6_udp.pcap`
+- `09_outer_vlan_ipv4_in_ipv4_udp.pcap`
+- `10_outer_qinq_ipv6_in_ipv4_tcp.pcap`
+- `11_outer_vlan_ipv4_in_ipv6_udp.pcap`
+- `12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap`
+- `13_same_inner_tuple_different_outer_ipv4_tunnels.pcap`
+- `14_same_inner_tuple_same_outer_ipv4_two_packets.pcap`
+- `15_ipv4_in_ipv4_inner_icmp.pcap`
+- `16_ipv6_in_ipv4_inner_icmpv6.pcap`
+- `17_truncated_inner_ipv4_header.pcap`
+- `18_truncated_inner_ipv6_header.pcap`
+- `19_outer_ipv4_proto4_payload_too_short.pcap`
+- `20_ipv6_next41_payload_too_short.pcap`
+
+All 20 fixtures in this directory now have active positive or conservative parser coverage.

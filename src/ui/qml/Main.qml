@@ -1329,6 +1329,9 @@ ApplicationWindow {
                 ipv6PacketCount: mainController.ipv6PacketCount
                 ipv6CapturedBytes: mainController.ipv6CapturedBytes
                 ipv6OriginalBytes: mainController.ipv6OriginalBytes
+                unrecognizedStatsPacketCount: mainController.unrecognizedStatsPacketCount
+                unrecognizedStatsCapturedBytes: mainController.unrecognizedStatsCapturedBytes
+                unrecognizedStatsOriginalBytes: mainController.unrecognizedStatsOriginalBytes
                 quicTotalFlows: mainController.quicTotalFlows
                 quicWithSni: mainController.quicWithSni
                 quicWithoutSni: mainController.quicWithoutSni

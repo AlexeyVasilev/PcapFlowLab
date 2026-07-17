@@ -284,6 +284,9 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
     if (!payload.has_value() || payload->payload_offset > packet_end || payload->has_fragment_header) {
         return std::nullopt;
     }
+    if (detail::parse_ipv6_authentication_payload(bounded_bytes, ipv6_offset).has_value()) {
+        return std::nullopt;
+    }
 
     FlowKeyV6 flow_key {};
     for (std::size_t index = 0; index < 16U; ++index) {
@@ -387,6 +390,229 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
     return std::nullopt;
 }
 
+std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
+    std::span<const std::uint8_t> bounded_bytes,
+    const detail::Ipv4PacketBounds& ipv4_bounds,
+    const std::size_t ah_offset,
+    const FlowKeyV4& flow_base,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder ipv4_builder
+) {
+    const auto ah = detail::parse_ah_header(
+        bounded_bytes,
+        ah_offset,
+        ipv4_bounds.nominal_packet_end
+    );
+    if (!ah.has_value()) {
+        return std::nullopt;
+    }
+
+    auto builder = ipv4_builder;
+    static_cast<void>(builder.push(LayerKey::ah(ah->spi)));
+
+    if (ah->next_header == detail::kIpProtocolIpv4Encapsulation) {
+        return decode_ipv4_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            ipv4_bounds.nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolIpv6Encapsulation) {
+        return decode_ipv6_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            ipv4_bounds.nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolTcp) {
+        if (ah->payload_offset + detail::kTcpMinimumHeaderSize > ipv4_bounds.packet_end ||
+            bounded_bytes.size() < ah->payload_offset + detail::kTcpMinimumHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto tcp_header_length =
+            static_cast<std::size_t>((bounded_bytes[ah->payload_offset + 12U] >> 4U) * 4U);
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            ah->payload_offset + tcp_header_length > ipv4_bounds.packet_end ||
+            bounded_bytes.size() < ah->payload_offset + tcp_header_length) {
+            return std::nullopt;
+        }
+
+        auto flow_key = flow_base;
+        flow_key.src_port = detail::read_be16(bounded_bytes, ah->payload_offset);
+        flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
+        flow_key.protocol = ProtocolId::tcp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(
+            ipv4_bounds.packet_end - (ah->payload_offset + tcp_header_length)
+        );
+        packet_ref.tcp_flags = bounded_bytes[ah->payload_offset + 13U];
+        static_cast<void>(builder.push(LayerKey::tcp()));
+
+        return make_decoded_packet(
+            IngestedPacketV4 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolUdp) {
+        if (ah->payload_offset + detail::kUdpHeaderSize > ipv4_bounds.packet_end ||
+            bounded_bytes.size() < ah->payload_offset + detail::kUdpHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto udp_payload = detail::parse_udp_payload_bounds(
+            bounded_bytes,
+            ah->payload_offset,
+            ipv4_bounds.nominal_packet_end
+        );
+        if (!udp_payload.has_value()) {
+            return std::nullopt;
+        }
+
+        auto flow_key = flow_base;
+        flow_key.src_port = detail::read_be16(bounded_bytes, ah->payload_offset);
+        flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
+        flow_key.protocol = ProtocolId::udp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        static_cast<void>(builder.push(LayerKey::udp()));
+
+        return make_decoded_packet(
+            IngestedPacketV4 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+            builder
+        );
+    }
+
+    return std::nullopt;
+}
+
+std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
+    std::span<const std::uint8_t> bounded_bytes,
+    const std::size_t nominal_packet_end,
+    const std::size_t packet_end,
+    const std::size_t ah_offset,
+    const FlowKeyV6& flow_base,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder ipv6_builder
+) {
+    const auto ah = detail::parse_ah_header(
+        bounded_bytes,
+        ah_offset,
+        nominal_packet_end
+    );
+    if (!ah.has_value()) {
+        return std::nullopt;
+    }
+
+    auto builder = ipv6_builder;
+    static_cast<void>(builder.push(LayerKey::ah(ah->spi)));
+
+    if (ah->next_header == detail::kIpProtocolIpv4Encapsulation) {
+        return decode_ipv4_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolIpv6Encapsulation) {
+        return decode_ipv6_transport_payload(
+            bounded_bytes,
+            ah->payload_offset,
+            nominal_packet_end,
+            packet,
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolTcp) {
+        if (ah->payload_offset + detail::kTcpMinimumHeaderSize > packet_end ||
+            bounded_bytes.size() < ah->payload_offset + detail::kTcpMinimumHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto tcp_header_length =
+            static_cast<std::size_t>((bounded_bytes[ah->payload_offset + 12U] >> 4U) * 4U);
+        if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
+            ah->payload_offset + tcp_header_length > packet_end ||
+            bounded_bytes.size() < ah->payload_offset + tcp_header_length) {
+            return std::nullopt;
+        }
+
+        auto flow_key = flow_base;
+        flow_key.src_port = detail::read_be16(bounded_bytes, ah->payload_offset);
+        flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
+        flow_key.protocol = ProtocolId::tcp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(
+            packet_end - (ah->payload_offset + tcp_header_length)
+        );
+        packet_ref.tcp_flags = bounded_bytes[ah->payload_offset + 13U];
+        static_cast<void>(builder.push(LayerKey::tcp()));
+
+        return make_decoded_packet(
+            IngestedPacketV6 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+            builder
+        );
+    }
+
+    if (ah->next_header == detail::kIpProtocolUdp) {
+        if (ah->payload_offset + detail::kUdpHeaderSize > packet_end ||
+            bounded_bytes.size() < ah->payload_offset + detail::kUdpHeaderSize) {
+            return std::nullopt;
+        }
+
+        const auto udp_payload = detail::parse_udp_payload_bounds(
+            bounded_bytes,
+            ah->payload_offset,
+            nominal_packet_end
+        );
+        if (!udp_payload.has_value()) {
+            return std::nullopt;
+        }
+
+        auto flow_key = flow_base;
+        flow_key.src_port = detail::read_be16(bounded_bytes, ah->payload_offset);
+        flow_key.dst_port = detail::read_be16(bounded_bytes, ah->payload_offset + 2U);
+        flow_key.protocol = ProtocolId::udp;
+
+        auto packet_ref = make_packet_ref(packet);
+        packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
+        static_cast<void>(builder.push(LayerKey::udp()));
+
+        return make_decoded_packet(
+            IngestedPacketV6 {
+                .flow_key = flow_key,
+                .packet_ref = packet_ref,
+            },
+            builder
+        );
+    }
+
+    return std::nullopt;
+}
+
 std::optional<DecodedPacket> decode_supported_ip_transport_payload(
     std::span<const std::uint8_t> packet_bytes,
     const std::uint16_t protocol_type,
@@ -402,6 +628,214 @@ std::optional<DecodedPacket> decode_supported_ip_transport_payload(
         return decode_ipv6_transport_payload(packet_bytes, payload_offset, bounded_packet_end, packet, std::move(builder));
     }
     return std::nullopt;
+}
+
+std::optional<DecodedPacket> try_decode_ipv4_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv4_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    const auto decoded = decode_ipv4_transport_payload(
+        packet_bytes,
+        inner_ipv4_offset,
+        outer_ipv4_packet_end,
+        packet,
+        std::move(builder)
+    );
+    if (!decoded.has_value() || !decoded->ipv4.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto protocol = decoded->ipv4->flow_key.protocol;
+    if (protocol != ProtocolId::tcp && protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    return decoded;
+}
+
+std::optional<DecodedPacket> try_decode_plain_ipv4_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv4_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    if (const auto direct = try_decode_ipv4_encapsulated_inner_packet(
+            packet_bytes,
+            inner_ipv4_offset,
+            outer_ipv4_packet_end,
+            packet,
+            builder
+        );
+        direct.has_value()) {
+        return direct;
+    }
+
+    const auto bounded_bytes = packet_bytes.first(std::min(outer_ipv4_packet_end, packet_bytes.size()));
+    const auto middle_ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, inner_ipv4_offset);
+    if (!middle_ipv4_bounds.has_value() ||
+        middle_ipv4_bounds->nominal_packet_end > bounded_bytes.size()) {
+        return std::nullopt;
+    }
+
+    const auto middle_flags_fragment = detail::read_be16(bounded_bytes, inner_ipv4_offset + 6U);
+    if ((middle_flags_fragment & 0x3FFFU) != 0U) {
+        return std::nullopt;
+    }
+
+    const auto inner_protocol = bounded_bytes[inner_ipv4_offset + 9U];
+    if (inner_protocol == detail::kIpProtocolIcmp) {
+        const auto transport_offset = inner_ipv4_offset + middle_ipv4_bounds->header_length;
+        if (transport_offset + 2U > middle_ipv4_bounds->packet_end ||
+            bounded_bytes.size() < transport_offset + 2U) {
+            return std::nullopt;
+        }
+
+        auto builder_with_inner_ipv4 = builder;
+        static_cast<void>(builder_with_inner_ipv4.push(LayerKey::ipv4()));
+
+        return make_decoded_packet(
+            IngestedPacketV4 {
+                .flow_key = FlowKeyV4 {
+                    .src_addr = detail::read_be32(bounded_bytes, inner_ipv4_offset + 12U),
+                    .dst_addr = detail::read_be32(bounded_bytes, inner_ipv4_offset + 16U),
+                    .src_port = 0U,
+                    .dst_port = 0U,
+                    .protocol = ProtocolId::icmp,
+                },
+                .packet_ref = make_packet_ref(packet),
+            },
+            builder_with_inner_ipv4
+        );
+    }
+
+    const auto middle_protocol = bounded_bytes[inner_ipv4_offset + 9U];
+    if (middle_protocol != detail::kIpProtocolIpv4Encapsulation) {
+        return std::nullopt;
+    }
+
+    const auto inner_ipv4_nested_offset = inner_ipv4_offset + middle_ipv4_bounds->header_length;
+    if (inner_ipv4_nested_offset >= middle_ipv4_bounds->packet_end) {
+        return std::nullopt;
+    }
+
+    const auto middle_bounded_bytes = bounded_bytes.first(middle_ipv4_bounds->packet_end);
+    const auto inner_ipv4_bounds = detail::parse_ipv4_packet_bounds(middle_bounded_bytes, inner_ipv4_nested_offset);
+    if (!inner_ipv4_bounds.has_value() ||
+        inner_ipv4_bounds->nominal_packet_end > middle_ipv4_bounds->packet_end) {
+        return std::nullopt;
+    }
+
+    auto nested_builder = builder;
+    static_cast<void>(nested_builder.push(LayerKey::ipv4()));
+
+    const auto decoded = decode_ipv4_transport_payload(
+        packet_bytes,
+        inner_ipv4_nested_offset,
+        middle_ipv4_bounds->packet_end,
+        packet,
+        std::move(nested_builder)
+    );
+    if (!decoded.has_value() || !decoded->ipv4.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto protocol = decoded->ipv4->flow_key.protocol;
+    if (protocol != ProtocolId::tcp && protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    return decoded;
+}
+
+std::optional<DecodedPacket> try_decode_ipv6_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv6_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    const auto decoded = decode_ipv6_transport_payload(
+        packet_bytes,
+        inner_ipv6_offset,
+        outer_ipv4_packet_end,
+        packet,
+        std::move(builder)
+    );
+    if (!decoded.has_value() || !decoded->ipv6.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto protocol = decoded->ipv6->flow_key.protocol;
+    if (protocol != ProtocolId::tcp && protocol != ProtocolId::udp) {
+        return std::nullopt;
+    }
+
+    return decoded;
+}
+
+std::optional<DecodedPacket> try_decode_plain_ipv6_encapsulated_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t inner_ipv6_offset,
+    const std::size_t outer_ipv4_packet_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder
+) {
+    if (const auto direct = try_decode_ipv6_encapsulated_inner_packet(
+            packet_bytes,
+            inner_ipv6_offset,
+            outer_ipv4_packet_end,
+            packet,
+            builder
+        );
+        direct.has_value()) {
+        return direct;
+    }
+
+    const auto bounded_bytes = packet_bytes.first(std::min(outer_ipv4_packet_end, packet_bytes.size()));
+    if (bounded_bytes.size() < inner_ipv6_offset + detail::kIpv6HeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto version = static_cast<std::uint8_t>(bounded_bytes[inner_ipv6_offset] >> 4U);
+    if (version != 6U) {
+        return std::nullopt;
+    }
+
+    const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, inner_ipv6_offset + 4U));
+    const auto packet_end =
+        std::min(inner_ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_bytes.size());
+
+    const auto payload = detail::parse_ipv6_payload(bounded_bytes, inner_ipv6_offset);
+    if (!payload.has_value() ||
+        payload->payload_offset > packet_end ||
+        payload->has_fragment_header ||
+        payload->next_header != detail::kIpProtocolIcmpV6 ||
+        payload->payload_offset + 2U > packet_end ||
+        bounded_bytes.size() < payload->payload_offset + 2U) {
+        return std::nullopt;
+    }
+
+    FlowKeyV6 flow_key {};
+    for (std::size_t index = 0; index < 16U; ++index) {
+        flow_key.src_addr[index] = bounded_bytes[inner_ipv6_offset + 8U + index];
+        flow_key.dst_addr[index] = bounded_bytes[inner_ipv6_offset + 24U + index];
+    }
+    flow_key.protocol = ProtocolId::icmpv6;
+
+    auto builder_with_inner_ipv6 = builder;
+    static_cast<void>(builder_with_inner_ipv6.push(LayerKey::ipv6()));
+
+    return make_decoded_packet(
+        IngestedPacketV6 {
+            .flow_key = flow_key,
+            .packet_ref = make_packet_ref(packet),
+        },
+        builder_with_inner_ipv6
+    );
 }
 
 std::optional<DecodedPacket> try_decode_vxlan_inner_packet(
@@ -482,6 +916,53 @@ std::optional<DecodedPacket> try_decode_gtpu_inner_packet(
         gtpu->resolved_protocol_type,
         gtpu->resolved_payload_offset,
         gtpu->bounded_packet_end,
+        packet,
+        std::move(builder)
+    );
+}
+
+std::optional<DecodedPacket> try_decode_gre_inner_packet(
+    std::span<const std::uint8_t> packet_bytes,
+    const std::size_t gre_offset,
+    const std::size_t gre_payload_end,
+    const RawPcapPacket& packet,
+    ProtocolPathBuilder builder,
+    const bool allow_eoip
+) {
+    const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, gre_payload_end, allow_eoip);
+    if (!gre.has_value() || !gre->resolved_supported_protocol) {
+        return std::nullopt;
+    }
+
+    if (gre->is_eoip) {
+        static_cast<void>(builder.push(LayerKey::gre(gre->eoip_tunnel_id)));
+    } else {
+        static_cast<void>(builder.push(gre->has_key ? LayerKey::gre(gre->key) : LayerKey::gre()));
+    }
+    if (gre->has_inner_ethernet) {
+        push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, gre->inner_ethernet_offset);
+        push_llc_snap_path_if_resolved(builder, gre->inner_ethernet, gre->resolved_protocol_type);
+    } else if (gre->protocol_type == detail::kEtherTypeMplsUnicast) {
+        const auto mpls = detail::parse_mpls_stack(packet_bytes, gre->payload_offset);
+        if (!detail::mpls_has_resolved_inner_payload(mpls.status)) {
+            return std::nullopt;
+        }
+
+        for (std::size_t index = 0U; index < mpls.label_count; ++index) {
+            static_cast<void>(builder.push(LayerKey::mpls(mpls.labels[index].label)));
+        }
+
+        if (mpls.has_inner_ethernet) {
+            static_cast<void>(builder.push(LayerKey::mpls_pw()));
+            push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, mpls.inner_ethernet_offset);
+            push_llc_snap_path_if_resolved(builder, mpls.inner_ethernet, mpls.inner_protocol_type);
+        }
+    }
+    return decode_supported_ip_transport_payload(
+        packet_bytes,
+        gre->resolved_protocol_type,
+        gre->resolved_payload_offset,
+        gre->bounded_packet_end,
         packet,
         std::move(builder)
     );
@@ -594,6 +1075,34 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 },
                 ipv4_builder
             );
+        }
+
+        if (protocol == detail::kIpProtocolIpv4Encapsulation) {
+            if (const auto inner_packet = try_decode_plain_ipv4_encapsulated_inner_packet(
+                    bounded_bytes,
+                    transport_offset,
+                    packet_end,
+                    packet,
+                    ipv4_builder
+                );
+                inner_packet.has_value()) {
+                return *inner_packet;
+            }
+            return {};
+        }
+
+        if (protocol == detail::kIpProtocolIpv6Encapsulation) {
+            if (const auto inner_packet = try_decode_plain_ipv6_encapsulated_inner_packet(
+                    bounded_bytes,
+                    transport_offset,
+                    packet_end,
+                    packet,
+                    ipv4_builder
+                );
+                inner_packet.has_value()) {
+                return *inner_packet;
+            }
+            return {};
         }
 
         if (protocol == detail::kIpProtocolTcp) {
@@ -740,6 +1249,62 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             );
         }
 
+        if (protocol == detail::kIpProtocolAh) {
+            if (const auto ah_packet = try_decode_direct_ipv4_ah_transport_packet(
+                    bounded_bytes,
+                    *ipv4_bounds,
+                    transport_offset,
+                    flow_base,
+                    packet,
+                    ipv4_builder
+                );
+                ah_packet.has_value()) {
+                return *ah_packet;
+            }
+            return {};
+        }
+
+        if (protocol == detail::kIpProtocolEsp) {
+            const auto esp = detail::parse_esp_header(
+                bounded_bytes,
+                transport_offset,
+                ipv4_bounds->nominal_packet_end
+            );
+            if (!esp.has_value()) {
+                return {};
+            }
+
+            auto flow_key = flow_base;
+            flow_key.protocol = ProtocolId::esp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(esp->payload_length);
+            auto builder = ipv4_builder;
+            static_cast<void>(builder.push(LayerKey::esp(esp->spi)));
+            return make_decoded_packet(
+                IngestedPacketV4 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
+                },
+                builder
+            );
+        }
+
+        if (protocol == detail::kIpProtocolGre) {
+            if (const auto gre_packet = try_decode_gre_inner_packet(
+                    bounded_bytes,
+                    transport_offset,
+                    packet_end,
+                    packet,
+                    ipv4_builder,
+                    true
+                );
+                gre_packet.has_value()) {
+                return *gre_packet;
+            }
+            return {};
+        }
+
         if (protocol == detail::kIpProtocolIcmp) {
             if (bounded_bytes.size() < transport_offset + 2U) {
                 return {};
@@ -796,6 +1361,7 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         if (!payload.has_value() || payload->payload_offset > packet_end) {
             return {};
         }
+        const auto ah_payload = detail::parse_ipv6_authentication_payload(bounded_bytes, ipv6_offset);
 
         FlowKeyV6 flow_key {};
         for (std::size_t index = 0; index < 16U; ++index) {
@@ -806,6 +1372,9 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         static_cast<void>(ipv6_builder.push(LayerKey::ipv6()));
 
         if (payload->has_fragment_header) {
+            if (ah_payload.has_value() && ah_payload->has_fragment_header) {
+                return {};
+            }
             switch (payload->next_header) {
             case detail::kIpProtocolTcp:
                 flow_key.protocol = ProtocolId::tcp;
@@ -830,6 +1399,50 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 },
                 ipv6_builder
             );
+        }
+
+        if (ah_payload.has_value()) {
+            if (const auto ah_packet = try_decode_direct_ipv6_ah_transport_packet(
+                    bounded_bytes,
+                    ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length,
+                    packet_end,
+                    ah_payload->ah_offset,
+                    flow_key,
+                    packet,
+                    ipv6_builder
+                );
+                ah_packet.has_value()) {
+                return *ah_packet;
+            }
+            return {};
+        }
+
+        if (payload->next_header == detail::kIpProtocolIpv4Encapsulation) {
+            if (const auto inner_packet = try_decode_ipv4_encapsulated_inner_packet(
+                    bounded_bytes,
+                    payload->payload_offset,
+                    packet_end,
+                    packet,
+                    ipv6_builder
+                );
+                inner_packet.has_value()) {
+                return *inner_packet;
+            }
+            return {};
+        }
+
+        if (payload->next_header == detail::kIpProtocolIpv6Encapsulation) {
+            if (const auto inner_packet = try_decode_ipv6_encapsulated_inner_packet(
+                    bounded_bytes,
+                    payload->payload_offset,
+                    packet_end,
+                    packet,
+                    ipv6_builder
+                );
+                inner_packet.has_value()) {
+                return *inner_packet;
+            }
+            return {};
         }
 
         if (payload->next_header == detail::kIpProtocolTcp) {
@@ -972,6 +1585,46 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 },
                 builder
             );
+        }
+
+        if (payload->next_header == detail::kIpProtocolEsp) {
+            const auto esp = detail::parse_esp_header(
+                bounded_bytes,
+                payload->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+            );
+            if (!esp.has_value()) {
+                return {};
+            }
+
+            flow_key.protocol = ProtocolId::esp;
+
+            auto packet_ref = make_packet_ref(packet);
+            packet_ref.payload_length = static_cast<std::uint32_t>(esp->payload_length);
+            auto builder = ipv6_builder;
+            static_cast<void>(builder.push(LayerKey::esp(esp->spi)));
+            return make_decoded_packet(
+                IngestedPacketV6 {
+                    .flow_key = flow_key,
+                    .packet_ref = packet_ref,
+                },
+                builder
+            );
+        }
+
+        if (payload->next_header == detail::kIpProtocolGre) {
+            if (const auto gre_packet = try_decode_gre_inner_packet(
+                    bounded_bytes,
+                    payload->payload_offset,
+                    packet_end,
+                    packet,
+                    ipv6_builder,
+                    false
+                );
+                gre_packet.has_value()) {
+                return *gre_packet;
+            }
+            return {};
         }
 
         if (payload->next_header == detail::kIpProtocolIcmpV6) {

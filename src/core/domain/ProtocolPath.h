@@ -38,6 +38,8 @@ enum class ProtocolLayerKind : std::uint16_t {
     geneve,
     gtpu,
     gre,
+    ah,
+    esp,
 };
 
 enum class ProtocolLayerIdentifierKind : std::uint8_t {
@@ -48,6 +50,9 @@ enum class ProtocolLayerIdentifierKind : std::uint8_t {
     vxlan_vni,
     geneve_vni,
     gtpu_teid,
+    gre_key,
+    ah_spi,
+    esp_spi,
 };
 
 struct ProtocolLayerIdentifier {
@@ -85,6 +90,9 @@ struct LayerKey {
     [[nodiscard]] static constexpr LayerKey icmpv6() noexcept;
     [[nodiscard]] static constexpr LayerKey arp() noexcept;
     [[nodiscard]] static constexpr LayerKey gre() noexcept;
+    [[nodiscard]] static constexpr LayerKey gre(std::uint32_t key) noexcept;
+    [[nodiscard]] static constexpr LayerKey ah(std::uint32_t spi) noexcept;
+    [[nodiscard]] static constexpr LayerKey esp(std::uint32_t spi) noexcept;
     [[nodiscard]] static constexpr LayerKey vlan(std::uint16_t vid) noexcept;
     [[nodiscard]] static constexpr LayerKey mpls(std::uint32_t label) noexcept;
     [[nodiscard]] static constexpr LayerKey vxlan(std::uint32_t vni) noexcept;
@@ -285,6 +293,36 @@ constexpr LayerKey LayerKey::arp() noexcept {
 
 constexpr LayerKey LayerKey::gre() noexcept {
     return LayerKey {.kind = ProtocolLayerKind::gre};
+}
+
+constexpr LayerKey LayerKey::gre(const std::uint32_t key) noexcept {
+    return LayerKey {
+        .kind = ProtocolLayerKind::gre,
+        .identifier = ProtocolLayerIdentifier {
+            .kind = ProtocolLayerIdentifierKind::gre_key,
+            .value = key,
+        },
+    };
+}
+
+constexpr LayerKey LayerKey::ah(const std::uint32_t spi) noexcept {
+    return LayerKey {
+        .kind = ProtocolLayerKind::ah,
+        .identifier = ProtocolLayerIdentifier {
+            .kind = ProtocolLayerIdentifierKind::ah_spi,
+            .value = spi,
+        },
+    };
+}
+
+constexpr LayerKey LayerKey::esp(const std::uint32_t spi) noexcept {
+    return LayerKey {
+        .kind = ProtocolLayerKind::esp,
+        .identifier = ProtocolLayerIdentifier {
+            .kind = ProtocolLayerIdentifierKind::esp_spi,
+            .value = spi,
+        },
+    };
 }
 
 constexpr LayerKey LayerKey::vlan(const std::uint16_t vid) noexcept {
