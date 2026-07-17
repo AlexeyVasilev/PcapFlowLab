@@ -415,7 +415,7 @@ Recommended implementation idea:
 
 1. Build a small bounded inline path while decoding the packet.
 2. Look up or insert the path in a session-owned registry.
-3. Store only `protocol_path_id` on packet/flow metadata.
+3. Store only `protocol_path_id` on flow/connection identity metadata.
 4. Use hashing for lookup, but verify full path equality before reusing an existing id.
 
 ## Index Serialization Compatibility
