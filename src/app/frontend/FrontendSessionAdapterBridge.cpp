@@ -409,6 +409,17 @@ std::string overview_json(const pfl::FrontendOverviewDto& overview) {
     out << '{'
         << "\"has_capture\":" << bool_json(overview.has_capture) << ','
         << "\"unrecognized_packet_count\":" << overview.unrecognized_packet_count << ','
+        << "\"unrecognized_packets\":";
+    if (overview.unrecognized_packets.has_value()) {
+        out << '{'
+            << "\"packet_count\":" << overview.unrecognized_packets->packet_count << ','
+            << "\"captured_bytes\":" << overview.unrecognized_packets->captured_bytes << ','
+            << "\"original_bytes\":" << overview.unrecognized_packets->original_bytes
+            << "},";
+    } else {
+        out << "null,";
+    }
+    out
         << "\"summary\":{"
         << "\"packet_count\":" << overview.summary.packet_count << ','
         << "\"flow_count\":" << overview.summary.flow_count << ','

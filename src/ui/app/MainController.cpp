@@ -3171,6 +3171,18 @@ qulonglong MainController::ipv6TotalBytes() const noexcept {
     return static_cast<qulonglong>(protocol_summary_.ipv6.original_bytes);
 }
 
+qulonglong MainController::unrecognizedStatsPacketCount() const noexcept {
+    return static_cast<qulonglong>(unrecognized_packet_statistics_.packet_count);
+}
+
+qulonglong MainController::unrecognizedStatsCapturedBytes() const noexcept {
+    return static_cast<qulonglong>(unrecognized_packet_statistics_.captured_bytes);
+}
+
+qulonglong MainController::unrecognizedStatsOriginalBytes() const noexcept {
+    return static_cast<qulonglong>(unrecognized_packet_statistics_.original_bytes);
+}
+
 qulonglong MainController::quicTotalFlows() const noexcept {
     return static_cast<qulonglong>(quic_recognition_stats_.total_flows);
 }
@@ -5162,6 +5174,7 @@ void MainController::resetLoadedState() {
     finishOpenProgress();
     session_ = {};
     protocol_summary_ = {};
+    unrecognized_packet_statistics_ = {};
     protocol_path_summary_ = {};
     loaded_protocol_path_statistics_mode_ = -1;
     protocol_path_stats_model_.clear();
@@ -5207,6 +5220,7 @@ void MainController::applyLoadedState(const QString& path) {
     source_capture_unavailable_notice_shown_ = false;
     current_input_path_ = path;
     protocol_summary_ = session_.protocol_summary();
+    unrecognized_packet_statistics_ = session_.unrecognized_packet_statistics();
     protocol_path_summary_ = {};
     loaded_protocol_path_statistics_mode_ = -1;
     protocol_path_stats_model_.clear();

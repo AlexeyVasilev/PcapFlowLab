@@ -2323,6 +2323,7 @@ FrontendSmartExportResult FrontendSessionAdapter::export_smart_unrecognized_pack
 
 FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
     const auto protocol_summary = session_.protocol_summary();
+    const auto unrecognized_packets = session_.unrecognized_packet_statistics();
     const auto protocol_path_presentations = build_protocol_path_presentations(session_);
     const auto top_summary = session_.has_capture() ? session_.top_summary() : CaptureTopSummary {};
     return FrontendOverviewDto {
@@ -2333,6 +2334,9 @@ FrontendOverviewDto FrontendSessionAdapter::get_overview() const {
         .original_bytes = protocol_summary.tcp.original_bytes + protocol_summary.udp.original_bytes +
             protocol_summary.sctp.original_bytes + protocol_summary.other.original_bytes,
         .unrecognized_packet_count = session_.unrecognized_packet_count(),
+        .unrecognized_packets = unrecognized_packets.packet_count > 0U
+            ? std::optional<UnrecognizedPacketStatistics> {unrecognized_packets}
+            : std::nullopt,
         .protocol_summary = protocol_summary,
         .quic_recognition = session_.quic_recognition_stats(),
         .tls_recognition = session_.tls_recognition_stats(),

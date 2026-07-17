@@ -95,6 +95,12 @@ struct ProtocolStats {
     std::uint64_t original_bytes {0};
 };
 
+struct UnrecognizedPacketStatistics {
+    std::uint64_t packet_count {0};
+    std::uint64_t captured_bytes {0};
+    std::uint64_t original_bytes {0};
+};
+
 struct CaptureProtocolSummary {
     ProtocolStats tcp {};
     ProtocolStats udp {};

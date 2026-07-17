@@ -3138,6 +3138,18 @@ std::size_t CaptureSession::unrecognized_packet_count() const noexcept {
     return state_.unrecognized_packets.size();
 }
 
+UnrecognizedPacketStatistics CaptureSession::unrecognized_packet_statistics() const noexcept {
+    UnrecognizedPacketStatistics summary {};
+    summary.packet_count = static_cast<std::uint64_t>(state_.unrecognized_packets.size());
+
+    for (const auto& record : state_.unrecognized_packets) {
+        summary.captured_bytes += record.packet.captured_length;
+        summary.original_bytes += record.packet.original_length;
+    }
+
+    return summary;
+}
+
 std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(const std::size_t flow_index) const {
     return list_flow_stream_items(flow_index, 0U, std::numeric_limits<std::size_t>::max());
 }

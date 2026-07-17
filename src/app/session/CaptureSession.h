@@ -222,6 +222,7 @@ public:
     [[nodiscard]] std::optional<std::uint64_t> selected_flow_tcp_direction_first_gap_packet_index(std::size_t flow_index, Direction direction) const noexcept;
     [[nodiscard]] std::size_t flow_packet_count(std::size_t flow_index) const noexcept;
     [[nodiscard]] std::size_t unrecognized_packet_count() const noexcept;
+    [[nodiscard]] UnrecognizedPacketStatistics unrecognized_packet_statistics() const noexcept;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index) const;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items(std::size_t flow_index, std::size_t offset, std::size_t limit) const;
     [[nodiscard]] std::vector<StreamItemRow> list_flow_stream_items_for_packet_prefix(std::size_t flow_index, std::size_t max_packets_to_scan, std::size_t limit) const;

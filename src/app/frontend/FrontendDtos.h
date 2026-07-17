@@ -184,6 +184,7 @@ struct FrontendOverviewDto {
     std::uint64_t captured_bytes {0};
     std::uint64_t original_bytes {0};
     std::uint64_t unrecognized_packet_count {0};
+    std::optional<UnrecognizedPacketStatistics> unrecognized_packets {};
     CaptureProtocolSummary protocol_summary {};
     QuicRecognitionStats quic_recognition {};
     TlsRecognitionStats tls_recognition {};
