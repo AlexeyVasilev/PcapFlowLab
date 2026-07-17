@@ -1,18 +1,18 @@
 Synthetic EoIP parsing fixtures for regression tests.
 
-This directory contains tiny deterministic `.pcap` fixtures for a future MikroTik EoIP pass.
-In this pass, the committed fixtures and active tests establish wire-layout and import/accounting
-contracts only. Production EoIP parsing, inner-flow extraction, Packet Details, and protocol-path
-expectations are intentionally deferred.
+This directory contains tiny deterministic `.pcap` fixtures for MikroTik-compatible EoIP over GRE.
+The committed fixtures and active tests cover wire layout, strict recognition, bounded inner
+Ethernet continuation, protocol-path identity normalization, and selected-packet presentation.
 
 ## Purpose
 
 These fixtures cover:
 - GRE version 1 EoIP wire shape over outer IPv4 protocol `47`;
 - the EoIP-specific four-byte payload-length / tunnel-ID word that follows the GRE base header;
+- the correct EoIP wire contract of big-endian frame length plus little-endian tunnel ID;
 - inner Ethernet continuation with inner IPv4, IPv6, VLAN, and QinQ payloads;
 - outer VLAN and outer MPLS preservation before the outer IPv4/GRE carriage;
-- deterministic identity edge cases for future tunnel-ID-aware protocol-path flow identity;
+- deterministic identity edge cases for tunnel-ID-aware protocol-path flow identity;
 - malformed and truncated EoIP robustness cases that must stay conservative.
 
 ## Local generation
@@ -36,15 +36,23 @@ MikroTik EoIP over IPv4 uses:
 - GRE K bit set;
 - GRE Protocol Type `0x6400`;
 - a four-byte word immediately after the GRE base header:
-  - first 16 bits: encapsulated Ethernet payload length;
-  - second 16 bits: EoIP tunnel ID;
+  - first 16 bits: encapsulated Ethernet payload length, encoded big-endian on the wire;
+  - second 16 bits: EoIP tunnel ID, encoded little-endian on the wire;
 - raw inner Ethernet frame immediately after that word.
 
 The complete normal EoIP header is eight bytes:
 
 ```text
-20 01 64 00 <payload-length:2> <tunnel-id:2>
+20 01 64 00 <frame-length:2 BE> <tunnel-id:2 LE>
 ```
+
+Examples:
+- logical tunnel ID `6400` (`0x1900`) is written on the wire as `00 19`;
+- logical tunnel ID `6401` (`0x1901`) is written on the wire as `01 19`;
+- logical tunnel ID `65535` (`0xffff`) is written on the wire as `ff ff`;
+- the real-capture-inspired fixture `07` uses the four-byte word `00 bf 19 00`, which means:
+  - frame length `0x00bf` = `191`;
+  - tunnel ID bytes `19 00`, little-endian decoded to logical tunnel ID `25`.
 
 This fixture set intentionally does **not** encode:
 - PPTP Call ID semantics;
@@ -52,9 +60,9 @@ This fixture set intentionally does **not** encode:
 - GRE checksum or routing fields;
 - a second GRE key after the payload-length / tunnel-ID word.
 
-## Future identity policy
+## Identity policy
 
-Future protocol-path-aware identity for EoIP should normalize the 16-bit tunnel ID into the
+Protocol-path-aware identity for EoIP normalizes the 16-bit tunnel ID into the
 existing GRE key slot:
 
 ```text
@@ -63,16 +71,26 @@ GRE(key=0x00001900)
 
 for tunnel ID `6400` (`0x1900`).
 
+For the real-shape fixture `07`, the expected identity is:
+
+```text
+GRE(key=0x00000019)
+```
+
+because its logical tunnel ID is `25`.
+
 Important rules:
-- the 16-bit EoIP tunnel ID should participate in future flow identity;
-- the 16-bit EoIP payload-length field must **not** participate in identity;
+- the 16-bit EoIP tunnel ID participates in flow identity;
+- the 16-bit EoIP payload-length field does **not** participate in identity;
 - the raw combined 32-bit on-wire word must **not** be interned as a GRE key, because its upper
   16 bits are packet-dependent payload length;
-- same tunnel ID plus same inner tuple should remain one future flow even when inner Ethernet frame
+- the raw combined 32-bit on-wire word is therefore not a stable identity value and must not be
+  treated as a big-endian GRE key surrogate;
+- same tunnel ID plus same inner tuple should remain one flow even when inner Ethernet frame
   lengths differ;
-- same inner tuple plus different tunnel IDs should split in the future.
+- same inner tuple plus different tunnel IDs should split.
 
-No separate `EoIP` protocol-path layer is introduced by these fixtures. The future normalized
+No separate `EoIP` protocol-path layer is introduced by these fixtures. The normalized
 identity is expected to reuse the existing GRE key representation.
 
 ## Shared deterministic constants
@@ -112,12 +130,15 @@ Real-capture-inspired deterministic fixture constants for fixture `07`:
 
 ## Current status
 
-In this pass:
-- all fixtures are committed and actively validated;
-- import/accounting tests are active and green by design;
-- parser-independent byte-layout tests are active and green by design;
-- production parser expectations are **not** active yet;
-- production Packet Details / Summary expectations are **not** active yet.
+Current coverage in this directory:
+- strict EoIP recognition over outer IPv4 GRE when the GRE K bit is set, version is `1`, and the
+  protocol type is `0x6400`;
+- big-endian EoIP frame length plus little-endian tunnel ID parsing;
+- normalized `GRE(key=...)` protocol-path identity using the logical EoIP tunnel ID;
+- bounded inner Ethernet continuation with inner IPv4, IPv6, VLAN, and QinQ payloads;
+- selected-packet Summary / Protocol Details presentation for recognized EoIP packets;
+- conservative malformed handling for truncated headers, invalid bounds, and non-EoIP GRE v1
+  lookalikes.
 
 ## Fixture descriptions
 
@@ -167,7 +188,7 @@ In this pass:
 
 - Packets: 1
 - Layer chain: Ethernet / VLAN 406 / MPLS 56474 / MPLS 477436 / outer IPv4 / EoIP / inner Ethernet / inner VLAN 3918 / inner IPv4 / UDP
-- Tunnel ID: `6400`
+- Tunnel ID: `25`
 - Purpose: deterministic equivalent of the observed real capture shape with outer VLAN + MPLS + EoIP.
 
 ### 08_same_inner_tuple_different_tunnel_ids.pcap
@@ -175,7 +196,7 @@ In this pass:
 - Packets: 2
 - Same outer IPv4 endpoints and same inner IPv4 / UDP tuple.
 - Tunnel IDs: `6400`, `6401`
-- Purpose: future identity split baseline for same inner tuple / different tunnel ID.
+- Purpose: identity split baseline for same inner tuple / different tunnel ID.
 
 ### 09_same_tunnel_id_different_inner_payload_lengths.pcap
 
@@ -183,14 +204,14 @@ In this pass:
 - Same tunnel ID: `6400`
 - Same inner IPv4 / UDP tuple
 - Different inner UDP payload sizes, so the EoIP payload-length field differs between packets
-- Purpose: critical future normalization baseline proving payload length must not split identity.
+- Purpose: critical normalization baseline proving payload length must not split identity.
 
 ### 10_same_tunnel_id_two_packets.pcap
 
 - Packets: 2
 - Same tunnel ID: `6400`
 - Same inner tuple and same payload length
-- Purpose: future one-flow / two-packet baseline inside one tunnel.
+- Purpose: one-flow / two-packet baseline inside one tunnel.
 
 ### 11_max_tunnel_id.pcap
 
@@ -214,7 +235,7 @@ In this pass:
 
 - Packets: 1
 - Layer chain: Ethernet / outer IPv4 / full EoIP header / declared bounded frame shorter than following bytes
-- Purpose: future parser must stay bounded by declared EoIP payload length.
+- Purpose: parser must stay bounded by declared EoIP payload length.
 
 ### 15_eoip_missing_key_bit.pcap
 

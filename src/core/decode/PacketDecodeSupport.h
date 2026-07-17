@@ -85,6 +85,7 @@ inline constexpr std::uint8_t kIgmpTypeV3MembershipReport = 0x22;
 inline constexpr std::uint16_t kUdpPortVxlan = 4789U;
 inline constexpr std::uint16_t kUdpPortGeneve = 6081U;
 inline constexpr std::uint16_t kUdpPortGtpu = 2152U;
+inline constexpr std::uint16_t kGreProtocolTypeEoip = 0x6400U;
 inline constexpr std::uint16_t kGeneveProtocolTypeEthernet = 0x6558U;
 inline constexpr std::uint16_t kGreProtocolTypeTransparentEthernetBridging = 0x6558U;
 inline constexpr std::uint16_t kGreFlagChecksum = 0x8000U;
@@ -278,18 +279,29 @@ struct GrePayloadView {
     bool has_checksum {false};
     bool has_key {false};
     bool has_sequence {false};
+    bool is_eoip {false};
     std::uint16_t checksum {0};
     std::uint32_t key {0};
     std::uint32_t sequence_number {0};
+    std::uint16_t eoip_frame_length {0};
+    std::uint16_t eoip_tunnel_id {0};
     std::size_t payload_offset {0};
     std::optional<std::size_t> bounded_packet_end {};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
+    bool inner_vlan_truncated {false};
     std::size_t inner_ethernet_offset {0};
     LinkLayerPayloadView inner_ethernet {};
     bool resolved_supported_protocol {false};
     std::uint16_t resolved_protocol_type {0};
     std::size_t resolved_payload_offset {0};
+};
+
+struct ParsedEoipHeader {
+    std::uint16_t frame_length {0};
+    std::uint16_t tunnel_id {0};
+    std::size_t inner_frame_offset {0};
+    std::size_t inner_frame_end {0};
 };
 
 struct MplsStackView {
@@ -400,6 +412,11 @@ struct PppoeSessionPayloadView {
 inline std::uint16_t read_be16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
     return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[offset]) << 8U) |
                                       static_cast<std::uint16_t>(bytes[offset + 1]));
+}
+
+inline std::uint16_t read_le16(std::span<const std::uint8_t> bytes, const std::size_t offset) {
+    return static_cast<std::uint16_t>(static_cast<std::uint16_t>(bytes[offset]) |
+                                      (static_cast<std::uint16_t>(bytes[offset + 1]) << 8U));
 }
 
 inline std::uint32_t read_be32(std::span<const std::uint8_t> bytes, const std::size_t offset) {
@@ -795,6 +812,42 @@ inline std::optional<VxlanPayloadView> parse_vxlan_payload(
     return view;
 }
 
+inline bool has_strict_eoip_signature(const std::uint16_t flags_version, const std::uint16_t protocol_type) noexcept {
+    return (flags_version & kGreVersionMask) == 1U &&
+           (flags_version & kGreFlagKey) != 0U &&
+           (flags_version & kGreFlagChecksum) == 0U &&
+           (flags_version & kGreFlagSequence) == 0U &&
+           protocol_type == kGreProtocolTypeEoip;
+}
+
+inline std::optional<ParsedEoipHeader> parse_eoip_header(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t key_word_offset,
+    const std::size_t gre_payload_end
+) {
+    if (key_word_offset + kGreOptionalFieldSize > gre_payload_end ||
+        bytes.size() < key_word_offset + kGreOptionalFieldSize) {
+        return std::nullopt;
+    }
+
+    const auto frame_length = read_be16(bytes, key_word_offset);
+    const auto tunnel_id = read_le16(bytes, key_word_offset + 2U);
+    const auto inner_frame_offset = key_word_offset + kGreOptionalFieldSize;
+    const auto inner_frame_end = inner_frame_offset + static_cast<std::size_t>(frame_length);
+    if (inner_frame_end < inner_frame_offset ||
+        inner_frame_end > gre_payload_end ||
+        bytes.size() < inner_frame_end) {
+        return std::nullopt;
+    }
+
+    return ParsedEoipHeader {
+        .frame_length = frame_length,
+        .tunnel_id = tunnel_id,
+        .inner_frame_offset = inner_frame_offset,
+        .inner_frame_end = inner_frame_end,
+    };
+}
+
 inline std::optional<GenevePayloadView> parse_geneve_payload(
     std::span<const std::uint8_t> bytes,
     const std::size_t geneve_offset,
@@ -964,7 +1017,8 @@ inline std::optional<GtpuPayloadView> parse_gtpu_payload(
 inline std::optional<GrePayloadView> parse_gre_payload(
     std::span<const std::uint8_t> bytes,
     const std::size_t gre_offset,
-    const std::size_t gre_payload_end
+    const std::size_t gre_payload_end,
+    const bool allow_eoip = false
 ) {
     if (gre_offset + kGreBaseHeaderSize > gre_payload_end ||
         bytes.size() < gre_offset + kGreBaseHeaderSize) {
@@ -979,10 +1033,6 @@ inline std::optional<GrePayloadView> parse_gre_payload(
     view.has_sequence = (view.flags_version & kGreFlagSequence) != 0U;
     view.bounded_packet_end = gre_payload_end;
 
-    if ((view.flags_version & kGreVersionMask) != 0U) {
-        return view;
-    }
-
     auto cursor = gre_offset + kGreBaseHeaderSize;
     if (view.has_checksum) {
         if (cursor + kGreOptionalFieldSize > gre_payload_end ||
@@ -991,6 +1041,72 @@ inline std::optional<GrePayloadView> parse_gre_payload(
         }
         view.checksum = read_be16(bytes, cursor);
         cursor += kGreOptionalFieldSize;
+    }
+
+    if (allow_eoip && has_strict_eoip_signature(view.flags_version, view.protocol_type)) {
+        const auto eoip = parse_eoip_header(bytes, cursor, gre_payload_end);
+        if (!eoip.has_value()) {
+            return std::nullopt;
+        }
+
+        view.is_eoip = true;
+        view.eoip_frame_length = eoip->frame_length;
+        view.eoip_tunnel_id = eoip->tunnel_id;
+        view.payload_offset = eoip->inner_frame_offset;
+        view.resolved_payload_offset = eoip->inner_frame_offset;
+        view.bounded_packet_end = eoip->inner_frame_end;
+        view.inner_ethernet_offset = eoip->inner_frame_offset;
+
+        if (eoip->inner_frame_end <= eoip->inner_frame_offset) {
+            view.has_inner_ethernet = true;
+            view.inner_ethernet_truncated = true;
+            return view;
+        }
+
+        const auto inner_payload_length = eoip->inner_frame_end - eoip->inner_frame_offset;
+        if (inner_payload_length < kEthernetHeaderSize) {
+            view.has_inner_ethernet = true;
+            view.inner_ethernet_truncated = true;
+            return view;
+        }
+
+        const auto inner_bytes = bytes.subspan(eoip->inner_frame_offset, inner_payload_length);
+        if (const auto continuation = parse_ethernet_continuation(inner_bytes, 0U); continuation.has_value()) {
+            view.has_inner_ethernet = true;
+            view.inner_ethernet = continuation->link_layer;
+            if (continuation->bounded_packet_end.has_value()) {
+                view.bounded_packet_end = eoip->inner_frame_offset + *continuation->bounded_packet_end;
+            }
+            if (continuation->resolved_supported_protocol) {
+                view.resolved_supported_protocol = true;
+                view.resolved_protocol_type = continuation->resolved_protocol_type;
+                view.resolved_payload_offset = eoip->inner_frame_offset + continuation->resolved_payload_offset;
+            }
+            return view;
+        }
+
+        view.has_inner_ethernet = true;
+        view.inner_ethernet = LinkLayerPayloadView {
+            .protocol_type = read_be16(bytes, eoip->inner_frame_offset + 12U),
+            .payload_offset = eoip->inner_frame_offset + kEthernetHeaderSize,
+            .is_ethernet = true,
+            .is_ieee_802_3 = read_be16(bytes, eoip->inner_frame_offset + 12U) < kIeee8023LengthCutoff,
+            .declared_payload_length = static_cast<std::uint16_t>(
+                read_be16(bytes, eoip->inner_frame_offset + 12U) < kIeee8023LengthCutoff
+                    ? read_be16(bytes, eoip->inner_frame_offset + 12U)
+                    : 0U),
+        };
+        if (is_vlan_ether_type(view.inner_ethernet.protocol_type) &&
+            inner_payload_length < kEthernetHeaderSize + kVlanHeaderSize) {
+            view.inner_vlan_truncated = true;
+        } else {
+            view.inner_ethernet_truncated = true;
+        }
+        return view;
+    }
+
+    if ((view.flags_version & kGreVersionMask) != 0U) {
+        return view;
     }
 
     if (view.has_key) {

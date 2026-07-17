@@ -214,17 +214,31 @@ struct GreDetails {
     bool has_checksum {false};
     bool has_key {false};
     bool has_sequence {false};
+    bool is_eoip {false};
     std::uint16_t checksum {0};
     std::uint32_t key {0};
+    bool version1_pptp_like {false};
     bool payload_length_present {false};
     std::uint16_t payload_length {0};
     bool call_id_present {false};
     std::uint16_t call_id {0};
+    bool eoip_missing_key_bit {false};
+    std::uint8_t eoip_available_header_bytes {0};
+    bool eoip_header_truncated {false};
+    std::uint16_t eoip_frame_length {0};
+    std::uint16_t eoip_tunnel_id {0};
+    std::uint16_t eoip_available_inner_frame_bytes {0};
+    bool eoip_declared_frame_exceeds_available {false};
     std::uint32_t sequence_number {0};
     bool protocol_type_supported {false};
     bool unknown_inner_payload {false};
     bool has_inner_ethernet {false};
     bool inner_ethernet_truncated {false};
+    bool inner_vlan_truncated {false};
+    bool partial_inner_vlan_present {false};
+    std::uint16_t partial_inner_vlan_tpid {0};
+    std::uint16_t partial_inner_vlan_tci {0};
+    std::uint8_t partial_inner_vlan_available_header_bytes {0};
     bool has_inner_packet {false};
     std::shared_ptr<GreInnerPacketDetails> inner_packet {};
 };
@@ -533,6 +547,8 @@ struct GreInnerPacketDetails {
     UdpDetails udp {};
     bool has_sctp {false};
     SctpDetails sctp {};
+    std::optional<std::uint32_t> transport_payload_length {};
+    std::optional<std::uint32_t> original_transport_payload_length {};
 };
 
 struct IgmpDetails {

@@ -926,14 +926,19 @@ std::optional<DecodedPacket> try_decode_gre_inner_packet(
     const std::size_t gre_offset,
     const std::size_t gre_payload_end,
     const RawPcapPacket& packet,
-    ProtocolPathBuilder builder
+    ProtocolPathBuilder builder,
+    const bool allow_eoip
 ) {
-    const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, gre_payload_end);
+    const auto gre = detail::parse_gre_payload(packet_bytes, gre_offset, gre_payload_end, allow_eoip);
     if (!gre.has_value() || !gre->resolved_supported_protocol) {
         return std::nullopt;
     }
 
-    static_cast<void>(builder.push(gre->has_key ? LayerKey::gre(gre->key) : LayerKey::gre()));
+    if (gre->is_eoip) {
+        static_cast<void>(builder.push(LayerKey::gre(gre->eoip_tunnel_id)));
+    } else {
+        static_cast<void>(builder.push(gre->has_key ? LayerKey::gre(gre->key) : LayerKey::gre()));
+    }
     if (gre->has_inner_ethernet) {
         push_link_layer_path(builder, packet_bytes, kLinkTypeEthernet, gre->inner_ethernet_offset);
         push_llc_snap_path_if_resolved(builder, gre->inner_ethernet, gre->resolved_protocol_type);
@@ -1291,7 +1296,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                     transport_offset,
                     packet_end,
                     packet,
-                    ipv4_builder
+                    ipv4_builder,
+                    true
                 );
                 gre_packet.has_value()) {
                 return *gre_packet;
@@ -1612,7 +1618,8 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                     payload->payload_offset,
                     packet_end,
                     packet,
-                    ipv6_builder
+                    ipv6_builder,
+                    false
                 );
                 gre_packet.has_value()) {
                 return *gre_packet;

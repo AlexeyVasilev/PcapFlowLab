@@ -111,6 +111,29 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_ah_payload(
     return std::nullopt;
 }
 
+std::optional<std::uint32_t> derive_transport_payload_length_from_gre_payload(
+    const std::span<const std::uint8_t> bounded_bytes,
+    const PacketRef& packet,
+    const std::size_t gre_offset,
+    const std::size_t nominal_packet_end,
+    const bool allow_eoip
+) {
+    const auto gre = detail::parse_gre_payload(bounded_bytes, gre_offset, nominal_packet_end, allow_eoip);
+    if (!gre.has_value() || !gre->resolved_supported_protocol) {
+        return std::nullopt;
+    }
+
+    if (gre->resolved_protocol_type == detail::kEtherTypeIpv4) {
+        return derive_transport_payload_length_from_ipv4_packet(bounded_bytes, packet, gre->resolved_payload_offset);
+    }
+
+    if (gre->resolved_protocol_type == detail::kEtherTypeIpv6) {
+        return derive_transport_payload_length_from_ipv6_packet(bounded_bytes, packet, gre->resolved_payload_offset);
+    }
+
+    return std::nullopt;
+}
+
 std::optional<std::uint32_t> derive_transport_payload_length_from_ipv4_packet(
     const std::span<const std::uint8_t> bounded_bytes,
     const PacketRef& packet,
@@ -183,6 +206,16 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_ipv4_packet(
         );
     }
 
+    if (protocol == detail::kIpProtocolGre) {
+        return derive_transport_payload_length_from_gre_payload(
+            bounded_bytes,
+            packet,
+            transport_offset,
+            ipv4_bounds->nominal_packet_end,
+            true
+        );
+    }
+
     return std::nullopt;
 }
 
@@ -251,6 +284,16 @@ std::optional<std::uint32_t> derive_transport_payload_length_from_ipv6_packet(
 
     if (payload->next_header == detail::kIpProtocolIpv6Encapsulation) {
         return derive_transport_payload_length_from_ipv6_packet(bounded_bytes, packet, payload->payload_offset);
+    }
+
+    if (payload->next_header == detail::kIpProtocolGre) {
+        return derive_transport_payload_length_from_gre_payload(
+            bounded_bytes,
+            packet,
+            payload->payload_offset,
+            nominal_packet_end,
+            false
+        );
     }
 
     return std::nullopt;
