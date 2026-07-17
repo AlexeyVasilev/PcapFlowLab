@@ -213,7 +213,7 @@ The same metadata is also needed for future:
 - `protocol path registry`
   - An interned mapping from `ProtocolPath` value objects to compact `ProtocolPathId` integers.
 - `protocol path id`
-  - A compact stable-per-session identifier used in `FlowKeyV2`, packet metadata, and later statistics/filter structures.
+  - A compact stable-per-session identifier used in `FlowKeyV2`, flow/connection metadata, and later statistics/filter structures.
 - `flow namespace`
   - The identity context created by the ordered protocol path and its namespace identifiers, distinct from the endpoint tuple alone.
 - `prefix path`
@@ -430,7 +430,7 @@ Static audit of the current format:
 
 Current implementation state:
 
-- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 12`;
+- `src/core/index/CaptureIndex.h` sets `kCaptureIndexVersion = 13`;
 - `src/core/index/Serialization.cpp` serializes:
   - `protocol_path_id` in `FlowKeyV4` / `FlowKeyV6`;
   - `protocol_path_id` in `ConnectionKeyV4` / `ConnectionKeyV6`;
@@ -488,7 +488,7 @@ Current index-save behavior relevant to large protocol-path-aware captures:
 
 - Qt save-index now runs asynchronously with low-noise progress text and cooperative cancel;
 - index save writes to a same-directory temporary file and replaces the final target only after successful finalization;
-- index v12 now allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
+- index v13 allows repeated `ipv4_connections` and `ipv6_connections` sections so large captures can be written and reopened as bounded connection chunks;
 - each connection chunk remains self-contained and split only on connection boundaries; protocol-path registry data is still written once per capture;
 - the current index format does not write a separate footer/final-marker record; "finalized" currently means that all required sections parse cleanly through EOF;
 - interrupted or cancelled saves should leave the previous final `.idx` unchanged;

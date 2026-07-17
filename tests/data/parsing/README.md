@@ -61,7 +61,7 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: direct IPv6 AH baseline carrying UDP.
 
 `ah/05_ipv4_ah_same_tuple_different_spi.pcap`
-- Purpose: same IPv4 tuple with different AH SPI values for future identity coverage.
+- Purpose: same IPv4 tuple with different AH SPI values for SPI-aware identity coverage.
 
 `ah/06_ipv4_ah_same_spi_two_packets.pcap`
 - Purpose: same-SPI repeated two-packet grouping baseline.
@@ -70,7 +70,7 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: IPv6 analogue of same-tuple different-SPI coverage.
 
 `ah/08_ipv4_ah_same_spi_different_sequence.pcap`
-- Purpose: same-SPI sequence variation baseline for future details-only sequence handling.
+- Purpose: same-SPI sequence variation baseline for details-only sequence handling.
 
 `ah/09_outer_vlan_ipv4_ah_udp.pcap`
 - Purpose: outer VLAN preserved before IPv4 AH.
@@ -82,16 +82,16 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: IPv6 Hop-by-Hop placement immediately before AH.
 
 `ah/12_ipv4_ah_inner_ipv4_udp.pcap`
-- Purpose: staged tunnel-mode IPv4 AH carrying inner IPv4 / UDP.
+- Purpose: tunnel-mode IPv4 AH carrying inner IPv4 / UDP.
 
 `ah/13_ipv4_ah_inner_ipv6_tcp.pcap`
-- Purpose: staged tunnel-mode IPv4 AH carrying inner IPv6 / TCP.
+- Purpose: tunnel-mode IPv4 AH carrying inner IPv6 / TCP.
 
 `ah/14_ipv6_ah_inner_ipv4_udp.pcap`
-- Purpose: staged tunnel-mode IPv6 AH carrying inner IPv4 / UDP.
+- Purpose: tunnel-mode IPv6 AH carrying inner IPv4 / UDP.
 
 `ah/15_ipv6_ah_inner_ipv6_tcp.pcap`
-- Purpose: staged tunnel-mode IPv6 AH carrying inner IPv6 / TCP.
+- Purpose: tunnel-mode IPv6 AH carrying inner IPv6 / TCP.
 
 `ah/16_ah_truncated_fixed_header.pcap`
 - Purpose: snaplen-style truncation before the full 12-byte AH fixed header is available.
@@ -153,7 +153,7 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: outer QinQ preserved before GRE/inner IPv4/TCP.
 
 `gre/15_gre_mpls_ipv4_udp.pcap`
-- Purpose: staged GRE payload protocol type `0x8847` MPLS coverage with inner IPv4/UDP.
+- Purpose: GRE payload protocol type `0x8847` MPLS coverage with inner IPv4/UDP.
 
 `gre/16_gre_unknown_protocol_type.pcap`
 - Purpose: GRE unknown payload protocol type robustness without fabricating an inner flow.
@@ -171,10 +171,10 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: snaplen-truncated inner IPv4 payload behind a complete GRE header.
 
 `gre/21_gre_same_inner_tuple_different_keys.pcap`
-- Purpose: namespace-collision staging where identical inner tuples differ only by GRE key.
+- Purpose: same-inner-tuple GRE-key identity split coverage.
 
 `gre/22_gre_same_inner_tuple_same_key_two_packets.pcap`
-- Purpose: same-key, same-inner-tuple two-packet grouping baseline for future GRE tests.
+- Purpose: same-key, same-inner-tuple two-packet grouping baseline.
 
 ## ESP
 
@@ -185,7 +185,7 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: outer IPv6 ESP baseline with deterministic SPI and Sequence Number.
 
 `esp/03_ipv4_esp_same_hosts_different_spi.pcap`
-- Purpose: same IPv4 endpoints but different SPI values for future SPI-aware identity coverage.
+- Purpose: same IPv4 endpoints but different SPI values for SPI-aware identity coverage.
 
 `esp/04_ipv4_esp_same_spi_two_packets.pcap`
 - Purpose: same SPI two-packet grouping baseline with sequence-only variation.
@@ -230,7 +230,7 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: staged UDP/4500 Non-ESP Marker negative control for future NAT-T detection.
 
 `esp/18_ipv4_esp_two_directions_different_spi.pcap`
-- Purpose: opposite-direction ESP packets with different SPI values for future directional identity coverage.
+- Purpose: opposite-direction ESP packets with different SPI values for directional SPI-aware identity coverage.
 
 ## EoIP
 
@@ -256,13 +256,13 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: deterministic real-shape coverage for outer VLAN + two MPLS labels before outer IPv4 / EoIP plus inner VLAN / IPv4 / UDP.
 
 `eoip/08_same_inner_tuple_different_tunnel_ids.pcap`
-- Purpose: future tunnel-ID identity split baseline for the same inner tuple through tunnel IDs `6400` and `6401`.
+- Purpose: tunnel-ID identity split baseline for the same inner tuple through tunnel IDs `6400` and `6401`.
 
 `eoip/09_same_tunnel_id_different_inner_payload_lengths.pcap`
-- Purpose: future payload-length normalization baseline proving packet-dependent EoIP payload length must not split identity.
+- Purpose: payload-length normalization baseline proving packet-dependent EoIP payload length must not split identity.
 
 `eoip/10_same_tunnel_id_two_packets.pcap`
-- Purpose: same-tunnel two-packet grouping baseline for future parser expectations.
+- Purpose: same-tunnel two-packet grouping baseline.
 
 `eoip/11_max_tunnel_id.pcap`
 - Purpose: `65535` tunnel-ID boundary-value coverage.
@@ -324,13 +324,13 @@ This catalog documents synthetic parsing fixtures that were added for targeted r
 - Purpose: outer VLAN preserved before outer IPv6 next-header `4` and inner IPv4/UDP.
 
 `ip_encapsulation/12_nested_ipv4_in_ipv4_in_ipv4_udp.pcap`
-- Purpose: repeated nested IPv4 layers for future positional protocol-path coverage.
+- Purpose: repeated nested IPv4 layers for implemented bounded positional protocol-path coverage.
 
 `ip_encapsulation/13_same_inner_tuple_different_outer_ipv4_tunnels.pcap`
 - Purpose: same inner IPv4/UDP tuple through two different outer IPv4 tunnel endpoint pairs to document the accepted v1 merge tradeoff.
 
 `ip_encapsulation/14_same_inner_tuple_same_outer_ipv4_two_packets.pcap`
-- Purpose: same outer and inner IPv4/UDP tuple repeated twice as a future one-flow/two-packet baseline.
+- Purpose: same outer and inner IPv4/UDP tuple repeated twice as a one-flow/two-packet baseline.
 
 `ip_encapsulation/15_ipv4_in_ipv4_inner_icmp.pcap`
 - Purpose: outer IPv4 protocol `4` carrying inner IPv4 ICMP echo request.

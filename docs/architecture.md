@@ -33,7 +33,10 @@ The fast path is the default way to open a capture.
 Saved analysis indexes can be opened directly instead of re-importing the capture.
 
 - The index stores capture summary, connections, flows, packet references, source metadata, and checkpointable analysis state.
-- The binary format is explicitly sectioned and loaded with an exact-version policy.
+- The current binary format is explicitly sectioned, versioned as index format `13`, and loaded with an exact-version policy.
+- Stable index data also includes the capture-level protocol-path registry plus flow/connection protocol-path identity metadata.
+- Runtime protocol-path statistics trees are rebuilt from indexed flow metadata and are not themselves persisted.
+- Unrecognized-packet metadata is persisted in current-format indexes and survives save/load without rescanning the source PCAP.
 - Raw packet bytes are not stored in the index.
 - An index can be opened without the original capture; this is an explicit index-only mode.
 - Raw packet features become available again only after the matching source capture is attached and validated.
@@ -63,7 +66,9 @@ On-demand analysis is separate from the fast path and from index loading.
 
 - Connections use a canonical symmetric key for bidirectional grouping.
 - Each runtime connection keeps separate `flow_a` and `flow_b` packet lists.
-- `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, transport payload length, TCP flags, link type, and fragmentation metadata.
+- Effective flow identity is the normalized endpoint tuple plus an interned `protocol_path_id`, so namespace-bearing layers such as GRE key, ESP SPI, AH SPI, and MikroTik EoIP Tunnel ID (normalized through the GRE-key slot) can split otherwise identical tuples.
+- `PacketRef` stores packet index, file offset, timestamp, captured/original lengths, effective terminal transport payload length, TCP flags, link type, and fragmentation metadata.
+- `PacketRef` does not store protocol-path identity; recognized packets resolve that through their owning flow/connection metadata.
 - Packet bytes are loaded lazily when details, payload, protocol text, export, or stream analysis needs them.
 - Selected-flow packet lists now use bounded initial materialization in the UI. Small flows that fit within the initial packet budget are materialized fully, while larger flows append additional rows only through explicit Load more continuation.
 - Selected-flow packet rows may be annotated on demand with exact-duplicate TCP retransmission suspicion using direction + seq + ack + payload length + payload bytes. This remains flow-local, conservative, and presentation-oriented.

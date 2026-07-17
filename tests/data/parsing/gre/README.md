@@ -43,7 +43,7 @@ Notes:
   - `0x86DD` IPv6
   - `0x6558` Transparent Ethernet Bridging
   - `0x8847` MPLS unicast
-- GRE version 1 / PPTP-like framing is intentionally staged as unsupported/deferred coverage in this pass.
+- GRE version 1 / PPTP-like framing remains intentionally unsupported/deferred in this pass.
 
 ## Shared constants
 
@@ -91,37 +91,37 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE / IPv4 / TCP
-- Expected future behavior: normal TCP flow; path `EthernetII -> IPv4 -> GRE -> IPv4 -> TCP`.
+- Current behavior: normal TCP flow; path `EthernetII -> IPv4 -> GRE -> IPv4 -> TCP`.
 
 ### 02_gre_ipv4_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE / IPv4 / UDP
-- Expected future behavior: normal UDP flow; path `EthernetII -> IPv4 -> GRE -> IPv4 -> UDP`.
+- Current behavior: normal UDP flow; path `EthernetII -> IPv4 -> GRE -> IPv4 -> UDP`.
 
 ### 03_gre_ipv6_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE / IPv6 / TCP
-- Expected future behavior: normal IPv6 TCP flow; path `EthernetII -> IPv4 -> GRE -> IPv6 -> TCP`.
+- Current behavior: normal IPv6 TCP flow; path `EthernetII -> IPv4 -> GRE -> IPv6 -> TCP`.
 
 ### 04_gre_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE / IPv6 / UDP
-- Expected future behavior: normal IPv6 UDP flow.
+- Current behavior: normal IPv6 UDP flow.
 
 ### 05_ipv6_outer_gre_ipv4_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / GRE / IPv4 / TCP
-- Expected future behavior: normal IPv4 TCP flow with outer IPv6 preserved in the path.
+- Current behavior: normal IPv4 TCP flow with outer IPv6 preserved in the path.
 
 ### 06_ipv6_outer_gre_ipv6_udp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv6 / GRE / IPv6 / UDP
-- Expected future behavior: normal IPv6 UDP flow with outer IPv6 GRE carriage.
+- Current behavior: normal IPv6 UDP flow with outer IPv6 GRE carriage.
 
 ### 07_gre_key_ipv4_udp.pcap
 
@@ -165,13 +165,13 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 
 - Packets: 1
 - Layer chain: Ethernet / outer VLAN / IPv4 / GRE / IPv4 / UDP
-- Expected future behavior: outer VLAN is preserved before outer IPv4/GRE.
+- Current behavior: outer VLAN is preserved before outer IPv4/GRE.
 
 ### 14_outer_qinq_gre_ipv4_tcp.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / outer QinQ / outer VLAN / IPv4 / GRE / IPv4 / TCP
-- Expected future behavior: both outer VLAN tags are preserved.
+- Current behavior: both outer VLAN tags are preserved.
 
 ### 15_gre_mpls_ipv4_udp.pcap
 
@@ -183,7 +183,7 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE(unknown protocol type) / Raw
-- Expected future behavior: GRE recognized, payload opaque, no fabricated TCP/UDP flow, no crash.
+- Current behavior: GRE recognized, payload opaque, no fabricated TCP/UDP flow, no crash.
 
 ### 17_gre_version1_pptp_like_unsupported.pcap
 
@@ -196,19 +196,19 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / partial GRE
-- Expected future behavior: conservative truncated GRE handling; no crash.
+- Current behavior: conservative truncated GRE handling; no crash.
 
 ### 19_gre_truncated_key_field.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE(key flag set) / partial key bytes
-- Expected future behavior: conservative truncated optional-field handling; no crash.
+- Current behavior: conservative truncated optional-field handling; no crash.
 
 ### 20_gre_truncated_inner_ipv4.pcap
 
 - Packets: 1
 - Layer chain: Ethernet / IPv4 / GRE / partial inner IPv4
-- Expected future behavior: GRE layer visible; inner IPv4 partial/truncated handling remains conservative.
+- Current behavior: GRE layer visible; inner IPv4 partial/truncated handling remains conservative.
 
 ### 21_gre_same_inner_tuple_different_keys.pcap
 
@@ -225,7 +225,6 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 - Layer chain: Ethernet / IPv4 / GRE(key) / IPv4 / UDP
 - GRE key on both packets: `0x11111111`
 - Current behavior: one flow with packet count `2` because both packets share the same keyed GRE protocol path.
-- Expected future behavior: one normal flow with two packets.
 
 ## Expected generated file list
 

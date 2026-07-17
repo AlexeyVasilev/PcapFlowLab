@@ -2,7 +2,7 @@ Synthetic AH parsing fixtures for regression tests.
 
 This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
 - direct IPv4 and IPv6 Authentication Header carriage using protocol / next-header `51`;
-- SPI and sequence-number identity baselines for future AH-aware protocol-path work;
+- SPI-aware identity coverage and sequence-number details baselines for AH protocol-path work;
 - outer VLAN / QinQ preservation before AH;
 - IPv6 Hop-by-Hop placement before AH;
 - AH tunnel-mode carriage with inner IPv4 / IPv6 payloads;
@@ -80,7 +80,7 @@ Implemented in the current branch:
   - `AH(spi=0x...)`
 - outer VLAN / QinQ preservation before AH;
 - selected-packet AH Summary / Protocol Details, including AH-owned inner IPv4 / IPv6 + TCP / UDP presentation;
-- exact index-version bump for AH protocol-path serialization.
+- current shared index format persists AH protocol-path identity through the capture-level protocol-path registry plus flow/connection path ids.
 
 Still intentionally deferred:
 - AH followed by SCTP;
@@ -119,13 +119,13 @@ Still intentionally deferred:
 
 - Packets: 2
 - Layer chain: Ethernet / IPv4 / AH / TCP
-- Purpose: same IPv4 tuple but different SPI values for future identity split coverage.
+- Purpose: same IPv4 tuple but different SPI values for SPI-aware identity split coverage.
 
 ### 06_ipv4_ah_same_spi_two_packets.pcap
 
 - Packets: 2
 - Layer chain: Ethernet / IPv4 / AH / UDP
-- Purpose: same SPI repeated twice as future grouping baseline.
+- Purpose: same SPI repeated twice as a grouping baseline.
 
 ### 07_ipv6_ah_same_tuple_different_spi.pcap
 
@@ -137,7 +137,7 @@ Still intentionally deferred:
 
 - Packets: 2
 - Layer chain: Ethernet / IPv4 / AH / TCP
-- Purpose: same SPI with varying sequence numbers for future details-only sequence handling.
+- Purpose: same SPI with varying sequence numbers for details-only sequence handling.
 
 ### 09_outer_vlan_ipv4_ah_udp.pcap
 

@@ -4,7 +4,7 @@ This directory is intended for tiny deterministic `.pcap` fixtures that exercise
 - outer IPv4 and outer IPv6 ESP carriage using IP protocol `50` / IPv6 next-header `50`;
 - conservative ESP header extraction for SPI and Sequence Number only;
 - same-endpoint different-SPI namespace coverage;
-- repeated-packet same-SPI grouping baselines for future parser work;
+- repeated-packet same-SPI grouping baselines;
 - outer VLAN / QinQ before ESP;
 - opaque encrypted payload handling with no inner decode or decryption;
 - truncated ESP base-header robustness;
@@ -36,15 +36,15 @@ Notes:
   - Sequence Number: 32 bits
 - Remaining bytes after the first 8 ESP bytes are encrypted / opaque payload in this fixture set.
 
-Future parser intent for this branch family:
+Current parser intent for this fixture family:
 - recognize ESP from IPv4 protocol `50` / IPv6 next-header `50`;
 - parse SPI and Sequence Number conservatively;
 - keep payload opaque with no inner decode/decryption;
-- include ESP in the protocol path, preferably with SPI:
+- include ESP in the protocol path with SPI:
   - `EthernetII -> IPv4 -> ESP(spi=0x01020304)`
   - `EthernetII -> IPv6 -> ESP(spi=0x01020304)`
-- SPI is intended to participate in protocol-path identity;
-- Sequence Number is intended to remain details-only metadata, not flow identity.
+- SPI participates in protocol-path identity;
+- Sequence Number remains details-only metadata, not flow identity.
 
 ## Shared constants
 
