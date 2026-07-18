@@ -6,6 +6,7 @@ Pcap Flow Lab is a flow-based packet-capture analyzer. The persistent model is p
 
 - `core/io`: classic PCAP and current PCAPNG readers, random-access packet reads, and classic PCAP export.
 - `core/decode`: packet-oriented link and network decoding for ingestion.
+- `docs/dissection-engine-rfc.md`: proposed follow-up architecture for converging legacy import-time decode and selected-packet best-effort details onto a shared registry-driven dissection engine.
 - `core/domain`: connection keys, packet references, runtime flows, summaries, and related lightweight types.
 - `core/services`: capture import, flow aggregation, packet inspection, exports, protocol analyzers, and developer-only perf logging.
 - `core/index`: sectioned binary index and checkpoint formats with exact-version loading.
@@ -156,6 +157,14 @@ Current scalability risks are still worth watching:
 - Flow and packet rows use wide delegate trees with several formatted labels per visible row.
 - The current flow table is vertically virtualized, but horizontal overflow is still handled by clipping rather than a dedicated horizontal-scrolling table model.
 - Pagination is intentionally deferred until stronger evidence shows that current virtualization is insufficient.
+
+## Decoder follow-up
+
+Current packet-oriented decode still uses a centralized legacy traversal in `PacketDecoder` for import and a separate best-effort traversal in `PacketDetailsService` for selected-packet details.
+
+- This split is intentional in current production behavior.
+- A proposed registry-driven replacement is documented in `docs/dissection-engine-rfc.md`.
+- The RFC is design-only for now; production remains on the legacy decode path until staged cutover criteria are met.
 
 ## Known limitations
 
