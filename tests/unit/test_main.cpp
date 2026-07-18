@@ -20,6 +20,7 @@ std::vector<RecordedTestFailure>& failure_storage() {
 
 void run_flow_key_tests();
 void run_dissection_foundation_tests();
+void run_common_direct_dissection_tests();
 void run_protocol_path_tests();
 void run_connection_tests();
 void run_ingestor_tests();
@@ -125,6 +126,7 @@ int main() {
     const std::vector<TestSuiteEntry> suites {
         {"flow_key", pfl::tests::run_flow_key_tests},
         {"dissection_foundation", pfl::tests::run_dissection_foundation_tests},
+        {"common_direct_dissection", pfl::tests::run_common_direct_dissection_tests},
         {"protocol_path", pfl::tests::run_protocol_path_tests},
         {"connection", pfl::tests::run_connection_tests},
         {"ingestor", pfl::tests::run_ingestor_tests},

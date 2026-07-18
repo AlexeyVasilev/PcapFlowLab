@@ -25,6 +25,11 @@ struct DissectionStep {
     std::optional<ByteRange> payload_range {};
     std::optional<NextDissection> next {};
     std::optional<IdentityContribution> identity_contribution {};
+    std::optional<TerminalFlowFact> terminal_flow {};
+    std::optional<ArpAddressFact> arp_addresses {};
+    std::optional<TransportPayloadFact> transport_payload {};
+    std::optional<TcpControlFact> tcp_control {};
+    std::optional<Ipv4FragmentationFact> ipv4_fragmentation {};
     ParseStatus status {ParseStatus::opaque};
     StopReason stop_reason {StopReason::none};
 };

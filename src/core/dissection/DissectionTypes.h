@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "core/domain/ProtocolId.h"
 #include "core/domain/ProtocolPath.h"
 
 namespace pfl::dissection {
@@ -106,6 +107,54 @@ enum class StopReason : std::uint8_t {
     malformed,
     truncated,
     depth_limit,
+};
+
+enum class DissectionAddressFamily : std::uint8_t {
+    unknown = 0,
+    ipv4,
+    ipv6,
+};
+
+struct TerminalFlowFact {
+    DissectionAddressFamily family {DissectionAddressFamily::unknown};
+    ProtocolId protocol {ProtocolId::unknown};
+    bool has_addresses {false};
+    std::uint32_t src_addr_v4 {0U};
+    std::uint32_t dst_addr_v4 {0U};
+    std::uint16_t src_port {0U};
+    std::uint16_t dst_port {0U};
+    bool has_ports {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const TerminalFlowFact&, const TerminalFlowFact&) = default;
+};
+
+struct ArpAddressFact {
+    bool has_sender_ipv4 {false};
+    bool has_target_ipv4 {false};
+    std::uint32_t sender_ipv4 {0U};
+    std::uint32_t target_ipv4 {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const ArpAddressFact&, const ArpAddressFact&) = default;
+};
+
+struct TransportPayloadFact {
+    std::uint32_t captured_payload_length {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const TransportPayloadFact&, const TransportPayloadFact&) = default;
+};
+
+struct TcpControlFact {
+    std::uint8_t flags {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const TcpControlFact&, const TcpControlFact&) = default;
+};
+
+struct Ipv4FragmentationFact {
+    bool is_fragmented {false};
+    bool more_fragments {false};
+    std::uint16_t fragment_offset_units {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const Ipv4FragmentationFact&, const Ipv4FragmentationFact&) = default;
 };
 
 // Reuse LayerKey directly so the dissection foundation reports physical path facts
