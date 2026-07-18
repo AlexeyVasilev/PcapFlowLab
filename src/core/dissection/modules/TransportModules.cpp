@@ -80,7 +80,7 @@ DissectionStep dissect_tcp(const PacketSlice& slice) {
     if (parsed.status != ParseStatus::complete) {
         return direct::make_error_step(
             slice,
-            LayerKey::tcp(),
+            DissectionLayerKind::tcp,
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kTcpMinimumHeaderSize
@@ -88,7 +88,7 @@ DissectionStep dissect_tcp(const PacketSlice& slice) {
     }
 
     return DissectionStep {
-        .layer = LayerKey::tcp(),
+        .layer = DissectionLayerKind::tcp,
         .path_contribution = LayerKey::tcp(),
         .bounds = direct::make_layer_bounds(
             slice,
@@ -113,7 +113,7 @@ DissectionStep dissect_udp(const PacketSlice& slice) {
     if (parsed.status != ParseStatus::complete) {
         return direct::make_error_step(
             slice,
-            LayerKey::udp(),
+            DissectionLayerKind::udp,
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kUdpHeaderSize
@@ -121,7 +121,7 @@ DissectionStep dissect_udp(const PacketSlice& slice) {
     }
 
     return DissectionStep {
-        .layer = LayerKey::udp(),
+        .layer = DissectionLayerKind::udp,
         .path_contribution = LayerKey::udp(),
         .bounds = direct::make_layer_bounds(
             slice,

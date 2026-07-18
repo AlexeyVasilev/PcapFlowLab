@@ -65,7 +65,7 @@ DissectionStep dissect_ipv4(const PacketSlice& slice) {
     if (parsed.status != ParseStatus::complete) {
         return direct::make_error_step(
             slice,
-            LayerKey::ipv4(),
+            DissectionLayerKind::ipv4,
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kIpv4MinimumHeaderSize
@@ -78,7 +78,7 @@ DissectionStep dissect_ipv4(const PacketSlice& slice) {
         .value = parsed.protocol,
     };
     DissectionStep step {
-        .layer = LayerKey::ipv4(),
+        .layer = DissectionLayerKind::ipv4,
         .path_contribution = LayerKey::ipv4(),
         .bounds = direct::make_layer_bounds(
             slice,
@@ -117,7 +117,7 @@ DissectionStep dissect_ipv4(const PacketSlice& slice) {
     if (!handoff.has_value()) {
         return direct::make_error_step(
             slice,
-            LayerKey::ipv4(),
+            DissectionLayerKind::ipv4,
             ParseStatus::malformed,
             StopReason::malformed,
             parsed.header_length

@@ -92,7 +92,7 @@ DissectionStep dissect_arp(const PacketSlice& slice) {
             )
             : make_exact_arp_bounds(slice, parsed.declared_length);
         return DissectionStep {
-            .layer = LayerKey::arp(),
+            .layer = DissectionLayerKind::arp,
             .bounds = bounds,
             .facts = std::monostate {},
             .terminal_disposition = TerminalDisposition::none,
@@ -102,7 +102,7 @@ DissectionStep dissect_arp(const PacketSlice& slice) {
     }
 
     return DissectionStep {
-        .layer = LayerKey::arp(),
+        .layer = DissectionLayerKind::arp,
         .path_contribution = LayerKey::arp(),
         .bounds = make_exact_arp_bounds(slice, parsed.declared_length),
         .facts = ArpFacts {

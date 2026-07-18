@@ -19,7 +19,7 @@ struct ProtocolHandoff {
 };
 
 struct DissectionStep {
-    LayerKey layer {};
+    DissectionLayerKind layer {DissectionLayerKind::unknown};
     std::optional<LayerKey> path_contribution {};
     LayerBounds bounds {};
     std::optional<ProtocolHandoff> handoff {};

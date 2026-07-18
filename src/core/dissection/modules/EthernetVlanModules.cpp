@@ -58,7 +58,7 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
     if (parsed.status != ParseStatus::complete) {
         return direct::make_error_step(
             slice,
-            LayerKey::unknown(),
+            DissectionLayerKind::unknown,
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kEthernetHeaderSize
@@ -67,7 +67,7 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
 
     const auto layer = parsed.is_ieee_802_3 ? LayerKey::ieee8023() : LayerKey::ethernet_ii();
     DissectionStep step {
-        .layer = layer,
+        .layer = parsed.is_ieee_802_3 ? DissectionLayerKind::ieee8023 : DissectionLayerKind::ethernet_ii,
         .path_contribution = layer,
         .bounds = direct::make_layer_bounds(
             slice,
@@ -102,7 +102,7 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
     if (!handoff.has_value()) {
         return direct::make_error_step(
             slice,
-            layer,
+            parsed.is_ieee_802_3 ? DissectionLayerKind::ieee8023 : DissectionLayerKind::ethernet_ii,
             ParseStatus::malformed,
             StopReason::malformed,
             parsed.header_length
@@ -118,7 +118,7 @@ DissectionStep dissect_vlan(const PacketSlice& slice) {
     if (parsed.status != ParseStatus::complete) {
         return direct::make_error_step(
             slice,
-            LayerKey::vlan(0U),
+            DissectionLayerKind::vlan,
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kVlanHeaderSize
@@ -136,11 +136,17 @@ DissectionStep dissect_vlan(const PacketSlice& slice) {
         }
     );
     if (!handoff.has_value()) {
-        return direct::make_error_step(slice, layer, ParseStatus::malformed, StopReason::malformed, parsed.header_length);
+        return direct::make_error_step(
+            slice,
+            DissectionLayerKind::vlan,
+            ParseStatus::malformed,
+            StopReason::malformed,
+            parsed.header_length
+        );
     }
 
     return DissectionStep {
-        .layer = layer,
+        .layer = DissectionLayerKind::vlan,
         .path_contribution = layer,
         .bounds = direct::make_layer_bounds(
             slice,

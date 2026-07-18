@@ -97,7 +97,7 @@ LayerBounds make_bounds(const PacketSlice& slice, const std::optional<ProtocolHa
 
 DissectionStep make_step(
     const PacketSlice& slice,
-    const LayerKey& layer,
+    const DissectionLayerKind layer,
     const ParseStatus status,
     const StopReason stop_reason,
     std::optional<ProtocolHandoff> handoff = std::nullopt,
@@ -122,7 +122,7 @@ DissectionStep ethernet_to_ipv4_dissector(const PacketSlice& slice) {
     if (!child.has_slice()) {
         return make_step(
             slice,
-            LayerKey::ethernet_ii(),
+            DissectionLayerKind::ethernet_ii,
             ParseStatus::malformed,
             StopReason::malformed
         );
@@ -130,7 +130,7 @@ DissectionStep ethernet_to_ipv4_dissector(const PacketSlice& slice) {
 
     return make_step(
         slice,
-        LayerKey::ethernet_ii(),
+        DissectionLayerKind::ethernet_ii,
         ParseStatus::complete,
         StopReason::none,
         ProtocolHandoff {
@@ -150,7 +150,7 @@ DissectionStep ipv4_to_tcp_dissector(const PacketSlice& slice) {
     if (!child.has_slice()) {
         return make_step(
             slice,
-            LayerKey::ipv4(),
+            DissectionLayerKind::ipv4,
             ParseStatus::malformed,
             StopReason::malformed,
             std::nullopt,
@@ -160,7 +160,7 @@ DissectionStep ipv4_to_tcp_dissector(const PacketSlice& slice) {
 
     return make_step(
         slice,
-        LayerKey::ipv4(),
+        DissectionLayerKind::ipv4,
         ParseStatus::complete,
         StopReason::none,
         ProtocolHandoff {
@@ -181,7 +181,7 @@ DissectionStep ipv4_to_tcp_dissector(const PacketSlice& slice) {
 DissectionStep tcp_terminal_dissector(const PacketSlice& slice) {
     return make_step(
         slice,
-        LayerKey::tcp(),
+        DissectionLayerKind::tcp,
         ParseStatus::complete,
         StopReason::terminal_protocol,
         std::nullopt,
@@ -198,7 +198,7 @@ DissectionStep tcp_terminal_dissector(const PacketSlice& slice) {
 DissectionStep truncated_terminal_dissector(const PacketSlice& slice) {
     return make_step(
         slice,
-        LayerKey::ipv4(),
+        DissectionLayerKind::ipv4,
         ParseStatus::truncated,
         StopReason::truncated,
         std::nullopt,
@@ -209,7 +209,7 @@ DissectionStep truncated_terminal_dissector(const PacketSlice& slice) {
 DissectionStep malformed_terminal_dissector(const PacketSlice& slice) {
     return make_step(
         slice,
-        LayerKey::ipv4(),
+        DissectionLayerKind::ipv4,
         ParseStatus::malformed,
         StopReason::malformed,
         std::nullopt,
@@ -222,7 +222,7 @@ DissectionStep root_to_missing_selector_dissector(const PacketSlice& slice) {
     if (!child.has_slice()) {
         return make_step(
             slice,
-            LayerKey::ethernet_ii(),
+            DissectionLayerKind::ethernet_ii,
             ParseStatus::malformed,
             StopReason::malformed
         );
@@ -230,7 +230,7 @@ DissectionStep root_to_missing_selector_dissector(const PacketSlice& slice) {
 
     return make_step(
         slice,
-        LayerKey::ethernet_ii(),
+        DissectionLayerKind::ethernet_ii,
         ParseStatus::complete,
         StopReason::none,
         ProtocolHandoff {
@@ -246,7 +246,7 @@ DissectionStep stop_with_handoff_dissector(const PacketSlice& slice) {
     if (!child.has_slice()) {
         return make_step(
             slice,
-            LayerKey::ethernet_ii(),
+            DissectionLayerKind::ethernet_ii,
             ParseStatus::malformed,
             StopReason::malformed
         );
@@ -254,7 +254,7 @@ DissectionStep stop_with_handoff_dissector(const PacketSlice& slice) {
 
     return make_step(
         slice,
-        LayerKey::ethernet_ii(),
+        DissectionLayerKind::ethernet_ii,
         ParseStatus::unsupported_variant,
         StopReason::unsupported_variant,
         ProtocolHandoff {
@@ -268,7 +268,7 @@ DissectionStep stop_with_handoff_dissector(const PacketSlice& slice) {
 DissectionStep no_handoff_dissector(const PacketSlice& slice) {
     return make_step(
         slice,
-        LayerKey::ethernet_ii(),
+        DissectionLayerKind::ethernet_ii,
         ParseStatus::complete,
         StopReason::none,
         std::nullopt,
@@ -279,7 +279,7 @@ DissectionStep no_handoff_dissector(const PacketSlice& slice) {
 DissectionStep missing_child_handoff_dissector(const PacketSlice& slice) {
     return make_step(
         slice,
-        LayerKey::ethernet_ii(),
+        DissectionLayerKind::ethernet_ii,
         ParseStatus::complete,
         StopReason::none,
         ProtocolHandoff {
@@ -295,7 +295,7 @@ DissectionStep repeat_vlan_dissector(const PacketSlice& slice) {
     if (!child.has_slice()) {
         return make_step(
             slice,
-            LayerKey::vlan(7U),
+            DissectionLayerKind::vlan,
             ParseStatus::malformed,
             StopReason::malformed,
             std::nullopt,
@@ -305,7 +305,7 @@ DissectionStep repeat_vlan_dissector(const PacketSlice& slice) {
 
     return make_step(
         slice,
-        LayerKey::vlan(7U),
+        DissectionLayerKind::vlan,
         ParseStatus::complete,
         StopReason::none,
         ProtocolHandoff {
@@ -321,7 +321,7 @@ DissectionStep repeat_vlan_dissector(const PacketSlice& slice) {
 }
 
 struct RecordedStep {
-    ProtocolLayerKind kind {ProtocolLayerKind::unknown};
+    DissectionLayerKind kind {DissectionLayerKind::unknown};
     std::size_t full_begin {0U};
     StopReason stop_reason {StopReason::none};
     bool has_handoff {false};
@@ -339,7 +339,7 @@ struct StepRecorder {
 void record_step(void* context, const DissectionStep& step) {
     auto* recorder = static_cast<StepRecorder*>(context);
     recorder->steps.push_back(RecordedStep {
-        .kind = step.layer.kind,
+        .kind = step.layer,
         .full_begin = step.bounds.full.declared.begin(),
         .stop_reason = step.stop_reason,
         .has_handoff = step.handoff.has_value(),
@@ -390,7 +390,7 @@ void expect_layer_bounds_facts_and_terminal_disposition_model() {
 
     const auto step = make_step(
         root,
-        LayerKey::ipv4(),
+        DissectionLayerKind::ipv4,
         ParseStatus::complete,
         StopReason::none,
         ProtocolHandoff {
@@ -648,15 +648,15 @@ void expect_engine_traversal_and_consumer_behavior() {
     PFL_EXPECT(chain_result.traversed_depth == 3U);
     PFL_EXPECT(recorder.steps.size() == 3U);
 
-    const std::vector<ProtocolLayerKind> observed_kinds {
+    const std::vector<DissectionLayerKind> observed_kinds {
         recorder.steps[0].kind,
         recorder.steps[1].kind,
         recorder.steps[2].kind,
     };
-    const std::vector<ProtocolLayerKind> expected_kinds {
-        ProtocolLayerKind::ethernet_ii,
-        ProtocolLayerKind::ipv4,
-        ProtocolLayerKind::tcp,
+    const std::vector<DissectionLayerKind> expected_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::tcp,
     };
     PFL_EXPECT(observed_kinds == expected_kinds);
 
@@ -775,7 +775,7 @@ void expect_engine_traversal_and_consumer_behavior() {
     PFL_EXPECT(bounded_repeat_result.traversed_depth == 4U);
     PFL_EXPECT(repeat_recorder.steps.size() == 4U);
     for (const auto& step : repeat_recorder.steps) {
-        PFL_EXPECT(step.kind == ProtocolLayerKind::vlan);
+        PFL_EXPECT(step.kind == DissectionLayerKind::vlan);
         PFL_EXPECT(step.has_handoff);
         PFL_EXPECT(step.has_child);
         PFL_EXPECT(step.has_path_contribution);

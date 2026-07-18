@@ -69,7 +69,7 @@ inline LayerBounds make_layer_bounds(
 
 inline DissectionStep make_error_step(
     const PacketSlice& slice,
-    const LayerKey& layer,
+    const DissectionLayerKind layer,
     const ParseStatus status,
     const StopReason stop_reason,
     const std::size_t header_length = 0U

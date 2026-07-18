@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include "core/dissection/DissectionEngine.h"
@@ -21,6 +22,15 @@ struct ImportIpv4Fragmentation {
     [[nodiscard]] friend constexpr bool operator==(const ImportIpv4Fragmentation&, const ImportIpv4Fragmentation&) = default;
 };
 
+struct ImportIpv6Fragmentation {
+    bool has_fragment_header {false};
+    bool more_fragments {false};
+    std::uint16_t fragment_offset_units {0U};
+    bool is_atomic_fragment {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const ImportIpv6Fragmentation&, const ImportIpv6Fragmentation&) = default;
+};
+
 struct ImportDissectionFacts {
     ProtocolPathBuilder physical_path {};
     ImportDissectionOutcome outcome {ImportDissectionOutcome::unrecognized};
@@ -29,6 +39,8 @@ struct ImportDissectionFacts {
     bool has_flow_addresses {false};
     std::uint32_t src_addr_v4 {0U};
     std::uint32_t dst_addr_v4 {0U};
+    std::array<std::uint8_t, 16> src_addr_v6 {};
+    std::array<std::uint8_t, 16> dst_addr_v6 {};
     std::uint16_t src_port {0U};
     std::uint16_t dst_port {0U};
     bool has_ports {false};
@@ -38,6 +50,8 @@ struct ImportDissectionFacts {
     std::uint8_t tcp_flags {0U};
     bool has_ipv4_fragmentation {false};
     ImportIpv4Fragmentation ipv4_fragmentation {};
+    bool has_ipv6_fragmentation {false};
+    ImportIpv6Fragmentation ipv6_fragmentation {};
     bool has_arp_addresses {false};
     ArpFacts arp_addresses {};
     ParseStatus final_status {ParseStatus::opaque};

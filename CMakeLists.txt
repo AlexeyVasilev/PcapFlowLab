@@ -55,6 +55,8 @@ add_library(
     src/core/dissection/modules/EthernetVlanModules.cpp
     src/core/dissection/modules/ArpModule.cpp
     src/core/dissection/modules/Ipv4Module.cpp
+    src/core/dissection/modules/Ipv6ExtensionModules.cpp
+    src/core/dissection/modules/Ipv6Module.cpp
     src/core/dissection/modules/TransportModules.cpp
     src/core/io/PcapReader.cpp
     src/core/io/PcapNgReader.cpp

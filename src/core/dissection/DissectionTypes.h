@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -116,6 +117,22 @@ enum class DissectionAddressFamily : std::uint8_t {
     ipv6,
 };
 
+enum class DissectionLayerKind : std::uint16_t {
+    unknown = 0,
+    ethernet_ii,
+    ieee8023,
+    vlan,
+    arp,
+    ipv4,
+    ipv6,
+    ipv6_hop_by_hop,
+    ipv6_routing,
+    ipv6_destination_options,
+    ipv6_fragment,
+    tcp,
+    udp,
+};
+
 struct BoundedByteRange {
     ByteRange declared {};
     ByteRange captured {};
@@ -173,6 +190,37 @@ struct Ipv4Facts {
     [[nodiscard]] friend constexpr bool operator==(const Ipv4Facts&, const Ipv4Facts&) = default;
 };
 
+struct Ipv6Facts {
+    std::uint8_t next_header {0U};
+    std::uint16_t payload_length {0U};
+    std::array<std::uint8_t, 16> src_addr_v6 {};
+    std::array<std::uint8_t, 16> dst_addr_v6 {};
+    bool has_fragment_header {false};
+    bool more_fragments {false};
+    std::uint16_t fragment_offset_units {0U};
+    bool is_atomic_fragment {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const Ipv6Facts&, const Ipv6Facts&) = default;
+};
+
+struct Ipv6ExtensionFacts {
+    DissectionLayerKind kind {DissectionLayerKind::unknown};
+    std::uint8_t next_header {0U};
+    std::size_t header_length {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const Ipv6ExtensionFacts&, const Ipv6ExtensionFacts&) = default;
+};
+
+struct Ipv6FragmentFacts {
+    std::uint8_t next_header {0U};
+    std::size_t header_length {0U};
+    std::uint16_t fragment_offset_units {0U};
+    bool more_fragments {false};
+    bool is_atomic_fragment {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const Ipv6FragmentFacts&, const Ipv6FragmentFacts&) = default;
+};
+
 struct TcpFacts {
     std::uint16_t src_port {0U};
     std::uint16_t dst_port {0U};
@@ -189,7 +237,17 @@ struct UdpFacts {
     [[nodiscard]] friend constexpr bool operator==(const UdpFacts&, const UdpFacts&) = default;
 };
 
-using LayerFacts = std::variant<std::monostate, EthernetFacts, VlanFacts, ArpFacts, Ipv4Facts, TcpFacts, UdpFacts>;
+using LayerFacts = std::variant<
+    std::monostate,
+    EthernetFacts,
+    VlanFacts,
+    ArpFacts,
+    Ipv4Facts,
+    Ipv6Facts,
+    Ipv6ExtensionFacts,
+    Ipv6FragmentFacts,
+    TcpFacts,
+    UdpFacts>;
 
 enum class TerminalDisposition : std::uint8_t {
     none = 0,

@@ -21,6 +21,23 @@ ProtocolId protocol_id_from_ip_protocol(const std::uint8_t protocol) noexcept {
     return ProtocolId::unknown;
 }
 
+ProtocolId protocol_id_from_ipv6_next_header(const std::uint8_t next_header) noexcept {
+    if (next_header == detail::kIpProtocolTcp) {
+        return ProtocolId::tcp;
+    }
+    if (next_header == detail::kIpProtocolUdp) {
+        return ProtocolId::udp;
+    }
+    if (next_header == detail::kIpProtocolSctp) {
+        return ProtocolId::sctp;
+    }
+    if (next_header == detail::kIpProtocolIcmpV6) {
+        return ProtocolId::icmpv6;
+    }
+
+    return ProtocolId::unknown;
+}
+
 std::uint32_t captured_payload_length_from_bounds(const LayerBounds& bounds) noexcept {
     if (!bounds.payload.has_value()) {
         return 0U;
@@ -71,6 +88,38 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
 
                 if (facts_.terminal_protocol == ProtocolId::unknown) {
                     facts_.terminal_protocol = protocol_id_from_ip_protocol(layer_facts.protocol);
+                }
+            } else if constexpr (std::is_same_v<Facts, Ipv6Facts>) {
+                facts_.family = DissectionAddressFamily::ipv6;
+                facts_.has_flow_addresses = true;
+                facts_.src_addr_v6 = layer_facts.src_addr_v6;
+                facts_.dst_addr_v6 = layer_facts.dst_addr_v6;
+                facts_.has_ipv6_fragmentation = true;
+                facts_.ipv6_fragmentation = ImportIpv6Fragmentation {
+                    .has_fragment_header = layer_facts.has_fragment_header,
+                    .more_fragments = layer_facts.more_fragments,
+                    .fragment_offset_units = layer_facts.fragment_offset_units,
+                    .is_atomic_fragment = layer_facts.is_atomic_fragment,
+                };
+
+                if (facts_.terminal_protocol == ProtocolId::unknown) {
+                    facts_.terminal_protocol = protocol_id_from_ipv6_next_header(layer_facts.next_header);
+                }
+            } else if constexpr (std::is_same_v<Facts, Ipv6ExtensionFacts>) {
+                if (facts_.terminal_protocol == ProtocolId::unknown) {
+                    facts_.terminal_protocol = protocol_id_from_ipv6_next_header(layer_facts.next_header);
+                }
+            } else if constexpr (std::is_same_v<Facts, Ipv6FragmentFacts>) {
+                facts_.has_ipv6_fragmentation = true;
+                facts_.ipv6_fragmentation = ImportIpv6Fragmentation {
+                    .has_fragment_header = true,
+                    .more_fragments = layer_facts.more_fragments,
+                    .fragment_offset_units = layer_facts.fragment_offset_units,
+                    .is_atomic_fragment = layer_facts.is_atomic_fragment,
+                };
+
+                if (facts_.terminal_protocol == ProtocolId::unknown) {
+                    facts_.terminal_protocol = protocol_id_from_ipv6_next_header(layer_facts.next_header);
                 }
             } else if constexpr (std::is_same_v<Facts, TcpFacts>) {
                 facts_.terminal_protocol = ProtocolId::tcp;
@@ -138,6 +187,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
                 .value = detail::kEtherTypeArp,
             },
             .dissector = dissect_arp,
@@ -173,6 +229,48 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolUdp,
+            },
+            .dissector = dissect_udp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolHopByHop,
+            },
+            .dissector = dissect_ipv6_hop_by_hop,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolRouting,
+            },
+            .dissector = dissect_ipv6_routing,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolFragment,
+            },
+            .dissector = dissect_ipv6_fragment,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolDestinationOptions,
+            },
+            .dissector = dissect_ipv6_destination_options,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolTcp,
+            },
+            .dissector = dissect_tcp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
                 .value = detail::kIpProtocolUdp,
             },
             .dissector = dissect_udp,

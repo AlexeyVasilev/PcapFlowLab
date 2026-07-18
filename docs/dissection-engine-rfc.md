@@ -84,6 +84,8 @@ Instead of one centralized function knowing every transition, the engine owns th
 
 The current production path remains on legacy `PacketDecoder` until a staged cutover is complete.
 
+For IPv6 specifically, this means extension-header traversal must not be hidden inside an IPv6-local chain walker. Each supported IPv6 extension header must be registered under `SelectorDomain::ipv6_next_header` and traversed by the generic engine as its own dissection step.
+
 ## Terminology
 
 - `packet slice`
@@ -102,6 +104,8 @@ The current production path remains on legacy `PacketDecoder` until a staged cut
   - Port-based or payload-based metadata that may decorate a flow but does not itself establish a protocol layer.
 - `dissection step`
   - One protocol-module invocation over one packet slice.
+- `dissection layer kind`
+  - A dissection-local step identity used by the shadow engine to describe the current visible layer, even when that layer has no corresponding production `ProtocolLayerKind`.
 - `path contribution`
   - The physical `LayerKey` a step contributes to `ProtocolPathBuilder`. This is separate from the visible/current layer so future container or presentation-only layers can differ from flow-identity path material.
 - `identity contribution`
@@ -117,6 +121,7 @@ The engine must preserve these invariants.
 - A best-effort presentation path may expose partial layers, but it must not fabricate a recognized flow tuple.
 - Strict import and best-effort packet-details consumers must not own separate structural header parsers for the same protocol.
 - Protocol-path layer order remains stable and continues to use `LayerKey` / `ProtocolPathBuilder` semantics already present in `ProtocolPath.h`.
+- The shadow engine's visible step identity remains dissection-local and must not force new `ProtocolLayerKind` or `LayerKey` values unless production flow identity genuinely needs them.
 - `kInvalidProtocolPathId` still means no path / unusable path.
 - Reassembly stays outside this engine.
 - Application protocols such as TLS / QUIC / HTTP / DNS stay out of the first engine scope.
@@ -319,7 +324,41 @@ struct DissectionStep {
 };
 ```
 
+### Dissection step identity versus path identity
+
+The engine must keep two distinct identities for each step:
+
+- a dissection-local layer identity used for traversal, diagnostics, and test assertions;
+- an optional production-compatible `LayerKey` path contribution used only when the step should participate in `ProtocolPathBuilder`.
+
+Conceptually:
+
+```cpp
+enum class DissectionLayerKind {
+    ethernet_ii,
+    vlan,
+    ipv6,
+    ipv6_hop_by_hop,
+    ipv6_routing,
+    ipv6_destination_options,
+    ipv6_fragment,
+    tcp,
+    udp,
+    // ...
+};
+
+struct DissectionStep {
+    DissectionLayerKind layer;
+    std::optional<LayerKey> path_contribution;
+    // ...
+};
+```
+
+This split is required because some visible traversal steps, such as IPv6 extension headers, matter to shadow dissection correctness and diagnostics but do not currently belong in production flow-identity path semantics.
+
 The final implementation can use different names, but the RFC should prohibit ambiguous boolean combinations.
+
+For IPv6 extension headers, shared helpers may parse one bounded header at a time, but they must not walk a multi-header chain internally. Repeated Hop-by-Hop, Routing, Fragment, and Destination Options headers must consume generic engine depth one step at a time.
 
 Interpretation:
 
