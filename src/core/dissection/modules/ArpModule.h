@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "core/dissection/DissectionRegistry.h"
@@ -14,6 +15,7 @@ struct ParsedArpPacket {
     std::uint16_t protocol_type {0U};
     std::uint8_t hardware_size {0U};
     std::uint8_t protocol_size {0U};
+    std::size_t declared_length {0U};
     std::uint16_t opcode {0U};
     bool has_sender_ipv4 {false};
     bool has_target_ipv4 {false};

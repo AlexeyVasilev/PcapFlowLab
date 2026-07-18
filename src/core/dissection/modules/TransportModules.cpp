@@ -78,15 +78,13 @@ ParsedUdpDatagram parse_udp_datagram(const PacketSlice& slice) noexcept {
 DissectionStep dissect_tcp(const PacketSlice& slice) {
     const auto parsed = parse_tcp_segment(slice);
     if (parsed.status != ParseStatus::complete) {
-        auto step = direct::make_error_step(
+        return direct::make_error_step(
             slice,
             LayerKey::tcp(),
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kTcpMinimumHeaderSize
         );
-        step.path_contribution = LayerKey::tcp();
-        return step;
     }
 
     return DissectionStep {
@@ -113,15 +111,13 @@ DissectionStep dissect_tcp(const PacketSlice& slice) {
 DissectionStep dissect_udp(const PacketSlice& slice) {
     const auto parsed = parse_udp_datagram(slice);
     if (parsed.status != ParseStatus::complete) {
-        auto step = direct::make_error_step(
+        return direct::make_error_step(
             slice,
             LayerKey::udp(),
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kUdpHeaderSize
         );
-        step.path_contribution = LayerKey::udp();
-        return step;
     }
 
     return DissectionStep {

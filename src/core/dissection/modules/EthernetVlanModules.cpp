@@ -100,15 +100,13 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
         }
     );
     if (!handoff.has_value()) {
-        auto malformed_step = direct::make_error_step(
+        return direct::make_error_step(
             slice,
             layer,
             ParseStatus::malformed,
             StopReason::malformed,
             parsed.header_length
         );
-        malformed_step.path_contribution = layer;
-        return malformed_step;
     }
 
     step.handoff = *handoff;
@@ -118,15 +116,13 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
 DissectionStep dissect_vlan(const PacketSlice& slice) {
     const auto parsed = parse_vlan_tag(slice);
     if (parsed.status != ParseStatus::complete) {
-        auto step = direct::make_error_step(
+        return direct::make_error_step(
             slice,
             LayerKey::vlan(0U),
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kVlanHeaderSize
         );
-        step.path_contribution = LayerKey::vlan(0U);
-        return step;
     }
 
     const auto layer = LayerKey::vlan(static_cast<std::uint16_t>(parsed.tci & 0x0FFFU));
@@ -140,9 +136,7 @@ DissectionStep dissect_vlan(const PacketSlice& slice) {
         }
     );
     if (!handoff.has_value()) {
-        auto step = direct::make_error_step(slice, layer, ParseStatus::malformed, StopReason::malformed, parsed.header_length);
-        step.path_contribution = layer;
-        return step;
+        return direct::make_error_step(slice, layer, ParseStatus::malformed, StopReason::malformed, parsed.header_length);
     }
 
     return DissectionStep {

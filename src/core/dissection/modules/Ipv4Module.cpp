@@ -63,18 +63,20 @@ ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
 DissectionStep dissect_ipv4(const PacketSlice& slice) {
     const auto parsed = parse_ipv4_packet(slice);
     if (parsed.status != ParseStatus::complete) {
-        auto step = direct::make_error_step(
+        return direct::make_error_step(
             slice,
             LayerKey::ipv4(),
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
             detail::kIpv4MinimumHeaderSize
         );
-        step.path_contribution = LayerKey::ipv4();
-        return step;
     }
 
     const auto bounded_full_end = std::min(parsed.nominal_packet_end, direct::slice_declared_length(slice));
+    const ProtocolSelector next_selector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = parsed.protocol,
+    };
     DissectionStep step {
         .layer = LayerKey::ipv4(),
         .path_contribution = LayerKey::ipv4(),
@@ -101,6 +103,7 @@ DissectionStep dissect_ipv4(const PacketSlice& slice) {
     };
 
     if (parsed.is_fragmented) {
+        step.handoff = direct::make_selector_handoff(next_selector);
         step.stop_reason = StopReason::needs_reassembly;
         return step;
     }
@@ -109,21 +112,16 @@ DissectionStep dissect_ipv4(const PacketSlice& slice) {
         slice,
         parsed.header_length,
         parsed.nominal_packet_end - parsed.header_length,
-        ProtocolSelector {
-            .domain = SelectorDomain::ip_protocol,
-            .value = parsed.protocol,
-        }
+        next_selector
     );
     if (!handoff.has_value()) {
-        auto malformed_step = direct::make_error_step(
+        return direct::make_error_step(
             slice,
             LayerKey::ipv4(),
             ParseStatus::malformed,
             StopReason::malformed,
             parsed.header_length
         );
-        malformed_step.path_contribution = LayerKey::ipv4();
-        return malformed_step;
     }
 
     step.handoff = *handoff;

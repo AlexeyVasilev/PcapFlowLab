@@ -5,6 +5,22 @@
 
 namespace pfl::dissection {
 
+namespace {
+
+LayerBounds make_exact_arp_bounds(const PacketSlice& slice, const std::size_t declared_length) {
+    LayerBounds bounds {
+        .source_id = slice.source_id(),
+        .full = direct::make_bounded_relative_range(slice, 0U, declared_length),
+        .header = direct::make_bounded_relative_range(slice, 0U, 8U),
+        .payload = std::optional<BoundedByteRange> {
+            direct::make_bounded_relative_range(slice, 8U, declared_length),
+        },
+    };
+    return bounds;
+}
+
+}  // namespace
+
 ParsedArpPacket parse_arp_packet(const PacketSlice& slice) noexcept {
     ParsedArpPacket parsed {};
     const auto bytes = direct::visible_captured_bytes(slice);
@@ -35,8 +51,8 @@ ParsedArpPacket parse_arp_packet(const PacketSlice& slice) noexcept {
 
     const auto hardware_size = static_cast<std::size_t>(parsed.hardware_size);
     const auto protocol_size = static_cast<std::size_t>(parsed.protocol_size);
-    const auto declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
-    if (available_bytes < declared_length) {
+    parsed.declared_length = static_cast<std::size_t>(8U + (2U * hardware_size) + (2U * protocol_size));
+    if (available_bytes < parsed.declared_length) {
         parsed.status = ParseStatus::truncated;
         parsed.address_section_truncated = true;
         return parsed;
@@ -60,15 +76,16 @@ ParsedArpPacket parse_arp_packet(const PacketSlice& slice) noexcept {
 DissectionStep dissect_arp(const PacketSlice& slice) {
     const auto parsed = parse_arp_packet(slice);
     if (parsed.status != ParseStatus::complete) {
-        return DissectionStep {
-            .layer = LayerKey::arp(),
-            .path_contribution = LayerKey::arp(),
-            .bounds = direct::make_layer_bounds(
+        const auto bounds = parsed.fixed_header_truncated
+            ? direct::make_layer_bounds(
                 slice,
                 direct::slice_declared_length(slice),
-                std::min<std::size_t>(8U, direct::slice_declared_length(slice)),
-                direct::RelativeRange {.begin = 8U, .end = direct::slice_declared_length(slice)}
-            ),
+                std::min<std::size_t>(8U, direct::slice_declared_length(slice))
+            )
+            : make_exact_arp_bounds(slice, parsed.declared_length);
+        return DissectionStep {
+            .layer = LayerKey::arp(),
+            .bounds = bounds,
             .facts = std::monostate {},
             .terminal_disposition = TerminalDisposition::none,
             .status = parsed.status,
@@ -79,13 +96,7 @@ DissectionStep dissect_arp(const PacketSlice& slice) {
     return DissectionStep {
         .layer = LayerKey::arp(),
         .path_contribution = LayerKey::arp(),
-        .bounds = direct::make_layer_bounds(
-            slice,
-            direct::slice_declared_length(slice),
-            std::min<std::size_t>(8U, direct::slice_declared_length(slice)),
-            direct::RelativeRange {.begin = 8U, .end = direct::slice_declared_length(slice)},
-            true
-        ),
+        .bounds = make_exact_arp_bounds(slice, parsed.declared_length),
         .facts = ArpFacts {
             .hardware_type = parsed.hardware_type,
             .protocol_type = parsed.protocol_type,

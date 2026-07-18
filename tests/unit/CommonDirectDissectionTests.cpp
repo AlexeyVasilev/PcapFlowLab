@@ -475,9 +475,11 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
 
     auto malformed_udp = make_ethernet_ipv4_udp_packet(ipv4(10, 1, 1, 1), ipv4(10, 1, 1, 2), 3000U, 4000U);
     set_udp_length(malformed_udp, 7U);
+    const auto malformed_udp_raw = make_raw_packet(malformed_udp);
+    const auto malformed_udp_root = make_root_slice(malformed_udp_raw);
     PFL_EXPECT(parse_udp_datagram(require_child_slice(
         require_child_slice(
-            make_root_slice(make_raw_packet(malformed_udp)),
+            malformed_udp_root,
             14U,
             malformed_udp.size() - 14U
         ),
@@ -487,16 +489,20 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
 
     auto invalid_ihl = make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 2, 1), ipv4(10, 1, 2, 2), 100U, 200U);
     invalid_ihl[14] = 0x44U;
+    const auto invalid_ihl_raw = make_raw_packet(invalid_ihl);
+    const auto invalid_ihl_root = make_root_slice(invalid_ihl_raw);
     PFL_EXPECT(parse_ipv4_packet(require_child_slice(
-        make_root_slice(make_raw_packet(invalid_ihl)),
+        invalid_ihl_root,
         14U,
         invalid_ihl.size() - 14U
     )).status == ParseStatus::malformed);
 
     auto short_total_length = make_ethernet_ipv4_tcp_packet(ipv4(10, 1, 3, 1), ipv4(10, 1, 3, 2), 100U, 200U);
     set_ipv4_total_length(short_total_length, 16U);
+    const auto short_total_length_raw = make_raw_packet(short_total_length);
+    const auto short_total_length_root = make_root_slice(short_total_length_raw);
     PFL_EXPECT(parse_ipv4_packet(require_child_slice(
-        make_root_slice(make_raw_packet(short_total_length)),
+        short_total_length_root,
         14U,
         short_total_length.size() - 14U
     )).status == ParseStatus::malformed);
@@ -504,7 +510,7 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
     const auto header_only_ipv4 = make_raw_packet(make_ipv4_header_only_packet(6U));
     const auto header_only_shadow = run_shadow(header_only_ipv4, *registry.registry);
     PFL_EXPECT(header_only_shadow.stop_reason == StopReason::malformed);
-    PFL_EXPECT(format_shadow_path(header_only_shadow) == "EthernetII -> IPv4 -> TCP");
+    PFL_EXPECT(format_shadow_path(header_only_shadow) == "EthernetII -> IPv4");
 
     const auto first_fragment_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
         ipv4(10, 2, 0, 1), ipv4(10, 2, 0, 2), 6U, 0x2000U, {0x16, 0x03, 0x03, 0x00, 0x10}));
@@ -540,6 +546,7 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
         arp_ethernet.declared_payload_length
     ));
     PFL_EXPECT(arp.status == ParseStatus::complete);
+    PFL_EXPECT(arp.declared_length == 28U);
     PFL_EXPECT(arp.has_sender_ipv4);
     PFL_EXPECT(arp.has_target_ipv4);
     PFL_EXPECT(arp.sender_ipv4 == ipv4(10, 10, 12, 2));
@@ -547,12 +554,36 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
 
     auto truncated_arp_bytes = arp_bytes;
     truncated_arp_bytes.resize(18U);
+    const auto truncated_arp_packet = make_raw_packet(
+        truncated_arp_bytes,
+        static_cast<std::uint32_t>(arp_bytes.size())
+    );
+    const auto truncated_arp_root = make_root_slice(truncated_arp_packet);
     const auto truncated_arp = parse_arp_packet(require_child_slice(
-        make_root_slice(make_raw_packet(truncated_arp_bytes, static_cast<std::uint32_t>(arp_bytes.size()))),
+        truncated_arp_root,
         14U,
         arp_bytes.size() - 14U
     ));
     PFL_EXPECT(truncated_arp.status == ParseStatus::truncated);
+    PFL_EXPECT(truncated_arp.fixed_header_truncated);
+    PFL_EXPECT(!truncated_arp.address_section_truncated);
+
+    auto truncated_arp_address_bytes = arp_bytes;
+    truncated_arp_address_bytes.resize(30U);
+    const auto truncated_arp_address_packet = make_raw_packet(
+        truncated_arp_address_bytes,
+        static_cast<std::uint32_t>(arp_bytes.size())
+    );
+    const auto truncated_arp_address_root = make_root_slice(truncated_arp_address_packet);
+    const auto truncated_arp_address = parse_arp_packet(require_child_slice(
+        truncated_arp_address_root,
+        14U,
+        arp_bytes.size() - 14U
+    ));
+    PFL_EXPECT(truncated_arp_address.status == ParseStatus::truncated);
+    PFL_EXPECT(!truncated_arp_address.fixed_header_truncated);
+    PFL_EXPECT(truncated_arp_address.address_section_truncated);
+    PFL_EXPECT(truncated_arp_address.declared_length == 28U);
 }
 
 void expect_common_direct_steps_report_handoffs_bounds_and_facts() {
@@ -640,6 +671,189 @@ void expect_common_direct_steps_report_handoffs_bounds_and_facts() {
     PFL_REQUIRE(udp_step.bounds.payload.has_value());
     PFL_EXPECT(udp_step.bounds.payload->declared.length() == 0U);
     PFL_EXPECT(udp_step.bounds.payload->captured.length() == 0U);
+}
+
+void expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds() {
+    const auto truncated_vlan_packet = make_raw_packet(std::vector<std::uint8_t> {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+        0x81, 0x00,
+        0x00, 0x64,
+    }, 18U);
+    const auto truncated_vlan_root = make_root_slice(truncated_vlan_packet);
+    const auto truncated_vlan_ethernet = parse_ethernet_frame(truncated_vlan_root);
+    PFL_REQUIRE(truncated_vlan_ethernet.status == ParseStatus::complete);
+    const auto truncated_vlan_step = dissect_vlan(require_child_slice(
+        truncated_vlan_root,
+        truncated_vlan_ethernet.header_length,
+        truncated_vlan_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(truncated_vlan_step.layer == LayerKey::vlan(0U));
+    PFL_EXPECT(truncated_vlan_step.status == ParseStatus::truncated);
+    PFL_EXPECT(!truncated_vlan_step.path_contribution.has_value());
+
+    auto invalid_ihl_packet = make_ethernet_ipv4_tcp_packet(ipv4(10, 8, 0, 1), ipv4(10, 8, 0, 2), 1U, 2U);
+    invalid_ihl_packet[14] = 0x44U;
+    const auto invalid_ihl_raw_packet = make_raw_packet(invalid_ihl_packet);
+    const auto invalid_ihl_root = make_root_slice(invalid_ihl_raw_packet);
+    const auto invalid_ihl_ethernet = parse_ethernet_frame(invalid_ihl_root);
+    PFL_REQUIRE(invalid_ihl_ethernet.status == ParseStatus::complete);
+    const auto invalid_ipv4_step = dissect_ipv4(require_child_slice(
+        invalid_ihl_root,
+        invalid_ihl_ethernet.header_length,
+        invalid_ihl_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(invalid_ipv4_step.status == ParseStatus::malformed);
+    PFL_EXPECT(!invalid_ipv4_step.path_contribution.has_value());
+
+    const auto header_only_tcp_packet = make_raw_packet(make_ipv4_header_only_packet(6U));
+    const auto header_only_tcp_root = make_root_slice(header_only_tcp_packet);
+    const auto header_only_tcp_ethernet = parse_ethernet_frame(header_only_tcp_root);
+    PFL_REQUIRE(header_only_tcp_ethernet.status == ParseStatus::complete);
+    const auto header_only_tcp_ipv4_slice = require_child_slice(
+        header_only_tcp_root,
+        header_only_tcp_ethernet.header_length,
+        header_only_tcp_ethernet.declared_payload_length
+    );
+    const auto header_only_tcp_ipv4 = parse_ipv4_packet(header_only_tcp_ipv4_slice);
+    PFL_REQUIRE(header_only_tcp_ipv4.status == ParseStatus::complete);
+    const auto header_only_tcp_step = dissect_tcp(require_child_slice(
+        header_only_tcp_ipv4_slice,
+        header_only_tcp_ipv4.header_length,
+        header_only_tcp_ipv4.nominal_packet_end - header_only_tcp_ipv4.header_length
+    ));
+    PFL_EXPECT(header_only_tcp_step.status == ParseStatus::malformed);
+    PFL_EXPECT(!header_only_tcp_step.path_contribution.has_value());
+
+    auto malformed_udp_packet = make_ethernet_ipv4_udp_packet(ipv4(10, 1, 1, 1), ipv4(10, 1, 1, 2), 3000U, 4000U);
+    set_udp_length(malformed_udp_packet, 7U);
+    const auto malformed_udp_raw_packet = make_raw_packet(malformed_udp_packet);
+    const auto malformed_udp_root = make_root_slice(malformed_udp_raw_packet);
+    const auto malformed_udp_ethernet = parse_ethernet_frame(malformed_udp_root);
+    PFL_REQUIRE(malformed_udp_ethernet.status == ParseStatus::complete);
+    const auto malformed_udp_ipv4_slice = require_child_slice(
+        malformed_udp_root,
+        malformed_udp_ethernet.header_length,
+        malformed_udp_ethernet.declared_payload_length
+    );
+    const auto malformed_udp_ipv4 = parse_ipv4_packet(malformed_udp_ipv4_slice);
+    PFL_REQUIRE(malformed_udp_ipv4.status == ParseStatus::complete);
+    const auto malformed_udp_step = dissect_udp(require_child_slice(
+        malformed_udp_ipv4_slice,
+        malformed_udp_ipv4.header_length,
+        malformed_udp_ipv4.nominal_packet_end - malformed_udp_ipv4.header_length
+    ));
+    PFL_EXPECT(malformed_udp_step.status == ParseStatus::malformed);
+    PFL_EXPECT(!malformed_udp_step.path_contribution.has_value());
+
+    const auto arp_bytes = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1));
+    auto padded_arp_bytes = arp_bytes;
+    padded_arp_bytes.insert(padded_arp_bytes.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x00});
+    const auto padded_arp_packet = make_raw_packet(padded_arp_bytes);
+    const auto padded_arp_root = make_root_slice(padded_arp_packet);
+    const auto padded_arp_ethernet = parse_ethernet_frame(padded_arp_root);
+    PFL_REQUIRE(padded_arp_ethernet.status == ParseStatus::complete);
+    const auto padded_arp_step = dissect_arp(require_child_slice(
+        padded_arp_root,
+        padded_arp_ethernet.header_length,
+        padded_arp_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(padded_arp_step.status == ParseStatus::complete);
+    PFL_REQUIRE(padded_arp_step.path_contribution.has_value());
+    PFL_EXPECT(*padded_arp_step.path_contribution == LayerKey::arp());
+    PFL_EXPECT(padded_arp_step.bounds.full.declared.length() == 28U);
+    PFL_EXPECT(padded_arp_step.bounds.full.captured.length() == 28U);
+    PFL_EXPECT(padded_arp_step.bounds.header.declared.length() == 8U);
+    PFL_EXPECT(padded_arp_step.bounds.header.captured.length() == 8U);
+    PFL_REQUIRE(padded_arp_step.bounds.payload.has_value());
+    PFL_EXPECT(padded_arp_step.bounds.payload->declared.length() == 20U);
+    PFL_EXPECT(padded_arp_step.bounds.payload->captured.length() == 20U);
+    PFL_EXPECT(padded_arp_step.terminal_disposition == TerminalDisposition::recognized_non_flow);
+
+    auto truncated_arp_fixed_header_bytes = arp_bytes;
+    truncated_arp_fixed_header_bytes.resize(18U);
+    const auto truncated_arp_fixed_header_packet = make_raw_packet(
+        truncated_arp_fixed_header_bytes,
+        static_cast<std::uint32_t>(arp_bytes.size())
+    );
+    const auto truncated_arp_fixed_header_root = make_root_slice(truncated_arp_fixed_header_packet);
+    const auto truncated_arp_fixed_header_ethernet = parse_ethernet_frame(truncated_arp_fixed_header_root);
+    PFL_REQUIRE(truncated_arp_fixed_header_ethernet.status == ParseStatus::complete);
+    const auto truncated_arp_fixed_header_step = dissect_arp(require_child_slice(
+        truncated_arp_fixed_header_root,
+        truncated_arp_fixed_header_ethernet.header_length,
+        truncated_arp_fixed_header_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(truncated_arp_fixed_header_step.status == ParseStatus::truncated);
+    PFL_EXPECT(!truncated_arp_fixed_header_step.path_contribution.has_value());
+    PFL_EXPECT(!truncated_arp_fixed_header_step.bounds.payload.has_value());
+
+    auto truncated_arp_address_bytes = arp_bytes;
+    truncated_arp_address_bytes.resize(30U);
+    const auto truncated_arp_address_packet = make_raw_packet(
+        truncated_arp_address_bytes,
+        static_cast<std::uint32_t>(arp_bytes.size())
+    );
+    const auto truncated_arp_address_root = make_root_slice(truncated_arp_address_packet);
+    const auto truncated_arp_address_ethernet = parse_ethernet_frame(truncated_arp_address_root);
+    PFL_REQUIRE(truncated_arp_address_ethernet.status == ParseStatus::complete);
+    const auto truncated_arp_address_step = dissect_arp(require_child_slice(
+        truncated_arp_address_root,
+        truncated_arp_address_ethernet.header_length,
+        truncated_arp_address_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(truncated_arp_address_step.status == ParseStatus::truncated);
+    PFL_EXPECT(!truncated_arp_address_step.path_contribution.has_value());
+    PFL_EXPECT(truncated_arp_address_step.bounds.full.declared.length() == 28U);
+    PFL_EXPECT(truncated_arp_address_step.bounds.full.captured.length() == 16U);
+    PFL_EXPECT(truncated_arp_address_step.bounds.header.declared.length() == 8U);
+    PFL_EXPECT(truncated_arp_address_step.bounds.header.captured.length() == 8U);
+    PFL_REQUIRE(truncated_arp_address_step.bounds.payload.has_value());
+    PFL_EXPECT(truncated_arp_address_step.bounds.payload->declared.length() == 20U);
+    PFL_EXPECT(truncated_arp_address_step.bounds.payload->captured.length() == 8U);
+}
+
+void expect_fragmented_ipv4_preserves_selector_only_handoff() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    const auto first_fragment_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(10, 0, 3, 1), ipv4(10, 0, 3, 2), 6U, 0x2000U, {0x16, 0x03, 0x03, 0x00, 0x10}));
+    const auto first_fragment_root = make_root_slice(first_fragment_packet);
+    const auto first_fragment_ethernet = dissect_ethernet(first_fragment_root);
+    PFL_REQUIRE(first_fragment_ethernet.handoff.has_value());
+    PFL_REQUIRE(first_fragment_ethernet.handoff->child.has_value());
+
+    const auto first_fragment_ipv4 = dissect_ipv4(*first_fragment_ethernet.handoff->child);
+    PFL_EXPECT(first_fragment_ipv4.status == ParseStatus::complete);
+    PFL_EXPECT(first_fragment_ipv4.stop_reason == StopReason::needs_reassembly);
+    PFL_REQUIRE(first_fragment_ipv4.path_contribution.has_value());
+    PFL_EXPECT(*first_fragment_ipv4.path_contribution == LayerKey::ipv4());
+    PFL_REQUIRE(first_fragment_ipv4.handoff.has_value());
+    const ProtocolSelector expected_fragment_selector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = 6U,
+    };
+    PFL_EXPECT(first_fragment_ipv4.handoff->selector == expected_fragment_selector);
+    PFL_EXPECT(!first_fragment_ipv4.handoff->child.has_value());
+
+    StepKindRecorder recorder {};
+    const DissectionEngine engine {};
+    const auto engine_result = engine.run(
+        registry,
+        make_link_type_selector(first_fragment_packet.data_link_type),
+        first_fragment_root,
+        DissectionConsumer {.on_step = record_step_kind, .context = &recorder}
+    );
+    PFL_EXPECT(engine_result.stop_reason == StopReason::needs_reassembly);
+    PFL_EXPECT(engine_result.step_count == 2U);
+    PFL_EXPECT(engine_result.traversed_depth == 2U);
+    const std::vector<ProtocolLayerKind> expected_kinds {
+        ProtocolLayerKind::ethernet_ii,
+        ProtocolLayerKind::ipv4,
+    };
+    PFL_EXPECT(recorder.kinds == expected_kinds);
 }
 
 void expect_common_direct_supports_triple_vlan_and_depth_limits() {
@@ -784,6 +998,19 @@ void expect_shadow_conservative_stops_and_arp_behavior() {
     PFL_EXPECT(unknown_ethertype_shadow.stop_reason == StopReason::unknown_next_protocol);
     PFL_EXPECT(format_shadow_path(unknown_ethertype_shadow) == "EthernetII");
 
+    const auto truncated_vlan_shadow = run_shadow(
+        make_raw_packet(std::vector<std::uint8_t> {
+            0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+            0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+            0x81, 0x00,
+            0x00, 0x64,
+        }, 18U),
+        registry
+    );
+    PFL_EXPECT(truncated_vlan_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(truncated_vlan_shadow.stop_reason == StopReason::truncated);
+    PFL_EXPECT(format_shadow_path(truncated_vlan_shadow) == "EthernetII");
+
     const auto arp_bytes = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1));
     const auto arp_shadow = run_shadow(make_raw_packet(arp_bytes), registry);
     PFL_EXPECT(arp_shadow.outcome == ImportDissectionOutcome::recognized_non_flow);
@@ -804,7 +1031,7 @@ void expect_shadow_conservative_stops_and_arp_behavior() {
     );
     PFL_EXPECT(truncated_arp_shadow.outcome == ImportDissectionOutcome::unrecognized);
     PFL_EXPECT(truncated_arp_shadow.stop_reason == StopReason::truncated);
-    PFL_EXPECT(format_shadow_path(truncated_arp_shadow) == "EthernetII -> ARP");
+    PFL_EXPECT(format_shadow_path(truncated_arp_shadow) == "EthernetII");
 
     const auto truncated_ethernet_shadow = run_shadow(
         make_raw_packet(std::vector<std::uint8_t> {
@@ -821,7 +1048,7 @@ void expect_shadow_conservative_stops_and_arp_behavior() {
     const auto invalid_ihl_shadow = run_shadow(make_raw_packet(invalid_ihl_packet), registry);
     PFL_EXPECT(invalid_ihl_shadow.outcome == ImportDissectionOutcome::unrecognized);
     PFL_EXPECT(invalid_ihl_shadow.stop_reason == StopReason::malformed);
-    PFL_EXPECT(format_shadow_path(invalid_ihl_shadow) == "EthernetII -> IPv4");
+    PFL_EXPECT(format_shadow_path(invalid_ihl_shadow) == "EthernetII");
 }
 
 }  // namespace
@@ -831,6 +1058,8 @@ void run_common_direct_dissection_tests() {
     expect_ethernet_and_vlan_canonical_parsers();
     expect_ipv4_tcp_udp_and_arp_canonical_parsers();
     expect_common_direct_steps_report_handoffs_bounds_and_facts();
+    expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds();
+    expect_fragmented_ipv4_preserves_selector_only_handoff();
     expect_common_direct_supports_triple_vlan_and_depth_limits();
     expect_shadow_parity_for_common_direct_subset();
     expect_shadow_conservative_stops_and_arp_behavior();

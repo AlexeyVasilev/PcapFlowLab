@@ -324,11 +324,14 @@ The final implementation can use different names, but the RFC should prohibit am
 Interpretation:
 
 - parse status describes the current layer;
+- `layer` may still name the attempted/current protocol for diagnostics even when parsing is partial or malformed;
+- `path_contribution` is emitted only after the current layer's canonical structural parser completes successfully;
 - stop reason describes why traversal does or does not continue;
 - the engine may continue only when:
   - `stop_reason == none`;
   - `handoff` exists;
   - `handoff.child` exists;
+- a handoff may preserve only the next selector when traversal must stop safely before creating a child slice;
 - reaching a terminal protocol does not itself mean that a valid flow tuple was necessarily produced.
 
 Example:
@@ -391,6 +394,7 @@ Global identity policy remains outside protocol modules.
 Examples:
 
 - the VLAN parser emits `VLAN(vid=0)` when it is physically present;
+- a truncated or malformed VLAN step may still identify VLAN for diagnostics, but it does not contribute `VLAN(vid=0)` or any other fabricated path entry;
 - the direct dissection path keeps general-depth VLAN chaining bounded by the explicit traversal depth and protocol-path capacity, rather than restoring any legacy two-tag cap;
 - later import-time flow-identity policy may omit VLAN VID `0` from normalized identity;
 - `ProtocolPath` normalization, interning, `FlowKey` assignment, and index concerns remain outside protocol modules.
@@ -450,6 +454,11 @@ High-level loop:
 4. Collect only the fields or diagnostics requested by that consumer.
 5. If the step yields a non-`none` stop reason, finish.
 6. Otherwise advance only when a handoff selector and bounded child slice are both present; missing child or missing handoff is a conservative stop.
+
+Selector-only handoffs are valid when a module can safely preserve the next selector but must not continue traversal. Example:
+
+- fragmented IPv4 may preserve the raw `ip_protocol` selector while stopping with `needs_reassembly`;
+- the engine still stops immediately because `stop_reason != none`.
 
 This replaces current ad hoc recursion such as:
 

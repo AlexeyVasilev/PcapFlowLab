@@ -101,4 +101,11 @@ inline std::optional<ProtocolHandoff> make_protocol_handoff(
     };
 }
 
+inline ProtocolHandoff make_selector_handoff(const ProtocolSelector selector) noexcept {
+    return ProtocolHandoff {
+        .selector = selector,
+        .child = std::nullopt,
+    };
+}
+
 }  // namespace pfl::dissection::direct
