@@ -1,5 +1,5 @@
 use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_uchar};
 
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,

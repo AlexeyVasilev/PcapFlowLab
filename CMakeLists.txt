@@ -48,6 +48,9 @@ add_library(
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
     src/core/domain/PacketDetails.cpp
+    src/core/dissection/PacketSlice.cpp
+    src/core/dissection/DissectionRegistry.cpp
+    src/core/dissection/DissectionEngine.cpp
     src/core/io/PcapReader.cpp
     src/core/io/PcapNgReader.cpp
     src/core/io/PcapWriter.cpp
@@ -282,6 +285,7 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         tests/unit/test_main.cpp
         tests/unit/FlowKeyTests.cpp
+        tests/unit/DissectionFoundationTests.cpp
         tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
