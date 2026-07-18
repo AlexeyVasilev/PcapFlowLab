@@ -149,8 +149,6 @@ fn main() {
         "src/core/reassembly/ReassemblyService.cpp",
         "src/core/services/PacketIngestor.cpp",
         "src/core/services/CaptureImportProcessor.cpp",
-        "src/core/services/FastCaptureImporter.cpp",
-        "src/core/services/DeepCaptureImporter.cpp",
         "src/core/services/CaptureImporter.cpp",
         "src/core/services/ChunkedCaptureImporter.cpp",
         "src/core/services/FlowExportService.cpp",

@@ -78,11 +78,8 @@ void expect_fixture(const FixtureExpectation& expectation) {
 }
 
 void expect_quic_sni_fixture(const QuicSniFixtureExpectation& expectation) {
-    CaptureImportOptions deep_options {};
-    deep_options.mode = ImportMode::deep;
-
     CaptureSession deep_session {};
-    PFL_EXPECT(deep_session.open_capture(fixture_path(expectation.relative_path), deep_options));
+    PFL_EXPECT(deep_session.open_capture(fixture_path(expectation.relative_path)));
     const auto deep_rows = deep_session.list_flows();
     PFL_EXPECT(!deep_rows.empty());
 
@@ -144,7 +141,7 @@ void expect_frontend_adapter_quic_service_hint_refresh(
     const std::string& expected_sni
 ) {
     FrontendSessionAdapter adapter {};
-    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    const auto open_result = adapter.open_capture(fixture_path(relative_path));
     PFL_EXPECT(open_result.opened);
 
     const auto flows = adapter.get_flows();
@@ -154,20 +151,21 @@ void expect_frontend_adapter_quic_service_hint_refresh(
         return flow.protocol_hint == "quic";
     });
     PFL_EXPECT(flow_it != flows.end());
-    PFL_EXPECT(flow_it->service_hint.empty());
+    PFL_EXPECT(flow_it->service_hint == expected_sni);
 
     const auto selection = adapter.select_flow(flow_it->flow_index);
     PFL_EXPECT(selection.selected);
-    PFL_REQUIRE(selection.updated_flow.has_value());
-    PFL_EXPECT(selection.updated_flow->flow_index == flow_it->flow_index);
-    PFL_EXPECT(selection.updated_flow->service_hint == expected_sni);
+    if (selection.updated_flow.has_value()) {
+        PFL_EXPECT(selection.updated_flow->flow_index == flow_it->flow_index);
+        PFL_EXPECT(selection.updated_flow->service_hint == expected_sni);
+    }
 }
 
 void expect_frontend_adapter_selected_flow_packet_details_rejects_mismatched_packet(
     const std::filesystem::path& relative_path
 ) {
     FrontendSessionAdapter adapter {};
-    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    const auto open_result = adapter.open_capture(fixture_path(relative_path));
     PFL_EXPECT(open_result.opened);
 
     const auto flows = adapter.get_flows();
@@ -190,7 +188,7 @@ void expect_frontend_adapter_stream_source_packets_use_bounded_flow_numbers(
     const std::filesystem::path& relative_path
 ) {
     FrontendSessionAdapter adapter {};
-    const auto open_result = adapter.open_capture(fixture_path(relative_path), FrontendOpenMode::fast);
+    const auto open_result = adapter.open_capture(fixture_path(relative_path));
     PFL_EXPECT(open_result.opened);
 
     const auto flows = adapter.get_flows();
@@ -258,3 +256,4 @@ void run_flow_hints_real_fixtures_tests() {
 }
 
 }  // namespace pfl::tests
+

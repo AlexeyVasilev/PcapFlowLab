@@ -427,7 +427,6 @@ void run_protocol_summary_tests() {
 
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.use_possible_tls_quic = true},
         }));
         const auto summary = session.protocol_summary();
@@ -482,6 +481,7 @@ void run_protocol_summary_tests() {
 }
 
 }  // namespace pfl::tests
+
 
 
 

@@ -110,7 +110,7 @@ void run_perf_open_logger_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         PFL_EXPECT(!std::filesystem::exists(kPerfLogPath));
     }
 
@@ -131,12 +131,12 @@ void run_perf_open_logger_tests() {
         );
         const auto index_path = temp_dir / "pfl_perf_open_enabled.idx";
 
-        CaptureSession fast_session {};
-        PFL_EXPECT(fast_session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
-        PFL_EXPECT(fast_session.save_index(index_path));
+        CaptureSession first_capture_session {};
+        PFL_EXPECT(first_capture_session.open_capture(capture_path, CaptureImportOptions {}));
+        PFL_EXPECT(first_capture_session.save_index(index_path));
 
-        CaptureSession deep_session {};
-        PFL_EXPECT(deep_session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        CaptureSession second_capture_session {};
+        PFL_EXPECT(second_capture_session.open_capture(capture_path, CaptureImportOptions {}));
 
         CaptureSession index_session {};
         PFL_EXPECT(index_session.load_index(index_path));
@@ -148,8 +148,8 @@ void run_perf_open_logger_tests() {
         PFL_EXPECT(rows[0][0] == "timestamp_utc");
         PFL_EXPECT(rows[0][1] == "operation_type");
         PFL_EXPECT(rows[0][2] == "input_path");
-        PFL_EXPECT(rows[1][1] == "capture_fast");
-        PFL_EXPECT(rows[2][1] == "capture_deep");
+        PFL_EXPECT(rows[1][1] == "capture");
+        PFL_EXPECT(rows[2][1] == "capture");
         PFL_EXPECT(rows[3][1] == "index_load");
 
         PFL_EXPECT(rows[1][5] == "true");
@@ -181,3 +181,4 @@ void run_perf_open_logger_tests() {
 }
 
 }  // namespace pfl::tests
+

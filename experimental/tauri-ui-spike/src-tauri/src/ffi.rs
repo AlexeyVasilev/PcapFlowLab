@@ -1,5 +1,5 @@
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_uchar};
+use std::os::raw::c_char;
 
 use crate::dtos::{
     AnalysisSequenceExportResultDto, AttachSourceCaptureResultDto, ExportAllFlowsInfoCsvResultDto, ExportCurrentFlowResultDto, ExportSelectedFlowsResultDto, FlowDto, OpenCaptureCancelResultDto, OpenCapturePollResultDto, OpenCaptureResultDto, OpenCaptureStartResultDto, OverviewDto, PacketDetailsDto, SaveIndexResultDto, SelectedFlowAnalysisDto,
@@ -20,12 +20,10 @@ extern "C" {
     fn pfl_frontend_session_adapter_open_capture_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
-        open_mode: c_uchar,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_start_open_capture_json(
         handle: *mut PflFrontendSessionAdapterHandle,
         path_utf8: *const c_char,
-        open_mode: c_uchar,
     ) -> *mut c_char;
     fn pfl_frontend_session_adapter_poll_open_capture_json(
         handle: *mut PflFrontendSessionAdapterHandle,
@@ -151,13 +149,6 @@ extern "C" {
     fn pfl_frontend_string_free(value: *mut c_char);
 }
 
-#[repr(u8)]
-#[derive(Copy, Clone)]
-pub enum OpenMode {
-    Fast = 0,
-    Deep = 1,
-}
-
 pub struct CppFrontendSessionAdapter {
     handle: *mut PflFrontendSessionAdapterHandle,
 }
@@ -203,27 +194,15 @@ impl CppFrontendSessionAdapter {
         Ok(Self { handle })
     }
 
-    pub fn open_capture(
-        &mut self,
-        path: &str,
-        open_mode: OpenMode,
-    ) -> Result<OpenCaptureResultDto, String> {
+    pub fn open_capture(&mut self, path: &str) -> Result<OpenCaptureResultDto, String> {
         let path = CString::new(path).map_err(|_| "Capture path contains an embedded NUL byte.".to_string())?;
-        let json = unsafe {
-            pfl_frontend_session_adapter_open_capture_json(self.handle, path.as_ptr(), open_mode as c_uchar)
-        };
+        let json = unsafe { pfl_frontend_session_adapter_open_capture_json(self.handle, path.as_ptr()) };
         parse_json_owned::<OpenCaptureResultDto>(json)
     }
 
-    pub fn start_open_capture(
-        &mut self,
-        path: &str,
-        open_mode: OpenMode,
-    ) -> Result<OpenCaptureStartResultDto, String> {
+    pub fn start_open_capture(&mut self, path: &str) -> Result<OpenCaptureStartResultDto, String> {
         let path = CString::new(path).map_err(|_| "Capture path contains an embedded NUL byte.".to_string())?;
-        let json = unsafe {
-            pfl_frontend_session_adapter_start_open_capture_json(self.handle, path.as_ptr(), open_mode as c_uchar)
-        };
+        let json = unsafe { pfl_frontend_session_adapter_start_open_capture_json(self.handle, path.as_ptr()) };
         parse_json_owned::<OpenCaptureStartResultDto>(json)
     }
 

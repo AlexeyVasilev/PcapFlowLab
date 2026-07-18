@@ -25,8 +25,6 @@
 #include <QVariantMap>
 
 #include "../../../core/open_context.h"
-#include "cli/CliImportMode.h"
-
 namespace pfl {
 
 namespace {
@@ -2074,7 +2072,6 @@ QString buildPacketSummaryFallback(
 
 MainController::MainController(QObject* parent)
     : QObject(parent)
-    , capture_open_mode_(kCliFastImportModeIndex)
     , current_tab_index_(kFlowTabIndex)
     , selected_packet_index_(kInvalidPacketSelection) {
     flow_model_.setProtocolPathPresentationResolver([this](const ProtocolPathId protocol_path_id) {
@@ -3236,10 +3233,6 @@ int MainController::statisticsMode() const noexcept {
     return statistics_mode_;
 }
 
-int MainController::captureOpenMode() const noexcept {
-    return capture_open_mode_;
-}
-
 bool MainController::httpUsePathAsServiceHint() const noexcept {
     return pending_analysis_settings_.http_use_path_as_service_hint;
 }
@@ -4356,19 +4349,6 @@ void MainController::setFlowDetailsTabIndex(const int index) {
 
 }
 
-void MainController::setCaptureOpenMode(const int mode) {
-    const int normalizedMode = (mode == kCliDeepImportModeIndex)
-        ? kCliDeepImportModeIndex
-        : kCliFastImportModeIndex;
-
-    if (capture_open_mode_ == normalizedMode) {
-        return;
-    }
-
-    capture_open_mode_ = normalizedMode;
-    emit captureOpenModeChanged();
-}
-
 void MainController::setStatisticsMode(const int mode) {
     const int normalizedMode = (mode == kProtocolPathStatisticsModeIdentityTree)
         ? kProtocolPathStatisticsModeIdentityTree
@@ -5283,8 +5263,9 @@ bool MainController::openPath(const QString& path, const bool asIndex) {
 
     ++active_open_job_id_;
     const qulonglong jobId = active_open_job_id_;
-    auto importOptions = capture_import_options_for_ui_index(capture_open_mode_);
-    importOptions.settings = pending_analysis_settings_;
+    const CaptureImportOptions importOptions {
+        .settings = pending_analysis_settings_,
+    };
     active_open_context_ = std::make_shared<OpenContext>();
     active_open_context_->on_progress = [this, jobId](const OpenProgress& progress) {
         QMetaObject::invokeMethod(this, [this, jobId, progress]() {

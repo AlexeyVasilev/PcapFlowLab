@@ -996,7 +996,7 @@ void expect_truncated_ah_udp_preserves_captured_and_original_payload_lengths() {
     }
 
     FrontendSessionAdapter adapter {};
-    const auto open_result = adapter.open_capture(capture_path, FrontendOpenMode::fast);
+    const auto open_result = adapter.open_capture(capture_path);
     PFL_REQUIRE(open_result.opened);
 
     const auto frontend_flows = adapter.get_flows();
@@ -1048,3 +1048,4 @@ void run_ah_pcap_fixture_tests() {
 }
 
 }  // namespace pfl::tests
+

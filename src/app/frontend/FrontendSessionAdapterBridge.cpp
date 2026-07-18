@@ -12,7 +12,6 @@
 namespace {
 
 using pfl::FlowAddressFamily;
-using pfl::FrontendOpenMode;
 using pfl::FrontendSessionAdapter;
 
 constexpr std::string_view kAdapterUnavailableText {"Adapter handle is unavailable."};
@@ -1037,30 +1036,26 @@ void pfl_frontend_session_adapter_free(PflFrontendSessionAdapterHandle* handle) 
 
 char* pfl_frontend_session_adapter_open_capture_json(
     PflFrontendSessionAdapterHandle* handle,
-    const char* path_utf8,
-    const std::uint8_t open_mode
+    const char* path_utf8
 ) {
     if (handle == nullptr) {
         return make_c_string("{\"opened\":false,\"cancelled\":false,\"opened_from_index\":false,\"partial_open\":false,\"partial_open_warning_text\":\"\",\"has_source_capture\":false,\"source_capture_accessible\":false,\"input_path\":\"\",\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\",\"error_text\":\"Adapter handle is unavailable.\",\"source_availability\":{\"has_source_capture\":false,\"source_capture_accessible\":false,\"opened_from_index\":false,\"partial_open\":false,\"byte_backed_inspection_available\":false,\"active_source_capture_path\":\"\",\"expected_source_capture_path\":\"\"}}");
     }
 
-    const auto mode = open_mode == 1U ? FrontendOpenMode::deep : FrontendOpenMode::fast;
     const auto path = path_from_utf8(path_utf8);
-    return make_c_string(open_result_json(handle->adapter.open_capture(path, mode)));
+    return make_c_string(open_result_json(handle->adapter.open_capture(path)));
 }
 
 char* pfl_frontend_session_adapter_start_open_capture_json(
     PflFrontendSessionAdapterHandle* handle,
-    const char* path_utf8,
-    const std::uint8_t open_mode
+    const char* path_utf8
 ) {
     if (handle == nullptr) {
         return make_c_string("{\"started\":false,\"error_text\":\"Adapter handle is unavailable.\"}");
     }
 
-    const auto mode = open_mode == 1U ? FrontendOpenMode::deep : FrontendOpenMode::fast;
     const auto path = path_from_utf8(path_utf8);
-    return make_c_string(open_start_result_json(handle->adapter.start_open_capture(path, mode)));
+    return make_c_string(open_start_result_json(handle->adapter.start_open_capture(path)));
 }
 
 char* pfl_frontend_session_adapter_poll_open_capture_json(PflFrontendSessionAdapterHandle* handle) {

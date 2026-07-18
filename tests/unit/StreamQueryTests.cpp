@@ -377,7 +377,7 @@ void run_stream_query_tests() {
     PFL_EXPECT(dns_session.open_capture(dns_path));
     const auto dns_rows = dns_session.list_flow_stream_items(0);
     PFL_EXPECT(dns_rows.size() == 1);
-    PFL_EXPECT(dns_rows[0].label == "UDP Payload");
+    PFL_EXPECT(dns_rows[0].label == "DNS Query");
     PFL_EXPECT(dns_rows[0].byte_count == dns_payload.size());
 
     const auto server_hello_record = make_tls_handshake_record(0x02U, {0xAA, 0xBB, 0xCC, 0xDD});
@@ -392,7 +392,6 @@ void run_stream_query_tests() {
 
     CaptureSession tls_multi_session {};
     CaptureImportOptions fast_options {};
-    fast_options.mode = ImportMode::fast;
 
     constexpr std::string_view split_http_request_text =
         "GET /split HTTP/1.1\r\n"
@@ -1774,7 +1773,7 @@ void run_stream_query_tests() {
         const auto flows = session.list_flows();
         PFL_EXPECT(flows.size() == 1U);
         PFL_EXPECT(flows[0].protocol_hint == "quic");
-        PFL_EXPECT(flows[0].service_hint.empty());
+        PFL_EXPECT(flows[0].service_hint == "www.instagram.com");
         PFL_EXPECT(flows[0].packet_count == 16U);
 
         const auto rows = session.list_flow_stream_items(0);
@@ -2097,3 +2096,4 @@ void run_stream_query_tests() {
 }
 
 }  // namespace pfl::tests
+

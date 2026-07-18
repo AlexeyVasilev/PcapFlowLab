@@ -23,10 +23,8 @@ void run_protocol_path_tests();
 void run_connection_tests();
 void run_ingestor_tests();
 void run_import_tests();
-void run_import_mode_tests();
 void run_analysis_settings_tests();
 void run_flow_analysis_tests();
-void run_cli_import_mode_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
 void run_packet_payload_tests();
@@ -129,10 +127,8 @@ int main() {
         {"connection", pfl::tests::run_connection_tests},
         {"ingestor", pfl::tests::run_ingestor_tests},
         {"import", pfl::tests::run_import_tests},
-        {"import_mode", pfl::tests::run_import_mode_tests},
         {"analysis_settings", pfl::tests::run_analysis_settings_tests},
         {"flow_analysis", pfl::tests::run_flow_analysis_tests},
-        {"cli_import_mode", pfl::tests::run_cli_import_mode_tests},
         {"packet_access", pfl::tests::run_packet_access_tests},
         {"packet_details", pfl::tests::run_packet_details_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},

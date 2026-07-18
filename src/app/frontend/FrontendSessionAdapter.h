@@ -21,8 +21,8 @@ public:
     FrontendSessionAdapter() = default;
     ~FrontendSessionAdapter();
 
-    [[nodiscard]] FrontendOpenResult open_capture(const std::filesystem::path& path, FrontendOpenMode open_mode);
-    [[nodiscard]] FrontendOpenStartResult start_open_capture(const std::filesystem::path& path, FrontendOpenMode open_mode);
+    [[nodiscard]] FrontendOpenResult open_capture(const std::filesystem::path& path);
+    [[nodiscard]] FrontendOpenStartResult start_open_capture(const std::filesystem::path& path);
     [[nodiscard]] FrontendOpenPollResultDto poll_open_capture();
     [[nodiscard]] bool cancel_open_capture();
     [[nodiscard]] FrontendAttachSourceCaptureResult attach_source_capture(const std::filesystem::path& path);

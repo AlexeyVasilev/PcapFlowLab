@@ -1,7 +1,6 @@
 #include "core/services/CaptureImporter.h"
 
-#include "core/services/DeepCaptureImporter.h"
-#include "core/services/FastCaptureImporter.h"
+#include "core/services/CaptureImportProcessor.h"
 
 namespace pfl {
 
@@ -44,18 +43,9 @@ CaptureImportResult CaptureImporter::import_capture_result(const std::filesystem
                                                            CaptureState& state,
                                                            const CaptureImportOptions& options,
                                                            OpenContext* ctx) {
-    switch (options.mode) {
-    case ImportMode::fast: {
-        FastCaptureImporter importer {};
-        return importer.import_capture(path, state, options, ctx);
-    }
-    case ImportMode::deep: {
-        DeepCaptureImporter importer {};
-        return importer.import_capture(path, state, options, ctx);
-    }
-    }
-
-    return CaptureImportResult::failure;
+    state = {};
+    CaptureImportProcessor processor {options.settings};
+    return import_capture_from_path(path, state, processor, ctx);
 }
 
 }  // namespace pfl

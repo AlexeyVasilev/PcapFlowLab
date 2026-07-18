@@ -12,8 +12,7 @@
         <div class="menu-root">
           <button id="menuButtonFile" type="button" class="menu-button" data-menu-button="file">File</button>
           <div id="menuPanelFile" class="menu-panel" data-menu-panel="file">
-            <button type="button" class="menu-item" data-menu-action="open-capture-fast">Open Capture (Fast)</button>
-            <button type="button" class="menu-item" data-menu-action="open-capture-deep">Open Capture (Deep)</button>
+            <button type="button" class="menu-item" data-menu-action="open-capture">Open Capture</button>
             <button type="button" class="menu-item" data-menu-action="open-index">Open Index</button>
             <button id="menuSaveIndex" type="button" class="menu-item" data-menu-action="save-index">Save Index</button>
             <div class="menu-separator"></div>
@@ -49,13 +48,6 @@
         <input id="capturePath" type="hidden" />
         <div class="topbar-toolbar">
           <button id="openFileButton" type="button">Open Capture...</button>
-
-          <label class="toolbar-group compact-toolbar-group" for="openMode">
-            <select id="openMode" aria-label="Open mode">
-              <option value="fast">Fast</option>
-              <option value="deep">Deep</option>
-            </select>
-          </label>
 
           <div id="activeSessionPanel" class="active-session-panel" title="Active session">
             <div class="active-session-copy">

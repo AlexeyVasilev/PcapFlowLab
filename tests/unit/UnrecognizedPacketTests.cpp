@@ -93,7 +93,7 @@ void run_unrecognized_packet_tests() {
 
     {
         FrontendSessionAdapter adapter {};
-        const auto open_result = adapter.open_capture(truncated_tcp_fixture, FrontendOpenMode::fast);
+        const auto open_result = adapter.open_capture(truncated_tcp_fixture);
         PFL_EXPECT(open_result.opened);
 
         const auto overview = adapter.get_overview();
@@ -149,7 +149,7 @@ void run_unrecognized_packet_tests() {
 
     {
         FrontendSessionAdapter adapter {};
-        const auto open_result = adapter.open_capture(normal_tcp_fixture, FrontendOpenMode::fast);
+        const auto open_result = adapter.open_capture(normal_tcp_fixture);
         PFL_EXPECT(open_result.opened);
 
         const auto overview = adapter.get_overview();
@@ -196,3 +196,4 @@ void run_unrecognized_packet_tests() {
 }
 
 }  // namespace pfl::tests
+

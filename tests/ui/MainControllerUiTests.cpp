@@ -37,7 +37,6 @@
 #include "app/session/CaptureSession.h"
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
-#include "cli/CliImportMode.h"
 #include "ui/app/FlowListModel.h"
 #include "ui/app/MainController.h"
 #include "ui/app/PacketDetailsViewModel.h"
@@ -1051,9 +1050,6 @@ int main(int argc, char* argv[]) {
     idle_cancel_controller.cancelOpen();
     UI_EXPECT(!idle_cancel_controller.isOpening());
     UI_EXPECT(idle_cancel_controller.statusText().isEmpty());
-    UI_EXPECT(controller.captureOpenMode() == kCliFastImportModeIndex);
-    controller.setCaptureOpenMode(kCliDeepImportModeIndex);
-    UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
     UI_EXPECT(open_capture_and_wait(app, controller, capture_path));
     UI_EXPECT(controller.canSaveIndex());
     UI_EXPECT(controller.hasSourceCapture());
@@ -1931,9 +1927,7 @@ int main(int argc, char* argv[]) {
     std::filesystem::remove(mismatched_attach_path, remove_error);
     std::filesystem::rename(capture_path, moved_capture_path);
 
-    controller.setCaptureOpenMode(kCliDeepImportModeIndex);
     UI_EXPECT(open_index_and_wait(app, controller, index_path));
-    UI_EXPECT(controller.captureOpenMode() == kCliDeepImportModeIndex);
     UI_EXPECT(controller.openedFromIndex());
     UI_EXPECT(!controller.hasSourceCapture());
     UI_EXPECT(controller.canAttachSourceCapture());
@@ -2051,7 +2045,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_flow_model != nullptr);
     UI_EXPECT(quic_flow_model->rowCount() == 1);
     UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
-    UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+    UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("bag.itunes.apple.com"));
     quic_controller.setSelectedFlowIndex(0);
     UI_EXPECT(quic_flow_model->data(quic_flow_model->index(0, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("bag.itunes.apple.com"));
     auto* quic_packet_model = qobject_cast<PacketListModel*>(quic_controller.packetModel());
@@ -2843,7 +2837,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(stream_model->rowCount() == 1);
     UI_EXPECT(stream_controller.selectedStreamItemIndex() == std::numeric_limits<qulonglong>::max());
     UI_EXPECT(stream_controller.selectedPacketIndex() == std::numeric_limits<qulonglong>::max());
-    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("UDP Payload"));
+    UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::LabelRole).toString() == QStringLiteral("DNS Query"));
     UI_EXPECT(stream_model->data(stream_model->index(0, 0), StreamListModel::ByteCountRole).toUInt() == make_dns_query_payload().size());
     auto* dns_packet_model = qobject_cast<PacketListModel*>(stream_controller.packetModel());
     UI_EXPECT(dns_packet_model != nullptr);
@@ -3049,15 +3043,14 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(quic_size_details_model->payloadTabTitle() == QStringLiteral("UDP Payload"));
 
     const auto tls_capture_path = std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / "parsing" / "tls" / "tls_client_hello_1.pcap";
-    MainController deep_controller {};
-    deep_controller.setCaptureOpenMode(kCliDeepImportModeIndex);
-    UI_EXPECT(open_capture_and_wait(app, deep_controller, tls_capture_path));
-    deep_controller.setSelectedFlowIndex(0);
-    deep_controller.setSelectedPacketIndex(0);
-    auto* deep_details_model = qobject_cast<PacketDetailsViewModel*>(deep_controller.packetDetailsModel());
-    UI_EXPECT(deep_details_model != nullptr);
-    UI_EXPECT(deep_details_model->protocolText().contains(QStringLiteral("TLS")));
-    UI_EXPECT(deep_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
+    MainController tls_details_controller {};
+    UI_EXPECT(open_capture_and_wait(app, tls_details_controller, tls_capture_path));
+    tls_details_controller.setSelectedFlowIndex(0);
+    tls_details_controller.setSelectedPacketIndex(0);
+    auto* tls_details_model = qobject_cast<PacketDetailsViewModel*>(tls_details_controller.packetDetailsModel());
+    UI_EXPECT(tls_details_model != nullptr);
+    UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("TLS")));
+    UI_EXPECT(tls_details_model->protocolText().contains(QStringLiteral("auth.split.io")));
 
     const auto full_truncated_packet = make_ethernet_ipv4_tcp_packet_with_bytes_payload(
         ipv4(172, 16, 0, 1), ipv4(172, 16, 0, 2), 34567, 8080, make_http_request_payload(), 0x18);
@@ -3305,7 +3298,7 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(ipv6_quic_constricted_flow_row >= 0);
     UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::FamilyRole).toString() == QStringLiteral("IPv6"));
     UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::ProtocolHintRole).toString() == QStringLiteral("QUIC"));
-    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::ServiceHintRole).toString().isEmpty());
+    UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::ServiceHintRole).toString() == QStringLiteral("www.instagram.com"));
     UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::AddressARole).toString().contains(QLatin1Char(':')));
     UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::AddressBRole).toString().contains(QLatin1Char(':')));
     UI_EXPECT(ipv6_quic_constricted_flow_model->data(ipv6_quic_constricted_flow_model->index(ipv6_quic_constricted_flow_row, 0), FlowListModel::PortARole).toUInt() == 443U ||

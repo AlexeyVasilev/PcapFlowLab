@@ -44,7 +44,7 @@ void run_reassembly_architecture_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto initial_summary = session.summary();
         const auto result = session.reassemble_flow_direction(ReassemblyRequest {.flow_index = 0});
         PFL_EXPECT(result.has_value());
@@ -57,7 +57,7 @@ void run_reassembly_architecture_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto flow_rows = session.list_flows();
         PFL_EXPECT(flow_rows.size() == 1);
         const auto result = session.reassemble_flow_direction(ReassemblyRequest {
@@ -77,3 +77,4 @@ void run_reassembly_architecture_tests() {
 }
 
 }  // namespace pfl::tests
+

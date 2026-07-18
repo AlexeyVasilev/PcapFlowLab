@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
 
 #include "core/domain/CaptureState.h"
@@ -10,11 +9,6 @@ struct OpenContext;
 
 namespace pfl {
 
-enum class ImportMode : std::uint8_t {
-    fast,
-    deep,
-};
-
 enum class CaptureImportResult : std::uint8_t {
     success,
     partial_success_with_warning,
@@ -22,7 +16,6 @@ enum class CaptureImportResult : std::uint8_t {
 };
 
 struct CaptureImportOptions {
-    ImportMode mode {ImportMode::fast};
     AnalysisSettings settings {};
 };
 

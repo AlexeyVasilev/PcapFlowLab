@@ -228,7 +228,7 @@ std::vector<std::uint8_t> make_quic_truncated_payload() {
 void run_packet_protocol_details_tests() {
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("TLS") != std::string::npos);
@@ -239,7 +239,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("TLS") != std::string::npos);
@@ -254,7 +254,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_server_hello_6.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_server_hello_6.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("TLS") != std::string::npos);
@@ -273,7 +273,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("TLS") != std::string::npos);
@@ -284,7 +284,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("QUIC") != std::string::npos);
@@ -301,7 +301,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_handshake_3.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_handshake_3.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("QUIC") != std::string::npos);
@@ -320,7 +320,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("QUIC") != std::string::npos);
@@ -350,7 +350,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
 
         const auto client_context = session.derive_quic_protocol_details_for_packet(0, 0);
         PFL_EXPECT(client_context.has_value());
@@ -395,7 +395,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
 
         const auto server_tail_context = session.derive_quic_protocol_details_for_packet(0, 2);
         PFL_EXPECT(server_tail_context.has_value());
@@ -428,7 +428,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
 
         const auto server_tail_context = session.derive_quic_protocol_details_for_packet(0, 1);
         PFL_EXPECT(!server_tail_context.has_value());
@@ -452,7 +452,7 @@ void run_packet_protocol_details_tests() {
         std::filesystem::remove(moved_source_path);
 
         CaptureSession original_session {};
-        PFL_EXPECT(original_session.open_capture(source_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(original_session.open_capture(source_path, CaptureImportOptions {}));
         PFL_EXPECT(original_session.save_index(index_path));
         std::filesystem::rename(source_path, moved_source_path);
 
@@ -465,7 +465,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("DNS") != std::string::npos);
@@ -476,7 +476,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("HTTP") != std::string::npos);
@@ -489,7 +489,7 @@ void run_packet_protocol_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_answer_2.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_answer_2.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("HTTP") != std::string::npos);
@@ -506,7 +506,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("Protocol: ARP (Address Resolution Protocol)") != std::string::npos);
@@ -576,7 +576,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("ICMP") != std::string::npos);
@@ -596,7 +596,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text.find("ICMPv6") != std::string::npos);
@@ -616,7 +616,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
     }
@@ -635,7 +635,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
     }
@@ -649,7 +649,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         PFL_EXPECT(session.read_packet_protocol_details_text(packet) == kNoProtocolDetailsMessage);
     }
@@ -658,7 +658,7 @@ void run_packet_protocol_details_tests() {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(
             fixture_path("parsing/udp/udp_truncated_quic_like_payload_3.pcap"),
-            CaptureImportOptions {.mode = ImportMode::deep}
+            CaptureImportOptions {}
         ));
         PFL_EXPECT(session.summary().packet_count == 1U);
         PFL_EXPECT(session.summary().flow_count == 1U);
@@ -679,7 +679,7 @@ void run_packet_protocol_details_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = require_packet(session, 0);
         const auto text = session.read_packet_protocol_details_text(packet);
         PFL_EXPECT(text == kNoProtocolDetailsMessage);
@@ -690,3 +690,4 @@ void run_packet_protocol_details_tests() {
 }
 
 }  // namespace pfl::tests
+

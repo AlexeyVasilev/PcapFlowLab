@@ -1304,8 +1304,8 @@ CaptureImportResult import_full_packets(Reader& reader, CaptureState& state, con
 
 }  // namespace
 
-CaptureImportProcessor::CaptureImportProcessor(const AnalysisSettings settings, const bool enable_quic_initial_sni)
-    : hint_service_(settings, enable_quic_initial_sni) {
+CaptureImportProcessor::CaptureImportProcessor(const AnalysisSettings settings)
+    : hint_service_(settings, true) {
 }
 
 bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,

@@ -139,7 +139,7 @@ Open-time performance logging is developer-only and off by default.
 
 - Creating `perf-open.enabled` in the current working directory or next to the executable enables CSV logging.
 - The log is written to `perf_open_log.csv`.
-- It records application-level timing for `capture_fast`, `capture_deep`, and `index_load` opens.
+- It records application-level timing for `capture` and `index_load` opens.
 - It does not change normal product behavior when disabled.
 
 ## UI list surfaces

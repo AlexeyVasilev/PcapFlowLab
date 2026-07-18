@@ -16,35 +16,33 @@ Classic pcap:
 
 1. `CaptureSession::open_capture(...)`
 2. `CaptureImporter::import_capture_result(...)`
-3. `FastCaptureImporter::import_capture(...)` or `DeepCaptureImporter::import_capture(...)`
-4. `import_capture_from_path(...)`
-5. `PcapReader::open(...)`
-6. `import_capture_from_reader(PcapReader&, ...)`
-7. `import_packets(...)`
-8. `PcapReader::read_next()`
-9. `CaptureImportProcessor::process_packet(...)`
-10. `PacketDecoder::decode(...)`
-11. `PacketIngestor::ingest(...)`
-12. `FlowHintService::detect(...)`
-13. `Connection::apply_hints(...)`
-14. `CaptureSession::state_ = imported_state`
+3. `import_capture_from_path(...)`
+4. `PcapReader::open(...)`
+5. `import_capture_from_reader(PcapReader&, ...)`
+6. `import_packets(...)`
+7. `PcapReader::read_next()`
+8. `CaptureImportProcessor::process_packet(...)`
+9. `PacketDecoder::decode(...)`
+10. `PacketIngestor::ingest(...)`
+11. `FlowHintService::detect(...)`
+12. `Connection::apply_hints(...)`
+13. `CaptureSession::state_ = imported_state`
 
 Pcapng:
 
 1. `CaptureSession::open_capture(...)`
 2. `CaptureImporter::import_capture_result(...)`
-3. `FastCaptureImporter::import_capture(...)` or `DeepCaptureImporter::import_capture(...)`
-4. `import_capture_from_path(...)`
-5. `PcapNgReader::open(...)`
-6. `import_capture_from_reader(PcapNgReader&, ...)`
-7. `import_packets(...)`
-8. `PcapNgReader::read_next()`
-9. `CaptureImportProcessor::process_packet(...)`
-10. `PacketDecoder::decode(...)`
-11. `PacketIngestor::ingest(...)`
-12. `FlowHintService::detect(...)`
-13. `Connection::apply_hints(...)`
-14. `CaptureSession::state_ = imported_state`
+3. `import_capture_from_path(...)`
+4. `PcapNgReader::open(...)`
+5. `import_capture_from_reader(PcapNgReader&, ...)`
+6. `import_packets(...)`
+7. `PcapNgReader::read_next()`
+8. `CaptureImportProcessor::process_packet(...)`
+9. `PacketDecoder::decode(...)`
+10. `PacketIngestor::ingest(...)`
+11. `FlowHintService::detect(...)`
+12. `Connection::apply_hints(...)`
+13. `CaptureSession::state_ = imported_state`
 
 ### Chunked import chain
 
@@ -373,12 +371,11 @@ That means current import does:
 
 This is probably the most obvious import-path byte-copy hot spot after the reader itself.
 
-### 3. Deep import currently does not differ from fast import in byte work
+### 3. Unified import currently uses one decode + hint path
 
-`DeepCaptureImporter` currently reuses the same base decode + hint path as fast import.
+`CaptureImporter` currently uses one shared decode + hint path for capture open.
 
-So there is no extra “deep-only” packet-details parsing happening too early, which is good.
-But it also means there is no separate cheap-vs-expensive staged logic yet.
+So there is no separate staged fast-vs-deep packet-details path in the current design.
 
 ### 4. Pcapng reader does more byte work than classic pcap reader
 

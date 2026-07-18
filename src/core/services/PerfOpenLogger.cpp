@@ -190,10 +190,8 @@ std::string PerfOpenLogger::detect_input_kind(const std::filesystem::path& path)
 
 std::string PerfOpenLogger::operation_type_text(const PerfOpenOperationType operation_type) {
     switch (operation_type) {
-    case PerfOpenOperationType::capture_fast:
-        return "capture_fast";
-    case PerfOpenOperationType::capture_deep:
-        return "capture_deep";
+    case PerfOpenOperationType::capture:
+        return "capture";
     case PerfOpenOperationType::index_load:
         return "index_load";
     }

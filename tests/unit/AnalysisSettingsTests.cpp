@@ -1,4 +1,4 @@
-﻿#include <vector>
+#include <vector>
 
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
@@ -146,7 +146,6 @@ void run_analysis_settings_tests() {
         const auto capture_path = write_single_http_capture("pfl_http_settings_path_fallback.pcap", make_http_request_without_host_payload());
 
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.http_use_path_as_service_hint = true},
         }));
         const auto rows = session.list_flows();
@@ -160,7 +159,6 @@ void run_analysis_settings_tests() {
         const auto capture_path = write_single_http_capture("pfl_http_settings_host_preferred.pcap", make_http_request_with_host_payload());
 
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.http_use_path_as_service_hint = true},
         }));
         const auto rows = session.list_flows();
@@ -184,7 +182,6 @@ void run_analysis_settings_tests() {
         const auto capture_path = write_single_tcp_443_unknown_capture("pfl_possible_tls_setting_on.pcap");
 
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.use_possible_tls_quic = true},
         }));
         const auto rows = session.list_flows();
@@ -197,7 +194,6 @@ void run_analysis_settings_tests() {
         const auto capture_path = write_single_udp_443_unknown_capture("pfl_possible_quic_setting_on.pcap");
 
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.use_possible_tls_quic = true},
         }));
         const auto rows = session.list_flows();
@@ -210,7 +206,6 @@ void run_analysis_settings_tests() {
         const auto capture_path = write_single_tls_capture("pfl_possible_tls_confirmed_tls.pcap");
 
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.use_possible_tls_quic = true},
         }));
         const auto rows = session.list_flows();
@@ -224,7 +219,6 @@ void run_analysis_settings_tests() {
         const auto capture_path = write_single_quic_capture("pfl_possible_tls_confirmed_quic.pcap");
 
         PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {
-            .mode = ImportMode::fast,
             .settings = AnalysisSettings {.use_possible_tls_quic = true},
         }));
         const auto rows = session.list_flows();
@@ -234,3 +228,5 @@ void run_analysis_settings_tests() {
 }
 
 }  // namespace pfl::tests
+
+

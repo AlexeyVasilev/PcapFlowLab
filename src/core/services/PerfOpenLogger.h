@@ -7,13 +7,12 @@
 namespace pfl {
 
 enum class PerfOpenOperationType : std::uint8_t {
-    capture_fast,
-    capture_deep,
+    capture,
     index_load,
 };
 
 struct PerfOpenRecord {
-    PerfOpenOperationType operation_type {PerfOpenOperationType::capture_fast};
+    PerfOpenOperationType operation_type {PerfOpenOperationType::capture};
     std::filesystem::path input_path {};
     std::string input_kind {"unknown"};
     std::uintmax_t file_size_bytes {0};
