@@ -584,6 +584,23 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
     PFL_EXPECT(!truncated_arp_address.fixed_header_truncated);
     PFL_EXPECT(truncated_arp_address.address_section_truncated);
     PFL_EXPECT(truncated_arp_address.declared_length == 28U);
+
+    auto impossible_arp_bytes = arp_bytes;
+    impossible_arp_bytes[18] = 6U;
+    impossible_arp_bytes[19] = 16U;
+    const auto impossible_arp_packet = make_raw_packet(impossible_arp_bytes);
+    const auto impossible_arp_root = make_root_slice(impossible_arp_packet);
+    const auto impossible_arp_ethernet = parse_ethernet_frame(impossible_arp_root);
+    PFL_REQUIRE(impossible_arp_ethernet.status == ParseStatus::complete);
+    const auto impossible_arp = parse_arp_packet(require_child_slice(
+        impossible_arp_root,
+        impossible_arp_ethernet.header_length,
+        impossible_arp_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(impossible_arp.status == ParseStatus::malformed);
+    PFL_EXPECT(!impossible_arp.fixed_header_truncated);
+    PFL_EXPECT(!impossible_arp.address_section_truncated);
+    PFL_EXPECT(impossible_arp.declared_length == 52U);
 }
 
 void expect_common_direct_steps_report_handoffs_bounds_and_facts() {
@@ -811,6 +828,30 @@ void expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds() {
     PFL_REQUIRE(truncated_arp_address_step.bounds.payload.has_value());
     PFL_EXPECT(truncated_arp_address_step.bounds.payload->declared.length() == 20U);
     PFL_EXPECT(truncated_arp_address_step.bounds.payload->captured.length() == 8U);
+
+    auto impossible_arp_bytes = arp_bytes;
+    impossible_arp_bytes[18] = 6U;
+    impossible_arp_bytes[19] = 16U;
+    const auto impossible_arp_packet = make_raw_packet(impossible_arp_bytes);
+    const auto impossible_arp_root = make_root_slice(impossible_arp_packet);
+    const auto impossible_arp_ethernet = parse_ethernet_frame(impossible_arp_root);
+    PFL_REQUIRE(impossible_arp_ethernet.status == ParseStatus::complete);
+    const auto impossible_arp_step = dissect_arp(require_child_slice(
+        impossible_arp_root,
+        impossible_arp_ethernet.header_length,
+        impossible_arp_ethernet.declared_payload_length
+    ));
+    PFL_EXPECT(impossible_arp_step.status == ParseStatus::malformed);
+    PFL_EXPECT(impossible_arp_step.stop_reason == StopReason::malformed);
+    PFL_EXPECT(!impossible_arp_step.path_contribution.has_value());
+    PFL_EXPECT(impossible_arp_step.terminal_disposition == TerminalDisposition::none);
+    PFL_EXPECT(impossible_arp_step.bounds.full.declared.length() == 28U);
+    PFL_EXPECT(impossible_arp_step.bounds.full.captured.length() == 28U);
+    PFL_EXPECT(impossible_arp_step.bounds.header.declared.length() == 8U);
+    PFL_EXPECT(impossible_arp_step.bounds.header.captured.length() == 8U);
+    PFL_REQUIRE(impossible_arp_step.bounds.payload.has_value());
+    PFL_EXPECT(impossible_arp_step.bounds.payload->declared.length() == 20U);
+    PFL_EXPECT(impossible_arp_step.bounds.payload->captured.length() == 20U);
 }
 
 void expect_fragmented_ipv4_preserves_selector_only_handoff() {
@@ -1032,6 +1073,15 @@ void expect_shadow_conservative_stops_and_arp_behavior() {
     PFL_EXPECT(truncated_arp_shadow.outcome == ImportDissectionOutcome::unrecognized);
     PFL_EXPECT(truncated_arp_shadow.stop_reason == StopReason::truncated);
     PFL_EXPECT(format_shadow_path(truncated_arp_shadow) == "EthernetII");
+
+    auto impossible_arp_packet = arp_bytes;
+    impossible_arp_packet[18] = 6U;
+    impossible_arp_packet[19] = 16U;
+    const auto impossible_arp_shadow = run_shadow(make_raw_packet(impossible_arp_packet), registry);
+    PFL_EXPECT(impossible_arp_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(impossible_arp_shadow.stop_reason == StopReason::malformed);
+    PFL_EXPECT(impossible_arp_shadow.terminal_protocol == ProtocolId::unknown);
+    PFL_EXPECT(format_shadow_path(impossible_arp_shadow) == "EthernetII");
 
     const auto truncated_ethernet_shadow = run_shadow(
         make_raw_packet(std::vector<std::uint8_t> {
