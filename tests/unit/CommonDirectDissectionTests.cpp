@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "TestSupport.h"
@@ -72,6 +73,12 @@ PacketSlice require_child_slice(
     const auto child = make_child_slice(parent, payload_offset, declared_payload_length);
     PFL_REQUIRE(child.has_slice());
     return *child.slice;
+}
+
+ByteRange require_range(const std::size_t begin, const std::size_t end) {
+    const auto range = ByteRange::from_begin_end(begin, end);
+    PFL_REQUIRE(range.has_value());
+    return *range;
 }
 
 std::string format_builder_path(const ProtocolPathBuilder& builder) {
@@ -229,6 +236,15 @@ std::vector<std::uint8_t> make_ipv4_header_only_packet(const std::uint8_t protoc
     append_be32(bytes, ipv4(10, 0, 0, 1));
     append_be32(bytes, ipv4(10, 0, 0, 2));
     return bytes;
+}
+
+struct StepKindRecorder {
+    std::vector<ProtocolLayerKind> kinds {};
+};
+
+void record_step_kind(void* context, const DissectionStep& step) {
+    auto* recorder = static_cast<StepKindRecorder*>(context);
+    recorder->kinds.push_back(step.layer.kind);
 }
 
 void expect_common_direct_registry_and_root_selector() {
@@ -539,6 +555,131 @@ void expect_ipv4_tcp_udp_and_arp_canonical_parsers() {
     PFL_EXPECT(truncated_arp.status == ParseStatus::truncated);
 }
 
+void expect_common_direct_steps_report_handoffs_bounds_and_facts() {
+    const auto tcp_packet = make_raw_packet(make_ethernet_ipv4_tcp_packet_with_payload(
+        ipv4(10, 0, 0, 3), ipv4(10, 0, 0, 4), 12345U, 443U, 6U, 0x1BU));
+    const auto tcp_root = make_root_slice(tcp_packet);
+    const auto ethernet_step = dissect_ethernet(tcp_root);
+    PFL_EXPECT(ethernet_step.layer == LayerKey::ethernet_ii());
+    PFL_REQUIRE(ethernet_step.path_contribution.has_value());
+    PFL_EXPECT(*ethernet_step.path_contribution == LayerKey::ethernet_ii());
+    PFL_REQUIRE(ethernet_step.handoff.has_value());
+    PFL_REQUIRE(ethernet_step.handoff->child.has_value());
+    const ProtocolSelector expected_ethernet_selector {
+        .domain = SelectorDomain::ether_type,
+        .value = 0x0800U,
+    };
+    PFL_EXPECT(ethernet_step.handoff->selector == expected_ethernet_selector);
+    PFL_EXPECT(std::holds_alternative<EthernetFacts>(ethernet_step.facts));
+    PFL_EXPECT(ethernet_step.bounds.full.declared == require_range(0U, tcp_packet.bytes.size()));
+    PFL_EXPECT(ethernet_step.bounds.full.captured == require_range(0U, tcp_packet.bytes.size()));
+    PFL_REQUIRE(ethernet_step.bounds.payload.has_value());
+    PFL_EXPECT(ethernet_step.bounds.payload->declared == require_range(14U, tcp_packet.bytes.size()));
+
+    const auto ipv4_step = dissect_ipv4(*ethernet_step.handoff->child);
+    PFL_EXPECT(ipv4_step.layer == LayerKey::ipv4());
+    PFL_REQUIRE(ipv4_step.path_contribution.has_value());
+    PFL_EXPECT(*ipv4_step.path_contribution == LayerKey::ipv4());
+    PFL_REQUIRE(ipv4_step.handoff.has_value());
+    PFL_REQUIRE(ipv4_step.handoff->child.has_value());
+    const ProtocolSelector expected_ipv4_selector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = 6U,
+    };
+    PFL_EXPECT(ipv4_step.handoff->selector == expected_ipv4_selector);
+    PFL_EXPECT(std::holds_alternative<Ipv4Facts>(ipv4_step.facts));
+    const auto* ipv4_facts = std::get_if<Ipv4Facts>(&ipv4_step.facts);
+    PFL_REQUIRE(ipv4_facts != nullptr);
+    PFL_EXPECT(ipv4_facts->protocol == 6U);
+    PFL_EXPECT(ipv4_facts->src_addr_v4 == ipv4(10, 0, 0, 3));
+    PFL_EXPECT(ipv4_facts->dst_addr_v4 == ipv4(10, 0, 0, 4));
+
+    const auto tcp_step = dissect_tcp(*ipv4_step.handoff->child);
+    PFL_EXPECT(tcp_step.layer == LayerKey::tcp());
+    PFL_REQUIRE(tcp_step.path_contribution.has_value());
+    PFL_EXPECT(*tcp_step.path_contribution == LayerKey::tcp());
+    PFL_EXPECT(tcp_step.terminal_disposition == TerminalDisposition::flow_candidate);
+    PFL_EXPECT(std::holds_alternative<TcpFacts>(tcp_step.facts));
+    const auto* tcp_facts = std::get_if<TcpFacts>(&tcp_step.facts);
+    PFL_REQUIRE(tcp_facts != nullptr);
+    PFL_EXPECT(tcp_facts->src_port == 12345U);
+    PFL_EXPECT(tcp_facts->dst_port == 443U);
+    PFL_EXPECT(tcp_facts->flags == 0x1BU);
+    PFL_REQUIRE(tcp_step.bounds.payload.has_value());
+    PFL_EXPECT(tcp_step.bounds.payload->captured.length() == 6U);
+
+    auto udp_extra_tail = make_ethernet_ipv4_udp_packet(ipv4(203, 0, 113, 10), ipv4(203, 0, 113, 11), 1200U, 2200U);
+    udp_extra_tail.push_back(0xAAU);
+    udp_extra_tail.push_back(0xBBU);
+    udp_extra_tail.push_back(0xCCU);
+    set_ipv4_total_length(udp_extra_tail, 31U);
+    const auto udp_packet = make_raw_packet(udp_extra_tail);
+    const auto udp_root = make_root_slice(udp_packet);
+    const auto udp_ethernet = parse_ethernet_frame(udp_root);
+    PFL_REQUIRE(udp_ethernet.status == ParseStatus::complete);
+    const auto udp_ipv4_slice = require_child_slice(udp_root, udp_ethernet.header_length, udp_ethernet.declared_payload_length);
+    const auto udp_ipv4 = parse_ipv4_packet(udp_ipv4_slice);
+    PFL_REQUIRE(udp_ipv4.status == ParseStatus::complete);
+    const auto udp_transport_slice = require_child_slice(
+        udp_ipv4_slice,
+        udp_ipv4.header_length,
+        udp_ipv4.nominal_packet_end - udp_ipv4.header_length
+    );
+    PFL_EXPECT(udp_transport_slice.declared_end() - udp_transport_slice.source_offset() == 11U);
+    const auto udp_step = dissect_udp(udp_transport_slice);
+    PFL_EXPECT(udp_step.layer == LayerKey::udp());
+    PFL_REQUIRE(udp_step.path_contribution.has_value());
+    PFL_EXPECT(*udp_step.path_contribution == LayerKey::udp());
+    PFL_EXPECT(udp_step.terminal_disposition == TerminalDisposition::flow_candidate);
+    PFL_EXPECT(std::holds_alternative<UdpFacts>(udp_step.facts));
+    const auto* udp_facts = std::get_if<UdpFacts>(&udp_step.facts);
+    PFL_REQUIRE(udp_facts != nullptr);
+    PFL_EXPECT(udp_facts->datagram_length == 8U);
+    PFL_EXPECT(udp_step.bounds.full.declared.length() == 8U);
+    PFL_EXPECT(udp_step.bounds.full.captured.length() == 8U);
+    PFL_REQUIRE(udp_step.bounds.payload.has_value());
+    PFL_EXPECT(udp_step.bounds.payload->declared.length() == 0U);
+    PFL_EXPECT(udp_step.bounds.payload->captured.length() == 0U);
+}
+
+void expect_common_direct_supports_triple_vlan_and_depth_limits() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    const auto triple_tagged_packet = make_raw_packet(add_vlan_tags(
+        make_ethernet_ipv4_udp_packet(ipv4(192, 0, 2, 10), ipv4(192, 0, 2, 11), 9000U, 53U),
+        {
+            {0x8100U, 10U},
+            {0x8100U, 20U},
+            {0x8100U, 30U},
+        }
+    ));
+    const auto triple_shadow = run_shadow(triple_tagged_packet, registry);
+    PFL_EXPECT(triple_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(format_shadow_path(triple_shadow) == "EthernetII -> VLAN(vid=10) -> VLAN(vid=20) -> VLAN(vid=30) -> IPv4 -> UDP");
+
+    StepKindRecorder recorder {};
+    const DissectionEngine engine {};
+    const auto limited_result = engine.run(
+        registry,
+        make_link_type_selector(triple_tagged_packet.data_link_type),
+        make_root_slice(triple_tagged_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &recorder},
+        4U
+    );
+    PFL_EXPECT(limited_result.stop_reason == StopReason::depth_limit);
+    PFL_EXPECT(limited_result.step_count == 4U);
+    PFL_EXPECT(limited_result.traversed_depth == 4U);
+    const std::vector<ProtocolLayerKind> expected_kinds {
+        ProtocolLayerKind::ethernet_ii,
+        ProtocolLayerKind::vlan,
+        ProtocolLayerKind::vlan,
+        ProtocolLayerKind::vlan,
+    };
+    PFL_EXPECT(recorder.kinds == expected_kinds);
+}
+
 void expect_shadow_parity_for_common_direct_subset() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
@@ -689,6 +830,8 @@ void run_common_direct_dissection_tests() {
     expect_common_direct_registry_and_root_selector();
     expect_ethernet_and_vlan_canonical_parsers();
     expect_ipv4_tcp_udp_and_arp_canonical_parsers();
+    expect_common_direct_steps_report_handoffs_bounds_and_facts();
+    expect_common_direct_supports_triple_vlan_and_depth_limits();
     expect_shadow_parity_for_common_direct_subset();
     expect_shadow_conservative_stops_and_arp_behavior();
 }

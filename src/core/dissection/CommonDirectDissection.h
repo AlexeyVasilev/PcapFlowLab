@@ -13,6 +13,14 @@ enum class ImportDissectionOutcome : std::uint8_t {
     recognized_non_flow,
 };
 
+struct ImportIpv4Fragmentation {
+    bool is_fragmented {false};
+    bool more_fragments {false};
+    std::uint16_t fragment_offset_units {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const ImportIpv4Fragmentation&, const ImportIpv4Fragmentation&) = default;
+};
+
 struct ImportDissectionFacts {
     ProtocolPathBuilder physical_path {};
     ImportDissectionOutcome outcome {ImportDissectionOutcome::unrecognized};
@@ -29,9 +37,9 @@ struct ImportDissectionFacts {
     bool has_tcp_flags {false};
     std::uint8_t tcp_flags {0U};
     bool has_ipv4_fragmentation {false};
-    Ipv4FragmentationFact ipv4_fragmentation {};
+    ImportIpv4Fragmentation ipv4_fragmentation {};
     bool has_arp_addresses {false};
-    ArpAddressFact arp_addresses {};
+    ArpFacts arp_addresses {};
     ParseStatus final_status {ParseStatus::opaque};
     StopReason stop_reason {StopReason::none};
     std::size_t step_count {0U};
@@ -59,6 +67,7 @@ private:
     static void consume_step(void* context, const DissectionStep& step) noexcept;
 
     ImportDissectionFacts facts_ {};
+    TerminalDisposition terminal_disposition_ {TerminalDisposition::none};
 };
 
 [[nodiscard]] constexpr ProtocolSelector make_link_type_selector(const std::uint32_t link_type) noexcept {

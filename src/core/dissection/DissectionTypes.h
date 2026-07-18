@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <variant>
 
 #include "core/domain/ProtocolId.h"
 #include "core/domain/ProtocolPath.h"
@@ -115,52 +116,86 @@ enum class DissectionAddressFamily : std::uint8_t {
     ipv6,
 };
 
-struct TerminalFlowFact {
-    DissectionAddressFamily family {DissectionAddressFamily::unknown};
-    ProtocolId protocol {ProtocolId::unknown};
-    bool has_addresses {false};
-    std::uint32_t src_addr_v4 {0U};
-    std::uint32_t dst_addr_v4 {0U};
-    std::uint16_t src_port {0U};
-    std::uint16_t dst_port {0U};
-    bool has_ports {false};
+struct BoundedByteRange {
+    ByteRange declared {};
+    ByteRange captured {};
 
-    [[nodiscard]] friend constexpr bool operator==(const TerminalFlowFact&, const TerminalFlowFact&) = default;
+    [[nodiscard]] friend constexpr bool operator==(const BoundedByteRange&, const BoundedByteRange&) = default;
 };
 
-struct ArpAddressFact {
+struct LayerBounds {
+    ByteSourceId source_id {};
+    BoundedByteRange full {};
+    BoundedByteRange header {};
+    std::optional<BoundedByteRange> payload {};
+
+    [[nodiscard]] friend constexpr bool operator==(const LayerBounds&, const LayerBounds&) = default;
+};
+
+struct EthernetFacts {
+    std::uint16_t protocol_type {0U};
+    bool is_ieee_802_3 {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const EthernetFacts&, const EthernetFacts&) = default;
+};
+
+struct VlanFacts {
+    std::uint16_t tci {0U};
+    std::uint16_t encapsulated_ether_type {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const VlanFacts&, const VlanFacts&) = default;
+};
+
+struct ArpFacts {
+    std::uint16_t hardware_type {0U};
+    std::uint16_t protocol_type {0U};
+    std::uint8_t hardware_size {0U};
+    std::uint8_t protocol_size {0U};
+    std::uint16_t opcode {0U};
     bool has_sender_ipv4 {false};
     bool has_target_ipv4 {false};
     std::uint32_t sender_ipv4 {0U};
     std::uint32_t target_ipv4 {0U};
 
-    [[nodiscard]] friend constexpr bool operator==(const ArpAddressFact&, const ArpAddressFact&) = default;
+    [[nodiscard]] friend constexpr bool operator==(const ArpFacts&, const ArpFacts&) = default;
 };
 
-struct TransportPayloadFact {
-    std::uint32_t captured_payload_length {0U};
-
-    [[nodiscard]] friend constexpr bool operator==(const TransportPayloadFact&, const TransportPayloadFact&) = default;
-};
-
-struct TcpControlFact {
-    std::uint8_t flags {0U};
-
-    [[nodiscard]] friend constexpr bool operator==(const TcpControlFact&, const TcpControlFact&) = default;
-};
-
-struct Ipv4FragmentationFact {
+struct Ipv4Facts {
+    std::uint8_t protocol {0U};
+    std::uint16_t total_length {0U};
+    std::size_t header_length {0U};
+    std::uint32_t src_addr_v4 {0U};
+    std::uint32_t dst_addr_v4 {0U};
     bool is_fragmented {false};
     bool more_fragments {false};
     std::uint16_t fragment_offset_units {0U};
 
-    [[nodiscard]] friend constexpr bool operator==(const Ipv4FragmentationFact&, const Ipv4FragmentationFact&) = default;
+    [[nodiscard]] friend constexpr bool operator==(const Ipv4Facts&, const Ipv4Facts&) = default;
 };
 
-// Reuse LayerKey directly so the dissection foundation reports physical path facts
-// without creating a competing protocol-path model. Global normalization and
-// interning remain outside this subsystem.
-using IdentityContribution = LayerKey;
+struct TcpFacts {
+    std::uint16_t src_port {0U};
+    std::uint16_t dst_port {0U};
+    std::uint8_t flags {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const TcpFacts&, const TcpFacts&) = default;
+};
+
+struct UdpFacts {
+    std::uint16_t src_port {0U};
+    std::uint16_t dst_port {0U};
+    std::uint16_t datagram_length {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const UdpFacts&, const UdpFacts&) = default;
+};
+
+using LayerFacts = std::variant<std::monostate, EthernetFacts, VlanFacts, ArpFacts, Ipv4Facts, TcpFacts, UdpFacts>;
+
+enum class TerminalDisposition : std::uint8_t {
+    none = 0,
+    flow_candidate,
+    recognized_non_flow,
+};
 
 inline constexpr std::size_t selector_domain_count = static_cast<std::size_t>(SelectorDomain::count);
 

@@ -102,6 +102,8 @@ The current production path remains on legacy `PacketDecoder` until a staged cut
   - Port-based or payload-based metadata that may decorate a flow but does not itself establish a protocol layer.
 - `dissection step`
   - One protocol-module invocation over one packet slice.
+- `path contribution`
+  - The physical `LayerKey` a step contributes to `ProtocolPathBuilder`. This is separate from the visible/current layer so future container or presentation-only layers can differ from flow-identity path material.
 - `identity contribution`
   - A protocol-local physical fact relevant to later identity construction, such as GRE key, EoIP tunnel id normalized through GRE-key semantics, AH SPI, ESP SPI, VXLAN VNI, Geneve VNI, or GTP-U TEID.
 - `consumer`
@@ -271,20 +273,46 @@ enum class StopReason {
     depth_limit
 };
 
-struct NextDissection {
+struct ProtocolHandoff {
     ProtocolSelector selector;
-    PacketSlice slice;
+    std::optional<PacketSlice> child;
+};
+
+struct BoundedByteRange {
+    ByteRange declared;
+    ByteRange captured;
+};
+
+struct LayerBounds {
+    ByteSourceId source_id;
+    BoundedByteRange full;
+    BoundedByteRange header;
+    std::optional<BoundedByteRange> payload;
+};
+
+using LayerFacts = std::variant<
+    std::monostate,
+    EthernetFacts,
+    VlanFacts,
+    ArpFacts,
+    Ipv4Facts,
+    TcpFacts,
+    UdpFacts
+>;
+
+enum class TerminalDisposition {
+    none,
+    flow_candidate,
+    recognized_non_flow
 };
 
 struct DissectionStep {
-    ProtocolId protocol;
-
-    ByteRange full_range;
-    ByteRange header_range;
-    std::optional<ByteRange> payload_range;
-
-    std::optional<NextDissection> next;
-    std::optional<IdentityContribution> identity;
+    LayerKey layer;
+    std::optional<LayerKey> path_contribution;
+    LayerBounds bounds;
+    std::optional<ProtocolHandoff> handoff;
+    LayerFacts facts;
+    TerminalDisposition terminal_disposition;
 
     ParseStatus status;
     StopReason stop_reason;
@@ -297,6 +325,10 @@ Interpretation:
 
 - parse status describes the current layer;
 - stop reason describes why traversal does or does not continue;
+- the engine may continue only when:
+  - `stop_reason == none`;
+  - `handoff` exists;
+  - `handoff.child` exists;
 - reaching a terminal protocol does not itself mean that a valid flow tuple was necessarily produced.
 
 Example:
@@ -359,6 +391,7 @@ Global identity policy remains outside protocol modules.
 Examples:
 
 - the VLAN parser emits `VLAN(vid=0)` when it is physically present;
+- the direct dissection path keeps general-depth VLAN chaining bounded by the explicit traversal depth and protocol-path capacity, rather than restoring any legacy two-tag cap;
 - later import-time flow-identity policy may omit VLAN VID `0` from normalized identity;
 - `ProtocolPath` normalization, interning, `FlowKey` assignment, and index concerns remain outside protocol modules.
 
@@ -416,7 +449,7 @@ High-level loop:
 3. Run the module through the relevant consumer using the shared canonical parse result.
 4. Collect only the fields or diagnostics requested by that consumer.
 5. If the step yields a non-`none` stop reason, finish.
-6. Otherwise advance to the returned next selector and next slice.
+6. Otherwise advance only when a handoff selector and bounded child slice are both present; missing child or missing handoff is a conservative stop.
 
 This replaces current ad hoc recursion such as:
 

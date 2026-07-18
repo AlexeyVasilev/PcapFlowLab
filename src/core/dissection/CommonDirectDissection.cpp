@@ -1,67 +1,97 @@
 #include "core/dissection/CommonDirectDissection.h"
 
 #include <array>
+#include <type_traits>
 
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/dissection/modules/CommonDirectModules.h"
 
 namespace pfl::dissection {
 
+namespace {
+
+ProtocolId protocol_id_from_ip_protocol(const std::uint8_t protocol) noexcept {
+    if (protocol == detail::kIpProtocolTcp) {
+        return ProtocolId::tcp;
+    }
+    if (protocol == detail::kIpProtocolUdp) {
+        return ProtocolId::udp;
+    }
+
+    return ProtocolId::unknown;
+}
+
+std::uint32_t captured_payload_length_from_bounds(const LayerBounds& bounds) noexcept {
+    if (!bounds.payload.has_value()) {
+        return 0U;
+    }
+
+    return static_cast<std::uint32_t>(bounds.payload->captured.length());
+}
+
+}  // namespace
+
 void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
     ++facts_.step_count;
     facts_.final_status = step.status;
 
-    if (!facts_.path_overflowed && !facts_.physical_path.push(step.layer_key)) {
+    if (step.path_contribution.has_value() && !facts_.path_overflowed && !facts_.physical_path.push(*step.path_contribution)) {
         facts_.path_overflowed = true;
     }
 
-    if (step.terminal_flow.has_value()) {
-        const auto& flow = *step.terminal_flow;
-        if (flow.family != DissectionAddressFamily::unknown) {
-            facts_.family = flow.family;
-        }
-        if (flow.protocol != ProtocolId::unknown) {
-            facts_.terminal_protocol = flow.protocol;
-        }
-        if (flow.has_addresses) {
-            facts_.has_flow_addresses = true;
-            facts_.src_addr_v4 = flow.src_addr_v4;
-            facts_.dst_addr_v4 = flow.dst_addr_v4;
-        }
-        if (flow.has_ports) {
-            facts_.src_port = flow.src_port;
-            facts_.dst_port = flow.dst_port;
-            facts_.has_ports = true;
-        }
+    if (step.terminal_disposition != TerminalDisposition::none) {
+        terminal_disposition_ = step.terminal_disposition;
     }
 
-    if (step.arp_addresses.has_value()) {
-        facts_.has_arp_addresses = true;
-        facts_.arp_addresses = *step.arp_addresses;
-    }
+    std::visit(
+        [this, &step](const auto& layer_facts) {
+            using Facts = std::decay_t<decltype(layer_facts)>;
+            if constexpr (std::is_same_v<Facts, std::monostate> ||
+                          std::is_same_v<Facts, EthernetFacts> ||
+                          std::is_same_v<Facts, VlanFacts>) {
+                return;
+            } else if constexpr (std::is_same_v<Facts, ArpFacts>) {
+                facts_.has_arp_addresses = true;
+                facts_.arp_addresses = layer_facts;
+                if (layer_facts.has_sender_ipv4 || layer_facts.has_target_ipv4) {
+                    facts_.family = DissectionAddressFamily::ipv4;
+                }
+                facts_.terminal_protocol = ProtocolId::arp;
+            } else if constexpr (std::is_same_v<Facts, Ipv4Facts>) {
+                facts_.family = DissectionAddressFamily::ipv4;
+                facts_.has_flow_addresses = true;
+                facts_.src_addr_v4 = layer_facts.src_addr_v4;
+                facts_.dst_addr_v4 = layer_facts.dst_addr_v4;
+                facts_.has_ipv4_fragmentation = true;
+                facts_.ipv4_fragmentation = ImportIpv4Fragmentation {
+                    .is_fragmented = layer_facts.is_fragmented,
+                    .more_fragments = layer_facts.more_fragments,
+                    .fragment_offset_units = layer_facts.fragment_offset_units,
+                };
 
-    if (step.transport_payload.has_value()) {
-        facts_.has_transport_payload_length = true;
-        facts_.captured_transport_payload_length = step.transport_payload->captured_payload_length;
-    }
-
-    if (step.tcp_control.has_value()) {
-        facts_.has_tcp_flags = true;
-        facts_.tcp_flags = step.tcp_control->flags;
-    }
-
-    if (step.ipv4_fragmentation.has_value()) {
-        facts_.has_ipv4_fragmentation = true;
-        facts_.ipv4_fragmentation = *step.ipv4_fragmentation;
-    }
-
-    if (step.layer_key.kind == ProtocolLayerKind::arp && step.status == ParseStatus::complete) {
-        if (facts_.has_arp_addresses &&
-            (facts_.arp_addresses.has_sender_ipv4 || facts_.arp_addresses.has_target_ipv4)) {
-            facts_.family = DissectionAddressFamily::ipv4;
-        }
-        facts_.terminal_protocol = ProtocolId::arp;
-    }
+                if (facts_.terminal_protocol == ProtocolId::unknown) {
+                    facts_.terminal_protocol = protocol_id_from_ip_protocol(layer_facts.protocol);
+                }
+            } else if constexpr (std::is_same_v<Facts, TcpFacts>) {
+                facts_.terminal_protocol = ProtocolId::tcp;
+                facts_.has_ports = true;
+                facts_.src_port = layer_facts.src_port;
+                facts_.dst_port = layer_facts.dst_port;
+                facts_.has_tcp_flags = true;
+                facts_.tcp_flags = layer_facts.flags;
+                facts_.has_transport_payload_length = step.bounds.payload.has_value();
+                facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
+            } else if constexpr (std::is_same_v<Facts, UdpFacts>) {
+                facts_.terminal_protocol = ProtocolId::udp;
+                facts_.has_ports = true;
+                facts_.src_port = layer_facts.src_port;
+                facts_.dst_port = layer_facts.dst_port;
+                facts_.has_transport_payload_length = step.bounds.payload.has_value();
+                facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
+            }
+        },
+        step.facts
+    );
 }
 
 void ImportDissectionCollector::finish(const DissectionEngineResult& result) noexcept {
@@ -69,7 +99,8 @@ void ImportDissectionCollector::finish(const DissectionEngineResult& result) noe
     facts_.traversed_depth = result.traversed_depth;
     facts_.step_count = result.step_count;
 
-    if (facts_.terminal_protocol == ProtocolId::arp && result.stop_reason == StopReason::terminal_protocol) {
+    if (terminal_disposition_ == TerminalDisposition::recognized_non_flow &&
+        result.stop_reason == StopReason::terminal_protocol) {
         facts_.outcome = ImportDissectionOutcome::recognized_non_flow;
         return;
     }
@@ -77,7 +108,8 @@ void ImportDissectionCollector::finish(const DissectionEngineResult& result) noe
     if (facts_.terminal_protocol != ProtocolId::unknown &&
         facts_.family != DissectionAddressFamily::unknown &&
         facts_.has_flow_addresses &&
-        (result.stop_reason == StopReason::terminal_protocol || result.stop_reason == StopReason::needs_reassembly)) {
+        (result.stop_reason == StopReason::terminal_protocol || result.stop_reason == StopReason::needs_reassembly) &&
+        (terminal_disposition_ == TerminalDisposition::flow_candidate || result.stop_reason == StopReason::needs_reassembly)) {
         facts_.outcome = ImportDissectionOutcome::recognized_flow;
         return;
     }

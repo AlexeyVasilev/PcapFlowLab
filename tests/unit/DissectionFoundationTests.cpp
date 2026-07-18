@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -20,7 +21,7 @@ namespace {
 
 using namespace dissection;
 
-static_assert(std::is_same_v<IdentityContribution, LayerKey>);
+static_assert(std::is_same_v<DissectorFn, DissectionStep (*)(const PacketSlice&)>);
 
 constexpr ProtocolSelector kRootSelector {
     .domain = SelectorDomain::link_type,
@@ -42,32 +43,75 @@ constexpr ProtocolSelector kIpProtocolUdpSelector {
     .value = 17U,
 };
 
+constexpr ProtocolSelector kRepeatSelector {
+    .domain = SelectorDomain::ether_type,
+    .value = 0x8100U,
+};
+
 ByteRange require_range(const std::size_t begin, const std::size_t end) {
     const auto range = ByteRange::from_begin_end(begin, end);
     PFL_REQUIRE(range.has_value());
     return *range;
 }
 
-DissectionStep make_step(
-    const PacketSlice& slice,
-    const LayerKey layer_key,
-    const ParseStatus status,
-    const StopReason stop_reason,
-    std::optional<NextDissection> next = std::nullopt,
-    std::optional<IdentityContribution> identity = std::nullopt
+BoundedByteRange make_bounded_range(
+    const std::size_t declared_begin,
+    const std::size_t declared_end,
+    const std::size_t captured_begin,
+    const std::size_t captured_end
 ) {
-    std::optional<ByteRange> payload_range {};
-    if (next.has_value()) {
-        payload_range = require_range(next->slice.source_offset(), next->slice.declared_end());
+    return BoundedByteRange {
+        .declared = require_range(declared_begin, declared_end),
+        .captured = require_range(captured_begin, captured_end),
+    };
+}
+
+LayerBounds make_bounds(const PacketSlice& slice, const std::optional<ProtocolHandoff>& handoff = std::nullopt) {
+    std::optional<BoundedByteRange> payload {};
+    if (handoff.has_value() && handoff->child.has_value()) {
+        payload = make_bounded_range(
+            handoff->child->source_offset(),
+            handoff->child->declared_end(),
+            handoff->child->source_offset(),
+            std::min(handoff->child->captured_end(), handoff->child->declared_end())
+        );
     }
 
+    return LayerBounds {
+        .source_id = slice.source_id(),
+        .full = make_bounded_range(
+            slice.source_offset(),
+            slice.declared_end(),
+            slice.source_offset(),
+            std::min(slice.captured_end(), slice.declared_end())
+        ),
+        .header = make_bounded_range(
+            slice.source_offset(),
+            slice.declared_end(),
+            slice.source_offset(),
+            std::min(slice.captured_end(), slice.declared_end())
+        ),
+        .payload = payload,
+    };
+}
+
+DissectionStep make_step(
+    const PacketSlice& slice,
+    const LayerKey& layer,
+    const ParseStatus status,
+    const StopReason stop_reason,
+    std::optional<ProtocolHandoff> handoff = std::nullopt,
+    std::optional<LayerKey> path_contribution = std::nullopt,
+    LayerFacts facts = std::monostate {},
+    const TerminalDisposition terminal_disposition = TerminalDisposition::none
+) {
     return DissectionStep {
-        .layer_key = layer_key,
-        .full_range = require_range(slice.source_offset(), slice.declared_end()),
-        .header_range = require_range(slice.source_offset(), slice.declared_end()),
-        .payload_range = payload_range,
-        .next = std::move(next),
-        .identity_contribution = std::move(identity),
+        .layer = layer,
+        .path_contribution = std::move(path_contribution),
+        .bounds = make_bounds(slice, handoff),
+        .handoff = std::move(handoff),
+        .facts = std::move(facts),
+        .terminal_disposition = terminal_disposition,
         .status = status,
         .stop_reason = stop_reason,
     };
@@ -89,11 +133,15 @@ DissectionStep ethernet_to_ipv4_dissector(const PacketSlice& slice) {
         LayerKey::ethernet_ii(),
         ParseStatus::complete,
         StopReason::none,
-        NextDissection {
+        ProtocolHandoff {
             .selector = kEtherTypeIpv4Selector,
-            .slice = *child.slice,
+            .child = *child.slice,
         },
-        IdentityContribution {LayerKey::vlan(0U)}
+        LayerKey::vlan(0U),
+        EthernetFacts {
+            .protocol_type = 0x0800U,
+            .is_ieee_802_3 = false,
+        }
     );
 }
 
@@ -104,7 +152,9 @@ DissectionStep ipv4_to_tcp_dissector(const PacketSlice& slice) {
             slice,
             LayerKey::ipv4(),
             ParseStatus::malformed,
-            StopReason::malformed
+            StopReason::malformed,
+            std::nullopt,
+            LayerKey::ipv4()
         );
     }
 
@@ -113,9 +163,17 @@ DissectionStep ipv4_to_tcp_dissector(const PacketSlice& slice) {
         LayerKey::ipv4(),
         ParseStatus::complete,
         StopReason::none,
-        NextDissection {
+        ProtocolHandoff {
             .selector = kIpProtocolTcpSelector,
-            .slice = *child.slice,
+            .child = *child.slice,
+        },
+        LayerKey::ipv4(),
+        Ipv4Facts {
+            .protocol = 6U,
+            .total_length = 28U,
+            .header_length = 20U,
+            .src_addr_v4 = 0x0A000001U,
+            .dst_addr_v4 = 0x0A000002U,
         }
     );
 }
@@ -125,7 +183,15 @@ DissectionStep tcp_terminal_dissector(const PacketSlice& slice) {
         slice,
         LayerKey::tcp(),
         ParseStatus::complete,
-        StopReason::terminal_protocol
+        StopReason::terminal_protocol,
+        std::nullopt,
+        LayerKey::tcp(),
+        TcpFacts {
+            .src_port = 1111U,
+            .dst_port = 2222U,
+            .flags = 0x18U,
+        },
+        TerminalDisposition::flow_candidate
     );
 }
 
@@ -134,7 +200,9 @@ DissectionStep truncated_terminal_dissector(const PacketSlice& slice) {
         slice,
         LayerKey::ipv4(),
         ParseStatus::truncated,
-        StopReason::truncated
+        StopReason::truncated,
+        std::nullopt,
+        LayerKey::ipv4()
     );
 }
 
@@ -143,7 +211,9 @@ DissectionStep malformed_terminal_dissector(const PacketSlice& slice) {
         slice,
         LayerKey::ipv4(),
         ParseStatus::malformed,
-        StopReason::malformed
+        StopReason::malformed,
+        std::nullopt,
+        LayerKey::ipv4()
     );
 }
 
@@ -163,14 +233,15 @@ DissectionStep root_to_missing_selector_dissector(const PacketSlice& slice) {
         LayerKey::ethernet_ii(),
         ParseStatus::complete,
         StopReason::none,
-        NextDissection {
+        ProtocolHandoff {
             .selector = kIpProtocolUdpSelector,
-            .slice = *child.slice,
-        }
+            .child = *child.slice,
+        },
+        LayerKey::ethernet_ii()
     );
 }
 
-DissectionStep stop_with_next_dissector(const PacketSlice& slice) {
+DissectionStep stop_with_handoff_dissector(const PacketSlice& slice) {
     const auto child = make_child_slice(slice, 14U, 28U);
     if (!child.has_slice()) {
         return make_step(
@@ -186,19 +257,66 @@ DissectionStep stop_with_next_dissector(const PacketSlice& slice) {
         LayerKey::ethernet_ii(),
         ParseStatus::unsupported_variant,
         StopReason::unsupported_variant,
-        NextDissection {
+        ProtocolHandoff {
             .selector = kEtherTypeIpv4Selector,
-            .slice = *child.slice,
-        }
+            .child = *child.slice,
+        },
+        LayerKey::ethernet_ii()
     );
 }
 
-DissectionStep no_next_dissector(const PacketSlice& slice) {
+DissectionStep no_handoff_dissector(const PacketSlice& slice) {
     return make_step(
         slice,
         LayerKey::ethernet_ii(),
         ParseStatus::complete,
-        StopReason::none
+        StopReason::none,
+        std::nullopt,
+        LayerKey::ethernet_ii()
+    );
+}
+
+DissectionStep missing_child_handoff_dissector(const PacketSlice& slice) {
+    return make_step(
+        slice,
+        LayerKey::ethernet_ii(),
+        ParseStatus::complete,
+        StopReason::none,
+        ProtocolHandoff {
+            .selector = kEtherTypeIpv4Selector,
+            .child = std::nullopt,
+        },
+        LayerKey::ethernet_ii()
+    );
+}
+
+DissectionStep repeat_vlan_dissector(const PacketSlice& slice) {
+    const auto child = make_child_slice(slice, 0U, slice.declared_end() - slice.source_offset());
+    if (!child.has_slice()) {
+        return make_step(
+            slice,
+            LayerKey::vlan(7U),
+            ParseStatus::malformed,
+            StopReason::malformed,
+            std::nullopt,
+            LayerKey::vlan(7U)
+        );
+    }
+
+    return make_step(
+        slice,
+        LayerKey::vlan(7U),
+        ParseStatus::complete,
+        StopReason::none,
+        ProtocolHandoff {
+            .selector = kRepeatSelector,
+            .child = *child.slice,
+        },
+        LayerKey::vlan(7U),
+        VlanFacts {
+            .tci = 7U,
+            .encapsulated_ether_type = static_cast<std::uint16_t>(kRepeatSelector.value),
+        }
     );
 }
 
@@ -206,11 +324,12 @@ struct RecordedStep {
     ProtocolLayerKind kind {ProtocolLayerKind::unknown};
     std::size_t full_begin {0U};
     StopReason stop_reason {StopReason::none};
-    bool has_next {false};
-    bool has_identity {false};
-    ProtocolLayerKind identity_kind {ProtocolLayerKind::unknown};
-    ProtocolLayerIdentifierKind identity_identifier_kind {ProtocolLayerIdentifierKind::none};
-    std::uint64_t identity_value {0U};
+    bool has_handoff {false};
+    bool has_child {false};
+    bool has_path_contribution {false};
+    ProtocolLayerKind path_kind {ProtocolLayerKind::unknown};
+    ProtocolLayerIdentifierKind path_identifier_kind {ProtocolLayerIdentifierKind::none};
+    std::uint64_t path_value {0U};
 };
 
 struct StepRecorder {
@@ -220,20 +339,17 @@ struct StepRecorder {
 void record_step(void* context, const DissectionStep& step) {
     auto* recorder = static_cast<StepRecorder*>(context);
     recorder->steps.push_back(RecordedStep {
-        .kind = step.layer_key.kind,
-        .full_begin = step.full_range.begin(),
+        .kind = step.layer.kind,
+        .full_begin = step.bounds.full.declared.begin(),
         .stop_reason = step.stop_reason,
-        .has_next = step.next.has_value(),
-        .has_identity = step.identity_contribution.has_value(),
-        .identity_kind = step.identity_contribution.has_value()
-            ? step.identity_contribution->kind
-            : ProtocolLayerKind::unknown,
-        .identity_identifier_kind = step.identity_contribution.has_value()
-            ? step.identity_contribution->identifier.kind
+        .has_handoff = step.handoff.has_value(),
+        .has_child = step.handoff.has_value() && step.handoff->child.has_value(),
+        .has_path_contribution = step.path_contribution.has_value(),
+        .path_kind = step.path_contribution.has_value() ? step.path_contribution->kind : ProtocolLayerKind::unknown,
+        .path_identifier_kind = step.path_contribution.has_value()
+            ? step.path_contribution->identifier.kind
             : ProtocolLayerIdentifierKind::none,
-        .identity_value = step.identity_contribution.has_value()
-            ? step.identity_contribution->identifier.value
-            : 0U,
+        .path_value = step.path_contribution.has_value() ? step.path_contribution->identifier.value : 0U,
     });
 }
 
@@ -261,15 +377,63 @@ void expect_byte_range_helpers() {
     PFL_EXPECT(!overflow_length_range.has_value());
 }
 
+void expect_layer_bounds_facts_and_terminal_disposition_model() {
+    const std::array<std::uint8_t, 32> bytes {
+        0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U,
+        8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U,
+        16U, 17U, 18U, 19U, 20U, 21U, 22U, 23U,
+        24U, 25U, 26U, 27U, 28U, 29U, 30U, 31U,
+    };
+    const auto root = make_root_packet_slice(ByteSourceId::captured_frame(10U), bytes, 20U, 30U);
+    const auto child = make_child_slice(root, 12U, 10U);
+    PFL_REQUIRE(child.has_slice());
+
+    const auto step = make_step(
+        root,
+        LayerKey::ipv4(),
+        ParseStatus::complete,
+        StopReason::none,
+        ProtocolHandoff {
+            .selector = kIpProtocolTcpSelector,
+            .child = *child.slice,
+        },
+        LayerKey::vlan(7U),
+        Ipv4Facts {
+            .protocol = 6U,
+            .total_length = 30U,
+            .header_length = 20U,
+            .src_addr_v4 = 0x0A000001U,
+            .dst_addr_v4 = 0x0A000002U,
+            .is_fragmented = true,
+            .more_fragments = true,
+            .fragment_offset_units = 3U,
+        },
+        TerminalDisposition::flow_candidate
+    );
+
+    PFL_EXPECT(step.bounds.source_id == ByteSourceId::captured_frame(10U));
+    PFL_EXPECT(step.bounds.full.declared == require_range(0U, 30U));
+    PFL_EXPECT(step.bounds.full.captured == require_range(0U, 20U));
+    PFL_EXPECT(step.bounds.header.declared == require_range(0U, 30U));
+    PFL_EXPECT(step.bounds.header.captured == require_range(0U, 20U));
+    PFL_REQUIRE(step.bounds.payload.has_value());
+    PFL_EXPECT(step.bounds.payload->declared == require_range(12U, 22U));
+    PFL_EXPECT(step.bounds.payload->captured == require_range(12U, 20U));
+    PFL_REQUIRE(step.path_contribution.has_value());
+    PFL_EXPECT(*step.path_contribution == LayerKey::vlan(7U));
+    PFL_EXPECT(step.terminal_disposition == TerminalDisposition::flow_candidate);
+    PFL_EXPECT(std::holds_alternative<Ipv4Facts>(step.facts));
+    const auto* ipv4 = std::get_if<Ipv4Facts>(&step.facts);
+    PFL_REQUIRE(ipv4 != nullptr);
+    PFL_EXPECT(ipv4->protocol == 6U);
+    PFL_EXPECT(ipv4->is_fragmented);
+    PFL_EXPECT(ipv4->fragment_offset_units == 3U);
+}
+
 void expect_root_packet_slice_bounds() {
     const std::array<std::uint8_t, 8> bytes {0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U};
 
-    const auto equal_root = make_root_packet_slice(
-        ByteSourceId::captured_frame(11U),
-        bytes,
-        8U,
-        8U
-    );
+    const auto equal_root = make_root_packet_slice(ByteSourceId::captured_frame(11U), bytes, 8U, 8U);
     PFL_EXPECT(equal_root.source_id() == ByteSourceId::captured_frame(11U));
     PFL_EXPECT(equal_root.source_offset() == 0U);
     PFL_EXPECT(equal_root.captured_end() == 8U);
@@ -277,23 +441,13 @@ void expect_root_packet_slice_bounds() {
     PFL_EXPECT(equal_root.declared_end() == 8U);
     PFL_EXPECT(equal_root.captured_size() == 8U);
 
-    const auto truncated_root = make_root_packet_slice(
-        ByteSourceId::captured_frame(12U),
-        bytes,
-        4U,
-        8U
-    );
+    const auto truncated_root = make_root_packet_slice(ByteSourceId::captured_frame(12U), bytes, 4U, 8U);
     PFL_EXPECT(truncated_root.captured_end() == 4U);
     PFL_EXPECT(truncated_root.reported_end() == 8U);
     PFL_EXPECT(truncated_root.declared_end() == 8U);
     PFL_EXPECT(truncated_root.captured_size() == 4U);
 
-    const auto overcaptured_root = make_root_packet_slice(
-        ByteSourceId::captured_frame(13U),
-        bytes,
-        12U,
-        6U
-    );
+    const auto overcaptured_root = make_root_packet_slice(ByteSourceId::captured_frame(13U), bytes, 12U, 6U);
     PFL_EXPECT(overcaptured_root.captured_end() == 8U);
     PFL_EXPECT(overcaptured_root.reported_end() == 6U);
     PFL_EXPECT(overcaptured_root.declared_end() == 6U);
@@ -366,11 +520,7 @@ void expect_child_packet_slice_bounds_and_failures() {
     PFL_EXPECT(!range_past_reported.has_slice());
     PFL_EXPECT(range_past_reported.status == PacketSliceBuildStatus::child_range_outside_reported_range);
 
-    const auto offset_past_reported_large = make_child_slice(
-        parent,
-        std::numeric_limits<std::size_t>::max(),
-        1U
-    );
+    const auto offset_past_reported_large = make_child_slice(parent, std::numeric_limits<std::size_t>::max(), 1U);
     PFL_EXPECT(!offset_past_reported_large.has_slice());
     PFL_EXPECT(offset_past_reported_large.status == PacketSliceBuildStatus::offset_outside_reported_range);
 
@@ -462,13 +612,6 @@ void expect_registry_build_and_lookup() {
     PFL_EXPECT(*null_result.conflicting_registration_index == 0U);
 }
 
-void expect_identity_foundation() {
-    const IdentityContribution vlan_zero = LayerKey::vlan(0U);
-    PFL_EXPECT(vlan_zero.kind == ProtocolLayerKind::vlan);
-    PFL_EXPECT(vlan_zero.identifier.kind == ProtocolLayerIdentifierKind::vlan_vid);
-    PFL_EXPECT(vlan_zero.identifier.value == 0U);
-}
-
 void expect_engine_traversal_and_consumer_behavior() {
     const std::array<std::uint8_t, 64> bytes {
         0U, 1U, 2U, 3U, 4U, 5U, 6U, 7U,
@@ -524,14 +667,16 @@ void expect_engine_traversal_and_consumer_behavior() {
     };
     const std::vector<std::size_t> expected_offsets {0U, 14U, 34U};
     PFL_EXPECT(observed_offsets == expected_offsets);
-    PFL_EXPECT(recorder.steps[0].has_next);
-    PFL_EXPECT(recorder.steps[1].has_next);
-    PFL_EXPECT(!recorder.steps[2].has_next);
+    PFL_EXPECT(recorder.steps[0].has_handoff);
+    PFL_EXPECT(recorder.steps[0].has_child);
+    PFL_EXPECT(recorder.steps[1].has_handoff);
+    PFL_EXPECT(recorder.steps[1].has_child);
+    PFL_EXPECT(!recorder.steps[2].has_handoff);
     PFL_EXPECT(recorder.steps[2].stop_reason == StopReason::terminal_protocol);
-    PFL_EXPECT(recorder.steps[0].has_identity);
-    PFL_EXPECT(recorder.steps[0].identity_kind == ProtocolLayerKind::vlan);
-    PFL_EXPECT(recorder.steps[0].identity_identifier_kind == ProtocolLayerIdentifierKind::vlan_vid);
-    PFL_EXPECT(recorder.steps[0].identity_value == 0U);
+    PFL_EXPECT(recorder.steps[0].has_path_contribution);
+    PFL_EXPECT(recorder.steps[0].path_kind == ProtocolLayerKind::vlan);
+    PFL_EXPECT(recorder.steps[0].path_identifier_kind == ProtocolLayerIdentifierKind::vlan_vid);
+    PFL_EXPECT(recorder.steps[0].path_value == 0U);
 
     const auto repeat_result = engine.run(chain_registry, kRootSelector, root_slice);
     PFL_EXPECT(repeat_result.stop_reason == StopReason::terminal_protocol);
@@ -553,6 +698,16 @@ void expect_engine_traversal_and_consumer_behavior() {
     PFL_EXPECT(missing_next_result.step_count == 1U);
     PFL_EXPECT(missing_next_result.traversed_depth == 1U);
 
+    const std::array missing_child_registrations {
+        DissectorRegistration {.selector = kRootSelector, .dissector = missing_child_handoff_dissector},
+    };
+    const auto missing_child_registry_result = DissectionRegistry::build(missing_child_registrations);
+    PFL_REQUIRE(missing_child_registry_result.ok());
+    const auto missing_child_result = engine.run(*missing_child_registry_result.registry, kRootSelector, root_slice);
+    PFL_EXPECT(missing_child_result.stop_reason == StopReason::unknown_next_protocol);
+    PFL_EXPECT(missing_child_result.step_count == 1U);
+    PFL_EXPECT(missing_child_result.traversed_depth == 1U);
+
     const std::array truncated_registrations {
         DissectorRegistration {.selector = kRootSelector, .dissector = truncated_terminal_dissector},
     };
@@ -573,33 +728,58 @@ void expect_engine_traversal_and_consumer_behavior() {
     PFL_EXPECT(malformed_result.step_count == 1U);
     PFL_EXPECT(malformed_result.traversed_depth == 1U);
 
-    const std::array stop_with_next_registrations {
-        DissectorRegistration {.selector = kRootSelector, .dissector = stop_with_next_dissector},
+    const std::array stop_with_handoff_registrations {
+        DissectorRegistration {.selector = kRootSelector, .dissector = stop_with_handoff_dissector},
         DissectorRegistration {.selector = kEtherTypeIpv4Selector, .dissector = ipv4_to_tcp_dissector},
     };
-    const auto stop_with_next_registry_result = DissectionRegistry::build(stop_with_next_registrations);
-    PFL_REQUIRE(stop_with_next_registry_result.ok());
+    const auto stop_with_handoff_registry_result = DissectionRegistry::build(stop_with_handoff_registrations);
+    PFL_REQUIRE(stop_with_handoff_registry_result.ok());
     StepRecorder stopped_recorder {};
-    const auto stop_with_next_result = engine.run(
-        *stop_with_next_registry_result.registry,
+    const auto stop_with_handoff_result = engine.run(
+        *stop_with_handoff_registry_result.registry,
         kRootSelector,
         root_slice,
         DissectionConsumer {.on_step = record_step, .context = &stopped_recorder}
     );
-    PFL_EXPECT(stop_with_next_result.stop_reason == StopReason::unsupported_variant);
-    PFL_EXPECT(stop_with_next_result.step_count == 1U);
-    PFL_EXPECT(stop_with_next_result.traversed_depth == 1U);
+    PFL_EXPECT(stop_with_handoff_result.stop_reason == StopReason::unsupported_variant);
+    PFL_EXPECT(stop_with_handoff_result.step_count == 1U);
+    PFL_EXPECT(stop_with_handoff_result.traversed_depth == 1U);
     PFL_EXPECT(stopped_recorder.steps.size() == 1U);
 
-    const std::array no_next_registrations {
-        DissectorRegistration {.selector = kRootSelector, .dissector = no_next_dissector},
+    const std::array no_handoff_registrations {
+        DissectorRegistration {.selector = kRootSelector, .dissector = no_handoff_dissector},
     };
-    const auto no_next_registry_result = DissectionRegistry::build(no_next_registrations);
-    PFL_REQUIRE(no_next_registry_result.ok());
-    const auto no_next_result = engine.run(*no_next_registry_result.registry, kRootSelector, root_slice);
-    PFL_EXPECT(no_next_result.stop_reason == StopReason::unknown_next_protocol);
-    PFL_EXPECT(no_next_result.step_count == 1U);
-    PFL_EXPECT(no_next_result.traversed_depth == 1U);
+    const auto no_handoff_registry_result = DissectionRegistry::build(no_handoff_registrations);
+    PFL_REQUIRE(no_handoff_registry_result.ok());
+    const auto no_handoff_result = engine.run(*no_handoff_registry_result.registry, kRootSelector, root_slice);
+    PFL_EXPECT(no_handoff_result.stop_reason == StopReason::unknown_next_protocol);
+    PFL_EXPECT(no_handoff_result.step_count == 1U);
+    PFL_EXPECT(no_handoff_result.traversed_depth == 1U);
+
+    const std::array repeat_registrations {
+        DissectorRegistration {.selector = kRootSelector, .dissector = repeat_vlan_dissector},
+        DissectorRegistration {.selector = kRepeatSelector, .dissector = repeat_vlan_dissector},
+    };
+    const auto repeat_registry_result = DissectionRegistry::build(repeat_registrations);
+    PFL_REQUIRE(repeat_registry_result.ok());
+    StepRecorder repeat_recorder {};
+    const auto bounded_repeat_result = engine.run(
+        *repeat_registry_result.registry,
+        kRootSelector,
+        root_slice,
+        DissectionConsumer {.on_step = record_step, .context = &repeat_recorder},
+        4U
+    );
+    PFL_EXPECT(bounded_repeat_result.stop_reason == StopReason::depth_limit);
+    PFL_EXPECT(bounded_repeat_result.step_count == 4U);
+    PFL_EXPECT(bounded_repeat_result.traversed_depth == 4U);
+    PFL_EXPECT(repeat_recorder.steps.size() == 4U);
+    for (const auto& step : repeat_recorder.steps) {
+        PFL_EXPECT(step.kind == ProtocolLayerKind::vlan);
+        PFL_EXPECT(step.has_handoff);
+        PFL_EXPECT(step.has_child);
+        PFL_EXPECT(step.has_path_contribution);
+    }
 
     const auto depth_limited_result = engine.run(chain_registry, kRootSelector, root_slice, {}, 1U);
     PFL_EXPECT(depth_limited_result.stop_reason == StopReason::depth_limit);
@@ -616,10 +796,10 @@ void expect_engine_traversal_and_consumer_behavior() {
 
 void run_dissection_foundation_tests() {
     expect_byte_range_helpers();
+    expect_layer_bounds_facts_and_terminal_disposition_model();
     expect_root_packet_slice_bounds();
     expect_child_packet_slice_bounds_and_failures();
     expect_registry_build_and_lookup();
-    expect_identity_foundation();
     expect_engine_traversal_and_consumer_behavior();
 }
 

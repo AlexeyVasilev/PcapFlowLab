@@ -52,7 +52,10 @@ add_library(
     src/core/dissection/DissectionRegistry.cpp
     src/core/dissection/DissectionEngine.cpp
     src/core/dissection/CommonDirectDissection.cpp
-    src/core/dissection/modules/CommonDirectModules.cpp
+    src/core/dissection/modules/EthernetVlanModules.cpp
+    src/core/dissection/modules/ArpModule.cpp
+    src/core/dissection/modules/Ipv4Module.cpp
+    src/core/dissection/modules/TransportModules.cpp
     src/core/io/PcapReader.cpp
     src/core/io/PcapNgReader.cpp
     src/core/io/PcapWriter.cpp

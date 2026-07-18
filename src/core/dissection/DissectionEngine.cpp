@@ -41,7 +41,7 @@ DissectionEngineResult DissectionEngine::run(
             return result;
         }
 
-        if (!step.next.has_value()) {
+        if (!step.handoff.has_value() || !step.handoff->child.has_value()) {
             result.stop_reason = StopReason::unknown_next_protocol;
             return result;
         }
@@ -51,8 +51,8 @@ DissectionEngineResult DissectionEngine::run(
             return result;
         }
 
-        current_selector = step.next->selector;
-        current_slice = step.next->slice;
+        current_selector = step.handoff->selector;
+        current_slice = *step.handoff->child;
     }
 
     result.stop_reason = StopReason::depth_limit;

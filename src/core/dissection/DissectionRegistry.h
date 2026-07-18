@@ -11,25 +11,20 @@
 
 namespace pfl::dissection {
 
-struct NextDissection {
+struct ProtocolHandoff {
     ProtocolSelector selector {};
-    PacketSlice slice {};
+    std::optional<PacketSlice> child {};
 
-    [[nodiscard]] friend bool operator==(const NextDissection&, const NextDissection&) = default;
+    [[nodiscard]] friend bool operator==(const ProtocolHandoff&, const ProtocolHandoff&) = default;
 };
 
 struct DissectionStep {
-    LayerKey layer_key {};
-    ByteRange full_range {};
-    ByteRange header_range {};
-    std::optional<ByteRange> payload_range {};
-    std::optional<NextDissection> next {};
-    std::optional<IdentityContribution> identity_contribution {};
-    std::optional<TerminalFlowFact> terminal_flow {};
-    std::optional<ArpAddressFact> arp_addresses {};
-    std::optional<TransportPayloadFact> transport_payload {};
-    std::optional<TcpControlFact> tcp_control {};
-    std::optional<Ipv4FragmentationFact> ipv4_fragmentation {};
+    LayerKey layer {};
+    std::optional<LayerKey> path_contribution {};
+    LayerBounds bounds {};
+    std::optional<ProtocolHandoff> handoff {};
+    LayerFacts facts {};
+    TerminalDisposition terminal_disposition {TerminalDisposition::none};
     ParseStatus status {ParseStatus::opaque};
     StopReason stop_reason {StopReason::none};
 };
