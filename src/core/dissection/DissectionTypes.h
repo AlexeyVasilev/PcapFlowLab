@@ -131,6 +131,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_fragment,
     tcp,
     udp,
+    sctp,
 };
 
 struct BoundedByteRange {
@@ -237,6 +238,15 @@ struct UdpFacts {
     [[nodiscard]] friend constexpr bool operator==(const UdpFacts&, const UdpFacts&) = default;
 };
 
+struct SctpFacts {
+    std::uint16_t src_port {0U};
+    std::uint16_t dst_port {0U};
+    std::uint32_t verification_tag {0U};
+    std::uint32_t checksum {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const SctpFacts&, const SctpFacts&) = default;
+};
+
 using LayerFacts = std::variant<
     std::monostate,
     EthernetFacts,
@@ -247,7 +257,8 @@ using LayerFacts = std::variant<
     Ipv6ExtensionFacts,
     Ipv6FragmentFacts,
     TcpFacts,
-    UdpFacts>;
+    UdpFacts,
+    SctpFacts>;
 
 enum class TerminalDisposition : std::uint8_t {
     none = 0,

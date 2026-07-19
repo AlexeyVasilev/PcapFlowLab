@@ -251,6 +251,8 @@ Service hints and heuristic application recognition are separate concerns and st
 
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
+Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agnostic and be reusable across both `SelectorDomain::ip_protocol` and `SelectorDomain::ipv6_next_header` registrations.
+
 ### Parse result model
 
 Conceptually:

@@ -17,6 +17,9 @@ ProtocolId protocol_id_from_ip_protocol(const std::uint8_t protocol) noexcept {
     if (protocol == detail::kIpProtocolUdp) {
         return ProtocolId::udp;
     }
+    if (protocol == detail::kIpProtocolSctp) {
+        return ProtocolId::sctp;
+    }
 
     return ProtocolId::unknown;
 }
@@ -137,6 +140,13 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 facts_.dst_port = layer_facts.dst_port;
                 facts_.has_transport_payload_length = step.bounds.payload.has_value();
                 facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
+            } else if constexpr (std::is_same_v<Facts, SctpFacts>) {
+                facts_.terminal_protocol = ProtocolId::sctp;
+                facts_.has_ports = true;
+                facts_.src_port = layer_facts.src_port;
+                facts_.dst_port = layer_facts.dst_port;
+                facts_.has_transport_payload_length = step.bounds.payload.has_value();
+                facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
             }
         },
         step.facts
@@ -235,6 +245,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolSctp,
+            },
+            .dissector = dissect_sctp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
                 .domain = SelectorDomain::ipv6_next_header,
                 .value = detail::kIpProtocolHopByHop,
             },
@@ -274,6 +291,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kIpProtocolUdp,
             },
             .dissector = dissect_udp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolSctp,
+            },
+            .dissector = dissect_sctp,
         },
     };
 

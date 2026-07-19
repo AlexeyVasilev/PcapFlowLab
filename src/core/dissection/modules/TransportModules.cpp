@@ -75,6 +75,39 @@ ParsedUdpDatagram parse_udp_datagram(const PacketSlice& slice) noexcept {
     };
 }
 
+ParsedSctpCommonHeader parse_sctp_common_header(const PacketSlice& slice) noexcept {
+    const auto nominal_packet_end = direct::slice_declared_length(slice);
+    if (nominal_packet_end < detail::kSctpCommonHeaderSize) {
+        return ParsedSctpCommonHeader {
+            .status = ParseStatus::malformed,
+        };
+    }
+
+    const auto bytes = direct::visible_captured_bytes(slice);
+    if (bytes.size() < detail::kSctpCommonHeaderSize) {
+        return ParsedSctpCommonHeader {
+            .status = ParseStatus::truncated,
+        };
+    }
+
+    const auto sctp = detail::parse_sctp_common_header(bytes, 0U, nominal_packet_end);
+    if (!sctp.has_value()) {
+        return ParsedSctpCommonHeader {
+            .status = ParseStatus::malformed,
+        };
+    }
+
+    return ParsedSctpCommonHeader {
+        .status = ParseStatus::complete,
+        .src_port = sctp->src_port,
+        .dst_port = sctp->dst_port,
+        .verification_tag = sctp->verification_tag,
+        .checksum = sctp->checksum,
+        .header_length = detail::kSctpCommonHeaderSize,
+        .captured_payload_length = static_cast<std::uint32_t>(sctp->payload_length),
+    };
+}
+
 DissectionStep dissect_tcp(const PacketSlice& slice) {
     const auto parsed = parse_tcp_segment(slice);
     if (parsed.status != ParseStatus::complete) {
@@ -134,6 +167,40 @@ DissectionStep dissect_udp(const PacketSlice& slice) {
             .src_port = parsed.src_port,
             .dst_port = parsed.dst_port,
             .datagram_length = parsed.datagram_length,
+        },
+        .terminal_disposition = TerminalDisposition::flow_candidate,
+        .status = ParseStatus::complete,
+        .stop_reason = StopReason::terminal_protocol,
+    };
+}
+
+DissectionStep dissect_sctp(const PacketSlice& slice) {
+    const auto parsed = parse_sctp_common_header(slice);
+    if (parsed.status != ParseStatus::complete) {
+        return direct::make_error_step(
+            slice,
+            DissectionLayerKind::sctp,
+            parsed.status,
+            parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
+            detail::kSctpCommonHeaderSize
+        );
+    }
+
+    return DissectionStep {
+        .layer = DissectionLayerKind::sctp,
+        .path_contribution = LayerKey::sctp(),
+        .bounds = direct::make_layer_bounds(
+            slice,
+            direct::slice_declared_length(slice),
+            parsed.header_length,
+            direct::RelativeRange {.begin = parsed.header_length, .end = direct::slice_declared_length(slice)},
+            true
+        ),
+        .facts = SctpFacts {
+            .src_port = parsed.src_port,
+            .dst_port = parsed.dst_port,
+            .verification_tag = parsed.verification_tag,
+            .checksum = parsed.checksum,
         },
         .terminal_disposition = TerminalDisposition::flow_candidate,
         .status = ParseStatus::complete,
