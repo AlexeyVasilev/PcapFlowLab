@@ -21,6 +21,7 @@ struct ParsedIpv4Packet {
     bool is_fragmented {false};
     bool more_fragments {false};
     std::uint16_t fragment_offset_units {0U};
+    Ipv4OptionsFacts options {};
 };
 
 [[nodiscard]] ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept;

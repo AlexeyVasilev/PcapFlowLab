@@ -181,6 +181,27 @@ struct ArpFacts {
     [[nodiscard]] friend constexpr bool operator==(const ArpFacts&, const ArpFacts&) = default;
 };
 
+enum class Ipv4OptionsParseStatus : std::uint8_t {
+    not_present = 0,
+    well_formed,
+    malformed,
+};
+
+struct Ipv4OptionsFacts {
+    Ipv4OptionsParseStatus status {Ipv4OptionsParseStatus::not_present};
+    std::uint8_t options_length {0U};
+    std::uint8_t parsed_option_count {0U};
+    std::uint8_t nop_count {0U};
+    bool has_end_of_list {false};
+    bool has_nonzero_padding {false};
+    bool has_router_alert {false};
+    std::uint16_t router_alert_value {0U};
+    bool has_malformed_offset {false};
+    std::uint8_t malformed_offset {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const Ipv4OptionsFacts&, const Ipv4OptionsFacts&) = default;
+};
+
 struct Ipv4Facts {
     std::uint8_t protocol {0U};
     std::uint16_t total_length {0U};
@@ -190,6 +211,7 @@ struct Ipv4Facts {
     bool is_fragmented {false};
     bool more_fragments {false};
     std::uint16_t fragment_offset_units {0U};
+    Ipv4OptionsFacts options {};
 
     [[nodiscard]] friend constexpr bool operator==(const Ipv4Facts&, const Ipv4Facts&) = default;
 };

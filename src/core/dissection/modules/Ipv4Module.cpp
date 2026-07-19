@@ -1,12 +1,93 @@
 #include "core/dissection/modules/Ipv4Module.h"
 
+#include <algorithm>
+
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/dissection/modules/CommonDirectModuleSupport.h"
 
 namespace pfl::dissection {
 
+namespace {
+
+constexpr std::uint8_t kIpv4OptionEndOfList = 0U;
+constexpr std::uint8_t kIpv4OptionNoOp = 1U;
+constexpr std::uint8_t kIpv4OptionRouterAlert = 148U;
+
+Ipv4OptionsFacts parse_ipv4_options(const std::span<const std::uint8_t> options_bytes) noexcept {
+    Ipv4OptionsFacts facts {
+        .status = options_bytes.empty() ? Ipv4OptionsParseStatus::not_present : Ipv4OptionsParseStatus::well_formed,
+        .options_length = static_cast<std::uint8_t>(options_bytes.size()),
+    };
+    if (options_bytes.empty()) {
+        return facts;
+    }
+
+    std::size_t offset = 0U;
+    while (offset < options_bytes.size()) {
+        const auto option_type = options_bytes[offset];
+        if (option_type == kIpv4OptionEndOfList) {
+            ++facts.parsed_option_count;
+            facts.has_end_of_list = true;
+            ++offset;
+
+            for (; offset < options_bytes.size(); ++offset) {
+                if (options_bytes[offset] != 0U) {
+                    facts.status = Ipv4OptionsParseStatus::malformed;
+                    facts.has_nonzero_padding = true;
+                    facts.has_malformed_offset = true;
+                    facts.malformed_offset = static_cast<std::uint8_t>(offset);
+                    break;
+                }
+            }
+            return facts;
+        }
+
+        if (option_type == kIpv4OptionNoOp) {
+            ++facts.parsed_option_count;
+            ++facts.nop_count;
+            ++offset;
+            continue;
+        }
+
+        if ((offset + 1U) >= options_bytes.size()) {
+            facts.status = Ipv4OptionsParseStatus::malformed;
+            facts.has_malformed_offset = true;
+            facts.malformed_offset = static_cast<std::uint8_t>(offset);
+            return facts;
+        }
+
+        const auto option_length = static_cast<std::size_t>(options_bytes[offset + 1U]);
+        if (option_length < 2U || option_length > (options_bytes.size() - offset)) {
+            facts.status = Ipv4OptionsParseStatus::malformed;
+            facts.has_malformed_offset = true;
+            facts.malformed_offset = static_cast<std::uint8_t>(offset);
+            return facts;
+        }
+
+        ++facts.parsed_option_count;
+        if (option_type == kIpv4OptionRouterAlert) {
+            if (option_length != 4U) {
+                facts.status = Ipv4OptionsParseStatus::malformed;
+                facts.has_malformed_offset = true;
+                facts.malformed_offset = static_cast<std::uint8_t>(offset);
+                return facts;
+            }
+
+            facts.has_router_alert = true;
+            facts.router_alert_value = detail::read_be16(options_bytes, offset + 2U);
+        }
+
+        offset += option_length;
+    }
+
+    return facts;
+}
+
+}  // namespace
+
 ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
     const auto bytes = direct::visible_captured_bytes(slice);
+    const auto declared_length = direct::slice_declared_length(slice);
     if (bytes.size() < detail::kIpv4MinimumHeaderSize) {
         return ParsedIpv4Packet {
             .status = ParseStatus::truncated,
@@ -16,6 +97,12 @@ ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
     const auto version = static_cast<std::uint8_t>(bytes[0U] >> 4U);
     const auto ihl = static_cast<std::size_t>((bytes[0U] & 0x0FU) * 4U);
     if (version != 4U || ihl < detail::kIpv4MinimumHeaderSize) {
+        return ParsedIpv4Packet {
+            .status = ParseStatus::malformed,
+        };
+    }
+
+    if (declared_length < ihl) {
         return ParsedIpv4Packet {
             .status = ParseStatus::malformed,
         };
@@ -57,6 +144,7 @@ ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
         .is_fragmented = (flags_fragment & 0x3FFFU) != 0U,
         .more_fragments = (flags_fragment & 0x2000U) != 0U,
         .fragment_offset_units = fragment_offset_units,
+        .options = parse_ipv4_options(bytes.subspan(detail::kIpv4MinimumHeaderSize, ihl - detail::kIpv4MinimumHeaderSize)),
     };
 }
 
@@ -96,6 +184,7 @@ DissectionStep dissect_ipv4(const PacketSlice& slice) {
             .is_fragmented = parsed.is_fragmented,
             .more_fragments = parsed.more_fragments,
             .fragment_offset_units = parsed.fragment_offset_units,
+            .options = parsed.options,
         },
         .terminal_disposition = TerminalDisposition::none,
         .status = ParseStatus::complete,

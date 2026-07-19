@@ -1053,6 +1053,316 @@ void expect_common_direct_steps_report_handoffs_bounds_and_facts() {
     PFL_EXPECT(ipv6_udp_step.bounds.payload->declared.length() == 0U);
 }
 
+void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
+    const auto registry = make_common_direct_registry();
+    PFL_REQUIRE(registry.ok());
+
+    {
+        const auto plain_packet = make_raw_packet(make_ethernet_ipv4_tcp_packet(
+            ipv4(10, 20, 0, 1), ipv4(10, 20, 0, 2), 1111U, 2222U));
+        const auto plain_root = make_root_slice(plain_packet);
+        const auto plain_ethernet = parse_ethernet_frame(plain_root);
+        PFL_REQUIRE(plain_ethernet.status == ParseStatus::complete);
+        const auto plain_ipv4_step = dissect_ipv4(require_child_slice(
+            plain_root,
+            plain_ethernet.header_length,
+            plain_ethernet.declared_payload_length
+        ));
+        const auto* plain_facts = std::get_if<Ipv4Facts>(&plain_ipv4_step.facts);
+        PFL_REQUIRE(plain_facts != nullptr);
+        PFL_EXPECT(plain_facts->options.status == Ipv4OptionsParseStatus::not_present);
+        PFL_EXPECT(plain_facts->options.options_length == 0U);
+    }
+
+    {
+        const auto options_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 1, 1), ipv4(10, 20, 1, 2), 3000U, 4000U),
+            {0x01, 0x94, 0x04, 0x00, 0x00, 0x94, 0x04, 0x12, 0x34, 0x00, 0x00, 0x00}
+        ));
+        const auto options_root = make_root_slice(options_packet);
+        const auto options_ethernet = parse_ethernet_frame(options_root);
+        PFL_REQUIRE(options_ethernet.status == ParseStatus::complete);
+        const auto options_ipv4_step = dissect_ipv4(require_child_slice(
+            options_root,
+            options_ethernet.header_length,
+            options_ethernet.declared_payload_length
+        ));
+        PFL_EXPECT(options_ipv4_step.layer == DissectionLayerKind::ipv4);
+        PFL_REQUIRE(options_ipv4_step.path_contribution.has_value());
+        PFL_EXPECT(*options_ipv4_step.path_contribution == LayerKey::ipv4());
+        PFL_REQUIRE(options_ipv4_step.handoff.has_value());
+        PFL_REQUIRE(options_ipv4_step.handoff->child.has_value());
+        const ProtocolSelector expected_udp_selector {
+            .domain = SelectorDomain::ip_protocol,
+            .value = detail::kIpProtocolUdp,
+        };
+        PFL_EXPECT(options_ipv4_step.handoff->selector == expected_udp_selector);
+        const auto* options_facts = std::get_if<Ipv4Facts>(&options_ipv4_step.facts);
+        PFL_REQUIRE(options_facts != nullptr);
+        PFL_EXPECT(options_facts->header_length == 32U);
+        PFL_EXPECT(options_facts->options.status == Ipv4OptionsParseStatus::well_formed);
+        PFL_EXPECT(options_facts->options.options_length == 12U);
+        PFL_EXPECT(options_facts->options.parsed_option_count == 4U);
+        PFL_EXPECT(options_facts->options.nop_count == 1U);
+        PFL_EXPECT(options_facts->options.has_end_of_list);
+        PFL_EXPECT(!options_facts->options.has_nonzero_padding);
+        PFL_EXPECT(options_facts->options.has_router_alert);
+        PFL_EXPECT(options_facts->options.router_alert_value == 0x1234U);
+        PFL_EXPECT(!options_facts->options.has_malformed_offset);
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            options_packet,
+            "EthernetII -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto malformed_router_alert_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 2, 1), ipv4(10, 20, 2, 2), 5000U, 5001U),
+            {0x94, 0x03, 0x00, 0x00}
+        ));
+        const auto malformed_root = make_root_slice(malformed_router_alert_packet);
+        const auto malformed_ethernet = parse_ethernet_frame(malformed_root);
+        PFL_REQUIRE(malformed_ethernet.status == ParseStatus::complete);
+        const auto malformed_step = dissect_ipv4(require_child_slice(
+            malformed_root,
+            malformed_ethernet.header_length,
+            malformed_ethernet.declared_payload_length
+        ));
+        PFL_EXPECT(malformed_step.status == ParseStatus::complete);
+        PFL_REQUIRE(malformed_step.path_contribution.has_value());
+        PFL_REQUIRE(malformed_step.handoff.has_value());
+        const auto* malformed_facts = std::get_if<Ipv4Facts>(&malformed_step.facts);
+        PFL_REQUIRE(malformed_facts != nullptr);
+        PFL_EXPECT(malformed_facts->options.status == Ipv4OptionsParseStatus::malformed);
+        PFL_EXPECT(malformed_facts->options.parsed_option_count == 1U);
+        PFL_EXPECT(malformed_facts->options.has_router_alert == false);
+        PFL_EXPECT(malformed_facts->options.has_malformed_offset);
+        PFL_EXPECT(malformed_facts->options.malformed_offset == 0U);
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            malformed_router_alert_packet,
+            "EthernetII -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto malformed_missing_length_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_tcp_packet(ipv4(10, 20, 3, 1), ipv4(10, 20, 3, 2), 6000U, 6001U),
+            {0x01, 0x01, 0x01, 0x44}
+        ));
+        const auto malformed_root = make_root_slice(malformed_missing_length_packet);
+        const auto malformed_ethernet = parse_ethernet_frame(malformed_root);
+        PFL_REQUIRE(malformed_ethernet.status == ParseStatus::complete);
+        const auto malformed_step = dissect_ipv4(require_child_slice(
+            malformed_root,
+            malformed_ethernet.header_length,
+            malformed_ethernet.declared_payload_length
+        ));
+        const auto* malformed_facts = std::get_if<Ipv4Facts>(&malformed_step.facts);
+        PFL_REQUIRE(malformed_facts != nullptr);
+        PFL_EXPECT(malformed_facts->options.status == Ipv4OptionsParseStatus::malformed);
+        PFL_EXPECT(malformed_facts->options.nop_count == 3U);
+        PFL_EXPECT(malformed_facts->options.parsed_option_count == 3U);
+        PFL_EXPECT(malformed_facts->options.has_malformed_offset);
+        PFL_EXPECT(malformed_facts->options.malformed_offset == 3U);
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            malformed_missing_length_packet,
+            "EthernetII -> IPv4 -> TCP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto malformed_short_length_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 3, 11), ipv4(10, 20, 3, 12), 6100U, 6101U),
+            {0x44, 0x01, 0x00, 0x00}
+        ));
+        const auto malformed_root = make_root_slice(malformed_short_length_packet);
+        const auto malformed_ethernet = parse_ethernet_frame(malformed_root);
+        PFL_REQUIRE(malformed_ethernet.status == ParseStatus::complete);
+        const auto malformed_step = dissect_ipv4(require_child_slice(
+            malformed_root,
+            malformed_ethernet.header_length,
+            malformed_ethernet.declared_payload_length
+        ));
+        const auto* malformed_facts = std::get_if<Ipv4Facts>(&malformed_step.facts);
+        PFL_REQUIRE(malformed_facts != nullptr);
+        PFL_EXPECT(malformed_facts->options.status == Ipv4OptionsParseStatus::malformed);
+        PFL_EXPECT(malformed_facts->options.parsed_option_count == 0U);
+        PFL_EXPECT(malformed_facts->options.has_malformed_offset);
+        PFL_EXPECT(malformed_facts->options.malformed_offset == 0U);
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            malformed_short_length_packet,
+            "EthernetII -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto malformed_past_end_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 3, 21), ipv4(10, 20, 3, 22), 6200U, 6201U),
+            {0x44, 0x05, 0x00, 0x00}
+        ));
+        const auto malformed_root = make_root_slice(malformed_past_end_packet);
+        const auto malformed_ethernet = parse_ethernet_frame(malformed_root);
+        PFL_REQUIRE(malformed_ethernet.status == ParseStatus::complete);
+        const auto malformed_step = dissect_ipv4(require_child_slice(
+            malformed_root,
+            malformed_ethernet.header_length,
+            malformed_ethernet.declared_payload_length
+        ));
+        const auto* malformed_facts = std::get_if<Ipv4Facts>(&malformed_step.facts);
+        PFL_REQUIRE(malformed_facts != nullptr);
+        PFL_EXPECT(malformed_facts->options.status == Ipv4OptionsParseStatus::malformed);
+        PFL_EXPECT(malformed_facts->options.parsed_option_count == 0U);
+        PFL_EXPECT(malformed_facts->options.has_malformed_offset);
+        PFL_EXPECT(malformed_facts->options.malformed_offset == 0U);
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            malformed_past_end_packet,
+            "EthernetII -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto malformed_padding_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 4, 1), ipv4(10, 20, 4, 2), 7000U, 7001U),
+            {0x00, 0x01, 0x00, 0x00}
+        ));
+        const auto malformed_root = make_root_slice(malformed_padding_packet);
+        const auto malformed_ethernet = parse_ethernet_frame(malformed_root);
+        PFL_REQUIRE(malformed_ethernet.status == ParseStatus::complete);
+        const auto malformed_step = dissect_ipv4(require_child_slice(
+            malformed_root,
+            malformed_ethernet.header_length,
+            malformed_ethernet.declared_payload_length
+        ));
+        const auto* malformed_facts = std::get_if<Ipv4Facts>(&malformed_step.facts);
+        PFL_REQUIRE(malformed_facts != nullptr);
+        PFL_EXPECT(malformed_facts->options.status == Ipv4OptionsParseStatus::malformed);
+        PFL_EXPECT(malformed_facts->options.has_end_of_list);
+        PFL_EXPECT(malformed_facts->options.has_nonzero_padding);
+        PFL_EXPECT(malformed_facts->options.has_malformed_offset);
+        PFL_EXPECT(malformed_facts->options.malformed_offset == 1U);
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            malformed_padding_packet,
+            "EthernetII -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto fragmented_packet = make_raw_packet(add_ipv4_options(
+            make_ethernet_ipv4_fragment_packet(
+                ipv4(10, 20, 5, 1),
+                ipv4(10, 20, 5, 2),
+                detail::kIpProtocolUdp,
+                0x2000U,
+                {0xde, 0xad, 0xbe, 0xef}
+            ),
+            {0x94, 0x04, 0x00, 0x00}
+        ));
+        const auto fragmented_root = make_root_slice(fragmented_packet);
+        const auto fragmented_ethernet = parse_ethernet_frame(fragmented_root);
+        PFL_REQUIRE(fragmented_ethernet.status == ParseStatus::complete);
+        const auto fragmented_step = dissect_ipv4(require_child_slice(
+            fragmented_root,
+            fragmented_ethernet.header_length,
+            fragmented_ethernet.declared_payload_length
+        ));
+        const auto* fragmented_facts = std::get_if<Ipv4Facts>(&fragmented_step.facts);
+        PFL_REQUIRE(fragmented_facts != nullptr);
+        PFL_EXPECT(fragmented_step.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(fragmented_facts->is_fragmented);
+        PFL_EXPECT(fragmented_facts->options.status == Ipv4OptionsParseStatus::well_formed);
+        PFL_EXPECT(fragmented_facts->options.has_router_alert);
+    }
+
+    {
+        const auto nested_inner_ipv4 = strip_ethernet_header(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 6, 1), ipv4(10, 20, 6, 2), 8000U, 8001U),
+            {0x01, 0x94, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00}
+        ));
+        const auto nested_ipv6_packet = make_raw_packet(make_ethernet_ipv6_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x31}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x32}),
+            detail::kIpProtocolIpv4Encapsulation,
+            nested_inner_ipv4
+        ));
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            nested_ipv6_packet,
+            "EthernetII -> IPv6 -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto nested_inner_ipv4 = strip_ethernet_header(add_ipv4_options(
+            make_ethernet_ipv4_tcp_packet(ipv4(10, 20, 6, 11), ipv4(10, 20, 6, 12), 8100U, 8101U),
+            {0x01, 0x01, 0x00, 0x00}
+        ));
+        const auto nested_ipv4_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+            ipv4(192, 0, 2, 50),
+            ipv4(192, 0, 2, 60),
+            detail::kIpProtocolIpv4Encapsulation,
+            0U,
+            nested_inner_ipv4
+        ));
+        expect_shadow_matches_legacy_flow(
+            *registry.registry,
+            nested_ipv4_packet,
+            "EthernetII -> IPv4 -> IPv4 -> TCP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto declared_short_ipv4 = strip_ethernet_header(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 7, 1), ipv4(10, 20, 7, 2), 9000U, 9001U),
+            {0x01, 0x01, 0x00, 0x00}
+        ));
+        const auto declared_short_slice = make_root_packet_slice(
+            ByteSourceId::captured_frame(99U),
+            declared_short_ipv4,
+            static_cast<std::uint32_t>(declared_short_ipv4.size()),
+            22U
+        );
+        const auto declared_short_parsed = parse_ipv4_packet(declared_short_slice);
+        PFL_EXPECT(declared_short_parsed.status == ParseStatus::malformed);
+        const auto declared_short_step = dissect_ipv4(declared_short_slice);
+        PFL_EXPECT(declared_short_step.status == ParseStatus::malformed);
+        PFL_EXPECT(!declared_short_step.path_contribution.has_value());
+        PFL_EXPECT(!declared_short_step.handoff.has_value());
+    }
+
+    {
+        const auto captured_short_ipv4 = strip_ethernet_header(add_ipv4_options(
+            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 8, 1), ipv4(10, 20, 8, 2), 9100U, 9101U),
+            {0x01, 0x01, 0x00, 0x00}
+        ));
+        const auto captured_short_slice = make_root_packet_slice(
+            ByteSourceId::captured_frame(100U),
+            captured_short_ipv4,
+            22U,
+            static_cast<std::uint32_t>(captured_short_ipv4.size())
+        );
+        const auto captured_short_parsed = parse_ipv4_packet(captured_short_slice);
+        PFL_EXPECT(captured_short_parsed.status == ParseStatus::truncated);
+        const auto captured_short_step = dissect_ipv4(captured_short_slice);
+        PFL_EXPECT(captured_short_step.status == ParseStatus::truncated);
+        PFL_EXPECT(!captured_short_step.path_contribution.has_value());
+        PFL_EXPECT(!captured_short_step.handoff.has_value());
+    }
+}
+
 void expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds() {
     const auto truncated_vlan_packet = make_raw_packet(std::vector<std::uint8_t> {
         0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
@@ -3682,6 +3992,7 @@ void run_common_direct_dissection_tests() {
     expect_icmp_canonical_parsers_and_bounds();
     expect_igmp_canonical_parsers_and_bounds();
     expect_common_direct_steps_report_handoffs_bounds_and_facts();
+    expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics();
     expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds();
     expect_fragmented_ipv4_preserves_selector_only_handoff();
     expect_sctp_fragmentation_preserves_selector_only_handoff();
