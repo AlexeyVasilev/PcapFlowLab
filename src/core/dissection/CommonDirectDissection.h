@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include "core/dissection/DissectionEngine.h"
 #include "core/io/LinkType.h"
@@ -82,6 +83,7 @@ private:
 
     ImportDissectionFacts facts_ {};
     TerminalDisposition terminal_disposition_ {TerminalDisposition::none};
+    std::optional<std::uint32_t> igmp_effective_destination_v4_ {};
 };
 
 [[nodiscard]] constexpr ProtocolSelector make_link_type_selector(const std::uint32_t link_type) noexcept {

@@ -236,6 +236,74 @@ void expect_shadow_matches_legacy_portless_flow(
     PFL_EXPECT(shadow.tcp_flags == 0U);
 }
 
+void expect_shadow_matches_legacy_igmp_flow(
+    const DissectionRegistry& registry,
+    const RawPcapPacket& packet,
+    const std::string& expected_shadow_path,
+    const std::string& expected_legacy_path,
+    const StopReason expected_stop_reason,
+    const std::uint32_t expected_source,
+    const std::uint32_t expected_destination
+) {
+    const auto legacy = decode_legacy_direct(packet);
+    const auto shadow = run_shadow(packet, registry);
+
+    PFL_REQUIRE(legacy.recognized_flow);
+    PFL_EXPECT(legacy.protocol == ProtocolId::igmp);
+    PFL_EXPECT(legacy.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(legacy.src_addr_v4 == expected_source);
+    PFL_EXPECT(legacy.dst_addr_v4 == expected_destination);
+    PFL_EXPECT(format_protocol_path(legacy.path) == expected_legacy_path);
+    PFL_EXPECT(legacy.src_port == 0U);
+    PFL_EXPECT(legacy.dst_port == 0U);
+
+    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
+    PFL_EXPECT(shadow.terminal_protocol == ProtocolId::igmp);
+    PFL_EXPECT(shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(shadow.has_flow_addresses);
+    PFL_EXPECT(shadow.src_addr_v4 == expected_source);
+    PFL_EXPECT(shadow.dst_addr_v4 == expected_destination);
+    PFL_EXPECT(format_shadow_path(shadow) == expected_shadow_path);
+    PFL_EXPECT(!shadow.has_ports);
+    PFL_EXPECT(shadow.src_port == 0U);
+    PFL_EXPECT(shadow.dst_port == 0U);
+    PFL_EXPECT(!shadow.has_transport_payload_length);
+    PFL_EXPECT(shadow.captured_transport_payload_length == 0U);
+    PFL_EXPECT(!shadow.has_tcp_flags);
+    PFL_EXPECT(shadow.tcp_flags == 0U);
+}
+
+void expect_shadow_only_nested_igmp_flow(
+    const DissectionRegistry& registry,
+    const RawPcapPacket& packet,
+    const std::string& expected_shadow_path,
+    const StopReason expected_stop_reason,
+    const std::uint32_t expected_source,
+    const std::uint32_t expected_destination
+) {
+    const auto legacy = decode_legacy_direct(packet);
+    const auto shadow = run_shadow(packet, registry);
+
+    PFL_EXPECT(!legacy.recognized_flow);
+
+    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
+    PFL_EXPECT(shadow.terminal_protocol == ProtocolId::igmp);
+    PFL_EXPECT(shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(shadow.has_flow_addresses);
+    PFL_EXPECT(shadow.src_addr_v4 == expected_source);
+    PFL_EXPECT(shadow.dst_addr_v4 == expected_destination);
+    PFL_EXPECT(format_shadow_path(shadow) == expected_shadow_path);
+    PFL_EXPECT(!shadow.has_ports);
+    PFL_EXPECT(shadow.src_port == 0U);
+    PFL_EXPECT(shadow.dst_port == 0U);
+    PFL_EXPECT(!shadow.has_transport_payload_length);
+    PFL_EXPECT(shadow.captured_transport_payload_length == 0U);
+    PFL_EXPECT(!shadow.has_tcp_flags);
+    PFL_EXPECT(shadow.tcp_flags == 0U);
+}
+
 std::vector<std::uint8_t> add_ipv4_options(
     const std::vector<std::uint8_t>& ethernet_packet,
     const std::vector<std::uint8_t>& options
@@ -368,6 +436,40 @@ std::vector<std::uint8_t> make_ipv6_payload_packet(
     return strip_ethernet_header(make_ethernet_ipv6_packet(src_addr, dst_addr, next_header, payload));
 }
 
+std::vector<std::uint8_t> make_igmp_message(
+    const std::uint8_t type,
+    const std::uint8_t code,
+    const std::uint16_t checksum,
+    const std::uint32_t group_or_control,
+    const std::vector<std::uint8_t>& body = {}
+) {
+    std::vector<std::uint8_t> bytes {};
+    bytes.push_back(type);
+    bytes.push_back(code);
+    append_be16(bytes, checksum);
+    append_be32(bytes, group_or_control);
+    bytes.insert(bytes.end(), body.begin(), body.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv4_igmp_packet(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint8_t type,
+    const std::uint8_t code,
+    const std::uint16_t checksum,
+    const std::uint32_t group_or_control,
+    const std::vector<std::uint8_t>& body = {}
+) {
+    return make_ethernet_ipv4_fragment_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolIgmp,
+        0U,
+        make_igmp_message(type, code, checksum, group_or_control, body)
+    );
+}
+
 std::vector<std::uint8_t> make_ipv6_tcp_segment(
     const std::uint16_t src_port,
     const std::uint16_t dst_port,
@@ -428,11 +530,15 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 23U);
+    PFL_EXPECT(built.registry->entry_count() == 24U);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIcmp,
     }) == dissect_icmp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = detail::kIpProtocolIgmp,
+    }) == dissect_igmp);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIpv4Encapsulation,
@@ -1655,6 +1761,198 @@ void expect_icmp_canonical_parsers_and_bounds() {
     PFL_EXPECT(format_shadow_path(truncated_icmp_shadow) == "EthernetII -> IPv4");
 }
 
+void expect_igmp_canonical_parsers_and_bounds() {
+    const auto exact_igmp_packet = make_raw_packet(std::vector<std::uint8_t> {
+        detail::kIgmpTypeMembershipQuery,
+        0x7FU,
+        0x12U, 0x34U,
+        0xE0U, 0x00U, 0x00U, 0x01U,
+    });
+    const auto exact_igmp_root = make_root_slice(exact_igmp_packet);
+    const auto exact_igmp = parse_igmp_common_header(exact_igmp_root);
+    PFL_EXPECT(exact_igmp.status == ParseStatus::complete);
+    PFL_EXPECT(exact_igmp.type == detail::kIgmpTypeMembershipQuery);
+    PFL_EXPECT(exact_igmp.code == 0x7FU);
+    PFL_EXPECT(exact_igmp.checksum == 0x1234U);
+    PFL_EXPECT(exact_igmp.group_or_control == 0xE0000001U);
+    PFL_EXPECT(exact_igmp.header_length == detail::kIgmpMinimumHeaderSize);
+    PFL_EXPECT(exact_igmp.captured_payload_length == 0U);
+
+    const auto exact_igmp_step = dissect_igmp(exact_igmp_root);
+    PFL_EXPECT(exact_igmp_step.layer == DissectionLayerKind::igmp);
+    PFL_EXPECT(!exact_igmp_step.path_contribution.has_value());
+    PFL_EXPECT(exact_igmp_step.terminal_disposition == TerminalDisposition::flow_candidate);
+    PFL_REQUIRE(exact_igmp_step.bounds.payload.has_value());
+    PFL_EXPECT(exact_igmp_step.bounds.full.declared.length() == detail::kIgmpMinimumHeaderSize);
+    PFL_EXPECT(exact_igmp_step.bounds.full.captured.length() == detail::kIgmpMinimumHeaderSize);
+    PFL_EXPECT(exact_igmp_step.bounds.header.declared.length() == detail::kIgmpMinimumHeaderSize);
+    PFL_EXPECT(exact_igmp_step.bounds.header.captured.length() == detail::kIgmpMinimumHeaderSize);
+    PFL_EXPECT(exact_igmp_step.bounds.payload->declared.length() == 0U);
+    PFL_EXPECT(exact_igmp_step.bounds.payload->captured.length() == 0U);
+    PFL_EXPECT(std::holds_alternative<IgmpFacts>(exact_igmp_step.facts));
+    const auto* exact_igmp_facts = std::get_if<IgmpFacts>(&exact_igmp_step.facts);
+    PFL_REQUIRE(exact_igmp_facts != nullptr);
+    PFL_EXPECT(exact_igmp_facts->type == detail::kIgmpTypeMembershipQuery);
+    PFL_EXPECT(exact_igmp_facts->code == 0x7FU);
+    PFL_EXPECT(exact_igmp_facts->checksum == 0x1234U);
+    PFL_EXPECT(exact_igmp_facts->group_or_control == 0xE0000001U);
+    PFL_EXPECT(exact_igmp_facts->has_effective_destination_v4);
+    PFL_EXPECT(exact_igmp_facts->effective_destination_v4 == 0xE0000001U);
+
+    struct IgmpTypeCase {
+        std::uint8_t type {0U};
+        std::uint8_t code {0U};
+        std::uint16_t checksum {0U};
+        std::uint32_t group_or_control {0U};
+        bool expected_has_effective_destination {false};
+        std::uint32_t expected_effective_destination {0U};
+    };
+
+    const std::array igmp_type_cases {
+        IgmpTypeCase {
+            .type = detail::kIgmpTypeMembershipQuery,
+            .code = 0x7EU,
+            .checksum = 0x1111U,
+            .group_or_control = 0xE00000FBU,
+            .expected_has_effective_destination = true,
+            .expected_effective_destination = 0xE00000FBU,
+        },
+        IgmpTypeCase {
+            .type = detail::kIgmpTypeMembershipQuery,
+            .code = 0x70U,
+            .checksum = 0x1717U,
+            .group_or_control = 0x00000000U,
+        },
+        IgmpTypeCase {
+            .type = detail::kIgmpTypeV1MembershipReport,
+            .code = 0x01U,
+            .checksum = 0x2222U,
+            .group_or_control = 0xE0000016U,
+            .expected_has_effective_destination = true,
+            .expected_effective_destination = 0xE0000016U,
+        },
+        IgmpTypeCase {
+            .type = detail::kIgmpTypeV2MembershipReport,
+            .code = 0x02U,
+            .checksum = 0x3333U,
+            .group_or_control = 0xE0000017U,
+            .expected_has_effective_destination = true,
+            .expected_effective_destination = 0xE0000017U,
+        },
+        IgmpTypeCase {
+            .type = detail::kIgmpTypeLeaveGroup,
+            .code = 0x03U,
+            .checksum = 0x4444U,
+            .group_or_control = 0xEFFFFFFAU,
+            .expected_has_effective_destination = true,
+            .expected_effective_destination = 0xEFFFFFFAU,
+        },
+        IgmpTypeCase {
+            .type = detail::kIgmpTypeV3MembershipReport,
+            .code = 0x04U,
+            .checksum = 0x5555U,
+            .group_or_control = 0xA1B2C3D4U,
+        },
+        IgmpTypeCase {
+            .type = 0x99U,
+            .code = 0x05U,
+            .checksum = 0x6666U,
+            .group_or_control = 0x01020304U,
+            .expected_has_effective_destination = true,
+            .expected_effective_destination = 0x01020304U,
+        },
+    };
+
+    for (const auto& test_case : igmp_type_cases) {
+        const auto parsed = parse_igmp_common_header(make_root_slice(make_raw_packet(make_igmp_message(
+            test_case.type,
+            test_case.code,
+            test_case.checksum,
+            test_case.group_or_control
+        ))));
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.type == test_case.type);
+        PFL_EXPECT(parsed.code == test_case.code);
+        PFL_EXPECT(parsed.checksum == test_case.checksum);
+        PFL_EXPECT(parsed.group_or_control == test_case.group_or_control);
+        PFL_EXPECT(parsed.has_effective_destination_v4 == test_case.expected_has_effective_destination);
+        PFL_EXPECT(parsed.effective_destination_v4 == test_case.expected_effective_destination);
+    }
+
+    const auto body_igmp_packet = make_raw_packet(make_igmp_message(
+        detail::kIgmpTypeV2MembershipReport,
+        0x11U,
+        0xABCDU,
+        0xE00000FBU,
+        {0x01U, 0x02U, 0x03U, 0x04U}
+    ));
+    const auto body_igmp = parse_igmp_common_header(make_root_slice(body_igmp_packet));
+    PFL_EXPECT(body_igmp.status == ParseStatus::complete);
+    PFL_EXPECT(body_igmp.captured_payload_length == 4U);
+
+    const auto truncated_body_igmp_packet = make_raw_packet(
+        make_igmp_message(
+            detail::kIgmpTypeV3MembershipReport,
+            0x22U,
+            0xBEEFU,
+            0x00112233U,
+            {0x10U, 0x20U, 0x30U, 0x40U}
+        ),
+        12U
+    );
+    const auto truncated_body_igmp_step = dissect_igmp(make_root_slice(truncated_body_igmp_packet));
+    PFL_EXPECT(truncated_body_igmp_step.status == ParseStatus::complete);
+    PFL_REQUIRE(truncated_body_igmp_step.bounds.payload.has_value());
+    PFL_EXPECT(truncated_body_igmp_step.bounds.payload->declared.length() == 4U);
+    PFL_EXPECT(truncated_body_igmp_step.bounds.payload->captured.length() == 4U);
+
+    const auto capture_truncated_body_igmp_packet = make_raw_packet(
+        std::vector<std::uint8_t> {0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U, 0x99U, 0xAAU, 0xBBU},
+        12U
+    );
+    const auto capture_truncated_body_igmp_step = dissect_igmp(make_root_slice(capture_truncated_body_igmp_packet));
+    PFL_EXPECT(capture_truncated_body_igmp_step.status == ParseStatus::complete);
+    PFL_REQUIRE(capture_truncated_body_igmp_step.bounds.payload.has_value());
+    PFL_EXPECT(capture_truncated_body_igmp_step.bounds.payload->declared.length() == 4U);
+    PFL_EXPECT(capture_truncated_body_igmp_step.bounds.payload->captured.length() == 2U);
+
+    const auto extra_tail_igmp_packet = make_raw_packet(
+        std::vector<std::uint8_t> {0x16U, 0x40U, 0xABU, 0xCDU, 0xE0U, 0x00U, 0x00U, 0xFBU, 0xDEU, 0xADU},
+        8U
+    );
+    const auto extra_tail_igmp_step = dissect_igmp(make_root_slice(extra_tail_igmp_packet));
+    PFL_EXPECT(extra_tail_igmp_step.status == ParseStatus::complete);
+    PFL_REQUIRE(extra_tail_igmp_step.bounds.payload.has_value());
+    PFL_EXPECT(extra_tail_igmp_step.bounds.full.declared.length() == 8U);
+    PFL_EXPECT(extra_tail_igmp_step.bounds.full.captured.length() == 8U);
+    PFL_EXPECT(extra_tail_igmp_step.bounds.payload->declared.length() == 0U);
+    PFL_EXPECT(extra_tail_igmp_step.bounds.payload->captured.length() == 0U);
+
+    const auto truncated_igmp_packet = make_raw_packet(
+        std::vector<std::uint8_t> {0x11U, 0x7FU, 0x12U, 0x34U, 0xE0U, 0x00U, 0x00U},
+        8U
+    );
+    const auto truncated_igmp_root = make_root_slice(truncated_igmp_packet);
+    const auto truncated_igmp = parse_igmp_common_header(truncated_igmp_root);
+    PFL_EXPECT(truncated_igmp.status == ParseStatus::truncated);
+    const auto truncated_igmp_step = dissect_igmp(truncated_igmp_root);
+    PFL_EXPECT(truncated_igmp_step.status == ParseStatus::truncated);
+    PFL_EXPECT(!truncated_igmp_step.path_contribution.has_value());
+    PFL_EXPECT(truncated_igmp_step.terminal_disposition == TerminalDisposition::none);
+
+    const auto impossible_igmp_packet = make_raw_packet(
+        std::vector<std::uint8_t> {0x11U, 0x7FU, 0x12U, 0x34U, 0xE0U, 0x00U, 0x00U},
+        7U
+    );
+    const auto impossible_igmp_step = dissect_igmp(make_root_slice(impossible_igmp_packet));
+    PFL_EXPECT(impossible_igmp_step.status == ParseStatus::malformed);
+    PFL_EXPECT(!impossible_igmp_step.path_contribution.has_value());
+    PFL_EXPECT(impossible_igmp_step.bounds.full.declared.length() == 7U);
+    PFL_EXPECT(impossible_igmp_step.bounds.full.captured.length() == 7U);
+    PFL_EXPECT(impossible_igmp_step.bounds.header.declared.length() == 7U);
+    PFL_EXPECT(impossible_igmp_step.bounds.header.captured.length() == 7U);
+}
+
 void expect_fragmented_ipv4_preserves_selector_only_handoff() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
@@ -1820,6 +2118,360 @@ void expect_icmp_fragmentation_preserves_selector_only_handoff() {
     PFL_EXPECT(ipv6_fragment_shadow.terminal_protocol == ProtocolId::icmpv6);
     PFL_EXPECT(!ipv6_fragment_shadow.has_ports);
     PFL_EXPECT(format_shadow_path(ipv6_fragment_shadow) == "EthernetII -> IPv6");
+}
+
+void expect_igmp_fragmentation_preserves_selector_only_handoff() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    const auto ipv4_fragment_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(10, 46, 0, 1),
+        ipv4(224, 0, 0, 1),
+        detail::kIpProtocolIgmp,
+        0x2000U,
+        {detail::kIgmpTypeMembershipQuery, 0x00U, 0x00U, 0x00U, 0xE0U, 0x00U, 0x00U, 0x01U}
+    ));
+    const auto ipv4_fragment_root = make_root_slice(ipv4_fragment_packet);
+    const auto ipv4_fragment_ethernet = dissect_ethernet(ipv4_fragment_root);
+    PFL_REQUIRE(ipv4_fragment_ethernet.handoff.has_value());
+    PFL_REQUIRE(ipv4_fragment_ethernet.handoff->child.has_value());
+    const auto ipv4_fragment_step = dissect_ipv4(*ipv4_fragment_ethernet.handoff->child);
+    PFL_EXPECT(ipv4_fragment_step.status == ParseStatus::complete);
+    PFL_EXPECT(ipv4_fragment_step.stop_reason == StopReason::needs_reassembly);
+    PFL_REQUIRE(ipv4_fragment_step.handoff.has_value());
+    PFL_EXPECT(ipv4_fragment_step.handoff->selector.domain == SelectorDomain::ip_protocol);
+    PFL_EXPECT(ipv4_fragment_step.handoff->selector.value == detail::kIpProtocolIgmp);
+    PFL_EXPECT(!ipv4_fragment_step.handoff->child.has_value());
+
+    StepKindRecorder recorder {};
+    const DissectionEngine engine {};
+    const auto engine_result = engine.run(
+        registry,
+        make_link_type_selector(ipv4_fragment_packet.data_link_type),
+        ipv4_fragment_root,
+        DissectionConsumer {.on_step = record_step_kind, .context = &recorder}
+    );
+    PFL_EXPECT(engine_result.stop_reason == StopReason::needs_reassembly);
+    const std::vector<DissectionLayerKind> expected_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+    };
+    PFL_EXPECT(recorder.kinds == expected_kinds);
+
+    expect_shadow_matches_legacy_igmp_flow(
+        registry,
+        ipv4_fragment_packet,
+        "EthernetII -> IPv4",
+        "EthernetII -> IPv4",
+        StopReason::needs_reassembly,
+        ipv4(10, 46, 0, 1),
+        ipv4(224, 0, 0, 1)
+    );
+}
+
+void expect_igmp_shadow_only_flow_behavior() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    const auto direct_packet = make_raw_packet(make_ethernet_ipv4_igmp_packet(
+        ipv4(192, 0, 2, 10),
+        ipv4(224, 0, 0, 1),
+        detail::kIgmpTypeMembershipQuery,
+        0x10U,
+        0x1111U,
+        0x00000000U,
+        {0xDEU, 0xADU}
+    ));
+    StepKindRecorder direct_recorder {};
+    const DissectionEngine engine {};
+    const auto direct_result = engine.run(
+        registry,
+        make_link_type_selector(direct_packet.data_link_type),
+        make_root_slice(direct_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &direct_recorder}
+    );
+    PFL_EXPECT(direct_result.stop_reason == StopReason::terminal_protocol);
+    const std::vector<DissectionLayerKind> expected_direct_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::igmp,
+    };
+    PFL_EXPECT(direct_recorder.kinds == expected_direct_kinds);
+    expect_shadow_matches_legacy_igmp_flow(
+        registry,
+        direct_packet,
+        "EthernetII -> IPv4",
+        "EthernetII -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(192, 0, 2, 10),
+        ipv4(224, 0, 0, 1)
+    );
+
+    const auto group_specific_query_packet = make_raw_packet(make_ethernet_ipv4_igmp_packet(
+        ipv4(192, 0, 2, 13),
+        ipv4(224, 0, 0, 1),
+        detail::kIgmpTypeMembershipQuery,
+        0x19U,
+        0x1919U,
+        0xEF090909U
+    ));
+    expect_shadow_matches_legacy_igmp_flow(
+        registry,
+        group_specific_query_packet,
+        "EthernetII -> IPv4",
+        "EthernetII -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(192, 0, 2, 13),
+        ipv4(239, 9, 9, 9)
+    );
+
+    const auto v1_report_packet = make_raw_packet(make_ethernet_ipv4_igmp_packet(
+        ipv4(192, 0, 2, 14),
+        ipv4(224, 0, 0, 22),
+        detail::kIgmpTypeV1MembershipReport,
+        0x21U,
+        0x2121U,
+        0xEF010101U
+    ));
+    expect_shadow_matches_legacy_igmp_flow(
+        registry,
+        v1_report_packet,
+        "EthernetII -> IPv4",
+        "EthernetII -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(192, 0, 2, 14),
+        ipv4(239, 1, 1, 1)
+    );
+
+    const auto vlan_packet = make_raw_packet(add_vlan_tags(
+        make_ethernet_ipv4_igmp_packet(
+            ipv4(192, 0, 2, 11),
+            ipv4(224, 0, 0, 22),
+            detail::kIgmpTypeV2MembershipReport,
+            0x22U,
+            0x2222U,
+            0xEF010203U
+        ),
+        {{0x8100U, 405U}}
+    ));
+    expect_shadow_matches_legacy_igmp_flow(
+        registry,
+        vlan_packet,
+        "EthernetII -> VLAN(vid=405) -> IPv4",
+        "EthernetII -> VLAN(vid=405) -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(192, 0, 2, 11),
+        ipv4(239, 1, 2, 3)
+    );
+
+    const auto nested_ipv4_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(198, 18, 0, 1),
+        ipv4(198, 18, 0, 2),
+        detail::kIpProtocolIpv4Encapsulation,
+        0U,
+        make_ipv4_payload_packet(
+            ipv4(10, 50, 0, 1),
+            ipv4(224, 0, 0, 1),
+            detail::kIpProtocolIgmp,
+            make_igmp_message(detail::kIgmpTypeV2MembershipReport, 0x33U, 0x3333U, 0xE0000016U)
+        )
+    ));
+    expect_shadow_only_nested_igmp_flow(
+        registry,
+        nested_ipv4_packet,
+        "EthernetII -> IPv4 -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(10, 50, 0, 1),
+        ipv4(224, 0, 0, 22)
+    );
+
+    const auto nested_ipv6_packet = make_raw_packet(make_ethernet_ipv6_packet(
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 1}),
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 2}),
+        detail::kIpProtocolIpv4Encapsulation,
+        make_ipv4_payload_packet(
+            ipv4(10, 60, 0, 1),
+            ipv4(224, 0, 0, 2),
+            detail::kIpProtocolIgmp,
+            make_igmp_message(detail::kIgmpTypeLeaveGroup, 0x44U, 0x4444U, 0xEF0A0A0AU)
+        )
+    ));
+    expect_shadow_only_nested_igmp_flow(
+        registry,
+        nested_ipv6_packet,
+        "EthernetII -> IPv6 -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(10, 60, 0, 1),
+        ipv4(239, 10, 10, 10)
+    );
+
+    const auto nested_ipv4_ipv6_ipv4_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(198, 18, 0, 3),
+        ipv4(198, 18, 0, 4),
+        detail::kIpProtocolIpv6Encapsulation,
+        0U,
+        make_ipv6_payload_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 0, 1}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 0, 2}),
+            detail::kIpProtocolIpv4Encapsulation,
+            make_ipv4_payload_packet(
+                ipv4(10, 70, 0, 1),
+                ipv4(239, 20, 20, 20),
+                detail::kIpProtocolIgmp,
+                make_igmp_message(detail::kIgmpTypeV3MembershipReport, 0x55U, 0x5555U, 0x01020304U)
+            )
+        )
+    ));
+    expect_shadow_only_nested_igmp_flow(
+        registry,
+        nested_ipv4_ipv6_ipv4_packet,
+        "EthernetII -> IPv4 -> IPv6 -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(10, 70, 0, 1),
+        ipv4(239, 20, 20, 20)
+    );
+
+    const auto outer_ipv6_hbh_inner_ipv4_packet = make_raw_packet(make_ethernet_ipv6_packet(
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 1}),
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 22, 0, 0, 0, 0, 0, 0, 0, 2}),
+        detail::kIpProtocolHopByHop,
+        make_ipv6_hop_by_hop_extension(
+            detail::kIpProtocolIpv4Encapsulation,
+            make_ipv4_payload_packet(
+                ipv4(10, 80, 0, 1),
+                ipv4(239, 30, 30, 30),
+                detail::kIpProtocolIgmp,
+                make_igmp_message(detail::kIgmpTypeMembershipQuery, 0x66U, 0x6666U, 0x00000000U)
+            )
+        )
+    ));
+    StepKindRecorder outer_ipv6_hbh_inner_ipv4_recorder {};
+    const auto outer_ipv6_hbh_inner_ipv4_result = engine.run(
+        registry,
+        make_link_type_selector(outer_ipv6_hbh_inner_ipv4_packet.data_link_type),
+        make_root_slice(outer_ipv6_hbh_inner_ipv4_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &outer_ipv6_hbh_inner_ipv4_recorder}
+    );
+    PFL_EXPECT(outer_ipv6_hbh_inner_ipv4_result.stop_reason == StopReason::terminal_protocol);
+    const std::vector<DissectionLayerKind> expected_outer_ipv6_hbh_inner_ipv4_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::ipv6_hop_by_hop,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::igmp,
+    };
+    PFL_EXPECT(outer_ipv6_hbh_inner_ipv4_recorder.kinds == expected_outer_ipv6_hbh_inner_ipv4_kinds);
+    expect_shadow_only_nested_igmp_flow(
+        registry,
+        outer_ipv6_hbh_inner_ipv4_packet,
+        "EthernetII -> IPv6 -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(10, 80, 0, 1),
+        ipv4(239, 30, 30, 30)
+    );
+
+    const auto unknown_type_packet = make_raw_packet(make_ethernet_ipv4_igmp_packet(
+        ipv4(192, 0, 2, 12),
+        ipv4(224, 0, 0, 250),
+        0x99U,
+        0x77U,
+        0x9999U,
+        0xEF010204U
+    ));
+    expect_shadow_matches_legacy_igmp_flow(
+        registry,
+        unknown_type_packet,
+        "EthernetII -> IPv4",
+        "EthernetII -> IPv4",
+        StopReason::terminal_protocol,
+        ipv4(192, 0, 2, 12),
+        ipv4(239, 1, 2, 4)
+    );
+
+    const auto direct_ipv6_igmp_shadow = run_shadow(
+        make_raw_packet(make_ethernet_ipv6_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 1}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 23, 0, 0, 0, 0, 0, 0, 0, 2}),
+            detail::kIpProtocolIgmp,
+            make_igmp_message(detail::kIgmpTypeMembershipQuery, 0x77U, 0x7777U, 0x00000000U)
+        )),
+        registry
+    );
+    PFL_EXPECT(direct_ipv6_igmp_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(direct_ipv6_igmp_shadow.stop_reason == StopReason::unknown_next_protocol);
+    PFL_EXPECT(direct_ipv6_igmp_shadow.terminal_protocol == ProtocolId::unknown);
+    PFL_EXPECT(format_shadow_path(direct_ipv6_igmp_shadow) == "EthernetII -> IPv6");
+}
+
+void expect_igmp_failures_remain_visible_without_path_contribution() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    const auto truncated_igmp_packet = make_raw_packet(
+        []() {
+            auto packet = make_ethernet_ipv4_igmp_packet(
+                ipv4(10, 90, 0, 1),
+                ipv4(224, 0, 0, 1),
+                detail::kIgmpTypeMembershipQuery,
+                0x10U,
+                0x1111U,
+                0x00000000U
+            );
+            packet.resize(packet.size() - 1U);
+            return packet;
+        }(),
+        14U + 20U + detail::kIgmpMinimumHeaderSize
+    );
+    StepKindRecorder truncated_recorder {};
+    const DissectionEngine engine {};
+    const auto truncated_result = engine.run(
+        registry,
+        make_link_type_selector(truncated_igmp_packet.data_link_type),
+        make_root_slice(truncated_igmp_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &truncated_recorder}
+    );
+    PFL_EXPECT(truncated_result.stop_reason == StopReason::truncated);
+    const std::vector<DissectionLayerKind> expected_truncated_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::igmp,
+    };
+    PFL_EXPECT(truncated_recorder.kinds == expected_truncated_kinds);
+    const auto truncated_shadow = run_shadow(truncated_igmp_packet, registry);
+    PFL_EXPECT(truncated_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(truncated_shadow.stop_reason == StopReason::truncated);
+    PFL_EXPECT(truncated_shadow.terminal_protocol == ProtocolId::igmp);
+    PFL_EXPECT(format_shadow_path(truncated_shadow) == "EthernetII -> IPv4");
+
+    const auto malformed_igmp_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(10, 91, 0, 1),
+        ipv4(224, 0, 0, 2),
+        detail::kIpProtocolIgmp,
+        0U,
+        {detail::kIgmpTypeV2MembershipReport, 0x20U, 0x12U, 0x34U, 0xE0U, 0x00U, 0x00U}
+    ));
+    StepKindRecorder malformed_recorder {};
+    const auto malformed_result = engine.run(
+        registry,
+        make_link_type_selector(malformed_igmp_packet.data_link_type),
+        make_root_slice(malformed_igmp_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &malformed_recorder}
+    );
+    PFL_EXPECT(malformed_result.stop_reason == StopReason::malformed);
+    const std::vector<DissectionLayerKind> expected_malformed_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::igmp,
+    };
+    PFL_EXPECT(malformed_recorder.kinds == expected_malformed_kinds);
+    const auto malformed_shadow = run_shadow(malformed_igmp_packet, registry);
+    PFL_EXPECT(malformed_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(malformed_shadow.stop_reason == StopReason::malformed);
+    PFL_EXPECT(malformed_shadow.terminal_protocol == ProtocolId::igmp);
+    PFL_EXPECT(format_shadow_path(malformed_shadow) == "EthernetII -> IPv4");
 }
 
 void expect_plain_ip_encapsulation_is_registry_driven() {
@@ -3028,14 +3680,18 @@ void run_common_direct_dissection_tests() {
     expect_ipv6_and_extension_canonical_parsers();
     expect_sctp_canonical_parsers_and_bounds();
     expect_icmp_canonical_parsers_and_bounds();
+    expect_igmp_canonical_parsers_and_bounds();
     expect_common_direct_steps_report_handoffs_bounds_and_facts();
     expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds();
     expect_fragmented_ipv4_preserves_selector_only_handoff();
     expect_sctp_fragmentation_preserves_selector_only_handoff();
     expect_icmp_fragmentation_preserves_selector_only_handoff();
+    expect_igmp_fragmentation_preserves_selector_only_handoff();
     expect_plain_ip_encapsulation_is_registry_driven();
     expect_common_direct_supports_triple_vlan_and_depth_limits();
     expect_shadow_parity_for_common_direct_subset();
+    expect_igmp_shadow_only_flow_behavior();
+    expect_igmp_failures_remain_visible_without_path_contribution();
     expect_shadow_conservative_stops_and_arp_behavior();
 }
 

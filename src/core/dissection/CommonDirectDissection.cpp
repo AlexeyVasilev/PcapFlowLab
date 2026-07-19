@@ -14,6 +14,9 @@ ProtocolId protocol_id_from_ip_protocol(const std::uint8_t protocol) noexcept {
     if (protocol == detail::kIpProtocolIcmp) {
         return ProtocolId::icmp;
     }
+    if (protocol == detail::kIpProtocolIgmp) {
+        return ProtocolId::igmp;
+    }
     if (protocol == detail::kIpProtocolTcp) {
         return ProtocolId::tcp;
     }
@@ -131,6 +134,11 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 facts_.terminal_protocol = ProtocolId::icmp;
             } else if constexpr (std::is_same_v<Facts, Icmpv6Facts>) {
                 facts_.terminal_protocol = ProtocolId::icmpv6;
+            } else if constexpr (std::is_same_v<Facts, IgmpFacts>) {
+                facts_.terminal_protocol = ProtocolId::igmp;
+                if (layer_facts.has_effective_destination_v4) {
+                    igmp_effective_destination_v4_ = layer_facts.effective_destination_v4;
+                }
             } else if constexpr (std::is_same_v<Facts, TcpFacts>) {
                 facts_.terminal_protocol = ProtocolId::tcp;
                 facts_.has_ports = true;
@@ -164,6 +172,13 @@ void ImportDissectionCollector::finish(const DissectionEngineResult& result) noe
     facts_.stop_reason = result.stop_reason;
     facts_.traversed_depth = result.traversed_depth;
     facts_.step_count = result.step_count;
+
+    if (facts_.terminal_protocol == ProtocolId::igmp &&
+        facts_.family == DissectionAddressFamily::ipv4 &&
+        facts_.has_flow_addresses &&
+        igmp_effective_destination_v4_.has_value()) {
+        facts_.dst_addr_v4 = *igmp_effective_destination_v4_;
+    }
 
     if (terminal_disposition_ == TerminalDisposition::recognized_non_flow &&
         result.stop_reason == StopReason::terminal_protocol) {
@@ -242,6 +257,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kIpProtocolIcmp,
             },
             .dissector = dissect_icmp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolIgmp,
+            },
+            .dissector = dissect_igmp,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

@@ -8,6 +8,7 @@ namespace pfl::dissection {
 namespace {
 
 inline constexpr std::size_t kIcmpCommonHeaderSize = 4U;
+inline constexpr std::size_t kIgmpCommonHeaderSize = detail::kIgmpMinimumHeaderSize;
 
 struct ParsedControlMessageCommonHeader {
     ParseStatus status {ParseStatus::opaque};
@@ -44,10 +45,11 @@ ParsedControlMessageCommonHeader parse_control_message_common_header(const Packe
 }
 
 template <typename ParsedHeader>
-DissectionStep make_icmp_step(
+DissectionStep make_control_message_step(
     const PacketSlice& slice,
     const DissectionLayerKind layer,
     const std::optional<LayerKey>& path_contribution,
+    const std::size_t error_header_length,
     const ParsedHeader& parsed,
     const LayerFacts& facts
 ) {
@@ -57,7 +59,7 @@ DissectionStep make_icmp_step(
             layer,
             parsed.status,
             parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
-            kIcmpCommonHeaderSize
+            error_header_length
         );
     }
 
@@ -104,12 +106,44 @@ ParsedIcmpv6Header parse_icmpv6_common_header(const PacketSlice& slice) noexcept
     };
 }
 
+ParsedIgmpHeader parse_igmp_common_header(const PacketSlice& slice) noexcept {
+    const auto nominal_packet_end = direct::slice_declared_length(slice);
+    if (nominal_packet_end < kIgmpCommonHeaderSize) {
+        return ParsedIgmpHeader {
+            .status = ParseStatus::malformed,
+        };
+    }
+
+    const auto bytes = direct::visible_captured_bytes(slice);
+    if (bytes.size() < kIgmpCommonHeaderSize) {
+        return ParsedIgmpHeader {
+            .status = ParseStatus::truncated,
+        };
+    }
+
+    return ParsedIgmpHeader {
+        .status = ParseStatus::complete,
+        .type = bytes[0U],
+        .code = bytes[1U],
+        .checksum = detail::read_be16(bytes, 2U),
+        .group_or_control = detail::read_be32(bytes, 4U),
+        .effective_destination_v4 = (bytes[0U] == detail::kIgmpTypeV3MembershipReport || detail::read_be32(bytes, 4U) == 0U)
+            ? 0U
+            : detail::read_be32(bytes, 4U),
+        .has_effective_destination_v4 = bytes[0U] != detail::kIgmpTypeV3MembershipReport &&
+                                         detail::read_be32(bytes, 4U) != 0U,
+        .header_length = kIgmpCommonHeaderSize,
+        .captured_payload_length = static_cast<std::uint32_t>(bytes.size() - kIgmpCommonHeaderSize),
+    };
+}
+
 DissectionStep dissect_icmp(const PacketSlice& slice) {
     const auto parsed = parse_icmp_common_header(slice);
-    return make_icmp_step(
+    return make_control_message_step(
         slice,
         DissectionLayerKind::icmp,
         LayerKey::icmp(),
+        kIcmpCommonHeaderSize,
         parsed,
         IcmpFacts {
             .type = parsed.type,
@@ -121,15 +155,35 @@ DissectionStep dissect_icmp(const PacketSlice& slice) {
 
 DissectionStep dissect_icmpv6(const PacketSlice& slice) {
     const auto parsed = parse_icmpv6_common_header(slice);
-    return make_icmp_step(
+    return make_control_message_step(
         slice,
         DissectionLayerKind::icmpv6,
         LayerKey::icmpv6(),
+        kIcmpCommonHeaderSize,
         parsed,
         Icmpv6Facts {
             .type = parsed.type,
             .code = parsed.code,
             .checksum = parsed.checksum,
+        }
+    );
+}
+
+DissectionStep dissect_igmp(const PacketSlice& slice) {
+    const auto parsed = parse_igmp_common_header(slice);
+    return make_control_message_step(
+        slice,
+        DissectionLayerKind::igmp,
+        std::nullopt,
+        kIgmpCommonHeaderSize,
+        parsed,
+        IgmpFacts {
+            .type = parsed.type,
+            .code = parsed.code,
+            .checksum = parsed.checksum,
+            .group_or_control = parsed.group_or_control,
+            .effective_destination_v4 = parsed.effective_destination_v4,
+            .has_effective_destination_v4 = parsed.has_effective_destination_v4,
         }
     );
 }

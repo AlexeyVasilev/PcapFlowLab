@@ -257,6 +257,8 @@ The same `dissect_ipv4` and `dissect_ipv6` modules may also be registered in bot
 
 ICMP and ICMPv6 should be modeled as portless terminal flow candidates. They use the deepest effective IPv4 or IPv6 endpoints together with `ProtocolId::icmp` or `ProtocolId::icmpv6`, without synthetic transport ports or application-level message classification.
 
+IGMP should be modeled as a portless IPv4 terminal flow candidate whose generic network facts come from the deepest effective IPv4 layer, while final flow identity preserves the current production multicast-group override semantics. In practice that means complete non-v3 IGMP headers may replace the effective IPv4 destination with the parsed group address when it is non-zero, while IGMPv3 membership reports and selector-only fragment cases retain the deepest IPv4 destination. Current shadow IGMP recognition may expose `DissectionLayerKind::igmp` without contributing a production `LayerKey`, so shadow visibility does not by itself alter persistent `ProtocolPath` semantics. Type-specific IGMPv3 record bodies remain opaque in this stage, and IPv6 multicast-listener semantics stay under ICMPv6 rather than IP protocol `2`.
+
 ### Parse result model
 
 Conceptually:
@@ -312,6 +314,7 @@ using LayerFacts = std::variant<
     Ipv6FragmentFacts,
     IcmpFacts,
     Icmpv6Facts,
+    IgmpFacts,
     TcpFacts,
     UdpFacts,
     SctpFacts
@@ -367,6 +370,8 @@ struct DissectionStep {
 ```
 
 This split is required because some visible traversal steps, such as IPv6 extension headers, matter to shadow dissection correctness and diagnostics but do not currently belong in production flow-identity path semantics.
+
+IGMP is also allowed to use this split: the shadow engine may emit a visible IGMP step while contributing no production `LayerKey` until a later production-cutover decision explicitly adds one.
 
 The final implementation can use different names, but the RFC should prohibit ambiguous boolean combinations.
 
