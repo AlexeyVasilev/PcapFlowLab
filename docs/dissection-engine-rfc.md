@@ -253,6 +253,8 @@ This matches how the current code already branches, but moves those branch table
 
 Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agnostic and be reusable across both `SelectorDomain::ip_protocol` and `SelectorDomain::ipv6_next_header` registrations.
 
+The same `dissect_ipv4` and `dissect_ipv6` modules may also be registered in both the Ethernet-resolved selector domains and the IP selector domains used for plain encapsulation. Nested IP traversal should therefore remain iterative and registry-driven: each IPv4 or IPv6 header contributes one ordinary engine step, repeated network layers remain visible in ordered dissection steps and `ProtocolPath`, and the deepest successfully parsed network layer supplies the effective terminal flow endpoints.
+
 ### Parse result model
 
 Conceptually:

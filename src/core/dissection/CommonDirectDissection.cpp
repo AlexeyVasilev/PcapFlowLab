@@ -252,6 +252,20 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolIpv4Encapsulation,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolIpv6Encapsulation,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
                 .domain = SelectorDomain::ipv6_next_header,
                 .value = detail::kIpProtocolHopByHop,
             },
@@ -298,6 +312,20 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kIpProtocolSctp,
             },
             .dissector = dissect_sctp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolIpv4Encapsulation,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolIpv6Encapsulation,
+            },
+            .dissector = dissect_ipv6,
         },
     };
 

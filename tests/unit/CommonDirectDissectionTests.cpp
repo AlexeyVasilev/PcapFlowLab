@@ -301,6 +301,33 @@ std::vector<std::uint8_t> make_ethernet_ipv4_sctp_packet(
     );
 }
 
+std::vector<std::uint8_t> make_ipv4_payload_packet(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint8_t protocol,
+    const std::vector<std::uint8_t>& payload,
+    const std::uint16_t flags_fragment = 0U,
+    const std::uint8_t ttl = 64U
+) {
+    return strip_ethernet_header(make_ethernet_ipv4_fragment_packet(
+        src_addr,
+        dst_addr,
+        protocol,
+        flags_fragment,
+        payload,
+        ttl
+    ));
+}
+
+std::vector<std::uint8_t> make_ipv6_payload_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    const std::uint8_t next_header,
+    const std::vector<std::uint8_t>& payload
+) {
+    return strip_ethernet_header(make_ethernet_ipv6_packet(src_addr, dst_addr, next_header, payload));
+}
+
 std::vector<std::uint8_t> make_ipv6_tcp_segment(
     const std::uint16_t src_port,
     const std::uint16_t dst_port,
@@ -361,7 +388,23 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 17U);
+    PFL_EXPECT(built.registry->entry_count() == 21U);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = detail::kIpProtocolIpv4Encapsulation,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = detail::kIpProtocolIpv6Encapsulation,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ipv6_next_header,
+        .value = detail::kIpProtocolIpv4Encapsulation,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ipv6_next_header,
+        .value = detail::kIpProtocolIpv6Encapsulation,
+    }) == dissect_ipv6);
 
     const auto root_selector = make_link_type_selector(kLinkTypeEthernet);
     PFL_EXPECT(root_selector.domain == SelectorDomain::link_type);
@@ -1526,6 +1569,409 @@ void expect_sctp_fragmentation_preserves_selector_only_handoff() {
     PFL_EXPECT(format_shadow_path(ipv6_fragment_shadow) == "EthernetII -> IPv6");
 }
 
+void expect_plain_ip_encapsulation_is_registry_driven() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+    const auto outer_ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0x11});
+    const auto outer_ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0x22});
+    const auto inner_ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0x33});
+    const auto inner_ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0x44});
+
+    const auto deepest_udp_inner_ipv4 = make_ipv4_payload_packet(
+        ipv4(198, 51, 100, 10),
+        ipv4(198, 51, 100, 11),
+        detail::kIpProtocolUdp,
+        make_ipv6_udp_segment(41000U, 53U, 3U)
+    );
+    const auto middle_ipv6_with_inner_ipv4 = make_ipv6_payload_packet(
+        inner_ipv6_src,
+        inner_ipv6_dst,
+        detail::kIpProtocolIpv4Encapsulation,
+        deepest_udp_inner_ipv4
+    );
+    const auto multi_nested_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 1),
+        ipv4(203, 0, 113, 2),
+        detail::kIpProtocolIpv6Encapsulation,
+        0U,
+        middle_ipv6_with_inner_ipv4
+    ));
+    const auto multi_nested_root = make_root_slice(multi_nested_packet);
+    const auto multi_nested_ethernet = dissect_ethernet(multi_nested_root);
+    PFL_REQUIRE(multi_nested_ethernet.handoff.has_value());
+    PFL_REQUIRE(multi_nested_ethernet.handoff->child.has_value());
+    PFL_EXPECT(multi_nested_ethernet.handoff->child->source_id() == multi_nested_root.source_id());
+    PFL_EXPECT(multi_nested_ethernet.handoff->child->source_offset() == 14U);
+
+    const auto multi_nested_outer_ipv4 = dissect_ipv4(*multi_nested_ethernet.handoff->child);
+    PFL_REQUIRE(multi_nested_outer_ipv4.handoff.has_value());
+    PFL_REQUIRE(multi_nested_outer_ipv4.handoff->child.has_value());
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->selector.domain == SelectorDomain::ip_protocol);
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->selector.value == detail::kIpProtocolIpv6Encapsulation);
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->child->source_id() == multi_nested_root.source_id());
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->child->source_offset() == 34U);
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->child->captured_end() == multi_nested_outer_ipv4.handoff->child->declared_end());
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->child->declared_end() <= multi_nested_ethernet.handoff->child->declared_end());
+    PFL_EXPECT(multi_nested_outer_ipv4.handoff->child->captured_end() <= multi_nested_ethernet.handoff->child->captured_end());
+
+    const auto multi_nested_inner_ipv6 = dissect_ipv6(*multi_nested_outer_ipv4.handoff->child);
+    PFL_REQUIRE(multi_nested_inner_ipv6.handoff.has_value());
+    PFL_REQUIRE(multi_nested_inner_ipv6.handoff->child.has_value());
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->selector.domain == SelectorDomain::ipv6_next_header);
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->selector.value == detail::kIpProtocolIpv4Encapsulation);
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->child->source_id() == multi_nested_root.source_id());
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->child->source_offset() == 74U);
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->child->captured_end() == multi_nested_inner_ipv6.handoff->child->declared_end());
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->child->declared_end() <= multi_nested_outer_ipv4.handoff->child->declared_end());
+    PFL_EXPECT(multi_nested_inner_ipv6.handoff->child->captured_end() <= multi_nested_outer_ipv4.handoff->child->captured_end());
+
+    const auto multi_nested_inner_ipv4 = dissect_ipv4(*multi_nested_inner_ipv6.handoff->child);
+    PFL_REQUIRE(multi_nested_inner_ipv4.handoff.has_value());
+    PFL_REQUIRE(multi_nested_inner_ipv4.handoff->child.has_value());
+    PFL_EXPECT(multi_nested_inner_ipv4.handoff->selector.domain == SelectorDomain::ip_protocol);
+    PFL_EXPECT(multi_nested_inner_ipv4.handoff->selector.value == detail::kIpProtocolUdp);
+    PFL_EXPECT(multi_nested_inner_ipv4.handoff->child->source_id() == multi_nested_root.source_id());
+    PFL_EXPECT(multi_nested_inner_ipv4.handoff->child->source_offset() == 94U);
+    PFL_EXPECT(multi_nested_inner_ipv4.handoff->child->declared_end() <= multi_nested_inner_ipv6.handoff->child->declared_end());
+
+    const auto multi_nested_udp = dissect_udp(*multi_nested_inner_ipv4.handoff->child);
+    PFL_EXPECT(multi_nested_udp.status == ParseStatus::complete);
+    PFL_REQUIRE(multi_nested_udp.bounds.payload.has_value());
+    PFL_EXPECT(multi_nested_udp.bounds.source_id == multi_nested_root.source_id());
+    PFL_EXPECT(multi_nested_udp.bounds.payload->captured.length() == 3U);
+
+    StepKindRecorder multi_nested_recorder {};
+    const DissectionEngine engine {};
+    const auto multi_nested_result = engine.run(
+        registry,
+        make_link_type_selector(multi_nested_packet.data_link_type),
+        multi_nested_root,
+        DissectionConsumer {.on_step = record_step_kind, .context = &multi_nested_recorder}
+    );
+    PFL_EXPECT(multi_nested_result.stop_reason == StopReason::terminal_protocol);
+    const std::vector<DissectionLayerKind> expected_multi_nested_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::udp,
+    };
+    PFL_EXPECT(multi_nested_recorder.kinds == expected_multi_nested_kinds);
+
+    const auto multi_nested_shadow = run_shadow(multi_nested_packet, registry);
+    PFL_EXPECT(multi_nested_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(multi_nested_shadow.stop_reason == StopReason::terminal_protocol);
+    PFL_EXPECT(multi_nested_shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(multi_nested_shadow.terminal_protocol == ProtocolId::udp);
+    PFL_EXPECT(multi_nested_shadow.src_addr_v4 == ipv4(198, 51, 100, 10));
+    PFL_EXPECT(multi_nested_shadow.dst_addr_v4 == ipv4(198, 51, 100, 11));
+    PFL_EXPECT(multi_nested_shadow.has_ports);
+    PFL_EXPECT(multi_nested_shadow.src_port == 41000U);
+    PFL_EXPECT(multi_nested_shadow.dst_port == 53U);
+    PFL_EXPECT(multi_nested_shadow.has_transport_payload_length);
+    PFL_EXPECT(multi_nested_shadow.captured_transport_payload_length == 3U);
+    PFL_EXPECT(format_shadow_path(multi_nested_shadow) == "EthernetII -> IPv4 -> IPv6 -> IPv4 -> UDP");
+
+    const auto extension_inner_sctp_packet = make_raw_packet(make_ethernet_ipv6_packet(
+        outer_ipv6_src,
+        outer_ipv6_dst,
+        detail::kIpProtocolHopByHop,
+        make_ipv6_hop_by_hop_extension(
+            detail::kIpProtocolIpv4Encapsulation,
+            make_ipv4_payload_packet(
+                ipv4(10, 77, 0, 1),
+                ipv4(10, 77, 0, 2),
+                detail::kIpProtocolSctp,
+                make_sctp_segment(2905U, 2906U, 0x11223344U, 0x55667788U, 2U)
+            )
+        )
+    ));
+    StepKindRecorder extension_sctp_recorder {};
+    const auto extension_sctp_result = engine.run(
+        registry,
+        make_link_type_selector(extension_inner_sctp_packet.data_link_type),
+        make_root_slice(extension_inner_sctp_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &extension_sctp_recorder}
+    );
+    PFL_EXPECT(extension_sctp_result.stop_reason == StopReason::terminal_protocol);
+    const std::vector<DissectionLayerKind> expected_extension_sctp_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::ipv6_hop_by_hop,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::sctp,
+    };
+    PFL_EXPECT(extension_sctp_recorder.kinds == expected_extension_sctp_kinds);
+    const auto extension_sctp_shadow = run_shadow(extension_inner_sctp_packet, registry);
+    PFL_EXPECT(extension_sctp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(extension_sctp_shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(extension_sctp_shadow.terminal_protocol == ProtocolId::sctp);
+    PFL_EXPECT(extension_sctp_shadow.src_addr_v4 == ipv4(10, 77, 0, 1));
+    PFL_EXPECT(extension_sctp_shadow.dst_addr_v4 == ipv4(10, 77, 0, 2));
+    PFL_EXPECT(extension_sctp_shadow.has_ports);
+    PFL_EXPECT(extension_sctp_shadow.src_port == 2905U);
+    PFL_EXPECT(extension_sctp_shadow.dst_port == 2906U);
+    PFL_EXPECT(extension_sctp_shadow.has_transport_payload_length);
+    PFL_EXPECT(extension_sctp_shadow.captured_transport_payload_length == 2U);
+    PFL_EXPECT(format_shadow_path(extension_sctp_shadow) == "EthernetII -> IPv6 -> IPv4 -> SCTP");
+
+    const auto inner_ipv6_routing_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 12),
+        ipv4(203, 0, 113, 13),
+        detail::kIpProtocolIpv6Encapsulation,
+        0U,
+        make_ipv6_payload_packet(
+            inner_ipv6_src,
+            inner_ipv6_dst,
+            detail::kIpProtocolRouting,
+            make_ipv6_routing_extension(detail::kIpProtocolUdp, make_ipv6_udp_segment(3333U, 4444U, 2U))
+        )
+    ));
+    StepKindRecorder inner_ipv6_routing_recorder {};
+    const auto inner_ipv6_routing_result = engine.run(
+        registry,
+        make_link_type_selector(inner_ipv6_routing_packet.data_link_type),
+        make_root_slice(inner_ipv6_routing_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &inner_ipv6_routing_recorder}
+    );
+    PFL_EXPECT(inner_ipv6_routing_result.stop_reason == StopReason::terminal_protocol);
+    const std::vector<DissectionLayerKind> expected_inner_ipv6_routing_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::ipv6_routing,
+        DissectionLayerKind::udp,
+    };
+    PFL_EXPECT(inner_ipv6_routing_recorder.kinds == expected_inner_ipv6_routing_kinds);
+    const auto inner_ipv6_routing_shadow = run_shadow(inner_ipv6_routing_packet, registry);
+    PFL_EXPECT(inner_ipv6_routing_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(inner_ipv6_routing_shadow.family == DissectionAddressFamily::ipv6);
+    PFL_EXPECT(inner_ipv6_routing_shadow.terminal_protocol == ProtocolId::udp);
+    PFL_EXPECT(inner_ipv6_routing_shadow.has_ports);
+    PFL_EXPECT(inner_ipv6_routing_shadow.src_port == 3333U);
+    PFL_EXPECT(inner_ipv6_routing_shadow.dst_port == 4444U);
+    PFL_EXPECT(format_shadow_path(inner_ipv6_routing_shadow) == "EthernetII -> IPv4 -> IPv6 -> UDP");
+
+    auto outer_extra_tail_packet = make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 10),
+        ipv4(203, 0, 113, 11),
+        detail::kIpProtocolIpv4Encapsulation,
+        0U,
+        make_ipv4_payload_packet(
+            ipv4(10, 1, 0, 1),
+            ipv4(10, 1, 0, 2),
+            detail::kIpProtocolUdp,
+            make_ipv6_udp_segment(5000U, 5001U)
+        )
+    );
+    outer_extra_tail_packet.push_back(0xAAU);
+    outer_extra_tail_packet.push_back(0xBBU);
+    outer_extra_tail_packet.push_back(0xCCU);
+    const auto outer_extra_tail_shadow = run_shadow(make_raw_packet(outer_extra_tail_packet), registry);
+    PFL_EXPECT(outer_extra_tail_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(outer_extra_tail_shadow.has_transport_payload_length);
+    PFL_EXPECT(outer_extra_tail_shadow.captured_transport_payload_length == 0U);
+    PFL_EXPECT(format_shadow_path(outer_extra_tail_shadow) == "EthernetII -> IPv4 -> IPv4 -> UDP");
+
+    auto truncated_inner_transport_packet = make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 20),
+        ipv4(203, 0, 113, 21),
+        detail::kIpProtocolIpv4Encapsulation,
+        0U,
+        make_ipv4_payload_packet(
+            ipv4(10, 2, 0, 1),
+            ipv4(10, 2, 0, 2),
+            detail::kIpProtocolTcp,
+            make_ipv6_tcp_segment(61000U, 443U)
+        )
+    );
+    const auto truncated_inner_transport_reported_length = static_cast<std::uint32_t>(truncated_inner_transport_packet.size());
+    truncated_inner_transport_packet.resize(truncated_inner_transport_packet.size() - 2U);
+    const auto truncated_inner_transport_shadow = run_shadow(
+        make_raw_packet(truncated_inner_transport_packet, truncated_inner_transport_reported_length),
+        registry
+    );
+    PFL_EXPECT(truncated_inner_transport_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(truncated_inner_transport_shadow.stop_reason == StopReason::truncated);
+    PFL_EXPECT(truncated_inner_transport_shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(truncated_inner_transport_shadow.terminal_protocol == ProtocolId::tcp);
+    PFL_EXPECT(!truncated_inner_transport_shadow.has_ports);
+    PFL_EXPECT(format_shadow_path(truncated_inner_transport_shadow) == "EthernetII -> IPv4 -> IPv4");
+
+    StepKindRecorder truncated_inner_transport_recorder {};
+    const auto truncated_inner_transport_raw =
+        make_raw_packet(truncated_inner_transport_packet, truncated_inner_transport_reported_length);
+    const auto truncated_inner_transport_result = engine.run(
+        registry,
+        make_link_type_selector(kLinkTypeEthernet),
+        make_root_slice(truncated_inner_transport_raw),
+        DissectionConsumer {.on_step = record_step_kind, .context = &truncated_inner_transport_recorder}
+    );
+    PFL_EXPECT(truncated_inner_transport_result.stop_reason == StopReason::truncated);
+    const std::vector<DissectionLayerKind> expected_truncated_inner_transport_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::tcp,
+    };
+    PFL_EXPECT(truncated_inner_transport_recorder.kinds == expected_truncated_inner_transport_kinds);
+
+    const auto short_inner_header_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 30),
+        ipv4(203, 0, 113, 31),
+        detail::kIpProtocolIpv4Encapsulation,
+        0U,
+        std::vector<std::uint8_t>(10U, 0x00U)
+    ));
+    StepKindRecorder short_inner_header_recorder {};
+    const auto short_inner_header_result = engine.run(
+        registry,
+        make_link_type_selector(short_inner_header_packet.data_link_type),
+        make_root_slice(short_inner_header_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &short_inner_header_recorder}
+    );
+    PFL_EXPECT(short_inner_header_result.stop_reason == StopReason::truncated);
+    const std::vector<DissectionLayerKind> expected_short_inner_header_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::ipv4,
+    };
+    PFL_EXPECT(short_inner_header_recorder.kinds == expected_short_inner_header_kinds);
+    const auto short_inner_header_shadow = run_shadow(short_inner_header_packet, registry);
+    PFL_EXPECT(short_inner_header_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(short_inner_header_shadow.stop_reason == StopReason::truncated);
+    PFL_EXPECT(format_shadow_path(short_inner_header_shadow) == "EthernetII -> IPv4");
+
+    const auto unknown_deepest_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 40),
+        ipv4(203, 0, 113, 41),
+        detail::kIpProtocolIpv6Encapsulation,
+        0U,
+        make_ipv6_payload_packet(inner_ipv6_src, inner_ipv6_dst, 0xFDU, {0xde, 0xad, 0xbe, 0xef})
+    ));
+    const auto unknown_deepest_shadow = run_shadow(unknown_deepest_packet, registry);
+    PFL_EXPECT(unknown_deepest_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(unknown_deepest_shadow.stop_reason == StopReason::unknown_next_protocol);
+    PFL_EXPECT(unknown_deepest_shadow.family == DissectionAddressFamily::ipv6);
+    PFL_EXPECT(unknown_deepest_shadow.terminal_protocol == ProtocolId::unknown);
+    PFL_EXPECT(format_shadow_path(unknown_deepest_shadow) == "EthernetII -> IPv4 -> IPv6");
+
+    const auto outer_ipv4_fragment_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 50),
+        ipv4(203, 0, 113, 51),
+        detail::kIpProtocolIpv4Encapsulation,
+        0x2000U,
+        {0x45, 0x00, 0x00, 0x14, 0x00}
+    ));
+    StepKindRecorder outer_ipv4_fragment_recorder {};
+    const auto outer_ipv4_fragment_result = engine.run(
+        registry,
+        make_link_type_selector(outer_ipv4_fragment_packet.data_link_type),
+        make_root_slice(outer_ipv4_fragment_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &outer_ipv4_fragment_recorder}
+    );
+    PFL_EXPECT(outer_ipv4_fragment_result.stop_reason == StopReason::needs_reassembly);
+    const std::vector<DissectionLayerKind> expected_outer_ipv4_fragment_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+    };
+    PFL_EXPECT(outer_ipv4_fragment_recorder.kinds == expected_outer_ipv4_fragment_kinds);
+    const auto outer_ipv4_fragment_shadow = run_shadow(outer_ipv4_fragment_packet, registry);
+    PFL_EXPECT(outer_ipv4_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(outer_ipv4_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+    PFL_EXPECT(format_shadow_path(outer_ipv4_fragment_shadow) == "EthernetII -> IPv4");
+
+    const auto outer_ipv6_fragment_packet = make_raw_packet(make_ethernet_ipv6_fragment_packet(
+        outer_ipv6_src,
+        outer_ipv6_dst,
+        detail::kIpProtocolIpv6Encapsulation,
+        {0x60, 0x00, 0x00, 0x00}
+    ));
+    StepKindRecorder outer_ipv6_fragment_recorder {};
+    const auto outer_ipv6_fragment_result = engine.run(
+        registry,
+        make_link_type_selector(outer_ipv6_fragment_packet.data_link_type),
+        make_root_slice(outer_ipv6_fragment_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &outer_ipv6_fragment_recorder}
+    );
+    PFL_EXPECT(outer_ipv6_fragment_result.stop_reason == StopReason::needs_reassembly);
+    const std::vector<DissectionLayerKind> expected_outer_ipv6_fragment_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::ipv6_fragment,
+    };
+    PFL_EXPECT(outer_ipv6_fragment_recorder.kinds == expected_outer_ipv6_fragment_kinds);
+    const auto outer_ipv6_fragment_shadow = run_shadow(outer_ipv6_fragment_packet, registry);
+    PFL_EXPECT(outer_ipv6_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+    PFL_EXPECT(outer_ipv6_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+    PFL_EXPECT(format_shadow_path(outer_ipv6_fragment_shadow) == "EthernetII -> IPv6");
+
+    const auto inner_fragmented_shadow = run_shadow(
+        make_raw_packet(make_ethernet_ipv6_packet(
+            outer_ipv6_src,
+            outer_ipv6_dst,
+            detail::kIpProtocolIpv4Encapsulation,
+            make_ipv4_payload_packet(
+                ipv4(10, 88, 0, 1),
+                ipv4(10, 88, 0, 2),
+                detail::kIpProtocolUdp,
+                {0xde, 0xad, 0xbe, 0xef},
+                0x2000U
+            )
+        )),
+        registry
+    );
+    PFL_EXPECT(inner_fragmented_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(inner_fragmented_shadow.stop_reason == StopReason::needs_reassembly);
+    PFL_EXPECT(inner_fragmented_shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(inner_fragmented_shadow.terminal_protocol == ProtocolId::udp);
+    PFL_EXPECT(!inner_fragmented_shadow.has_ports);
+    PFL_EXPECT(format_shadow_path(inner_fragmented_shadow) == "EthernetII -> IPv6 -> IPv4");
+
+    const auto deep_depth_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
+        ipv4(203, 0, 113, 60),
+        ipv4(203, 0, 113, 61),
+        detail::kIpProtocolIpv6Encapsulation,
+        0U,
+        make_ipv6_payload_packet(
+            inner_ipv6_src,
+            inner_ipv6_dst,
+            detail::kIpProtocolIpv4Encapsulation,
+            make_ipv4_payload_packet(
+                ipv4(10, 99, 0, 1),
+                ipv4(10, 99, 0, 2),
+                detail::kIpProtocolIpv6Encapsulation,
+                make_ipv6_payload_packet(
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0x55}),
+                    ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0x66}),
+                    detail::kIpProtocolUdp,
+                    make_ipv6_udp_segment(62000U, 62001U, 1U)
+                )
+            )
+        )
+    ));
+    StepKindRecorder deep_depth_recorder {};
+    const auto deep_depth_result = engine.run(
+        registry,
+        make_link_type_selector(deep_depth_packet.data_link_type),
+        make_root_slice(deep_depth_packet),
+        DissectionConsumer {.on_step = record_step_kind, .context = &deep_depth_recorder},
+        5U
+    );
+    PFL_EXPECT(deep_depth_result.stop_reason == StopReason::depth_limit);
+    PFL_EXPECT(deep_depth_result.step_count == 5U);
+    PFL_EXPECT(deep_depth_result.traversed_depth == 5U);
+    const std::vector<DissectionLayerKind> expected_deep_depth_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::ipv6,
+    };
+    PFL_EXPECT(deep_depth_recorder.kinds == expected_deep_depth_kinds);
+}
+
 void expect_common_direct_supports_triple_vlan_and_depth_limits() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
@@ -1819,6 +2265,114 @@ void expect_shadow_parity_for_common_direct_subset() {
         "EthernetII -> IPv6",
         StopReason::needs_reassembly
     );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_fragment_packet(
+            ipv4(198, 18, 0, 1),
+            ipv4(198, 18, 0, 2),
+            detail::kIpProtocolIpv4Encapsulation,
+            0U,
+            make_ipv4_payload_packet(
+                ipv4(10, 50, 0, 1),
+                ipv4(10, 50, 0, 2),
+                detail::kIpProtocolTcp,
+                make_ipv6_tcp_segment(32000U, 443U, 4U, 0x18U)
+            )
+        )),
+        "EthernetII -> IPv4 -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_fragment_packet(
+            ipv4(198, 18, 0, 3),
+            ipv4(198, 18, 0, 4),
+            detail::kIpProtocolIpv6Encapsulation,
+            0U,
+            make_ipv6_payload_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0x81}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0x82}),
+                detail::kIpProtocolUdp,
+                make_ipv6_udp_segment(5300U, 53U, 5U)
+            )
+        )),
+        "EthernetII -> IPv4 -> IPv6 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0x91}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0x92}),
+            detail::kIpProtocolIpv4Encapsulation,
+            make_ipv4_payload_packet(
+                ipv4(10, 60, 0, 1),
+                ipv4(10, 60, 0, 2),
+                detail::kIpProtocolUdp,
+                make_ipv6_udp_segment(1200U, 2200U, 2U)
+            )
+        )),
+        "EthernetII -> IPv6 -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0xa1}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0xa2}),
+            detail::kIpProtocolIpv6Encapsulation,
+            make_ipv6_payload_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0xb1}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0xb2}),
+                detail::kIpProtocolTcp,
+                make_ipv6_tcp_segment(22000U, 8443U, 3U, 0x18U)
+            )
+        )),
+        "EthernetII -> IPv6 -> IPv6 -> TCP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_packet(
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0xc1}),
+            ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0xc2}),
+            detail::kIpProtocolHopByHop,
+            make_ipv6_hop_by_hop_extension(
+                detail::kIpProtocolIpv4Encapsulation,
+                make_ipv4_payload_packet(
+                    ipv4(10, 70, 0, 1),
+                    ipv4(10, 70, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv6_udp_segment(9000U, 9001U, 1U)
+                )
+            )
+        )),
+        "EthernetII -> IPv6 -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_fragment_packet(
+            ipv4(198, 18, 0, 5),
+            ipv4(198, 18, 0, 6),
+            detail::kIpProtocolIpv6Encapsulation,
+            0U,
+            make_ipv6_payload_packet(
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0xd1}),
+                ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 0xd2}),
+                detail::kIpProtocolRouting,
+                make_ipv6_routing_extension(detail::kIpProtocolUdp, make_ipv6_udp_segment(3333U, 4444U, 2U))
+            )
+        )),
+        "EthernetII -> IPv4 -> IPv6 -> UDP",
+        StopReason::terminal_protocol
+    );
 }
 
 void expect_shadow_conservative_stops_and_arp_behavior() {
@@ -1995,6 +2549,7 @@ void run_common_direct_dissection_tests() {
     expect_failed_layers_do_not_contribute_path_and_exact_arp_bounds();
     expect_fragmented_ipv4_preserves_selector_only_handoff();
     expect_sctp_fragmentation_preserves_selector_only_handoff();
+    expect_plain_ip_encapsulation_is_registry_driven();
     expect_common_direct_supports_triple_vlan_and_depth_limits();
     expect_shadow_parity_for_common_direct_subset();
     expect_shadow_conservative_stops_and_arp_behavior();
