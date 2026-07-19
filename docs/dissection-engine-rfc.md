@@ -255,6 +255,8 @@ Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agn
 
 The same `dissect_ipv4` and `dissect_ipv6` modules may also be registered in both the Ethernet-resolved selector domains and the IP selector domains used for plain encapsulation. Nested IP traversal should therefore remain iterative and registry-driven: each IPv4 or IPv6 header contributes one ordinary engine step, repeated network layers remain visible in ordered dissection steps and `ProtocolPath`, and the deepest successfully parsed network layer supplies the effective terminal flow endpoints.
 
+ICMP and ICMPv6 should be modeled as portless terminal flow candidates. They use the deepest effective IPv4 or IPv6 endpoints together with `ProtocolId::icmp` or `ProtocolId::icmpv6`, without synthetic transport ports or application-level message classification.
+
 ### Parse result model
 
 Conceptually:
@@ -305,8 +307,14 @@ using LayerFacts = std::variant<
     VlanFacts,
     ArpFacts,
     Ipv4Facts,
+    Ipv6Facts,
+    Ipv6ExtensionFacts,
+    Ipv6FragmentFacts,
+    IcmpFacts,
+    Icmpv6Facts,
     TcpFacts,
-    UdpFacts
+    UdpFacts,
+    SctpFacts
 >;
 
 enum class TerminalDisposition {
@@ -376,6 +384,7 @@ Interpretation:
   - `handoff.child` exists;
 - a handoff may preserve only the next selector when traversal must stop safely before creating a child slice;
 - reaching a terminal protocol does not itself mean that a valid flow tuple was necessarily produced.
+- successful ICMP / ICMPv6 terminal steps may contribute `LayerKey::icmp()` / `LayerKey::icmpv6()` to the shadow-engine physical path even while production import remains on legacy `PacketDecoder` path material.
 
 Example:
 
@@ -597,6 +606,8 @@ Use cases:
 - unsupported GRE or tunnel payload type;
 - unresolved Ethernet continuation behind bounded inner payload;
 - unknown PPP or SNAP payload that still deserves diagnostics.
+
+Control-message bodies such as ICMP error quotes remain opaque at this stage. The first engine cutover does not traverse quoted inner packets carried inside ICMP or ICMPv6 payloads.
 
 The first engine cutover does not need a user-visible generic `Data` summary layer everywhere, but the event model should be able to represent opaque terminal payloads so packet-details consumers can keep current conservative behavior.
 

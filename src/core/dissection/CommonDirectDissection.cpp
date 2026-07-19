@@ -11,6 +11,9 @@ namespace pfl::dissection {
 namespace {
 
 ProtocolId protocol_id_from_ip_protocol(const std::uint8_t protocol) noexcept {
+    if (protocol == detail::kIpProtocolIcmp) {
+        return ProtocolId::icmp;
+    }
     if (protocol == detail::kIpProtocolTcp) {
         return ProtocolId::tcp;
     }
@@ -124,6 +127,10 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 if (facts_.terminal_protocol == ProtocolId::unknown) {
                     facts_.terminal_protocol = protocol_id_from_ipv6_next_header(layer_facts.next_header);
                 }
+            } else if constexpr (std::is_same_v<Facts, IcmpFacts>) {
+                facts_.terminal_protocol = ProtocolId::icmp;
+            } else if constexpr (std::is_same_v<Facts, Icmpv6Facts>) {
+                facts_.terminal_protocol = ProtocolId::icmpv6;
             } else if constexpr (std::is_same_v<Facts, TcpFacts>) {
                 facts_.terminal_protocol = ProtocolId::tcp;
                 facts_.has_ports = true;
@@ -232,6 +239,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolIcmp,
+            },
+            .dissector = dissect_icmp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
                 .value = detail::kIpProtocolTcp,
             },
             .dissector = dissect_tcp,
@@ -291,6 +305,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kIpProtocolDestinationOptions,
             },
             .dissector = dissect_ipv6_destination_options,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolIcmpV6,
+            },
+            .dissector = dissect_icmpv6,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
