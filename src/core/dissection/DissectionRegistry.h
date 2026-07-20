@@ -24,6 +24,26 @@ enum class PathCommitPolicy : std::uint8_t {
     recognized_flow_or_recognized_non_flow,
 };
 
+[[nodiscard]] constexpr std::uint8_t path_commit_policy_strength(const PathCommitPolicy policy) noexcept {
+    switch (policy) {
+    case PathCommitPolicy::immediate:
+        return 0U;
+    case PathCommitPolicy::recognized_flow_or_recognized_non_flow:
+        return 1U;
+    case PathCommitPolicy::recognized_flow:
+        return 2U;
+    }
+
+    return 0U;
+}
+
+[[nodiscard]] constexpr PathCommitPolicy combine_path_commit_policies(
+    const PathCommitPolicy lhs,
+    const PathCommitPolicy rhs
+) noexcept {
+    return path_commit_policy_strength(lhs) >= path_commit_policy_strength(rhs) ? lhs : rhs;
+}
+
 struct DissectionStep {
     DissectionLayerKind layer {DissectionLayerKind::unknown};
     std::optional<LayerKey> path_contribution {};

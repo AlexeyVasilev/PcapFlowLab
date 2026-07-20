@@ -354,6 +354,36 @@ void expect_import_dissection_collector_uses_explicit_path_commit_policies() {
             .traversed_depth = step_count,
         };
     };
+    const std::array all_policies {
+        PathCommitPolicy::immediate,
+        PathCommitPolicy::recognized_flow,
+        PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+    };
+
+    for (const auto lhs : all_policies) {
+        for (const auto rhs : all_policies) {
+            const auto combined = combine_path_commit_policies(lhs, rhs);
+            PFL_EXPECT(combined == combine_path_commit_policies(rhs, lhs));
+            PFL_EXPECT(path_commit_policy_strength(combined) >= path_commit_policy_strength(lhs));
+            PFL_EXPECT(path_commit_policy_strength(combined) >= path_commit_policy_strength(rhs));
+        }
+        PFL_EXPECT(combine_path_commit_policies(lhs, lhs) == lhs);
+    }
+
+    for (const auto lhs : all_policies) {
+        for (const auto middle : all_policies) {
+            for (const auto rhs : all_policies) {
+                PFL_EXPECT(
+                    combine_path_commit_policies(
+                        combine_path_commit_policies(lhs, middle),
+                        rhs)
+                    == combine_path_commit_policies(
+                        lhs,
+                        combine_path_commit_policies(middle, rhs))
+                );
+            }
+        }
+    }
 
     {
         ImportDissectionCollector collector {};
@@ -496,6 +526,246 @@ void expect_import_dissection_collector_uses_explicit_path_commit_policies() {
 
         PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
         PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP");
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ethernet_ii,
+            .path_contribution = LayerKey::ethernet_ii(),
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::pppoe,
+            .path_contribution = LayerKey::pppoe(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow,
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ppp,
+            .path_contribution = LayerKey::ppp(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::arp,
+            .path_contribution = LayerKey::arp(),
+            .facts = ArpFacts {
+                .has_sender_ipv4 = true,
+                .has_target_ipv4 = true,
+                .sender_ipv4 = ipv4(198, 51, 100, 10),
+                .target_ipv4 = ipv4(198, 51, 100, 1),
+            },
+            .terminal_disposition = TerminalDisposition::recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::terminal_protocol,
+        });
+        collector.finish(make_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII");
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ethernet_ii,
+            .path_contribution = LayerKey::ethernet_ii(),
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::linux_sll,
+            .path_contribution = LayerKey::linux_sll(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::pppoe,
+            .path_contribution = LayerKey::pppoe(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow,
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::arp,
+            .path_contribution = LayerKey::arp(),
+            .facts = ArpFacts {
+                .has_sender_ipv4 = true,
+                .has_target_ipv4 = true,
+                .sender_ipv4 = ipv4(198, 51, 100, 20),
+                .target_ipv4 = ipv4(198, 51, 100, 1),
+            },
+            .terminal_disposition = TerminalDisposition::recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::terminal_protocol,
+        });
+        collector.finish(make_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> LinuxSll");
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ethernet_ii,
+            .path_contribution = LayerKey::ethernet_ii(),
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::pppoe,
+            .path_contribution = LayerKey::pppoe(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ppp,
+            .path_contribution = LayerKey::ppp(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow,
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::arp,
+            .path_contribution = LayerKey::arp(),
+            .facts = ArpFacts {
+                .has_sender_ipv4 = true,
+                .has_target_ipv4 = true,
+                .sender_ipv4 = ipv4(203, 0, 113, 10),
+                .target_ipv4 = ipv4(203, 0, 113, 1),
+            },
+            .terminal_disposition = TerminalDisposition::recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::terminal_protocol,
+        });
+        collector.finish(make_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> PPPoE");
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ethernet_ii,
+            .path_contribution = LayerKey::ethernet_ii(),
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::pppoe,
+            .path_contribution = LayerKey::pppoe(),
+            .descendant_path_commit_policy = PathCommitPolicy::recognized_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ipv4,
+            .path_contribution = LayerKey::ipv4(),
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::arp,
+            .path_contribution = LayerKey::arp(),
+            .facts = ArpFacts {
+                .has_sender_ipv4 = true,
+                .has_target_ipv4 = true,
+                .sender_ipv4 = ipv4(203, 0, 113, 30),
+                .target_ipv4 = ipv4(203, 0, 113, 1),
+            },
+            .terminal_disposition = TerminalDisposition::recognized_non_flow,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::terminal_protocol,
+        });
+        collector.finish(make_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII");
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ieee8023,
+            .path_contribution = LayerKey::ieee8023(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow,
+            .path_contribution_deferrable_by_child = true,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::llc_snap,
+            .path_contribution = LayerKey::llc_snap(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .defer_last_deferrable_path_contribution = true,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.finish(make_result(StopReason::truncated, 2U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(format_shadow_path(collector.facts()).empty());
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ieee8023,
+            .path_contribution = LayerKey::ieee8023(),
+            .path_contribution_deferrable_by_child = true,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::llc_snap,
+            .path_contribution = LayerKey::llc_snap(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow,
+            .defer_last_deferrable_path_contribution = true,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ipv4,
+            .path_contribution = LayerKey::ipv4(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .facts = Ipv4Facts {
+                .protocol = detail::kIpProtocolUdp,
+                .src_addr_v4 = ipv4(192, 0, 2, 40),
+                .dst_addr_v4 = ipv4(198, 51, 100, 40),
+            },
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::udp,
+            .path_contribution = LayerKey::udp(),
+            .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            .facts = UdpFacts {
+                .src_port = 1234U,
+                .dst_port = 5678U,
+            },
+            .terminal_disposition = TerminalDisposition::flow_candidate,
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::terminal_protocol,
+        });
+        collector.finish(make_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP");
     }
 }
 
@@ -6436,6 +6706,8 @@ void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
         PFL_REQUIRE(step.path_contribution.has_value());
         PFL_EXPECT(*step.path_contribution == LayerKey::llc_snap());
         PFL_EXPECT(step.path_commit_policy == PathCommitPolicy::recognized_flow_or_recognized_non_flow);
+        PFL_REQUIRE(step.descendant_path_commit_policy.has_value());
+        PFL_EXPECT(*step.descendant_path_commit_policy == PathCommitPolicy::recognized_flow_or_recognized_non_flow);
         PFL_EXPECT(step.defer_last_deferrable_path_contribution);
         PFL_REQUIRE(step.handoff.has_value());
         PFL_REQUIRE(step.handoff->child.has_value());
@@ -6666,6 +6938,8 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         PFL_REQUIRE(step.path_contribution.has_value());
         PFL_EXPECT(*step.path_contribution == LayerKey::pppoe());
         PFL_EXPECT(step.path_commit_policy == PathCommitPolicy::recognized_flow);
+        PFL_REQUIRE(step.descendant_path_commit_policy.has_value());
+        PFL_EXPECT(*step.descendant_path_commit_policy == PathCommitPolicy::recognized_flow);
         PFL_REQUIRE(step.handoff.has_value());
         PFL_REQUIRE(step.handoff->child.has_value());
         PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::ppp_frame);
@@ -6800,6 +7074,8 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
         PFL_REQUIRE(step.path_contribution.has_value());
         PFL_EXPECT(*step.path_contribution == LayerKey::ppp());
         PFL_EXPECT(step.path_commit_policy == PathCommitPolicy::recognized_flow);
+        PFL_REQUIRE(step.descendant_path_commit_policy.has_value());
+        PFL_EXPECT(*step.descendant_path_commit_policy == PathCommitPolicy::recognized_flow);
         PFL_REQUIRE(step.handoff.has_value());
         PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::ppp_protocol);
         PFL_EXPECT(step.handoff->selector.value == detail::kPppProtocolIpv6);

@@ -62,7 +62,14 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
     facts_.final_status = step.status;
 
     if (step.descendant_path_commit_policy.has_value()) {
-        active_descendant_path_commit_policy_ = step.descendant_path_commit_policy;
+        if (active_descendant_path_commit_policy_.has_value()) {
+            active_descendant_path_commit_policy_ = combine_path_commit_policies(
+                *active_descendant_path_commit_policy_,
+                *step.descendant_path_commit_policy
+            );
+        } else {
+            active_descendant_path_commit_policy_ = *step.descendant_path_commit_policy;
+        }
     }
 
     if (step.defer_last_deferrable_path_contribution &&
@@ -73,7 +80,10 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 continue;
             }
 
-            pending.commit_policy = step.path_commit_policy;
+            pending.commit_policy = combine_path_commit_policies(
+                pending.commit_policy,
+                step.path_commit_policy
+            );
             pending.deferrable_by_child = false;
             break;
         }
@@ -84,9 +94,11 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
             facts_.path_overflowed = true;
         } else {
             auto effective_policy = step.path_commit_policy;
-            if (effective_policy == PathCommitPolicy::immediate &&
-                active_descendant_path_commit_policy_.has_value()) {
-                effective_policy = *active_descendant_path_commit_policy_;
+            if (active_descendant_path_commit_policy_.has_value()) {
+                effective_policy = combine_path_commit_policies(
+                    effective_policy,
+                    *active_descendant_path_commit_policy_
+                );
             }
             pending_path_[pending_path_size_++] = PendingPathContribution {
                 .layer = *step.path_contribution,
