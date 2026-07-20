@@ -361,6 +361,50 @@ std::vector<std::uint8_t> make_ethernet_ieee8023_frame(const std::uint16_t paylo
     return bytes;
 }
 
+std::vector<std::uint8_t> make_ethernet_frame_with_payload(
+    const std::uint16_t ether_type,
+    const std::vector<std::uint8_t>& payload
+) {
+    std::vector<std::uint8_t> bytes {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb,
+    };
+    append_be16(bytes, ether_type);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+void append_mpls_label(
+    std::vector<std::uint8_t>& bytes,
+    const std::uint32_t label,
+    const bool bottom_of_stack,
+    const std::uint8_t traffic_class = 0U,
+    const std::uint8_t ttl = 64U
+) {
+    const auto entry = (label << 12U) |
+        (static_cast<std::uint32_t>(traffic_class & 0x7U) << 9U) |
+        (static_cast<std::uint32_t>(bottom_of_stack ? 1U : 0U) << 8U) |
+        static_cast<std::uint32_t>(ttl);
+    append_be32(bytes, entry);
+}
+
+std::vector<std::uint8_t> make_mpls_payload_with_labels(
+    const std::initializer_list<std::uint32_t> labels,
+    const std::vector<std::uint8_t>& payload,
+    const std::uint8_t traffic_class = 0U,
+    const std::uint8_t ttl = 64U
+) {
+    PFL_REQUIRE(labels.size() > 0U);
+    std::vector<std::uint8_t> bytes {};
+    std::size_t index = 0U;
+    for (const auto label : labels) {
+        ++index;
+        append_mpls_label(bytes, label, index == labels.size(), traffic_class, ttl);
+    }
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
 std::vector<std::uint8_t> make_ipv4_header_only_packet(const std::uint8_t protocol) {
     std::vector<std::uint8_t> bytes {
         0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
@@ -731,7 +775,7 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 33U);
+    PFL_EXPECT(built.registry->entry_count() == 38U);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIcmp,
@@ -799,7 +843,23 @@ void expect_common_direct_registry_and_root_selector() {
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::gre_protocol_type,
         .value = detail::kEtherTypeMplsUnicast,
-    }) == nullptr);
+    }) == dissect_mpls_label);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypeMplsUnicast,
+    }) == dissect_mpls_label);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::mpls_stack,
+        .value = kMplsStackContinueSelectorValue,
+    }) == dissect_mpls_label);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::mpls_payload,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::mpls_payload,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_ipv6);
 
     const auto root_selector = make_link_type_selector(kLinkTypeEthernet);
     PFL_EXPECT(root_selector.domain == SelectorDomain::link_type);
@@ -2639,6 +2699,388 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
     }
 }
 
+void expect_mpls_shadow_parsers_bounds_and_traversal() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+    const DissectionEngine engine {};
+
+    {
+        const auto exact_label_packet = make_raw_packet(
+            make_mpls_payload_with_labels(
+                {16030U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 130, 0, 1),
+                    ipv4(10, 130, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(5300U, 53U, 2U)
+                )
+            )
+        );
+        const auto exact_label_root = make_root_slice(exact_label_packet);
+        const auto exact_label = parse_mpls_label(exact_label_root);
+        PFL_EXPECT(exact_label.status == ParseStatus::complete);
+        PFL_EXPECT(exact_label.label == 16030U);
+        PFL_EXPECT(exact_label.traffic_class == 0U);
+        PFL_EXPECT(exact_label.bottom_of_stack);
+        PFL_EXPECT(exact_label.ttl == 64U);
+        PFL_EXPECT(exact_label.header_length == detail::kMplsLabelSize);
+        PFL_EXPECT(exact_label.declared_payload_length == exact_label_packet.bytes.size() - detail::kMplsLabelSize);
+
+        const auto exact_label_step = dissect_mpls_label(exact_label_root);
+        PFL_EXPECT(exact_label_step.layer == DissectionLayerKind::mpls);
+        PFL_EXPECT(exact_label_step.status == ParseStatus::complete);
+        PFL_EXPECT(exact_label_step.stop_reason == StopReason::none);
+        PFL_REQUIRE(exact_label_step.path_contribution.has_value());
+        PFL_EXPECT(*exact_label_step.path_contribution == LayerKey::mpls(16030U));
+        PFL_REQUIRE(exact_label_step.handoff.has_value());
+        PFL_REQUIRE(exact_label_step.handoff->child.has_value());
+        const ProtocolSelector expected_payload_selector {
+            .domain = SelectorDomain::mpls_payload,
+            .value = detail::kEtherTypeIpv4,
+        };
+        PFL_EXPECT(exact_label_step.handoff->selector == expected_payload_selector);
+        PFL_EXPECT(exact_label_step.bounds.full.declared.length() == exact_label_packet.bytes.size());
+        PFL_EXPECT(exact_label_step.bounds.full.captured.length() == exact_label_packet.bytes.size());
+        PFL_EXPECT(exact_label_step.bounds.header.declared.length() == detail::kMplsLabelSize);
+        PFL_EXPECT(exact_label_step.bounds.header.captured.length() == detail::kMplsLabelSize);
+        PFL_REQUIRE(exact_label_step.bounds.payload.has_value());
+        PFL_EXPECT(exact_label_step.bounds.payload->declared.length() == exact_label_packet.bytes.size() - detail::kMplsLabelSize);
+        PFL_EXPECT(exact_label_step.bounds.payload->captured.length() == exact_label_packet.bytes.size() - detail::kMplsLabelSize);
+        const auto* exact_label_facts = std::get_if<MplsFacts>(&exact_label_step.facts);
+        PFL_REQUIRE(exact_label_facts != nullptr);
+        PFL_EXPECT(exact_label_facts->label == 16030U);
+        PFL_EXPECT(exact_label_facts->bottom_of_stack);
+    }
+
+    {
+        const auto stacked_label_packet = make_raw_packet(
+            make_mpls_payload_with_labels(
+                {16030U, 16031U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 130, 1, 1),
+                    ipv4(10, 130, 1, 2),
+                    detail::kIpProtocolTcp,
+                    make_ipv4_tcp_segment(12345U, 443U, 2U, 0x18U)
+                )
+            )
+        );
+        const auto stacked_label_step = dissect_mpls_label(make_root_slice(stacked_label_packet));
+        PFL_EXPECT(stacked_label_step.status == ParseStatus::complete);
+        PFL_REQUIRE(stacked_label_step.handoff.has_value());
+        const ProtocolSelector expected_stack_selector {
+            .domain = SelectorDomain::mpls_stack,
+            .value = kMplsStackContinueSelectorValue,
+        };
+        PFL_EXPECT(stacked_label_step.handoff->selector == expected_stack_selector);
+    }
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {16030U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 131, 0, 1),
+                    ipv4(10, 131, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(5301U, 53U, 3U)
+                )
+            )
+        )),
+        "EthernetII -> MPLS(label=16030) -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(add_vlan_tags(
+            make_ethernet_frame_with_payload(
+                detail::kEtherTypeMplsUnicast,
+                make_mpls_payload_with_labels(
+                    {16040U},
+                    make_ipv4_payload_packet(
+                        ipv4(10, 131, 1, 1),
+                        ipv4(10, 131, 1, 2),
+                        detail::kIpProtocolTcp,
+                        make_ipv4_tcp_segment(5302U, 443U, 1U, 0x18U)
+                    )
+                )
+            ),
+            {{0x8100U, 410U}}
+        )),
+        "EthernetII -> VLAN(vid=410) -> MPLS(label=16040) -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(add_vlan_tags(
+            make_ethernet_frame_with_payload(
+                detail::kEtherTypeMplsUnicast,
+                make_mpls_payload_with_labels(
+                    {16050U},
+                    make_ipv6_payload_packet(
+                        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0, 0x11}),
+                        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0, 0x12}),
+                        detail::kIpProtocolUdp,
+                        make_ipv6_udp_segment(6300U, 6301U, 2U)
+                    )
+                )
+            ),
+            {{0x88A8U, 411U}, {0x8100U, 412U}}
+        )),
+        "EthernetII -> VLAN(vid=411) -> VLAN(vid=412) -> MPLS(label=16050) -> IPv6 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 132, 0, 1),
+            ipv4(10, 132, 0, 2),
+            make_gre_header(
+                detail::kEtherTypeMplsUnicast,
+                make_mpls_payload_with_labels(
+                    {16030U},
+                    make_ipv4_payload_packet(
+                        ipv4(10, 132, 1, 1),
+                        ipv4(10, 132, 1, 2),
+                        detail::kIpProtocolUdp,
+                        make_ipv4_udp_segment(6302U, 53U, 1U)
+                    )
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> MPLS(label=16030) -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {100U, 200U, 300U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 133, 0, 1),
+                    ipv4(10, 133, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7000U, 7001U, 1U)
+                )
+            )
+        )),
+        "EthernetII -> MPLS(label=100) -> MPLS(label=200) -> MPLS(label=300) -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    {
+        const auto deep_stack_packet = make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {100U, 200U, 300U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 133, 1, 1),
+                    ipv4(10, 133, 1, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7002U, 7003U, 1U)
+                )
+            )
+        ));
+        StepKindRecorder recorder {};
+        const auto result = engine.run(
+            registry,
+            make_link_type_selector(deep_stack_packet.data_link_type),
+            make_root_slice(deep_stack_packet),
+            DissectionConsumer {.on_step = record_step_kind, .context = &recorder}
+        );
+        const std::vector<DissectionLayerKind> expected_kinds {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::mpls,
+            DissectionLayerKind::mpls,
+            DissectionLayerKind::mpls,
+            DissectionLayerKind::ipv4,
+            DissectionLayerKind::udp,
+        };
+        PFL_EXPECT(result.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(recorder.kinds == expected_kinds);
+
+        StepKindRecorder limited_recorder {};
+        const auto limited_result = engine.run(
+            registry,
+            make_link_type_selector(deep_stack_packet.data_link_type),
+            make_root_slice(deep_stack_packet),
+            DissectionConsumer {.on_step = record_step_kind, .context = &limited_recorder},
+            4U
+        );
+        const std::vector<DissectionLayerKind> expected_limited_kinds {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::mpls,
+            DissectionLayerKind::mpls,
+            DissectionLayerKind::mpls,
+        };
+        PFL_EXPECT(limited_result.stop_reason == StopReason::depth_limit);
+        PFL_EXPECT(limited_recorder.kinds == expected_limited_kinds);
+    }
+
+    {
+        const auto unknown_payload_shadow = run_shadow(make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels({16060U}, {0x12U, 0x34U, 0x56U, 0x78U})
+        )), registry);
+        PFL_EXPECT(unknown_payload_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(unknown_payload_shadow.stop_reason == StopReason::unrecognized_payload);
+        PFL_EXPECT(format_shadow_path(unknown_payload_shadow) == "EthernetII -> MPLS(label=16060)");
+    }
+
+    {
+        const auto missing_payload_shadow = run_shadow(make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels({16061U}, {})
+        )), registry);
+        PFL_EXPECT(missing_payload_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(missing_payload_shadow.stop_reason == StopReason::no_payload);
+        PFL_EXPECT(format_shadow_path(missing_payload_shadow) == "EthernetII -> MPLS(label=16061)");
+    }
+
+    {
+        auto truncated_inner_ipv4 = make_ipv4_payload_packet(
+            ipv4(10, 134, 0, 1),
+            ipv4(10, 134, 0, 2),
+            detail::kIpProtocolUdp,
+            make_ipv4_udp_segment(7400U, 7401U, 1U)
+        );
+        truncated_inner_ipv4.resize(10U);
+        const auto truncated_inner_shadow = run_shadow(
+            make_raw_packet(
+                make_ethernet_frame_with_payload(
+                    detail::kEtherTypeMplsUnicast,
+                    make_mpls_payload_with_labels({16062U}, truncated_inner_ipv4)
+                ),
+                14U + 4U + 20U
+            ),
+            registry
+        );
+        PFL_EXPECT(truncated_inner_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(truncated_inner_shadow.stop_reason == StopReason::truncated);
+        PFL_EXPECT(format_shadow_path(truncated_inner_shadow) == "EthernetII -> MPLS(label=16062)");
+    }
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {16063U},
+                strip_ethernet_header(make_ethernet_ipv4_fragment_packet(
+                    ipv4(10, 134, 1, 1),
+                    ipv4(10, 134, 1, 2),
+                    detail::kIpProtocolUdp,
+                    0x2000U,
+                    {0xdeU, 0xadU, 0xbeU, 0xefU}
+                ))
+            )
+        )),
+        "EthernetII -> MPLS(label=16063) -> IPv4",
+        StopReason::needs_reassembly
+    );
+
+    {
+        const auto pseudowire_like_shadow = run_shadow(make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {16064U},
+                {0x00U, 0x00U, 0x12U, 0x34U, 0x02U, 0x00U, 0x00U, 0x00U, 0x31U, 0x01U}
+            )
+        )), registry);
+        PFL_EXPECT(pseudowire_like_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(pseudowire_like_shadow.stop_reason == StopReason::unrecognized_payload);
+        PFL_EXPECT(format_shadow_path(pseudowire_like_shadow) == "EthernetII -> MPLS(label=16064)");
+        PFL_EXPECT(format_shadow_path(pseudowire_like_shadow).find("MPLS PW") == std::string::npos);
+    }
+
+    {
+        const auto base_payload = make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {17000U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 135, 0, 1),
+                    ipv4(10, 135, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7500U, 7501U, 1U)
+                ),
+                0U,
+                64U
+            )
+        );
+        const auto tc_ttl_variant = make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {17000U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 135, 0, 1),
+                    ipv4(10, 135, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7500U, 7501U, 1U)
+                ),
+                5U,
+                1U
+            )
+        );
+        const auto different_label = make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {17001U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 135, 0, 1),
+                    ipv4(10, 135, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7500U, 7501U, 1U)
+                )
+            )
+        );
+        const auto different_order = make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {17002U, 17003U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 135, 1, 1),
+                    ipv4(10, 135, 1, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7502U, 7503U, 1U)
+                )
+            )
+        );
+        const auto reversed_order = make_ethernet_frame_with_payload(
+            detail::kEtherTypeMplsUnicast,
+            make_mpls_payload_with_labels(
+                {17003U, 17002U},
+                make_ipv4_payload_packet(
+                    ipv4(10, 135, 1, 1),
+                    ipv4(10, 135, 1, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7502U, 7503U, 1U)
+                )
+            )
+        );
+
+        const auto base_shadow = run_shadow(make_raw_packet(base_payload), registry);
+        const auto tc_ttl_shadow = run_shadow(make_raw_packet(tc_ttl_variant), registry);
+        const auto different_label_shadow = run_shadow(make_raw_packet(different_label), registry);
+        const auto different_order_shadow = run_shadow(make_raw_packet(different_order), registry);
+        const auto reversed_order_shadow = run_shadow(make_raw_packet(reversed_order), registry);
+
+        PFL_EXPECT(shadow_path(base_shadow) == shadow_path(tc_ttl_shadow));
+        PFL_EXPECT(format_shadow_path(base_shadow) == format_shadow_path(tc_ttl_shadow));
+        PFL_EXPECT(shadow_path(base_shadow) != shadow_path(different_label_shadow));
+        PFL_EXPECT(shadow_path(different_order_shadow) != shadow_path(reversed_order_shadow));
+        PFL_EXPECT(format_shadow_path(different_order_shadow) == "EthernetII -> MPLS(label=17002) -> MPLS(label=17003) -> IPv4 -> UDP");
+        PFL_EXPECT(format_shadow_path(reversed_order_shadow) == "EthernetII -> MPLS(label=17003) -> MPLS(label=17002) -> IPv4 -> UDP");
+    }
+}
+
 void expect_gre_shadow_parsers_bounds_and_traversal() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
@@ -3156,14 +3598,29 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
     }
 
     {
-        const auto deferred_mpls_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+        const auto gre_mpls_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
             ipv4(10, 92, 1, 1),
             ipv4(10, 92, 1, 2),
-            make_gre_header(detail::kEtherTypeMplsUnicast, {0x00, 0x00, 0x00, 0x00})
+            make_gre_header(
+                detail::kEtherTypeMplsUnicast,
+                make_mpls_payload_with_labels(
+                    {16030U},
+                    make_ipv4_payload_packet(
+                        ipv4(172, 21, 4, 1),
+                        ipv4(172, 21, 4, 2),
+                        detail::kIpProtocolUdp,
+                        make_ipv4_udp_segment(7600U, 7601U, 1U)
+                    )
+                )
+            )
         )), registry);
-        PFL_EXPECT(deferred_mpls_shadow.outcome == ImportDissectionOutcome::unrecognized);
-        PFL_EXPECT(deferred_mpls_shadow.stop_reason == StopReason::unknown_next_protocol);
-        PFL_EXPECT(format_shadow_path(deferred_mpls_shadow) == "EthernetII -> IPv4 -> GRE");
+        PFL_EXPECT(gre_mpls_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(gre_mpls_shadow.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(gre_mpls_shadow.terminal_protocol == ProtocolId::udp);
+        PFL_EXPECT(gre_mpls_shadow.has_ports);
+        PFL_EXPECT(gre_mpls_shadow.src_port == 7600U);
+        PFL_EXPECT(gre_mpls_shadow.dst_port == 7601U);
+        PFL_EXPECT(format_shadow_path(gre_mpls_shadow) == "EthernetII -> IPv4 -> GRE -> MPLS(label=16030) -> IPv4 -> UDP");
     }
 
     {
@@ -5422,6 +5879,7 @@ void run_common_direct_dissection_tests() {
     expect_ipv6_and_extension_canonical_parsers();
     expect_sctp_canonical_parsers_and_bounds();
     expect_ah_and_esp_shadow_parsers_bounds_and_traversal();
+    expect_mpls_shadow_parsers_bounds_and_traversal();
     expect_gre_shadow_parsers_bounds_and_traversal();
     expect_icmp_canonical_parsers_and_bounds();
     expect_igmp_canonical_parsers_and_bounds();

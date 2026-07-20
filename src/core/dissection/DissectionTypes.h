@@ -77,6 +77,8 @@ enum class SelectorDomain : std::uint8_t {
     ip_protocol,
     ipv6_next_header,
     gre_protocol_type,
+    mpls_stack,
+    mpls_payload,
     udp_destination_port_candidate,
     count,
 };
@@ -130,6 +132,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_destination_options,
     ipv6_fragment,
     gre,
+    mpls,
     ah,
     esp,
     icmp,
@@ -265,6 +268,15 @@ struct GreFacts {
     [[nodiscard]] friend constexpr bool operator==(const GreFacts&, const GreFacts&) = default;
 };
 
+struct MplsFacts {
+    std::uint32_t label {0U};
+    std::uint8_t traffic_class {0U};
+    bool bottom_of_stack {false};
+    std::uint8_t ttl {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const MplsFacts&, const MplsFacts&) = default;
+};
+
 struct AhFacts {
     std::uint8_t next_header {0U};
     std::uint8_t payload_length_field {0U};
@@ -346,6 +358,7 @@ using LayerFacts = std::variant<
     Ipv6ExtensionFacts,
     Ipv6FragmentFacts,
     GreFacts,
+    MplsFacts,
     AhFacts,
     EspFacts,
     IcmpFacts,

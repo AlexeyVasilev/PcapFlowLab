@@ -132,6 +132,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 }
             } else if constexpr (std::is_same_v<Facts, GreFacts>) {
                 return;
+            } else if constexpr (std::is_same_v<Facts, MplsFacts>) {
+                return;
             } else if constexpr (std::is_same_v<Facts, AhFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, EspFacts>) {
@@ -258,6 +260,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kEtherTypeLegacyVlan,
             },
             .dissector = dissect_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeMplsUnicast,
+            },
+            .dissector = dissect_mpls_label,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
@@ -440,6 +449,34 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kGreProtocolTypeTransparentEthernetBridging,
             },
             .dissector = dissect_ethernet,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gre_protocol_type,
+                .value = detail::kEtherTypeMplsUnicast,
+            },
+            .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_stack,
+                .value = kMplsStackContinueSelectorValue,
+            },
+            .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_payload,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_payload,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
         },
     };
 

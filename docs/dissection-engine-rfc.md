@@ -602,8 +602,21 @@ GRE and EoIP are a good stress case and should shape the engine design.
 - In the current shadow-only stage, GRE v0 is traversed as a normal registered layer under `SelectorDomain::ip_protocol` or `SelectorDomain::ipv6_next_header`, then hands off through `SelectorDomain::gre_protocol_type`.
 - Direct GRE-carried IPv4 or IPv6 and GRE TEB reuse the existing IPv4, IPv6, and Ethernet dissectors rather than embedding child parsing inside the GRE module.
 - GRE optional checksum, key, and sequence fields are parsed in wire order for facts and bounds, but only GRE key contributes to `ProtocolPath` identity.
-- GRE-carried MPLS and MikroTik EoIP remain deferred in the shadow engine for this pass even though the production decoder already has protocol-specific handling for those payload shapes.
+- GRE-carried MPLS may be traversed in shadow mode through the same explicit MPLS module used for direct EtherType MPLS entry, one label shim per engine step.
+- MikroTik EoIP remains deferred in the shadow engine for this pass even though the production decoder already has protocol-specific handling for that payload shape.
 - Unsupported GRE versions, routing-present variants, and malformed optional-field bounds must stop conservatively without contributing a physical path layer.
+
+## MPLS Nuance
+
+- Direct MPLS entry should remain registry-driven:
+  - Ethernet / VLAN / QinQ `EtherType 0x8847`;
+  - GRE protocol type `0x8847`.
+- Shadow MPLS traversal should parse exactly one label shim per engine step rather than looping over a whole label stack inside one dissector.
+- Bottom-of-stack payload inference in this stage remains intentionally narrow:
+  - IPv4 by first nibble `4`;
+  - IPv6 by first nibble `6`.
+- MPLS pseudowire / control-word traversal remains deferred in the shadow engine for this pass, even though production helpers already support richer MPLS continuation.
+- Successfully parsed MPLS labels contribute `LayerKey::mpls(label)` in order; TTL and traffic-class bits remain non-identity metadata.
 
 This is exactly the kind of branching that is too brittle in a centralized traversal and benefits from protocol-local modules with explicit selector transitions.
 
