@@ -1,46 +1,55 @@
 Synthetic PPPoE / PPP parsing fixtures for regression tests.
 
-This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
-- basic PPPoE Session frames carrying IPv4 / IPv6 transport traffic;
-- PPPoE Session control protocols such as LCP, IPCP, and IPv6CP;
-- PPPoE Discovery packets such as PADI / PADO / PADR / PADS / PADT;
-- VLAN and QinQ shims before PPPoE;
-- unknown PPP protocol payloads inside PPPoE Session frames;
-- malformed or truncated PPPoE / PPP envelopes;
-- inconsistent PPPoE length-field cases.
+This directory defines the migration contract for the current production
+`PacketDecoder` and related production-selected-packet paths.
 
-The first parser step now supports:
-- PPPoE Session (`0x8864`) frames with `code = 0x00`;
-- PPP IPv4 (`0x0021`) continuation into normal IPv4 flow parsing;
-- PPP IPv6 (`0x0057`) continuation into normal IPv6 flow parsing;
-- VLAN / QinQ before supported PPPoE Session packets;
-- PPPoE Discovery (`0x8863`) header parsing with bounded tag presentation for common Discovery tags;
-- basic PPP control presentation inside PPPoE Session for LCP / IPCP / IPv6CP control headers and bounded option lists.
+It does not define any shadow dissection behavior.
 
-This directory still includes future and conservative fixtures for:
-- unknown PPP protocols inside Session frames;
-- malformed or truncated PPPoE / PPP envelopes;
-- inconsistent PPPoE length-field cases.
+## Exact production contract
+
+Confirmed from production code and existing tests:
+
+- PPPoE Discovery EtherType `0x8863` is recognized only as a diagnostic no-flow packet.
+- PPPoE Discovery does not contribute a production `ProtocolPath`.
+- PPPoE Session continuation only exists for:
+  - version `1`
+  - type `1`
+  - code `0x00`
+- PPP framing is read as a fixed 2-byte big-endian PPP Protocol field.
+- PPP Protocol Field Compression and ACFC are not supported.
+- Supported PPP Session payload protocols are:
+  - `0x0021` -> bounded IPv4 continuation -> normal IPv4/TCP or IPv4/UDP flow when the inner tuple is fully available
+  - `0x0057` -> bounded IPv6 continuation -> normal IPv6/TCP or IPv6/UDP flow when the inner tuple is fully available
+- PPP control protocols remain no-flow packets:
+  - `0xc021` -> LCP
+  - `0x8021` -> IPCP
+  - `0x8057` -> IPv6CP
+- Unknown PPP protocols remain no-flow packets with explicit reason text.
+- Bounded PPPoE payload semantics use `min(declared PPPoE payload length, captured PPPoE payload bytes)`.
+- Bytes beyond the declared PPPoE payload must not be used to complete PPP, IP, or transport parsing.
+- Session ID `0x0000` is accepted by current production support.
+- Session ID does not participate in current production `ProtocolPath` or flow identity.
+- Current production PPPoE/PPP path contribution is:
+  - `PPPoE -> PPP`
+  - with no session-id/code/version/type identifier in the path layer key
+- Supported link entry shims before PPPoE are:
+  - direct Ethernet II
+  - single `0x8100` VLAN
+  - QinQ-style `0x88A8` outer + `0x8100` inner VLAN
+  - legacy single `0x9100` VLAN-like tag
+- No non-Ethernet PPPoE entry path is currently covered by production.
 
 ## Local generation
 
-Run from the repository root after installing Scapy locally:
+There is no committed PPPoE fixture generator in the repository.
 
-```bash
-python tests/data/parsing/pppoe/generate_pppoe_pcaps.py --output-dir tests/data/parsing/pppoe
-```
+When new PPPoE fixtures are required:
 
-To overwrite previously generated fixtures:
+- use a temporary local generator under `tmp/`;
+- generate only the missing deterministic `.pcap` files;
+- delete the temporary generator before finishing.
 
-```bash
-python tests/data/parsing/pppoe/generate_pppoe_pcaps.py --output-dir tests/data/parsing/pppoe --force
-```
-
-Notes:
-- The generator is committed and the generated fixtures are exercised by the PPPoE regression tests.
-- Review generated `.pcap` files locally before committing them.
-- The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port values.
-- IPv4 / IPv6 / TCP / UDP payloads come from Scapy, while PPPoE / PPP / discovery / malformed envelopes are assembled from explicit bytes to stay stable across Scapy versions.
+The committed `.pcap` files in this directory are the source of truth.
 
 ## Shared constants
 
@@ -50,182 +59,204 @@ Notes:
 - Server IPv4: `198.51.100.30`
 - Client IPv6: `2001:db8:30::10`
 - Server IPv6: `2001:db8:30::20`
-- PPPoE session id: `0x1234`
+- Default PPPoE session id: `0x1234`
 - Client TCP port: `49160`
 - Server TCP port: `443`
 - Client UDP port: `53540`
 - Server UDP port: `443`
 
-## Protocol values used
+## Fixture inventory
 
-- PPPoE Discovery EtherType: `0x8863`
-- PPPoE Session EtherType: `0x8864`
-- PPP IPv4: `0x0021`
-- PPP IPv6: `0x0057`
-- PPP LCP: `0xc021`
-- PPP IPCP: `0x8021`
-- PPP IPv6CP: `0x8057`
-
-PPPoE codes used:
-- PADI: `0x09`
-- PADO: `0x07`
-- PADR: `0x19`
-- PADS: `0x65`
-- PADT: `0xa7`
-- Session data: `0x00`
-
-## Current support assumptions
-
-Current committed PPPoE support is intentionally bounded:
-- PPPoE Session IPv4 / IPv6 data packets are expected to become normal flows when the PPPoE Session header and PPP protocol field are present, with inner parsing bounded by `min(declared PPPoE payload length, captured PPPoE payload bytes)`;
-- PPP LCP / IPCP / IPv6CP session frames should remain safe and inspectable, but not become normal IP flows;
-- PPPoE Discovery packets are still no-flow packets, but selected-packet details should now preserve PPPoE Discovery header fields and common TLV tags when safely present;
-- malformed/truncated/length-mismatch cases are still no-crash robustness fixtures first, but tuple extraction may still occur when enough bounded inner header bytes exist.
-
----
-
-### 01_pppoe_session_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPv4 / IPv4 / TCP / Raw
-- Current expected behavior: normal IPv4/TCP flow through PPPoE Session.
-
-### 02_pppoe_session_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPv4 / IPv4 / UDP / Raw
-- Current expected behavior: normal IPv4/UDP flow through PPPoE Session.
-
-### 03_pppoe_session_ipv6_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPv6 / IPv6 / TCP / Raw
-- Current expected behavior: normal IPv6/TCP flow through PPPoE Session.
-
-### 04_pppoe_session_ipv6_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPv6 / IPv6 / UDP / Raw
-- Current expected behavior: normal IPv6/UDP flow through PPPoE Session.
-
-### 05_pppoe_session_lcp_config_request.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP LCP / Configure-Request
-- Current expected behavior: safe no-flow LCP control inspection with PPP control header fields and bounded option presentation.
-
-### 06_pppoe_session_ipcp_config_request.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPCP / Configure-Request
-- Current expected behavior: safe no-flow IPCP control inspection with PPP control header fields and bounded option presentation.
-
-### 07_pppoe_session_ipv6cp_config_request.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPv6CP / Configure-Request
-- Current expected behavior: safe no-flow IPv6CP control inspection with PPP control header fields and bounded option presentation.
-
-### 08_pppoe_discovery_padi.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Discovery PADI / tags
-- Current expected behavior: no-flow Discovery packet with basic PPPoE Discovery header presentation; should not become an IP flow.
-
-### 09_pppoe_discovery_pado.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Discovery PADO / tags
-- Tags include: `Service-Name`, `AC-Name`, `AC-Cookie`
-- Current expected behavior: safe no-flow Discovery inspection with bounded tag presentation.
-
-### 10_pppoe_discovery_padr.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Discovery PADR / tags
-- Current expected behavior: safe no-flow Discovery request inspection with bounded tag presentation.
-
-### 11_pppoe_discovery_pads.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Discovery PADS / tags
-- Session id: `0x1234`
-- Current expected behavior: safe no-flow Discovery session-confirmation inspection with bounded tag presentation.
-
-### 12_pppoe_discovery_padt.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Discovery PADT
-- Session id: `0x1234`
-- Current expected behavior: safe no-flow Discovery termination-packet inspection with bounded PPPoE header presentation.
-
-### 13_vlan_pppoe_session_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / VLAN `0x8100` / PPPoE Session / PPP IPv4 / IPv4 / TCP
-- Current expected behavior: VLAN should not block PPPoE Session or inner IPv4/TCP parsing.
-
-### 14_qinq_pppoe_session_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / outer `0x88A8` / inner `0x8100` / PPPoE Session / PPP IPv4 / IPv4 / UDP
-- Current expected behavior: QinQ should not block PPPoE Session or inner IPv4/UDP parsing.
-
-### 15_pppoe_session_unknown_ppp_protocol.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / unknown PPP protocol / Raw
-- Current expected behavior: remains no-flow with `Unknown PPP protocol`; selected-packet details should preserve PPPoE Session, PPP protocol value, and bounded unknown-payload Data presentation without fabricating IPv4/IPv6 parsing.
-
-### 16_pppoe_truncated_header.pcap
-
-- Packets: 1
-- Layer chain: Ethernet indicates PPPoE Session EtherType, but PPPoE header is incomplete
-- Current expected behavior: malformed/truncated no-crash robustness only.
-
-### 17_pppoe_truncated_ppp_protocol.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session header present, but PPP protocol field is incomplete
-- Current expected behavior: safe partial PPPoE handling only.
-
-### 18_pppoe_truncated_inner_ipv4.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session / PPP IPv4 / partial IPv4 header
-- Current expected behavior: safe no-flow handling after PPPoE shim with partial IPv4 presentation when header bytes are available.
-
-### 19_pppoe_bad_length_short_payload.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session with length field larger than captured payload
-- Current expected behavior: PPPoE warning that declared payload length exceeds captured bytes; inner parsing stays bounded to captured bytes and may still form a normal IPv4/UDP flow if the tuple is available.
-
-### 20_pppoe_bad_length_extra_payload.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / PPPoE Session with length field smaller than captured payload
-- Current expected behavior: PPPoE warning that trailing captured bytes exceed the declared PPPoE payload; inner parsing is bounded to the declared payload and may still form a normal IPv4/UDP flow if the tuple is available inside that boundary.
-
-## Expected generated file list
+### Supported Session data flows
 
 - `01_pppoe_session_ipv4_tcp.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=51) -> PPP 0x0021 -> IPv4 -> TCP`
+  - Outcome: one recognized IPv4/TCP flow
+  - ProtocolId: `tcp`
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> TCP`
+
 - `02_pppoe_session_ipv4_udp.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: one recognized IPv4/UDP flow
+  - ProtocolId: `udp`
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+
 - `03_pppoe_session_ipv6_tcp.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=71) -> PPP 0x0057 -> IPv6 -> TCP`
+  - Outcome: one recognized IPv6/TCP flow
+  - ProtocolId: `tcp`
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv6 -> TCP`
+
 - `04_pppoe_session_ipv6_udp.pcap`
-- `05_pppoe_session_lcp_config_request.pcap`
-- `06_pppoe_session_ipcp_config_request.pcap`
-- `07_pppoe_session_ipv6cp_config_request.pcap`
-- `08_pppoe_discovery_padi.pcap`
-- `09_pppoe_discovery_pado.pcap`
-- `10_pppoe_discovery_padr.pcap`
-- `11_pppoe_discovery_pads.pcap`
-- `12_pppoe_discovery_padt.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=59) -> PPP 0x0057 -> IPv6 -> UDP`
+  - Outcome: one recognized IPv6/UDP flow
+  - ProtocolId: `udp`
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv6 -> UDP`
+
 - `13_vlan_pppoe_session_ipv4_tcp.pcap`
+  - Wire: `EthernetII -> VLAN(tpid=0x8100,vid=130) -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=51) -> PPP 0x0021 -> IPv4 -> TCP`
+  - Outcome: one recognized IPv4/TCP flow through single VLAN
+  - ProtocolPath: `EthernetII -> VLAN(vid=130) -> PPPoE -> PPP -> IPv4 -> TCP`
+
 - `14_qinq_pppoe_session_ipv4_udp.pcap`
+  - Wire: `EthernetII -> VLAN(tpid=0x88A8,vid=230) -> VLAN(tpid=0x8100,vid=231) -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: one recognized IPv4/UDP flow through QinQ
+  - ProtocolPath: `EthernetII -> VLAN(vid=230) -> VLAN(vid=231) -> PPPoE -> PPP -> IPv4 -> UDP`
+
+- `21_pppoe_session_same_tuple_same_session_id.pcap`
+  - Wire: two identical `EthernetII -> PPPoE Session(session=0x3333,decl=39) -> PPP 0x0021 -> IPv4 -> UDP` packets
+  - Outcome: one recognized UDP flow with two packets
+  - Identity purpose: proves same tuple + same Session ID stays in one flow
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+
+- `22_pppoe_session_same_tuple_different_session_id.pcap`
+  - Wire: two packets with the same inner IPv4/UDP tuple, Session IDs `0x3333` and `0x4444`
+  - Outcome: one recognized UDP flow with two packets
+  - Identity purpose: proves Session ID does not split production flow identity
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+
+- `23_pppoe_session_zero_session_id_ipv4_udp.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x0000,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: one recognized IPv4/UDP flow
+  - Identity purpose: proves Session ID zero is accepted
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+
+- `24_qinq_pppoe_session_ipv6_tcp.pcap`
+  - Wire: `EthernetII -> VLAN(tpid=0x88A8,vid=232) -> VLAN(tpid=0x8100,vid=233) -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=71) -> PPP 0x0057 -> IPv6 -> TCP`
+  - Outcome: one recognized IPv6/TCP flow through QinQ
+  - ProtocolPath: `EthernetII -> VLAN(vid=232) -> VLAN(vid=233) -> PPPoE -> PPP -> IPv6 -> TCP`
+
+- `25_legacy_9100_vlan_pppoe_session_ipv4_udp.pcap`
+  - Wire: `EthernetII -> VLAN(tpid=0x9100,vid=330) -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: one recognized IPv4/UDP flow through legacy `0x9100`
+  - ProtocolPath: `EthernetII -> VLAN(vid=330) -> PPPoE -> PPP -> IPv4 -> UDP`
+
+### Discovery and PPP control no-flow fixtures
+
+- `05_pppoe_session_lcp_config_request.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=16) -> PPP 0xc021`
+  - Outcome: no flow, reason `PPP LCP control packet`
+  - ProtocolPath: none
+
+- `06_pppoe_session_ipcp_config_request.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=12) -> PPP 0x8021`
+  - Outcome: no flow, reason `PPP IPCP control packet`
+  - ProtocolPath: none
+
+- `07_pppoe_session_ipv6cp_config_request.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=16) -> PPP 0x8057`
+  - Outcome: no flow, reason `PPP IPv6CP control packet`
+  - ProtocolPath: none
+
+- `08_pppoe_discovery_padi.pcap`
+  - Wire: `EthernetII -> PPPoE Discovery(v=1,type=1,code=0x09,session=0x0000,decl=13)`
+  - Outcome: no flow, reason `PPPoE Discovery PADI`
+  - ProtocolPath: none
+
+- `09_pppoe_discovery_pado.pcap`
+  - Wire: `EthernetII -> PPPoE Discovery(v=1,type=1,code=0x07,session=0x0000,decl=30)`
+  - Outcome: no flow, reason `PPPoE Discovery PADO`
+  - ProtocolPath: none
+
+- `10_pppoe_discovery_padr.pcap`
+  - Wire: `EthernetII -> PPPoE Discovery(v=1,type=1,code=0x19,session=0x0000,decl=29)`
+  - Outcome: no flow, reason `PPPoE Discovery PADR`
+  - ProtocolPath: none
+
+- `11_pppoe_discovery_pads.pcap`
+  - Wire: `EthernetII -> PPPoE Discovery(v=1,type=1,code=0x65,session=0x1234,decl=22)`
+  - Outcome: no flow, reason `PPPoE Discovery PADS`
+  - ProtocolPath: none
+
+- `12_pppoe_discovery_padt.pcap`
+  - Wire: `EthernetII -> PPPoE Discovery(v=1,type=1,code=0xa7,session=0x1234,decl=0)`
+  - Outcome: no flow, reason `PPPoE Discovery PADT`
+  - ProtocolPath: none
+
 - `15_pppoe_session_unknown_ppp_protocol.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=8) -> PPP 0x1235`
+  - Outcome: no flow, reason `Unknown PPP protocol`
+  - ProtocolPath: none
+
+### Declared-boundary, truncation, and unsupported-variant fixtures
+
 - `16_pppoe_truncated_header.pcap`
+  - Wire: Ethernet advertises PPPoE Session EtherType but fewer than 6 PPPoE header bytes are captured
+  - Outcome: no flow, reason `PPPoE Session header truncated`
+  - Classification: structural truncation
+  - ProtocolPath: none
+
 - `17_pppoe_truncated_ppp_protocol.pcap`
+  - Wire: complete PPPoE Session header with declared payload `2`, but only one PPP Protocol byte is captured
+  - Outcome: no flow, reason `PPP protocol field truncated`
+  - Classification: structural truncation / declared payload exceeds capture
+  - ProtocolPath: none
+
 - `18_pppoe_truncated_inner_ipv4.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=12) -> PPP 0x0021 -> partial IPv4 header`
+  - Outcome: no flow, reason `Unsupported or malformed packet`
+  - Classification: supported PPP protocol with truncated inner IPv4
+  - ProtocolPath: none
+
 - `19_pppoe_bad_length_short_payload.pcap`
+  - Wire: valid `PPPoE Session -> PPP 0x0021 -> IPv4 -> UDP`, but declared PPPoE payload `51` exceeds captured PPPoE payload `39`
+  - Outcome: one recognized IPv4/UDP flow with PPPoE length warning
+  - Boundary purpose: proves bounded continuation uses captured bytes only
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+
 - `20_pppoe_bad_length_extra_payload.pcap`
+  - Wire: valid `PPPoE Session -> PPP 0x0021 -> IPv4 -> UDP`, but declared PPPoE payload `33` is shorter than captured PPPoE payload `43`
+  - Outcome: one recognized IPv4/UDP flow with trailing-bytes-ignored warning
+  - Boundary purpose: proves bytes after the declared PPPoE payload do not extend inner parsing
+  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+
+- `26_pppoe_session_declared_too_short_for_ppp_protocol_with_valid_trailer.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=1)` followed by captured bytes that look like `PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: no flow, reason `PPP protocol field truncated`
+  - Boundary purpose: proves production does not read PPP bytes beyond the declared PPPoE boundary
+  - ProtocolPath: none
+
+- `27_pppoe_session_capture_truncated_ipv4_udp_caplen_lt_origlen.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=39) -> PPP 0x0021 -> partial IPv4/UDP packet`
+  - Capture semantics: PCAP `caplen < orig_len`
+  - Outcome: no flow, reason `Unsupported or malformed packet`
+  - Boundary purpose: genuine capture truncation fixture
+  - ProtocolPath: none
+
+- `28_pppoe_session_unsupported_version_with_ipv4_trailer.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=2,type=1,code=0x00,session=0x1234,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: no flow, reason `Unsupported or malformed packet`
+  - Variant purpose: unsupported PPPoE version
+  - ProtocolPath: none
+
+- `29_pppoe_session_unsupported_type_with_ipv4_trailer.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=2,code=0x00,session=0x1234,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: no flow, reason `Unsupported or malformed packet`
+  - Variant purpose: unsupported PPPoE type
+  - ProtocolPath: none
+
+- `30_pppoe_session_unsupported_code_with_ipv4_trailer.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x01,session=0x1234,decl=39) -> PPP 0x0021 -> IPv4 -> UDP`
+  - Outcome: no flow, reason `Unsupported or malformed packet`
+  - Variant purpose: unsupported PPPoE Session code
+  - ProtocolPath: none
+
+- `31_pppoe_session_zero_length_payload.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=0)` with no PPP payload bytes
+  - Outcome: no flow, reason `PPP protocol field truncated`
+  - Boundary purpose: zero declared payload
+  - ProtocolPath: none
+
+- `32_pppoe_session_truncated_inner_ipv6.pcap`
+  - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=14) -> PPP 0x0057 -> 12 captured IPv6 header bytes`
+  - Outcome: no flow, reason `Unsupported or malformed packet`
+  - Classification: supported PPP protocol with truncated inner IPv6
+  - ProtocolPath: none
+
+- `33_pppoe_same_session_id_supported_and_unsupported_code.pcap`
+  - Wire: two packets with Session ID `0x5555`
+    - packet 1: supported `code=0x00`, `PPP 0x0021 -> IPv4 -> UDP`
+    - packet 2: unsupported `code=0x01`, same inner-looking PPP/IPv4/UDP bytes
+  - Outcome: one recognized IPv4/UDP flow plus one unrecognized packet
+  - Identity purpose: proves unsupported code does not create an additional PPPoE flow/path
+  - ProtocolPath: recognized packet uses `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`; unsupported packet contributes no path
