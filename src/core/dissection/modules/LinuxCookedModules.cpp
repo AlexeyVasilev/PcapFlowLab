@@ -51,7 +51,7 @@ DissectionStep make_linux_cooked_step(
     return DissectionStep {
         .layer = layer_kind,
         .path_contribution = layer_key,
-        .path_contribution_policy = PathContributionPolicy::terminal_success,
+        .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
         .bounds = direct::make_layer_bounds(
             slice,
             direct::slice_declared_length(slice),

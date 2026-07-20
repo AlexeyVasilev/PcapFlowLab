@@ -18,15 +18,19 @@ struct ProtocolHandoff {
     [[nodiscard]] friend bool operator==(const ProtocolHandoff&, const ProtocolHandoff&) = default;
 };
 
-enum class PathContributionPolicy : std::uint8_t {
+enum class PathCommitPolicy : std::uint8_t {
     immediate = 0,
-    terminal_success,
+    recognized_flow,
+    recognized_flow_or_recognized_non_flow,
 };
 
 struct DissectionStep {
     DissectionLayerKind layer {DissectionLayerKind::unknown};
     std::optional<LayerKey> path_contribution {};
-    PathContributionPolicy path_contribution_policy {PathContributionPolicy::immediate};
+    PathCommitPolicy path_commit_policy {PathCommitPolicy::immediate};
+    std::optional<PathCommitPolicy> descendant_path_commit_policy {};
+    bool path_contribution_deferrable_by_child {false};
+    bool defer_last_deferrable_path_contribution {false};
     LayerBounds bounds {};
     std::optional<ProtocolHandoff> handoff {};
     LayerFacts facts {};

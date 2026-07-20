@@ -70,6 +70,7 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
     DissectionStep step {
         .layer = parsed.is_ieee_802_3 ? DissectionLayerKind::ieee8023 : DissectionLayerKind::ethernet_ii,
         .path_contribution = layer,
+        .path_contribution_deferrable_by_child = parsed.is_ieee_802_3,
         .bounds = direct::make_layer_bounds(
             slice,
             direct::slice_declared_length(slice),

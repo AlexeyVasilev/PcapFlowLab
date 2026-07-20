@@ -168,7 +168,8 @@ DissectionStep dissect_pppoe_session(const PacketSlice& slice) {
     return DissectionStep {
         .layer = DissectionLayerKind::pppoe,
         .path_contribution = LayerKey::pppoe(),
-        .path_contribution_policy = PathContributionPolicy::terminal_success,
+        .path_commit_policy = PathCommitPolicy::recognized_flow,
+        .descendant_path_commit_policy = PathCommitPolicy::recognized_flow,
         .bounds = make_pppoe_bounds(slice, parsed),
         .handoff = *handoff,
         .facts = make_pppoe_facts(parsed),
@@ -219,7 +220,8 @@ DissectionStep dissect_ppp(const PacketSlice& slice) {
     return DissectionStep {
         .layer = DissectionLayerKind::ppp,
         .path_contribution = LayerKey::ppp(),
-        .path_contribution_policy = PathContributionPolicy::terminal_success,
+        .path_commit_policy = PathCommitPolicy::recognized_flow,
+        .descendant_path_commit_policy = PathCommitPolicy::recognized_flow,
         .bounds = make_ppp_bounds(slice, parsed.header_length),
         .handoff = *handoff,
         .facts = facts,

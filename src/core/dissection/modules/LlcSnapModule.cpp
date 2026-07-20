@@ -155,7 +155,9 @@ DissectionStep dissect_llc_snap(const PacketSlice& slice) {
     return DissectionStep {
         .layer = DissectionLayerKind::llc_snap,
         .path_contribution = LayerKey::llc_snap(),
-        .path_contribution_policy = PathContributionPolicy::terminal_success,
+        .path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+        .descendant_path_commit_policy = PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+        .defer_last_deferrable_path_contribution = true,
         .bounds = make_llc_snap_bounds(slice, declared_length, detail::kLlcSnapHeaderSize, true),
         .handoff = *handoff,
         .facts = facts,

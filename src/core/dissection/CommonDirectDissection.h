@@ -83,13 +83,14 @@ private:
 
     struct PendingPathContribution {
         LayerKey layer {};
-        bool deferred_scope {false};
+        PathCommitPolicy commit_policy {PathCommitPolicy::immediate};
+        bool deferrable_by_child {false};
         TerminalDisposition terminal_disposition {TerminalDisposition::none};
     };
 
     std::array<PendingPathContribution, kMaxProtocolPathLayers> pending_path_ {};
     std::size_t pending_path_size_ {0U};
-    bool deferred_path_scope_active_ {false};
+    std::optional<PathCommitPolicy> active_descendant_path_commit_policy_ {};
     ImportDissectionFacts facts_ {};
     TerminalDisposition terminal_disposition_ {TerminalDisposition::none};
     std::optional<std::uint32_t> igmp_effective_destination_v4_ {};

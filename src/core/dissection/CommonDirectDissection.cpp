@@ -61,12 +61,21 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
     ++facts_.step_count;
     facts_.final_status = step.status;
 
-    if (step.path_contribution_policy == PathContributionPolicy::terminal_success) {
-        deferred_path_scope_active_ = true;
-        if (pending_path_size_ == 1U &&
-            !pending_path_[0].deferred_scope &&
-            pending_path_[0].layer == LayerKey::ieee8023()) {
-            pending_path_[0].deferred_scope = true;
+    if (step.descendant_path_commit_policy.has_value()) {
+        active_descendant_path_commit_policy_ = step.descendant_path_commit_policy;
+    }
+
+    if (step.defer_last_deferrable_path_contribution &&
+        step.path_commit_policy != PathCommitPolicy::immediate) {
+        for (std::size_t index = pending_path_size_; index > 0U; --index) {
+            auto& pending = pending_path_[index - 1U];
+            if (!pending.deferrable_by_child) {
+                continue;
+            }
+
+            pending.commit_policy = step.path_commit_policy;
+            pending.deferrable_by_child = false;
+            break;
         }
     }
 
@@ -74,9 +83,15 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
         if (pending_path_size_ >= pending_path_.size()) {
             facts_.path_overflowed = true;
         } else {
+            auto effective_policy = step.path_commit_policy;
+            if (effective_policy == PathCommitPolicy::immediate &&
+                active_descendant_path_commit_policy_.has_value()) {
+                effective_policy = *active_descendant_path_commit_policy_;
+            }
             pending_path_[pending_path_size_++] = PendingPathContribution {
                 .layer = *step.path_contribution,
-                .deferred_scope = deferred_path_scope_active_,
+                .commit_policy = effective_policy,
+                .deferrable_by_child = step.path_contribution_deferrable_by_child,
                 .terminal_disposition = step.terminal_disposition,
             };
         }
@@ -223,11 +238,22 @@ void ImportDissectionCollector::finish(const DissectionEngineResult& result) noe
     facts_.physical_path.clear();
     for (std::size_t index = 0U; index < pending_path_size_; ++index) {
         const auto& pending = pending_path_[index];
-        if (pending.deferred_scope) {
-            if (!recognized_flow &&
-                !(recognized_non_flow && pending.terminal_disposition == TerminalDisposition::none)) {
+        switch (pending.commit_policy) {
+        case PathCommitPolicy::immediate:
+            break;
+        case PathCommitPolicy::recognized_flow:
+            if (!recognized_flow) {
                 continue;
             }
+            break;
+        case PathCommitPolicy::recognized_flow_or_recognized_non_flow:
+            if (recognized_flow) {
+                break;
+            }
+            if (!recognized_non_flow || pending.terminal_disposition != TerminalDisposition::none) {
+                continue;
+            }
+            break;
         }
         if (!facts_.path_overflowed && !facts_.physical_path.push(pending.layer)) {
             facts_.path_overflowed = true;
