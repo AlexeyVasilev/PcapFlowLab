@@ -129,6 +129,8 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_routing,
     ipv6_destination_options,
     ipv6_fragment,
+    ah,
+    esp,
     icmp,
     icmpv6,
     igmp,
@@ -247,6 +249,25 @@ struct Ipv6FragmentFacts {
     [[nodiscard]] friend constexpr bool operator==(const Ipv6FragmentFacts&, const Ipv6FragmentFacts&) = default;
 };
 
+struct AhFacts {
+    std::uint8_t next_header {0U};
+    std::uint8_t payload_length_field {0U};
+    std::uint16_t reserved {0U};
+    std::uint32_t spi {0U};
+    std::uint32_t sequence_number {0U};
+    std::uint16_t header_length {0U};
+    std::uint16_t icv_length {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const AhFacts&, const AhFacts&) = default;
+};
+
+struct EspFacts {
+    std::uint32_t spi {0U};
+    std::uint32_t sequence_number {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const EspFacts&, const EspFacts&) = default;
+};
+
 struct IcmpFacts {
     std::uint8_t type {0U};
     std::uint8_t code {0U};
@@ -308,6 +329,8 @@ using LayerFacts = std::variant<
     Ipv6Facts,
     Ipv6ExtensionFacts,
     Ipv6FragmentFacts,
+    AhFacts,
+    EspFacts,
     IcmpFacts,
     Icmpv6Facts,
     IgmpFacts,

@@ -130,6 +130,12 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 if (facts_.terminal_protocol == ProtocolId::unknown) {
                     facts_.terminal_protocol = protocol_id_from_ipv6_next_header(layer_facts.next_header);
                 }
+            } else if constexpr (std::is_same_v<Facts, AhFacts>) {
+                return;
+            } else if constexpr (std::is_same_v<Facts, EspFacts>) {
+                facts_.terminal_protocol = ProtocolId::esp;
+                facts_.has_transport_payload_length = step.bounds.payload.has_value();
+                facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
             } else if constexpr (std::is_same_v<Facts, IcmpFacts>) {
                 facts_.terminal_protocol = ProtocolId::icmp;
             } else if constexpr (std::is_same_v<Facts, Icmpv6Facts>) {
@@ -289,6 +295,20 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolEsp,
+            },
+            .dissector = dissect_esp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolAh,
+            },
+            .dissector = dissect_ipv4_ah,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
                 .value = detail::kIpProtocolIpv4Encapsulation,
             },
             .dissector = dissect_ipv4,
@@ -355,6 +375,20 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kIpProtocolSctp,
             },
             .dissector = dissect_sctp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolEsp,
+            },
+            .dissector = dissect_esp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolAh,
+            },
+            .dissector = dissect_ipv6_ah,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

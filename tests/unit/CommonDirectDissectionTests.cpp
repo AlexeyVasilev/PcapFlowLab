@@ -100,6 +100,12 @@ ProtocolPath shadow_path(const ImportDissectionFacts& facts) {
     return facts.physical_path.to_path();
 }
 
+bool protocol_uses_ports(const ProtocolId protocol) {
+    return protocol == ProtocolId::tcp ||
+           protocol == ProtocolId::udp ||
+           protocol == ProtocolId::sctp;
+}
+
 LegacyDirectFacts decode_legacy_direct(const RawPcapPacket& packet) {
     PacketDecoder decoder {};
     const auto decoded = decoder.decode(packet);
@@ -119,7 +125,7 @@ LegacyDirectFacts decode_legacy_direct(const RawPcapPacket& packet) {
         facts.src_addr_v4 = decoded.ipv4->flow_key.src_addr;
         facts.dst_addr_v4 = decoded.ipv4->flow_key.dst_addr;
         facts.is_ip_fragmented = decoded.ipv4->packet_ref.is_ip_fragmented;
-        facts.has_ports = !facts.is_ip_fragmented;
+        facts.has_ports = !facts.is_ip_fragmented && protocol_uses_ports(facts.protocol);
         facts.src_port = decoded.ipv4->flow_key.src_port;
         facts.dst_port = decoded.ipv4->flow_key.dst_port;
         facts.has_payload_length = !facts.is_ip_fragmented || decoded.ipv4->packet_ref.payload_length != 0U;
@@ -133,7 +139,7 @@ LegacyDirectFacts decode_legacy_direct(const RawPcapPacket& packet) {
         facts.src_addr_v6 = decoded.ipv6->flow_key.src_addr;
         facts.dst_addr_v6 = decoded.ipv6->flow_key.dst_addr;
         facts.is_ip_fragmented = decoded.ipv6->packet_ref.is_ip_fragmented;
-        facts.has_ports = !facts.is_ip_fragmented;
+        facts.has_ports = !facts.is_ip_fragmented && protocol_uses_ports(facts.protocol);
         facts.src_port = decoded.ipv6->flow_key.src_port;
         facts.dst_port = decoded.ipv6->flow_key.dst_port;
         facts.has_payload_length = !facts.is_ip_fragmented || decoded.ipv6->packet_ref.payload_length != 0U;
@@ -409,6 +415,114 @@ std::vector<std::uint8_t> make_ethernet_ipv4_sctp_packet(
     );
 }
 
+std::vector<std::uint8_t> make_ah_header(
+    const std::uint8_t next_header,
+    const std::uint32_t spi,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& icv = {},
+    const std::uint16_t reserved = 0U,
+    const std::optional<std::uint8_t>& payload_length_field_override = std::nullopt
+) {
+    PFL_REQUIRE((icv.size() % 4U) == 0U);
+    const auto computed_header_length = 12U + icv.size();
+    const auto payload_length_field = payload_length_field_override.value_or(
+        static_cast<std::uint8_t>((computed_header_length / 4U) - 2U)
+    );
+
+    std::vector<std::uint8_t> bytes {};
+    bytes.push_back(next_header);
+    bytes.push_back(payload_length_field);
+    append_be16(bytes, reserved);
+    append_be32(bytes, spi);
+    append_be32(bytes, sequence_number);
+    bytes.insert(bytes.end(), icv.begin(), icv.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_esp_header(
+    const std::uint32_t spi,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& opaque_payload = {}
+) {
+    std::vector<std::uint8_t> bytes {};
+    append_be32(bytes, spi);
+    append_be32(bytes, sequence_number);
+    bytes.insert(bytes.end(), opaque_payload.begin(), opaque_payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv4_ah_packet(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint8_t next_header,
+    const std::vector<std::uint8_t>& inner_payload,
+    const std::uint32_t spi = 0x11111111U,
+    const std::uint32_t sequence_number = 0x01020304U,
+    const std::vector<std::uint8_t>& icv = {},
+    const std::uint16_t flags_fragment = 0U
+) {
+    auto payload = make_ah_header(next_header, spi, sequence_number, icv);
+    payload.insert(payload.end(), inner_payload.begin(), inner_payload.end());
+    return make_ethernet_ipv4_fragment_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolAh,
+        flags_fragment,
+        payload
+    );
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv6_ah_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    const std::uint8_t next_header,
+    const std::vector<std::uint8_t>& inner_payload,
+    const std::uint32_t spi = 0x11111111U,
+    const std::uint32_t sequence_number = 0x01020304U,
+    const std::vector<std::uint8_t>& icv = {}
+) {
+    auto payload = make_ah_header(next_header, spi, sequence_number, icv);
+    payload.insert(payload.end(), inner_payload.begin(), inner_payload.end());
+    return make_ethernet_ipv6_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolAh,
+        payload
+    );
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv4_esp_packet(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::uint32_t spi,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& opaque_payload = {},
+    const std::uint16_t flags_fragment = 0U
+) {
+    return make_ethernet_ipv4_fragment_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolEsp,
+        flags_fragment,
+        make_esp_header(spi, sequence_number, opaque_payload)
+    );
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv6_esp_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    const std::uint32_t spi,
+    const std::uint32_t sequence_number,
+    const std::vector<std::uint8_t>& opaque_payload = {}
+) {
+    return make_ethernet_ipv6_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolEsp,
+        make_esp_header(spi, sequence_number, opaque_payload)
+    );
+}
+
 std::vector<std::uint8_t> make_ipv4_payload_packet(
     const std::uint32_t src_addr,
     const std::uint32_t dst_addr,
@@ -492,6 +606,23 @@ std::vector<std::uint8_t> make_ipv6_tcp_segment(
     return bytes;
 }
 
+std::vector<std::uint8_t> make_ipv4_tcp_segment(
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port,
+    const std::uint16_t payload_length = 0U,
+    const std::uint8_t tcp_flags = 0x18U
+) {
+    return make_ipv6_tcp_segment(src_port, dst_port, payload_length, tcp_flags);
+}
+
+std::vector<std::uint8_t> make_ipv4_udp_segment(
+    const std::uint16_t src_port,
+    const std::uint16_t dst_port,
+    const std::uint16_t payload_length = 0U
+) {
+    return make_ipv6_udp_segment(src_port, dst_port, payload_length);
+}
+
 std::vector<std::uint8_t> make_ipv6_routing_extension(
     const std::uint8_t next_header,
     const std::vector<std::uint8_t>& payload
@@ -530,7 +661,7 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 24U);
+    PFL_EXPECT(built.registry->entry_count() == 28U);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIcmp,
@@ -548,6 +679,14 @@ void expect_common_direct_registry_and_root_selector() {
         .value = detail::kIpProtocolIpv6Encapsulation,
     }) == dissect_ipv6);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = detail::kIpProtocolAh,
+    }) == dissect_ipv4_ah);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = detail::kIpProtocolEsp,
+    }) == dissect_esp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ipv6_next_header,
         .value = detail::kIpProtocolIcmpV6,
     }) == dissect_icmpv6);
@@ -559,6 +698,14 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::ipv6_next_header,
         .value = detail::kIpProtocolIpv6Encapsulation,
     }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ipv6_next_header,
+        .value = detail::kIpProtocolAh,
+    }) == dissect_ipv6_ah);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ipv6_next_header,
+        .value = detail::kIpProtocolEsp,
+    }) == dissect_esp);
 
     const auto root_selector = make_link_type_selector(kLinkTypeEthernet);
     PFL_EXPECT(root_selector.domain == SelectorDomain::link_type);
@@ -1926,6 +2073,476 @@ void expect_sctp_canonical_parsers_and_bounds() {
     PFL_EXPECT(!truncated_sctp_shadow.has_ports);
     PFL_EXPECT(!truncated_sctp_shadow.has_transport_payload_length);
     PFL_EXPECT(format_shadow_path(truncated_sctp_shadow) == "EthernetII -> IPv4");
+}
+
+void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+    const DissectionEngine engine {};
+
+    const auto ipv6_src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 0, 0x11});
+    const auto ipv6_dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 21, 0, 0, 0, 0, 0, 0, 0, 0x12});
+
+    {
+        const auto exact_ah_packet = make_raw_packet(make_ah_header(
+            detail::kIpProtocolTcp,
+            0x01020304U,
+            0x05060708U,
+            {}
+        ), 12U);
+        const auto exact_ah_root = make_root_slice(exact_ah_packet);
+        const auto exact_ah = parse_ah_header(exact_ah_root);
+        PFL_EXPECT(exact_ah.status == ParseStatus::complete);
+        PFL_EXPECT(exact_ah.next_header == detail::kIpProtocolTcp);
+        PFL_EXPECT(exact_ah.payload_length_field == 1U);
+        PFL_EXPECT(exact_ah.reserved == 0U);
+        PFL_EXPECT(exact_ah.spi == 0x01020304U);
+        PFL_EXPECT(exact_ah.sequence_number == 0x05060708U);
+        PFL_EXPECT(exact_ah.header_length == 12U);
+        PFL_EXPECT(exact_ah.icv_length == 0U);
+
+        const auto exact_ah_step = dissect_ipv4_ah(exact_ah_root);
+        PFL_EXPECT(exact_ah_step.layer == DissectionLayerKind::ah);
+        PFL_REQUIRE(exact_ah_step.path_contribution.has_value());
+        PFL_EXPECT(*exact_ah_step.path_contribution == LayerKey::ah(0x01020304U));
+        PFL_EXPECT(exact_ah_step.terminal_disposition == TerminalDisposition::none);
+        PFL_REQUIRE(exact_ah_step.handoff.has_value());
+        PFL_REQUIRE(exact_ah_step.handoff->child.has_value());
+        const ProtocolSelector expected_ipv4_ah_selector {
+            .domain = SelectorDomain::ip_protocol,
+            .value = detail::kIpProtocolTcp,
+        };
+        PFL_EXPECT(exact_ah_step.handoff->selector == expected_ipv4_ah_selector);
+        PFL_EXPECT(exact_ah_step.bounds.full.declared.length() == 12U);
+        PFL_EXPECT(exact_ah_step.bounds.full.captured.length() == 12U);
+        PFL_EXPECT(exact_ah_step.bounds.header.declared.length() == 12U);
+        PFL_EXPECT(exact_ah_step.bounds.header.captured.length() == 12U);
+        PFL_REQUIRE(exact_ah_step.bounds.payload.has_value());
+        PFL_EXPECT(exact_ah_step.bounds.payload->declared.length() == 0U);
+        PFL_EXPECT(exact_ah_step.bounds.payload->captured.length() == 0U);
+        PFL_EXPECT(std::holds_alternative<AhFacts>(exact_ah_step.facts));
+        const auto* exact_ah_facts = std::get_if<AhFacts>(&exact_ah_step.facts);
+        PFL_REQUIRE(exact_ah_facts != nullptr);
+        PFL_EXPECT(exact_ah_facts->next_header == detail::kIpProtocolTcp);
+        PFL_EXPECT(exact_ah_facts->payload_length_field == 1U);
+        PFL_EXPECT(exact_ah_facts->reserved == 0U);
+        PFL_EXPECT(exact_ah_facts->spi == 0x01020304U);
+        PFL_EXPECT(exact_ah_facts->sequence_number == 0x05060708U);
+        PFL_EXPECT(exact_ah_facts->header_length == 12U);
+        PFL_EXPECT(exact_ah_facts->icv_length == 0U);
+    }
+
+    {
+        const auto icv_ah_packet = make_raw_packet(make_ah_header(
+            detail::kIpProtocolUdp,
+            0x11121314U,
+            0x15161718U,
+            {0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7},
+            0x1234U
+        ), 20U);
+        const auto icv_ah = parse_ah_header(make_root_slice(icv_ah_packet));
+        PFL_EXPECT(icv_ah.status == ParseStatus::complete);
+        PFL_EXPECT(icv_ah.payload_length_field == 3U);
+        PFL_EXPECT(icv_ah.reserved == 0x1234U);
+        PFL_EXPECT(icv_ah.header_length == 20U);
+        PFL_EXPECT(icv_ah.icv_length == 8U);
+    }
+
+    {
+        auto truncated_fixed_ah = make_ah_header(detail::kIpProtocolTcp, 0x01020304U, 0x05060708U);
+        truncated_fixed_ah.resize(10U);
+        const auto parsed = parse_ah_header(make_root_slice(make_raw_packet(truncated_fixed_ah, 12U)));
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+    }
+
+    {
+        const auto malformed_short_length = parse_ah_header(make_root_slice(make_raw_packet(
+            make_ah_header(detail::kIpProtocolTcp, 0x01020304U, 0x05060708U, {}, 0U, 0U),
+            12U
+        )));
+        PFL_EXPECT(malformed_short_length.status == ParseStatus::malformed);
+    }
+
+    {
+        const auto malformed_beyond_declared = parse_ah_header(make_root_slice(make_raw_packet(
+            make_ah_header(detail::kIpProtocolTcp, 0x01020304U, 0x05060708U, {0xaa, 0xbb, 0xcc, 0xdd}),
+            12U
+        )));
+        PFL_EXPECT(malformed_beyond_declared.status == ParseStatus::malformed);
+    }
+
+    {
+        auto truncated_icv_ah = make_ah_header(
+            detail::kIpProtocolTcp,
+            0x01020304U,
+            0x05060708U,
+            {0xa0, 0xa1, 0xa2, 0xa3}
+        );
+        truncated_icv_ah.resize(14U);
+        const auto parsed = parse_ah_header(make_root_slice(make_raw_packet(truncated_icv_ah, 16U)));
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+    }
+
+    {
+        const auto exact_esp_packet = make_raw_packet(make_esp_header(
+            0x21222324U,
+            0x31323334U,
+            {}
+        ), detail::kEspBaseHeaderSize);
+        const auto exact_esp_root = make_root_slice(exact_esp_packet);
+        const auto exact_esp = parse_esp_header(exact_esp_root);
+        PFL_EXPECT(exact_esp.status == ParseStatus::complete);
+        PFL_EXPECT(exact_esp.spi == 0x21222324U);
+        PFL_EXPECT(exact_esp.sequence_number == 0x31323334U);
+        PFL_EXPECT(exact_esp.header_length == detail::kEspBaseHeaderSize);
+
+        const auto exact_esp_step = dissect_esp(exact_esp_root);
+        PFL_EXPECT(exact_esp_step.layer == DissectionLayerKind::esp);
+        PFL_REQUIRE(exact_esp_step.path_contribution.has_value());
+        PFL_EXPECT(*exact_esp_step.path_contribution == LayerKey::esp(0x21222324U));
+        PFL_EXPECT(exact_esp_step.terminal_disposition == TerminalDisposition::flow_candidate);
+        PFL_EXPECT(exact_esp_step.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(exact_esp_step.bounds.full.declared.length() == detail::kEspBaseHeaderSize);
+        PFL_EXPECT(exact_esp_step.bounds.header.declared.length() == detail::kEspBaseHeaderSize);
+        PFL_REQUIRE(exact_esp_step.bounds.payload.has_value());
+        PFL_EXPECT(exact_esp_step.bounds.payload->declared.length() == 0U);
+        PFL_EXPECT(exact_esp_step.bounds.payload->captured.length() == 0U);
+        PFL_EXPECT(std::holds_alternative<EspFacts>(exact_esp_step.facts));
+        const auto* exact_esp_facts = std::get_if<EspFacts>(&exact_esp_step.facts);
+        PFL_REQUIRE(exact_esp_facts != nullptr);
+        PFL_EXPECT(exact_esp_facts->spi == 0x21222324U);
+        PFL_EXPECT(exact_esp_facts->sequence_number == 0x31323334U);
+    }
+
+    {
+        const auto payload_esp_packet = make_raw_packet(make_esp_header(
+            0x01020304U,
+            0x0a0b0c0dU,
+            {0xde, 0xad, 0xbe, 0xef, 0x10}
+        ));
+        const auto payload_esp_step = dissect_esp(make_root_slice(payload_esp_packet));
+        PFL_EXPECT(payload_esp_step.status == ParseStatus::complete);
+        PFL_REQUIRE(payload_esp_step.bounds.payload.has_value());
+        PFL_EXPECT(payload_esp_step.bounds.payload->declared.length() == 5U);
+        PFL_EXPECT(payload_esp_step.bounds.payload->captured.length() == 5U);
+    }
+
+    {
+        auto truncated_esp_bytes = make_esp_header(0x01020304U, 0x0a0b0c0dU);
+        truncated_esp_bytes.resize(detail::kEspBaseHeaderSize - 2U);
+        const auto parsed = parse_esp_header(make_root_slice(make_raw_packet(
+            truncated_esp_bytes,
+            detail::kEspBaseHeaderSize
+        )));
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+
+        const auto step = dissect_esp(make_root_slice(make_raw_packet(
+            truncated_esp_bytes,
+            detail::kEspBaseHeaderSize
+        )));
+        PFL_EXPECT(step.status == ParseStatus::truncated);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(step.terminal_disposition == TerminalDisposition::none);
+    }
+
+    {
+        const auto malformed_esp_step = dissect_esp(make_root_slice(make_raw_packet(
+            make_esp_header(0x01020304U, 0x0a0b0c0dU),
+            detail::kEspBaseHeaderSize - 1U
+        )));
+        PFL_EXPECT(malformed_esp_step.status == ParseStatus::malformed);
+        PFL_EXPECT(!malformed_esp_step.path_contribution.has_value());
+    }
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 50, 0, 1), ipv4(10, 50, 0, 2), detail::kIpProtocolTcp,
+            make_ipv4_tcp_segment(12345U, 443U, 3U, 0x18U)
+        )),
+        "EthernetII -> IPv4 -> AH(spi=0x11111111) -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 50, 1, 1), ipv4(10, 50, 1, 2), detail::kIpProtocolUdp,
+            make_ipv4_udp_segment(5300U, 53U, 4U)
+        )),
+        "EthernetII -> IPv4 -> AH(spi=0x11111111) -> UDP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_ah_packet(
+            ipv6_src_addr, ipv6_dst_addr, detail::kIpProtocolTcp,
+            make_ipv6_tcp_segment(23456U, 443U, 2U, 0x18U)
+        )),
+        "EthernetII -> IPv6 -> AH(spi=0x11111111) -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        [&]() {
+            auto ah_udp_payload = make_ah_header(
+                detail::kIpProtocolUdp,
+                0x11111111U,
+                0x01020304U,
+                {}
+            );
+            const auto udp_segment = make_ipv6_udp_segment(5301U, 5302U, 0U);
+            ah_udp_payload.insert(ah_udp_payload.end(), udp_segment.begin(), udp_segment.end());
+            return make_raw_packet(make_ethernet_ipv6_packet(
+                ipv6_src_addr,
+                ipv6_dst_addr,
+                detail::kIpProtocolHopByHop,
+                make_ipv6_hop_by_hop_extension(detail::kIpProtocolAh, ah_udp_payload)
+            ));
+        }(),
+        "EthernetII -> IPv6 -> AH(spi=0x11111111) -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_esp_packet(
+            ipv4(10, 60, 0, 1), ipv4(10, 60, 0, 2), 0x01020304U, 0x11121314U, {0xde, 0xad, 0xbe}
+        )),
+        "EthernetII -> IPv4 -> ESP(spi=0x01020304)",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_esp_packet(
+            ipv6_src_addr, ipv6_dst_addr, 0x01020304U, 0x11121314U, {0xde, 0xad}
+        )),
+        "EthernetII -> IPv6 -> ESP(spi=0x01020304)",
+        StopReason::terminal_protocol
+    );
+
+    {
+        const auto ah_inner_ipv6_packet = make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 70, 0, 1),
+            ipv4(10, 70, 0, 2),
+            detail::kIpProtocolIpv6Encapsulation,
+            strip_ethernet_header(make_ethernet_ipv6_packet(
+                ipv6_src_addr,
+                ipv6_dst_addr,
+                detail::kIpProtocolTcp,
+                make_ipv6_tcp_segment(30000U, 443U, 1U, 0x18U)
+            ))
+        ));
+        expect_shadow_matches_legacy_flow(
+            registry,
+            ah_inner_ipv6_packet,
+            "EthernetII -> IPv4 -> AH(spi=0x11111111) -> IPv6 -> TCP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto ah_inner_ipv4_packet = make_raw_packet(make_ethernet_ipv6_ah_packet(
+            ipv6_src_addr,
+            ipv6_dst_addr,
+            detail::kIpProtocolIpv4Encapsulation,
+            strip_ethernet_header(make_ethernet_ipv4_udp_packet(
+                ipv4(172, 16, 0, 1),
+                ipv4(172, 16, 0, 2),
+                40000U,
+                53U
+            ))
+        ));
+        expect_shadow_matches_legacy_flow(
+            registry,
+            ah_inner_ipv4_packet,
+            "EthernetII -> IPv6 -> AH(spi=0x11111111) -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const auto ah_sctp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 80, 0, 1),
+            ipv4(10, 80, 0, 2),
+            detail::kIpProtocolSctp,
+            make_sctp_segment(49152U, 36412U, 0x01020304U, 0x89ABCDEFU, 2U)
+        )), registry);
+        PFL_EXPECT(ah_sctp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(ah_sctp_shadow.terminal_protocol == ProtocolId::sctp);
+        PFL_EXPECT(ah_sctp_shadow.has_ports);
+        PFL_EXPECT(ah_sctp_shadow.src_port == 49152U);
+        PFL_EXPECT(ah_sctp_shadow.dst_port == 36412U);
+        PFL_EXPECT(format_shadow_path(ah_sctp_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111) -> SCTP");
+    }
+
+    {
+        const auto ah_icmp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 81, 0, 1),
+            ipv4(10, 81, 0, 2),
+            detail::kIpProtocolIcmp,
+            {8U, 0U, 0x12U, 0x34U}
+        )), registry);
+        PFL_EXPECT(ah_icmp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(ah_icmp_shadow.terminal_protocol == ProtocolId::icmp);
+        PFL_EXPECT(!ah_icmp_shadow.has_ports);
+        PFL_EXPECT(format_shadow_path(ah_icmp_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111) -> ICMP");
+    }
+
+    {
+        const auto ah_icmpv6_shadow = run_shadow(make_raw_packet(make_ethernet_ipv6_ah_packet(
+            ipv6_src_addr,
+            ipv6_dst_addr,
+            detail::kIpProtocolIcmpV6,
+            {128U, 0U, 0x12U, 0x34U}
+        )), registry);
+        PFL_EXPECT(ah_icmpv6_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(ah_icmpv6_shadow.terminal_protocol == ProtocolId::icmpv6);
+        PFL_EXPECT(!ah_icmpv6_shadow.has_ports);
+        PFL_EXPECT(format_shadow_path(ah_icmpv6_shadow) == "EthernetII -> IPv6 -> AH(spi=0x11111111) -> ICMPv6");
+    }
+
+    {
+        const auto ah_igmp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(192, 0, 2, 200),
+            ipv4(224, 0, 0, 1),
+            detail::kIpProtocolIgmp,
+            make_igmp_message(0x16U, 0U, 0x1234U, ipv4(239, 1, 1, 1))
+        )), registry);
+        PFL_EXPECT(ah_igmp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(ah_igmp_shadow.terminal_protocol == ProtocolId::igmp);
+        PFL_EXPECT(ah_igmp_shadow.family == DissectionAddressFamily::ipv4);
+        PFL_EXPECT(ah_igmp_shadow.dst_addr_v4 == ipv4(239, 1, 1, 1));
+        PFL_EXPECT(format_shadow_path(ah_igmp_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111)");
+    }
+
+    {
+        const auto ah_esp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 82, 0, 1),
+            ipv4(10, 82, 0, 2),
+            detail::kIpProtocolEsp,
+            make_esp_header(0x21222324U, 0x31323334U, {0xde, 0xad, 0xbe, 0xef})
+        )), registry);
+        PFL_EXPECT(ah_esp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(ah_esp_shadow.terminal_protocol == ProtocolId::esp);
+        PFL_EXPECT(!ah_esp_shadow.has_ports);
+        PFL_EXPECT(ah_esp_shadow.has_transport_payload_length);
+        PFL_EXPECT(ah_esp_shadow.captured_transport_payload_length == 4U);
+        PFL_EXPECT(format_shadow_path(ah_esp_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111) -> ESP(spi=0x21222324)");
+    }
+
+    {
+        const auto unknown_ah_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 83, 0, 1),
+            ipv4(10, 83, 0, 2),
+            0xFDU,
+            {0xde, 0xad, 0xbe, 0xef}
+        )), registry);
+        PFL_EXPECT(unknown_ah_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(unknown_ah_shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(unknown_ah_shadow.terminal_protocol == ProtocolId::unknown);
+        PFL_EXPECT(format_shadow_path(unknown_ah_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111)");
+    }
+
+    {
+        auto nested_ah_payload = make_ipv6_tcp_segment(1234U, 4321U, 1U, 0x18U);
+        auto ah3 = make_ah_header(detail::kIpProtocolTcp, 0x33333333U, 3U);
+        ah3.insert(ah3.end(), nested_ah_payload.begin(), nested_ah_payload.end());
+        auto ah2 = make_ah_header(detail::kIpProtocolAh, 0x22222222U, 2U);
+        ah2.insert(ah2.end(), ah3.begin(), ah3.end());
+        auto ah1 = make_ah_header(detail::kIpProtocolAh, 0x11111111U, 1U);
+        ah1.insert(ah1.end(), ah2.begin(), ah2.end());
+        const auto repeated_ah_packet = make_raw_packet(make_ethernet_ipv6_packet(
+            ipv6_src_addr,
+            ipv6_dst_addr,
+            detail::kIpProtocolAh,
+            ah1
+        ));
+
+        StepKindRecorder repeated_ah_recorder {};
+        const auto repeated_ah_result = engine.run(
+            registry,
+            make_link_type_selector(repeated_ah_packet.data_link_type),
+            make_root_slice(repeated_ah_packet),
+            DissectionConsumer {.on_step = record_step_kind, .context = &repeated_ah_recorder},
+            5U
+        );
+        const std::vector<DissectionLayerKind> expected_repeated_ah_kinds {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::ipv6,
+            DissectionLayerKind::ah,
+            DissectionLayerKind::ah,
+            DissectionLayerKind::ah,
+        };
+        PFL_EXPECT(repeated_ah_result.stop_reason == StopReason::depth_limit);
+        PFL_EXPECT(repeated_ah_result.step_count == 5U);
+        PFL_EXPECT(repeated_ah_result.traversed_depth == 5U);
+        PFL_EXPECT(repeated_ah_recorder.kinds == expected_repeated_ah_kinds);
+
+        const auto repeated_ah_shadow = run_shadow(repeated_ah_packet, registry);
+        PFL_EXPECT(repeated_ah_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(repeated_ah_shadow.terminal_protocol == ProtocolId::tcp);
+        PFL_EXPECT(format_shadow_path(repeated_ah_shadow) ==
+            "EthernetII -> IPv6 -> AH(spi=0x11111111) -> AH(spi=0x22222222) -> AH(spi=0x33333333) -> TCP");
+    }
+
+    {
+        const auto outer_ipv4_ah_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_ah_packet(
+            ipv4(10, 84, 0, 1),
+            ipv4(10, 84, 0, 2),
+            detail::kIpProtocolTcp,
+            make_ipv4_tcp_segment(80U, 12345U),
+            0x11111111U,
+            1U,
+            {},
+            0x2000U
+        )), registry);
+        PFL_EXPECT(outer_ipv4_ah_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(outer_ipv4_ah_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(format_shadow_path(outer_ipv4_ah_fragment_shadow) == "EthernetII -> IPv4");
+    }
+
+    {
+        const auto outer_ipv4_esp_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_esp_packet(
+            ipv4(10, 85, 0, 1),
+            ipv4(10, 85, 0, 2),
+            0x01020304U,
+            1U,
+            {0xde, 0xad, 0xbe, 0xef},
+            0x2000U
+        )), registry);
+        PFL_EXPECT(outer_ipv4_esp_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(outer_ipv4_esp_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(format_shadow_path(outer_ipv4_esp_fragment_shadow) == "EthernetII -> IPv4");
+    }
+
+    {
+        const auto outer_ipv6_ah_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv6_fragment_packet(
+            ipv6_src_addr,
+            ipv6_dst_addr,
+            detail::kIpProtocolAh,
+            make_ah_header(detail::kIpProtocolTcp, 0x11111111U, 1U),
+            0x0000U,
+            true
+        )), registry);
+        PFL_EXPECT(outer_ipv6_ah_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(outer_ipv6_ah_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(format_shadow_path(outer_ipv6_ah_fragment_shadow) == "EthernetII -> IPv6");
+    }
+
+    {
+        const auto outer_ipv6_esp_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv6_fragment_packet(
+            ipv6_src_addr,
+            ipv6_dst_addr,
+            detail::kIpProtocolEsp,
+            make_esp_header(0x01020304U, 1U),
+            0x0000U,
+            true
+        )), registry);
+        PFL_EXPECT(outer_ipv6_esp_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(outer_ipv6_esp_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(format_shadow_path(outer_ipv6_esp_fragment_shadow) == "EthernetII -> IPv6");
+    }
 }
 
 void expect_icmp_canonical_parsers_and_bounds() {
@@ -3989,6 +4606,7 @@ void run_common_direct_dissection_tests() {
     expect_ipv4_tcp_udp_and_arp_canonical_parsers();
     expect_ipv6_and_extension_canonical_parsers();
     expect_sctp_canonical_parsers_and_bounds();
+    expect_ah_and_esp_shadow_parsers_bounds_and_traversal();
     expect_icmp_canonical_parsers_and_bounds();
     expect_igmp_canonical_parsers_and_bounds();
     expect_common_direct_steps_report_handoffs_bounds_and_facts();

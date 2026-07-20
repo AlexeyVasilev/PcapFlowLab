@@ -602,6 +602,22 @@ GRE and EoIP are a good stress case and should shape the engine design.
 
 This is exactly the kind of branching that is too brittle in a centralized traversal and benefits from protocol-local modules with explicit selector transitions.
 
+## AH And ESP Nuance
+
+AH and ESP should follow the same registry-driven split while preserving current production selector domains.
+
+- AH is an intermediate IP-security layer:
+  - one shared bounded AH parser;
+  - one IPv4 wrapper registered under `SelectorDomain::ip_protocol`;
+  - one IPv6 wrapper registered under `SelectorDomain::ipv6_next_header`;
+  - successful AH steps contribute `LayerKey::ah(spi)` and continue with the parsed Next Header only when a bounded child slice is valid.
+- ESP is an opaque terminal IP-security layer:
+  - one bounded ESP base-header parser reused for both IPv4 and IPv6 selector domains;
+  - successful ESP steps contribute `LayerKey::esp(spi)`;
+  - traversal stops at ESP without attempting payload decryption or inner continuation in this stage.
+
+This shadow-only stage should cover direct IPv4 / IPv6 AH and ESP, IPv6-extension to AH handoff, nested AH continuation to already supported direct transports or plain-IP tunnel payloads, and conservative no-flow handling for malformed, truncated, and fragment-needs-reassembly cases. Production `PacketDecoder` semantics remain unchanged until the later import cutover stage.
+
 ## Generic Data Layer
 
 The engine should support a conservative opaque-payload terminal event.
@@ -678,6 +694,8 @@ The engine should allow consumer-dependent collection and continuation policy:
   - EoIP;
   - AH;
   - ESP.
+
+For AH specifically, the shadow registry should keep the IPv4-versus-IPv6 next-selector distinction explicit instead of hiding it behind one domain-agnostic continuation. For ESP, the shadow registry should model the current production subset as an opaque terminal flow candidate keyed by SPI, without decrypting or decoding encrypted payload contents.
 
 ### Stage 4: full semantic differential parity
 
