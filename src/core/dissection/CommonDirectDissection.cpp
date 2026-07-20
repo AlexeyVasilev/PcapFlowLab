@@ -92,7 +92,10 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
             if constexpr (std::is_same_v<Facts, std::monostate> ||
                           std::is_same_v<Facts, EthernetFacts> ||
                           std::is_same_v<Facts, VlanFacts> ||
-                          std::is_same_v<Facts, LlcSnapFacts>) {
+                          std::is_same_v<Facts, LlcSnapFacts> ||
+                          std::is_same_v<Facts, LinuxCookedFacts> ||
+                          std::is_same_v<Facts, PppoeFacts> ||
+                          std::is_same_v<Facts, PppFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, ArpFacts>) {
                 facts_.has_arp_addresses = true;
@@ -314,6 +317,20 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypePppoeDiscovery,
+            },
+            .dissector = dissect_pppoe_discovery,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypePppoeSession,
+            },
+            .dissector = dissect_pppoe_session,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
                 .domain = SelectorDomain::llc_snap_pid,
                 .value = detail::kEtherTypeIpv4,
             },
@@ -332,6 +349,48 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kEtherTypeArp,
             },
             .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ppp_frame,
+                .value = kPppFrameContinueSelectorValue,
+            },
+            .dissector = dissect_ppp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ppp_protocol,
+                .value = detail::kPppProtocolIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ppp_protocol,
+                .value = detail::kPppProtocolIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ppp_protocol,
+                .value = 0xC021U,
+            },
+            .dissector = dissect_ppp_control,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ppp_protocol,
+                .value = 0x8021U,
+            },
+            .dissector = dissect_ppp_control,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ppp_protocol,
+                .value = 0x8057U,
+            },
+            .dissector = dissect_ppp_control,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

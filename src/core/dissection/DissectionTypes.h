@@ -75,6 +75,7 @@ enum class SelectorDomain : std::uint8_t {
     ether_type,
     ieee8023_payload,
     llc_snap_pid,
+    ppp_frame,
     ppp_protocol,
     ip_protocol,
     ipv6_next_header,
@@ -129,6 +130,9 @@ enum class DissectionLayerKind : std::uint16_t {
     linux_sll2,
     vlan,
     llc_snap,
+    pppoe,
+    ppp,
+    ppp_control,
     arp,
     ipv4,
     ipv6,
@@ -199,6 +203,23 @@ struct LinuxCookedFacts {
     std::uint32_t interface_index {0U};
 
     [[nodiscard]] friend constexpr bool operator==(const LinuxCookedFacts&, const LinuxCookedFacts&) = default;
+};
+
+struct PppoeFacts {
+    std::uint8_t version {0U};
+    std::uint8_t type {0U};
+    std::uint8_t code {0U};
+    std::uint16_t session_id {0U};
+    std::uint16_t payload_length {0U};
+    bool is_discovery {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const PppoeFacts&, const PppoeFacts&) = default;
+};
+
+struct PppFacts {
+    std::uint16_t protocol {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const PppFacts&, const PppFacts&) = default;
 };
 
 struct ArpFacts {
@@ -382,6 +403,8 @@ using LayerFacts = std::variant<
     VlanFacts,
     LlcSnapFacts,
     LinuxCookedFacts,
+    PppoeFacts,
+    PppFacts,
     ArpFacts,
     Ipv4Facts,
     Ipv6Facts,

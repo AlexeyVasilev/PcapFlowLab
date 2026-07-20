@@ -232,6 +232,7 @@ Exact deterministic selectors:
 - link-type root;
 - EtherType;
 - LLC/SNAP resolved PID;
+- PPP frame entry;
 - PPP protocol;
 - IP protocol;
 - IPv6 Next Header;
@@ -250,6 +251,10 @@ Candidate dispatch does not mean recognition by port alone. A candidate dissecto
 Service hints and heuristic application recognition are separate concerns and stay outside the first engine scope.
 
 For IEEE 802.3 specifically, the length field defines a bounded child slice for any LLC/SNAP continuation. Captured bytes beyond that declared child length remain outside the child slice and therefore cannot complete a truncated LLC/SNAP header or become inner IP payload. In the shadow engine this continuation is modeled as one `LLC/SNAP` step that retains the raw OUI, dispatches supported children by PID through the registry, and contributes `LLC/SNAP` to the physical path only when the supported downstream continuation reaches a successful terminal outcome. Non-SNAP LLC and unknown SNAP PID remain conservative no-flow cases, and this shadow-only mechanism does not introduce new persistent `ProtocolLayerKind`, `LayerKey`, or index-format state.
+
+PPPoE / PPP follow the same bounded-child rule in shadow mode. `EtherType 0x8863` and `0x8864` use separate stateless PPPoE Discovery and PPPoE Session entry wrappers even though they share the same fixed six-byte header. The PPPoE Length field creates the bounded child used for any Session continuation, but the child length is clamped to the enclosing declared slice so no PPP or inner IP bytes can be consumed beyond the enclosing boundary. Supported Session continuation remains limited to version `1`, type `1`, code `0x00`, and a separate PPP step parses exactly one big-endian two-byte PPP Protocol field before dispatching through `SelectorDomain::ppp_protocol`. Only the current production subset continues further: `0x0021` -> IPv4, `0x0057` -> IPv6, and opaque no-flow control handling for `0xC021`, `0x8021`, and `0x8057`. PPPoE Session ID remains diagnostic metadata only; shadow path contribution still uses persistent `LayerKey::pppoe()` and `LayerKey::ppp()` with deferred `terminal_success` contribution so unsupported Session variants, Discovery packets, PPP control packets, unknown PPP protocols, and bounded inner truncation cases leave no final physical-path contribution.
+
+Known shadow parity gaps: `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap` is intentionally left divergent today. That fixture advertises PPPoE payload length `33` while the inner IPv4 Total Length is `37`; legacy bounded decoding still recognizes the packet as `PPPoE -> PPP -> IPv4 -> UDP`, but the shadow `PacketSlice` model rejects the inner IPv4 child because it exceeds the enclosing declared PPPoE boundary. This declared-boundary cutover choice must be resolved explicitly before production import migration.
 
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
@@ -594,6 +599,8 @@ Recommended layout after migration stabilizes:
   - AH / ESP
 
 The exact folder names can change, but the key point is that protocol-local continuation rules move next to their protocol parser, not into one monolithic decoder file.
+
+For PPPoE specifically, keep the common fixed-header parser pure and allocation-free, but retain separate Discovery and Session wrapper registrations under EtherType. Do not infer Discovery versus Session from payload contents or surrounding Ethernet state.
 
 ## GRE And EoIP Nuance
 

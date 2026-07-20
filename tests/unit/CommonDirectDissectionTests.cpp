@@ -77,6 +77,19 @@ RawPcapPacket require_raw_fixture_packet(const std::filesystem::path& relative_p
     return *packet;
 }
 
+std::vector<RawPcapPacket> require_raw_fixture_packets(const std::filesystem::path& relative_path) {
+    PcapReader reader {};
+    PFL_EXPECT(reader.open(fixture_path(relative_path)));
+
+    std::vector<RawPcapPacket> packets {};
+    while (const auto packet = reader.read_next()) {
+        packets.push_back(*packet);
+    }
+
+    PFL_EXPECT(!packets.empty());
+    return packets;
+}
+
 PacketSlice make_root_slice(const RawPcapPacket& packet) {
     return make_root_packet_slice(
         ByteSourceId::captured_frame(static_cast<std::uint32_t>(packet.packet_index)),
@@ -187,6 +200,45 @@ ImportDissectionFacts run_shadow(const RawPcapPacket& packet, const DissectionRe
     );
     collector.finish(result);
     return collector.facts();
+}
+
+std::vector<DissectionStep> collect_shadow_steps(const RawPcapPacket& packet, const DissectionRegistry& registry) {
+    struct StepRecorder {
+        std::vector<DissectionStep> steps {};
+    };
+
+    auto record_step = [](void* context, const DissectionStep& step) {
+        auto* recorder = static_cast<StepRecorder*>(context);
+        recorder->steps.push_back(step);
+    };
+
+    StepRecorder recorder {};
+    const DissectionEngine engine {};
+    static_cast<void>(engine.run(
+        registry,
+        make_link_type_selector(packet.data_link_type),
+        make_root_slice(packet),
+        DissectionConsumer {
+            .on_step = record_step,
+            .context = &recorder,
+        }
+    ));
+    return recorder.steps;
+}
+
+const PppoeFacts* find_pppoe_facts(const std::vector<DissectionStep>& steps) {
+    for (const auto& step : steps) {
+        if (step.layer != DissectionLayerKind::pppoe) {
+            continue;
+        }
+
+        const auto* facts = std::get_if<PppoeFacts>(&step.facts);
+        if (facts != nullptr) {
+            return facts;
+        }
+    }
+
+    return nullptr;
 }
 
 void expect_shadow_matches_legacy_flow(
@@ -827,7 +879,7 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 47U);
+    PFL_EXPECT(built.registry->entry_count() == 55U);
     PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll)) == dissect_linux_sll);
     PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll2)) == dissect_linux_sll2);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
@@ -922,6 +974,42 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::llc_snap_pid,
         .value = detail::kEtherTypeArp,
     }) == dissect_arp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypePppoeDiscovery,
+    }) == dissect_pppoe_discovery);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypePppoeSession,
+    }) == dissect_pppoe_session);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_frame,
+        .value = kPppFrameContinueSelectorValue,
+    }) == dissect_ppp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_protocol,
+        .value = detail::kPppProtocolIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_protocol,
+        .value = detail::kPppProtocolIpv6,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_protocol,
+        .value = 0xC021U,
+    }) == dissect_ppp_control);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_protocol,
+        .value = 0x8021U,
+    }) == dissect_ppp_control);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_protocol,
+        .value = 0x8057U,
+    }) == dissect_ppp_control);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ppp_protocol,
+        .value = 0x1235U,
+    }) == nullptr);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::gre_protocol_type,
         .value = detail::kEtherTypeIpv4,
@@ -6393,6 +6481,430 @@ void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
     }
 }
 
+void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    {
+        const auto supported_session_slice = make_declared_root_slice(
+            {
+                0x11U, 0x00U, 0x12U, 0x34U, 0x00U, 0x04U,
+                0x00U, 0x21U, 0xaaU, 0xbbU,
+            },
+            10U
+        );
+        const auto parsed = parse_pppoe_frame(supported_session_slice, false);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.version == 1U);
+        PFL_EXPECT(parsed.type == 1U);
+        PFL_EXPECT(parsed.code == 0U);
+        PFL_EXPECT(parsed.session_id == 0x1234U);
+        PFL_EXPECT(parsed.payload_length == 4U);
+        PFL_EXPECT(parsed.header_length == detail::kPppoeHeaderSize);
+        PFL_EXPECT(parsed.declared_payload_length == 4U);
+        PFL_EXPECT(parsed.logical_payload_length == 4U);
+        PFL_EXPECT(!parsed.declared_payload_exceeds_capture);
+        PFL_EXPECT(!parsed.captured_payload_exceeds_declared);
+
+        const auto step = dissect_pppoe_session(supported_session_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::pppoe);
+        PFL_REQUIRE(step.path_contribution.has_value());
+        PFL_EXPECT(*step.path_contribution == LayerKey::pppoe());
+        PFL_EXPECT(step.path_contribution_policy == PathContributionPolicy::terminal_success);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::ppp_frame);
+        PFL_EXPECT(step.handoff->selector.value == kPppFrameContinueSelectorValue);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::none);
+        PFL_EXPECT(step.bounds.full.declared.length() == 10U);
+        PFL_EXPECT(step.bounds.header.declared.length() == 6U);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 4U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 4U);
+        const auto* facts = std::get_if<PppoeFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->version == 1U);
+        PFL_EXPECT(facts->type == 1U);
+        PFL_EXPECT(facts->code == 0U);
+        PFL_EXPECT(facts->session_id == 0x1234U);
+        PFL_EXPECT(facts->payload_length == 4U);
+        PFL_EXPECT(!facts->is_discovery);
+    }
+
+    {
+        const auto discovery_slice = make_declared_root_slice(
+            {
+                0x11U, 0x09U, 0x00U, 0x00U, 0x00U, 0x03U,
+                0x01U, 0x02U, 0x03U,
+            },
+            9U
+        );
+        const auto parsed = parse_pppoe_frame(discovery_slice, true);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.is_discovery);
+        PFL_EXPECT(parsed.code == 0x09U);
+        const auto step = dissect_pppoe_discovery(discovery_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::pppoe);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::terminal_protocol);
+        const auto* facts = std::get_if<PppoeFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->is_discovery);
+        PFL_EXPECT(facts->payload_length == 3U);
+    }
+
+    {
+        const auto unsupported_version_slice = make_declared_root_slice(
+            {
+                0x21U, 0x00U, 0x12U, 0x34U, 0x00U, 0x04U,
+                0x00U, 0x21U, 0xaaU, 0xbbU,
+            },
+            10U
+        );
+        const auto step = dissect_pppoe_session(unsupported_version_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::pppoe);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+        PFL_EXPECT(step.status == ParseStatus::unsupported_variant);
+        PFL_EXPECT(step.stop_reason == StopReason::unsupported_variant);
+    }
+
+    {
+        const auto declared_shorter_slice = make_declared_root_slice(
+            {
+                0x11U, 0x00U, 0x00U, 0x00U, 0x00U, 0x04U,
+                0x00U, 0x57U, 0xaaU, 0xbbU, 0xccU, 0xddU,
+            },
+            12U
+        );
+        const auto parsed = parse_pppoe_frame(declared_shorter_slice, false);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.logical_payload_length == 4U);
+        PFL_EXPECT(parsed.captured_payload_exceeds_declared);
+        PFL_EXPECT(!parsed.declared_payload_exceeds_capture);
+
+        const auto step = dissect_pppoe_session(declared_shorter_slice);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == 10U);
+        PFL_EXPECT(step.bounds.full.captured.length() == 10U);
+        PFL_EXPECT(step.bounds.payload->declared.length() == 4U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 4U);
+    }
+
+    {
+        const auto declared_longer_slice = make_declared_root_slice(
+            {
+                0x11U, 0x00U, 0x12U, 0x34U, 0x00U, 0x08U,
+                0x00U, 0x21U, 0xaaU,
+            },
+            14U
+        );
+        const auto parsed = parse_pppoe_frame(declared_longer_slice, false);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.logical_payload_length == 3U);
+        PFL_EXPECT(parsed.declared_payload_exceeds_capture);
+        PFL_EXPECT(!parsed.captured_payload_exceeds_declared);
+
+        const auto step = dissect_pppoe_session(declared_longer_slice);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == 14U);
+        PFL_EXPECT(step.bounds.full.captured.length() == 9U);
+        PFL_EXPECT(step.bounds.payload->declared.length() == 8U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 3U);
+    }
+
+    {
+        const auto zero_session_slice = make_declared_root_slice(
+            {
+                0x11U, 0x00U, 0x00U, 0x00U, 0x00U, 0x02U,
+                0x00U, 0x21U,
+            },
+            8U
+        );
+        const auto parsed = parse_pppoe_frame(zero_session_slice, false);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.session_id == 0U);
+    }
+
+    {
+        const auto ppp_ipv6_slice = make_declared_root_slice(
+            {0x00U, 0x57U, 0xaaU, 0xbbU},
+            4U
+        );
+        const auto parsed = parse_ppp_frame(ppp_ipv6_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.protocol == detail::kPppProtocolIpv6);
+        PFL_EXPECT(parsed.header_length == detail::kPppProtocolFieldSize);
+        PFL_EXPECT(parsed.declared_payload_length == 2U);
+
+        const auto step = dissect_ppp(ppp_ipv6_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::ppp);
+        PFL_REQUIRE(step.path_contribution.has_value());
+        PFL_EXPECT(*step.path_contribution == LayerKey::ppp());
+        PFL_EXPECT(step.path_contribution_policy == PathContributionPolicy::terminal_success);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::ppp_protocol);
+        PFL_EXPECT(step.handoff->selector.value == detail::kPppProtocolIpv6);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 2U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 2U);
+        const auto* facts = std::get_if<PppFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->protocol == detail::kPppProtocolIpv6);
+    }
+
+    {
+        const auto ppp_short_slice = make_declared_root_slice({0x00U}, 1U);
+        const auto parsed = parse_ppp_frame(ppp_short_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        const auto step = dissect_ppp(ppp_short_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::ppp);
+        PFL_EXPECT(step.status == ParseStatus::truncated);
+        PFL_EXPECT(step.stop_reason == StopReason::truncated);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+    }
+
+    {
+        const auto control_slice = make_declared_root_slice({0x01U, 0x02U, 0x03U}, 3U);
+        const auto step = dissect_ppp_control(control_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::ppp_control);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::terminal_protocol);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 3U);
+    }
+
+    struct SupportedFlowExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+    };
+
+    const std::vector<SupportedFlowExpectation> supported_expectations {
+        {"parsing/pppoe/01_pppoe_session_ipv4_tcp.pcap", "EthernetII -> PPPoE -> PPP -> IPv4 -> TCP"},
+        {"parsing/pppoe/02_pppoe_session_ipv4_udp.pcap", "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP"},
+        {"parsing/pppoe/03_pppoe_session_ipv6_tcp.pcap", "EthernetII -> PPPoE -> PPP -> IPv6 -> TCP"},
+        {"parsing/pppoe/04_pppoe_session_ipv6_udp.pcap", "EthernetII -> PPPoE -> PPP -> IPv6 -> UDP"},
+        {"parsing/pppoe/13_vlan_pppoe_session_ipv4_tcp.pcap", "EthernetII -> VLAN(vid=130) -> PPPoE -> PPP -> IPv4 -> TCP"},
+        {"parsing/pppoe/14_qinq_pppoe_session_ipv4_udp.pcap", "EthernetII -> VLAN(vid=230) -> VLAN(vid=231) -> PPPoE -> PPP -> IPv4 -> UDP"},
+        {"parsing/pppoe/19_pppoe_bad_length_short_payload.pcap", "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP"},
+        {"parsing/pppoe/23_pppoe_session_zero_session_id_ipv4_udp.pcap", "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP"},
+        {"parsing/pppoe/24_qinq_pppoe_session_ipv6_tcp.pcap", "EthernetII -> VLAN(vid=232) -> VLAN(vid=233) -> PPPoE -> PPP -> IPv6 -> TCP"},
+        {"parsing/pppoe/25_legacy_9100_vlan_pppoe_session_ipv4_udp.pcap", "EthernetII -> VLAN(vid=330) -> PPPoE -> PPP -> IPv4 -> UDP"},
+    };
+
+    for (const auto& expectation : supported_expectations) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
+        expect_shadow_matches_legacy_flow(
+            registry,
+            require_raw_fixture_packet(expectation.relative_path),
+            expectation.expected_shadow_path,
+            StopReason::terminal_protocol
+        );
+    }
+
+    struct NoFlowExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+        StopReason expected_stop_reason;
+        std::vector<DissectionLayerKind> expected_kinds;
+    };
+
+    const std::vector<NoFlowExpectation> control_expectations {
+        {"parsing/pppoe/05_pppoe_session_lcp_config_request.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp, DissectionLayerKind::ppp_control}},
+        {"parsing/pppoe/06_pppoe_session_ipcp_config_request.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp, DissectionLayerKind::ppp_control}},
+        {"parsing/pppoe/07_pppoe_session_ipv6cp_config_request.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp, DissectionLayerKind::ppp_control}},
+        {"parsing/pppoe/08_pppoe_discovery_padi.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/09_pppoe_discovery_pado.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/10_pppoe_discovery_padr.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/11_pppoe_discovery_pads.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/12_pppoe_discovery_padt.pcap", "EthernetII", StopReason::terminal_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+    };
+
+    for (const auto& expectation : control_expectations) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        const auto steps = collect_shadow_steps(packet, registry);
+        std::vector<DissectionLayerKind> kinds {};
+        for (const auto& step : steps) {
+            kinds.push_back(step.layer);
+        }
+
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
+        PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
+        PFL_EXPECT((kinds == expectation.expected_kinds));
+
+        const auto* pppoe_facts = find_pppoe_facts(steps);
+        PFL_REQUIRE(pppoe_facts != nullptr);
+        if (expectation.expected_kinds.size() == 2U) {
+            PFL_EXPECT(pppoe_facts->is_discovery);
+        } else {
+            PFL_EXPECT(!pppoe_facts->is_discovery);
+        }
+    }
+
+    struct UnsupportedExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+        StopReason expected_stop_reason;
+        std::vector<DissectionLayerKind> expected_kinds;
+    };
+
+    const std::vector<UnsupportedExpectation> unsupported_expectations {
+        {"parsing/pppoe/15_pppoe_session_unknown_ppp_protocol.pcap", "EthernetII", StopReason::unknown_next_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp}},
+        {"parsing/pppoe/16_pppoe_truncated_header.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/17_pppoe_truncated_ppp_protocol.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp}},
+        {"parsing/pppoe/18_pppoe_truncated_inner_ipv4.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp, DissectionLayerKind::ipv4}},
+        {"parsing/pppoe/26_pppoe_session_declared_too_short_for_ppp_protocol_with_valid_trailer.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp}},
+        {"parsing/pppoe/27_pppoe_session_capture_truncated_ipv4_udp_caplen_lt_origlen.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp, DissectionLayerKind::ipv4, DissectionLayerKind::udp}},
+        {"parsing/pppoe/28_pppoe_session_unsupported_version_with_ipv4_trailer.pcap", "EthernetII", StopReason::unsupported_variant, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/29_pppoe_session_unsupported_type_with_ipv4_trailer.pcap", "EthernetII", StopReason::unsupported_variant, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/30_pppoe_session_unsupported_code_with_ipv4_trailer.pcap", "EthernetII", StopReason::unsupported_variant, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}},
+        {"parsing/pppoe/31_pppoe_session_zero_length_payload.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp}},
+        {"parsing/pppoe/32_pppoe_session_truncated_inner_ipv6.pcap", "EthernetII", StopReason::malformed, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe, DissectionLayerKind::ppp, DissectionLayerKind::ipv6}},
+    };
+
+    for (const auto& expectation : unsupported_expectations) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        const auto steps = collect_shadow_steps(packet, registry);
+        std::vector<DissectionLayerKind> kinds {};
+        for (const auto& step : steps) {
+            kinds.push_back(step.layer);
+        }
+
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
+        PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
+        PFL_EXPECT((kinds == expectation.expected_kinds));
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap"};
+        const auto packet = require_raw_fixture_packet("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap");
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        const auto steps = collect_shadow_steps(packet, registry);
+        std::vector<DissectionLayerKind> kinds {};
+        for (const auto& step : steps) {
+            kinds.push_back(step.layer);
+        }
+
+        // Known shadow parity gap:
+        // - PPPoE declared payload length is 33 bytes.
+        // - The inner IPv4 Total Length field is 37 bytes.
+        // - Legacy bounded decoding accepts and recognizes the packet as a flow.
+        // - The shadow PacketSlice model rejects the inner IPv4 child because it
+        //   would extend beyond the enclosing declared PPPoE boundary.
+        // This is an intentional production-cutover decision point, not an
+        // ordinary unsupported-protocol case.
+        PFL_EXPECT(legacy.recognized_flow);
+        PFL_EXPECT(format_protocol_path(legacy.path) == "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP");
+        PFL_EXPECT(legacy.protocol == ProtocolId::udp);
+        PFL_EXPECT(legacy.family == DissectionAddressFamily::ipv4);
+        PFL_EXPECT(legacy.has_addresses);
+        PFL_EXPECT(legacy.src_addr_v4 == ipv4(192, 0, 2, 30));
+        PFL_EXPECT(legacy.dst_addr_v4 == ipv4(198, 51, 100, 30));
+        PFL_EXPECT(legacy.has_ports);
+        PFL_EXPECT(legacy.src_port == 53540U);
+        PFL_EXPECT(legacy.dst_port == 443U);
+        PFL_EXPECT(legacy.has_payload_length);
+        PFL_EXPECT(legacy.captured_payload_length == 3U);
+
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == StopReason::malformed);
+        PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
+        PFL_EXPECT((kinds == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::pppoe,
+            DissectionLayerKind::ppp,
+            DissectionLayerKind::ipv4,
+        }));
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pppoe/21_pppoe_session_same_tuple_same_session_id.pcap"};
+        const auto packets = require_raw_fixture_packets("parsing/pppoe/21_pppoe_session_same_tuple_same_session_id.pcap");
+        PFL_EXPECT(packets.size() == 2U);
+        for (const auto& packet : packets) {
+            expect_shadow_matches_legacy_flow(
+                registry,
+                packet,
+                "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP",
+                StopReason::terminal_protocol
+            );
+            const auto steps = collect_shadow_steps(packet, registry);
+            const auto* pppoe_facts = find_pppoe_facts(steps);
+            PFL_REQUIRE(pppoe_facts != nullptr);
+            PFL_EXPECT(pppoe_facts->session_id == 0x3333U);
+        }
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pppoe/22_pppoe_session_same_tuple_different_session_id.pcap"};
+        const auto packets = require_raw_fixture_packets("parsing/pppoe/22_pppoe_session_same_tuple_different_session_id.pcap");
+        PFL_EXPECT(packets.size() == 2U);
+        const std::vector<std::uint16_t> expected_session_ids {0x3333U, 0x4444U};
+        for (std::size_t index = 0U; index < packets.size(); ++index) {
+            expect_shadow_matches_legacy_flow(
+                registry,
+                packets[index],
+                "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP",
+                StopReason::terminal_protocol
+            );
+            const auto steps = collect_shadow_steps(packets[index], registry);
+            const auto* pppoe_facts = find_pppoe_facts(steps);
+            PFL_REQUIRE(pppoe_facts != nullptr);
+            PFL_EXPECT(pppoe_facts->session_id == expected_session_ids[index]);
+        }
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pppoe/33_pppoe_same_session_id_supported_and_unsupported_code.pcap"};
+        const auto packets = require_raw_fixture_packets("parsing/pppoe/33_pppoe_same_session_id_supported_and_unsupported_code.pcap");
+        PFL_EXPECT(packets.size() == 2U);
+
+        expect_shadow_matches_legacy_flow(
+            registry,
+            packets[0],
+            "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+
+        {
+            const auto legacy = decode_legacy_direct(packets[1]);
+            const auto shadow = run_shadow(packets[1], registry);
+            const auto steps = collect_shadow_steps(packets[1], registry);
+            std::vector<DissectionLayerKind> kinds {};
+            for (const auto& step : steps) {
+                kinds.push_back(step.layer);
+            }
+
+            PFL_EXPECT(!legacy.recognized_flow);
+            PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+            PFL_EXPECT(shadow.stop_reason == StopReason::unsupported_variant);
+            PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
+            PFL_EXPECT((kinds == std::vector<DissectionLayerKind> {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pppoe}));
+
+            const auto* pppoe_facts = find_pppoe_facts(steps);
+            PFL_REQUIRE(pppoe_facts != nullptr);
+            PFL_EXPECT(pppoe_facts->session_id == 0x5555U);
+            PFL_EXPECT(pppoe_facts->code == 0x01U);
+        }
+    }
+}
+
 }  // namespace
 
 void run_common_direct_dissection_tests() {
@@ -6421,6 +6933,7 @@ void run_common_direct_dissection_tests() {
     expect_shadow_conservative_stops_and_arp_behavior();
     expect_linux_cooked_shadow_root_parsers_and_fixture_parity();
     expect_llc_snap_shadow_parsers_bounds_and_fixture_parity();
+    expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity();
 }
 
 }  // namespace pfl::tests
