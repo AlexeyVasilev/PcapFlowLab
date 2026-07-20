@@ -328,6 +328,7 @@ if(BUILD_TESTING)
         tests/unit/EoipPcapFixtureTests.cpp
         tests/unit/IpEncapsulationPcapFixtureTests.cpp
         tests/unit/SctpPcapFixtureTests.cpp
+        tests/unit/LinuxCookedPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp

@@ -1,0 +1,217 @@
+Deterministic Linux cooked capture fixtures for migration-parity tests.
+
+These `.pcap` files lock in the current production behavior for:
+- Linux cooked capture v1 / SLL root parsing;
+- Linux cooked capture v2 / SLL2 root parsing;
+- direct continuation into IPv4, IPv6, and ARP;
+- current unsupported cooked-root VLAN behavior;
+- structural cooked-header truncation;
+- capture-truncated inner IPv4 / IPv6;
+- metadata boundary cases where address length exceeds the fixed 8-byte cooked address storage.
+
+They are intentionally fixture-first only.
+No shadow SLL/SLL2 dissection is implied by these files.
+
+Supported production behavior covered here:
+- `01_sll_ipv4_tcp.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: `Linux SLL -> IPv4 -> TCP`
+  - SLL fields:
+    - Packet Type: `0x1234`
+    - Hardware Type: `0x3456`
+    - Address Length: `6`
+    - Address Bytes: `10 20 30 40 50 60 70 80`
+    - Protocol Type: `0x0800`
+  - Inner endpoints / ports:
+    - `10.24.0.11:32123 -> 10.24.0.29:443`
+  - Expected production outcome:
+    - one recognized TCP flow;
+    - ProtocolPath: `LinuxSll -> IPv4 -> TCP`.
+- `02_sll_ipv6_udp.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: `Linux SLL -> IPv6 -> UDP`
+  - SLL fields:
+    - Packet Type: `0x00a1`
+    - Hardware Type: `0x00f1`
+    - Address Length: `4`
+    - Address Bytes: `aa bb cc dd ee ff 11 22`
+    - Protocol Type: `0x86dd`
+  - Inner endpoints / ports:
+    - `2001:db8:0:1::10:53000 -> 2001:db8:0:2::20:161`
+  - Expected production outcome:
+    - one recognized UDP flow;
+    - ProtocolPath: `LinuxSll -> IPv6 -> UDP`.
+- `03_sll_arp.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: `Linux SLL -> ARP`
+  - SLL fields:
+    - Packet Type: `0x0004`
+    - Hardware Type: `0x0001`
+    - Address Length: `6`
+    - Address Bytes: `01 23 45 67 89 ab cd ef`
+    - Protocol Type: `0x0806`
+  - ARP payload:
+    - request for `192.0.2.1` from `192.0.2.10`
+  - Expected production outcome:
+    - one recognized ARP flow row;
+    - ProtocolPath: `LinuxSll`.
+- `05_sll2_ipv4_tcp.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: `Linux SLL2 -> IPv4 -> TCP`
+  - SLL2 fields:
+    - Protocol Type: `0x0800`
+    - Reserved: `0x0000`
+    - Interface Index: `0x01020304`
+    - Hardware Type: `0x0f0e`
+    - Packet Type: `0x7f`
+    - Address Length: `6`
+    - Address Bytes: `21 22 23 24 25 26 27 28`
+  - Inner endpoints / ports:
+    - `198.51.100.44:41234 -> 198.51.100.77:8443`
+  - Expected production outcome:
+    - one recognized TCP flow;
+    - ProtocolPath: `LinuxSll2 -> IPv4 -> TCP`.
+- `06_sll2_ipv6_udp.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: `Linux SLL2 -> IPv6 -> UDP`
+  - SLL2 fields:
+    - Protocol Type: `0x86dd`
+    - Reserved: `0x0000`
+    - Interface Index: `0x10203040`
+    - Hardware Type: `0x1234`
+    - Packet Type: `0x11`
+    - Address Length: `8`
+    - Address Bytes: `31 32 33 34 35 36 37 38`
+  - Inner endpoints / ports:
+    - `2001:db8:0:3::30:61000 -> 2001:db8:0:4::40:33434`
+  - Expected production outcome:
+    - one recognized UDP flow;
+    - ProtocolPath: `LinuxSll2 -> IPv6 -> UDP`.
+- `07_sll2_arp.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: `Linux SLL2 -> ARP`
+  - SLL2 fields:
+    - Protocol Type: `0x0806`
+    - Reserved: `0x0000`
+    - Interface Index: `0x55667788`
+    - Hardware Type: `0x0001`
+    - Packet Type: `0x02`
+    - Address Length: `6`
+    - Address Bytes: `41 42 43 44 45 46 47 48`
+  - ARP payload:
+    - reply for `203.0.113.20` / `203.0.113.1`
+  - Expected production outcome:
+    - one recognized ARP flow row;
+    - ProtocolPath: `LinuxSll2`.
+
+Current unsupported cooked-root VLAN behavior:
+- `04_sll_vlan_ipv4_udp_unsupported.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure on wire: `Linux SLL -> VLAN(vid=420) -> IPv4 -> UDP`
+  - SLL Protocol Type: `0x8100`
+  - Expected production outcome:
+    - no flow;
+    - one unrecognized packet with `Unsupported or malformed packet`;
+    - `summary().packet_count == 0`;
+    - no protocol-path registry entry, because cooked-root VLAN is not currently peeled.
+- `08_sll2_vlan_ipv6_tcp_unsupported.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure on wire: `Linux SLL2 -> 802.1ad VLAN(vid=700) -> IPv6 -> TCP`
+  - SLL2 Protocol Type: `0x88a8`
+  - Expected production outcome:
+    - no flow;
+    - one unrecognized packet with `Unsupported or malformed packet`;
+    - `summary().packet_count == 0`;
+    - no protocol-path registry entry.
+
+Unknown protocol coverage:
+- `11_sll_unknown_protocol.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: `Linux SLL -> unknown protocol 0x1234`
+  - Expected production outcome:
+    - no flow;
+    - one unrecognized packet with `Unsupported or malformed packet`;
+    - `summary().packet_count == 0`;
+    - Linux cooked details remain visible.
+- `12_sll2_unknown_protocol.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: `Linux SLL2 -> unknown protocol 0x4321`
+  - Expected production outcome:
+    - no flow;
+    - one unrecognized packet with `Unsupported or malformed packet`;
+    - `summary().packet_count == 0`;
+    - Linux cooked details remain visible.
+
+Structural cooked-header truncation:
+- `09_sll_truncated_header.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Captured bytes: only `8` root-header bytes
+  - Expected production outcome:
+    - no recognized/flow packet row is counted in `summary()`;
+    - one unrecognized packet is retained;
+    - zero flows;
+    - `summary().packet_count == 0`.
+- `10_sll2_truncated_header.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Captured bytes: only `12` root-header bytes
+  - Expected production outcome:
+    - no recognized/flow packet row is counted in `summary()`;
+    - one unrecognized packet is retained;
+    - zero flows;
+    - `summary().packet_count == 0`.
+
+Captured inner-packet truncation:
+- `13_sll_truncated_inner_ipv4.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: complete SLL header selecting IPv4, but PCAP record is snaplen-truncated before the full inner IPv4 header
+  - Original length is larger than captured length
+  - Expected production outcome:
+    - no flow;
+    - one unrecognized packet with `IPv4 header truncated`;
+    - `summary().packet_count == 0`;
+    - Linux cooked root remains visible.
+- `14_sll2_truncated_inner_ipv6.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: complete SLL2 header selecting IPv6, but PCAP record is snaplen-truncated before the full inner IPv6 header
+  - Original length is larger than captured length
+  - Expected production outcome:
+    - no flow;
+    - one unrecognized packet with `IPv6 header truncated`;
+    - `summary().packet_count == 0`;
+    - Linux cooked root remains visible.
+
+Metadata boundary cases:
+- `15_sll_addrlen_8_ipv4_udp.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: `Linux SLL -> IPv4 -> UDP`
+  - Address Length: exactly `8`, matching the fixed cooked address storage
+  - Expected production outcome:
+    - one recognized UDP flow;
+    - ProtocolPath: `LinuxSll -> IPv4 -> UDP`.
+- `16_sll_addrlen_12_ipv4_tcp.pcap`
+  - Link type: `DLT_LINUX_SLL` (`113`)
+  - Structure: `Linux SLL -> IPv4 -> TCP`
+  - Address Length: `12`, larger than the fixed `8`-byte storage
+  - Expected production outcome:
+    - one recognized TCP flow;
+    - ProtocolPath: `LinuxSll -> IPv4 -> TCP`.
+- `17_sll2_addrlen_8_ipv4_udp.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: `Linux SLL2 -> IPv4 -> UDP`
+  - Address Length: exactly `8`
+  - Expected production outcome:
+    - one recognized UDP flow;
+    - ProtocolPath: `LinuxSll2 -> IPv4 -> UDP`.
+- `18_sll2_addrlen_12_ipv6_udp.pcap`
+  - Link type: `DLT_LINUX_SLL2` (`276`)
+  - Structure: `Linux SLL2 -> IPv6 -> UDP`
+  - Address Length: `12`, larger than the fixed `8`-byte storage
+  - Expected production outcome:
+    - one recognized UDP flow;
+    - ProtocolPath: `LinuxSll2 -> IPv6 -> UDP`.
+
+Why these fixtures exist:
+- they define the current production contract before any shadow SLL/SLL2 implementation is added;
+- they lock in which Linux cooked root cases are supported today;
+- they make byte-order, offset, link-type, and snaplen-truncation mistakes visible;
+- they explicitly document that cooked-root VLAN continuation is currently unsupported, even though direct Ethernet/VLAN continuation exists elsewhere in the product.

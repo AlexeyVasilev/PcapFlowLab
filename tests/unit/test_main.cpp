@@ -51,6 +51,7 @@ void run_chunked_import_tests();
 void run_protocol_coverage_tests();
 void run_malformed_packet_handling_tests();
 void run_linux_cooked_tests();
+void run_linux_cooked_pcap_fixture_tests();
 void run_fragmentation_tests();
 void run_reassembly_architecture_tests();
 void run_reassembly_v1_tests();
@@ -157,6 +158,7 @@ int main() {
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},
         {"linux_cooked", pfl::tests::run_linux_cooked_tests},
+        {"linux_cooked_pcap_fixtures", pfl::tests::run_linux_cooked_pcap_fixture_tests},
         {"fragmentation", pfl::tests::run_fragmentation_tests},
         {"reassembly_architecture", pfl::tests::run_reassembly_architecture_tests},
         {"reassembly_v1", pfl::tests::run_reassembly_v1_tests},
