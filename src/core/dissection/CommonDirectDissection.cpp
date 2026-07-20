@@ -61,8 +61,25 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
     ++facts_.step_count;
     facts_.final_status = step.status;
 
-    if (step.path_contribution.has_value() && !facts_.path_overflowed && !facts_.physical_path.push(*step.path_contribution)) {
-        facts_.path_overflowed = true;
+    if (step.path_contribution_policy == PathContributionPolicy::terminal_success) {
+        deferred_path_scope_active_ = true;
+        if (pending_path_size_ == 1U &&
+            !pending_path_[0].deferred_scope &&
+            pending_path_[0].layer == LayerKey::ieee8023()) {
+            pending_path_[0].deferred_scope = true;
+        }
+    }
+
+    if (step.path_contribution.has_value()) {
+        if (pending_path_size_ >= pending_path_.size()) {
+            facts_.path_overflowed = true;
+        } else {
+            pending_path_[pending_path_size_++] = PendingPathContribution {
+                .layer = *step.path_contribution,
+                .deferred_scope = deferred_path_scope_active_,
+                .terminal_disposition = step.terminal_disposition,
+            };
+        }
     }
 
     if (step.terminal_disposition != TerminalDisposition::none) {
@@ -74,7 +91,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
             using Facts = std::decay_t<decltype(layer_facts)>;
             if constexpr (std::is_same_v<Facts, std::monostate> ||
                           std::is_same_v<Facts, EthernetFacts> ||
-                          std::is_same_v<Facts, VlanFacts>) {
+                          std::is_same_v<Facts, VlanFacts> ||
+                          std::is_same_v<Facts, LlcSnapFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, ArpFacts>) {
                 facts_.has_arp_addresses = true;
@@ -190,17 +208,35 @@ void ImportDissectionCollector::finish(const DissectionEngineResult& result) noe
         facts_.dst_addr_v4 = *igmp_effective_destination_v4_;
     }
 
-    if (terminal_disposition_ == TerminalDisposition::recognized_non_flow &&
-        result.stop_reason == StopReason::terminal_protocol) {
+    const auto recognized_non_flow =
+        terminal_disposition_ == TerminalDisposition::recognized_non_flow &&
+        result.stop_reason == StopReason::terminal_protocol;
+    const auto recognized_flow =
+        facts_.terminal_protocol != ProtocolId::unknown &&
+        facts_.family != DissectionAddressFamily::unknown &&
+        facts_.has_flow_addresses &&
+        (result.stop_reason == StopReason::terminal_protocol || result.stop_reason == StopReason::needs_reassembly) &&
+        (terminal_disposition_ == TerminalDisposition::flow_candidate || result.stop_reason == StopReason::needs_reassembly);
+    facts_.physical_path.clear();
+    for (std::size_t index = 0U; index < pending_path_size_; ++index) {
+        const auto& pending = pending_path_[index];
+        if (pending.deferred_scope) {
+            if (!recognized_flow &&
+                !(recognized_non_flow && pending.terminal_disposition == TerminalDisposition::none)) {
+                continue;
+            }
+        }
+        if (!facts_.path_overflowed && !facts_.physical_path.push(pending.layer)) {
+            facts_.path_overflowed = true;
+        }
+    }
+
+    if (recognized_non_flow) {
         facts_.outcome = ImportDissectionOutcome::recognized_non_flow;
         return;
     }
 
-    if (facts_.terminal_protocol != ProtocolId::unknown &&
-        facts_.family != DissectionAddressFamily::unknown &&
-        facts_.has_flow_addresses &&
-        (result.stop_reason == StopReason::terminal_protocol || result.stop_reason == StopReason::needs_reassembly) &&
-        (terminal_disposition_ == TerminalDisposition::flow_candidate || result.stop_reason == StopReason::needs_reassembly)) {
+    if (recognized_flow) {
         facts_.outcome = ImportDissectionOutcome::recognized_flow;
         return;
     }
@@ -221,6 +257,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
+                .domain = SelectorDomain::ieee8023_payload,
+                .value = kIeee8023PayloadSelectorValue,
+            },
+            .dissector = dissect_llc_snap,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
                 .domain = SelectorDomain::ether_type,
                 .value = detail::kEtherTypeIpv4,
             },
@@ -236,6 +279,27 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::llc_snap_pid,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::llc_snap_pid,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::llc_snap_pid,
                 .value = detail::kEtherTypeArp,
             },
             .dissector = dissect_arp,

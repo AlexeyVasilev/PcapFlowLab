@@ -18,9 +18,15 @@ struct ProtocolHandoff {
     [[nodiscard]] friend bool operator==(const ProtocolHandoff&, const ProtocolHandoff&) = default;
 };
 
+enum class PathContributionPolicy : std::uint8_t {
+    immediate = 0,
+    terminal_success,
+};
+
 struct DissectionStep {
     DissectionLayerKind layer {DissectionLayerKind::unknown};
     std::optional<LayerKey> path_contribution {};
+    PathContributionPolicy path_contribution_policy {PathContributionPolicy::immediate};
     LayerBounds bounds {};
     std::optional<ProtocolHandoff> handoff {};
     LayerFacts facts {};

@@ -72,6 +72,7 @@ private:
 enum class SelectorDomain : std::uint8_t {
     link_type = 0,
     ether_type,
+    ieee8023_payload,
     llc_snap_pid,
     ppp_protocol,
     ip_protocol,
@@ -124,6 +125,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ethernet_ii,
     ieee8023,
     vlan,
+    llc_snap,
     arp,
     ipv4,
     ipv6,
@@ -171,6 +173,17 @@ struct VlanFacts {
     std::uint16_t encapsulated_ether_type {0U};
 
     [[nodiscard]] friend constexpr bool operator==(const VlanFacts&, const VlanFacts&) = default;
+};
+
+struct LlcSnapFacts {
+    std::uint8_t dsap {0U};
+    std::uint8_t ssap {0U};
+    std::uint8_t control {0U};
+    bool has_snap {false};
+    std::uint32_t oui {0U};
+    std::uint16_t pid {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const LlcSnapFacts&, const LlcSnapFacts&) = default;
 };
 
 struct ArpFacts {
@@ -352,6 +365,7 @@ using LayerFacts = std::variant<
     std::monostate,
     EthernetFacts,
     VlanFacts,
+    LlcSnapFacts,
     ArpFacts,
     Ipv4Facts,
     Ipv6Facts,

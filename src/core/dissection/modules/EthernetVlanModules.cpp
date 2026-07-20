@@ -2,6 +2,7 @@
 
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/dissection/modules/CommonDirectModuleSupport.h"
+#include "core/dissection/modules/LlcSnapModule.h"
 
 namespace pfl::dissection {
 
@@ -86,7 +87,26 @@ DissectionStep dissect_ethernet(const PacketSlice& slice) {
     };
 
     if (parsed.is_ieee_802_3) {
-        step.stop_reason = StopReason::unrecognized_payload;
+        const auto handoff = direct::make_protocol_handoff(
+            slice,
+            parsed.header_length,
+            parsed.protocol_type,
+            ProtocolSelector {
+                .domain = SelectorDomain::ieee8023_payload,
+                .value = kIeee8023PayloadSelectorValue,
+            }
+        );
+        if (!handoff.has_value()) {
+            return direct::make_error_step(
+                slice,
+                DissectionLayerKind::ieee8023,
+                ParseStatus::malformed,
+                StopReason::malformed,
+                parsed.header_length
+            );
+        }
+
+        step.handoff = *handoff;
         return step;
     }
 
@@ -129,10 +149,16 @@ DissectionStep dissect_vlan(const PacketSlice& slice) {
     const auto handoff = direct::make_protocol_handoff(
         slice,
         parsed.header_length,
-        parsed.declared_payload_length,
+        parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff
+            ? static_cast<std::size_t>(parsed.encapsulated_ether_type)
+            : parsed.declared_payload_length,
         ProtocolSelector {
-            .domain = SelectorDomain::ether_type,
-            .value = parsed.encapsulated_ether_type,
+            .domain = parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff
+                ? SelectorDomain::ieee8023_payload
+                : SelectorDomain::ether_type,
+            .value = parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff
+                ? kIeee8023PayloadSelectorValue
+                : parsed.encapsulated_ether_type,
         }
     );
     if (!handoff.has_value()) {

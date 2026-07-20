@@ -8,5 +8,6 @@
 #include "core/dissection/modules/Ipv4Module.h"
 #include "core/dissection/modules/Ipv6ExtensionModules.h"
 #include "core/dissection/modules/Ipv6Module.h"
+#include "core/dissection/modules/LlcSnapModule.h"
 #include "core/dissection/modules/MplsModule.h"
 #include "core/dissection/modules/TransportModules.h"

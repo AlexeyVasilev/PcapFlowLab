@@ -81,6 +81,15 @@ public:
 private:
     static void consume_step(void* context, const DissectionStep& step) noexcept;
 
+    struct PendingPathContribution {
+        LayerKey layer {};
+        bool deferred_scope {false};
+        TerminalDisposition terminal_disposition {TerminalDisposition::none};
+    };
+
+    std::array<PendingPathContribution, kMaxProtocolPathLayers> pending_path_ {};
+    std::size_t pending_path_size_ {0U};
+    bool deferred_path_scope_active_ {false};
     ImportDissectionFacts facts_ {};
     TerminalDisposition terminal_disposition_ {TerminalDisposition::none};
     std::optional<std::uint32_t> igmp_effective_destination_v4_ {};

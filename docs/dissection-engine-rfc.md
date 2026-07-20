@@ -249,6 +249,8 @@ Candidate dispatch does not mean recognition by port alone. A candidate dissecto
 
 Service hints and heuristic application recognition are separate concerns and stay outside the first engine scope.
 
+For IEEE 802.3 specifically, the length field defines a bounded child slice for any LLC/SNAP continuation. Captured bytes beyond that declared child length remain outside the child slice and therefore cannot complete a truncated LLC/SNAP header or become inner IP payload. In the shadow engine this continuation is modeled as one `LLC/SNAP` step that retains the raw OUI, dispatches supported children by PID through the registry, and contributes `LLC/SNAP` to the physical path only when the supported downstream continuation reaches a successful terminal outcome. Non-SNAP LLC and unknown SNAP PID remain conservative no-flow cases, and this shadow-only mechanism does not introduce new persistent `ProtocolLayerKind`, `LayerKey`, or index-format state.
+
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
 Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agnostic and be reusable across both `SelectorDomain::ip_protocol` and `SelectorDomain::ipv6_next_header` registrations.
@@ -696,6 +698,12 @@ The engine should allow consumer-dependent collection and continuation policy:
   - ICMPv6;
   - IGMP;
 - run only in tests and diagnostics.
+
+Within this stage, LLC/SNAP parity specifically means:
+- IEEE 802.3 root and post-VLAN `< 0x0600` fields create bounded child slices instead of reusing the whole remaining frame;
+- captured Ethernet padding or trailer bytes remain outside those child slices;
+- supported SNAP PID continuation is registry-driven for IPv4, IPv6, and ARP;
+- OUI is retained diagnostically but does not become part of persistent path identity.
 
 ### Stage 3: remaining currently supported modules in shadow tests
 

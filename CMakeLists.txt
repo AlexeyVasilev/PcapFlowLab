@@ -53,6 +53,7 @@ add_library(
     src/core/dissection/DissectionEngine.cpp
     src/core/dissection/CommonDirectDissection.cpp
     src/core/dissection/modules/EthernetVlanModules.cpp
+    src/core/dissection/modules/LlcSnapModule.cpp
     src/core/dissection/modules/ArpModule.cpp
     src/core/dissection/modules/ControlMessageModules.cpp
     src/core/dissection/modules/GreModule.cpp

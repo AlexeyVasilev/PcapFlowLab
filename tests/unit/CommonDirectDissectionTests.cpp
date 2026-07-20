@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <variant>
@@ -15,6 +16,7 @@
 #include "core/dissection/PacketSlice.h"
 #include "core/dissection/modules/CommonDirectModules.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/io/PcapReader.h"
 #include "core/io/LinkType.h"
 
 namespace pfl::tests {
@@ -61,12 +63,34 @@ RawPcapPacket make_raw_packet(
     };
 }
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+RawPcapPacket require_raw_fixture_packet(const std::filesystem::path& relative_path) {
+    PcapReader reader {};
+    PFL_EXPECT(reader.open(fixture_path(relative_path)));
+    const auto packet = reader.read_next();
+    PFL_REQUIRE(packet.has_value());
+    PFL_EXPECT(!reader.read_next().has_value());
+    return *packet;
+}
+
 PacketSlice make_root_slice(const RawPcapPacket& packet) {
     return make_root_packet_slice(
         ByteSourceId::captured_frame(static_cast<std::uint32_t>(packet.packet_index)),
         packet.bytes,
         packet.captured_length,
         packet.original_length
+    );
+}
+
+PacketSlice make_declared_root_slice(const std::vector<std::uint8_t>& bytes, const std::size_t declared_length) {
+    return make_root_packet_slice(
+        ByteSourceId::captured_frame(),
+        bytes,
+        bytes.size(),
+        declared_length
     );
 }
 
@@ -240,6 +264,33 @@ void expect_shadow_matches_legacy_portless_flow(
     PFL_EXPECT(shadow.captured_transport_payload_length == 0U);
     PFL_EXPECT(!shadow.has_tcp_flags);
     PFL_EXPECT(shadow.tcp_flags == 0U);
+}
+
+void expect_shadow_matches_legacy_recognized_non_flow(
+    const DissectionRegistry& registry,
+    const RawPcapPacket& packet,
+    const std::string& expected_shadow_path,
+    const std::string& expected_legacy_path,
+    const StopReason expected_stop_reason
+) {
+    const auto legacy = decode_legacy_direct(packet);
+    const auto shadow = run_shadow(packet, registry);
+
+    PFL_REQUIRE(legacy.recognized_flow);
+    PFL_EXPECT(legacy.protocol == ProtocolId::arp);
+    PFL_EXPECT(format_protocol_path(legacy.path) == expected_legacy_path);
+
+    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_non_flow);
+    PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
+    PFL_EXPECT(shadow.terminal_protocol == ProtocolId::arp);
+    PFL_EXPECT(shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(shadow.has_arp_addresses);
+    PFL_EXPECT(format_shadow_path(shadow) == expected_shadow_path);
+    PFL_EXPECT(!shadow.has_ports);
+    PFL_EXPECT(shadow.src_port == 0U);
+    PFL_EXPECT(shadow.dst_port == 0U);
+    PFL_EXPECT(!shadow.has_transport_payload_length);
+    PFL_EXPECT(!shadow.has_tcp_flags);
 }
 
 void expect_shadow_matches_legacy_igmp_flow(
@@ -775,7 +826,11 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 38U);
+    PFL_EXPECT(built.registry->entry_count() == 42U);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ieee8023_payload,
+        .value = kIeee8023PayloadSelectorValue,
+    }) == dissect_llc_snap);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIcmp,
@@ -828,6 +883,18 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::ipv6_next_header,
         .value = detail::kIpProtocolEsp,
     }) == dissect_esp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::llc_snap_pid,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::llc_snap_pid,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::llc_snap_pid,
+        .value = detail::kEtherTypeArp,
+    }) == dissect_arp);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::gre_protocol_type,
         .value = detail::kEtherTypeIpv4,
@@ -5870,6 +5937,230 @@ void expect_shadow_conservative_stops_and_arp_behavior() {
     PFL_EXPECT(format_shadow_path(invalid_ihl_shadow) == "EthernetII");
 }
 
+void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    {
+        const auto exact_header_slice = make_declared_root_slice(
+            {0xaaU, 0xaaU, 0x03U, 0x00U, 0x00U, 0x00U, 0x08U, 0x00U},
+            8U
+        );
+        const auto parsed = parse_llc_snap_payload(exact_header_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.dsap == 0xaaU);
+        PFL_EXPECT(parsed.ssap == 0xaaU);
+        PFL_EXPECT(parsed.control == 0x03U);
+        PFL_EXPECT(parsed.has_snap);
+        PFL_EXPECT(parsed.oui == 0U);
+        PFL_EXPECT(parsed.pid == detail::kEtherTypeIpv4);
+        PFL_EXPECT(parsed.pid_supported);
+        PFL_EXPECT(parsed.header_length == detail::kLlcSnapHeaderSize);
+
+        const auto step = dissect_llc_snap(exact_header_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::llc_snap);
+        PFL_REQUIRE(step.path_contribution.has_value());
+        PFL_EXPECT(*step.path_contribution == LayerKey::llc_snap());
+        PFL_EXPECT(step.path_contribution_policy == PathContributionPolicy::terminal_success);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::llc_snap_pid);
+        PFL_EXPECT(step.handoff->selector.value == detail::kEtherTypeIpv4);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::none);
+        PFL_EXPECT(step.bounds.full.declared.length() == 8U);
+        PFL_EXPECT(step.bounds.full.captured.length() == 8U);
+        PFL_EXPECT(step.bounds.header.declared.length() == 8U);
+        PFL_EXPECT(step.bounds.header.captured.length() == 8U);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 0U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 0U);
+        PFL_EXPECT(std::holds_alternative<LlcSnapFacts>(step.facts));
+        const auto* facts = std::get_if<LlcSnapFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->dsap == 0xaaU);
+        PFL_EXPECT(facts->ssap == 0xaaU);
+        PFL_EXPECT(facts->control == 0x03U);
+        PFL_EXPECT(facts->has_snap);
+        PFL_EXPECT(facts->oui == 0U);
+        PFL_EXPECT(facts->pid == detail::kEtherTypeIpv4);
+    }
+
+    {
+        const auto nonzero_oui_slice = make_declared_root_slice(
+            {0xaaU, 0xaaU, 0x03U, 0x00U, 0x00U, 0xf8U, 0x08U, 0x00U},
+            8U
+        );
+        const auto parsed = parse_llc_snap_payload(nonzero_oui_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.has_snap);
+        PFL_EXPECT(parsed.oui == 0x0000f8U);
+        PFL_EXPECT(parsed.pid == detail::kEtherTypeIpv4);
+        PFL_EXPECT(parsed.pid_supported);
+    }
+
+    {
+        const auto unknown_pid_slice = make_declared_root_slice(
+            {0xaaU, 0xaaU, 0x03U, 0x00U, 0x00U, 0x00U, 0x12U, 0x34U},
+            8U
+        );
+        const auto parsed = parse_llc_snap_payload(unknown_pid_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.has_snap);
+        PFL_EXPECT(parsed.pid == 0x1234U);
+        PFL_EXPECT(!parsed.pid_supported);
+
+        const auto step = dissect_llc_snap(unknown_pid_slice);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::unrecognized_payload);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+    }
+
+    {
+        const auto dsap_only_slice = make_declared_root_slice({0xaaU}, 1U);
+        const auto parsed = parse_llc_snap_payload(dsap_only_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        PFL_EXPECT(parsed.dsap == 0xaaU);
+        PFL_EXPECT(parsed.header_length == 1U);
+        const auto step = dissect_llc_snap(dsap_only_slice);
+        PFL_EXPECT(step.status == ParseStatus::truncated);
+        PFL_EXPECT(step.stop_reason == StopReason::truncated);
+        PFL_EXPECT(!step.path_contribution.has_value());
+    }
+
+    {
+        const auto dsap_ssap_slice = make_declared_root_slice({0xaaU, 0xaaU}, 2U);
+        const auto parsed = parse_llc_snap_payload(dsap_ssap_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        PFL_EXPECT(parsed.dsap == 0xaaU);
+        PFL_EXPECT(parsed.ssap == 0xaaU);
+        PFL_EXPECT(parsed.header_length == 2U);
+    }
+
+    {
+        const auto nonsnap_slice = make_declared_root_slice(
+            {0xaaU, 0xaaU, 0x00U, 0x00U, 0x00U, 0x00U, 0x08U, 0x00U},
+            8U
+        );
+        const auto parsed = parse_llc_snap_payload(nonsnap_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(!parsed.has_snap);
+        PFL_EXPECT(parsed.header_length == detail::kLlcHeaderSize);
+        const auto step = dissect_llc_snap(nonsnap_slice);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::unrecognized_payload);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == detail::kLlcHeaderSize);
+        PFL_EXPECT(step.bounds.header.declared.length() == detail::kLlcHeaderSize);
+    }
+
+    {
+        const auto truncated_oui_slice = make_declared_root_slice({0xaaU, 0xaaU, 0x03U, 0x00U}, 4U);
+        const auto parsed = parse_llc_snap_payload(truncated_oui_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        PFL_EXPECT(parsed.header_length == 4U);
+        const auto truncated_pid_slice = make_declared_root_slice(
+            {0xaaU, 0xaaU, 0x03U, 0x00U, 0x00U, 0x00U, 0x08U},
+            7U
+        );
+        const auto truncated_pid = parse_llc_snap_payload(truncated_pid_slice);
+        PFL_EXPECT(truncated_pid.status == ParseStatus::truncated);
+        PFL_EXPECT(truncated_pid.header_length == 7U);
+    }
+
+    struct SupportedFlowExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+        const char* expected_legacy_path;
+        StopReason expected_stop_reason;
+        bool recognized_non_flow;
+    };
+
+    const std::vector<SupportedFlowExpectation> supported_expectations {
+        {"parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/02_llc_snap_ipv4_udp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/03_llc_snap_ipv6_tcp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> TCP", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> TCP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/04_llc_snap_ipv6_udp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/05_llc_snap_arp.pcap", "IEEE 802.3 -> LLC/SNAP", "IEEE 802.3 -> LLC/SNAP", StopReason::terminal_protocol, true},
+        {"parsing/llc_snap/06_vlan_llc_snap_ipv4_tcp.pcap", "EthernetII -> VLAN(vid=100) -> LLC/SNAP -> IPv4 -> TCP", "EthernetII -> VLAN(vid=100) -> LLC/SNAP -> IPv4 -> TCP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/07_qinq_llc_snap_ipv4_udp.pcap", "EthernetII -> VLAN(vid=200) -> VLAN(vid=300) -> LLC/SNAP -> IPv4 -> UDP", "EthernetII -> VLAN(vid=200) -> VLAN(vid=300) -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/14_llc_snap_length_short_payload.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/20_llc_snap_padding_after_declared_payload.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/23_vlan_9100_llc_snap_ipv4_udp.pcap", "EthernetII -> VLAN(vid=413) -> LLC/SNAP -> IPv4 -> UDP", "EthernetII -> VLAN(vid=413) -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+    };
+
+    for (const auto& expectation : supported_expectations) {
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        if (expectation.recognized_non_flow) {
+            expect_shadow_matches_legacy_recognized_non_flow(
+                registry,
+                packet,
+                expectation.expected_shadow_path,
+                expectation.expected_legacy_path,
+                expectation.expected_stop_reason
+            );
+        } else {
+            expect_shadow_matches_legacy_flow(
+                registry,
+                packet,
+                expectation.expected_shadow_path,
+                expectation.expected_stop_reason
+            );
+        }
+    }
+
+    {
+        const auto packet = require_raw_fixture_packet("parsing/llc_snap/20_llc_snap_padding_after_declared_payload.pcap");
+        const auto root = make_root_slice(packet);
+        const auto ethernet_step = dissect_ethernet(root);
+        PFL_REQUIRE(ethernet_step.handoff.has_value());
+        PFL_REQUIRE(ethernet_step.handoff->child.has_value());
+        const auto& ieee8023_child = *ethernet_step.handoff->child;
+        PFL_EXPECT(ieee8023_child.declared_end() < root.captured_end());
+        const auto llc_snap_step = dissect_llc_snap(ieee8023_child);
+        PFL_REQUIRE(llc_snap_step.bounds.payload.has_value());
+        PFL_EXPECT(llc_snap_step.bounds.payload->declared.end() == ieee8023_child.declared_end());
+        PFL_EXPECT(llc_snap_step.bounds.payload->captured.end() == ieee8023_child.captured_end());
+    }
+
+    struct UnsupportedFixtureExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+        StopReason expected_stop_reason;
+    };
+
+    const std::vector<UnsupportedFixtureExpectation> unsupported_expectations {
+        {"parsing/llc_snap/08_llc_snap_unknown_pid.pcap", "IEEE 802.3", StopReason::unrecognized_payload},
+        {"parsing/llc_snap/10_llc_non_snap_ipx_like.pcap", "IEEE 802.3", StopReason::unrecognized_payload},
+        {"parsing/llc_snap/11_llc_snap_truncated_llc_header.pcap", "", StopReason::malformed},
+        {"parsing/llc_snap/12_llc_snap_truncated_snap_header.pcap", "", StopReason::malformed},
+        {"parsing/llc_snap/13_llc_snap_truncated_inner_ipv4.pcap", "", StopReason::truncated},
+        {"parsing/llc_snap/15_llc_snap_length_extra_payload.pcap", "", StopReason::malformed},
+        {"parsing/llc_snap/16_llc_truncated_dsap_only.pcap", "IEEE 802.3", StopReason::truncated},
+        {"parsing/llc_snap/17_llc_truncated_dsap_ssap.pcap", "IEEE 802.3", StopReason::truncated},
+        {"parsing/llc_snap/18_llc_non_snap_control.pcap", "IEEE 802.3", StopReason::unrecognized_payload},
+        {"parsing/llc_snap/19_llc_snap_declared_short_with_captured_tail.pcap", "IEEE 802.3", StopReason::truncated},
+        {"parsing/llc_snap/21_llc_snap_truncated_inner_ipv6.pcap", "", StopReason::malformed},
+        {"parsing/llc_snap/22_llc_snap_truncated_inner_arp.pcap", "", StopReason::truncated},
+    };
+
+    for (const auto& expectation : unsupported_expectations) {
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
+        PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
+        PFL_EXPECT(!shadow.has_ports);
+        PFL_EXPECT(!shadow.has_transport_payload_length);
+        PFL_EXPECT(!shadow.has_tcp_flags);
+    }
+}
+
 }  // namespace
 
 void run_common_direct_dissection_tests() {
@@ -5896,6 +6187,7 @@ void run_common_direct_dissection_tests() {
     expect_igmp_shadow_only_flow_behavior();
     expect_igmp_failures_remain_visible_without_path_contribution();
     expect_shadow_conservative_stops_and_arp_behavior();
+    expect_llc_snap_shadow_parsers_bounds_and_fixture_parity();
 }
 
 }  // namespace pfl::tests
