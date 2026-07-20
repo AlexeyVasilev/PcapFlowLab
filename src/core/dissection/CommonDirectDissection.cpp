@@ -130,6 +130,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 if (facts_.terminal_protocol == ProtocolId::unknown) {
                     facts_.terminal_protocol = protocol_id_from_ipv6_next_header(layer_facts.next_header);
                 }
+            } else if constexpr (std::is_same_v<Facts, GreFacts>) {
+                return;
             } else if constexpr (std::is_same_v<Facts, AhFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, EspFacts>) {
@@ -295,6 +297,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ip_protocol,
+                .value = detail::kIpProtocolGre,
+            },
+            .dissector = dissect_gre,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ip_protocol,
                 .value = detail::kIpProtocolEsp,
             },
             .dissector = dissect_esp,
@@ -379,6 +388,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ipv6_next_header,
+                .value = detail::kIpProtocolGre,
+            },
+            .dissector = dissect_gre,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ipv6_next_header,
                 .value = detail::kIpProtocolEsp,
             },
             .dissector = dissect_esp,
@@ -403,6 +419,27 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kIpProtocolIpv6Encapsulation,
             },
             .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gre_protocol_type,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gre_protocol_type,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gre_protocol_type,
+                .value = detail::kGreProtocolTypeTransparentEthernetBridging,
+            },
+            .dissector = dissect_ethernet,
         },
     };
 

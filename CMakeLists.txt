@@ -55,6 +55,7 @@ add_library(
     src/core/dissection/modules/EthernetVlanModules.cpp
     src/core/dissection/modules/ArpModule.cpp
     src/core/dissection/modules/ControlMessageModules.cpp
+    src/core/dissection/modules/GreModule.cpp
     src/core/dissection/modules/IpSecurityModules.cpp
     src/core/dissection/modules/Ipv4Module.cpp
     src/core/dissection/modules/Ipv6ExtensionModules.cpp

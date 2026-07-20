@@ -599,6 +599,11 @@ GRE and EoIP are a good stress case and should shape the engine design.
 - EoIP is not a separate top-level IP protocol; it is a GRE payload shape with additional semantics.
 - GRE TEB and GRE MPLS are not the same continuation path.
 - EoIP identity normalization currently reuses the GRE-key slot and must remain consistent during migration.
+- In the current shadow-only stage, GRE v0 is traversed as a normal registered layer under `SelectorDomain::ip_protocol` or `SelectorDomain::ipv6_next_header`, then hands off through `SelectorDomain::gre_protocol_type`.
+- Direct GRE-carried IPv4 or IPv6 and GRE TEB reuse the existing IPv4, IPv6, and Ethernet dissectors rather than embedding child parsing inside the GRE module.
+- GRE optional checksum, key, and sequence fields are parsed in wire order for facts and bounds, but only GRE key contributes to `ProtocolPath` identity.
+- GRE-carried MPLS and MikroTik EoIP remain deferred in the shadow engine for this pass even though the production decoder already has protocol-specific handling for those payload shapes.
+- Unsupported GRE versions, routing-present variants, and malformed optional-field bounds must stop conservatively without contributing a physical path layer.
 
 This is exactly the kind of branching that is too brittle in a centralized traversal and benefits from protocol-local modules with explicit selector transitions.
 

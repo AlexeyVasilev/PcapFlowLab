@@ -415,6 +415,76 @@ std::vector<std::uint8_t> make_ethernet_ipv4_sctp_packet(
     );
 }
 
+std::vector<std::uint8_t> make_gre_header(
+    const std::uint16_t protocol_type,
+    const std::vector<std::uint8_t>& payload = {},
+    const bool has_checksum = false,
+    const bool has_key = false,
+    const bool has_sequence = false,
+    const std::uint16_t extra_flags = 0U,
+    const std::uint16_t checksum = 0x1234U,
+    const std::uint16_t reserved1 = 0x5678U,
+    const std::uint32_t key = 0x11111111U,
+    const std::uint32_t sequence_number = 0x01020304U
+) {
+    std::uint16_t flags_and_version = extra_flags;
+    if (has_checksum) {
+        flags_and_version = static_cast<std::uint16_t>(flags_and_version | detail::kGreFlagChecksum);
+    }
+    if (has_key) {
+        flags_and_version = static_cast<std::uint16_t>(flags_and_version | detail::kGreFlagKey);
+    }
+    if (has_sequence) {
+        flags_and_version = static_cast<std::uint16_t>(flags_and_version | detail::kGreFlagSequence);
+    }
+
+    std::vector<std::uint8_t> bytes {};
+    append_be16(bytes, flags_and_version);
+    append_be16(bytes, protocol_type);
+    if (has_checksum) {
+        append_be16(bytes, checksum);
+        append_be16(bytes, reserved1);
+    }
+    if (has_key) {
+        append_be32(bytes, key);
+    }
+    if (has_sequence) {
+        append_be32(bytes, sequence_number);
+    }
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv4_gre_packet(
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
+    const std::vector<std::uint8_t>& gre_payload,
+    const std::uint16_t flags_fragment = 0U,
+    const std::uint8_t ttl = 64U
+) {
+    return make_ethernet_ipv4_fragment_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolGre,
+        flags_fragment,
+        gre_payload,
+        ttl
+    );
+}
+
+std::vector<std::uint8_t> make_ethernet_ipv6_gre_packet(
+    const std::array<std::uint8_t, 16>& src_addr,
+    const std::array<std::uint8_t, 16>& dst_addr,
+    const std::vector<std::uint8_t>& gre_payload
+) {
+    return make_ethernet_ipv6_packet(
+        src_addr,
+        dst_addr,
+        detail::kIpProtocolGre,
+        gre_payload
+    );
+}
+
 std::vector<std::uint8_t> make_ah_header(
     const std::uint8_t next_header,
     const std::uint32_t spi,
@@ -661,7 +731,7 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 28U);
+    PFL_EXPECT(built.registry->entry_count() == 33U);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIcmp,
@@ -678,6 +748,10 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolIpv6Encapsulation,
     }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ip_protocol,
+        .value = detail::kIpProtocolGre,
+    }) == dissect_gre);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolAh,
@@ -700,12 +774,32 @@ void expect_common_direct_registry_and_root_selector() {
     }) == dissect_ipv6);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ipv6_next_header,
+        .value = detail::kIpProtocolGre,
+    }) == dissect_gre);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ipv6_next_header,
         .value = detail::kIpProtocolAh,
     }) == dissect_ipv6_ah);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ipv6_next_header,
         .value = detail::kIpProtocolEsp,
     }) == dissect_esp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::gre_protocol_type,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::gre_protocol_type,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::gre_protocol_type,
+        .value = detail::kGreProtocolTypeTransparentEthernetBridging,
+    }) == dissect_ethernet);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::gre_protocol_type,
+        .value = detail::kEtherTypeMplsUnicast,
+    }) == nullptr);
 
     const auto root_selector = make_link_type_selector(kLinkTypeEthernet);
     PFL_EXPECT(root_selector.domain == SelectorDomain::link_type);
@@ -2542,6 +2636,727 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(outer_ipv6_esp_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(outer_ipv6_esp_fragment_shadow.stop_reason == StopReason::needs_reassembly);
         PFL_EXPECT(format_shadow_path(outer_ipv6_esp_fragment_shadow) == "EthernetII -> IPv6");
+    }
+}
+
+void expect_gre_shadow_parsers_bounds_and_traversal() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+    const DissectionEngine engine {};
+
+    const auto outer_ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 0, 0x11});
+    const auto outer_ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 31, 0, 0, 0, 0, 0, 0, 0, 0x12});
+    const auto inner_ipv6_src = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 41, 0, 0, 0, 0, 0, 0, 0, 0x21});
+    const auto inner_ipv6_dst = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 41, 0, 0, 0, 0, 0, 0, 0, 0x22});
+
+    {
+        const auto exact_header_packet = make_raw_packet(make_gre_header(detail::kEtherTypeIpv4), detail::kGreBaseHeaderSize);
+        const auto exact_header_root = make_root_slice(exact_header_packet);
+        const auto exact_header = parse_gre_header(exact_header_root);
+        PFL_EXPECT(exact_header.status == ParseStatus::complete);
+        PFL_EXPECT(exact_header.flags_and_version == 0U);
+        PFL_EXPECT(exact_header.protocol_type == detail::kEtherTypeIpv4);
+        PFL_EXPECT(!exact_header.has_checksum);
+        PFL_EXPECT(!exact_header.has_key);
+        PFL_EXPECT(!exact_header.has_sequence);
+        PFL_EXPECT(exact_header.header_length == detail::kGreBaseHeaderSize);
+
+        const auto exact_header_step = dissect_gre(exact_header_root);
+        PFL_EXPECT(exact_header_step.layer == DissectionLayerKind::gre);
+        PFL_EXPECT(exact_header_step.status == ParseStatus::complete);
+        PFL_EXPECT(exact_header_step.stop_reason == StopReason::none);
+        PFL_REQUIRE(exact_header_step.path_contribution.has_value());
+        PFL_EXPECT(*exact_header_step.path_contribution == LayerKey::gre());
+        PFL_REQUIRE(exact_header_step.handoff.has_value());
+        PFL_REQUIRE(exact_header_step.handoff->child.has_value());
+        const ProtocolSelector expected_selector {
+            .domain = SelectorDomain::gre_protocol_type,
+            .value = detail::kEtherTypeIpv4,
+        };
+        PFL_EXPECT(exact_header_step.handoff->selector == expected_selector);
+        PFL_EXPECT(exact_header_step.bounds.full.declared.length() == detail::kGreBaseHeaderSize);
+        PFL_EXPECT(exact_header_step.bounds.full.captured.length() == detail::kGreBaseHeaderSize);
+        PFL_EXPECT(exact_header_step.bounds.header.declared.length() == detail::kGreBaseHeaderSize);
+        PFL_EXPECT(exact_header_step.bounds.header.captured.length() == detail::kGreBaseHeaderSize);
+        PFL_REQUIRE(exact_header_step.bounds.payload.has_value());
+        PFL_EXPECT(exact_header_step.bounds.payload->declared.length() == 0U);
+        PFL_EXPECT(exact_header_step.bounds.payload->captured.length() == 0U);
+        PFL_EXPECT(std::holds_alternative<GreFacts>(exact_header_step.facts));
+        const auto* exact_header_facts = std::get_if<GreFacts>(&exact_header_step.facts);
+        PFL_REQUIRE(exact_header_facts != nullptr);
+        PFL_EXPECT(exact_header_facts->protocol_type == detail::kEtherTypeIpv4);
+        PFL_EXPECT(exact_header_facts->header_length == detail::kGreBaseHeaderSize);
+    }
+
+    {
+        const auto checksum_only = parse_gre_header(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, true, false, false),
+            detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize
+        )));
+        PFL_EXPECT(checksum_only.status == ParseStatus::complete);
+        PFL_EXPECT(checksum_only.has_checksum);
+        PFL_EXPECT(checksum_only.checksum == 0x1234U);
+        PFL_EXPECT(checksum_only.reserved1 == 0x5678U);
+        PFL_EXPECT(checksum_only.header_length == detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize);
+    }
+
+    {
+        const auto key_only_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, true, false),
+            detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize
+        )));
+        PFL_EXPECT(key_only_step.status == ParseStatus::complete);
+        PFL_REQUIRE(key_only_step.path_contribution.has_value());
+        PFL_EXPECT(*key_only_step.path_contribution == LayerKey::gre(0x11111111U));
+        const auto* key_only_facts = std::get_if<GreFacts>(&key_only_step.facts);
+        PFL_REQUIRE(key_only_facts != nullptr);
+        PFL_EXPECT(key_only_facts->has_key);
+        PFL_EXPECT(key_only_facts->key == 0x11111111U);
+        PFL_EXPECT(key_only_facts->header_length == detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize);
+    }
+
+    {
+        const auto sequence_only = parse_gre_header(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, false, true),
+            detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize
+        )));
+        PFL_EXPECT(sequence_only.status == ParseStatus::complete);
+        PFL_EXPECT(sequence_only.has_sequence);
+        PFL_EXPECT(sequence_only.sequence_number == 0x01020304U);
+        PFL_EXPECT(sequence_only.header_length == detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize);
+    }
+
+    {
+        const auto full_optional_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv6, {}, true, true, true),
+            detail::kGreBaseHeaderSize + (3U * detail::kGreOptionalFieldSize)
+        )));
+        PFL_EXPECT(full_optional_step.status == ParseStatus::complete);
+        PFL_REQUIRE(full_optional_step.path_contribution.has_value());
+        PFL_EXPECT(*full_optional_step.path_contribution == LayerKey::gre(0x11111111U));
+        const auto* full_optional_facts = std::get_if<GreFacts>(&full_optional_step.facts);
+        PFL_REQUIRE(full_optional_facts != nullptr);
+        PFL_EXPECT(full_optional_facts->has_checksum);
+        PFL_EXPECT(full_optional_facts->has_key);
+        PFL_EXPECT(full_optional_facts->has_sequence);
+        PFL_EXPECT(full_optional_facts->checksum == 0x1234U);
+        PFL_EXPECT(full_optional_facts->reserved1 == 0x5678U);
+        PFL_EXPECT(full_optional_facts->key == 0x11111111U);
+        PFL_EXPECT(full_optional_facts->sequence_number == 0x01020304U);
+        PFL_EXPECT(full_optional_facts->header_length == detail::kGreBaseHeaderSize + (3U * detail::kGreOptionalFieldSize));
+    }
+
+    {
+        const auto zero_key_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, true, false, 0U, 0x1234U, 0x5678U, 0U),
+            detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize
+        )));
+        PFL_EXPECT(zero_key_step.status == ParseStatus::complete);
+        PFL_REQUIRE(zero_key_step.path_contribution.has_value());
+        PFL_EXPECT(*zero_key_step.path_contribution == LayerKey::gre(0U));
+    }
+
+    {
+        const auto unsupported_version_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, false, false, 0x0001U),
+            detail::kGreBaseHeaderSize
+        )));
+        PFL_EXPECT(unsupported_version_step.status == ParseStatus::unsupported_variant);
+        PFL_EXPECT(unsupported_version_step.stop_reason == StopReason::unsupported_variant);
+        PFL_EXPECT(!unsupported_version_step.path_contribution.has_value());
+        PFL_EXPECT(!unsupported_version_step.handoff.has_value());
+    }
+
+    {
+        const auto unsupported_routing_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, false, false, 0x4000U),
+            detail::kGreBaseHeaderSize
+        )));
+        PFL_EXPECT(unsupported_routing_step.status == ParseStatus::unsupported_variant);
+        PFL_EXPECT(unsupported_routing_step.stop_reason == StopReason::unsupported_variant);
+        PFL_EXPECT(!unsupported_routing_step.path_contribution.has_value());
+        PFL_EXPECT(!unsupported_routing_step.handoff.has_value());
+    }
+
+    {
+        const auto malformed_short_step = dissect_gre(make_root_slice(make_raw_packet(
+            {0x00, 0x00, 0x08},
+            3U
+        )));
+        PFL_EXPECT(malformed_short_step.status == ParseStatus::malformed);
+        PFL_EXPECT(!malformed_short_step.path_contribution.has_value());
+        PFL_EXPECT(!malformed_short_step.handoff.has_value());
+    }
+
+    {
+        auto truncated_base_bytes = make_gre_header(detail::kEtherTypeIpv4);
+        truncated_base_bytes.resize(detail::kGreBaseHeaderSize - 1U);
+        const auto truncated_base_step = dissect_gre(make_root_slice(make_raw_packet(
+            truncated_base_bytes,
+            detail::kGreBaseHeaderSize
+        )));
+        PFL_EXPECT(truncated_base_step.status == ParseStatus::truncated);
+        PFL_EXPECT(!truncated_base_step.path_contribution.has_value());
+        PFL_EXPECT(!truncated_base_step.handoff.has_value());
+    }
+
+    {
+        const auto malformed_key_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, true, false),
+            detail::kGreBaseHeaderSize + 2U
+        )));
+        PFL_EXPECT(malformed_key_step.status == ParseStatus::malformed);
+        PFL_EXPECT(!malformed_key_step.path_contribution.has_value());
+    }
+
+    {
+        auto truncated_key_bytes = make_gre_header(detail::kEtherTypeIpv4, {}, false, true, false);
+        truncated_key_bytes.resize(detail::kGreBaseHeaderSize + 2U);
+        const auto truncated_key_step = dissect_gre(make_root_slice(make_raw_packet(
+            truncated_key_bytes,
+            detail::kGreBaseHeaderSize + detail::kGreOptionalFieldSize
+        )));
+        PFL_EXPECT(truncated_key_step.status == ParseStatus::truncated);
+        PFL_EXPECT(!truncated_key_step.path_contribution.has_value());
+    }
+
+    {
+        const auto malformed_sequence_step = dissect_gre(make_root_slice(make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, {}, false, false, true),
+            detail::kGreBaseHeaderSize + 2U
+        )));
+        PFL_EXPECT(malformed_sequence_step.status == ParseStatus::malformed);
+        PFL_EXPECT(!malformed_sequence_step.path_contribution.has_value());
+    }
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 0, 1),
+            ipv4(10, 90, 0, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 20, 0, 1),
+                    ipv4(172, 20, 0, 2),
+                    detail::kIpProtocolTcp,
+                    make_ipv4_tcp_segment(12345U, 443U, 3U, 0x18U)
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 1, 1),
+            ipv4(10, 90, 1, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 20, 1, 1),
+                    ipv4(172, 20, 1, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(5300U, 53U, 4U)
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 2, 1),
+            ipv4(10, 90, 2, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv6,
+                make_ipv6_payload_packet(
+                    inner_ipv6_src,
+                    inner_ipv6_dst,
+                    detail::kIpProtocolTcp,
+                    make_ipv6_tcp_segment(23456U, 443U, 2U, 0x18U)
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> IPv6 -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 3, 1),
+            ipv4(10, 90, 3, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv6,
+                make_ipv6_payload_packet(
+                    inner_ipv6_src,
+                    inner_ipv6_dst,
+                    detail::kIpProtocolUdp,
+                    make_ipv6_udp_segment(5301U, 5302U, 3U)
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> IPv6 -> UDP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_gre_packet(
+            outer_ipv6_src,
+            outer_ipv6_dst,
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 20, 4, 1),
+                    ipv4(172, 20, 4, 2),
+                    detail::kIpProtocolTcp,
+                    make_ipv4_tcp_segment(34567U, 8443U, 1U, 0x18U)
+                )
+            )
+        )),
+        "EthernetII -> IPv6 -> GRE -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv6_gre_packet(
+            outer_ipv6_src,
+            outer_ipv6_dst,
+            make_gre_header(
+                detail::kEtherTypeIpv6,
+                make_ipv6_payload_packet(
+                    inner_ipv6_src,
+                    inner_ipv6_dst,
+                    detail::kIpProtocolUdp,
+                    make_ipv6_udp_segment(6300U, 6301U, 2U)
+                )
+            )
+        )),
+        "EthernetII -> IPv6 -> GRE -> IPv6 -> UDP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 5, 1),
+            ipv4(10, 90, 5, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 20, 5, 1),
+                    ipv4(172, 20, 5, 2),
+                    detail::kIpProtocolSctp,
+                    make_sctp_segment(49152U, 36412U, 0x01020304U, 0x89ABCDEFU, 2U)
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> IPv4 -> SCTP",
+        StopReason::terminal_protocol
+    );
+
+    {
+        const auto outer_hbh_gre_udp = make_raw_packet(make_ethernet_ipv6_packet(
+            outer_ipv6_src,
+            outer_ipv6_dst,
+            detail::kIpProtocolHopByHop,
+            make_ipv6_hop_by_hop_extension(
+                detail::kIpProtocolGre,
+                make_gre_header(
+                    detail::kEtherTypeIpv4,
+                    make_ipv4_payload_packet(
+                        ipv4(172, 20, 6, 1),
+                        ipv4(172, 20, 6, 2),
+                        detail::kIpProtocolUdp,
+                        make_ipv4_udp_segment(7000U, 7001U, 2U)
+                    )
+                )
+            )
+        ));
+        expect_shadow_matches_legacy_flow(
+            registry,
+            outer_hbh_gre_udp,
+            "EthernetII -> IPv6 -> GRE -> IPv4 -> UDP",
+            StopReason::terminal_protocol
+        );
+    }
+
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(add_vlan_tags(
+            make_ethernet_ipv4_gre_packet(
+                ipv4(10, 90, 7, 1),
+                ipv4(10, 90, 7, 2),
+                make_gre_header(
+                    detail::kEtherTypeIpv4,
+                    make_ipv4_payload_packet(
+                        ipv4(172, 20, 7, 1),
+                        ipv4(172, 20, 7, 2),
+                        detail::kIpProtocolUdp,
+                        make_ipv4_udp_segment(7100U, 7101U, 1U)
+                    )
+                )
+            ),
+            {{0x8100U, 330U}}
+        )),
+        "EthernetII -> VLAN(vid=330) -> IPv4 -> GRE -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(add_vlan_tags(
+            make_ethernet_ipv4_gre_packet(
+                ipv4(10, 90, 8, 1),
+                ipv4(10, 90, 8, 2),
+                make_gre_header(
+                    detail::kEtherTypeIpv4,
+                    make_ipv4_payload_packet(
+                        ipv4(172, 20, 8, 1),
+                        ipv4(172, 20, 8, 2),
+                        detail::kIpProtocolTcp,
+                        make_ipv4_tcp_segment(7200U, 7201U, 1U, 0x18U)
+                    )
+                )
+            ),
+            {{0x88A8U, 331U}, {0x8100U, 330U}}
+        )),
+        "EthernetII -> VLAN(vid=331) -> VLAN(vid=330) -> IPv4 -> GRE -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 9, 1),
+            ipv4(10, 90, 9, 2),
+            make_gre_header(
+                detail::kGreProtocolTypeTransparentEthernetBridging,
+                make_ethernet_ipv4_tcp_packet(ipv4(192, 0, 2, 1), ipv4(192, 0, 2, 2), 7300U, 7301U)
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> EthernetII -> IPv4 -> TCP",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_flow(
+        registry,
+        make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 90, 10, 1),
+            ipv4(10, 90, 10, 2),
+            make_gre_header(
+                detail::kGreProtocolTypeTransparentEthernetBridging,
+                add_vlan_tags(
+                    make_ethernet_ipv4_udp_packet(ipv4(192, 0, 2, 11), ipv4(192, 0, 2, 12), 7400U, 7401U),
+                    {{0x8100U, 130U}}
+                )
+            )
+        )),
+        "EthernetII -> IPv4 -> GRE -> EthernetII -> VLAN(vid=130) -> IPv4 -> UDP",
+        StopReason::terminal_protocol
+    );
+
+    {
+        const auto gre_icmp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 91, 0, 1),
+            ipv4(10, 91, 0, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                strip_ethernet_header(make_ethernet_ipv4_icmp_packet(
+                    ipv4(172, 21, 0, 1),
+                    ipv4(172, 21, 0, 2),
+                    8U,
+                    0U
+                ))
+            )
+        )), registry);
+        PFL_EXPECT(gre_icmp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(gre_icmp_shadow.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(gre_icmp_shadow.terminal_protocol == ProtocolId::icmp);
+        PFL_EXPECT(!gre_icmp_shadow.has_ports);
+        PFL_EXPECT(format_shadow_path(gre_icmp_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4 -> ICMP");
+    }
+
+    {
+        const auto gre_icmpv6_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 91, 1, 1),
+            ipv4(10, 91, 1, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv6,
+                make_ipv6_payload_packet(
+                    inner_ipv6_src,
+                    inner_ipv6_dst,
+                    detail::kIpProtocolIcmpV6,
+                    make_ipv6_icmpv6_message(128U, 0U)
+                )
+            )
+        )), registry);
+        PFL_EXPECT(gre_icmpv6_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(gre_icmpv6_shadow.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(gre_icmpv6_shadow.terminal_protocol == ProtocolId::icmpv6);
+        PFL_EXPECT(!gre_icmpv6_shadow.has_ports);
+        PFL_EXPECT(format_shadow_path(gre_icmpv6_shadow) == "EthernetII -> IPv4 -> GRE -> IPv6 -> ICMPv6");
+    }
+
+    {
+        const auto gre_igmp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 91, 2, 1),
+            ipv4(10, 91, 2, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                strip_ethernet_header(make_ethernet_ipv4_igmp_packet(
+                    ipv4(172, 21, 2, 1),
+                    ipv4(239, 1, 1, 1),
+                    detail::kIgmpTypeV2MembershipReport,
+                    0U,
+                    0x1234U,
+                    ipv4(239, 1, 1, 1)
+                ))
+            )
+        )), registry);
+        PFL_EXPECT(gre_igmp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(gre_igmp_shadow.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(gre_igmp_shadow.terminal_protocol == ProtocolId::igmp);
+        PFL_EXPECT(!gre_igmp_shadow.has_ports);
+        PFL_EXPECT(gre_igmp_shadow.has_flow_addresses);
+        PFL_EXPECT(gre_igmp_shadow.dst_addr_v4 == ipv4(239, 1, 1, 1));
+        PFL_EXPECT(format_shadow_path(gre_igmp_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4");
+    }
+
+    {
+        const auto gre_esp_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 91, 3, 1),
+            ipv4(10, 91, 3, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 21, 3, 1),
+                    ipv4(172, 21, 3, 2),
+                    detail::kIpProtocolEsp,
+                    make_esp_header(0x01020304U, 0x11121314U, {0xde, 0xad})
+                )
+            )
+        )), registry);
+        PFL_EXPECT(gre_esp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(gre_esp_shadow.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(gre_esp_shadow.terminal_protocol == ProtocolId::esp);
+        PFL_EXPECT(!gre_esp_shadow.has_ports);
+        PFL_EXPECT(format_shadow_path(gre_esp_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4 -> ESP(spi=0x01020304)");
+    }
+
+    {
+        const auto unknown_inner_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 0, 1),
+            ipv4(10, 92, 0, 2),
+            make_gre_header(0x1234U, {0xde, 0xad, 0xbe, 0xef})
+        )), registry);
+        PFL_EXPECT(unknown_inner_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(unknown_inner_shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(unknown_inner_shadow.terminal_protocol == ProtocolId::unknown);
+        PFL_EXPECT(format_shadow_path(unknown_inner_shadow) == "EthernetII -> IPv4 -> GRE");
+    }
+
+    {
+        const auto deferred_mpls_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 1, 1),
+            ipv4(10, 92, 1, 2),
+            make_gre_header(detail::kEtherTypeMplsUnicast, {0x00, 0x00, 0x00, 0x00})
+        )), registry);
+        PFL_EXPECT(deferred_mpls_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(deferred_mpls_shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(format_shadow_path(deferred_mpls_shadow) == "EthernetII -> IPv4 -> GRE");
+    }
+
+    {
+        auto truncated_inner_ipv4 = make_ipv4_payload_packet(
+            ipv4(172, 22, 0, 1),
+            ipv4(172, 22, 0, 2),
+            detail::kIpProtocolUdp,
+            make_ipv4_udp_segment(7500U, 7501U, 1U)
+        );
+        truncated_inner_ipv4.resize(10U);
+        const auto truncated_inner_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 2, 1),
+            ipv4(10, 92, 2, 2),
+            make_gre_header(detail::kEtherTypeIpv4, truncated_inner_ipv4)
+        ), 14U + 20U + detail::kGreBaseHeaderSize + 20U), registry);
+        PFL_EXPECT(truncated_inner_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(truncated_inner_shadow.stop_reason == StopReason::truncated);
+        PFL_EXPECT(format_shadow_path(truncated_inner_shadow) == "EthernetII -> IPv4 -> GRE");
+        PFL_EXPECT(!truncated_inner_shadow.has_ports);
+    }
+
+    {
+        const auto outer_ipv4_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 3, 1),
+            ipv4(10, 92, 3, 2),
+            make_gre_header(detail::kEtherTypeIpv4, {0xde, 0xad, 0xbe, 0xef}),
+            0x2000U
+        )), registry);
+        PFL_EXPECT(outer_ipv4_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(outer_ipv4_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(format_shadow_path(outer_ipv4_fragment_shadow) == "EthernetII -> IPv4");
+    }
+
+    {
+        const auto outer_ipv6_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv6_fragment_packet(
+            outer_ipv6_src,
+            outer_ipv6_dst,
+            detail::kIpProtocolGre,
+            make_gre_header(detail::kEtherTypeIpv4, {0xde, 0xad, 0xbe, 0xef})
+        )), registry);
+        PFL_EXPECT(outer_ipv6_fragment_shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(outer_ipv6_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(format_shadow_path(outer_ipv6_fragment_shadow) == "EthernetII -> IPv6");
+    }
+
+    {
+        const auto inner_fragment_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 4, 1),
+            ipv4(10, 92, 4, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 22, 4, 1),
+                    ipv4(172, 22, 4, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7600U, 7601U, 2U),
+                    0x2000U
+                )
+            )
+        )), registry);
+        PFL_EXPECT(inner_fragment_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(inner_fragment_shadow.stop_reason == StopReason::needs_reassembly);
+        PFL_EXPECT(inner_fragment_shadow.terminal_protocol == ProtocolId::udp);
+        PFL_EXPECT(format_shadow_path(inner_fragment_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4");
+        PFL_EXPECT(!inner_fragment_shadow.has_ports);
+    }
+
+    {
+        auto nested_gre_payload = make_gre_header(
+            detail::kEtherTypeIpv6,
+            make_ipv6_payload_packet(
+                inner_ipv6_src,
+                inner_ipv6_dst,
+                detail::kIpProtocolUdp,
+                make_ipv6_udp_segment(7700U, 7701U, 1U)
+            )
+        );
+        nested_gre_payload = make_gre_header(
+            detail::kEtherTypeIpv4,
+            make_ipv4_payload_packet(
+                ipv4(172, 22, 5, 1),
+                ipv4(172, 22, 5, 2),
+                detail::kIpProtocolGre,
+                nested_gre_payload
+            )
+        );
+        const auto nested_gre_packet = make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 5, 1),
+            ipv4(10, 92, 5, 2),
+            nested_gre_payload
+        ));
+        const auto nested_gre_shadow = run_shadow(nested_gre_packet, registry);
+        PFL_EXPECT(nested_gre_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(nested_gre_shadow.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(format_shadow_path(nested_gre_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4 -> GRE -> IPv6 -> UDP");
+
+        StepKindRecorder nested_gre_recorder {};
+        const auto nested_gre_depth_result = engine.run(
+            registry,
+            make_link_type_selector(nested_gre_packet.data_link_type),
+            make_root_slice(nested_gre_packet),
+            DissectionConsumer {.on_step = record_step_kind, .context = &nested_gre_recorder},
+            5U
+        );
+        const std::vector<DissectionLayerKind> expected_nested_gre_kinds {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::ipv4,
+            DissectionLayerKind::gre,
+            DissectionLayerKind::ipv4,
+            DissectionLayerKind::gre,
+        };
+        PFL_EXPECT(nested_gre_depth_result.stop_reason == StopReason::depth_limit);
+        PFL_EXPECT(nested_gre_recorder.kinds == expected_nested_gre_kinds);
+    }
+
+    {
+        const auto first_key_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 93, 0, 1),
+            ipv4(10, 93, 0, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 23, 0, 1),
+                    ipv4(172, 23, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7800U, 7801U, 1U)
+                ),
+                false,
+                true,
+                false,
+                0U,
+                0x1234U,
+                0x5678U,
+                0x11111111U
+            )
+        )), registry);
+        const auto second_key_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 93, 0, 1),
+            ipv4(10, 93, 0, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 23, 0, 1),
+                    ipv4(172, 23, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7800U, 7801U, 1U)
+                ),
+                false,
+                true,
+                false,
+                0U,
+                0x1234U,
+                0x5678U,
+                0x22222222U
+            )
+        )), registry);
+        const auto repeated_first_key_shadow = run_shadow(make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 93, 0, 1),
+            ipv4(10, 93, 0, 2),
+            make_gre_header(
+                detail::kEtherTypeIpv4,
+                make_ipv4_payload_packet(
+                    ipv4(172, 23, 0, 1),
+                    ipv4(172, 23, 0, 2),
+                    detail::kIpProtocolUdp,
+                    make_ipv4_udp_segment(7800U, 7801U, 1U)
+                ),
+                false,
+                true,
+                false,
+                0U,
+                0x1234U,
+                0x5678U,
+                0x11111111U
+            )
+        )), registry);
+
+        const auto first_key_path = shadow_path(first_key_shadow);
+        const auto second_key_path = shadow_path(second_key_shadow);
+        const auto repeated_first_key_path = shadow_path(repeated_first_key_shadow);
+        PFL_EXPECT(format_protocol_path(first_key_path) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP");
+        PFL_EXPECT(format_protocol_path(second_key_path) == "EthernetII -> IPv4 -> GRE(key=0x22222222) -> IPv4 -> UDP");
+        PFL_EXPECT(first_key_path == repeated_first_key_path);
+        PFL_EXPECT(!(first_key_path == second_key_path));
+
+        ProtocolPathRegistry registry_ids {};
+        const auto first_key_id = registry_ids.intern(first_key_path);
+        const auto second_key_id = registry_ids.intern(second_key_path);
+        const auto repeated_first_key_id = registry_ids.intern(repeated_first_key_path);
+        PFL_EXPECT(first_key_id != kInvalidProtocolPathId);
+        PFL_EXPECT(second_key_id != kInvalidProtocolPathId);
+        PFL_EXPECT(first_key_id != second_key_id);
+        PFL_EXPECT(first_key_id == repeated_first_key_id);
     }
 }
 
@@ -4607,6 +5422,7 @@ void run_common_direct_dissection_tests() {
     expect_ipv6_and_extension_canonical_parsers();
     expect_sctp_canonical_parsers_and_bounds();
     expect_ah_and_esp_shadow_parsers_bounds_and_traversal();
+    expect_gre_shadow_parsers_bounds_and_traversal();
     expect_icmp_canonical_parsers_and_bounds();
     expect_igmp_canonical_parsers_and_bounds();
     expect_common_direct_steps_report_handoffs_bounds_and_facts();
