@@ -9,8 +9,7 @@ These `.pcap` files lock in the current production behavior for:
 - capture-truncated inner IPv4 / IPv6;
 - metadata boundary cases where address length exceeds the fixed 8-byte cooked address storage.
 
-They are intentionally fixture-first only.
-No shadow SLL/SLL2 dissection is implied by these files.
+They serve both as the current production contract and as the shadow-dissection migration contract for Linux cooked roots.
 
 Supported production behavior covered here:
 - `01_sll_ipv4_tcp.pcap`
@@ -55,6 +54,8 @@ Supported production behavior covered here:
   - Expected production outcome:
     - one recognized ARP flow row;
     - ProtocolPath: `LinuxSll`.
+  - Shadow migration note:
+    - cooked-root ARP remains `LinuxSll`, not `LinuxSll -> ARP`.
 - `05_sll2_ipv4_tcp.pcap`
   - Link type: `DLT_LINUX_SLL2` (`276`)
   - Structure: `Linux SLL2 -> IPv4 -> TCP`
@@ -103,6 +104,8 @@ Supported production behavior covered here:
   - Expected production outcome:
     - one recognized ARP flow row;
     - ProtocolPath: `LinuxSll2`.
+  - Shadow migration note:
+    - cooked-root ARP remains `LinuxSll2`, not `LinuxSll2 -> ARP`.
 
 Current unsupported cooked-root VLAN behavior:
 - `04_sll_vlan_ipv4_udp_unsupported.pcap`
@@ -211,7 +214,7 @@ Metadata boundary cases:
     - ProtocolPath: `LinuxSll2 -> IPv6 -> UDP`.
 
 Why these fixtures exist:
-- they define the current production contract before any shadow SLL/SLL2 implementation is added;
+- they define the current production contract that shadow SLL/SLL2 root modules must preserve;
 - they lock in which Linux cooked root cases are supported today;
 - they make byte-order, offset, link-type, and snaplen-truncation mistakes visible;
 - they explicitly document that cooked-root VLAN continuation is currently unsupported, even though direct Ethernet/VLAN continuation exists elsewhere in the product.

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -826,7 +827,33 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 42U);
+    PFL_EXPECT(built.registry->entry_count() == 47U);
+    PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll)) == dissect_linux_sll);
+    PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll2)) == dissect_linux_sll2);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeArp,
+    }) == dissect_linux_cooked_arp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeVlan,
+    }) == nullptr);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeQinq,
+    }) == nullptr);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeLegacyVlan,
+    }) == nullptr);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ieee8023_payload,
         .value = kIeee8023PayloadSelectorValue,
@@ -931,6 +958,12 @@ void expect_common_direct_registry_and_root_selector() {
     const auto root_selector = make_link_type_selector(kLinkTypeEthernet);
     PFL_EXPECT(root_selector.domain == SelectorDomain::link_type);
     PFL_EXPECT(root_selector.value == kLinkTypeEthernet);
+    const auto sll_root_selector = make_link_type_selector(kLinkTypeLinuxSll);
+    PFL_EXPECT(sll_root_selector.domain == SelectorDomain::link_type);
+    PFL_EXPECT(sll_root_selector.value == kLinkTypeLinuxSll);
+    const auto sll2_root_selector = make_link_type_selector(kLinkTypeLinuxSll2);
+    PFL_EXPECT(sll2_root_selector.domain == SelectorDomain::link_type);
+    PFL_EXPECT(sll2_root_selector.value == kLinkTypeLinuxSll2);
 }
 
 void expect_ethernet_and_vlan_canonical_parsers() {
@@ -5937,6 +5970,205 @@ void expect_shadow_conservative_stops_and_arp_behavior() {
     PFL_EXPECT(format_shadow_path(invalid_ihl_shadow) == "EthernetII");
 }
 
+void expect_linux_cooked_shadow_root_parsers_and_fixture_parity() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    {
+        const auto root = make_declared_root_slice(
+            {
+                0x12U, 0x34U,
+                0x34U, 0x56U,
+                0x00U, 0x06U,
+                0x10U, 0x20U, 0x30U, 0x40U, 0x50U, 0x60U, 0x70U, 0x80U,
+                0x08U, 0x00U,
+            },
+            detail::kLinuxSllHeaderSize
+        );
+        const auto parsed = parse_linux_sll_frame(root);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(!parsed.is_sll2);
+        PFL_EXPECT(parsed.protocol_type == detail::kEtherTypeIpv4);
+        PFL_EXPECT(parsed.packet_type == 0x1234U);
+        PFL_EXPECT(parsed.hardware_type == 0x3456U);
+        PFL_EXPECT(parsed.address_length == 6U);
+        PFL_EXPECT(parsed.header_length == detail::kLinuxSllHeaderSize);
+        PFL_EXPECT(parsed.declared_payload_length == 0U);
+
+        const auto step = dissect_linux_sll(root);
+        PFL_EXPECT(step.layer == DissectionLayerKind::linux_sll);
+        PFL_REQUIRE(step.path_contribution.has_value());
+        PFL_EXPECT(*step.path_contribution == LayerKey::linux_sll());
+        PFL_EXPECT(step.path_contribution_policy == PathContributionPolicy::terminal_success);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::linux_cooked_protocol);
+        PFL_EXPECT(step.handoff->selector.value == detail::kEtherTypeIpv4);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::none);
+        PFL_EXPECT(step.bounds.full.declared.length() == detail::kLinuxSllHeaderSize);
+        PFL_EXPECT(step.bounds.header.declared.length() == detail::kLinuxSllHeaderSize);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 0U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 0U);
+        PFL_EXPECT(std::holds_alternative<LinuxCookedFacts>(step.facts));
+        const auto* facts = std::get_if<LinuxCookedFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(!facts->is_sll2);
+        PFL_EXPECT(facts->protocol_type == detail::kEtherTypeIpv4);
+        PFL_EXPECT(facts->packet_type == 0x1234U);
+        PFL_EXPECT(facts->hardware_type == 0x3456U);
+        PFL_EXPECT(facts->address_length == 6U);
+    }
+
+    {
+        const auto root = make_declared_root_slice(
+            {
+                0x86U, 0xddU,
+                0x00U, 0x00U,
+                0x10U, 0x20U, 0x30U, 0x40U,
+                0x12U, 0x34U,
+                0x11U,
+                0x08U,
+                0x31U, 0x32U, 0x33U, 0x34U, 0x35U, 0x36U, 0x37U, 0x38U,
+            },
+            detail::kLinuxSll2HeaderSize
+        );
+        const auto parsed = parse_linux_sll2_frame(root);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.is_sll2);
+        PFL_EXPECT(parsed.protocol_type == detail::kEtherTypeIpv6);
+        PFL_EXPECT(parsed.packet_type == 0x11U);
+        PFL_EXPECT(parsed.hardware_type == 0x1234U);
+        PFL_EXPECT(parsed.address_length == 8U);
+        PFL_EXPECT(parsed.reserved == 0U);
+        PFL_EXPECT(parsed.interface_index == 0x10203040U);
+        PFL_EXPECT(parsed.header_length == detail::kLinuxSll2HeaderSize);
+        PFL_EXPECT(parsed.declared_payload_length == 0U);
+
+        const auto step = dissect_linux_sll2(root);
+        PFL_EXPECT(step.layer == DissectionLayerKind::linux_sll2);
+        PFL_REQUIRE(step.path_contribution.has_value());
+        PFL_EXPECT(*step.path_contribution == LayerKey::linux_sll2());
+        PFL_EXPECT(step.path_contribution_policy == PathContributionPolicy::terminal_success);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.handoff->selector.domain == SelectorDomain::linux_cooked_protocol);
+        PFL_EXPECT(step.handoff->selector.value == detail::kEtherTypeIpv6);
+        PFL_EXPECT(std::holds_alternative<LinuxCookedFacts>(step.facts));
+        const auto* facts = std::get_if<LinuxCookedFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->is_sll2);
+        PFL_EXPECT(facts->interface_index == 0x10203040U);
+        PFL_EXPECT(facts->reserved == 0U);
+        PFL_EXPECT(facts->packet_type == 0x11U);
+        PFL_EXPECT(facts->address_length == 8U);
+    }
+
+    {
+        const auto truncated_root = make_declared_root_slice(
+            {0x12U, 0x34U, 0x34U, 0x56U, 0x00U, 0x06U, 0x10U, 0x20U},
+            8U
+        );
+        const auto parsed = parse_linux_sll_frame(truncated_root);
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        const auto step = dissect_linux_sll(truncated_root);
+        PFL_EXPECT(step.layer == DissectionLayerKind::linux_sll);
+        PFL_EXPECT(step.status == ParseStatus::truncated);
+        PFL_EXPECT(step.stop_reason == StopReason::truncated);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == 8U);
+        PFL_EXPECT(step.bounds.header.declared.length() == 8U);
+    }
+
+    {
+        const auto arp_slice = make_declared_root_slice(
+            {
+                0x00U, 0x01U, 0x08U, 0x00U, 0x06U, 0x04U, 0x00U, 0x01U,
+                0x00U, 0x11U, 0x22U, 0x33U, 0x44U, 0x55U,
+                0xc0U, 0x00U, 0x02U, 0x0aU,
+                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+                0xc0U, 0x00U, 0x02U, 0x01U,
+            },
+            28U
+        );
+        const auto step = dissect_linux_cooked_arp(arp_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::arp);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::terminal_protocol);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+        PFL_EXPECT(step.terminal_disposition == TerminalDisposition::recognized_non_flow);
+        PFL_EXPECT(std::holds_alternative<ArpFacts>(step.facts));
+    }
+
+    const std::vector<std::pair<const char*, const char*>> supported_flow_expectations {
+        {"parsing/linux_cooked/01_sll_ipv4_tcp.pcap", "LinuxSll -> IPv4 -> TCP"},
+        {"parsing/linux_cooked/02_sll_ipv6_udp.pcap", "LinuxSll -> IPv6 -> UDP"},
+        {"parsing/linux_cooked/05_sll2_ipv4_tcp.pcap", "LinuxSll2 -> IPv4 -> TCP"},
+        {"parsing/linux_cooked/06_sll2_ipv6_udp.pcap", "LinuxSll2 -> IPv6 -> UDP"},
+        {"parsing/linux_cooked/15_sll_addrlen_8_ipv4_udp.pcap", "LinuxSll -> IPv4 -> UDP"},
+        {"parsing/linux_cooked/16_sll_addrlen_12_ipv4_tcp.pcap", "LinuxSll -> IPv4 -> TCP"},
+        {"parsing/linux_cooked/17_sll2_addrlen_8_ipv4_udp.pcap", "LinuxSll2 -> IPv4 -> UDP"},
+        {"parsing/linux_cooked/18_sll2_addrlen_12_ipv6_udp.pcap", "LinuxSll2 -> IPv6 -> UDP"},
+    };
+
+    for (const auto& expectation : supported_flow_expectations) {
+        expect_shadow_matches_legacy_flow(
+            registry,
+            require_raw_fixture_packet(expectation.first),
+            expectation.second,
+            StopReason::terminal_protocol
+        );
+    }
+
+    expect_shadow_matches_legacy_recognized_non_flow(
+        registry,
+        require_raw_fixture_packet("parsing/linux_cooked/03_sll_arp.pcap"),
+        "LinuxSll",
+        "LinuxSll",
+        StopReason::terminal_protocol
+    );
+    expect_shadow_matches_legacy_recognized_non_flow(
+        registry,
+        require_raw_fixture_packet("parsing/linux_cooked/07_sll2_arp.pcap"),
+        "LinuxSll2",
+        "LinuxSll2",
+        StopReason::terminal_protocol
+    );
+
+    struct UnsupportedExpectation {
+        const char* relative_path;
+        StopReason expected_stop_reason;
+    };
+
+    const std::vector<UnsupportedExpectation> unsupported_expectations {
+        {"parsing/linux_cooked/04_sll_vlan_ipv4_udp_unsupported.pcap", StopReason::unknown_next_protocol},
+        {"parsing/linux_cooked/08_sll2_vlan_ipv6_tcp_unsupported.pcap", StopReason::unknown_next_protocol},
+        {"parsing/linux_cooked/09_sll_truncated_header.pcap", StopReason::truncated},
+        {"parsing/linux_cooked/10_sll2_truncated_header.pcap", StopReason::truncated},
+        {"parsing/linux_cooked/11_sll_unknown_protocol.pcap", StopReason::unknown_next_protocol},
+        {"parsing/linux_cooked/12_sll2_unknown_protocol.pcap", StopReason::unknown_next_protocol},
+        {"parsing/linux_cooked/13_sll_truncated_inner_ipv4.pcap", StopReason::truncated},
+        {"parsing/linux_cooked/14_sll2_truncated_inner_ipv6.pcap", StopReason::truncated},
+    };
+
+    for (const auto& expectation : unsupported_expectations) {
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
+        PFL_EXPECT(format_shadow_path(shadow).empty());
+        PFL_EXPECT(!shadow.has_ports);
+        PFL_EXPECT(!shadow.has_transport_payload_length);
+        PFL_EXPECT(!shadow.has_tcp_flags);
+    }
+}
+
 void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
@@ -6187,6 +6419,7 @@ void run_common_direct_dissection_tests() {
     expect_igmp_shadow_only_flow_behavior();
     expect_igmp_failures_remain_visible_without_path_contribution();
     expect_shadow_conservative_stops_and_arp_behavior();
+    expect_linux_cooked_shadow_root_parsers_and_fixture_parity();
     expect_llc_snap_shadow_parsers_bounds_and_fixture_parity();
 }
 

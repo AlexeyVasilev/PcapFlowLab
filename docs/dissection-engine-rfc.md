@@ -253,6 +253,8 @@ For IEEE 802.3 specifically, the length field defines a bounded child slice for 
 
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
+Linux cooked root dissection follows the same staged rule set in shadow mode. `DLT_LINUX_SLL` and `DLT_LINUX_SLL2` are root link-type modules that dispatch only the currently supported cooked-root protocol types for IPv4, IPv6, and ARP through a dedicated selector domain. Unsupported cooked-root VLAN/QinQ values remain conservative no-flow cases, and cooked-root ARP preserves the current production path contract of `LinuxSll` / `LinuxSll2` without appending an extra `ARP` physical-path layer.
+
 Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agnostic and be reusable across both `SelectorDomain::ip_protocol` and `SelectorDomain::ipv6_next_header` registrations.
 
 The same `dissect_ipv4` and `dissect_ipv6` modules may also be registered in both the Ethernet-resolved selector domains and the IP selector domains used for plain encapsulation. Nested IP traversal should therefore remain iterative and registry-driven: each IPv4 or IPv6 header contributes one ordinary engine step, repeated network layers remain visible in ordered dissection steps and `ProtocolPath`, and the deepest successfully parsed network layer supplies the effective terminal flow endpoints.

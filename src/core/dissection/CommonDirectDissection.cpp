@@ -252,8 +252,37 @@ void ImportDissectionCollector::consume_step(void* context, const DissectionStep
 DissectionRegistryBuildResult make_common_direct_registry() {
     const std::array registrations {
         DissectorRegistration {
+            .selector = make_link_type_selector(kLinkTypeLinuxSll),
+            .dissector = dissect_linux_sll,
+        },
+        DissectorRegistration {
+            .selector = make_link_type_selector(kLinkTypeLinuxSll2),
+            .dissector = dissect_linux_sll2,
+        },
+        DissectorRegistration {
             .selector = make_link_type_selector(kLinkTypeEthernet),
             .dissector = dissect_ethernet,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::linux_cooked_protocol,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::linux_cooked_protocol,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::linux_cooked_protocol,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_linux_cooked_arp,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
