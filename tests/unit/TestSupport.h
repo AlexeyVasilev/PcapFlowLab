@@ -22,6 +22,21 @@ void record_failure_message(std::string message);
 const std::vector<RecordedTestFailure>& recorded_failures();
 bool has_recorded_failures();
 void clear_recorded_failures();
+void push_test_context(std::string context);
+void pop_test_context();
+std::string current_test_context();
+
+class ScopedTestContext final {
+public:
+    explicit ScopedTestContext(std::string context);
+    ~ScopedTestContext();
+
+    ScopedTestContext(const ScopedTestContext&) = delete;
+    ScopedTestContext& operator=(const ScopedTestContext&) = delete;
+
+private:
+    bool active_ {true};
+};
 
 }  // namespace pfl::tests
 

@@ -16,6 +16,21 @@ std::vector<RecordedTestFailure>& failure_storage() {
     return failures;
 }
 
+std::vector<std::string>& context_storage() {
+    static std::vector<std::string> contexts {};
+    return contexts;
+}
+
+std::string format_failure_message(const char* file, int line, const char* kind, const char* expression) {
+    std::ostringstream builder {};
+    const auto context = current_test_context();
+    if (!context.empty()) {
+        builder << '[' << context << "] ";
+    }
+    builder << file << ':' << line << ' ' << kind << ": " << expression;
+    return builder.str();
+}
+
 }  // namespace
 
 void run_flow_key_tests();
@@ -81,9 +96,7 @@ void expect(bool condition, const char* expression, const char* file, int line) 
         return;
     }
 
-    std::ostringstream builder {};
-    builder << file << ':' << line << " expectation failed: " << expression;
-    record_failure_message(builder.str());
+    record_failure_message(format_failure_message(file, line, "expectation failed", expression));
 }
 
 void require(bool condition, const char* expression, const char* file, int line) {
@@ -91,9 +104,7 @@ void require(bool condition, const char* expression, const char* file, int line)
         return;
     }
 
-    std::ostringstream builder {};
-    builder << file << ':' << line << " requirement failed: " << expression;
-    throw TestFailure(builder.str());
+    throw TestFailure(format_failure_message(file, line, "requirement failed", expression));
 }
 
 void record_failure_message(std::string message) {
@@ -112,6 +123,42 @@ bool has_recorded_failures() {
 
 void clear_recorded_failures() {
     failure_storage().clear();
+}
+
+void push_test_context(std::string context) {
+    context_storage().push_back(std::move(context));
+}
+
+void pop_test_context() {
+    if (!context_storage().empty()) {
+        context_storage().pop_back();
+    }
+}
+
+std::string current_test_context() {
+    const auto& contexts = context_storage();
+    if (contexts.empty()) {
+        return {};
+    }
+
+    std::ostringstream builder {};
+    for (std::size_t index = 0; index < contexts.size(); ++index) {
+        if (index > 0U) {
+            builder << " | ";
+        }
+        builder << contexts[index];
+    }
+    return builder.str();
+}
+
+ScopedTestContext::ScopedTestContext(std::string context) {
+    push_test_context(std::move(context));
+}
+
+ScopedTestContext::~ScopedTestContext() {
+    if (active_) {
+        pop_test_context();
+    }
 }
 
 }  // namespace pfl::tests
@@ -186,6 +233,8 @@ int main() {
 
     for (const auto& suite : suites) {
         try {
+            const auto suite_context = std::string {"suite="} + std::string {suite.name};
+            pfl::tests::ScopedTestContext scoped_suite_context {suite_context};
             suite.run();
         } catch (const pfl::tests::TestFailure& failure) {
             pfl::tests::record_failure_message(failure.what());
