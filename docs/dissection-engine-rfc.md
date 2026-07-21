@@ -65,6 +65,14 @@ The new design should keep the parts that are already working well.
 - Selected-packet details already support a best-effort mode that can show partial layers without fabricating recognized flows.
 - Reassembly is already isolated in `core/reassembly` and should stay out of the import path.
 
+## Current Production Fixture Contract Notes
+
+The current production VXLAN behavior is now explicitly captured by the committed fixtures under `tests/data/parsing/vxlan/` and the production-only assertions in `tests/unit/VxlanPcapFixtureTests.cpp`.
+
+- The fixture contract covers the exact current production UDP entry rule, header validation, VNI identity, outer-fragment handling, supported inner Ethernet continuations, unsupported continuations, and nested-overlay negatives.
+- UDP and Ethernet canonical shadow parsers already exist and remain the future migration boundary for VXLAN.
+- Shadow VXLAN dissection is still pending and this RFC should not be read as claiming shadow VXLAN support today.
+
 ## Primary Architectural Decision
 
 Introduce a registry-driven dissection engine that walks a packet as a sequence of protocol modules.
