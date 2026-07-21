@@ -8,7 +8,7 @@ using namespace dissection;
 namespace {
 
 void expect_link_type_and_linux_cooked_registry_mappings(const DissectionRegistry& registry) {
-    PFL_EXPECT(registry.entry_count() == 75U);
+    PFL_EXPECT(registry.entry_count() == 83U);
     PFL_EXPECT(registry.find(make_link_type_selector(kLinkTypeEthernet)) == dissect_ethernet);
     PFL_EXPECT(registry.find(make_link_type_selector(kLinkTypeLinuxSll)) == dissect_linux_sll);
     PFL_EXPECT(registry.find(make_link_type_selector(kLinkTypeLinuxSll2)) == dissect_linux_sll2);

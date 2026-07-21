@@ -183,6 +183,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 return;
             } else if constexpr (std::is_same_v<Facts, MplsFacts>) {
                 return;
+            } else if constexpr (std::is_same_v<Facts, MplsPseudowireFacts>) {
+                return;
             } else if constexpr (std::is_same_v<Facts, AhFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, EspFacts>) {
@@ -808,6 +810,62 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kEtherTypeIpv6,
             },
             .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_bos_payload,
+                .value = kMplsBosPayloadSelectorValue,
+            },
+            .dissector = dissect_mpls_bos_payload,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_frame,
+                .value = kMplsPseudowireInnerFrameSelectorValue,
+            },
+            .dissector = dissect_mpls_pseudowire_inner_ethernet,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_ether_type,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_ether_type,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_ether_type,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_ether_type,
+                .value = detail::kEtherTypeVlan,
+            },
+            .dissector = dissect_mpls_pseudowire_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_ether_type,
+                .value = detail::kEtherTypeQinq,
+            },
+            .dissector = dissect_mpls_pseudowire_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::mpls_pw_inner_ether_type,
+                .value = detail::kEtherTypeLegacyVlan,
+            },
+            .dissector = dissect_mpls_pseudowire_inner_vlan,
         },
     };
 

@@ -12,6 +12,7 @@
 #include "core/dissection/modules/LlcSnapModule.h"
 #include "core/dissection/modules/MacsecModule.h"
 #include "core/dissection/modules/MplsModule.h"
+#include "core/dissection/modules/MplsPseudowireModule.h"
 #include "core/dissection/modules/PbbModule.h"
 #include "core/dissection/modules/PppoePppModules.h"
 #include "core/dissection/modules/TransportModules.h"

@@ -2,6 +2,7 @@
 
 #include "core/decode/PacketDecodeSupport.h"
 #include "core/dissection/modules/CommonDirectModuleSupport.h"
+#include "core/dissection/modules/MplsPseudowireModule.h"
 
 namespace pfl::dissection {
 
@@ -14,10 +15,10 @@ ProtocolSelector make_mpls_stack_selector() noexcept {
     };
 }
 
-ProtocolSelector make_mpls_payload_selector(const std::uint16_t protocol_type) noexcept {
+ProtocolSelector make_mpls_bos_payload_selector() noexcept {
     return ProtocolSelector {
-        .domain = SelectorDomain::mpls_payload,
-        .value = protocol_type,
+        .domain = SelectorDomain::mpls_bos_payload,
+        .value = kMplsBosPayloadSelectorValue,
     };
 }
 
@@ -110,22 +111,11 @@ DissectionStep dissect_mpls_label(const PacketSlice& slice) {
         return step;
     }
 
-    const auto version_nibble = static_cast<std::uint8_t>(bytes[parsed.header_length] >> 4U);
-    std::optional<ProtocolSelector> next_selector {};
-    if (version_nibble == 4U) {
-        next_selector = make_mpls_payload_selector(detail::kEtherTypeIpv4);
-    } else if (version_nibble == 6U) {
-        next_selector = make_mpls_payload_selector(detail::kEtherTypeIpv6);
-    } else {
-        step.stop_reason = StopReason::unrecognized_payload;
-        return step;
-    }
-
     step.handoff = direct::make_protocol_handoff(
         slice,
         parsed.header_length,
         parsed.declared_payload_length,
-        *next_selector
+        make_mpls_bos_payload_selector()
     );
     if (!step.handoff.has_value()) {
         step.status = ParseStatus::malformed;

@@ -86,6 +86,9 @@ enum class SelectorDomain : std::uint8_t {
     gre_protocol_type,
     mpls_stack,
     mpls_payload,
+    mpls_bos_payload,
+    mpls_pw_inner_frame,
+    mpls_pw_inner_ether_type,
     udp_destination_port_candidate,
     count,
 };
@@ -148,6 +151,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_fragment,
     gre,
     mpls,
+    mpls_pseudowire,
     ah,
     esp,
     icmp,
@@ -369,6 +373,14 @@ struct MplsFacts {
     [[nodiscard]] friend constexpr bool operator==(const MplsFacts&, const MplsFacts&) = default;
 };
 
+struct MplsPseudowireFacts {
+    bool has_control_word {false};
+    std::uint16_t control_word_flags {0U};
+    std::uint16_t sequence {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const MplsPseudowireFacts&, const MplsPseudowireFacts&) = default;
+};
+
 struct AhFacts {
     std::uint8_t next_header {0U};
     std::uint8_t payload_length_field {0U};
@@ -457,6 +469,7 @@ using LayerFacts = std::variant<
     Ipv6FragmentFacts,
     GreFacts,
     MplsFacts,
+    MplsPseudowireFacts,
     AhFacts,
     EspFacts,
     IcmpFacts,

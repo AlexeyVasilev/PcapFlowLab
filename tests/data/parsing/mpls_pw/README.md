@@ -6,7 +6,8 @@ This directory documents and exercises the exact current production behavior in
 
 This is not an RFC-target document. Production code is the source of truth.
 
-No shadow MPLS pseudowire support is implemented in this pass.
+Shadow MPLS pseudowire support now exists in the shadow dissection engine, but
+this README remains the production contract source of truth.
 
 ## Scope
 
@@ -20,7 +21,7 @@ These fixtures cover:
 - exact persistent `ProtocolPath` behavior for recognized flows.
 
 These fixtures do not claim:
-- shadow pseudowire traversal;
+- production cutover or full shadow/production equivalence beyond the committed subset;
 - generic RFC 4448 / RFC 4385 compliance beyond what production currently does;
 - generic inner EtherType continuation behind pseudowire;
 - control-word length or fragmentation semantics beyond current production checks.

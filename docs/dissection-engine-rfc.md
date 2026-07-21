@@ -623,15 +623,22 @@ GRE and EoIP are a good stress case and should shape the engine design.
   - Ethernet / VLAN / QinQ `EtherType 0x8847`;
   - GRE protocol type `0x8847`.
 - Shadow MPLS traversal should parse exactly one label shim per engine step rather than looping over a whole label stack inside one dissector.
-- Bottom-of-stack payload inference in this stage remains intentionally narrow:
+- Bottom-of-stack payload inference in this stage is explicitly ordered:
   - IPv4 by first nibble `4`;
-  - IPv6 by first nibble `6`.
-- MPLS pseudowire / control-word traversal remains deferred in the shadow engine for this pass, even though production helpers already support richer MPLS continuation.
+  - IPv6 by first nibble `6`;
+  - then MPLS Ethernet pseudowire control-word / no-control-word continuation.
+- MPLS pseudowire / control-word traversal is now shadow-supported through an explicit post-BoS selector plus a restricted inner Ethernet profile.
 - The production MPLS pseudowire fixture contract in `tests/data/parsing/mpls_pw/README.md` now records the exact post-BoS production decision order:
   - direct IPv4 nibble `4`;
   - direct IPv6 nibble `6`;
   - accepted 4-byte pseudowire control word only when the first 16 bits are `0x0000`;
   - then plain inner Ethernet continuation.
+- The shadow engine follows that same order:
+  - direct IPv4 / IPv6 recognition has priority over Ethernet-pseudowire heuristics;
+  - zero flags select the exact four-byte control word;
+  - no control-word length field is interpreted;
+  - control-word sequence is metadata only and does not affect persistent identity;
+  - both control-word and no-control-word forms contribute the same conditional `MPLS PW` physical-path layer.
 - Successfully parsed MPLS labels contribute `LayerKey::mpls(label)` in order; TTL and traffic-class bits remain non-identity metadata.
 
 This is exactly the kind of branching that is too brittle in a centralized traversal and benefits from protocol-local modules with explicit selector transitions.

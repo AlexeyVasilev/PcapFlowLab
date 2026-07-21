@@ -64,6 +64,7 @@ add_library(
     src/core/dissection/modules/Ipv6ExtensionModules.cpp
     src/core/dissection/modules/Ipv6Module.cpp
     src/core/dissection/modules/MplsModule.cpp
+    src/core/dissection/modules/MplsPseudowireModule.cpp
     src/core/dissection/modules/PbbModule.cpp
     src/core/dissection/modules/PppoePppModules.cpp
     src/core/dissection/modules/TransportModules.cpp
@@ -312,6 +313,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectLinkDissectionTests.cpp
         tests/unit/CommonDirectNetworkDissectionTests.cpp
         tests/unit/CommonDirectEncapsulationDissectionTests.cpp
+        tests/unit/CommonDirectMplsPseudowireDissectionTests.cpp
         tests/unit/CommonDirectTransportDissectionTests.cpp
         tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp

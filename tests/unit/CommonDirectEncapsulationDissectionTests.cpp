@@ -513,8 +513,8 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         PFL_REQUIRE(exact_label_step.handoff.has_value());
         PFL_REQUIRE(exact_label_step.handoff->child.has_value());
         const ProtocolSelector expected_payload_selector {
-            .domain = SelectorDomain::mpls_payload,
-            .value = detail::kEtherTypeIpv4,
+            .domain = SelectorDomain::mpls_bos_payload,
+            .value = kMplsBosPayloadSelectorValue,
         };
         PFL_EXPECT(exact_label_step.handoff->selector == expected_payload_selector);
         PFL_EXPECT(exact_label_step.bounds.full.declared.length() == exact_label_packet.bytes.size());
@@ -707,7 +707,7 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
             make_mpls_payload_with_labels({16060U}, {0x12U, 0x34U, 0x56U, 0x78U})
         )), registry);
         PFL_EXPECT(unknown_payload_shadow.outcome == ImportDissectionOutcome::unrecognized);
-        PFL_EXPECT(unknown_payload_shadow.stop_reason == StopReason::unrecognized_payload);
+        PFL_EXPECT(unknown_payload_shadow.stop_reason == StopReason::truncated);
         PFL_EXPECT(format_shadow_path(unknown_payload_shadow) == "EthernetII -> MPLS(label=16060)");
     }
 
@@ -762,20 +762,6 @@ void expect_mpls_shadow_parsers_bounds_and_traversal() {
         "EthernetII -> MPLS(label=16063) -> IPv4",
         StopReason::needs_reassembly
     );
-
-    {
-        const auto pseudowire_like_shadow = run_shadow(make_raw_packet(make_ethernet_frame_with_payload(
-            detail::kEtherTypeMplsUnicast,
-            make_mpls_payload_with_labels(
-                {16064U},
-                {0x00U, 0x00U, 0x12U, 0x34U, 0x02U, 0x00U, 0x00U, 0x00U, 0x31U, 0x01U}
-            )
-        )), registry);
-        PFL_EXPECT(pseudowire_like_shadow.outcome == ImportDissectionOutcome::unrecognized);
-        PFL_EXPECT(pseudowire_like_shadow.stop_reason == StopReason::unrecognized_payload);
-        PFL_EXPECT(format_shadow_path(pseudowire_like_shadow) == "EthernetII -> MPLS(label=16064)");
-        PFL_EXPECT(format_shadow_path(pseudowire_like_shadow).find("MPLS PW") == std::string::npos);
-    }
 
     {
         const auto base_payload = make_ethernet_frame_with_payload(
