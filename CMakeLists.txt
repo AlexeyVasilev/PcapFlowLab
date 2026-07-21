@@ -305,6 +305,10 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectDissectionTests.cpp
         tests/unit/CommonDirectDissectionTestSupport.cpp
         tests/unit/CommonDirectCoreDissectionTests.cpp
+        tests/unit/CommonDirectRegistryEngineTests.cpp
+        tests/unit/CommonDirectCollectorTests.cpp
+        tests/unit/CommonDirectPathPolicyTests.cpp
+        tests/unit/CommonDirectBoundsTraversalTests.cpp
         tests/unit/CommonDirectLinkDissectionTests.cpp
         tests/unit/CommonDirectNetworkDissectionTests.cpp
         tests/unit/CommonDirectEncapsulationDissectionTests.cpp

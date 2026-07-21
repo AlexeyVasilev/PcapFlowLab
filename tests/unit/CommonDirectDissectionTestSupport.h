@@ -48,6 +48,10 @@ struct StepKindRecorder {
 };
 
 void run_common_direct_core_dissection_tests();
+void run_common_direct_registry_engine_tests();
+void run_common_direct_collector_tests();
+void run_common_direct_path_policy_tests();
+void run_common_direct_bounds_traversal_tests();
 void run_common_direct_link_dissection_tests();
 void run_common_direct_network_dissection_tests();
 void run_common_direct_encapsulation_dissection_tests();
