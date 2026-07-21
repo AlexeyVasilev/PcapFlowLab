@@ -1,202 +1,309 @@
-Synthetic IEEE 802.1ah PBB / MAC-in-MAC parsing fixtures for regression tests.
+Synthetic IEEE 802.1ah PBB / MAC-in-MAC fixtures for the current production decoder.
 
-This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
-- basic outer backbone Ethernet plus PBB I-TAG framing;
-- inner customer Ethernet continuation into IPv4 / IPv6 / ARP;
-- optional outer provider B-TAG before the I-TAG;
-- optional inner customer VLAN / QinQ / LLC-SNAP composition;
-- unknown inner EtherType fallback;
-- malformed or truncated I-TAG / inner Ethernet / inner IPv4 cases;
-- non-default I-TAG metadata presentation coverage.
+These fixtures define the production migration contract for a future shadow PBB pass.
 
-Current repository behavior now supports a bounded first pass of shared PBB / MAC-in-MAC parsing:
-- outer EtherType `0x88e7` I-TAG detection;
-- 4-byte I-TAG metadata presentation (Priority / Drop Eligible / NCA / Reserved 1 / Reserved 2 / I-SID);
-- inner customer Ethernet continuation into IPv4 / IPv6 / ARP;
-- reuse of inner VLAN / QinQ / LLC/SNAP continuation;
-- conservative no-flow handling for unknown inner EtherType and malformed/truncated cases.
+Current production subset covered here:
+- outer Ethernet II entry with EtherType `0x88e7`;
+- outer VLAN entry before PBB through the shared VLAN parser for `0x8100`, `0x88a8`, and `0x9100`;
+- fixed 4-byte PBB I-TAG parsing;
+- PBB identity keyed only by 24-bit I-SID;
+- inner customer Ethernet continuation into:
+  - IPv4;
+  - IPv6;
+  - ARP;
+  - inner VLAN / QinQ;
+  - inner IEEE 802.3 LLC/SNAP when it resolves to IPv4;
+- conservative no-flow handling for:
+  - unknown inner EtherType;
+  - known-but-unsupported nested continuations such as inner PPPoE session;
+  - truncated I-TAG;
+  - complete I-TAG with no inner Ethernet bytes;
+  - truncated inner Ethernet;
+  - truncated inner IPv4;
+  - truncated inner IPv6;
+  - truncated inner ARP;
+  - extra captured tail beyond the bounded inner network/transport lengths;
+  - caplen-truncated inner IPv4 after a complete I-TAG.
 
-## Local generation
+Not covered or intentionally unsupported here:
+- PBB-TE;
+- OAM / CFM;
+- bridge-learning or control-plane behavior;
+- nested PBB continuation;
+- inner PPPoE continuation through PBB;
+- inner MPLS continuation through PBB;
+- MACsec through PBB.
 
-Run from the repository root after installing Scapy locally:
+Key production semantics locked by these fixtures:
+- exact entry EtherType is `0x88e7`;
+- I-TAG size is exactly 4 bytes;
+- I-TAG fields are parsed as:
+  - PCP: top 3 bits;
+  - DEI: next 1 bit;
+  - NCA: next 1 bit;
+  - reserved: next 3 bits;
+  - I-SID: low 24 bits;
+- ProtocolPath contribution is exactly one `PBB(isid=0x......)` layer;
+- PBB flow identity uses I-SID only;
+- PCP / DEI / NCA / reserved bits do not split flows;
+- inner Ethernet II appears in physical ProtocolPath for inner Ethernet II continuations;
+- inner IEEE 802.3 / LLC-SNAP appears as `IEEE 802.3 -> LLC/SNAP` rather than `EthernetII`.
 
-```bash
-python3 tests/data/parsing/pbb/generate_pbb_pcaps.py --output-dir tests/data/parsing/pbb
-```
-
-To overwrite previously generated fixtures:
-
-```bash
-python3 tests/data/parsing/pbb/generate_pbb_pcaps.py --output-dir tests/data/parsing/pbb --force
-```
-
-Notes:
-- The generator only writes local classic little-endian Ethernet `.pcap` files.
-- It does not send packets and does not require root/admin privileges.
-- Review generated captures locally in Wireshark before committing them.
-- Scapy is used only for stable inner IPv4 / IPv6 / TCP / UDP / ARP payload bytes.
-- PBB I-TAG, outer/inner Ethernet framing, VLAN/QinQ, LLC/SNAP, and malformed/truncated cases are assembled from explicit bytes for deterministic wire layout.
-
-## Shared constants
-
-- Backbone A MAC: `02:00:00:00:60:01`
-- Backbone B MAC: `02:00:00:00:60:02`
-- Customer A MAC: `02:00:00:00:61:01`
-- Customer B MAC: `02:00:00:00:61:02`
-- Host A IPv4: `192.0.2.60`
-- Host B IPv4: `198.51.100.60`
-- Host A IPv6: `2001:db8:60::10`
-- Host B IPv6: `2001:db8:60::20`
+Shared fixture constants reused unless a case says otherwise:
+- outer backbone source MAC: `02:00:00:00:60:01`
+- outer backbone destination MAC: `02:00:00:00:60:02`
+- inner customer source MAC: `02:00:00:00:61:01`
+- inner customer destination MAC: `02:00:00:00:61:02`
+- IPv4 source: `192.0.2.60`
+- IPv4 destination: `198.51.100.60`
+- IPv6 source: `2001:db8:60::10`
+- IPv6 destination: `2001:db8:60::20`
 - TCP source port: `49190`
 - TCP destination port: `443`
 - UDP source port: `53570`
 - UDP destination port: `443`
-- Default I-SID: `0x123456`
-- Outer B-VLAN ID: `600`
-- Inner C-VLAN ID: `610`
-- Inner S-VLAN ID: `620`
+- default I-SID: `0x123456`
 
-## PBB / MAC-in-MAC notes
+No committed fixture generator is kept for this directory. PCAPs are committed deterministic binaries.
 
-- Outer EtherType for the I-TAG envelope is `0x88e7`.
-- This fixture set models a narrow MAC-in-MAC chain:
-  - outer backbone Ethernet;
-  - optional outer provider B-TAG;
-  - PBB I-TAG;
-  - inner customer Ethernet;
-  - optional inner VLAN / QinQ / LLC-SNAP;
-  - inner IPv4 / IPv6 / ARP / unknown / malformed payload.
-- The 4-byte I-TAG is emitted from explicit bytes using:
-  - Priority: 3 bits
-  - Drop Eligible: 1 bit
-  - NCA: 1 bit
-  - reserved: 3 bits (`Reserved 1` + `Reserved 2` in UI)
-  - I-SID: 24 bits
-- No PBB-TE, OAM/CFM, control-plane, service semantics, or bridge-learning behavior is implied here.
-
-## Current support assumptions
-
-Current shared support covers:
-- normal inner IPv4 / IPv6 TCP/UDP flow extraction behind PBB;
-- ARP recognition behind PBB without fabricating a transport flow;
-- outer B-TAG preservation before the I-TAG;
-- inner VLAN / QinQ / LLC/SNAP continuation after the I-TAG;
-- conservative partial presentation for truncated inner IPv4 headers.
-
-Still intentionally conservative:
-- unknown inner EtherType remains no-flow with bounded Data preview;
-- truncated I-TAG and truncated inner Ethernet remain no-flow;
-- truncated I-TAG can still expose partial first-byte bit fields when available;
-- conservative no-flow PBB cases can expose basic Protocol-tab text with I-TAG metadata and truncation / inner-header warnings when available;
-- no PBB-TE, OAM/CFM, bridge-learning, or service semantics are implied.
-
----
+## Fixture Contract
 
 ### 01_pbb_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv4 / TCP / Raw
-- Current expected behavior: normal IPv4/TCP flow through MAC-in-MAC.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: PCP `0`, DEI `0`, NCA `0`, reserved `0`, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv4 -> TCP.
+- Production outcome: recognized flow.
+- ProtocolId: `TCP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP`.
+- Purpose: baseline direct inner IPv4/TCP continuation.
 
 ### 02_pbb_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv4 / UDP / Raw
-- Current expected behavior: normal IPv4/UDP flow through MAC-in-MAC.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP`.
+- Purpose: baseline direct inner IPv4/UDP continuation.
 
 ### 03_pbb_ipv6_tcp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv6 / TCP / Raw
-- Current expected behavior: normal IPv6/TCP flow through MAC-in-MAC.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv6 -> TCP.
+- Production outcome: recognized flow.
+- ProtocolId: `TCP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> TCP`.
+- Purpose: baseline direct inner IPv6/TCP continuation.
 
 ### 04_pbb_ipv6_udp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv6 / UDP / Raw
-- Current expected behavior: normal IPv6/UDP flow through MAC-in-MAC.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv6 -> UDP.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> UDP`.
+- Purpose: baseline direct inner IPv6/UDP continuation.
 
 ### 05_pbb_arp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / ARP
-- Current expected behavior: ARP recognized behind PBB without fabricating a transport flow.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> ARP.
+- Production outcome: recognized non-flow surfaced through the normal flow list.
+- ProtocolId: `ARP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII`.
+- Purpose: locks current ARP-behind-PBB behavior without fabricating transport ports.
 
 ### 06_pbb_inner_vlan_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / inner VLAN / IPv4 / TCP
-- Current expected behavior: PBB continuation plus reuse of existing inner VLAN support.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> VLAN `610` -> IPv4 -> TCP.
+- Production outcome: recognized flow.
+- ProtocolId: `TCP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=610) -> IPv4 -> TCP`.
+- Purpose: inner customer single-tag VLAN continuation.
 
 ### 07_pbb_inner_qinq_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / inner QinQ / inner VLAN / IPv4 / UDP
-- Current expected behavior: PBB continuation plus reuse of stacked customer VLAN support.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> outer inner VLAN `620` -> inner VLAN `610` -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=620) -> VLAN(vid=610) -> IPv4 -> UDP`.
+- Purpose: inner customer QinQ continuation.
 
 ### 08_pbb_inner_llc_snap_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet 802.3 length / LLC / SNAP / IPv4 / UDP
-- Inner customer Type/Length field: `0x0030` (`48` bytes)
-- Current expected behavior: PBB continuation plus reuse of the existing LLC/SNAP path.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: inner IEEE 802.3 length frame -> LLC/SNAP -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP`.
+- Purpose: locks shared inner LLC/SNAP continuation through PBB.
 
 ### 09_pbb_outer_btag_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / outer provider VLAN B-TAG / PBB I-TAG / inner Ethernet / IPv4 / UDP
-- Current expected behavior: provider VLAN before PBB I-TAG remains visible and does not block inner IPv4/UDP continuation.
+- Outer encapsulation: Ethernet II -> provider B-TAG VLAN `600` -> PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> VLAN(vid=600) -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP`.
+- Purpose: provider VLAN before PBB remains visible in path and selected-packet presentation.
 
 ### 10_pbb_outer_btag_inner_vlan_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / outer provider VLAN B-TAG / PBB I-TAG / inner Ethernet / inner VLAN / IPv4 / TCP
-- Current expected behavior: outer provider VLAN plus inner customer VLAN composition through PBB.
+- Outer encapsulation: Ethernet II -> provider B-TAG VLAN `600` -> PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> VLAN `610` -> IPv4 -> TCP.
+- Production outcome: recognized flow.
+- ProtocolId: `TCP`.
+- Physical ProtocolPath: `EthernetII -> VLAN(vid=600) -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=610) -> IPv4 -> TCP`.
+- Purpose: outer provider VLAN plus inner customer VLAN composition.
 
 ### 11_pbb_unknown_inner_ethertype.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / unknown EtherType / Raw
-- Current expected behavior: conservative fallback only; parser must not fabricate IPv4 / IPv6 / ARP.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> unknown EtherType.
+- Production outcome: unrecognized packet.
+- Reason text: `Unknown PBB inner EtherType`.
+- Path behavior: no persisted flow ProtocolPath.
+- Purpose: unknown inner EtherType must not fabricate IPv4/IPv6/ARP continuation.
 
 ### 12_pbb_truncated_itag.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB EtherType `0x88e7` / incomplete I-TAG
-- Current expected behavior: malformed/truncated I-TAG robustness only; no crash.
+- Outer encapsulation: Ethernet II -> EtherType `0x88e7`.
+- Boundary shape: only 2 of 4 I-TAG bytes captured.
+- Production outcome: unrecognized packet.
+- Reason text: `PBB I-TAG truncated`.
+- Selected-packet behavior: partial first-byte metadata can still be shown.
+- Purpose: fixed-header truncation contract.
 
 ### 13_pbb_truncated_inner_ethernet.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / partial inner Ethernet header
-- Current expected behavior: no crash with conservative partial inner Ethernet presentation.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Boundary shape: fewer than 14 bytes remain for the inner Ethernet header.
+- Production outcome: unrecognized packet.
+- Reason text: `Inner Ethernet header truncated`.
+- Purpose: complete I-TAG with truncated inner Ethernet continuation.
 
 ### 14_pbb_truncated_inner_ipv4.pcap
-
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG / inner Ethernet / IPv4 EtherType / partial IPv4 header
-- Current expected behavior: no-flow with shared partial IPv4 presentation reused after the PBB shim.
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Inner structure: complete inner Ethernet II with EtherType IPv4, but fixed IPv4 header is truncated.
+- Production outcome: unrecognized packet.
+- Reason text: `IPv4 header truncated`.
+- Purpose: complete inner Ethernet plus truncated inner protocol.
 
 ### 15_pbb_metadata_nondefault_itag.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: PCP `5`, DEI `1`, NCA `1`, reserved `0`, I-SID `0x654321`.
+- Inner structure: Ethernet II -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x654321) -> EthernetII -> IPv4 -> UDP`.
+- Purpose: non-default I-TAG metadata presentation and non-default I-SID identity.
 
-- Packets: 1
-- Layer chain: outer Ethernet / PBB I-TAG with non-default Priority / Drop Eligible / NCA / I-SID / inner Ethernet / IPv4 / UDP
-- Current expected behavior: normal IPv4/UDP flow plus visible non-default I-TAG metadata fields such as Priority, Drop Eligible, NCA, Reserved 1, Reserved 2, and I-SID.
+### 16_pbb_same_isid_same_inner_tuple_metadata_variation.pcap
+- Packets: 2.
+- Outer encapsulation: Ethernet II directly into PBB for both packets.
+- Packet 1 I-TAG: PCP `0`, DEI `0`, NCA `0`, reserved `0`, I-SID `0x123456`.
+- Packet 2 I-TAG: PCP `7`, DEI `1`, NCA `1`, reserved `5`, I-SID `0x123456`.
+- Inner structure for both packets: identical Ethernet II -> IPv4 -> UDP tuple.
+- Production outcome: one recognized flow with two packets.
+- Physical ProtocolPath for both packets: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP`.
+- Identity purpose: proves PCP / DEI / NCA / reserved bits do not split the flow when I-SID is unchanged.
 
-## Expected generated file list
+### 17_pbb_different_isid_same_inner_tuple.pcap
+- Packets: 2.
+- Outer encapsulation: Ethernet II directly into PBB for both packets.
+- Packet 1 I-SID: `0x123456`.
+- Packet 2 I-SID: `0x123457`.
+- Inner structure for both packets: identical Ethernet II -> IPv4 -> UDP tuple.
+- Production outcome: two recognized flows.
+- Physical ProtocolPaths:
+  - `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP`
+  - `EthernetII -> PBB(isid=0x123457) -> EthernetII -> IPv4 -> UDP`
+- Identity purpose: proves I-SID participates in production flow/path identity.
 
-- `01_pbb_ipv4_tcp.pcap`
-- `02_pbb_ipv4_udp.pcap`
-- `03_pbb_ipv6_tcp.pcap`
-- `04_pbb_ipv6_udp.pcap`
-- `05_pbb_arp.pcap`
-- `06_pbb_inner_vlan_ipv4_tcp.pcap`
-- `07_pbb_inner_qinq_ipv4_udp.pcap`
-- `08_pbb_inner_llc_snap_ipv4_udp.pcap`
-- `09_pbb_outer_btag_ipv4_udp.pcap`
-- `10_pbb_outer_btag_inner_vlan_ipv4_tcp.pcap`
-- `11_pbb_unknown_inner_ethertype.pcap`
-- `12_pbb_truncated_itag.pcap`
-- `13_pbb_truncated_inner_ethernet.pcap`
-- `14_pbb_truncated_inner_ipv4.pcap`
-- `15_pbb_metadata_nondefault_itag.pcap`
+### 18_pbb_zero_isid_ipv4_udp.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0x000000`.
+- Inner structure: Ethernet II -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x000000) -> EthernetII -> IPv4 -> UDP`.
+- Purpose: lower I-SID boundary coverage.
+
+### 19_pbb_max_isid_ipv4_udp.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: default metadata, I-SID `0xffffff`.
+- Inner structure: Ethernet II -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0xffffff) -> EthernetII -> IPv4 -> UDP`.
+- Purpose: upper 24-bit I-SID boundary coverage.
+
+### 20_pbb_outer_qinq_ipv6_udp.pcap
+- Outer encapsulation: Ethernet II -> outer provider tag `0x88a8` VLAN `701` -> inner provider/customer tag `0x8100` VLAN `702` -> PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv6 -> UDP.
+- Production outcome: recognized flow.
+- Physical ProtocolPath: `EthernetII -> VLAN(vid=701) -> VLAN(vid=702) -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> UDP`.
+- Purpose: proves production can enter PBB after outer QinQ and preserve both outer VLAN layers.
+
+### 21_pbb_outer_legacy_vlan_ipv4_udp.pcap
+- Outer encapsulation: Ethernet II -> legacy VLAN TPID `0x9100` with VID `703` -> PBB.
+- PBB header: default metadata, I-SID `0x123456`.
+- Inner structure: Ethernet II -> IPv4 -> UDP.
+- Production outcome: recognized flow.
+- Physical ProtocolPath: `EthernetII -> VLAN(vid=703) -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP`.
+- Purpose: locks current shared support for alternate outer VLAN TPID `0x9100` before PBB.
+
+### 22_pbb_capture_truncated_inner_ipv4_caplen_lt_origlen.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Boundary shape: capture ends 8 bytes into the inner IPv4 header; original frame length is larger than captured length.
+- Production outcome: unrecognized packet.
+- Reason text: `IPv4 header truncated`.
+- Selected-packet behavior: inner Ethernet and partial IPv4 details remain visible; no transport tuple is fabricated.
+- Purpose: capture-truncation contract after a complete PBB header and complete inner Ethernet header.
+
+### 23_pbb_complete_itag_no_inner_ethernet.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Boundary shape: zero bytes remain after the fixed 4-byte I-TAG.
+- Production outcome: unrecognized packet.
+- Reason text: `Inner Ethernet header truncated`.
+- Selected-packet behavior: PBB details remain visible and an empty/truncated inner Ethernet shell is still surfaced conservatively.
+- Purpose: distinguishes complete PBB-header parsing from missing inner Ethernet bytes.
+
+### 24_pbb_truncated_inner_ipv6.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Inner structure: complete inner Ethernet II with EtherType IPv6, but only 20 of 40 fixed IPv6 header bytes are captured.
+- Production outcome: unrecognized packet.
+- Reason text: `IPv6 header truncated`.
+- Selected-packet behavior: conservative details stop at the inner Ethernet layer; no inner IPv6/UDP tuple is fabricated.
+- Purpose: inner IPv6 fixed-header truncation contract after a complete I-TAG and complete inner Ethernet header.
+
+### 25_pbb_truncated_inner_arp.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Inner structure: complete inner Ethernet II with EtherType ARP, fixed 8-byte ARP header present, address section truncated.
+- Selected-packet behavior: conservative ARP details are exposed with a truncated address section warning.
+- Import accounting note: current fixture tests intentionally do not over-constrain whether this packet is surfaced through the unrecognized list or through the normal ARP flow-style accounting path.
+- Purpose: conservative ARP-address-section truncation behind PBB.
+
+### 26_pbb_inner_pppoe_session_unsupported.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Inner structure: complete inner Ethernet II with EtherType PPPoE Session and a minimal PPPoE session payload.
+- Production outcome: unrecognized packet.
+- Reason text: `Unsupported or malformed packet`.
+- Path behavior: no persisted flow ProtocolPath even though the inner EtherType is known.
+- Purpose: known nested continuation that current production does not continue through PBB.
+
+### 27_pbb_extra_captured_tail_ipv4_udp.pcap
+- Outer encapsulation: Ethernet II directly into PBB.
+- PBB header: complete default I-TAG.
+- Inner structure: Ethernet II -> IPv4 -> UDP with UDP payload `pbb-tail-ok`.
+- Boundary shape: conspicuous captured tail bytes `de ad be ef a5 5a` follow the declared inner IPv4/UDP lengths.
+- Production outcome: recognized flow.
+- ProtocolId: `UDP`.
+- Physical ProtocolPath: `EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP`.
+- Payload-accounting purpose: transport payload length and payload dump stay bounded to the declared inner IPv4/UDP lengths and exclude the unrelated captured tail.

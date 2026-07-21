@@ -730,6 +730,17 @@ Within this stage, LLC/SNAP parity specifically means:
   - AH;
   - ESP.
 
+For PBB specifically, the current migration contract is defined by the committed
+production-only fixtures under `tests/data/parsing/pbb/` plus
+`tests/unit/PbbPcapFixtureTests.cpp`. That contract now covers exact `0x88e7`
+entry semantics, fixed 4-byte I-TAG parsing, I-SID-only identity behavior,
+outer VLAN/QinQ/legacy-TPID entry before PBB, inner Ethernet continuation into
+the currently supported IPv4/IPv6/ARP and inner VLAN/QinQ/LLC-SNAP subset,
+known-but-unsupported nested continuations, complete-I-TAG/no-inner-Ethernet
+cases, extra-tail payload-bounds behavior, and conservative
+malformed/truncation behavior. No shadow PBB dissector is implemented in this
+stage.
+
 For AH specifically, the shadow registry should keep the IPv4-versus-IPv6 next-selector distinction explicit instead of hiding it behind one domain-agnostic continuation. For ESP, the shadow registry should model the current production subset as an opaque terminal flow candidate keyed by SPI, without decrypting or decoding encrypted payload contents.
 
 ### Stage 4: full semantic differential parity

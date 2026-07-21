@@ -19,6 +19,17 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
 }
 
+const ProtocolPath* require_protocol_path(const CaptureSession& session, const ProtocolPathId protocol_path_id) {
+    PFL_REQUIRE(protocol_path_id != kInvalidProtocolPathId);
+    const auto* path = session.state().protocol_path_registry.find(protocol_path_id);
+    PFL_REQUIRE(path != nullptr);
+    return path;
+}
+
+std::string require_flow_protocol_path_text(const CaptureSession& session, const FlowRow& row) {
+    return format_protocol_path(*require_protocol_path(session, row.protocol_path_id));
+}
+
 PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
     const auto packet = session.find_packet(packet_index);
     PFL_REQUIRE(packet.has_value());
@@ -79,6 +90,17 @@ std::string ascii_to_hex_fragment(const std::string& text) {
                 << static_cast<unsigned>(static_cast<unsigned char>(text[index]));
     }
     return builder.str();
+}
+
+void expect_hex_dump_contains_payload_text(
+    const std::string& hex_dump,
+    const std::string& text
+) {
+    constexpr std::size_t kHexDumpLinePayloadBytes = 16U;
+    for (std::size_t offset = 0U; offset < text.size(); offset += kHexDumpLinePayloadBytes) {
+        const auto chunk = text.substr(offset, std::min(kHexDumpLinePayloadBytes, text.size() - offset));
+        PFL_EXPECT(hex_dump.find(ascii_to_hex_fragment(chunk)) != std::string::npos);
+    }
 }
 
 void expect_layer_prefix(
@@ -152,8 +174,10 @@ void expect_single_ip_pbb_flow(
     const bool expected_dei = false,
     const bool expected_nca = false,
     const std::uint32_t expected_isid = 0x123456U,
+    const std::string& expected_protocol_path = {},
     const std::string& expected_transport_payload = {}
 ) {
+    const ScopedTestContext fixture_context {"fixture=" + relative_path.string()};
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.summary().packet_count == 1U);
     const auto rows = session.list_flows();
@@ -162,6 +186,11 @@ void expect_single_ip_pbb_flow(
     PFL_EXPECT(rows[0].protocol_text == expected_protocol);
     PFL_EXPECT(rows[0].packet_count == 1U);
     PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+    PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+    if (!expected_protocol_path.empty()) {
+        PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == expected_protocol_path);
+    }
+    PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
@@ -213,7 +242,7 @@ void expect_single_ip_pbb_flow(
     if (!expected_transport_payload.empty()) {
         PFL_EXPECT(packet.payload_length == expected_transport_payload.size());
         const auto payload_dump = session.read_packet_payload_hex_dump(packet);
-        PFL_EXPECT(payload_dump.find(ascii_to_hex_fragment(expected_transport_payload)) != std::string::npos);
+        expect_hex_dump_contains_payload_text(payload_dump, expected_transport_payload);
     }
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
@@ -236,6 +265,7 @@ void expect_single_ip_pbb_flow(
 }
 
 void expect_single_pbb_arp_packet(CaptureSession& session, const std::filesystem::path& relative_path) {
+    const ScopedTestContext fixture_context {"fixture=" + relative_path.string()};
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.summary().packet_count == 1U);
     PFL_EXPECT(session.summary().flow_count == 1U);
@@ -244,6 +274,12 @@ void expect_single_pbb_arp_packet(CaptureSession& session, const std::filesystem
     const auto rows = session.list_flows();
     PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].packet_count == 1U);
+    PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+    PFL_EXPECT(
+        require_flow_protocol_path_text(session, rows[0]) ==
+        "EthernetII -> PBB(isid=0x123456) -> EthernetII"
+    );
+    PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
 
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
@@ -271,9 +307,11 @@ void expect_single_unrecognized_pbb_packet(
     const std::filesystem::path& relative_path,
     const std::string& expected_reason
 ) {
+    const ScopedTestContext fixture_context {"fixture=" + relative_path.string()};
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     PFL_EXPECT(session.list_flows().empty());
     PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+    PFL_EXPECT(session.state().protocol_path_registry.size() == 0U);
     const auto rows = session.list_unrecognized_packets(0U, 30U);
     PFL_REQUIRE(rows.size() == 1U);
     PFL_EXPECT(rows[0].row_number == 1U);
@@ -303,6 +341,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP",
             "pbb-ipv4-tcp"
         );
     }
@@ -326,6 +365,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
             "pbb-ipv4-udp"
         );
     }
@@ -349,6 +389,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> TCP",
             "pbb-ipv6-tcp"
         );
     }
@@ -372,6 +413,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> UDP",
             "pbb-ipv6-udp"
         );
     }
@@ -400,6 +442,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=610) -> IPv4 -> TCP",
             "pbb-ipv4-tcp"
         );
     }
@@ -423,6 +466,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=620) -> VLAN(vid=610) -> IPv4 -> UDP",
             "pbb-ipv4-udp"
         );
     }
@@ -446,6 +490,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP",
             "pbb-ipv4-udp"
         );
 
@@ -486,6 +531,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> VLAN(vid=600) -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
             "pbb-ipv4-udp"
         );
 
@@ -529,6 +575,7 @@ void run_pbb_pcap_fixture_tests() {
             false,
             false,
             0x123456U,
+            "EthernetII -> VLAN(vid=600) -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=610) -> IPv4 -> TCP",
             "pbb-ipv4-tcp"
         );
 
@@ -692,8 +739,292 @@ void run_pbb_pcap_fixture_tests() {
             true,
             true,
             0x654321U,
+            "EthernetII -> PBB(isid=0x654321) -> EthernetII -> IPv4 -> UDP",
             "pbb-ipv4-udp"
         );
+    }
+
+    {
+        CaptureSession session {};
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/16_pbb_same_isid_same_inner_tuple_metadata_variation.pcap"};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/pbb/16_pbb_same_isid_same_inner_tuple_metadata_variation.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 2U);
+        PFL_EXPECT(session.summary().flow_count == 1U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].packet_count == 2U);
+        PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP");
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+
+        const auto first_packet = require_packet(session, 0U);
+        const auto second_packet = require_packet(session, 1U);
+        const auto first_details = session.read_packet_details(first_packet);
+        const auto second_details = session.read_packet_details(second_packet);
+        PFL_REQUIRE(first_details.has_value());
+        PFL_REQUIRE(second_details.has_value());
+        PFL_EXPECT(first_details->pbb.isid == 0x123456U);
+        PFL_EXPECT(second_details->pbb.isid == 0x123456U);
+        PFL_EXPECT(first_details->pbb.pcp == 0U);
+        PFL_EXPECT(!first_details->pbb.dei);
+        PFL_EXPECT(!first_details->pbb.nca);
+        PFL_EXPECT(second_details->pbb.pcp == 7U);
+        PFL_EXPECT(second_details->pbb.dei);
+        PFL_EXPECT(second_details->pbb.nca);
+        PFL_EXPECT(second_details->pbb.reserved == 5U);
+    }
+
+    {
+        CaptureSession session {};
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/17_pbb_different_isid_same_inner_tuple.pcap"};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/pbb/17_pbb_different_isid_same_inner_tuple.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 2U);
+        PFL_EXPECT(session.summary().flow_count == 2U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(rows[0].protocol_path_id != rows[1].protocol_path_id);
+        const auto first_path = require_flow_protocol_path_text(session, rows[0]);
+        const auto second_path = require_flow_protocol_path_text(session, rows[1]);
+        PFL_EXPECT(
+            (first_path == "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP" &&
+             second_path == "EthernetII -> PBB(isid=0x123457) -> EthernetII -> IPv4 -> UDP") ||
+            (first_path == "EthernetII -> PBB(isid=0x123457) -> EthernetII -> IPv4 -> UDP" &&
+             second_path == "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP")
+        );
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 2U);
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/18_pbb_zero_isid_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x000000U,
+            "EthernetII -> PBB(isid=0x000000) -> EthernetII -> IPv4 -> UDP",
+            "pbb-contract-udp"
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/19_pbb_max_isid_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0xFFFFFFU,
+            "EthernetII -> PBB(isid=0xffffff) -> EthernetII -> IPv4 -> UDP",
+            "pbb-contract-udp"
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/20_pbb_outer_qinq_ipv6_udp.pcap",
+            FlowAddressFamily::ipv6,
+            "UDP",
+            "2001:0db8:0060:0000:0000:0000:0000:0010",
+            53570U,
+            "2001:0db8:0060:0000:0000:0000:0000:0020",
+            443U,
+            {"frame", "ethernet", "vlan", "vlan", "pbb", "ethernet-inner", "ipv6", "udp"},
+            2U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "EthernetII -> VLAN(vid=701) -> VLAN(vid=702) -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> UDP",
+            "pbb-contract-ipv6"
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/21_pbb_outer_legacy_vlan_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "vlan", "pbb", "ethernet-inner", "ipv4", "udp"},
+            1U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "EthernetII -> VLAN(vid=703) -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
+            "pbb-contract-udp"
+        );
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/22_pbb_capture_truncated_inner_ipv4_caplen_lt_origlen.pcap",
+            "IPv4 header truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        PFL_EXPECT(packet.captured_length < packet.original_length);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(details->ipv4.header_truncated);
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/23_pbb_complete_itag_no_inner_ethernet.pcap",
+            "Inner Ethernet header truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->inner_ethernet.header_truncated);
+        PFL_EXPECT(details->inner_ethernet.available_header_bytes == 0U);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner"});
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/24_pbb_truncated_inner_ipv6.pcap",
+            "IPv6 header truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(!details->has_ipv6);
+        PFL_EXPECT(!details->has_udp);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner"});
+        PFL_EXPECT(find_layer(summary_layers, "ipv6") == nullptr);
+        PFL_EXPECT(find_layer(summary_layers, "udp") == nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/25_pbb_truncated_inner_arp.pcap"};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/pbb/25_pbb_truncated_inner_arp.pcap")));
+
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        if (!rows.empty()) {
+            PFL_EXPECT(rows[0].reason_text == "ARP header truncated");
+        }
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->has_arp);
+        PFL_EXPECT(!details->arp.fixed_header_truncated);
+        PFL_EXPECT(details->arp.address_section_truncated);
+        PFL_EXPECT(details->arp.hardware_type == 1U);
+        PFL_EXPECT(details->arp.protocol_type == 0x0800U);
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        expect_layer_prefix(summary_layers, {"frame", "ethernet", "pbb", "ethernet-inner"});
+        PFL_EXPECT(find_layer(summary_layers, "arp") != nullptr);
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_unrecognized_pbb_packet(
+            session,
+            "parsing/pbb/26_pbb_inner_pppoe_session_unsupported.pcap",
+            "Unsupported or malformed packet"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_pbb);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+        PFL_EXPECT(!details->has_arp);
+        PFL_EXPECT(!details->has_tcp);
+        PFL_EXPECT(!details->has_udp);
+    }
+
+    {
+        CaptureSession session {};
+        expect_single_ip_pbb_flow(
+            session,
+            "parsing/pbb/27_pbb_extra_captured_tail_ipv4_udp.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.60",
+            53570U,
+            "198.51.100.60",
+            443U,
+            {"frame", "ethernet", "pbb", "ethernet-inner", "ipv4", "udp"},
+            0U,
+            0U,
+            false,
+            0U,
+            false,
+            false,
+            0x123456U,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
+            "pbb-tail-ok"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        PFL_EXPECT(packet.captured_length == packet.original_length);
+        PFL_EXPECT(packet.original_length == 77U);
+        const auto payload_dump = session.read_packet_payload_hex_dump(packet);
+        PFL_EXPECT(payload_dump.find("de ad be ef a5 5a") == std::string::npos);
     }
 }
 
