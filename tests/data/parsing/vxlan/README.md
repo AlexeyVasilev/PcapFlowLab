@@ -1,6 +1,9 @@
 Synthetic VXLAN regression fixtures that define the exact current production `PacketDecoder` contract.
 
-This directory is production-fixture coverage only. It does not imply that shadow VXLAN dissection exists.
+This directory now serves both:
+
+- the production `PacketDecoder` contract;
+- the shadow dissection migration contract that must preserve the same strict flow-selection behavior.
 
 ## Production contract summary
 

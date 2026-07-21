@@ -96,6 +96,12 @@ enum class SelectorDomain : std::uint8_t {
     mpls_pw_inner_frame,
     mpls_pw_inner_ether_type,
     udp_destination_port_candidate,
+    vxlan_inner_frame,
+    vxlan_inner_ether_type,
+    vxlan_inner_ieee8023_payload,
+    vxlan_inner_llc_snap_pid,
+    vxlan_inner_ip_protocol,
+    vxlan_inner_ipv6_next_header,
     count,
 };
 
@@ -155,6 +161,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_routing,
     ipv6_destination_options,
     ipv6_fragment,
+    vxlan,
     gre,
     eoip,
     mpls,
@@ -381,6 +388,13 @@ struct EoipFacts {
     [[nodiscard]] friend constexpr bool operator==(const EoipFacts&, const EoipFacts&) = default;
 };
 
+struct VxlanFacts {
+    std::uint8_t flags {0U};
+    std::uint32_t vni {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const VxlanFacts&, const VxlanFacts&) = default;
+};
+
 struct MplsFacts {
     std::uint32_t label {0U};
     std::uint8_t traffic_class {0U};
@@ -486,6 +500,7 @@ using LayerFacts = std::variant<
     Ipv6FragmentFacts,
     GreFacts,
     EoipFacts,
+    VxlanFacts,
     MplsFacts,
     MplsPseudowireFacts,
     AhFacts,

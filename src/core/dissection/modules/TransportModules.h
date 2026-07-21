@@ -40,6 +40,7 @@ struct ParsedSctpCommonHeader {
 
 [[nodiscard]] DissectionStep dissect_tcp(const PacketSlice& slice);
 [[nodiscard]] DissectionStep dissect_udp(const PacketSlice& slice);
+[[nodiscard]] DissectionStep dissect_udp_terminal(const PacketSlice& slice);
 [[nodiscard]] DissectionStep dissect_sctp(const PacketSlice& slice);
 
 }  // namespace pfl::dissection

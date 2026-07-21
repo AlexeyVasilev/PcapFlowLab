@@ -71,7 +71,10 @@ The current production VXLAN behavior is now explicitly captured by the committe
 
 - The fixture contract covers the exact current production UDP entry rule, header validation, VNI identity, outer-fragment handling, supported inner Ethernet continuations, unsupported continuations, and nested-overlay negatives.
 - UDP and Ethernet canonical shadow parsers already exist and remain the future migration boundary for VXLAN.
-- Shadow VXLAN dissection is still pending and this RFC should not be read as claiming shadow VXLAN support today.
+- Shadow VXLAN dissection now exists in the registry-driven path with the same strict destination-port `4789` gate, exact 8-byte header validation, and big-endian 24-bit VNI identity.
+- Successful shadow VXLAN traversal keeps outer UDP in the physical path, uses the inner tuple as the final flow identity, and stays within a restricted inner Ethernet profile.
+- Nested UDP overlays are not recursively decoded inside shadow VXLAN; inner UDP terminates as UDP even when its ports look like VXLAN, Geneve, or GTP-U.
+- Invalid, truncated, or unsupported VXLAN candidates preserve the production-compatible ordinary outer UDP or no-flow outcome instead of fabricating VXLAN identity.
 
 ## Primary Architectural Decision
 

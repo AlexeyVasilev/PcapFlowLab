@@ -17,3 +17,4 @@
 #include "core/dissection/modules/PbbModule.h"
 #include "core/dissection/modules/PppoePppModules.h"
 #include "core/dissection/modules/TransportModules.h"
+#include "core/dissection/modules/VxlanModule.h"

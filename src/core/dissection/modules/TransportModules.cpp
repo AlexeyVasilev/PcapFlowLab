@@ -5,6 +5,39 @@
 
 namespace pfl::dissection {
 
+namespace {
+
+ProtocolSelector make_udp_payload_candidate_selector(const std::uint16_t dst_port) noexcept {
+    return ProtocolSelector {
+        .domain = SelectorDomain::udp_destination_port_candidate,
+        .value = dst_port,
+    };
+}
+
+DissectionStep make_udp_terminal_step(const PacketSlice& slice, const ParsedUdpDatagram& parsed) {
+    return DissectionStep {
+        .layer = DissectionLayerKind::udp,
+        .path_contribution = LayerKey::udp(),
+        .bounds = direct::make_layer_bounds(
+            slice,
+            parsed.datagram_length,
+            detail::kUdpHeaderSize,
+            direct::RelativeRange {.begin = detail::kUdpHeaderSize, .end = parsed.datagram_length},
+            true
+        ),
+        .facts = UdpFacts {
+            .src_port = parsed.src_port,
+            .dst_port = parsed.dst_port,
+            .datagram_length = parsed.datagram_length,
+        },
+        .terminal_disposition = TerminalDisposition::flow_candidate,
+        .status = ParseStatus::complete,
+        .stop_reason = StopReason::terminal_protocol,
+    };
+}
+
+}  // namespace
+
 ParsedTcpSegment parse_tcp_segment(const PacketSlice& slice) noexcept {
     const auto bytes = direct::visible_captured_bytes(slice);
     const auto nominal_packet_end = direct::slice_declared_length(slice);
@@ -153,25 +186,41 @@ DissectionStep dissect_udp(const PacketSlice& slice) {
         );
     }
 
-    return DissectionStep {
-        .layer = DissectionLayerKind::udp,
-        .path_contribution = LayerKey::udp(),
-        .bounds = direct::make_layer_bounds(
+    auto step = make_udp_terminal_step(slice, parsed);
+    if (parsed.dst_port != detail::kUdpPortVxlan) {
+        return step;
+    }
+
+    const auto handoff = direct::make_protocol_handoff(
+        slice,
+        detail::kUdpHeaderSize,
+        parsed.datagram_length - detail::kUdpHeaderSize,
+        make_udp_payload_candidate_selector(parsed.dst_port)
+    );
+    if (!handoff.has_value()) {
+        step.status = ParseStatus::malformed;
+        step.stop_reason = StopReason::malformed;
+        return step;
+    }
+
+    step.handoff = *handoff;
+    step.stop_reason = StopReason::none;
+    return step;
+}
+
+DissectionStep dissect_udp_terminal(const PacketSlice& slice) {
+    const auto parsed = parse_udp_datagram(slice);
+    if (parsed.status != ParseStatus::complete) {
+        return direct::make_error_step(
             slice,
-            parsed.datagram_length,
-            detail::kUdpHeaderSize,
-            direct::RelativeRange {.begin = detail::kUdpHeaderSize, .end = parsed.datagram_length},
-            true
-        ),
-        .facts = UdpFacts {
-            .src_port = parsed.src_port,
-            .dst_port = parsed.dst_port,
-            .datagram_length = parsed.datagram_length,
-        },
-        .terminal_disposition = TerminalDisposition::flow_candidate,
-        .status = ParseStatus::complete,
-        .stop_reason = StopReason::terminal_protocol,
-    };
+            DissectionLayerKind::udp,
+            parsed.status,
+            parsed.status == ParseStatus::truncated ? StopReason::truncated : StopReason::malformed,
+            detail::kUdpHeaderSize
+        );
+    }
+
+    return make_udp_terminal_step(slice, parsed);
 }
 
 DissectionStep dissect_sctp(const PacketSlice& slice) {

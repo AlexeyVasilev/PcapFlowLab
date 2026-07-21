@@ -69,6 +69,7 @@ add_library(
     src/core/dissection/modules/PbbModule.cpp
     src/core/dissection/modules/PppoePppModules.cpp
     src/core/dissection/modules/TransportModules.cpp
+    src/core/dissection/modules/VxlanModule.cpp
     src/core/io/PcapReader.cpp
     src/core/io/PcapNgReader.cpp
     src/core/io/PcapWriter.cpp
@@ -317,6 +318,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectEoipDissectionTests.cpp
         tests/unit/CommonDirectMplsPseudowireDissectionTests.cpp
         tests/unit/CommonDirectTransportDissectionTests.cpp
+        tests/unit/CommonDirectVxlanDissectionTests.cpp
         tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
