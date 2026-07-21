@@ -730,6 +730,19 @@ Within this stage, LLC/SNAP parity specifically means:
   - AH;
   - ESP.
 
+For MACsec specifically, shadow dissection is not implemented yet. The current
+migration contract is defined by the committed production-only fixtures under
+`tests/data/parsing/macsec/` plus `tests/unit/MacsecPcapFixtureTests.cpp`.
+That contract is intentionally narrow: direct Ethernet and outer
+VLAN/QinQ/legacy-`0x9100` entry into EtherType `0x88e5`, presentation-only
+SecTAG / optional SCI / protected-payload / fixed-16-byte-ICV metadata,
+Short-Length-as-display-only behavior, and conservative no-flow outcomes with
+specific truncation or protected-payload-not-decrypted reason text. Current
+production does not recover inner IPv4/IPv6/ARP flows from protected payload,
+does not validate the ICV, and does not persist a MACsec `ProtocolPath`
+contribution for these packets. Any future shadow MACsec module must match that
+fixture-defined production contract before production import cutover.
+
 For PBB specifically, the current migration contract is defined by the committed
 fixtures under `tests/data/parsing/pbb/` plus
 `tests/unit/PbbPcapFixtureTests.cpp`. That contract now covers exact `0x88e7`
