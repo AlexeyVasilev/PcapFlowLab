@@ -11,5 +11,6 @@
 #include "core/dissection/modules/LinuxCookedModules.h"
 #include "core/dissection/modules/LlcSnapModule.h"
 #include "core/dissection/modules/MplsModule.h"
+#include "core/dissection/modules/PbbModule.h"
 #include "core/dissection/modules/PppoePppModules.h"
 #include "core/dissection/modules/TransportModules.h"

@@ -119,6 +119,7 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
             if constexpr (std::is_same_v<Facts, std::monostate> ||
                           std::is_same_v<Facts, EthernetFacts> ||
                           std::is_same_v<Facts, VlanFacts> ||
+                          std::is_same_v<Facts, PbbFacts> ||
                           std::is_same_v<Facts, LlcSnapFacts> ||
                           std::is_same_v<Facts, LinuxCookedFacts> ||
                           std::is_same_v<Facts, PppoeFacts> ||
@@ -356,6 +357,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         DissectorRegistration {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypePbb,
+            },
+            .dissector = dissect_pbb,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
                 .value = detail::kEtherTypePppoeDiscovery,
             },
             .dissector = dissect_pppoe_discovery,
@@ -387,6 +395,55 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kEtherTypeArp,
             },
             .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_frame,
+                .value = kPbbInnerFrameSelectorValue,
+            },
+            .dissector = dissect_pbb_inner_ethernet,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_ether_type,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_ether_type,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_ether_type,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_ether_type,
+                .value = detail::kEtherTypeVlan,
+            },
+            .dissector = dissect_pbb_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_ether_type,
+                .value = detail::kEtherTypeQinq,
+            },
+            .dissector = dissect_pbb_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::pbb_inner_ether_type,
+                .value = detail::kEtherTypeLegacyVlan,
+            },
+            .dissector = dissect_pbb_inner_vlan,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

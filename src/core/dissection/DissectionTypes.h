@@ -75,6 +75,8 @@ enum class SelectorDomain : std::uint8_t {
     ether_type,
     ieee8023_payload,
     llc_snap_pid,
+    pbb_inner_frame,
+    pbb_inner_ether_type,
     ppp_frame,
     ppp_protocol,
     ip_protocol,
@@ -129,6 +131,7 @@ enum class DissectionLayerKind : std::uint16_t {
     linux_sll,
     linux_sll2,
     vlan,
+    pbb,
     llc_snap,
     pppoe,
     ppp,
@@ -180,6 +183,16 @@ struct VlanFacts {
     std::uint16_t encapsulated_ether_type {0U};
 
     [[nodiscard]] friend constexpr bool operator==(const VlanFacts&, const VlanFacts&) = default;
+};
+
+struct PbbFacts {
+    std::uint8_t pcp {0U};
+    bool dei {false};
+    bool nca {false};
+    std::uint8_t reserved {0U};
+    std::uint32_t isid {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const PbbFacts&, const PbbFacts&) = default;
 };
 
 struct LlcSnapFacts {
@@ -401,6 +414,7 @@ using LayerFacts = std::variant<
     std::monostate,
     EthernetFacts,
     VlanFacts,
+    PbbFacts,
     LlcSnapFacts,
     LinuxCookedFacts,
     PppoeFacts,

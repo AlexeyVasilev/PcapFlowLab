@@ -1,6 +1,6 @@
 Synthetic IEEE 802.1ah PBB / MAC-in-MAC fixtures for the current production decoder.
 
-These fixtures define the production migration contract for a future shadow PBB pass.
+These fixtures define the production migration contract for the shadow PBB pass.
 
 Current production subset covered here:
 - outer Ethernet II entry with EtherType `0x88e7`;

@@ -241,6 +241,30 @@ const PppoeFacts* find_pppoe_facts(const std::vector<DissectionStep>& steps) {
     return nullptr;
 }
 
+const PbbFacts* find_pbb_facts(const std::vector<DissectionStep>& steps) {
+    for (const auto& step : steps) {
+        if (step.layer != DissectionLayerKind::pbb) {
+            continue;
+        }
+
+        const auto* facts = std::get_if<PbbFacts>(&step.facts);
+        if (facts != nullptr) {
+            return facts;
+        }
+    }
+
+    return nullptr;
+}
+
+std::vector<DissectionLayerKind> collect_step_kinds(const std::vector<DissectionStep>& steps) {
+    std::vector<DissectionLayerKind> kinds {};
+    kinds.reserve(steps.size());
+    for (const auto& step : steps) {
+        kinds.push_back(step.layer);
+    }
+    return kinds;
+}
+
 void expect_shadow_matches_legacy_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
@@ -1302,7 +1326,7 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 55U);
+    PFL_EXPECT(built.registry->entry_count() == 63U);
     PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll)) == dissect_linux_sll);
     PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll2)) == dissect_linux_sll2);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
@@ -1397,6 +1421,38 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::llc_snap_pid,
         .value = detail::kEtherTypeArp,
     }) == dissect_arp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_frame,
+        .value = kPbbInnerFrameSelectorValue,
+    }) == dissect_pbb_inner_ethernet);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeArp,
+    }) == dissect_arp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeVlan,
+    }) == dissect_pbb_inner_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeQinq,
+    }) == dissect_pbb_inner_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeLegacyVlan,
+    }) == dissect_pbb_inner_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypePbb,
+    }) == dissect_pbb);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ether_type,
         .value = detail::kEtherTypePppoeDiscovery,
@@ -7335,6 +7391,237 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
     }
 }
 
+void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    {
+        const auto exact_header_slice = make_declared_root_slice(
+            {0xABU, 0x12U, 0x34U, 0x56U},
+            4U
+        );
+        const auto parsed = parse_pbb_frame(exact_header_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.pcp == 5U);
+        PFL_EXPECT(!parsed.dei);
+        PFL_EXPECT(parsed.nca);
+        PFL_EXPECT(parsed.reserved == 3U);
+        PFL_EXPECT(parsed.isid == 0x123456U);
+        PFL_EXPECT(parsed.header_length == detail::kPbbITagSize);
+        PFL_EXPECT(parsed.declared_payload_length == 0U);
+
+        const auto step = dissect_pbb(exact_header_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::pbb);
+        PFL_REQUIRE(step.path_contribution.has_value());
+        PFL_EXPECT(*step.path_contribution == LayerKey::pbb(0x123456U));
+        PFL_EXPECT(step.path_commit_policy == PathCommitPolicy::recognized_flow_or_recognized_non_flow);
+        PFL_REQUIRE(step.descendant_path_commit_policy.has_value());
+        PFL_EXPECT(*step.descendant_path_commit_policy == PathCommitPolicy::recognized_flow_or_recognized_non_flow);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::truncated);
+        PFL_EXPECT(!step.handoff.has_value());
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 0U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 0U);
+        const auto* facts = std::get_if<PbbFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->pcp == 5U);
+        PFL_EXPECT(!facts->dei);
+        PFL_EXPECT(facts->nca);
+        PFL_EXPECT(facts->reserved == 3U);
+        PFL_EXPECT(facts->isid == 0x123456U);
+    }
+
+    {
+        const auto truncated_slice = make_declared_root_slice({0x10U, 0x20U}, 4U);
+        const auto parsed = parse_pbb_frame(truncated_slice);
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        const auto step = dissect_pbb(truncated_slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::pbb);
+        PFL_EXPECT(step.status == ParseStatus::truncated);
+        PFL_EXPECT(step.stop_reason == StopReason::truncated);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+    }
+
+    {
+        const auto inner_ipv4_slice = make_declared_root_slice(
+            {
+                0x20U, 0x12U, 0x34U, 0x56U,
+                0x02U, 0x00U, 0x00U, 0x00U, 0x61U, 0x02U,
+                0x02U, 0x00U, 0x00U, 0x00U, 0x61U, 0x01U,
+                0x08U, 0x00U,
+            },
+            18U
+        );
+        const auto pbb_step = dissect_pbb(inner_ipv4_slice);
+        PFL_REQUIRE(pbb_step.handoff.has_value());
+        PFL_REQUIRE(pbb_step.handoff->child.has_value());
+        const auto inner_step = dissect_pbb_inner_ethernet(*pbb_step.handoff->child);
+        PFL_EXPECT(inner_step.layer == DissectionLayerKind::ethernet_ii);
+        PFL_REQUIRE(inner_step.path_contribution.has_value());
+        PFL_EXPECT(*inner_step.path_contribution == LayerKey::ethernet_ii());
+        PFL_REQUIRE(inner_step.handoff.has_value());
+        PFL_EXPECT(inner_step.handoff->selector.domain == SelectorDomain::pbb_inner_ether_type);
+        PFL_EXPECT(inner_step.handoff->selector.value == detail::kEtherTypeIpv4);
+    }
+
+    {
+        const auto inner_vlan_slice = make_declared_root_slice(
+            {
+                0x02U, 0x00U, 0x00U, 0x00U, 0x61U, 0x02U,
+                0x02U, 0x00U, 0x00U, 0x00U, 0x61U, 0x01U,
+                0x81U, 0x00U, 0x02U, 0x62U, 0x08U, 0x00U,
+            },
+            18U
+        );
+        const auto ethernet_step = dissect_pbb_inner_ethernet(inner_vlan_slice);
+        PFL_REQUIRE(ethernet_step.handoff.has_value());
+        PFL_REQUIRE(ethernet_step.handoff->child.has_value());
+        const auto vlan_step = dissect_pbb_inner_vlan(*ethernet_step.handoff->child);
+        PFL_EXPECT(vlan_step.layer == DissectionLayerKind::vlan);
+        PFL_REQUIRE(vlan_step.path_contribution.has_value());
+        PFL_EXPECT(*vlan_step.path_contribution == LayerKey::vlan(610U));
+        PFL_REQUIRE(vlan_step.handoff.has_value());
+        PFL_EXPECT(vlan_step.handoff->selector.domain == SelectorDomain::pbb_inner_ether_type);
+        PFL_EXPECT(vlan_step.handoff->selector.value == detail::kEtherTypeIpv4);
+    }
+
+    struct SupportedFlowExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+    };
+
+    const std::vector<SupportedFlowExpectation> supported_expectations {
+        {"parsing/pbb/01_pbb_ipv4_tcp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> TCP"},
+        {"parsing/pbb/02_pbb_ipv4_udp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP"},
+        {"parsing/pbb/03_pbb_ipv6_tcp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> TCP"},
+        {"parsing/pbb/04_pbb_ipv6_udp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> UDP"},
+        {"parsing/pbb/06_pbb_inner_vlan_ipv4_tcp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=610) -> IPv4 -> TCP"},
+        {"parsing/pbb/07_pbb_inner_qinq_ipv4_udp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=620) -> VLAN(vid=610) -> IPv4 -> UDP"},
+        {"parsing/pbb/08_pbb_inner_llc_snap_ipv4_udp.pcap", "EthernetII -> PBB(isid=0x123456) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP"},
+        {"parsing/pbb/09_pbb_outer_btag_ipv4_udp.pcap", "EthernetII -> VLAN(vid=600) -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP"},
+        {"parsing/pbb/10_pbb_outer_btag_inner_vlan_ipv4_tcp.pcap", "EthernetII -> VLAN(vid=600) -> PBB(isid=0x123456) -> EthernetII -> VLAN(vid=610) -> IPv4 -> TCP"},
+        {"parsing/pbb/15_pbb_metadata_nondefault_itag.pcap", "EthernetII -> PBB(isid=0x654321) -> EthernetII -> IPv4 -> UDP"},
+        {"parsing/pbb/18_pbb_zero_isid_ipv4_udp.pcap", "EthernetII -> PBB(isid=0x000000) -> EthernetII -> IPv4 -> UDP"},
+        {"parsing/pbb/19_pbb_max_isid_ipv4_udp.pcap", "EthernetII -> PBB(isid=0xffffff) -> EthernetII -> IPv4 -> UDP"},
+        {"parsing/pbb/20_pbb_outer_qinq_ipv6_udp.pcap", "EthernetII -> VLAN(vid=701) -> VLAN(vid=702) -> PBB(isid=0x123456) -> EthernetII -> IPv6 -> UDP"},
+        {"parsing/pbb/21_pbb_outer_legacy_vlan_ipv4_udp.pcap", "EthernetII -> VLAN(vid=703) -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP"},
+        {"parsing/pbb/27_pbb_extra_captured_tail_ipv4_udp.pcap", "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP"},
+    };
+
+    for (const auto& expectation : supported_expectations) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        expect_shadow_matches_legacy_flow(
+            registry,
+            packet,
+            expectation.expected_shadow_path,
+            StopReason::terminal_protocol
+        );
+
+        const auto steps = collect_shadow_steps(packet, registry);
+        const auto* pbb = find_pbb_facts(steps);
+        PFL_REQUIRE(pbb != nullptr);
+        const auto expects_zero_isid = std::string {expectation.relative_path}.find("18_") != std::string::npos;
+        PFL_EXPECT(pbb->isid != 0U || expects_zero_isid);
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/05_pbb_arp.pcap"};
+        const auto packet = require_raw_fixture_packet("parsing/pbb/05_pbb_arp.pcap");
+        expect_shadow_matches_legacy_recognized_non_flow(
+            registry,
+            packet,
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII",
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII",
+            StopReason::terminal_protocol
+        );
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/16_pbb_same_isid_same_inner_tuple_metadata_variation.pcap"};
+        const auto packets = require_raw_fixture_packets("parsing/pbb/16_pbb_same_isid_same_inner_tuple_metadata_variation.pcap");
+        PFL_EXPECT(packets.size() == 2U);
+        for (const auto& packet : packets) {
+            expect_shadow_matches_legacy_flow(
+                registry,
+                packet,
+                "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
+                StopReason::terminal_protocol
+            );
+        }
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/17_pbb_different_isid_same_inner_tuple.pcap"};
+        const auto packets = require_raw_fixture_packets("parsing/pbb/17_pbb_different_isid_same_inner_tuple.pcap");
+        PFL_EXPECT(packets.size() == 2U);
+        const std::vector<std::string> expected_paths {
+            "EthernetII -> PBB(isid=0x123456) -> EthernetII -> IPv4 -> UDP",
+            "EthernetII -> PBB(isid=0x123457) -> EthernetII -> IPv4 -> UDP",
+        };
+        for (std::size_t index = 0U; index < packets.size(); ++index) {
+            expect_shadow_matches_legacy_flow(
+                registry,
+                packets[index],
+                expected_paths[index],
+                StopReason::terminal_protocol
+            );
+        }
+    }
+
+    struct UnsupportedExpectation {
+        const char* relative_path;
+        StopReason expected_stop_reason;
+        std::vector<DissectionLayerKind> expected_kinds;
+    };
+
+    const std::vector<UnsupportedExpectation> unsupported_expectations {
+        {"parsing/pbb/11_pbb_unknown_inner_ethertype.pcap", StopReason::unknown_next_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb, DissectionLayerKind::ethernet_ii}},
+        {"parsing/pbb/12_pbb_truncated_itag.pcap", StopReason::malformed, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb}},
+        {"parsing/pbb/13_pbb_truncated_inner_ethernet.pcap", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb, DissectionLayerKind::ethernet_ii}},
+        {"parsing/pbb/14_pbb_truncated_inner_ipv4.pcap", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb, DissectionLayerKind::ethernet_ii, DissectionLayerKind::ipv4}},
+        {"parsing/pbb/22_pbb_capture_truncated_inner_ipv4_caplen_lt_origlen.pcap", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb, DissectionLayerKind::ethernet_ii, DissectionLayerKind::ipv4}},
+        {"parsing/pbb/23_pbb_complete_itag_no_inner_ethernet.pcap", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb}},
+        {"parsing/pbb/24_pbb_truncated_inner_ipv6.pcap", StopReason::malformed, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb, DissectionLayerKind::ethernet_ii, DissectionLayerKind::ipv6}},
+        {"parsing/pbb/26_pbb_inner_pppoe_session_unsupported.pcap", StopReason::unknown_next_protocol, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::pbb, DissectionLayerKind::ethernet_ii}},
+    };
+
+    for (const auto& expectation : unsupported_expectations) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        const auto steps = collect_shadow_steps(packet, registry);
+        const auto kinds = collect_step_kinds(steps);
+
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
+        PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
+        PFL_EXPECT((kinds == expectation.expected_kinds));
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/pbb/25_pbb_truncated_inner_arp.pcap"};
+        const auto packet = require_raw_fixture_packet("parsing/pbb/25_pbb_truncated_inner_arp.pcap");
+        const auto shadow = run_shadow(packet, registry);
+        const auto steps = collect_shadow_steps(packet, registry);
+        const auto kinds = collect_step_kinds(steps);
+
+        PFL_EXPECT(shadow.outcome != ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(!shadow.has_ports);
+        PFL_EXPECT((kinds == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::pbb,
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::arp,
+        }));
+    }
+}
+
 }  // namespace
 
 void run_common_direct_dissection_tests() {
@@ -7365,6 +7652,7 @@ void run_common_direct_dissection_tests() {
     expect_linux_cooked_shadow_root_parsers_and_fixture_parity();
     expect_llc_snap_shadow_parsers_bounds_and_fixture_parity();
     expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity();
+    expect_pbb_shadow_parsers_bounds_and_fixture_parity();
 }
 
 }  // namespace pfl::tests
