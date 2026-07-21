@@ -303,6 +303,12 @@ if(BUILD_TESTING)
         tests/unit/FlowKeyTests.cpp
         tests/unit/DissectionFoundationTests.cpp
         tests/unit/CommonDirectDissectionTests.cpp
+        tests/unit/CommonDirectDissectionTestSupport.cpp
+        tests/unit/CommonDirectCoreDissectionTests.cpp
+        tests/unit/CommonDirectLinkDissectionTests.cpp
+        tests/unit/CommonDirectNetworkDissectionTests.cpp
+        tests/unit/CommonDirectEncapsulationDissectionTests.cpp
+        tests/unit/CommonDirectTransportDissectionTests.cpp
         tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
