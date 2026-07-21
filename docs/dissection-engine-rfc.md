@@ -614,7 +614,9 @@ GRE and EoIP are a good stress case and should shape the engine design.
 - Direct GRE-carried IPv4 or IPv6 and GRE TEB reuse the existing IPv4, IPv6, and Ethernet dissectors rather than embedding child parsing inside the GRE module.
 - GRE optional checksum, key, and sequence fields are parsed in wire order for facts and bounds, but only GRE key contributes to `ProtocolPath` identity.
 - GRE-carried MPLS may be traversed in shadow mode through the same explicit MPLS module used for direct EtherType MPLS entry, one label shim per engine step.
+- The exact current production GRE-versus-EoIP contract is now defined by the committed fixtures under `tests/data/parsing/eoip/` and `tests/unit/EoipPcapFixtureTests.cpp`.
 - MikroTik EoIP remains deferred in the shadow engine for this pass even though the production decoder already has protocol-specific handling for that payload shape.
+- When shadow EoIP is introduced later, it must preserve the fixture-defined production classification rules exactly, including the current outer-IPv4-only EoIP reachability and the strict `version=1 + key bit set + checksum clear + sequence clear + protocol type 0x6400` distinction from ordinary GRE.
 - Unsupported GRE versions, routing-present variants, and malformed optional-field bounds must stop conservatively without contributing a physical path layer.
 
 ## MPLS Nuance

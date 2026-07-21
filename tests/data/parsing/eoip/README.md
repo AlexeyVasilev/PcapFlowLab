@@ -1,267 +1,450 @@
-Synthetic EoIP parsing fixtures for regression tests.
+Synthetic EoIP parsing fixtures for production-contract regression tests.
 
-This directory contains tiny deterministic `.pcap` fixtures for MikroTik-compatible EoIP over GRE.
-The committed fixtures and active tests cover wire layout, strict recognition, bounded inner
-Ethernet continuation, protocol-path identity normalization, and selected-packet presentation.
+This directory defines the exact current production contract for MikroTik-style EoIP handling in `PacketDecoder` and packet-details code. These fixtures are intentionally source-of-truth tests for current behavior; they are not a claim of future shadow-engine support.
 
-## Purpose
+## Scope
 
-These fixtures cover:
-- GRE version 1 EoIP wire shape over outer IPv4 protocol `47`;
-- the EoIP-specific four-byte payload-length / tunnel-ID word that follows the GRE base header;
-- the correct EoIP wire contract of big-endian frame length plus little-endian tunnel ID;
-- inner Ethernet continuation with inner IPv4, IPv6, VLAN, and QinQ payloads;
-- outer VLAN and outer MPLS preservation before the outer IPv4/GRE carriage;
-- deterministic identity edge cases for tunnel-ID-aware protocol-path flow identity;
-- malformed and truncated EoIP robustness cases that must stay conservative.
+The committed fixtures define:
+- how production distinguishes strict EoIP from ordinary GRE;
+- which outer entry contexts can reach EoIP classification;
+- the exact on-wire EoIP word layout and byte order;
+- how tunnel ID is normalized into physical `ProtocolPath`;
+- which inner Ethernet continuations are supported;
+- which GRE/EoIP-looking cases remain ordinary GRE or no-flow;
+- how malformed and truncated packets stay conservative.
 
-## Local generation
+No local generator is intentionally kept in the repository. Temporary fixture-generation helpers may be used during development, but they must be deleted afterward.
 
-Run from the repository root with a local Python 3 interpreter:
+## Production classification contract
 
-```bash
-python3 tmp/generate_eoip_pcaps.py tests/data/parsing/eoip --force
-```
+Production reaches EoIP only through the outer IPv4 `protocol=47` path.
 
-Notes:
-- `tmp/generate_eoip_pcaps.py` is a local helper only and is not intended as committed production tooling.
-- The script writes classic little-endian Ethernet `.pcap` files with deterministic timestamps, IPv4 IDs, and checksums.
-- The script self-validates every generated fixture and fails loudly if a malformed case no longer matches its contract.
-
-## EoIP basics
-
-MikroTik EoIP over IPv4 uses:
-- outer IPv4 protocol `47` (`GRE`);
+Strict EoIP classification requires all of the following:
+- outer IPv4 transport protocol `47`;
+- complete 4-byte GRE base header;
 - GRE version `1`;
-- GRE K bit set;
-- GRE Protocol Type `0x6400`;
-- a four-byte word immediately after the GRE base header:
-  - first 16 bits: encapsulated Ethernet payload length, encoded big-endian on the wire;
-  - second 16 bits: EoIP tunnel ID, encoded little-endian on the wire;
-- raw inner Ethernet frame immediately after that word.
+- GRE key bit set;
+- GRE checksum bit clear;
+- GRE sequence bit clear;
+- GRE Protocol Type `0x6400`.
 
-The complete normal EoIP header is eight bytes:
+If all of those hold, production treats the next 4 bytes as the EoIP-specific word:
+- bytes `0..1`: frame length, big-endian;
+- bytes `2..3`: tunnel ID, little-endian.
+
+Important consequences:
+- outer IPv6 `next_header=47` does not classify `0x6400` as EoIP in production;
+- GRE v0 direct IPv4, GRE TEB, and GRE with a key that merely looks like an EoIP word remain ordinary GRE;
+- GRE version `1` plus `0x6400` plus checksum set does not classify as EoIP;
+- GRE v0 plus `0x6400` does not classify as EoIP;
+- missing-key-bit `0x6400` remains non-EoIP GRE and is reported conservatively.
+
+## Header layout and byte order
+
+The strict EoIP wire shape used by production is:
 
 ```text
-20 01 64 00 <frame-length:2 BE> <tunnel-id:2 LE>
+GRE flags/version: 0x2001
+GRE protocol:      0x6400
+EoIP word:
+  frame length:    16-bit big-endian
+  tunnel id:       16-bit little-endian
+inner frame:       raw inner Ethernet frame
 ```
 
 Examples:
-- logical tunnel ID `6400` (`0x1900`) is written on the wire as `00 19`;
-- logical tunnel ID `6401` (`0x1901`) is written on the wire as `01 19`;
-- logical tunnel ID `65535` (`0xffff`) is written on the wire as `ff ff`;
-- the real-capture-inspired fixture `07` uses the four-byte word `00 bf 19 00`, which means:
-  - frame length `0x00bf` = `191`;
-  - tunnel ID bytes `19 00`, little-endian decoded to logical tunnel ID `25`.
+- tunnel ID `6400` (`0x1900`) is written as bytes `00 19`;
+- tunnel ID `6401` (`0x1901`) is written as bytes `01 19`;
+- tunnel ID `65535` (`0xffff`) is written as bytes `ff ff`.
 
-This fixture set intentionally does **not** encode:
-- PPTP Call ID semantics;
-- PPTP acknowledgement number;
-- GRE checksum or routing fields;
-- a second GRE key after the payload-length / tunnel-ID word.
+Production packet details intentionally keep two values separate:
+- `Raw GRE Key`
+  this is the literal 32-bit word seen in the EoIP slot;
+- `Identity Key`
+  this is the normalized 16-bit logical tunnel ID widened into the existing GRE-key identity slot.
 
-## Identity policy
+For example, fixture `09` proves that:
+- raw key `0x002e0019` and raw key `0x00360019` are different packet-level words;
+- both normalize to the same identity key `0x00001900`.
 
-Protocol-path-aware identity for EoIP normalizes the 16-bit tunnel ID into the
-existing GRE key slot:
+## Physical path and identity
 
-```text
-GRE(key=0x00001900)
-```
+Production does not introduce a separate `EoIP(...)` path layer.
 
-for tunnel ID `6400` (`0x1900`).
-
-For the real-shape fixture `07`, the expected identity is:
+Successful EoIP flows use the existing GRE key slot in physical `ProtocolPath`, for example:
 
 ```text
-GRE(key=0x00000019)
+EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP
 ```
 
-because its logical tunnel ID is `25`.
+Identity rules established by fixtures:
+- tunnel ID participates in persistent path identity;
+- EoIP frame length does not participate in identity;
+- the stored `GRE(key=...)` value is the decoded little-endian 16-bit Tunnel ID widened into the existing 32-bit GRE-key slot, not the raw 32-bit EoIP word;
+- outer IPv4 source/destination addresses do not become final flow endpoints;
+- outer VLAN / MPLS layers do remain part of the physical path, so they can still split flows;
+- same inner tuple plus same tunnel ID aggregates even if outer IPv4 endpoints change;
+- same inner tuple plus different tunnel IDs splits;
+- same tunnel ID plus different payload lengths aggregates;
+- same tunnel ID plus the same inner frame but different accepted EoIP `frame_length` values still aggregates;
+- same tunnel ID plus different outer VLAN path metadata splits.
 
-Important rules:
-- the 16-bit EoIP tunnel ID participates in flow identity;
-- the 16-bit EoIP payload-length field does **not** participate in identity;
-- the raw combined 32-bit on-wire word must **not** be interned as a GRE key, because its upper
-  16 bits are packet-dependent payload length;
-- the raw combined 32-bit on-wire word is therefore not a stable identity value and must not be
-  treated as a big-endian GRE key surrogate;
-- same tunnel ID plus same inner tuple should remain one flow even when inner Ethernet frame
-  lengths differ;
-- same inner tuple plus different tunnel IDs should split.
+## Entry contexts
 
-No separate `EoIP` protocol-path layer is introduced by these fixtures. The normalized
-identity is expected to reuse the existing GRE key representation.
+Current production-supported reachability established by fixtures:
+- Ethernet II -> IPv4 -> EoIP;
+- outer single VLAN -> IPv4 -> EoIP;
+- outer VLAN + MPLS -> IPv4 -> EoIP.
 
-## Shared deterministic constants
+Current production non-EoIP reachability established by fixtures:
+- Ethernet II -> IPv6 -> GRE version 1 + key + `0x6400` remains ordinary GRE and no-flow.
+- outer IPv4 fragmented `protocol 47` packets do not continue into EoIP at all, even when the captured bytes contain a complete valid-looking EoIP header and inner Ethernet/IP/transport payload;
+- first fragments (`MF=1`, offset `0`) remain no-flow and commit no physical path;
+- non-first fragments remain no-flow and commit no physical path;
+- caplen-truncated fragmented outer-IPv4 `protocol 47` packets still stop at the outer IPv4 layer and do not read beyond captured bytes.
 
-- Outer client MAC: `02:00:00:00:80:01`
-- Outer server MAC: `02:00:00:00:80:02`
-- Inner client MAC: `02:00:00:00:81:01`
-- Inner server MAC: `02:00:00:00:81:02`
-- Outer IPv4 client A: `192.0.2.80`
-- Outer IPv4 server A: `198.51.100.80`
-- Outer IPv4 client B: `192.0.2.81`
-- Outer IPv4 server B: `198.51.100.81`
-- Inner IPv4 client: `10.80.0.10`
-- Inner IPv4 server: `10.80.0.20`
-- Inner IPv6 client: `2001:db8:81::10`
-- Inner IPv6 server: `2001:db8:81::20`
-- TCP client port: `49180`
-- TCP server port: `443`
-- UDP client port: `53800`
-- UDP server port: `443`
-- Normal outer VLAN ID: `806`
-- Normal inner VLAN ID: `1806`
-- Inner QinQ VLAN IDs: `1807`, `1808`
-- Primary tunnel ID: `6400`
-- Secondary tunnel ID: `6401`
-- High tunnel ID: `65535`
+This directory still does not claim current production EoIP support for:
+- outer IPv6 EoIP classification;
+- Linux cooked roots;
+- plain-IP-contained EoIP;
+- recursive nested EoIP continuation;
+- PBB or MPLS-pseudowire flow continuation through EoIP.
 
-Real-capture-inspired deterministic fixture constants for fixture `07`:
-- outer VLAN ID: `406`
-- MPLS labels:
-  - `56474`, bottom-of-stack `false`
-  - `477436`, bottom-of-stack `true`
-- outer IPv4 client/server: `172.10.0.66 -> 172.10.0.2`
-- inner VLAN ID: `3918`
-- inner IPv4 client/server: `172.16.72.2 -> 172.19.0.242`
-- UDP ports: `12366 -> 12406`
+## Inner Ethernet continuation profile
 
-## Current status
+Current production-supported inner continuations established by fixtures:
+- inner Ethernet II -> IPv4 -> TCP;
+- inner Ethernet II -> IPv4 -> UDP;
+- inner Ethernet II -> IPv6 -> UDP;
+- inner VLAN -> IPv4 -> UDP;
+- inner QinQ -> IPv6 -> TCP;
+- inner IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP.
 
-Current coverage in this directory:
-- strict EoIP recognition over outer IPv4 GRE when the GRE K bit is set, version is `1`, and the
-  protocol type is `0x6400`;
-- big-endian EoIP frame length plus little-endian tunnel ID parsing;
-- normalized `GRE(key=...)` protocol-path identity using the logical EoIP tunnel ID;
-- bounded inner Ethernet continuation with inner IPv4, IPv6, VLAN, and QinQ payloads;
-- selected-packet Summary / Protocol Details presentation for recognized EoIP packets;
-- conservative malformed handling for truncated headers, invalid bounds, and non-EoIP GRE v1
-  lookalikes.
+Current production-rejected or no-flow continuations established by fixtures:
+- inner Ethernet too short for a full header;
+- inner VLAN header truncated;
+- declared EoIP frame length beyond bounded available bytes;
+- bounded frame shorter than the full inner Ethernet header;
+- outer IPv6 `0x6400` packets, even when the following bytes look exactly like a valid EoIP word;
+- inner PPPoE Session (`0x8864`) behind valid EoIP:
+  no production flow, no committed physical path, but best-effort packet details can still surface the outer inner Ethernet plus recovered inner IPv4 / UDP facts;
+- inner MPLS unicast (`0x8847`) behind valid EoIP:
+  no production flow, no committed physical path, but best-effort packet details can still surface the outer inner Ethernet, MPLS label stack, and recovered inner IPv4 / UDP facts;
+- inner PBB (`0x88e7`) behind valid EoIP:
+  no production flow, no committed physical path, but best-effort packet details can still surface the outer inner Ethernet plus recovered inner IPv4 / UDP facts;
+- inner MACsec (`0x88e5`) behind valid EoIP:
+  no production flow, no committed physical path, and no recovered inner IP/transport flow tuple;
+- inner unknown EtherType behind valid EoIP:
+  no production flow, no committed physical path, and no recovered inner IP/transport flow tuple;
+- nested EoIP carried through inner IPv4 `protocol 47`:
+  no production flow, no committed physical path, and no recursive nested GRE/EoIP continuation even when the nested bytes are a valid-looking strict EoIP shape.
 
-## Fixture descriptions
+## Bounds and truncation contract
 
-### 01_ipv4_eoip_inner_ipv4_udp.pcap
+The malformed/truncated fixtures prove that production:
+- requires enough bytes for the 4-byte GRE base header before EoIP classification is possible;
+- requires the full 4-byte EoIP word before tunnel ID can be reported;
+- never reads an inner Ethernet frame beyond the EoIP-declared bounded length;
+- reports truncated inner Ethernet and truncated inner VLAN conservatively;
+- does not fabricate inner IPv4 addresses, ports, or flow tuples when bounds are insufficient.
+- fragmented outer IPv4 `protocol 47` packets are classified before any GRE/EoIP continuation attempt, so complete valid-looking EoIP bytes inside first or later fragments do not create a flow, a Tunnel ID identity, or a committed `ProtocolPath`;
+- caplen-truncated fragmented outer IPv4 packets still expose only bounded outer-IPv4 details and do not consume GRE/EoIP bytes beyond capture length.
 
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / GRE version 1 / EoIP / inner Ethernet / inner IPv4 / UDP
-- Tunnel ID: `6400`
-- Purpose: baseline valid EoIP carriage for inner IPv4 / UDP.
+## Fixture inventory
 
-### 02_ipv4_eoip_inner_ipv4_tcp.pcap
+### Reusable successful-flow fixtures
 
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / EoIP / inner Ethernet / inner IPv4 / TCP
-- Tunnel ID: `6400`
-- Purpose: baseline valid EoIP carriage for inner IPv4 / TCP.
+`01_ipv4_eoip_inner_ipv4_udp.pcap`
+- Outer: Ethernet II / IPv4 / GRE v1 + K / `0x6400`
+- Inner: Ethernet II / IPv4 / UDP
+- Outcome: recognized flow
+- ProtocolId: UDP
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
+- Purpose: baseline strict EoIP success.
 
-### 03_ipv4_eoip_inner_ipv6_udp.pcap
+`02_ipv4_eoip_inner_ipv4_tcp.pcap`
+- Outer: Ethernet II / IPv4 / strict EoIP
+- Inner: Ethernet II / IPv4 / TCP
+- Outcome: recognized flow
+- ProtocolId: TCP
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> TCP`
+- Purpose: direct inner IPv4/TCP continuation.
 
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / EoIP / inner Ethernet / inner IPv6 / UDP
-- Tunnel ID: `6400`
-- Purpose: baseline valid EoIP carriage for inner IPv6 / UDP.
+`03_ipv4_eoip_inner_ipv6_udp.pcap`
+- Outer: Ethernet II / IPv4 / strict EoIP
+- Inner: Ethernet II / IPv6 / UDP
+- Outcome: recognized flow
+- ProtocolId: UDP
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv6 -> UDP`
+- Purpose: direct inner IPv6/UDP continuation.
 
-### 04_ipv4_eoip_inner_vlan_ipv4_udp.pcap
+`04_ipv4_eoip_inner_vlan_ipv4_udp.pcap`
+- Outer: Ethernet II / IPv4 / strict EoIP
+- Inner: Ethernet II / VLAN 1806 / IPv4 / UDP
+- Outcome: recognized flow
+- ProtocolId: UDP
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> VLAN(vid=1806) -> IPv4 -> UDP`
+- Purpose: inner VLAN continuation.
 
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / EoIP / inner Ethernet / inner VLAN / inner IPv4 / UDP
-- Tunnel ID: `6400`
-- Purpose: baseline valid inner VLAN continuation behind EoIP.
+`05_ipv4_eoip_inner_qinq_ipv6_tcp.pcap`
+- Outer: Ethernet II / IPv4 / strict EoIP
+- Inner: Ethernet II / QinQ 1807 / 1808 / IPv6 / TCP
+- Outcome: recognized flow
+- ProtocolId: TCP
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> VLAN(vid=1807) -> VLAN(vid=1808) -> IPv6 -> TCP`
+- Purpose: inner QinQ continuation.
 
-### 05_ipv4_eoip_inner_qinq_ipv6_tcp.pcap
+`06_outer_vlan_ipv4_eoip_inner_ipv4_udp.pcap`
+- Outer: Ethernet II / VLAN 806 / IPv4 / strict EoIP
+- Inner: Ethernet II / IPv4 / UDP
+- Outcome: recognized flow
+- ProtocolId: UDP
+- Path: `EthernetII -> VLAN(vid=806) -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
+- Purpose: outer VLAN metadata remains in physical path.
 
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / EoIP / inner Ethernet / inner QinQ / inner IPv6 / TCP
-- Tunnel ID: `6400`
-- Purpose: exact inner QinQ continuation contract.
+`07_outer_vlan_mpls2_ipv4_eoip_inner_vlan_ipv4_udp.pcap`
+- Outer: Ethernet II / VLAN 406 / MPLS 56474 / MPLS 477436 / IPv4 / strict EoIP
+- Inner: Ethernet II / VLAN 3918 / IPv4 / UDP
+- Outcome: recognized flow
+- ProtocolId: UDP
+- Path: `EthernetII -> VLAN(vid=406) -> MPLS(label=56474) -> MPLS(label=477436) -> IPv4 -> GRE(key=0x00000019) -> EthernetII -> VLAN(vid=3918) -> IPv4 -> UDP`
+- Purpose: real-shape-inspired outer VLAN + MPLS carriage and tunnel-ID byte-order proof for tunnel ID `25`.
 
-### 06_outer_vlan_ipv4_eoip_inner_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / outer VLAN / outer IPv4 / EoIP / inner Ethernet / inner IPv4 / UDP
-- Tunnel ID: `6400`
-- Purpose: preserve outer VLAN before outer IPv4 / GRE.
-
-### 07_outer_vlan_mpls2_ipv4_eoip_inner_vlan_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / VLAN 406 / MPLS 56474 / MPLS 477436 / outer IPv4 / EoIP / inner Ethernet / inner VLAN 3918 / inner IPv4 / UDP
-- Tunnel ID: `25`
-- Purpose: deterministic equivalent of the observed real capture shape with outer VLAN + MPLS + EoIP.
-
-### 08_same_inner_tuple_different_tunnel_ids.pcap
-
+`08_same_inner_tuple_different_tunnel_ids.pcap`
 - Packets: 2
-- Same outer IPv4 endpoints and same inner IPv4 / UDP tuple.
+- Inner tuple: identical
 - Tunnel IDs: `6400`, `6401`
-- Purpose: identity split baseline for same inner tuple / different tunnel ID.
+- Outcome: 2 recognized flows
+- Purpose: tunnel ID splits identity.
 
-### 09_same_tunnel_id_different_inner_payload_lengths.pcap
-
+`09_same_tunnel_id_different_inner_payload_lengths.pcap`
 - Packets: 2
-- Same tunnel ID: `6400`
-- Same inner IPv4 / UDP tuple
-- Different inner UDP payload sizes, so the EoIP payload-length field differs between packets
-- Purpose: critical normalization baseline proving payload length must not split identity.
+- Inner tuple: identical
+- Tunnel ID: identical
+- Raw GRE/EoIP words: different
+- Outcome: 1 recognized flow
+- Purpose: raw frame-length word does not split identity.
 
-### 10_same_tunnel_id_two_packets.pcap
-
+`10_same_tunnel_id_two_packets.pcap`
 - Packets: 2
-- Same tunnel ID: `6400`
-- Same inner tuple and same payload length
-- Purpose: one-flow / two-packet baseline inside one tunnel.
+- Inner tuple: identical
+- Tunnel ID: identical
+- Outcome: 1 recognized flow
+- Purpose: ordinary same-tunnel aggregation baseline.
 
-### 11_max_tunnel_id.pcap
-
-- Packets: 1
+`11_max_tunnel_id.pcap`
 - Tunnel ID: `65535`
-- Purpose: boundary-value tunnel ID encoding coverage.
+- Outcome: recognized flow
+- Path: `EthernetII -> IPv4 -> GRE(key=0x0000ffff) -> EthernetII -> IPv4 -> UDP`
+- Purpose: high tunnel-ID boundary.
 
-### 12_truncated_eoip_key_word.pcap
+`19_ipv4_eoip_inner_llc_snap_ipv4_udp.pcap`
+- Outer: Ethernet II / IPv4 / strict EoIP
+- Inner: IEEE 802.3 / LLC/SNAP / IPv4 / UDP
+- Outcome: recognized flow
+- ProtocolId: UDP
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP`
+- Purpose: proves EoIP uses the existing inner Ethernet continuation profile strongly enough to continue through inner LLC/SNAP.
 
+`26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap`
+- Packets: 2
+- Outer IPv4 endpoints: different
+- Inner tuple: identical
+- Tunnel ID: identical
+- Outcome: 1 recognized flow
+- Path: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
+- Purpose: proves outer IPv4 endpoints do not participate in final EoIP flow identity.
+
+`27_same_tunnel_same_inner_tuple_different_outer_vlan_metadata.pcap`
+- Packets: 2
+- One packet: direct outer IPv4
+- One packet: outer VLAN 806 -> IPv4
+- Inner tuple: identical
+- Tunnel ID: identical
+- Outcome: 2 recognized flows
+- Paths:
+  - `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
+  - `EthernetII -> VLAN(vid=806) -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
+- Purpose: proves outer physical path metadata still splits EoIP flows.
+
+### Reusable conservative no-flow fixtures
+
+`12_truncated_eoip_key_word.pcap`
+- Outcome: unrecognized packet
+- Purpose: GRE base header present but EoIP word truncated.
+
+`13_eoip_payload_length_exceeds_available.pcap`
+- Outcome: unrecognized packet
+- Purpose: declared inner frame length exceeds bounded available bytes.
+
+`14_eoip_payload_length_smaller_than_inner_frame.pcap`
+- Outcome: unrecognized packet
+- Purpose: parser must stay bounded by the declared EoIP frame length even when more captured bytes follow.
+
+`15_eoip_missing_key_bit.pcap`
+- Outcome: unrecognized packet
+- Classification: ordinary GRE, not EoIP
+- Purpose: proves strict EoIP requires the GRE key bit.
+
+`16_gre_v1_unsupported_protocol_type.pcap`
+- Outcome: unrecognized packet
+- Classification: ordinary GRE, not EoIP
+- Purpose: GRE v1 unsupported-protocol negative control.
+
+`17_eoip_truncated_inner_ethernet.pcap`
+- Outcome: unrecognized packet
+- Classification: EoIP recognized, inner Ethernet truncated
+- Purpose: no fabricated inner Ethernet tuple.
+
+`18_eoip_truncated_inner_vlan.pcap`
+- Outcome: unrecognized packet
+- Classification: EoIP recognized, inner VLAN truncated
+- Purpose: partial VLAN presentation without inner flow fabrication.
+
+### New GRE/EoIP ambiguity fixtures
+
+`20_ipv6_gre_v1_k_6400_inner_ipv4_udp_not_eoip.pcap`
+- Outer: Ethernet II / IPv6 / GRE version 1 + K / `0x6400`
+- Following 4 bytes: valid-looking EoIP word `0x002e0019`
+- Outcome: unrecognized packet
+- Classification: ordinary GRE, not EoIP
+- Purpose: production outer IPv6 path does not enable EoIP classification.
+
+`21_ipv4_gre_v0_inner_ipv4_udp_not_eoip.pcap`
+- Outer: Ethernet II / IPv4 / GRE v0 / Protocol Type IPv4
+- Outcome: recognized flow
+- Path: `EthernetII -> IPv4 -> GRE -> IPv4 -> UDP`
+- Purpose: ordinary GRE v0 direct-inner-IPv4 baseline.
+
+`22_ipv4_gre_v0_teb_inner_ipv4_udp_not_eoip.pcap`
+- Outer: Ethernet II / IPv4 / GRE v0 / Protocol Type TEB
+- Outcome: recognized flow
+- Path: `EthernetII -> IPv4 -> GRE -> EthernetII -> IPv4 -> UDP`
+- Purpose: ordinary GRE TEB must remain GRE, not EoIP.
+
+`23_ipv4_gre_v0_key_looks_like_eoip_word_inner_ipv4_udp.pcap`
+- Outer: Ethernet II / IPv4 / GRE v0 with key
+- GRE key: `0x002e0019`
+- Outcome: recognized flow
+- Path: `EthernetII -> IPv4 -> GRE(key=0x002e0019) -> IPv4 -> UDP`
+- Purpose: ordinary GRE key values that look like EoIP words must remain plain GRE keys.
+
+`24_ipv4_gre_v0_6400_wrong_version_key.pcap`
+- Outer: Ethernet II / IPv4 / GRE v0 with key / Protocol Type `0x6400`
+- Outcome: unrecognized packet
+- Classification: ordinary GRE, not EoIP
+- Purpose: `0x6400` alone is not enough; GRE version must also match.
+
+`25_ipv4_gre_v1_checksum_key_6400_not_eoip.pcap`
+- Outer: Ethernet II / IPv4 / GRE version 1 with checksum + key / Protocol Type `0x6400`
+- Raw GRE key slot bytes: `0x002e0019`
+- Outcome: unrecognized packet
+- Classification: ordinary GRE, not EoIP
+- Purpose: checksum-present `0x6400` packets do not satisfy the strict EoIP signature.
+
+### Fragmentation and unsupported-continuation fixtures
+
+`28_ipv4_eoip_first_fragment_mf_complete_inner.pcap`
 - Packets: 1
-- Layer chain: Ethernet / outer IPv4 / GRE base header / partial payload-length+tunnel-ID word
-- Purpose: truncated EoIP-specific word robustness.
+- Outer IPv4 fragmentation fields: `MF=1`, fragment offset `0`
+- EoIP header fields:
+  - frame length: `46`
+  - raw tunnel-id bytes: `00 19`
+  - decoded tunnel ID: `6400`
+- Inner EtherType/protocol: Ethernet II / IPv4 / UDP bytes are fully present
+- Production outcome: unrecognized packet
+- Flow count: `0`
+- Physical ProtocolPath: none committed
+- Identity purpose: proves first-fragment outer IPv4 `protocol 47` does not create EoIP Tunnel ID identity even when a full valid-looking EoIP payload is captured
+- Bounds purpose: proves production stops at outer IPv4 fragmentation before any GRE/EoIP continuation.
 
-### 13_eoip_payload_length_exceeds_available.pcap
+`29_ipv4_eoip_nonfirst_fragment_valid_looking_bytes_captrunc.pcap`
+- Packets: 2
+- Packet 1 outer IPv4 fragmentation fields: `MF=1`, fragment offset `1`
+- Packet 2 outer IPv4 fragmentation fields: `MF=0`, fragment offset `2`, `caplen < orig_len`
+- EoIP header fields in both packets:
+  - raw GRE flags/version: `0x2001`
+  - protocol type: `0x6400`
+  - frame length word present in captured bytes
+  - raw tunnel-id bytes: `00 19`
+  - decoded tunnel ID: `6400`
+- Inner EtherType/protocol: valid-looking Ethernet II / IPv4 / UDP bytes
+- Production outcome: both packets stay unrecognized
+- Flow count: `0`
+- Physical ProtocolPath: none committed
+- Identity purpose: proves later fragments do not fabricate Tunnel ID identity
+- Bounds purpose: proves non-first fragments and caplen-truncated non-first fragments still stop at outer IPv4 and do not read beyond captured bytes.
 
+`30_ipv4_eoip_inner_unsupported_ethernet_payloads.pcap`
+- Packets: 5
+- Outer IPv4 fragmentation fields: none; all packets are unfragmented strict outer IPv4 EoIP
+- Per-packet EoIP header fields:
+  - tunnel-id bytes: `00 19`
+  - decoded tunnel ID: `6400`
+  - frame lengths: `59`, `57`, `72`, `74`, `18`
+- Packet 1 inner EtherType/protocol: PPPoE Session `0x8864`
+  - Production outcome: unrecognized packet
+  - Flow count: `0`
+  - Physical ProtocolPath: none committed
+  - Details note: best-effort inner packet details can still surface inner IPv4 / UDP after PPPoE/PPP, but PPPoE does not continue into production flow extraction through EoIP.
+- Packet 2 inner EtherType/protocol: MPLS unicast `0x8847`
+  - Production outcome: unrecognized packet
+  - Flow count: `0`
+  - Physical ProtocolPath: none committed
+  - Details note: best-effort packet details can still surface MPLS plus inner IPv4 / UDP, but MPLS behind EoIP does not continue into production flow extraction.
+- Packet 3 inner EtherType/protocol: PBB `0x88e7`
+  - Production outcome: unrecognized packet
+  - Flow count: `0`
+  - Physical ProtocolPath: none committed
+  - Details note: best-effort packet details can still surface recovered inner IPv4 / UDP facts, but the PBB layer is not committed into an EoIP production path and no flow is formed.
+- Packet 4 inner EtherType/protocol: MACsec `0x88e5`
+  - Production outcome: unrecognized packet
+  - Flow count: `0`
+  - Physical ProtocolPath: none committed
+  - Details note: best-effort packet details stop at inner Ethernet / MACsec-facing envelope with no recovered inner IP/transport flow tuple.
+- Packet 5 inner EtherType/protocol: unknown `0x1234`
+  - Production outcome: unrecognized packet
+  - Flow count: `0`
+  - Physical ProtocolPath: none committed
+  - Details note: best-effort packet details stop at inner Ethernet only.
+- Identity purpose: proves unsupported inner Ethernet payloads do not accidentally reuse root Ethernet reachability and do not grow `ProtocolPathRegistry`
+- Bounds purpose: proves strict EoIP classification can coexist with conservative no-flow inner continuation.
+
+`31_ipv4_eoip_nested_eoip_not_continued.pcap`
 - Packets: 1
-- Layer chain: Ethernet / outer IPv4 / full EoIP header / too-short bounded inner bytes
-- Purpose: declared payload length larger than available inner Ethernet bytes.
+- Outer IPv4 fragmentation fields: none
+- EoIP header fields:
+  - frame length: `88`
+  - raw tunnel-id bytes: `00 19`
+  - decoded tunnel ID: `6400`
+- Inner EtherType/protocol: Ethernet II / inner IPv4 `protocol 47` with valid-looking nested GRE/EoIP bytes
+- Production outcome: unrecognized packet
+- Flow count: `0`
+- Physical ProtocolPath: none committed
+- Identity purpose: proves production stops before recursive nested EoIP continuation and does not fabricate a nested Tunnel ID/path
+- Bounds purpose: proves valid-looking nested GRE/EoIP bytes inside inner IPv4 do not bypass the current transport-only inner-IP continuation gate.
 
-### 14_eoip_payload_length_smaller_than_inner_frame.pcap
+`32_same_tunnel_same_inner_frame_different_frame_length.pcap`
+- Packets: 2
+- Outer IPv4 fragmentation fields: none
+- Packet 1 EoIP header fields:
+  - frame length: `46`
+  - raw EoIP/GRE word: `0x002e0019`
+  - raw tunnel-id bytes: `00 19`
+  - decoded tunnel ID: `6400`
+- Packet 2 EoIP header fields:
+  - frame length: `50`
+  - raw EoIP/GRE word: `0x00320019`
+  - raw tunnel-id bytes: `00 19`
+  - decoded tunnel ID: `6400`
+- Inner EtherType/protocol: identical Ethernet II / IPv4 / UDP frame in both packets
+- Production outcome: one recognized UDP flow containing both packets
+- Flow count: `1`
+- Physical ProtocolPath: `EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP`
+- Identity purpose: proves accepted EoIP frame-length variation alone does not split identity when the Tunnel ID and bounded inner frame are otherwise the same
+- Bounds purpose: packet 2 carries extra bounded bytes after the inner IPv4 packet, but transport payload accounting still follows the inner IPv4/UDP lengths rather than the larger EoIP frame length.
 
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / full EoIP header / declared bounded frame shorter than following bytes
-- Purpose: parser must stay bounded by declared EoIP payload length.
-
-### 15_eoip_missing_key_bit.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / GRE version 1 with K bit clear / protocol type `0x6400`
-- Purpose: negative control proving EoIP must require the GRE K bit.
-
-### 16_gre_v1_unsupported_protocol_type.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / GRE version 1 / protocol type `0x1234`
-- Purpose: GRE version-1 unsupported-protocol negative control.
-
-### 17_eoip_truncated_inner_ethernet.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / valid EoIP header / fewer than 14 bytes of inner Ethernet
-- Purpose: truncated inner Ethernet robustness.
-
-### 18_eoip_truncated_inner_vlan.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / outer IPv4 / valid EoIP header / inner Ethernet addresses + VLAN EtherType + truncated VLAN bytes
-- Purpose: truncated inner VLAN robustness.
-
-## Expected generated file list
+## Expected file list
 
 - `01_ipv4_eoip_inner_ipv4_udp.pcap`
 - `02_ipv4_eoip_inner_ipv4_tcp.pcap`
@@ -281,3 +464,17 @@ Current coverage in this directory:
 - `16_gre_v1_unsupported_protocol_type.pcap`
 - `17_eoip_truncated_inner_ethernet.pcap`
 - `18_eoip_truncated_inner_vlan.pcap`
+- `19_ipv4_eoip_inner_llc_snap_ipv4_udp.pcap`
+- `20_ipv6_gre_v1_k_6400_inner_ipv4_udp_not_eoip.pcap`
+- `21_ipv4_gre_v0_inner_ipv4_udp_not_eoip.pcap`
+- `22_ipv4_gre_v0_teb_inner_ipv4_udp_not_eoip.pcap`
+- `23_ipv4_gre_v0_key_looks_like_eoip_word_inner_ipv4_udp.pcap`
+- `24_ipv4_gre_v0_6400_wrong_version_key.pcap`
+- `25_ipv4_gre_v1_checksum_key_6400_not_eoip.pcap`
+- `26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap`
+- `27_same_tunnel_same_inner_tuple_different_outer_vlan_metadata.pcap`
+- `28_ipv4_eoip_first_fragment_mf_complete_inner.pcap`
+- `29_ipv4_eoip_nonfirst_fragment_valid_looking_bytes_captrunc.pcap`
+- `30_ipv4_eoip_inner_unsupported_ethernet_payloads.pcap`
+- `31_ipv4_eoip_nested_eoip_not_continued.pcap`
+- `32_same_tunnel_same_inner_frame_different_frame_length.pcap`
