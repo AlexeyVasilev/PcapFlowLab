@@ -72,6 +72,8 @@ private:
 enum class SelectorDomain : std::uint8_t {
     link_type = 0,
     linux_cooked_protocol,
+    native_ether_type,
+    native_ieee8023_payload,
     ether_type,
     ieee8023_payload,
     llc_snap_pid,
@@ -136,6 +138,7 @@ enum class DissectionLayerKind : std::uint16_t {
     pppoe,
     ppp,
     ppp_control,
+    macsec,
     arp,
     ipv4,
     ipv6,
@@ -233,6 +236,33 @@ struct PppFacts {
     std::uint16_t protocol {0U};
 
     [[nodiscard]] friend constexpr bool operator==(const PppFacts&, const PppFacts&) = default;
+};
+
+struct MacsecFacts {
+    std::uint8_t available_base_bytes {0U};
+    std::uint8_t available_sci_bytes {0U};
+    std::uint8_t tci_an {0U};
+    std::uint8_t version {0U};
+    bool end_station {false};
+    bool sci_present {false};
+    bool single_copy_broadcast {false};
+    bool encrypted {false};
+    bool changed_text {false};
+    std::uint8_t association_number {0U};
+    std::uint8_t short_length {0U};
+    bool packet_number_present {false};
+    std::uint32_t packet_number {0U};
+    bool has_sci {false};
+    std::uint64_t sci {0U};
+    bool has_plain_ether_type {false};
+    std::uint16_t plain_ether_type {0U};
+    std::uint32_t protected_payload_offset {0U};
+    std::uint32_t protected_payload_length {0U};
+    std::uint32_t icv_offset {0U};
+    std::uint32_t icv_length {0U};
+    bool icv_complete {false};
+
+    [[nodiscard]] friend constexpr bool operator==(const MacsecFacts&, const MacsecFacts&) = default;
 };
 
 struct ArpFacts {
@@ -419,6 +449,7 @@ using LayerFacts = std::variant<
     LinuxCookedFacts,
     PppoeFacts,
     PppFacts,
+    MacsecFacts,
     ArpFacts,
     Ipv4Facts,
     Ipv6Facts,

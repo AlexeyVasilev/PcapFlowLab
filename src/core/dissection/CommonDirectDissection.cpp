@@ -328,52 +328,59 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ieee8023_payload,
+                .domain = SelectorDomain::native_ieee8023_payload,
                 .value = kIeee8023PayloadSelectorValue,
             },
             .dissector = dissect_llc_snap,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypeIpv4,
             },
             .dissector = dissect_ipv4,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypeIpv6,
             },
             .dissector = dissect_ipv6,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypeArp,
             },
             .dissector = dissect_arp,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypePbb,
             },
             .dissector = dissect_pbb,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypePppoeDiscovery,
             },
             .dissector = dissect_pppoe_discovery,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypePppoeSession,
             },
             .dissector = dissect_pppoe_session,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::native_ether_type,
+                .value = detail::kEtherTypeMacsec,
+            },
+            .dissector = dissect_macsec,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
@@ -489,24 +496,101 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypeVlan,
             },
             .dissector = dissect_vlan,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypeQinq,
             },
             .dissector = dissect_vlan,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
-                .domain = SelectorDomain::ether_type,
+                .domain = SelectorDomain::native_ether_type,
                 .value = detail::kEtherTypeLegacyVlan,
             },
             .dissector = dissect_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::native_ether_type,
+                .value = detail::kEtherTypeMplsUnicast,
+            },
+            .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ieee8023_payload,
+                .value = kIeee8023PayloadSelectorValue,
+            },
+            .dissector = dissect_llc_snap,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypePbb,
+            },
+            .dissector = dissect_pbb,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypePppoeDiscovery,
+            },
+            .dissector = dissect_pppoe_discovery,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypePppoeSession,
+            },
+            .dissector = dissect_pppoe_session,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeVlan,
+            },
+            .dissector = dissect_embedded_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeQinq,
+            },
+            .dissector = dissect_embedded_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeLegacyVlan,
+            },
+            .dissector = dissect_embedded_vlan,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
@@ -695,7 +779,7 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .domain = SelectorDomain::gre_protocol_type,
                 .value = detail::kGreProtocolTypeTransparentEthernetBridging,
             },
-            .dissector = dissect_ethernet,
+            .dissector = dissect_embedded_ethernet,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

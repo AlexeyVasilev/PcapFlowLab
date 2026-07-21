@@ -27,6 +27,8 @@ struct ParsedVlanTag {
 [[nodiscard]] ParsedVlanTag parse_vlan_tag(const PacketSlice& slice) noexcept;
 
 [[nodiscard]] DissectionStep dissect_ethernet(const PacketSlice& slice);
+[[nodiscard]] DissectionStep dissect_embedded_ethernet(const PacketSlice& slice);
 [[nodiscard]] DissectionStep dissect_vlan(const PacketSlice& slice);
+[[nodiscard]] DissectionStep dissect_embedded_vlan(const PacketSlice& slice);
 
 }  // namespace pfl::dissection

@@ -55,6 +55,7 @@ add_library(
     src/core/dissection/modules/EthernetVlanModules.cpp
     src/core/dissection/modules/LinuxCookedModules.cpp
     src/core/dissection/modules/LlcSnapModule.cpp
+    src/core/dissection/modules/MacsecModule.cpp
     src/core/dissection/modules/ArpModule.cpp
     src/core/dissection/modules/ControlMessageModules.cpp
     src/core/dissection/modules/GreModule.cpp

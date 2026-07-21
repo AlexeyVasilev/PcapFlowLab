@@ -256,6 +256,21 @@ const PbbFacts* find_pbb_facts(const std::vector<DissectionStep>& steps) {
     return nullptr;
 }
 
+const MacsecFacts* find_macsec_facts(const std::vector<DissectionStep>& steps) {
+    for (const auto& step : steps) {
+        if (step.layer != DissectionLayerKind::macsec) {
+            continue;
+        }
+
+        const auto* facts = std::get_if<MacsecFacts>(&step.facts);
+        if (facts != nullptr) {
+            return facts;
+        }
+    }
+
+    return nullptr;
+}
+
 std::vector<DissectionLayerKind> collect_step_kinds(const std::vector<DissectionStep>& steps) {
     std::vector<DissectionLayerKind> kinds {};
     kinds.reserve(steps.size());
@@ -925,6 +940,39 @@ std::vector<std::uint8_t> make_ethernet_frame_with_payload(
     return bytes;
 }
 
+std::vector<std::uint8_t> make_macsec_bytes(
+    const std::uint8_t tci_an,
+    const std::uint8_t short_length,
+    const std::uint32_t packet_number,
+    const std::vector<std::uint8_t>& protected_payload = {},
+    const bool has_sci = false,
+    const std::uint64_t sci = 0x0200000071010001ULL,
+    const bool include_full_icv = true,
+    const std::vector<std::uint8_t>& icv_override = {}
+) {
+    std::vector<std::uint8_t> bytes {
+        tci_an,
+        short_length,
+    };
+    append_be32(bytes, packet_number);
+    if (has_sci) {
+        for (int shift = 56; shift >= 0; shift -= 8) {
+            bytes.push_back(static_cast<std::uint8_t>((sci >> shift) & 0xFFU));
+        }
+    }
+    bytes.insert(bytes.end(), protected_payload.begin(), protected_payload.end());
+    if (include_full_icv) {
+        if (icv_override.empty()) {
+            for (std::uint8_t index = 0U; index < 16U; ++index) {
+                bytes.push_back(static_cast<std::uint8_t>(0xA0U + index));
+            }
+        } else {
+            bytes.insert(bytes.end(), icv_override.begin(), icv_override.end());
+        }
+    }
+    return bytes;
+}
+
 void append_mpls_label(
     std::vector<std::uint8_t>& bytes,
     const std::uint32_t label,
@@ -1326,7 +1374,8 @@ void record_step_kind(void* context, const DissectionStep& step) {
 void expect_common_direct_registry_and_root_selector() {
     const auto built = make_common_direct_registry();
     PFL_REQUIRE(built.ok());
-    PFL_EXPECT(built.registry->entry_count() == 63U);
+    PFL_EXPECT(built.registry->entry_count() == 75U);
+    PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeEthernet)) == dissect_ethernet);
     PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll)) == dissect_linux_sll);
     PFL_EXPECT(built.registry->find(make_link_type_selector(kLinkTypeLinuxSll2)) == dissect_linux_sll2);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
@@ -1353,6 +1402,14 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::linux_cooked_protocol,
         .value = detail::kEtherTypeLegacyVlan,
     }) == nullptr);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::linux_cooked_protocol,
+        .value = detail::kEtherTypeMacsec,
+    }) == nullptr);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ieee8023_payload,
+        .value = kIeee8023PayloadSelectorValue,
+    }) == dissect_llc_snap);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ieee8023_payload,
         .value = kIeee8023PayloadSelectorValue,
@@ -1450,6 +1507,54 @@ void expect_common_direct_registry_and_root_selector() {
         .value = detail::kEtherTypeLegacyVlan,
     }) == dissect_pbb_inner_vlan);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::pbb_inner_ether_type,
+        .value = detail::kEtherTypeMacsec,
+    }) == nullptr);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_ipv4);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_ipv6);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeArp,
+    }) == dissect_arp);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypePbb,
+    }) == dissect_pbb);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypePppoeDiscovery,
+    }) == dissect_pppoe_discovery);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypePppoeSession,
+    }) == dissect_pppoe_session);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeMacsec,
+    }) == dissect_macsec);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeVlan,
+    }) == dissect_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeQinq,
+    }) == dissect_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeLegacyVlan,
+    }) == dissect_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::native_ether_type,
+        .value = detail::kEtherTypeMplsUnicast,
+    }) == dissect_mpls_label);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ether_type,
         .value = detail::kEtherTypePbb,
     }) == dissect_pbb);
@@ -1461,6 +1566,22 @@ void expect_common_direct_registry_and_root_selector() {
         .domain = SelectorDomain::ether_type,
         .value = detail::kEtherTypePppoeSession,
     }) == dissect_pppoe_session);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypeMacsec,
+    }) == nullptr);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypeVlan,
+    }) == dissect_embedded_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypeQinq,
+    }) == dissect_embedded_vlan);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::ether_type,
+        .value = detail::kEtherTypeLegacyVlan,
+    }) == dissect_embedded_vlan);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::ppp_frame,
         .value = kPppFrameContinueSelectorValue,
@@ -1500,7 +1621,11 @@ void expect_common_direct_registry_and_root_selector() {
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::gre_protocol_type,
         .value = detail::kGreProtocolTypeTransparentEthernetBridging,
-    }) == dissect_ethernet);
+    }) == dissect_embedded_ethernet);
+    PFL_EXPECT(built.registry->find(ProtocolSelector {
+        .domain = SelectorDomain::gre_protocol_type,
+        .value = detail::kEtherTypeMacsec,
+    }) == nullptr);
     PFL_EXPECT(built.registry->find(ProtocolSelector {
         .domain = SelectorDomain::gre_protocol_type,
         .value = detail::kEtherTypeMplsUnicast,
@@ -1890,7 +2015,7 @@ void expect_common_direct_steps_report_handoffs_bounds_and_facts() {
     PFL_REQUIRE(ethernet_step.handoff.has_value());
     PFL_REQUIRE(ethernet_step.handoff->child.has_value());
     const ProtocolSelector expected_ethernet_selector {
-        .domain = SelectorDomain::ether_type,
+        .domain = SelectorDomain::native_ether_type,
         .value = 0x0800U,
     };
     PFL_EXPECT(ethernet_step.handoff->selector == expected_ethernet_selector);
@@ -7622,6 +7747,426 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
     }
 }
 
+void expect_macsec_shadow_parsers_bounds_and_fixture_parity() {
+    const auto built = make_common_direct_registry();
+    PFL_REQUIRE(built.ok());
+    const auto& registry = *built.registry;
+
+    {
+        const auto macsec_bytes = make_macsec_bytes(
+            0xFDU,
+            7U,
+            0xA1B2C3D4U,
+            {},
+            true,
+            0x0123456789ABCDEFULL
+        );
+        const auto slice = make_declared_root_slice(macsec_bytes, macsec_bytes.size());
+        const auto parsed = parse_macsec_frame(slice);
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.available_base_bytes == 6U);
+        PFL_EXPECT(parsed.available_sci_bytes == 8U);
+        PFL_EXPECT(parsed.tci_an == 0xFDU);
+        PFL_EXPECT(parsed.version == 1U);
+        PFL_EXPECT(parsed.end_station);
+        PFL_EXPECT(parsed.sci_present);
+        PFL_EXPECT(parsed.single_copy_broadcast);
+        PFL_EXPECT(parsed.encrypted);
+        PFL_EXPECT(parsed.changed_text);
+        PFL_EXPECT(parsed.association_number == 1U);
+        PFL_EXPECT(parsed.short_length == 7U);
+        PFL_EXPECT(parsed.packet_number_present);
+        PFL_EXPECT(parsed.packet_number == 0xA1B2C3D4U);
+        PFL_EXPECT(parsed.has_sci);
+        PFL_EXPECT(parsed.sci == 0x0123456789ABCDEFULL);
+        PFL_EXPECT(!parsed.has_plain_ether_type);
+        PFL_EXPECT(parsed.header_length == 14U);
+        PFL_EXPECT(parsed.protected_payload_offset == 14U);
+        PFL_EXPECT(parsed.protected_payload_length == 0U);
+        PFL_EXPECT(parsed.icv_offset == 14U);
+        PFL_EXPECT(parsed.icv_length == 16U);
+        PFL_EXPECT(parsed.icv_complete);
+
+        const auto step = dissect_macsec(slice);
+        PFL_EXPECT(step.layer == DissectionLayerKind::macsec);
+        PFL_EXPECT(!step.path_contribution.has_value());
+        PFL_EXPECT(!step.handoff.has_value());
+        PFL_EXPECT(step.terminal_disposition == TerminalDisposition::none);
+        PFL_EXPECT(step.status == ParseStatus::complete);
+        PFL_EXPECT(step.stop_reason == StopReason::encrypted_payload);
+        PFL_EXPECT(step.bounds.full.declared.length() == macsec_bytes.size());
+        PFL_EXPECT(step.bounds.header.declared.length() == 14U);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 0U);
+        const auto* facts = std::get_if<MacsecFacts>(&step.facts);
+        PFL_REQUIRE(facts != nullptr);
+        PFL_EXPECT(facts->sci == 0x0123456789ABCDEFULL);
+        PFL_EXPECT(facts->icv_complete);
+    }
+
+    for (std::uint8_t association_number = 0U; association_number < 4U; ++association_number) {
+        const auto parsed = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(
+                static_cast<std::uint8_t>(0x80U | association_number),
+                0U,
+                0xFFFFFFFFU
+            ),
+            22U
+        ));
+        PFL_EXPECT(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.version == 1U);
+        PFL_EXPECT(parsed.association_number == association_number);
+        PFL_EXPECT(parsed.packet_number == 0xFFFFFFFFU);
+    }
+
+    for (std::size_t length = 0U; length <= 5U; ++length) {
+        std::vector<std::uint8_t> bytes {};
+        for (std::size_t index = 0U; index < length; ++index) {
+            bytes.push_back(static_cast<std::uint8_t>(0x10U + index));
+        }
+        const auto parsed = parse_macsec_frame(make_declared_root_slice(bytes, length));
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        PFL_EXPECT(parsed.available_base_bytes == length);
+        PFL_EXPECT(!parsed.packet_number_present);
+        if (length < 2U) {
+            PFL_EXPECT(parsed.header_length == 2U);
+        } else {
+            PFL_EXPECT(parsed.header_length == 6U);
+        }
+    }
+
+    {
+        auto truncated_sci = make_macsec_bytes(0x20U, 0U, 0x01020304U, {}, true, 0x0102030405060708ULL, false);
+        truncated_sci.resize(13U);
+        const auto parsed = parse_macsec_frame(make_declared_root_slice(truncated_sci, truncated_sci.size()));
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        PFL_EXPECT(parsed.sci_present);
+        PFL_EXPECT(parsed.available_sci_bytes == 7U);
+        PFL_EXPECT(!parsed.has_sci);
+        PFL_EXPECT(parsed.header_length == 14U);
+    }
+
+    for (std::size_t remaining = 1U; remaining < 16U; ++remaining) {
+        std::vector<std::uint8_t> protected_payload {};
+        for (std::size_t index = 0U; index < remaining; ++index) {
+            protected_payload.push_back(static_cast<std::uint8_t>(0x30U + index));
+        }
+        const auto parsed = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(0x0CU, 0U, 0x01020304U, protected_payload, false, 0U, false),
+            6U + remaining
+        ));
+        PFL_EXPECT(parsed.status == ParseStatus::truncated);
+        PFL_EXPECT(parsed.protected_payload_length == remaining);
+        PFL_EXPECT(parsed.icv_length == 0U);
+        PFL_EXPECT(!parsed.icv_complete);
+    }
+
+    {
+        const auto exact_icv = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(0x0CU, 0U, 0x01020304U),
+            22U
+        ));
+        PFL_EXPECT(exact_icv.status == ParseStatus::complete);
+        PFL_EXPECT(exact_icv.protected_payload_length == 0U);
+        PFL_EXPECT(exact_icv.icv_length == 16U);
+        PFL_EXPECT(exact_icv.icv_complete);
+
+        const auto one_payload = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(0x0CU, 0U, 0x01020304U, {0x45U}),
+            23U
+        ));
+        PFL_EXPECT(one_payload.status == ParseStatus::complete);
+        PFL_EXPECT(one_payload.protected_payload_length == 1U);
+        PFL_EXPECT(!one_payload.has_plain_ether_type);
+    }
+
+    {
+        const auto plain = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(
+                0x00U,
+                4U,
+                0x01020304U,
+                {0x08U, 0x00U, 0xdeU, 0xadU, 0xbeU, 0xefU, 0xcaU, 0xfeU, 0xbaU, 0xbeU, 0x11U, 0x22U}
+            ),
+            34U
+        ));
+        PFL_EXPECT(plain.status == ParseStatus::complete);
+        PFL_EXPECT(plain.short_length == 4U);
+        PFL_EXPECT(plain.protected_payload_length == 12U);
+        PFL_EXPECT(plain.has_plain_ether_type);
+        PFL_EXPECT(plain.plain_ether_type == detail::kEtherTypeIpv4);
+
+        const auto encrypted = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(0x08U, 0U, 0x01020304U, {0x08U, 0x00U}),
+            24U
+        ));
+        PFL_EXPECT(!encrypted.has_plain_ether_type);
+
+        const auto changed = parse_macsec_frame(make_declared_root_slice(
+            make_macsec_bytes(0x04U, 0U, 0x01020304U, {0x08U, 0x00U}),
+            24U
+        ));
+        PFL_EXPECT(!changed.has_plain_ether_type);
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::ethernet_ii,
+            .path_contribution = LayerKey::ethernet_ii(),
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::none,
+        });
+        collector.consume(DissectionStep {
+            .layer = DissectionLayerKind::macsec,
+            .facts = MacsecFacts {
+                .version = 1U,
+                .association_number = 3U,
+                .packet_number_present = true,
+                .packet_number = 0xFFFFFFFFU,
+                .protected_payload_offset = 6U,
+                .protected_payload_length = 12U,
+            },
+            .status = ParseStatus::complete,
+            .stop_reason = StopReason::encrypted_payload,
+        });
+        collector.finish(DissectionEngineResult {
+            .stop_reason = StopReason::encrypted_payload,
+            .step_count = 2U,
+            .traversed_depth = 2U,
+        });
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(collector.facts().terminal_protocol == ProtocolId::unknown);
+        PFL_EXPECT(!collector.facts().has_flow_addresses);
+        PFL_EXPECT(!collector.facts().has_ports);
+        PFL_EXPECT(!collector.facts().has_transport_payload_length);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII");
+    }
+
+    {
+        const auto direct_packet = make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMacsec,
+            make_macsec_bytes(0x0CU, 0U, 0x01020304U, {0xdeU, 0xadU}, false, 0U, false)
+        ));
+        const auto shadow = run_shadow(direct_packet, registry);
+        const auto steps = collect_shadow_steps(direct_packet, registry);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT((collect_step_kinds(steps) == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::macsec,
+        }));
+        PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
+    }
+
+    {
+        const auto nested_packet = make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypeMacsec,
+            make_macsec_bytes(
+                0x00U,
+                0U,
+                0x01020304U,
+                {0x88U, 0xe5U, 0x01U, 0x02U},
+                false,
+                0U,
+                true
+            )
+        ));
+        const auto steps = collect_shadow_steps(nested_packet, registry);
+        PFL_EXPECT((collect_step_kinds(steps) == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::macsec,
+        }));
+    }
+
+    {
+        const auto gre_teb_macsec = make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 0, 1),
+            ipv4(10, 92, 0, 2),
+            make_gre_header(
+                detail::kGreProtocolTypeTransparentEthernetBridging,
+                make_ethernet_frame_with_payload(
+                    detail::kEtherTypeMacsec,
+                    make_macsec_bytes(0x0CU, 0U, 0x01020304U, {0xdeU, 0xadU}, false, 0U, false)
+                )
+            )
+        ));
+        const auto shadow = run_shadow(gre_teb_macsec, registry);
+        const auto steps = collect_shadow_steps(gre_teb_macsec, registry);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(format_shadow_path(shadow) == "EthernetII -> IPv4 -> GRE -> EthernetII");
+        PFL_EXPECT((collect_step_kinds(steps) == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::ipv4,
+            DissectionLayerKind::gre,
+            DissectionLayerKind::ethernet_ii,
+        }));
+    }
+
+    {
+        const auto gre_teb_vlan_macsec = make_raw_packet(make_ethernet_ipv4_gre_packet(
+            ipv4(10, 92, 1, 1),
+            ipv4(10, 92, 1, 2),
+            make_gre_header(
+                detail::kGreProtocolTypeTransparentEthernetBridging,
+                add_vlan_tags(
+                    make_ethernet_frame_with_payload(
+                        detail::kEtherTypeMacsec,
+                        make_macsec_bytes(0x0CU, 0U, 0x01020304U, {0xdeU, 0xadU}, false, 0U, false)
+                    ),
+                    {{0x8100U, 131U}}
+                )
+            )
+        ));
+        const auto shadow = run_shadow(gre_teb_vlan_macsec, registry);
+        const auto steps = collect_shadow_steps(gre_teb_vlan_macsec, registry);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(format_shadow_path(shadow) == "EthernetII -> IPv4 -> GRE -> EthernetII -> VLAN(vid=131)");
+        PFL_EXPECT((collect_step_kinds(steps) == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::ipv4,
+            DissectionLayerKind::gre,
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::vlan,
+        }));
+    }
+
+    {
+        const auto pbb_inner_macsec = make_raw_packet(make_ethernet_frame_with_payload(
+            detail::kEtherTypePbb,
+            [] {
+                std::vector<std::uint8_t> payload {0x20U, 0x12U, 0x34U, 0x56U};
+                const auto inner_frame = make_ethernet_frame_with_payload(
+                    detail::kEtherTypeMacsec,
+                    make_macsec_bytes(0x0CU, 0U, 0x01020304U, {0xdeU, 0xadU}, false, 0U, false)
+                );
+                payload.insert(payload.end(), inner_frame.begin(), inner_frame.end());
+                return payload;
+            }()
+        ));
+        const auto shadow = run_shadow(pbb_inner_macsec, registry);
+        const auto steps = collect_shadow_steps(pbb_inner_macsec, registry);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(format_shadow_path(shadow) == "EthernetII");
+        PFL_EXPECT((collect_step_kinds(steps) == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::ethernet_ii,
+            DissectionLayerKind::pbb,
+            DissectionLayerKind::ethernet_ii,
+        }));
+        PFL_EXPECT(find_macsec_facts(steps) == nullptr);
+    }
+
+    {
+        const auto linux_cooked_macsec = make_raw_packet(
+            {
+                0x12U, 0x34U,
+                0x34U, 0x56U,
+                0x00U, 0x06U,
+                0x10U, 0x20U, 0x30U, 0x40U, 0x50U, 0x60U, 0x70U, 0x80U,
+                0x88U, 0xe5U,
+            },
+            16U,
+            kLinkTypeLinuxSll
+        );
+        const auto shadow = run_shadow(linux_cooked_macsec, registry);
+        const auto steps = collect_shadow_steps(linux_cooked_macsec, registry);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == StopReason::unknown_next_protocol);
+        PFL_EXPECT(format_shadow_path(shadow).empty());
+        PFL_EXPECT((collect_step_kinds(steps) == std::vector<DissectionLayerKind> {
+            DissectionLayerKind::linux_sll,
+        }));
+        PFL_EXPECT(find_macsec_facts(steps) == nullptr);
+    }
+
+    struct MacsecFixtureExpectation {
+        const char* relative_path;
+        const char* expected_shadow_path;
+        StopReason expected_stop_reason;
+        std::vector<DissectionLayerKind> expected_kinds;
+        bool expect_plain_ether_type;
+        std::uint32_t expected_packet_number;
+        std::uint32_t expected_payload_length;
+        std::uint32_t expected_icv_length;
+        bool expect_icv_complete;
+    };
+
+    const std::vector<MacsecFixtureExpectation> expectations {
+        {"parsing/macsec/01_macsec_basic_no_sci.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/02_macsec_sci_present.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/03_macsec_an2_nonzero_pn_sci.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x0A0B0C0DU, 24U, 16U, true},
+        {"parsing/macsec/04_macsec_integrity_only_cleartext_like_payload.pcap", "EthernetII", StopReason::unrecognized_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, true, 0x01020304U, 35U, 16U, true},
+        {"parsing/macsec/05_macsec_short_length_nonzero.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 32U, 16U, true},
+        {"parsing/macsec/06_vlan_macsec_sci.pcap", "EthernetII -> VLAN(vid=700)", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::vlan, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/07_qinq_macsec_basic.pcap", "EthernetII -> VLAN(vid=710) -> VLAN(vid=720)", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::vlan, DissectionLayerKind::vlan, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/08_macsec_scb_flag.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/09_macsec_es_flag.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/10_macsec_truncated_base_sectag.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0U, 0U, 0U, false},
+        {"parsing/macsec/11_macsec_truncated_packet_number.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0U, 0U, 0U, false},
+        {"parsing/macsec/12_macsec_truncated_sci.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 0U, 0U, false},
+        {"parsing/macsec/13_macsec_missing_icv_or_short_payload.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 15U, 0U, false},
+        {"parsing/macsec/14_macsec_zero_packet_number.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x00000000U, 24U, 16U, true},
+        {"parsing/macsec/15_macsec_protected_payload_ipv4_like_no_decode.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 38U, 16U, true},
+        {"parsing/macsec/16_macsec_legacy_vlan_9100.pcap", "EthernetII -> VLAN(vid=730)", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::vlan, DissectionLayerKind::macsec}, false, 0x01020304U, 24U, 16U, true},
+        {"parsing/macsec/17_macsec_version1_max_packet_number.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0xFFFFFFFFU, 24U, 16U, true},
+        {"parsing/macsec/18_macsec_short_length_ignored_for_bounds.pcap", "EthernetII", StopReason::encrypted_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 12U, 16U, true},
+        {"parsing/macsec/19_macsec_caplen_lt_origlen_partial_icv.pcap", "EthernetII", StopReason::truncated, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 12U, 0U, false},
+        {"parsing/macsec/20_macsec_plain_ether_type_one_byte_only.pcap", "EthernetII", StopReason::unrecognized_payload, {DissectionLayerKind::ethernet_ii, DissectionLayerKind::macsec}, false, 0x01020304U, 1U, 16U, true},
+    };
+
+    ProtocolPathRegistry shadow_path_registry {};
+    for (const auto& expectation : expectations) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {expectation.relative_path}};
+        const auto packet = require_raw_fixture_packet(expectation.relative_path);
+        const auto legacy = decode_legacy_direct(packet);
+        const auto shadow = run_shadow(packet, registry);
+        const auto steps = collect_shadow_steps(packet, registry);
+        const auto kinds = collect_step_kinds(steps);
+        const auto* macsec = find_macsec_facts(steps);
+
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
+        PFL_EXPECT(shadow.stop_reason == expectation.expected_stop_reason);
+        PFL_EXPECT(shadow.terminal_protocol == ProtocolId::unknown);
+        PFL_EXPECT(!shadow.has_flow_addresses);
+        PFL_EXPECT(!shadow.has_ports);
+        PFL_EXPECT(!shadow.has_transport_payload_length);
+        PFL_EXPECT(format_shadow_path(shadow) == expectation.expected_shadow_path);
+        PFL_EXPECT(format_shadow_path(shadow).find("MACsec") == std::string::npos);
+        PFL_EXPECT((kinds == expectation.expected_kinds));
+        PFL_REQUIRE(macsec != nullptr);
+        PFL_EXPECT(macsec->has_plain_ether_type == expectation.expect_plain_ether_type);
+        PFL_EXPECT(macsec->packet_number == expectation.expected_packet_number);
+        PFL_EXPECT(macsec->protected_payload_length == expectation.expected_payload_length);
+        PFL_EXPECT(macsec->icv_length == expectation.expected_icv_length);
+        PFL_EXPECT(macsec->icv_complete == expectation.expect_icv_complete);
+        PFL_EXPECT(shadow_path_registry.intern(shadow_path(shadow)) != kInvalidProtocolPathId);
+    }
+
+    {
+        const auto fixture_01 = run_shadow(require_raw_fixture_packet("parsing/macsec/01_macsec_basic_no_sci.pcap"), registry);
+        const auto fixture_04 = run_shadow(
+            require_raw_fixture_packet("parsing/macsec/04_macsec_integrity_only_cleartext_like_payload.pcap"),
+            registry
+        );
+        const auto fixture_17 = run_shadow(
+            require_raw_fixture_packet("parsing/macsec/17_macsec_version1_max_packet_number.pcap"),
+            registry
+        );
+
+        ProtocolPathRegistry direct_registry {};
+        const auto id_01 = direct_registry.intern(shadow_path(fixture_01));
+        const auto id_04 = direct_registry.intern(shadow_path(fixture_04));
+        const auto id_17 = direct_registry.intern(shadow_path(fixture_17));
+        PFL_EXPECT(id_01 != kInvalidProtocolPathId);
+        PFL_EXPECT(id_01 == id_04);
+        PFL_EXPECT(id_01 == id_17);
+        PFL_EXPECT(direct_registry.size() == 1U);
+    }
+}
+
 }  // namespace
 
 void run_common_direct_dissection_tests() {
@@ -7653,6 +8198,7 @@ void run_common_direct_dissection_tests() {
     expect_llc_snap_shadow_parsers_bounds_and_fixture_parity();
     expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity();
     expect_pbb_shadow_parsers_bounds_and_fixture_parity();
+    expect_macsec_shadow_parsers_bounds_and_fixture_parity();
 }
 
 }  // namespace pfl::tests

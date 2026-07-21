@@ -1,8 +1,9 @@
 Synthetic MACsec / IEEE 802.1AE fixtures that define the exact current
 production decoder contract.
 
-These fixtures are for production behavior only. No shadow MACsec dissector is
-implemented in this branch.
+These fixtures remain the production-behavior source of truth. The shadow
+dissector now mirrors that contract without changing current production
+classification semantics.
 
 No committed generator is kept for this directory. The `.pcap` files are
 committed deterministic binaries.

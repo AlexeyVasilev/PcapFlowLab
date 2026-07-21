@@ -730,18 +730,21 @@ Within this stage, LLC/SNAP parity specifically means:
   - AH;
   - ESP.
 
-For MACsec specifically, shadow dissection is not implemented yet. The current
-migration contract is defined by the committed production-only fixtures under
-`tests/data/parsing/macsec/` plus `tests/unit/MacsecPcapFixtureTests.cpp`.
-That contract is intentionally narrow: direct Ethernet and outer
-VLAN/QinQ/legacy-`0x9100` entry into EtherType `0x88e5`, presentation-only
-SecTAG / optional SCI / protected-payload / fixed-16-byte-ICV metadata,
-Short-Length-as-display-only behavior, and conservative no-flow outcomes with
-specific truncation or protected-payload-not-decrypted reason text. Current
-production does not recover inner IPv4/IPv6/ARP flows from protected payload,
-does not validate the ICV, and does not persist a MACsec `ProtocolPath`
-contribution for these packets. Any future shadow MACsec module must match that
-fixture-defined production contract before production import cutover.
+For MACsec specifically, shadow dissection now implements the committed
+production fixture contract under `tests/data/parsing/macsec/` plus
+`tests/unit/MacsecPcapFixtureTests.cpp`. That contract remains intentionally
+narrow: native Ethernet entry only through direct Ethernet II, outer single
+VLAN `0x8100`, outer QinQ `0x88a8` + `0x8100`, or outer legacy-`0x9100`
+stacking; fixed six-byte base SecTAG; optional eight-byte SCI; fixed assumed
+trailing 16-byte ICV; no ICV validation; Short Length retained as metadata
+only; optional Plain EtherType retained as metadata only for complete
+`E=0` / `C=0` protected data with at least two visible bytes; and no protected
+payload continuation into inner protocols. The shadow MACsec step emits facts
+for diagnostics but contributes no persisted `ProtocolPath` layer and still
+finalizes as `unrecognized` for production parity. Native Ethernet reachability
+is isolated from unsupported embedded Ethernet selector contexts such as PBB
+inner Ethernet, GRE TEB inner Ethernet, and Linux cooked roots. Production
+import remains on legacy `PacketDecoder` until the broader cutover stage.
 
 For PBB specifically, the current migration contract is defined by the committed
 fixtures under `tests/data/parsing/pbb/` plus
