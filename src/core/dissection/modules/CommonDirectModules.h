@@ -2,6 +2,7 @@
 
 #include "core/dissection/modules/ArpModule.h"
 #include "core/dissection/modules/ControlMessageModules.h"
+#include "core/dissection/modules/EoipModule.h"
 #include "core/dissection/modules/EthernetVlanModules.h"
 #include "core/dissection/modules/GreModule.h"
 #include "core/dissection/modules/IpSecurityModules.h"

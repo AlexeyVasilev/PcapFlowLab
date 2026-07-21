@@ -1,6 +1,6 @@
 Synthetic EoIP parsing fixtures for production-contract regression tests.
 
-This directory defines the exact current production contract for MikroTik-style EoIP handling in `PacketDecoder` and packet-details code. These fixtures are intentionally source-of-truth tests for current behavior; they are not a claim of future shadow-engine support.
+This directory defines the exact current production contract for MikroTik-style EoIP handling in `PacketDecoder` and packet-details code. These fixtures are intentionally source-of-truth tests for both production-regression checks and the shadow-engine parity suite.
 
 ## Scope
 
@@ -271,7 +271,7 @@ The malformed/truncated fixtures prove that production:
 
 `12_truncated_eoip_key_word.pcap`
 - Outcome: unrecognized packet
-- Purpose: GRE base header present but EoIP word truncated.
+- Purpose: GRE base header is present, but the outer IPv4-declared GRE payload is only 6 bytes, so a full 8-byte EoIP header does not fit inside the enclosing declared boundary.
 
 `13_eoip_payload_length_exceeds_available.pcap`
 - Outcome: unrecognized packet
@@ -279,7 +279,7 @@ The malformed/truncated fixtures prove that production:
 
 `14_eoip_payload_length_smaller_than_inner_frame.pcap`
 - Outcome: unrecognized packet
-- Purpose: parser must stay bounded by the declared EoIP frame length even when more captured bytes follow.
+- Purpose: parser must stay bounded by the declared EoIP frame length even when more captured bytes follow; the bounded inner-Ethernet child becomes capture-truncated relative to the 14-byte Ethernet header.
 
 `15_eoip_missing_key_bit.pcap`
 - Outcome: unrecognized packet
@@ -294,12 +294,12 @@ The malformed/truncated fixtures prove that production:
 `17_eoip_truncated_inner_ethernet.pcap`
 - Outcome: unrecognized packet
 - Classification: EoIP recognized, inner Ethernet truncated
-- Purpose: no fabricated inner Ethernet tuple.
+- Purpose: no fabricated inner Ethernet tuple; the bounded inner-Ethernet child exposes fewer than 14 visible bytes, so shadow reports an inner-Ethernet truncation rather than continuing to inner IP.
 
 `18_eoip_truncated_inner_vlan.pcap`
 - Outcome: unrecognized packet
-- Classification: EoIP recognized, inner VLAN truncated
-- Purpose: partial VLAN presentation without inner flow fabrication.
+- Classification: EoIP recognized, inner VLAN structurally incomplete inside the bounded EoIP child
+- Purpose: partial VLAN presentation without inner flow fabrication; after the bounded inner Ethernet header only 2 declared bytes remain for the VLAN child, so the VLAN header is structurally incomplete inside the EoIP frame boundary.
 
 ### New GRE/EoIP ambiguity fixtures
 

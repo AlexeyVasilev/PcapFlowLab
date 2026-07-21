@@ -181,6 +181,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 }
             } else if constexpr (std::is_same_v<Facts, GreFacts>) {
                 return;
+            } else if constexpr (std::is_same_v<Facts, EoipFacts>) {
+                return;
             } else if constexpr (std::is_same_v<Facts, MplsFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, MplsPseudowireFacts>) {
@@ -641,7 +643,7 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .domain = SelectorDomain::ip_protocol,
                 .value = detail::kIpProtocolGre,
             },
-            .dissector = dissect_gre,
+            .dissector = dissect_ipv4_gre_variant,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
@@ -789,6 +791,111 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kEtherTypeMplsUnicast,
             },
             .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_frame,
+                .value = kEoipInnerFrameSelectorValue,
+            },
+            .dissector = dissect_eoip_inner_ethernet,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ether_type,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_eoip_inner_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ether_type,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_eoip_inner_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ether_type,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ether_type,
+                .value = detail::kEtherTypeVlan,
+            },
+            .dissector = dissect_eoip_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ether_type,
+                .value = detail::kEtherTypeQinq,
+            },
+            .dissector = dissect_eoip_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ether_type,
+                .value = detail::kEtherTypeLegacyVlan,
+            },
+            .dissector = dissect_eoip_inner_vlan,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ieee8023_payload,
+                .value = kEoipInnerIeee8023PayloadSelectorValue,
+            },
+            .dissector = dissect_eoip_inner_llc_snap,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_llc_snap_pid,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_eoip_inner_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_llc_snap_pid,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_eoip_inner_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_llc_snap_pid,
+                .value = detail::kEtherTypeArp,
+            },
+            .dissector = dissect_arp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ip_protocol,
+                .value = detail::kIpProtocolTcp,
+            },
+            .dissector = dissect_tcp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ip_protocol,
+                .value = detail::kIpProtocolUdp,
+            },
+            .dissector = dissect_udp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ipv6_next_header,
+                .value = detail::kIpProtocolTcp,
+            },
+            .dissector = dissect_tcp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::eoip_inner_ipv6_next_header,
+                .value = detail::kIpProtocolUdp,
+            },
+            .dissector = dissect_udp,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

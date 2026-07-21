@@ -615,8 +615,8 @@ GRE and EoIP are a good stress case and should shape the engine design.
 - GRE optional checksum, key, and sequence fields are parsed in wire order for facts and bounds, but only GRE key contributes to `ProtocolPath` identity.
 - GRE-carried MPLS may be traversed in shadow mode through the same explicit MPLS module used for direct EtherType MPLS entry, one label shim per engine step.
 - The exact current production GRE-versus-EoIP contract is now defined by the committed fixtures under `tests/data/parsing/eoip/` and `tests/unit/EoipPcapFixtureTests.cpp`.
-- MikroTik EoIP remains deferred in the shadow engine for this pass even though the production decoder already has protocol-specific handling for that payload shape.
-- When shadow EoIP is introduced later, it must preserve the fixture-defined production classification rules exactly, including the current outer-IPv4-only EoIP reachability and the strict `version=1 + key bit set + checksum clear + sequence clear + protocol type 0x6400` distinction from ordinary GRE.
+- The shadow engine now models MikroTik EoIP as a GRE payload-shape variant reached only from the outer IPv4 `protocol=47` selector path; outer IPv6 `next_header=47` still remains ordinary GRE.
+- Shadow EoIP preserves the fixture-defined production classification rules exactly, including the strict `version=1 + key bit set + checksum clear + sequence clear + protocol type 0x6400` distinction from ordinary GRE, the normalized Tunnel ID -> `GRE(key=...)` path contribution, bounded inner-Ethernet continuation, and the current no-recursive-nested-EoIP rule.
 - Unsupported GRE versions, routing-present variants, and malformed optional-field bounds must stop conservatively without contributing a physical path layer.
 
 ## MPLS Nuance
@@ -743,6 +743,10 @@ Within this stage, LLC/SNAP parity specifically means:
   - EoIP;
   - AH;
   - ESP.
+
+GRE, EoIP, MPLS, MPLS pseudowire, PPPoE / PPP, MACsec, and AH / ESP are now
+implemented in the current shadow test suite; the remaining stage text records
+the migration scope rather than a still-deferred status for those families.
 
 For MACsec specifically, shadow dissection now implements the committed
 production fixture contract under `tests/data/parsing/macsec/` plus

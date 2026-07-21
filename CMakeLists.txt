@@ -58,6 +58,7 @@ add_library(
     src/core/dissection/modules/MacsecModule.cpp
     src/core/dissection/modules/ArpModule.cpp
     src/core/dissection/modules/ControlMessageModules.cpp
+    src/core/dissection/modules/EoipModule.cpp
     src/core/dissection/modules/GreModule.cpp
     src/core/dissection/modules/IpSecurityModules.cpp
     src/core/dissection/modules/Ipv4Module.cpp
@@ -313,6 +314,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectLinkDissectionTests.cpp
         tests/unit/CommonDirectNetworkDissectionTests.cpp
         tests/unit/CommonDirectEncapsulationDissectionTests.cpp
+        tests/unit/CommonDirectEoipDissectionTests.cpp
         tests/unit/CommonDirectMplsPseudowireDissectionTests.cpp
         tests/unit/CommonDirectTransportDissectionTests.cpp
         tests/unit/ProtocolPathTests.cpp

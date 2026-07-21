@@ -55,6 +55,7 @@ void run_common_direct_bounds_traversal_tests();
 void run_common_direct_link_dissection_tests();
 void run_common_direct_network_dissection_tests();
 void run_common_direct_encapsulation_dissection_tests();
+void run_common_direct_eoip_dissection_tests();
 void run_common_direct_mpls_pseudowire_dissection_tests();
 void run_common_direct_transport_dissection_tests();
 

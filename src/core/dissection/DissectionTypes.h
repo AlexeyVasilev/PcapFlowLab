@@ -84,6 +84,12 @@ enum class SelectorDomain : std::uint8_t {
     ip_protocol,
     ipv6_next_header,
     gre_protocol_type,
+    eoip_inner_frame,
+    eoip_inner_ether_type,
+    eoip_inner_ieee8023_payload,
+    eoip_inner_llc_snap_pid,
+    eoip_inner_ip_protocol,
+    eoip_inner_ipv6_next_header,
     mpls_stack,
     mpls_payload,
     mpls_bos_payload,
@@ -150,6 +156,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_destination_options,
     ipv6_fragment,
     gre,
+    eoip,
     mpls,
     mpls_pseudowire,
     ah,
@@ -364,6 +371,16 @@ struct GreFacts {
     [[nodiscard]] friend constexpr bool operator==(const GreFacts&, const GreFacts&) = default;
 };
 
+struct EoipFacts {
+    std::uint16_t gre_flags_and_version {0U};
+    std::uint16_t gre_protocol_type {0U};
+    std::uint16_t frame_length {0U};
+    std::uint16_t tunnel_id {0U};
+    std::uint16_t header_length {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const EoipFacts&, const EoipFacts&) = default;
+};
+
 struct MplsFacts {
     std::uint32_t label {0U};
     std::uint8_t traffic_class {0U};
@@ -468,6 +485,7 @@ using LayerFacts = std::variant<
     Ipv6ExtensionFacts,
     Ipv6FragmentFacts,
     GreFacts,
+    EoipFacts,
     MplsFacts,
     MplsPseudowireFacts,
     AhFacts,

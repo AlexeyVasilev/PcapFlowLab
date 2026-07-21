@@ -8,7 +8,7 @@ using namespace dissection;
 namespace {
 
 void expect_link_type_and_linux_cooked_registry_mappings(const DissectionRegistry& registry) {
-    PFL_EXPECT(registry.entry_count() == 83U);
+    PFL_EXPECT(registry.entry_count() == 98U);
     PFL_EXPECT(registry.find(make_link_type_selector(kLinkTypeEthernet)) == dissect_ethernet);
     PFL_EXPECT(registry.find(make_link_type_selector(kLinkTypeLinuxSll)) == dissect_linux_sll);
     PFL_EXPECT(registry.find(make_link_type_selector(kLinkTypeLinuxSll2)) == dissect_linux_sll2);
@@ -71,7 +71,7 @@ void expect_ip_protocol_and_control_registry_mappings(const DissectionRegistry& 
     PFL_EXPECT(registry.find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolGre,
-    }) == dissect_gre);
+    }) == dissect_ipv4_gre_variant);
     PFL_EXPECT(registry.find(ProtocolSelector {
         .domain = SelectorDomain::ip_protocol,
         .value = detail::kIpProtocolAh,
@@ -279,6 +279,87 @@ void expect_ppp_gre_and_mpls_registry_mappings(const DissectionRegistry& registr
         .domain = SelectorDomain::gre_protocol_type,
         .value = detail::kEtherTypeMplsUnicast,
     }) == dissect_mpls_label);
+
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_frame,
+        .value = kEoipInnerFrameSelectorValue,
+    }) == dissect_eoip_inner_ethernet);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_eoip_inner_ipv4);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_eoip_inner_ipv6);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeArp,
+    }) == dissect_arp);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeVlan,
+    }) == dissect_eoip_inner_vlan);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeQinq,
+    }) == dissect_eoip_inner_vlan);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeLegacyVlan,
+    }) == dissect_eoip_inner_vlan);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypePppoeSession,
+    }) == nullptr);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypePbb,
+    }) == nullptr);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ether_type,
+        .value = detail::kEtherTypeMacsec,
+    }) == nullptr);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ieee8023_payload,
+        .value = kEoipInnerIeee8023PayloadSelectorValue,
+    }) == dissect_eoip_inner_llc_snap);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_llc_snap_pid,
+        .value = detail::kEtherTypeIpv4,
+    }) == dissect_eoip_inner_ipv4);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_llc_snap_pid,
+        .value = detail::kEtherTypeIpv6,
+    }) == dissect_eoip_inner_ipv6);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_llc_snap_pid,
+        .value = detail::kEtherTypeArp,
+    }) == dissect_arp);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ip_protocol,
+        .value = detail::kIpProtocolTcp,
+    }) == dissect_tcp);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ip_protocol,
+        .value = detail::kIpProtocolUdp,
+    }) == dissect_udp);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ip_protocol,
+        .value = detail::kIpProtocolGre,
+    }) == nullptr);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ipv6_next_header,
+        .value = detail::kIpProtocolTcp,
+    }) == dissect_tcp);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ipv6_next_header,
+        .value = detail::kIpProtocolUdp,
+    }) == dissect_udp);
+    PFL_EXPECT(registry.find(ProtocolSelector {
+        .domain = SelectorDomain::eoip_inner_ipv6_next_header,
+        .value = detail::kIpProtocolGre,
+    }) == nullptr);
 
     PFL_EXPECT(registry.find(ProtocolSelector {
         .domain = SelectorDomain::ether_type,
