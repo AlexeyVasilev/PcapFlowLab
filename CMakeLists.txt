@@ -371,6 +371,26 @@ if(BUILD_TESTING)
             pcap_flow_lab_core
     )
 
+    # Keep only the core test executable unoptimized in optimized configs to
+    # reduce compiler memory usage; production targets remain fully optimized.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(
+            pcap_flow_lab_core_tests
+            PRIVATE
+                $<$<CONFIG:Release>:-O0>
+                $<$<CONFIG:RelWithDebInfo>:-O0>
+                $<$<CONFIG:MinSizeRel>:-O0>
+        )
+    elseif(MSVC)
+        target_compile_options(
+            pcap_flow_lab_core_tests
+            PRIVATE
+                $<$<CONFIG:Release>:/Od>
+                $<$<CONFIG:RelWithDebInfo>:/Od>
+                $<$<CONFIG:MinSizeRel>:/Od>
+        )
+    endif()
+
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()
 
