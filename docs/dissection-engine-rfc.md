@@ -627,6 +627,11 @@ GRE and EoIP are a good stress case and should shape the engine design.
   - IPv4 by first nibble `4`;
   - IPv6 by first nibble `6`.
 - MPLS pseudowire / control-word traversal remains deferred in the shadow engine for this pass, even though production helpers already support richer MPLS continuation.
+- The production MPLS pseudowire fixture contract in `tests/data/parsing/mpls_pw/README.md` now records the exact post-BoS production decision order:
+  - direct IPv4 nibble `4`;
+  - direct IPv6 nibble `6`;
+  - accepted 4-byte pseudowire control word only when the first 16 bits are `0x0000`;
+  - then plain inner Ethernet continuation.
 - Successfully parsed MPLS labels contribute `LayerKey::mpls(label)` in order; TTL and traffic-class bits remain non-identity metadata.
 
 This is exactly the kind of branching that is too brittle in a centralized traversal and benefits from protocol-local modules with explicit selector transitions.
