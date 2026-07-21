@@ -1,278 +1,232 @@
-Synthetic Geneve parsing fixtures for regression tests.
+Synthetic Geneve parsing fixtures for production-behavior regression tests.
 
-This directory is intended for tiny deterministic `.pcap` fixtures that exercise:
-- outer IPv4 / UDP / Geneve carrying inner Ethernet plus IPv4 / IPv6 transport traffic;
-- malformed or truncated Geneve base headers;
-- malformed Geneve version or option-length handling;
-- malformed or truncated inner Ethernet / IPv4 payload after Geneve;
-- unsupported Geneve protocol types;
-- namespace-collision coverage where identical inner 5-tuples from different VNIs must now split into distinct flows;
-- future bidirectional inner-flow grouping cases that should collapse into one inner TCP flow;
-- same-outer-tuple cases that split by the inner tuple instead of the outer UDP carrier tuple;
-- recursive continuation from Geneve into an inner VLAN-tagged Ethernet payload;
-- outer IPv6 Geneve carriage, UDP port-gating negative controls, and a valid non-zero option-length Geneve case.
+This directory documents the current production `PacketDecoder` Geneve contract.
+It is fixture-first documentation for the supported production path only. It does
+not describe any shadow dissection implementation.
 
-Supported behavior covered by these fixtures:
-- supported tunnel/overlay parsing recovers an effective inner IPv4/IPv6 plus TCP/UDP tuple for the bounded valid cases covered in this branch;
-- Geneve VNI now participates in protocol-path-aware flow identity;
-- malformed Geneve cases should remain conservative and should not fabricate inner flow tuples.
+## Strict production Geneve contract
 
-Current implemented status:
-- Geneve fixture generator, README, generated `.pcap` files, and flow fixture tests are committed;
-- valid UDP/6081 Geneve carrying Ethernet plus inner IPv4/IPv6 plus TCP/UDP now supports inner flow-tuple extraction;
-- Geneve option length is handled in 4-byte units and bounded options are skipped safely for tuple extraction;
-- Geneve VNI is parsed as metadata and now participates in protocol-path-aware flow identity;
-- selected-packet Geneve Summary / Protocol details now show a Geneve layer plus sequential inner Ethernet/VLAN/IP/transport layers for valid fixtures, and lenient warnings for malformed/truncated UDP/6081 Geneve-like payloads.
+Current production flow extraction recognizes Geneve only when all of the
+following are true:
 
-## Local generation
+- outer transport is UDP with destination port `6081`;
+- the bounded UDP payload contains at least the fixed 8-byte Geneve base header;
+- Geneve version is `0`;
+- Geneve option length is interpreted in 4-byte units and the full option area
+  fits inside the bounded UDP payload;
+- Geneve Protocol Type is Ethernet `0x6558`;
+- the inner Ethernet continuation resolves to supported inner IPv4 or IPv6
+  transport.
 
-Run from the repository root after installing Scapy locally:
+Current production behavior also implies:
 
-```bash
-python tests/data/parsing/geneve/generate_geneve_pcaps.py --output-dir tests/data/parsing/geneve
-```
-
-To overwrite previously generated fixtures:
-
-```bash
-python tests/data/parsing/geneve/generate_geneve_pcaps.py --output-dir tests/data/parsing/geneve --force
-```
-
-Notes:
-- The generator and generated `.pcap` files are committed in this branch.
-- Regenerate locally only when you intentionally update fixture coverage or encoding.
-- The script writes classic little-endian Ethernet `.pcap` files with deterministic MAC/IP/port/VNI values.
-- Geneve headers are assembled from explicit bytes to keep the fixed-header and option-layout cases stable across Scapy versions.
+- source-only port `6081` is not enough;
+- `src=6081,dst=6081` is still accepted, because production gates on
+  destination port only;
+- VNI is parsed as a 24-bit big-endian field;
+- VNI participates in protocol-path-aware flow identity;
+- Geneve options, OAM, Critical, and other flag/control bits do not currently
+  participate in flow identity;
+- individual Geneve options are not parsed;
+- unsupported Protocol Type values do not continue into inner Ethernet decoding;
+- nested overlay-like inner UDP traffic is not recursively decoded as another
+  overlay;
+- outer IPv4 or IPv6 fragmentation prevents Geneve inner-flow extraction and
+  falls back to the outer IP fragmentation shell;
+- selected-packet Summary / Protocol details may still show lenient
+  warning-oriented Geneve metadata on UDP/6081 packets even when strict flow
+  extraction rejects the payload.
 
 ## Shared constants
 
-- Outer source MAC: `02:00:00:00:50:01`
-- Outer destination MAC: `02:00:00:00:50:02`
-- Outer source IPv4: `203.0.113.50`
-- Outer destination IPv4: `203.0.113.51`
-- Outer source IPv6: `2001:db8:50:1::1`
-- Outer destination IPv6: `2001:db8:50:1::2`
-- Outer UDP source port base: `54000`
-- Geneve UDP destination port: `6081`
-- Negative-control non-Geneve UDP destination port: `6091`
-- Inner source MAC: `02:00:00:00:51:01`
-- Inner destination MAC: `02:00:00:00:51:02`
-- Inner IPv4 source: `10.50.0.10`
-- Inner IPv4 destination: `10.50.0.20`
-- Alternate inner IPv4 source: `10.50.0.11`
-- Alternate inner IPv4 destination: `10.50.0.21`
-- Inner IPv6 source: `2001:db8:50::10`
-- Inner IPv6 destination: `2001:db8:50::20`
-- Inner TCP source port: `49550`
-- Inner TCP destination port: `443`
-- Inner UDP source port: `53650`
-- Inner UDP destination port: `443`
-- Alternate inner TCP source ports: `10011`, `10012`
-- Inner VLAN ID for recursive shim case: `150`
-- Geneve Ethernet protocol type: `0x6558`
-- Default VNI: `100`
-- Alternate VNI for collision case: `200`
+- outer source MAC: `02:00:00:00:50:01`
+- outer destination MAC: `02:00:00:00:50:02`
+- primary outer IPv4 pair: `203.0.113.50 -> 203.0.113.51`
+- alternate outer IPv4 pair: `203.0.113.60 -> 203.0.113.61`
+- outer IPv6 pair: `2001:db8:50:1::1 -> 2001:db8:50:1::2`
+- default Geneve destination port: `6081`
+- wrong-port negative control: `6091`
+- default supported Protocol Type: Ethernet `0x6558`
+- default VNI: `100`
 
-## Current behavior and remaining follow-up
-
-Current Geneve behavior:
-- valid Geneve over UDP/6081 with a valid inner Ethernet plus inner IPv4/IPv6 plus TCP/UDP tuple creates a normal flow keyed by the inner tuple;
-- bounded Geneve options are skipped safely using the option length field in 4-byte units;
-- malformed or truncated Geneve / inner payload cases remain conservative and do not fabricate normal inner flows;
-- identical inner tuples from different VNIs now split because VNI participates in protocol-path-aware flow identity;
-- selected-packet Summary / Protocol details now show Geneve metadata and sequential inner layers for valid fixtures, while malformed/truncated UDP/6081 Geneve-like payloads can still surface presentational warnings without affecting flow keys;
-- invalid Geneve version packets remain no-flow for strict tuple extraction, but selected-packet details may still show best-effort inner Ethernet/IP/transport continuation when the bounded header, options, and Ethernet protocol type are otherwise usable;
-- unsupported Geneve protocol types are reported distinctly from malformed or invalid-version cases and do not continue into inner Ethernet presentation.
-
----
-
-### 01_geneve_inner_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuple: `203.0.113.50:54000 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: `0`
-- Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected current behavior: one normal inner IPv4/TCP flow using the inner tuple as the effective flow endpoints.
-
-### 02_geneve_inner_ipv4_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv4 / UDP / Raw
-- Outer tuple: `203.0.113.50:54001 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: `0`
-- Inner tuple: `10.50.0.10:53650 -> 10.50.0.20:443`
-- Expected current behavior: one normal inner IPv4/UDP flow using the inner tuple as the effective flow endpoints.
-
-### 03_geneve_inner_ipv6_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv6 / TCP / Raw
-- Outer tuple: `203.0.113.50:54002 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: `0`
-- Inner tuple: `2001:db8:50::10:49550 -> 2001:db8:50::20:443`
-- Expected current behavior: one normal inner IPv6/TCP flow using the inner tuple as the effective flow endpoints.
-
-### 04_geneve_inner_ipv6_udp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv6 / UDP / Raw
-- Outer tuple: `203.0.113.50:54003 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: `0`
-- Inner tuple: `2001:db8:50::10:53650 -> 2001:db8:50::20:443`
-- Expected current behavior: one normal inner IPv6/UDP flow using the inner tuple as the effective flow endpoints.
-
-### 05_geneve_truncated_base_header.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / partial Geneve
-- Outer tuple: `203.0.113.50:54004 -> 203.0.113.51:6081`
-- Geneve payload length: less than the fixed 8-byte base header
-- Expected current behavior: no inner tuple extraction; conservative outer/fallback or unrecognized handling only.
-
-### 06_geneve_invalid_version.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / malformed Geneve / inner Ethernet / inner IPv4 / TCP
-- Outer tuple: `203.0.113.50:54005 -> 203.0.113.51:6081`
-- Geneve version: `1`
-- Geneve VNI: `100`
-- Expected current behavior: do not accept the packet as a valid Geneve inner-tuple carrier, but selected-packet details may still show best-effort inner Ethernet / IPv4 / TCP continuation for manual inspection.
-
-### 07_geneve_options_length_truncated.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / partial Geneve options
-- Outer tuple: `203.0.113.50:54006 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: declares `8` bytes of options, but only `4` bytes are present
-- Expected current behavior: no inner tuple extraction.
-
-### 08_geneve_truncated_inner_ethernet.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / partial inner Ethernet
-- Outer tuple: `203.0.113.50:54007 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: `0`
-- Expected current behavior: no inner flow tuple is extracted because the inner Ethernet header is incomplete.
-
-### 09_geneve_truncated_inner_ipv4.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / partial inner IPv4
-- Outer tuple: `203.0.113.50:54008 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Inner Ethernet EtherType: `0x0800`
-- Expected current behavior: no normal flow tuple is created; later packet-details work may show partial inner IPv4 fields conservatively.
-
-### 10_geneve_unsupported_protocol_type.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / non-Ethernet protocol type / Raw
-- Outer tuple: `203.0.113.50:54009 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Protocol type: `0x0800` (IPv4 directly, intentionally outside the initial Ethernet-payload Geneve scope)
-- Expected current behavior: no inner Ethernet/IP tuple extraction in the first Geneve pass; selected-packet details should report the unsupported protocol type distinctly from malformed or invalid-version Geneve cases.
-
-### 11_geneve_inner_ipv4_tcp_bidirectional.pcap
-
-- Packets: 2
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuples:
-  - packet 1: `203.0.113.50:54010 -> 203.0.113.51:6081`
-  - packet 2: `203.0.113.50:54011 -> 203.0.113.51:6081`
-- Geneve VNI for both packets: `100`
-- Inner tuples:
-  - packet 1: `10.50.0.10:49550 -> 10.50.0.20:443`
-  - packet 2: `10.50.0.20:443 -> 10.50.0.10:49550`
-- Expected current behavior: both packets belong to one bidirectional inner IPv4/TCP flow.
-
-### 12_geneve_same_outer_tuple_different_inner_flows.pcap
-
-- Packets: 2
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuple for both packets: `203.0.113.50:54012 -> 203.0.113.51:6081`
-- Geneve VNI for both packets: `100`
-- Inner tuples:
-  - packet 1: `10.50.0.10:10011 -> 10.50.0.20:443`
-  - packet 2: `10.50.0.10:10012 -> 10.50.0.20:443`
-- Expected current behavior: these become two distinct inner IPv4/TCP flows based on the inner tuple.
-
-### 13_geneve_inner_vlan_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / 802.1Q VLAN / inner IPv4 / TCP / Raw
-- Outer tuple: `203.0.113.50:54013 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Inner VLAN ID: `150`
-- Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected current behavior: Geneve parsing recognizes Geneve and continues through the existing inner Ethernet/VLAN/IP/TCP path to recover the inner tuple.
-
-### 14_geneve_outer_ipv6_inner_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv6 / UDP / Geneve / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuple: `2001:db8:50:1::1:54014 -> 2001:db8:50:1::2:6081`
-- Geneve VNI: `100`
-- Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected current behavior: outer IPv6 carriage does not prevent Geneve recognition or inner IPv4/TCP tuple extraction.
-
-### 15_geneve_wrong_udp_port_valid_geneve_payload.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP(non-6081) / bytes that otherwise resemble Geneve / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuple: `203.0.113.50:54015 -> 203.0.113.51:6091`
-- Embedded VNI bytes: `100`
-- Inner tuple if decapsulated hypothetically: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected current behavior: negative control for UDP port gating; do not treat this as Geneve in the basic parser and do not extract an inner Geneve tuple.
-
-### 16_geneve_vni_boundary_values.pcap
-
-- Packets: 2
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuples:
-  - packet 1: `203.0.113.50:54016 -> 203.0.113.51:6081`
-  - packet 2: `203.0.113.50:54017 -> 203.0.113.51:6081`
-- Geneve VNIs:
-  - packet 1: `0`
-  - packet 2: `16777215`
-- Inner tuples:
-  - packet 1: `10.50.0.10:49550 -> 10.50.0.20:443`
-  - packet 2: `10.50.0.11:10011 -> 10.50.0.21:443`
-- Expected current behavior: valid Geneve packets produce inner flows for both VNI boundary values, and VNI participates in protocol-path-aware flow identity when tuples would otherwise collide.
-
-### 17_geneve_with_options_inner_ipv4_tcp.pcap
-
-- Packets: 1
-- Layer chain: Ethernet / IPv4 / UDP / Geneve / options / inner Ethernet / inner IPv4 / TCP / Raw
-- Outer tuple: `203.0.113.50:54018 -> 203.0.113.51:6081`
-- Geneve VNI: `100`
-- Option length: `8` bytes
-- Option shape: one deterministic 8-byte option block with a 4-byte Geneve option header and 4 bytes of option data
-- Inner tuple: `10.50.0.10:49550 -> 10.50.0.20:443`
-- Expected current behavior: parser skips bounded options safely and extracts the inner tuple.
-
-## Expected generated file list
+## Fixture inventory
 
 - `01_geneve_inner_ipv4_tcp.pcap`
+  Valid outer IPv4 / UDP / Geneve / Ethernet / inner IPv4 / TCP.
 - `02_geneve_inner_ipv4_udp.pcap`
+  Valid outer IPv4 / UDP / Geneve / Ethernet / inner IPv4 / UDP.
 - `03_geneve_inner_ipv6_tcp.pcap`
+  Valid outer IPv4 / UDP / Geneve / Ethernet / inner IPv6 / TCP.
 - `04_geneve_inner_ipv6_udp.pcap`
+  Valid outer IPv4 / UDP / Geneve / Ethernet / inner IPv6 / UDP.
 - `05_geneve_truncated_base_header.pcap`
+  UDP/6081 Geneve-like payload truncated before the fixed 8-byte base header.
 - `06_geneve_invalid_version.pcap`
+  Version `1` packet; strict flow extraction rejects it, details may still show
+  best-effort inner continuation.
 - `07_geneve_options_length_truncated.pcap`
+  Option-length field declares more option bytes than are bounded/captured.
 - `08_geneve_truncated_inner_ethernet.pcap`
+  Valid Geneve base header but truncated inner Ethernet header.
 - `09_geneve_truncated_inner_ipv4.pcap`
+  Valid Geneve + inner Ethernet, but truncated inner IPv4 header.
 - `10_geneve_unsupported_protocol_type.pcap`
+  Protocol Type `0x0800` instead of Ethernet `0x6558`.
 - `11_geneve_inner_ipv4_tcp_bidirectional.pcap`
+  Two packets that must collapse into one bidirectional inner TCP flow.
 - `12_geneve_same_outer_tuple_different_inner_flows.pcap`
+  Same outer UDP tuple, different inner TCP tuples.
 - `13_geneve_inner_vlan_ipv4_tcp.pcap`
+  Supported inner `802.1Q VLAN -> IPv4 -> TCP` continuation.
 - `14_geneve_outer_ipv6_inner_ipv4_tcp.pcap`
+  Outer IPv6 carrier with supported inner IPv4 / TCP continuation.
 - `15_geneve_wrong_udp_port_valid_geneve_payload.pcap`
+  Valid-looking Geneve bytes on non-6081 UDP destination port.
 - `16_geneve_vni_boundary_values.pcap`
+  VNI boundary coverage for `0` and `16777215`.
 - `17_geneve_with_options_inner_ipv4_tcp.pcap`
+  Valid non-zero option length with bounded option skipping.
+- `18_geneve_udp_port_direction_matrix.pcap`
+  Destination-port gating matrix: valid `dst=6081`, source-only `6081`
+  negative control, and `src=6081,dst=6081` positive control.
+- `19_geneve_same_inner_tuple_different_vni.pcap`
+  Same inner tuple, different VNIs; must split by protocol-path identity.
+- `20_geneve_outer_tagged_contexts.pcap`
+  Outer single-VLAN, outer QinQ, and outer legacy `0x9100` VLAN contexts.
+- `21_geneve_identity_outer_carrier_variation_same_flow.pcap`
+  Same VNI plus same inner tuple across different outer carrier metadata;
+  production should still merge them into one flow.
+- `22_geneve_identity_outer_and_inner_vlan_splits.pcap`
+  Same inner tuple split by outer VLAN path contribution and inner VLAN path
+  contribution.
+- `23_geneve_outer_ipv4_fragmentation.pcap`
+  Outer IPv4 fragmentation shell; Geneve inner flow must not be extracted.
+- `24_geneve_outer_ipv6_fragmentation.pcap`
+  Outer IPv6 fragment-header shell; Geneve inner flow must not be extracted.
+- `25_geneve_option_and_flag_tolerance_matrix.pcap`
+  Accepted OAM/Critical/control-bit/trailing-reserved variation plus bounded
+  options; these remain presentation metadata, not identity.
+- `26_geneve_inner_supported_and_visible_matrix.pcap`
+  Supported inner continuation matrix:
+  `inner VLAN`, `inner IEEE 802.3 LLC/SNAP -> IPv4`, and
+  `inner IEEE 802.3 LLC/SNAP -> IPv6`.
+- `27_geneve_unsupported_and_nested_matrix.pcap`
+  ARP comparison case, unknown-inner-EtherType fallback case, and nested
+  Geneve/VXLAN-like inner UDP traffic that must remain plain inner UDP and not
+  recurse.
+- `28_geneve_udp_declared_bounds_matrix.pcap`
+  UDP/IP declared-bounds matrix for exact-header-only and bounded-payload cases.
+- `29_geneve_capture_truncation_matrix.pcap`
+  Capture-truncation matrix covering truncated Geneve header, truncated options,
+  truncated inner Ethernet, and truncated inner IPv4.
+- `30_geneve_vni_byte_order_distinct_values.pcap`
+  Distinct VNI byte-order coverage with `0x010203` and `0x030201`.
+- `31_geneve_linux_cooked_contexts.pcap`
+  Linux SLL outer context carrying supported Geneve / inner IPv4 / UDP.
+- `32_geneve_linux_cooked_v2_contexts.pcap`
+  Linux SLL2 outer context carrying supported Geneve / inner IPv6 / TCP.
+- `33_geneve_inner_unsupported_ethernet_payloads.pcap`
+  Valid Geneve / inner Ethernet matrix for inner ARP, PPPoE Session, MPLS
+  unicast, PBB, MACsec, and an asymmetric unknown EtherType.
+- `34_geneve_nested_gtpu_no_recursion.pcap`
+  Valid Geneve / inner Ethernet / inner IPv4 / UDP / GTP-U-like payload that
+  must terminate at the inner UDP carrier and not recurse into GTP-U.
+
+## Current expectations
+
+- Valid supported Geneve packets produce normal inner IPv4/IPv6 TCP/UDP flows.
+- Protocol paths include the physical carrier plus `Geneve(vni=...)`.
+- Same inner tuple plus different VNI splits into different flows.
+- Same inner tuple plus same VNI plus different outer carrier metadata still
+  merges into one flow, because outer carrier endpoints are not part of v1 flow
+  identity.
+- Unsupported or malformed Geneve cases stay conservative and do not fabricate
+  inner flows.
+- Wrong-port packets remain ordinary outer UDP.
+- Fragmented outer IPv4/IPv6 packets do not enter Geneve, remain recognized
+  fragmentation-shell flows, keep `unrecognized_packet_count() == 0` for
+  fixtures `23` and `24`, and recover no VNI or inner endpoint identity.
+- Linux cooked carriers preserve `LinuxSll` or `LinuxSll2` in the protocol path.
+
+## Unsupported inner-Ethernet matrix
+
+When the outer Geneve header is otherwise valid and the inner Ethernet
+EtherType is one of the following:
+
+- ARP `0x0806`
+- PPPoE Session `0x8864`
+- MPLS unicast `0x8847`
+- PBB `0x88e7`
+- MACsec `0x88e5`
+- unknown asymmetric EtherType `0x1234`
+
+current production flow extraction does not persist `Geneve(vni=...)` into the
+final flow identity for any of these packets.
+
+The exact current production outcome is:
+
+| Inner EtherType | Flow result | Geneve/VNI path committed | Inner Ethernet committed | Deeper best-effort details |
+| --- | --- | --- | --- | --- |
+| ARP `0x0806` | ordinary outer UDP fallback flow | no | no | Geneve + inner Ethernet header only |
+| PPPoE Session `0x8864` | ordinary outer UDP fallback flow | no | no | inner IPv4/UDP can still appear in selected-packet details |
+| MPLS unicast `0x8847` | ordinary outer UDP fallback flow | no | no | inner IPv4/UDP can still appear in selected-packet details |
+| PBB `0x88e7` | ordinary outer UDP fallback flow | no | no | inner IPv4/UDP can still appear in selected-packet details |
+| MACsec `0x88e5` | ordinary outer UDP fallback flow | no | no | Geneve + inner Ethernet header only |
+| unknown `0x1234` | ordinary outer UDP fallback flow | no | no | Geneve + inner Ethernet header only |
+
+Additional contract details for this matrix:
+
+- no case fabricates inner endpoints or ports into flow identity;
+- `ProtocolPathRegistry` grows only by the single outer fallback path
+  `EthernetII -> IPv4 -> UDP`;
+- selected-packet details keep the outer Geneve layer visible, but do not
+  surface nested PPPoE/MPLS/PBB/MACsec path layers inside Geneve.
+
+## Nested overlay non-recursion
+
+Current committed fixtures explicitly pin the non-recursive Geneve behavior for:
+
+- Geneve -> inner IPv4/UDP -> Geneve-like UDP/6081
+- Geneve -> inner IPv4/UDP -> VXLAN-like UDP/4789
+- Geneve -> inner IPv4/UDP -> GTP-U-like UDP/2152
+
+The exact current production rule is:
+
+- the accepted first Geneve layer remains present in the path;
+- the final flow is the inner UDP carrier flow;
+- no second Geneve/VXLAN/GTP-U path layer is added;
+- no second VNI or GTP-U TEID identity is recovered.
+
+For these packets the final path remains:
+
+- `EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> UDP`
+
+## Fixture 28 exact declared-bounds contract
+
+`28_geneve_udp_declared_bounds_matrix.pcap` is fixed to the following current
+production behavior:
+
+- session summary packet count: `3`
+- unrecognized packet count: `1`
+- flow rows: `3`
+
+Per packet:
+
+| Packet index | Outer IPv4 Total Length | UDP Length | Captured Length | Geneve header reachable | Geneve details available | Flow result | Unrecognized result | Physical path |
+| --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |
+| `0` | `92` | `16` | `106` | yes, exact 8-byte header only | yes | ordinary outer UDP fallback flow | no | `EthernetII -> IPv4 -> UDP` |
+| `1` | `40` | `20` | `54` | yes, but declared options overrun bounded UDP payload | yes | ordinary outer UDP fallback flow | no | `EthernetII -> IPv4 -> UDP` |
+| `2` | `36` | `72` | `106` | no usable Geneve reachability after top-level UDP declared-bounds failure | no | no flow | yes | none committed |
+| `3` | `92` | `72` | `106` | yes | yes | recognized inner TCP flow | no | `EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP` |
+
+Packet `2` is the important negative control:
+
+- outer IPv4 details are still available;
+- Geneve details are absent;
+- the packet lands in the unrecognized list;
+- no Geneve/VNI path is committed.
+
+## Generator note
+
+These fixtures were generated deterministically during branch development, but
+no local generator is kept in the tree after this fixture pass.

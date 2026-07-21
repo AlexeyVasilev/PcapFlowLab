@@ -76,6 +76,14 @@ The current production VXLAN behavior is now explicitly captured by the committe
 - Nested UDP overlays are not recursively decoded inside shadow VXLAN; inner UDP terminates as UDP even when its ports look like VXLAN, Geneve, or GTP-U.
 - Invalid, truncated, or unsupported VXLAN candidates preserve the production-compatible ordinary outer UDP or no-flow outcome instead of fabricating VXLAN identity.
 
+The current production Geneve behavior is now likewise pinned by the committed
+fixtures under `tests/data/parsing/geneve/` and the production-only assertions
+in `tests/unit/GenevePcapFixtureTests.cpp`.
+
+- The fixture contract covers the exact current production destination-port gate `6081`, version-`0` requirement, bounded 4-byte-unit option skipping, big-endian 24-bit VNI identity, restricted inner Ethernet continuation subset, unsupported inner-EtherType fallback behavior, nested-overlay non-recursion, and exact declared-bounds edge cases.
+- UDP and Ethernet canonical shadow parsers already exist and remain the future migration boundary for Geneve.
+- Shadow Geneve migration is still pending; this RFC note records only the now-explicit production contract and the intended shadow entry constraints.
+
 ## Primary Architectural Decision
 
 Introduce a registry-driven dissection engine that walks a packet as a sequence of protocol modules.
