@@ -834,8 +834,11 @@ remaining work is parity closure and production integration.
 The July 22, 2026 static audit in
 `docs/dissection-engine-parity-audit.md` no longer identifies any known
 protocol-family semantic blockers in the audited fixture set. This stage
-remains in progress because cutover still needs the import adapter,
-whole-session parity harness, and real-capture validation.
+remains in progress because production still imports through legacy
+`PacketDecoder`, and cutover still needs whole-session parity harness coverage
+plus real-capture validation. A production-compatible bridge from
+`ImportDissectionFacts` into the existing recognized-flow `DecodedPacket`
+contract now exists, but it is not yet wired into runtime import.
 
 ### Stage 5: single production import cutover (`not started`)
 
@@ -924,10 +927,9 @@ Do not switch production import to the new engine until all of these are true ac
 The branch is past foundational shadow implementation. The next work should be
 sequenced as an explicit cutover-preparation plan:
 
-1. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
-2. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
-3. run representative real-capture correctness and import-performance validation;
-4. cut over production import in one dedicated change.
+1. add a full-session legacy-vs-shadow import parity harness around the existing `ImportDissectionFacts` -> `DecodedPacket` adapter, covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
+2. run representative real-capture correctness and import-performance validation;
+3. cut over production import in one dedicated change.
 
 Keep production `PacketDecoder` unchanged until the import-integration
 prerequisites are all closed explicitly.

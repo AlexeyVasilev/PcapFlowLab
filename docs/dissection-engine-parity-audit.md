@@ -19,6 +19,8 @@ Primary production import path:
 
 - `src/core/services/CaptureImportProcessor.cpp`
 - `src/core/services/PacketIngestor.cpp`
+- `src/core/services/DissectionImportAdapter.h`
+- `src/core/services/DissectionImportAdapter.cpp`
 - `src/core/decode/PacketDecoder.h`
 - `src/core/decode/PacketDecoder.cpp`
 - `src/core/domain/IngestedPacket.h`
@@ -38,6 +40,7 @@ Primary shadow path:
 Parity-contract evidence:
 
 - `tests/unit/CommonDirectDissectionTestSupport.cpp`
+- `tests/unit/DissectionImportAdapterTests.cpp`
 - `tests/unit/CommonDirectCollectorTests.cpp`
 - `tests/unit/CommonDirectRegistryEngineTests.cpp`
 - `tests/unit/CommonDirectLinkDissectionTests.cpp`
@@ -94,7 +97,7 @@ If decode fails, production still has two additional import behaviors:
 
 ## Shadow import facts traced from code
 
-The shadow engine currently stops at `ImportDissectionFacts`.
+The shadow engine itself currently stops at `ImportDissectionFacts`.
 
 `DissectionEngine` runs a registered step chain and `ImportDissectionCollector`
 reduces steps into:
@@ -129,6 +132,22 @@ Important differences versus production import payload:
 
 `ProtocolPathRegistry` growth happens only if some external bridge decides to
 intern `shadow.facts().physical_path` for a recognized flow.
+
+There is now a narrow bridge at:
+
+- `src/core/services/DissectionImportAdapter.h`
+- `src/core/services/DissectionImportAdapter.cpp`
+
+That adapter converts finalized `ImportDissectionFacts` into the existing
+`DecodedPacket` shape for recognized flows only. It does not:
+
+- run packet parsing;
+- touch `CaptureState`;
+- build `PacketRef` capture-context metadata;
+- intern paths;
+- assign `protocol_path_id`;
+- run hint detection;
+- switch production import away from `PacketDecoder`.
 
 ## Protocol-family parity matrix
 
@@ -262,7 +281,7 @@ before any production import cutover can be called ready.
 
 | ID | Area | Current state | Required before cutover |
 | --- | --- | --- | --- |
-| I1 | Import adapter | Shadow ends at `ImportDissectionFacts`. Production import persists `DecodedPacket`, `IngestedPacketV4` / `IngestedPacketV6`, `FlowKey`, `PacketRef`, protocol-path interning, `UnrecognizedPacketRecord`, and existing hint-detection side effects. | Add an adapter that maps shadow facts into the existing import payload contract without changing runtime semantics. |
+| I1 | Import adapter | Adapter-core now exists and is unit-covered at the `ImportDissectionFacts -> DecodedPacket` boundary. Runtime import still persists `PacketRef` capture context, protocol-path interning, `UnrecognizedPacketRecord`, and existing hint-detection side effects through the legacy `PacketDecoder` path. | Wire the adapter through `CaptureImportProcessor` only after the whole-session parity harness proves no regression in persisted packet/session state. |
 | I2 | Full-session parity harness | Current shadow tests are mostly packet- and fixture-local. | Add a whole-session legacy-vs-shadow harness that compares summary counters, flow rows, connections, packet counts per flow, unrecognized rows, protocol-path registry contents, and persisted packet metadata. |
 | I3 | Real-capture correctness and performance validation | The current audit is static and fixture-driven only. | Validate representative real captures for correctness, import throughput, memory, and no-regression behavior before a single production cutover commit. |
 
@@ -343,8 +362,10 @@ The shadow test surface is broad, but this audit still does not prove full
 production-import equivalence end to end.
 
 - There is no full-session legacy-vs-shadow import harness yet.
-- There is no exercised adapter from `ImportDissectionFacts` into persisted
-  `PacketRef` / `FlowKey` / `UnrecognizedPacketRecord` structures.
+- There is now focused adapter coverage from `ImportDissectionFacts` into the
+  recognized-flow `DecodedPacket` contract, but there is still no full-session
+  exercised bridge for persisted `PacketRef` capture context,
+  `UnrecognizedPacketRecord`, and end-to-end session state.
 - The static audit does not prove byte-for-byte equivalence for:
   - timestamps;
   - file byte offsets;
@@ -419,6 +440,6 @@ blockers.
 
 ## Minimum expected sequence before cutover
 
-1. Add the import adapter and full-session parity harness.
+1. Add the full-session parity harness around the existing import adapter.
 2. Validate representative real captures and import performance.
 3. Cut over production import in a single dedicated change.
