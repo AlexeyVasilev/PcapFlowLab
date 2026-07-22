@@ -154,8 +154,8 @@ Status vocabulary used here is intentionally narrow:
 | TCP | exact | `CommonDirectTransportDissectionTests.cpp`, helper parity assertions | Ports, flags, and payload-length semantics are asserted. |
 | UDP | exact | `CommonDirectTransportDissectionTests.cpp`, overlay family tests | Ordinary UDP and UDP-candidate fallback semantics are strongly covered. |
 | SCTP | exact | `CommonDirectTransportDissectionTests.cpp` | Direct SCTP import parity is shadow-covered. |
-| ICMP | blocking-gap | `PacketDecoder.cpp`, `CommonDirectRegistryEngineTests.cpp`, `CommonDirectDissectionTestSupport.cpp` | Tuple parity is good, but persistent path differs because shadow contributes `ICMP`. |
-| ICMPv6 | blocking-gap | `PacketDecoder.cpp`, `CommonDirectRegistryEngineTests.cpp`, `CommonDirectDissectionTestSupport.cpp` | Same cutover issue as ICMP. |
+| ICMP | exact | `PacketDecoder.cpp`, `CommonDirectRegistryEngineTests.cpp`, `CommonDirectDissectionTestSupport.cpp` | Visible ICMP step remains, but persistent path now matches legacy carrier/network layers exactly. |
+| ICMPv6 | exact | `PacketDecoder.cpp`, `CommonDirectRegistryEngineTests.cpp`, `CommonDirectDissectionTestSupport.cpp` | Visible ICMPv6 step remains, but persistent path now matches legacy carrier/network layers exactly. |
 | IGMP | exact | `CommonDirectRegistryEngineTests.cpp`, encapsulation tests | Both sides keep path at `... -> IPv4` without an IGMP terminal layer. |
 | Plain IP encapsulation | exact | `CommonDirectEncapsulationDissectionTests.cpp` | Nested IPv4/IPv6 continuation and fragment shells are already parity-tested. |
 | AH | exact | `CommonDirectEncapsulationDissectionTests.cpp`, `AhPcapFixtureTests.cpp` | SPI-bearing path and direct transport continuation are aligned. |
@@ -176,8 +176,14 @@ Status vocabulary used here is intentionally narrow:
 | ID | Protocol / family | Fixture or source location | Production behavior | Shadow behavior | Import-visible consequence | Recommended resolution | Risk | Suggested separate commit message |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | B1 | ARP | `src/core/decode/PacketDecoder.cpp`, `tests/unit/ArpPcapFixtureTests.cpp`, `tests/unit/CommonDirectRegistryEngineTests.cpp` | Recognized as flow-bearing import traffic on carrier-only path. | Finalized as `recognized_non_flow` with `LayerKey::arp()`. | Flow counts, summary counts, flow rows, and persistent path identity all change. | Decide whether cutover should preserve legacy ARP-as-flow semantics or intentionally migrate production to non-flow ARP semantics; do not cut over until both import classification and persistent path policy are aligned. | medium | `Align ARP shadow import semantics` |
-| B2 | ICMP / ICMPv6 | `src/core/decode/PacketDecoder.cpp`, `tests/unit/CommonDirectRegistryEngineTests.cpp`, `tests/unit/CommonDirectDissectionTestSupport.cpp` | Portless flows are recognized without appending terminal `ICMP` / `ICMPv6` path layers. | Portless flows are recognized with terminal `ICMP` / `ICMPv6` path layers. | Flow grouping by tuple survives, but `ProtocolPathRegistry` identity diverges for every affected flow. | Align shadow path contribution to legacy persistent path semantics, or explicitly migrate production identity and rebaseline all downstream path assumptions in a dedicated commit. | low | `Align ICMP and ICMPv6 path identity` |
 | B3 | PPPoE / PPP declared-boundary policy | `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap`, `tests/unit/CommonDirectLinkDissectionTests.cpp`, `docs/dissection-engine-rfc.md` | Legacy accepts PPPoE length `33` with inner IPv4 Total Length `37` and recognizes a flow. | Shadow rejects the inner IPv4 child because it exceeds the enclosing PPPoE declared boundary. | Import outcome flips from recognized flow to malformed/unrecognized. | Make an explicit policy decision in a dedicated commit: either (1) emulate the current legacy permissive bounded behavior locally for PPPoE import, or (2) intentionally tighten production import to declared PPPoE boundaries. Weakening the global `PacketSlice` declared-boundary invariant is not acceptable. | high | `Resolve PPPoE declared-boundary policy` |
+
+Resolved note:
+
+- ICMP and ICMPv6 are no longer active blockers. Shadow still emits visible
+  `DissectionLayerKind::icmp` / `DissectionLayerKind::icmpv6` steps with typed
+  facts, but successful terminal steps no longer contribute persistent
+  `LayerKey::icmp()` / `LayerKey::icmpv6()` path material.
 
 ## Exact blocking findings
 
@@ -210,32 +216,22 @@ Impact:
 
 This is a cutover blocker.
 
-### 2. ICMP and ICMPv6 are not cutover-ready for persistent path identity
+### 2. ICMP and ICMPv6 path parity is resolved
 
-Production import behavior:
+Current behavior:
 
-- direct and nested plain-IP ICMP / ICMPv6 flows are recognized as portless
+- direct and nested plain-IP ICMP / ICMPv6 flows remain recognized as portless
   flows;
-- `PacketDecoder` does not append `LayerKey::icmp()` or `LayerKey::icmpv6()` to
-  the persistent path.
+- visible `icmp` / `icmpv6` dissection steps and typed facts remain present;
+- successful terminal ICMP / ICMPv6 steps no longer contribute persistent
+  `LayerKey::icmp()` / `LayerKey::icmpv6()` path material.
 
-Shadow behavior:
+Effect:
 
-- `dissect_icmp(...)` and `dissect_icmpv6(...)` emit path contributions;
-- collector tests and registry tests explicitly expect shadow path text such as:
-  - `EthernetII -> IPv4 -> ICMP`
-  - `EthernetII -> IPv6 -> ICMPv6`
-- helper `expect_shadow_matches_legacy_portless_flow(...)` exists precisely
-  because path parity is not exact even when tuple parity is exact.
-
-Impact:
-
-- flow grouping by tuple still matches;
-- `ProtocolPathRegistry` identity would differ for every ICMP/ICMPv6 flow;
-- any cutover would split current flow/path semantics for direct and tunneled
-  ICMP / ICMPv6 traffic.
-
-This is a cutover blocker.
+- shadow persistent paths now match legacy production paths exactly for direct
+  and already covered encapsulated ICMP / ICMPv6 flows;
+- `ProtocolPathRegistry` identity no longer diverges solely because the terminal
+  protocol is ICMP or ICMPv6.
 
 ### 3. PPPoE fixture 20 remains an intentional semantic divergence
 
@@ -411,8 +407,7 @@ Recommended verdict:
 Reason:
 
 1. ARP import semantics differ materially.
-2. ICMP / ICMPv6 persistent protocol-path identity differs materially.
-3. PPPoE fixture 20 remains an intentional import-semantic divergence.
+2. PPPoE fixture 20 remains an intentional import-semantic divergence.
 
 Everything else inspected here points to a strong migration foundation:
 
@@ -425,9 +420,8 @@ But the remaining blockers are import-contract blockers, not cosmetic ones.
 
 ## Minimum expected sequence before cutover
 
-1. Align ICMP and ICMPv6 protocol paths with the chosen persistent identity policy.
-2. Align ARP import classification and persistent path semantics.
-3. Resolve PPPoE fixture 20 declared-boundary behavior explicitly.
-4. Add the import adapter and full-session parity harness.
-5. Validate representative real captures and import performance.
-6. Cut over production import in a single dedicated change.
+1. Align ARP import classification and persistent path semantics.
+2. Resolve PPPoE fixture 20 declared-boundary behavior explicitly.
+3. Add the import adapter and full-session parity harness.
+4. Validate representative real captures and import performance.
+5. Cut over production import in a single dedicated change.

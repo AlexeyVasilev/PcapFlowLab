@@ -646,8 +646,7 @@ void expect_icmp_canonical_parsers_and_bounds() {
 
     const auto exact_icmp_step = dissect_icmp(exact_icmp_root);
     PFL_EXPECT(exact_icmp_step.layer == DissectionLayerKind::icmp);
-    PFL_REQUIRE(exact_icmp_step.path_contribution.has_value());
-    PFL_EXPECT(*exact_icmp_step.path_contribution == LayerKey::icmp());
+    PFL_EXPECT(!exact_icmp_step.path_contribution.has_value());
     PFL_EXPECT(exact_icmp_step.terminal_disposition == TerminalDisposition::flow_candidate);
     PFL_REQUIRE(exact_icmp_step.bounds.payload.has_value());
     PFL_EXPECT(exact_icmp_step.bounds.full.declared.length() == 4U);
@@ -726,8 +725,7 @@ void expect_icmp_canonical_parsers_and_bounds() {
 
     const auto exact_icmpv6_step = dissect_icmpv6(exact_icmpv6_root);
     PFL_EXPECT(exact_icmpv6_step.layer == DissectionLayerKind::icmpv6);
-    PFL_REQUIRE(exact_icmpv6_step.path_contribution.has_value());
-    PFL_EXPECT(*exact_icmpv6_step.path_contribution == LayerKey::icmpv6());
+    PFL_EXPECT(!exact_icmpv6_step.path_contribution.has_value());
     PFL_EXPECT(std::holds_alternative<Icmpv6Facts>(exact_icmpv6_step.facts));
     const auto* exact_icmpv6_facts = std::get_if<Icmpv6Facts>(&exact_icmpv6_step.facts);
     PFL_REQUIRE(exact_icmpv6_facts != nullptr);

@@ -293,11 +293,10 @@ void expect_shadow_matches_legacy_flow(
     PFL_EXPECT(shadow.tcp_flags == legacy.tcp_flags);
 }
 
-void expect_shadow_matches_legacy_portless_flow(
+void expect_shadow_matches_legacy_portless_terminal_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
-    const std::string& expected_shadow_path,
-    const std::string& expected_legacy_path,
+    const std::string& expected_path,
     const StopReason expected_stop_reason
 ) {
     const auto legacy = decode_legacy_direct(packet);
@@ -306,8 +305,9 @@ void expect_shadow_matches_legacy_portless_flow(
     PFL_REQUIRE(legacy.recognized_flow);
     PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
-    PFL_EXPECT(format_shadow_path(shadow) == expected_shadow_path);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_legacy_path);
+    PFL_EXPECT(shadow_path(shadow) == legacy.path);
+    PFL_EXPECT(format_shadow_path(shadow) == expected_path);
+    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
     PFL_EXPECT(shadow.terminal_protocol == legacy.protocol);
     PFL_EXPECT(shadow.family == legacy.family);
     PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);

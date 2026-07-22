@@ -317,7 +317,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(ah_icmp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
         PFL_EXPECT(ah_icmp_shadow.terminal_protocol == ProtocolId::icmp);
         PFL_EXPECT(!ah_icmp_shadow.has_ports);
-        PFL_EXPECT(format_shadow_path(ah_icmp_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111) -> ICMP");
+        PFL_EXPECT(format_shadow_path(ah_icmp_shadow) == "EthernetII -> IPv4 -> AH(spi=0x11111111)");
     }
 
     {
@@ -330,7 +330,7 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(ah_icmpv6_shadow.outcome == ImportDissectionOutcome::recognized_flow);
         PFL_EXPECT(ah_icmpv6_shadow.terminal_protocol == ProtocolId::icmpv6);
         PFL_EXPECT(!ah_icmpv6_shadow.has_ports);
-        PFL_EXPECT(format_shadow_path(ah_icmpv6_shadow) == "EthernetII -> IPv6 -> AH(spi=0x11111111) -> ICMPv6");
+        PFL_EXPECT(format_shadow_path(ah_icmpv6_shadow) == "EthernetII -> IPv6 -> AH(spi=0x11111111)");
     }
 
     {
@@ -1278,7 +1278,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(gre_icmp_shadow.stop_reason == StopReason::terminal_protocol);
         PFL_EXPECT(gre_icmp_shadow.terminal_protocol == ProtocolId::icmp);
         PFL_EXPECT(!gre_icmp_shadow.has_ports);
-        PFL_EXPECT(format_shadow_path(gre_icmp_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4 -> ICMP");
+        PFL_EXPECT(format_shadow_path(gre_icmp_shadow) == "EthernetII -> IPv4 -> GRE -> IPv4");
     }
 
     {
@@ -1299,7 +1299,7 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         PFL_EXPECT(gre_icmpv6_shadow.stop_reason == StopReason::terminal_protocol);
         PFL_EXPECT(gre_icmpv6_shadow.terminal_protocol == ProtocolId::icmpv6);
         PFL_EXPECT(!gre_icmpv6_shadow.has_ports);
-        PFL_EXPECT(format_shadow_path(gre_icmpv6_shadow) == "EthernetII -> IPv4 -> GRE -> IPv6 -> ICMPv6");
+        PFL_EXPECT(format_shadow_path(gre_icmpv6_shadow) == "EthernetII -> IPv4 -> GRE -> IPv6");
     }
 
     {
@@ -1728,7 +1728,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
     PFL_EXPECT(extension_sctp_shadow.captured_transport_payload_length == 2U);
     PFL_EXPECT(format_shadow_path(extension_sctp_shadow) == "EthernetII -> IPv6 -> IPv4 -> SCTP");
 
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_fragment_packet(
             ipv4(203, 0, 113, 70),
@@ -1742,12 +1742,11 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
                 {8U, 0U, 0x12U, 0x34U, 0xAAU, 0xBBU, 0xCCU, 0xDDU}
             )
         )),
-        "EthernetII -> IPv4 -> IPv4 -> ICMP",
         "EthernetII -> IPv4 -> IPv4",
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_fragment_packet(
             ipv4(203, 0, 113, 72),
@@ -1761,12 +1760,11 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
                 make_ipv6_icmpv6_message(128U, 0U)
             )
         )),
-        "EthernetII -> IPv4 -> IPv6 -> ICMPv6",
         "EthernetII -> IPv4 -> IPv6",
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_fragment_packet(
             ipv4(203, 0, 113, 74),
@@ -1780,7 +1778,6 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
                 make_ipv6_hop_by_hop_extension(detail::kIpProtocolIcmpV6, make_ipv6_icmpv6_message(129U, 1U))
             )
         )),
-        "EthernetII -> IPv4 -> IPv6 -> ICMPv6",
         "EthernetII -> IPv4 -> IPv6",
         StopReason::terminal_protocol
     );
@@ -2032,7 +2029,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
     PFL_EXPECT(outer_ipv6_inner_ipv4_icmp_shadow.dst_addr_v4 == ipv4(10, 89, 0, 2));
     PFL_EXPECT(!outer_ipv6_inner_ipv4_icmp_shadow.has_ports);
     PFL_EXPECT(!outer_ipv6_inner_ipv4_icmp_shadow.has_transport_payload_length);
-    PFL_EXPECT(format_shadow_path(outer_ipv6_inner_ipv4_icmp_shadow) == "EthernetII -> IPv6 -> IPv4 -> ICMP");
+    PFL_EXPECT(format_shadow_path(outer_ipv6_inner_ipv4_icmp_shadow) == "EthernetII -> IPv6 -> IPv4");
 
     const auto outer_ipv6_inner_ipv6_icmpv6_packet = make_raw_packet(make_ethernet_ipv6_packet(
         outer_ipv6_src,
@@ -2054,7 +2051,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
     PFL_EXPECT(outer_ipv6_inner_ipv6_icmpv6_shadow.dst_addr_v6 == inner_ipv6_dst);
     PFL_EXPECT(!outer_ipv6_inner_ipv6_icmpv6_shadow.has_ports);
     PFL_EXPECT(!outer_ipv6_inner_ipv6_icmpv6_shadow.has_transport_payload_length);
-    PFL_EXPECT(format_shadow_path(outer_ipv6_inner_ipv6_icmpv6_shadow) == "EthernetII -> IPv6 -> IPv6 -> ICMPv6");
+    PFL_EXPECT(format_shadow_path(outer_ipv6_inner_ipv6_icmpv6_shadow) == "EthernetII -> IPv6 -> IPv6");
 
     const auto outer_ipv6_hbh_inner_ipv4_icmp_packet = make_raw_packet(make_ethernet_ipv6_packet(
         outer_ipv6_src,
@@ -2091,7 +2088,7 @@ void expect_plain_ip_encapsulation_is_registry_driven() {
     PFL_EXPECT(outer_ipv6_hbh_inner_ipv4_icmp_shadow.family == DissectionAddressFamily::ipv4);
     PFL_EXPECT(outer_ipv6_hbh_inner_ipv4_icmp_shadow.terminal_protocol == ProtocolId::icmp);
     PFL_EXPECT(!outer_ipv6_hbh_inner_ipv4_icmp_shadow.has_ports);
-    PFL_EXPECT(format_shadow_path(outer_ipv6_hbh_inner_ipv4_icmp_shadow) == "EthernetII -> IPv6 -> IPv4 -> ICMP");
+    PFL_EXPECT(format_shadow_path(outer_ipv6_hbh_inner_ipv4_icmp_shadow) == "EthernetII -> IPv6 -> IPv4");
 
     const auto deep_depth_packet = make_raw_packet(make_ethernet_ipv4_fragment_packet(
         ipv4(203, 0, 113, 60),

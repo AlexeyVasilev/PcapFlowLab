@@ -442,7 +442,7 @@ Interpretation:
   - `handoff.child` exists;
 - a handoff may preserve only the next selector when traversal must stop safely before creating a child slice;
 - reaching a terminal protocol does not itself mean that a valid flow tuple was necessarily produced.
-- successful ICMP / ICMPv6 terminal steps may contribute `LayerKey::icmp()` / `LayerKey::icmpv6()` to the shadow-engine physical path even while production import remains on legacy `PacketDecoder` path material.
+- successful ICMP / ICMPv6 terminal steps remain visible dissection steps with typed facts, but under the current import-compatibility policy they contribute no persistent `LayerKey::icmp()` / `LayerKey::icmpv6()` path material.
 
 Example:
 
@@ -834,11 +834,10 @@ remaining work is parity closure and production integration.
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
 The July 22, 2026 static audit in
-`docs/dissection-engine-parity-audit.md` shows three blocking semantic gaps
+`docs/dissection-engine-parity-audit.md` shows two blocking semantic gaps
 remaining before this stage can be considered complete:
 
 - ARP import classification and persistent-path parity;
-- ICMP / ICMPv6 persistent-path parity;
 - PPPoE fixture `20_pppoe_bad_length_extra_payload.pcap` declared-boundary policy.
 
 ### Stage 5: single production import cutover (`not started`)
@@ -929,12 +928,11 @@ The branch is past foundational shadow implementation. The next work should be
 sequenced as an explicit cutover-preparation plan:
 
 1. resolve ARP import classification and path parity;
-2. resolve ICMP / ICMPv6 persistent protocol-path parity;
-3. make an explicit PPPoE fixture-20 declared-boundary policy decision and align behavior to it;
-4. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
-5. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
-6. run representative real-capture correctness and import-performance validation;
-7. cut over production import in one dedicated change.
+2. make an explicit PPPoE fixture-20 declared-boundary policy decision and align behavior to it;
+3. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
+4. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
+5. run representative real-capture correctness and import-performance validation;
+6. cut over production import in one dedicated change.
 
-Keep production `PacketDecoder` unchanged until the three semantic blockers and
+Keep production `PacketDecoder` unchanged until the remaining semantic blockers and
 the import-integration prerequisites are all closed explicitly.

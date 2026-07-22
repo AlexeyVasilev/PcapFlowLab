@@ -480,7 +480,7 @@ void expect_shadow_parity_for_ipv4_and_vlan_flows(const DissectionRegistry& regi
         StopReason::terminal_protocol
     );
 
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv4_icmp_packet(
             ipv4(10, 9, 0, 1),
@@ -488,11 +488,10 @@ void expect_shadow_parity_for_ipv4_and_vlan_flows(const DissectionRegistry& regi
             8U,
             0U
         )),
-        "EthernetII -> IPv4 -> ICMP",
         "EthernetII -> IPv4",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(add_vlan_tags(
             make_ethernet_ipv4_icmp_packet(
@@ -503,7 +502,6 @@ void expect_shadow_parity_for_ipv4_and_vlan_flows(const DissectionRegistry& regi
             ),
             {{0x8100U, 405U}}
         )),
-        "EthernetII -> VLAN(vid=405) -> IPv4 -> ICMP",
         "EthernetII -> VLAN(vid=405) -> IPv4",
         StopReason::terminal_protocol
     );
@@ -554,22 +552,20 @@ void expect_shadow_parity_for_ipv6_flows_and_extensions(const DissectionRegistry
         "EthernetII -> VLAN(vid=401) -> IPv6 -> SCTP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv6_packet(
             ipv6_src_addr, ipv6_dst_addr, detail::kIpProtocolIcmpV6, make_ipv6_icmpv6_message(128U, 0U))),
-        "EthernetII -> IPv6 -> ICMPv6",
         "EthernetII -> IPv6",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(add_vlan_tags(
             make_ethernet_ipv6_packet(
                 ipv6_src_addr, ipv6_dst_addr, detail::kIpProtocolIcmpV6, make_ipv6_icmpv6_message(129U, 1U)),
             {{0x8100U, 406U}}
         )),
-        "EthernetII -> VLAN(vid=406) -> IPv6 -> ICMPv6",
         "EthernetII -> VLAN(vid=406) -> IPv6",
         StopReason::terminal_protocol
     );
@@ -580,11 +576,10 @@ void expect_shadow_parity_for_ipv6_flows_and_extensions(const DissectionRegistry
         "EthernetII -> IPv6 -> UDP",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_portless_flow(
+    expect_shadow_matches_legacy_portless_terminal_flow(
         registry,
         make_raw_packet(make_ethernet_ipv6_icmpv6_with_hop_by_hop_packet(
             ipv6_src_addr, ipv6_dst_addr, 128U, 0U)),
-        "EthernetII -> IPv6 -> ICMPv6",
         "EthernetII -> IPv6",
         StopReason::terminal_protocol
     );
@@ -750,6 +745,90 @@ void expect_shadow_parity_for_nested_ip_encapsulation(const DissectionRegistry& 
         "EthernetII -> IPv4 -> IPv6 -> UDP",
         StopReason::terminal_protocol
     );
+}
+
+void expect_icmp_and_icmpv6_visible_steps_without_persistent_terminal_path(const DissectionRegistry& registry) {
+    const auto icmp_packet = make_raw_packet(make_ethernet_ipv4_icmp_packet(
+        ipv4(10, 30, 0, 1),
+        ipv4(10, 30, 0, 2),
+        8U,
+        0U
+    ));
+    const auto icmp_steps = collect_shadow_steps(icmp_packet, registry);
+    const std::vector<DissectionLayerKind> expected_icmp_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv4,
+        DissectionLayerKind::icmp,
+    };
+    const auto expected_icmp_path = ProtocolPath({LayerKey::ethernet_ii(), LayerKey::ipv4()});
+    PFL_REQUIRE(icmp_steps.size() == 3U);
+    PFL_EXPECT(collect_step_kinds(icmp_steps) == expected_icmp_kinds);
+    PFL_EXPECT(!icmp_steps[2].path_contribution.has_value());
+    PFL_EXPECT(std::holds_alternative<IcmpFacts>(icmp_steps[2].facts));
+
+    const auto icmp_shadow = run_shadow(icmp_packet, registry);
+    const auto icmp_legacy = decode_legacy_direct(icmp_packet);
+    PFL_REQUIRE(icmp_legacy.recognized_flow);
+    PFL_EXPECT(icmp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(icmp_shadow.terminal_protocol == ProtocolId::icmp);
+    PFL_EXPECT(!icmp_shadow.has_ports);
+    PFL_EXPECT(shadow_path(icmp_shadow) == icmp_legacy.path);
+    PFL_EXPECT(shadow_path(icmp_shadow) == expected_icmp_path);
+
+    const auto icmpv6_packet = make_raw_packet(make_ethernet_ipv6_packet(
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x51}),
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x52}),
+        detail::kIpProtocolIcmpV6,
+        make_ipv6_icmpv6_message(128U, 0U)
+    ));
+    const auto icmpv6_steps = collect_shadow_steps(icmpv6_packet, registry);
+    const std::vector<DissectionLayerKind> expected_icmpv6_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::ipv6,
+        DissectionLayerKind::icmpv6,
+    };
+    const auto expected_icmpv6_path = ProtocolPath({LayerKey::ethernet_ii(), LayerKey::ipv6()});
+    PFL_REQUIRE(icmpv6_steps.size() == 3U);
+    PFL_EXPECT(collect_step_kinds(icmpv6_steps) == expected_icmpv6_kinds);
+    PFL_EXPECT(!icmpv6_steps[2].path_contribution.has_value());
+    PFL_EXPECT(std::holds_alternative<Icmpv6Facts>(icmpv6_steps[2].facts));
+
+    const auto icmpv6_shadow = run_shadow(icmpv6_packet, registry);
+    const auto icmpv6_legacy = decode_legacy_direct(icmpv6_packet);
+    PFL_REQUIRE(icmpv6_legacy.recognized_flow);
+    PFL_EXPECT(icmpv6_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(icmpv6_shadow.terminal_protocol == ProtocolId::icmpv6);
+    PFL_EXPECT(!icmpv6_shadow.has_ports);
+    PFL_EXPECT(shadow_path(icmpv6_shadow) == icmpv6_legacy.path);
+    PFL_EXPECT(shadow_path(icmpv6_shadow) == expected_icmpv6_path);
+
+    const auto tagged_icmp_packet = make_raw_packet(add_vlan_tags(
+        make_ethernet_ipv4_icmp_packet(
+            ipv4(10, 30, 1, 1),
+            ipv4(10, 30, 1, 2),
+            0U,
+            0U
+        ),
+        {{0x8100U, 407U}}
+    ));
+    const auto tagged_icmp_shadow = run_shadow(tagged_icmp_packet, registry);
+    const auto tagged_icmp_legacy = decode_legacy_direct(tagged_icmp_packet);
+    PFL_REQUIRE(tagged_icmp_legacy.recognized_flow);
+    PFL_EXPECT(shadow_path(tagged_icmp_shadow) == tagged_icmp_legacy.path);
+
+    ProtocolPathRegistry path_registry {};
+    const auto icmp_legacy_id = path_registry.intern(icmp_legacy.path);
+    const auto icmp_shadow_id = path_registry.intern(shadow_path(icmp_shadow));
+    const auto icmpv6_legacy_id = path_registry.intern(icmpv6_legacy.path);
+    const auto icmpv6_shadow_id = path_registry.intern(shadow_path(icmpv6_shadow));
+    const auto tagged_icmp_id = path_registry.intern(shadow_path(tagged_icmp_shadow));
+    PFL_EXPECT(icmp_legacy_id != kInvalidProtocolPathId);
+    PFL_EXPECT(icmp_legacy_id == icmp_shadow_id);
+    PFL_EXPECT(icmpv6_legacy_id != kInvalidProtocolPathId);
+    PFL_EXPECT(icmpv6_legacy_id == icmpv6_shadow_id);
+    PFL_EXPECT(tagged_icmp_id != kInvalidProtocolPathId);
+    PFL_EXPECT(tagged_icmp_id != icmp_legacy_id);
+    PFL_EXPECT(path_registry.size() == 3U);
 }
 
 void expect_shadow_reports_unrecognized_and_malformed_stops(const DissectionRegistry& registry) {
@@ -926,6 +1005,7 @@ void run_common_direct_registry_engine_tests() {
     expect_shadow_parity_for_ipv4_and_vlan_flows(registry);
     expect_shadow_parity_for_ipv6_flows_and_extensions(registry);
     expect_shadow_parity_for_nested_ip_encapsulation(registry);
+    expect_icmp_and_icmpv6_visible_steps_without_persistent_terminal_path(registry);
 
     expect_shadow_reports_unrecognized_and_malformed_stops(registry);
     expect_shadow_depth_limit_reports_partial_step_sequence(registry);

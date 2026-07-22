@@ -142,7 +142,7 @@ DissectionStep dissect_icmp(const PacketSlice& slice) {
     return make_control_message_step(
         slice,
         DissectionLayerKind::icmp,
-        LayerKey::icmp(),
+        std::nullopt,
         kIcmpCommonHeaderSize,
         parsed,
         IcmpFacts {
@@ -158,7 +158,7 @@ DissectionStep dissect_icmpv6(const PacketSlice& slice) {
     return make_control_message_step(
         slice,
         DissectionLayerKind::icmpv6,
-        LayerKey::icmpv6(),
+        std::nullopt,
         kIcmpCommonHeaderSize,
         parsed,
         Icmpv6Facts {
