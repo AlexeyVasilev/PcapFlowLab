@@ -389,7 +389,7 @@ void expect_geneve_registry_mappings() {
     PFL_REQUIRE(built.ok());
     const auto& registry = *built.registry;
 
-    PFL_EXPECT(registry.entry_count() == 130U);
+    PFL_EXPECT(registry.entry_count() == 139U);
     PFL_EXPECT(registry.find(ProtocolSelector {
         .domain = SelectorDomain::udp_destination_port_candidate,
         .value = detail::kUdpPortVxlan,

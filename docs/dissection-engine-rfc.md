@@ -96,10 +96,14 @@ under `tests/data/parsing/gtpu/` and the production-only assertions in
   continuation, control-message outer-UDP fallback, nested inner-UDP
   non-recursion, carrier-context reachability, and outer-fragment shell
   behavior.
-- UDP and direct inner-IP canonical shadow parsers already exist and remain the
-  migration boundary for future shadow GTP-U work.
-- Shadow GTP-U dissection is still pending in this RFC; this pass defines only
-  the production migration contract and does not claim shadow support.
+- Shadow GTP-U dissection now exists in the registry-driven path with the same
+  strict UDP destination-port `2152` gate, TEID-bearing identity, bounded
+  optional E/S/PN handling, bounded extension-header skipping, direct-inner-IP
+  continuation subset, inner-UDP non-recursion, and outer-fragment shell
+  behavior as the committed production fixture contract.
+- Unsupported, malformed, or bounded-truncated GTP-U candidates do not commit
+  GTP-U path identity in shadow mode; they fall back to the ordinary outer UDP
+  flow exactly as the committed production GTP-U fixtures require.
 
 ## Primary Architectural Decision
 

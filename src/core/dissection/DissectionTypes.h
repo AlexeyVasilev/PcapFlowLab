@@ -96,6 +96,9 @@ enum class SelectorDomain : std::uint8_t {
     mpls_pw_inner_frame,
     mpls_pw_inner_ether_type,
     udp_destination_port_candidate,
+    gtpu_inner_payload,
+    gtpu_inner_ip_protocol,
+    gtpu_inner_ipv6_next_header,
     vxlan_inner_frame,
     vxlan_inner_ether_type,
     vxlan_inner_ieee8023_payload,
@@ -169,6 +172,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_fragment,
     vxlan,
     geneve,
+    gtpu,
     gre,
     eoip,
     mpls,
@@ -415,6 +419,24 @@ struct GeneveFacts {
     [[nodiscard]] friend constexpr bool operator==(const GeneveFacts&, const GeneveFacts&) = default;
 };
 
+struct GtpuFacts {
+    std::uint8_t flags {0U};
+    std::uint8_t version {0U};
+    std::uint8_t message_type {0U};
+    std::uint16_t length {0U};
+    std::uint32_t teid {0U};
+    bool has_optional_fields {false};
+    bool has_sequence_number {false};
+    bool has_npdu_number {false};
+    bool has_extension_headers {false};
+    std::uint16_t sequence_number {0U};
+    std::uint8_t npdu_number {0U};
+    std::uint8_t first_extension_header_type {0U};
+    std::size_t header_length {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const GtpuFacts&, const GtpuFacts&) = default;
+};
+
 struct MplsFacts {
     std::uint32_t label {0U};
     std::uint8_t traffic_class {0U};
@@ -522,6 +544,7 @@ using LayerFacts = std::variant<
     EoipFacts,
     VxlanFacts,
     GeneveFacts,
+    GtpuFacts,
     MplsFacts,
     MplsPseudowireFacts,
     AhFacts,

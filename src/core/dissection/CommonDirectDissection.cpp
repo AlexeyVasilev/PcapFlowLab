@@ -187,6 +187,8 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 return;
             } else if constexpr (std::is_same_v<Facts, GeneveFacts>) {
                 return;
+            } else if constexpr (std::is_same_v<Facts, GtpuFacts>) {
+                return;
             } else if constexpr (std::is_same_v<Facts, MplsFacts>) {
                 return;
             } else if constexpr (std::is_same_v<Facts, MplsPseudowireFacts>) {
@@ -781,6 +783,69 @@ DissectionRegistryBuildResult make_common_direct_registry() {
                 .value = detail::kUdpPortGeneve,
             },
             .dissector = dissect_geneve,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::udp_destination_port_candidate,
+                .value = detail::kUdpPortGtpu,
+            },
+            .dissector = dissect_gtpu,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_payload,
+                .value = detail::kEtherTypeIpv4,
+            },
+            .dissector = dissect_gtpu_inner_ipv4,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_payload,
+                .value = detail::kEtherTypeIpv6,
+            },
+            .dissector = dissect_gtpu_inner_ipv6,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_ip_protocol,
+                .value = detail::kIpProtocolTcp,
+            },
+            .dissector = dissect_tcp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_ip_protocol,
+                .value = detail::kIpProtocolUdp,
+            },
+            .dissector = dissect_udp_terminal,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_ip_protocol,
+                .value = detail::kIpProtocolSctp,
+            },
+            .dissector = dissect_sctp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_ipv6_next_header,
+                .value = detail::kIpProtocolTcp,
+            },
+            .dissector = dissect_tcp,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_ipv6_next_header,
+                .value = detail::kIpProtocolUdp,
+            },
+            .dissector = dissect_udp_terminal,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gtpu_inner_ipv6_next_header,
+                .value = detail::kIpProtocolSctp,
+            },
+            .dissector = dissect_sctp,
         },
         DissectorRegistration {
             .selector = ProtocolSelector {

@@ -413,6 +413,10 @@ decoding plus production fixture tests.
 
 ## Notes for migration
 
-- This directory defines the production contract that shadow GTP-U migration must match.
-- Shadow GTP-U dissection is not implemented in this pass.
+- This directory defines the production contract that the shadow GTP-U path now matches.
+- The direct shadow registry path now supports the same committed GTP-U fixture subset:
+  UDP destination-port `2152` candidacy, TEID-aware identity, bounded optional
+  E/S/PN handling, bounded extension-header skipping, direct inner IPv4/IPv6
+  continuation, nested inner-UDP non-recursion, outer carrier reachability, and
+  outer-fragment shell behavior.
 - No temporary fixture generator is committed with this directory.

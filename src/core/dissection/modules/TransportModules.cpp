@@ -15,7 +15,9 @@ ProtocolSelector make_udp_payload_candidate_selector(const std::uint16_t dst_por
 }
 
 bool is_udp_payload_candidate_port(const std::uint16_t dst_port) noexcept {
-    return dst_port == detail::kUdpPortVxlan || dst_port == detail::kUdpPortGeneve;
+    return dst_port == detail::kUdpPortVxlan ||
+           dst_port == detail::kUdpPortGeneve ||
+           dst_port == detail::kUdpPortGtpu;
 }
 
 DissectionStep make_udp_terminal_step(const PacketSlice& slice, const ParsedUdpDatagram& parsed) {
