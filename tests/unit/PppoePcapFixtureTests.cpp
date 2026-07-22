@@ -700,28 +700,18 @@ void run_pppoe_pcap_fixture_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap")));
-        const auto rows = session.list_flows();
-        PFL_REQUIRE(rows.size() == 1U);
-        PFL_EXPECT(rows[0].family == FlowAddressFamily::ipv4);
-        PFL_EXPECT(rows[0].protocol_text == "UDP");
-        PFL_EXPECT(flow_protocol_id(rows[0]) == ProtocolId::udp);
-        PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP");
-        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
-
-        const auto packet_rows = session.list_flow_packets(0U);
-        PFL_REQUIRE(packet_rows.size() == 1U);
-        PFL_EXPECT(packet_rows[0].payload_length == 3U);
-        const auto packet = require_packet(session, packet_rows[0].packet_index);
+        const auto row = expect_single_unrecognized_packet(
+            session,
+            "parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap",
+            "Unsupported or malformed packet"
+        );
+        const auto packet = require_packet(session, row.packet_index);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
         PFL_EXPECT(details->has_ethernet);
         PFL_EXPECT(details->has_pppoe);
-        PFL_EXPECT(details->has_ipv4);
-        PFL_EXPECT(details->has_udp);
         PFL_EXPECT(details->pppoe.captured_payload_exceeds_declared);
         PFL_EXPECT(details->pppoe.payload_length_mismatch);
-        PFL_EXPECT(details->udp.payload_truncated);
         const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
         const auto* pppoe_layer = find_layer(summary_layers, "pppoe");
         PFL_REQUIRE(pppoe_layer != nullptr);

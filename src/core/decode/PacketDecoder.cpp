@@ -1033,6 +1033,11 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
         if (!ipv4_bounds.has_value()) {
             return {};
         }
+        if (network->has_pppoe &&
+            network->bounded_packet_end.has_value() &&
+            ipv4_bounds->nominal_packet_end > bounded_bytes.size()) {
+            return {};
+        }
 
         const auto flags_fragment = detail::read_be16(bounded_bytes, ipv4_offset + 6U);
         const bool is_fragmented = (flags_fragment & 0x3FFFU) != 0U;
@@ -1356,6 +1361,11 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
 
         const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
         const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_bytes.size());
+        if (network->has_pppoe &&
+            network->bounded_packet_end.has_value() &&
+            ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length > bounded_bytes.size()) {
+            return {};
+        }
 
         const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
         if (!payload.has_value() || payload->payload_offset > packet_end) {

@@ -2,7 +2,7 @@
 
 Date: 2026-07-22
 Branch: `feature/unified-packet-dissection`
-Verdict: `not-ready-blocking-gaps`
+Verdict: `not-ready-coverage-gaps`
 
 ## Scope
 
@@ -136,7 +136,6 @@ Status vocabulary used here is intentionally narrow:
 
 - `exact`
 - `import-equivalent`
-- `blocking-gap`
 - `coverage-gap`
 - `not-applicable`
 
@@ -164,7 +163,7 @@ Status vocabulary used here is intentionally narrow:
 | EoIP | exact | `CommonDirectEoipDissectionTests.cpp`, `EoipPcapFixtureTests.cpp` | GRE-derived tunnel-id identity and bounded inner Ethernet continuation are aligned. |
 | MPLS label stack | exact | `CommonDirectEncapsulationDissectionTests.cpp`, `MplsPcapFixtureTests.cpp` | Label-by-label path and BoS continuation semantics are covered. |
 | MPLS pseudowire | exact | `CommonDirectMplsPseudowireDissectionTests.cpp`, `MplsPseudowirePcapFixtureTests.cpp` | Control-word and no-control-word paths are parity-tested. |
-| PPPoE / PPP | blocking-gap | `CommonDirectLinkDissectionTests.cpp`, `PppoePcapFixtureTests.cpp`, RFC known-gap note | Fixture 20 is an intentional declared-boundary divergence that remains unresolved for cutover. |
+| PPPoE / PPP | exact | `CommonDirectLinkDissectionTests.cpp`, `PppoePcapFixtureTests.cpp`, RFC bounded-child note | Fixture 20 now confirms that legacy import and shadow traversal both reject inner packets whose declared IP length exceeds the bounded PPPoE payload. |
 | PBB | exact | `CommonDirectLinkDissectionTests.cpp`, `PbbPcapFixtureTests.cpp` | Restricted inner-Ethernet continuation and I-SID identity are fixture-pinned. |
 | MACsec | import-equivalent | `CommonDirectLinkDissectionTests.cpp`, `MacsecPcapFixtureTests.cpp` | Shadow emits richer diagnostic facts but still preserves unrecognized import behavior and no persistent path layer. |
 | VXLAN | exact | `CommonDirectVxlanDissectionTests.cpp`, `VxlanPcapFixtureTests.cpp`, fixture README | Positive flows, ordinary UDP fallback, identity splits, and fragmentation shells are parity-tested. |
@@ -173,11 +172,9 @@ Status vocabulary used here is intentionally narrow:
 
 ## Cutover blockers
 
-| ID | Protocol / family | Fixture or source location | Production behavior | Shadow behavior | Import-visible consequence | Recommended resolution | Risk | Suggested separate commit message |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B3 | PPPoE / PPP declared-boundary policy | `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap`, `tests/unit/CommonDirectLinkDissectionTests.cpp`, `docs/dissection-engine-rfc.md` | Legacy accepts PPPoE length `33` with inner IPv4 Total Length `37` and recognizes a flow. | Shadow rejects the inner IPv4 child because it exceeds the enclosing PPPoE declared boundary. | Import outcome flips from recognized flow to malformed/unrecognized. | Make an explicit policy decision in a dedicated commit: either (1) emulate the current legacy permissive bounded behavior locally for PPPoE import, or (2) intentionally tighten production import to declared PPPoE boundaries. Weakening the global `PacketSlice` declared-boundary invariant is not acceptable. | high | `Resolve PPPoE declared-boundary policy` |
+No known protocol-family semantic blockers remain in the audited fixture set.
 
-Resolved note:
+Resolved notes:
 
 - ARP is no longer an active blocker. Shadow still emits a visible
   `DissectionLayerKind::arp` step with `ArpFacts`, but supported ARP now
@@ -187,6 +184,11 @@ Resolved note:
   `DissectionLayerKind::icmp` / `DissectionLayerKind::icmpv6` steps with typed
   facts, but successful terminal steps no longer contribute persistent
   `LayerKey::icmp()` / `LayerKey::icmpv6()` path material.
+- PPPoE / PPP is no longer an active blocker. Fixture
+  `20_pppoe_bad_length_extra_payload.pcap` now follows the same strict
+  declared-boundary policy in both legacy import and shadow traversal, so an
+  inner IPv4 packet whose declared length exceeds the bounded PPPoE payload is
+  rejected as malformed / unrecognized rather than recovered as a UDP flow.
 
 ## Exact blocking findings
 
@@ -228,7 +230,7 @@ Effect:
 - `ProtocolPathRegistry` identity no longer diverges solely because the terminal
   protocol is ICMP or ICMPv6.
 
-### 3. PPPoE fixture 20 remains an intentional semantic divergence
+### 3. PPPoE fixture 20 now confirms strict bounded-child parity
 
 Fixture:
 
@@ -238,19 +240,20 @@ Current asserted behavior:
 
 - PPPoE declared payload length is `33`;
 - inner IPv4 Total Length is `37`;
-- legacy bounded decoding still recognizes the packet as
-  `PPPoE -> PPP -> IPv4 -> UDP`;
-- shadow rejects the inner IPv4 child because it would exceed the enclosing
+- legacy import rejects the bounded inner IPv4 packet instead of recovering a
+  UDP flow from bytes beyond the declared PPPoE payload;
+- shadow rejects the same inner IPv4 child because it exceeds the enclosing
   declared PPPoE boundary.
 
 Impact:
 
-- legacy import yields a recognized flow;
+- legacy import yields no flow;
 - shadow yields `unrecognized` with `StopReason::malformed`;
-- this is not a presentation difference.
+- there is no persistent protocol-path entry or flow-registry growth on either
+  side.
 
-This is a cutover blocker until the declared-boundary policy is explicitly
-chosen and production behavior is aligned to it.
+This fixture is no longer a semantic blocker; it now pins the strict
+declared-boundary policy that production cutover must preserve.
 
 ## Cutover integration prerequisites
 
@@ -397,11 +400,12 @@ flow construction.
 
 Recommended verdict:
 
-- `not-ready-blocking-gaps`
+- `not-ready-coverage-gaps`
 
 Reason:
 
-1. PPPoE fixture 20 remains an intentional import-semantic divergence.
+1. No known protocol-family semantic blockers remain, but import-adapter,
+   whole-session parity, and real-capture validation work are still incomplete.
 
 Everything else inspected here points to a strong migration foundation:
 
@@ -410,11 +414,11 @@ Everything else inspected here points to a strong migration foundation:
 - some negative paths are only diagnostic differences and do not leak into
   persistent flow identity.
 
-But the remaining blockers are import-contract blockers, not cosmetic ones.
+The remaining gaps are cutover-readiness and coverage gaps, not parser-semantic
+blockers.
 
 ## Minimum expected sequence before cutover
 
-1. Resolve PPPoE fixture 20 declared-boundary behavior explicitly.
-2. Add the import adapter and full-session parity harness.
-3. Validate representative real captures and import performance.
-4. Cut over production import in a single dedicated change.
+1. Add the import adapter and full-session parity harness.
+2. Validate representative real captures and import performance.
+3. Cut over production import in a single dedicated change.

@@ -846,6 +846,11 @@ std::string classify_unrecognized_packet_reason(
         if (!ipv4_bounds.has_value()) {
             return network->has_mpls ? "Inner IPv4 header truncated" : "Unsupported or malformed packet";
         }
+        if (network->has_pppoe &&
+            network->bounded_packet_end.has_value() &&
+            ipv4_bounds->nominal_packet_end > bounded_packet_bytes.size()) {
+            return "Unsupported or malformed packet";
+        }
 
         const auto protocol = bounded_packet_bytes[ipv4_offset + 9U];
         const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
@@ -921,6 +926,11 @@ std::string classify_unrecognized_packet_reason(
 
         const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_packet_bytes, ipv6_offset + 4U));
         const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_packet_bytes.size());
+        if (network->has_pppoe &&
+            network->bounded_packet_end.has_value() &&
+            ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length > bounded_packet_bytes.size()) {
+            return "Unsupported or malformed packet";
+        }
         if (ipv6_payload->payload_offset > packet_end) {
             return "Could not extract flow key";
         }

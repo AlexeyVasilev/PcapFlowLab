@@ -882,26 +882,18 @@ void expect_pppoe_ppp_shadow_parsers_bounds_and_fixture_parity() {
             kinds.push_back(step.layer);
         }
 
-        // Known shadow parity gap:
-        // - PPPoE declared payload length is 33 bytes.
-        // - The inner IPv4 Total Length field is 37 bytes.
-        // - Legacy bounded decoding accepts and recognizes the packet as a flow.
-        // - The shadow PacketSlice model rejects the inner IPv4 child because it
-        //   would extend beyond the enclosing declared PPPoE boundary.
-        // This is an intentional production-cutover decision point, not an
-        // ordinary unsupported-protocol case.
-        PFL_EXPECT(legacy.recognized_flow);
-        PFL_EXPECT(format_protocol_path(legacy.path) == "EthernetII -> PPPoE -> PPP -> IPv4 -> UDP");
-        PFL_EXPECT(legacy.protocol == ProtocolId::udp);
-        PFL_EXPECT(legacy.family == DissectionAddressFamily::ipv4);
-        PFL_EXPECT(legacy.has_addresses);
-        PFL_EXPECT(legacy.src_addr_v4 == ipv4(192, 0, 2, 30));
-        PFL_EXPECT(legacy.dst_addr_v4 == ipv4(198, 51, 100, 30));
-        PFL_EXPECT(legacy.has_ports);
-        PFL_EXPECT(legacy.src_port == 53540U);
-        PFL_EXPECT(legacy.dst_port == 443U);
-        PFL_EXPECT(legacy.has_payload_length);
-        PFL_EXPECT(legacy.captured_payload_length == 3U);
+        // PPPoE declared payload length is 33 bytes while the inner IPv4 Total
+        // Length field is 37 bytes. Legacy import now matches the strict
+        // declared-boundary policy already enforced by the shadow PacketSlice
+        // model, so neither path recovers a UDP flow from bytes beyond the
+        // bounded PPPoE payload.
+        PFL_EXPECT(!legacy.recognized_flow);
+        PFL_EXPECT(legacy.protocol == ProtocolId::unknown);
+        PFL_EXPECT(legacy.family == DissectionAddressFamily::unknown);
+        PFL_EXPECT(!legacy.has_addresses);
+        PFL_EXPECT(!legacy.has_ports);
+        PFL_EXPECT(!legacy.has_payload_length);
+        PFL_EXPECT(legacy.path.empty());
 
         PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::unrecognized);
         PFL_EXPECT(shadow.stop_reason == StopReason::malformed);

@@ -206,9 +206,9 @@ The committed `.pcap` files in this directory are the source of truth.
 
 - `20_pppoe_bad_length_extra_payload.pcap`
   - Wire: valid `PPPoE Session -> PPP 0x0021 -> IPv4 -> UDP`, but declared PPPoE payload `33` is shorter than captured PPPoE payload `43`
-  - Outcome: one recognized IPv4/UDP flow with trailing-bytes-ignored warning
-  - Boundary purpose: proves bytes after the declared PPPoE payload do not extend inner parsing
-  - ProtocolPath: `EthernetII -> PPPoE -> PPP -> IPv4 -> UDP`
+  - Outcome: no flow, reason `Unsupported or malformed packet`, with trailing-bytes-ignored warning on the PPPoE layer
+  - Boundary purpose: proves bytes after the declared PPPoE payload do not rescue an inner IP packet whose own declared length exceeds the remaining bounded PPPoE payload
+  - ProtocolPath: none
 
 - `26_pppoe_session_declared_too_short_for_ppp_protocol_with_valid_trailer.pcap`
   - Wire: `EthernetII -> PPPoE Session(v=1,type=1,code=0x00,session=0x1234,decl=1)` followed by captured bytes that look like `PPP 0x0021 -> IPv4 -> UDP`

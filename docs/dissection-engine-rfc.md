@@ -294,9 +294,7 @@ Service hints and heuristic application recognition are separate concerns and st
 
 For IEEE 802.3 specifically, the length field defines a bounded child slice for any LLC/SNAP continuation. Captured bytes beyond that declared child length remain outside the child slice and therefore cannot complete a truncated LLC/SNAP header or become inner IP payload. In the shadow engine this continuation is modeled as one `LLC/SNAP` step that retains the raw OUI, dispatches supported children by PID through the registry, and uses an explicit deferred path-commit policy: the parent `IEEE 802.3` contribution is marked as child-deferrable, and the `LLC/SNAP` step can defer both contributions until supported downstream flow or recognized-non-flow success. Nested path commit policies combine monotonically, so a descendant may tighten an enclosing requirement but cannot weaken it. Non-SNAP LLC and unknown SNAP PID remain conservative no-flow cases, and this shadow-only mechanism does not introduce new persistent `ProtocolLayerKind`, `LayerKey`, or index-format state.
 
-PPPoE / PPP follow the same bounded-child rule in shadow mode. `EtherType 0x8863` and `0x8864` use separate stateless PPPoE Discovery and PPPoE Session entry wrappers even though they share the same fixed six-byte header. The PPPoE Length field creates the bounded child used for any Session continuation, but the child length is clamped to the enclosing declared slice so no PPP or inner IP bytes can be consumed beyond the enclosing boundary. Supported Session continuation remains limited to version `1`, type `1`, code `0x00`, and a separate PPP step parses exactly one big-endian two-byte PPP Protocol field before dispatching through `SelectorDomain::ppp_protocol`. Only the current production subset continues further: `0x0021` -> IPv4, `0x0057` -> IPv6, and opaque no-flow control handling for `0xC021`, `0x8021`, and `0x8057`. PPPoE Session ID remains diagnostic metadata only; shadow path contribution still uses persistent `LayerKey::pppoe()` and `LayerKey::ppp()` with explicit flow-success-only commit policies, and nested descendant policies are combined with the strictest active ancestor requirement rather than replaced. Unsupported Session variants, Discovery packets, PPP control packets, unknown PPP protocols, and bounded inner truncation cases therefore leave no final physical-path contribution.
-
-Known shadow parity gaps: `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap` is intentionally left divergent today. That fixture advertises PPPoE payload length `33` while the inner IPv4 Total Length is `37`; legacy bounded decoding still recognizes the packet as `PPPoE -> PPP -> IPv4 -> UDP`, but the shadow `PacketSlice` model rejects the inner IPv4 child because it exceeds the enclosing declared PPPoE boundary. This declared-boundary cutover choice must be resolved explicitly before production import migration.
+PPPoE / PPP follow the same bounded-child rule in shadow mode. `EtherType 0x8863` and `0x8864` use separate stateless PPPoE Discovery and PPPoE Session entry wrappers even though they share the same fixed six-byte header. The PPPoE Length field creates the bounded child used for any Session continuation, but the child length is clamped to the enclosing declared slice so no PPP or inner IP bytes can be consumed beyond the enclosing boundary. Supported Session continuation remains limited to version `1`, type `1`, code `0x00`, and a separate PPP step parses exactly one big-endian two-byte PPP Protocol field before dispatching through `SelectorDomain::ppp_protocol`. Only the current production subset continues further: `0x0021` -> IPv4, `0x0057` -> IPv6, and opaque no-flow control handling for `0xC021`, `0x8021`, and `0x8057`. PPPoE Session ID remains diagnostic metadata only; shadow path contribution still uses persistent `LayerKey::pppoe()` and `LayerKey::ppp()` with explicit flow-success-only commit policies, and nested descendant policies are combined with the strictest active ancestor requirement rather than replaced. Unsupported Session variants, Discovery packets, PPP control packets, unknown PPP protocols, bounded inner truncation cases, and inner IP packets whose own declared lengths exceed the bounded PPPoE payload therefore leave no final physical-path contribution. The production import path now follows that same strict bounded-child policy for fixture `20_pppoe_bad_length_extra_payload.pcap`, so the previously documented PPPoE declared-boundary divergence has been resolved without weakening the shadow `PacketSlice` invariant.
 
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
@@ -834,10 +832,10 @@ remaining work is parity closure and production integration.
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
 The July 22, 2026 static audit in
-`docs/dissection-engine-parity-audit.md` shows one blocking semantic gap
-remaining before this stage can be considered complete:
-
-- PPPoE fixture `20_pppoe_bad_length_extra_payload.pcap` declared-boundary policy.
+`docs/dissection-engine-parity-audit.md` no longer identifies any known
+protocol-family semantic blockers in the audited fixture set. This stage
+remains in progress because cutover still needs the import adapter,
+whole-session parity harness, and real-capture validation.
 
 ### Stage 5: single production import cutover (`not started`)
 
@@ -926,11 +924,10 @@ Do not switch production import to the new engine until all of these are true ac
 The branch is past foundational shadow implementation. The next work should be
 sequenced as an explicit cutover-preparation plan:
 
-1. make an explicit PPPoE fixture-20 declared-boundary policy decision and align behavior to it;
-2. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
-3. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
-4. run representative real-capture correctness and import-performance validation;
-5. cut over production import in one dedicated change.
+1. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
+2. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
+3. run representative real-capture correctness and import-performance validation;
+4. cut over production import in one dedicated change.
 
-Keep production `PacketDecoder` unchanged until the remaining semantic blockers and
-the import-integration prerequisites are all closed explicitly.
+Keep production `PacketDecoder` unchanged until the import-integration
+prerequisites are all closed explicitly.
