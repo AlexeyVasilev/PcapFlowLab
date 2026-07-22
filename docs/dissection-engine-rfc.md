@@ -86,6 +86,21 @@ in `tests/unit/GenevePcapFixtureTests.cpp`.
 - Unsupported inner Ethernet payloads and nested inner overlay lookalikes do not commit Geneve path identity in shadow mode; they fall back to the ordinary outer UDP flow exactly as the committed production Geneve fixtures require.
 - In the fixture-28 negative declared-bounds case, shadow traversal still retains the successfully decoded outer `EthernetII -> IPv4` layers diagnostically, but the packet remains unrecognized and produces no flow and no persistent protocol-path registry entry.
 
+The current production GTP-U behavior is now pinned by the committed fixtures
+under `tests/data/parsing/gtpu/` and the production-only assertions in
+`tests/unit/GtpuPcapFixtureTests.cpp`.
+
+- The fixture contract covers the exact current UDP destination-port `2152`
+  gate, base-header acceptance rules, TEID identity, optional E/S/PN block
+  semantics, bounded extension-header skipping, direct-inner-IP-only
+  continuation, control-message outer-UDP fallback, nested inner-UDP
+  non-recursion, carrier-context reachability, and outer-fragment shell
+  behavior.
+- UDP and direct inner-IP canonical shadow parsers already exist and remain the
+  migration boundary for future shadow GTP-U work.
+- Shadow GTP-U dissection is still pending in this RFC; this pass defines only
+  the production migration contract and does not claim shadow support.
+
 ## Primary Architectural Decision
 
 Introduce a registry-driven dissection engine that walks a packet as a sequence of protocol modules.

@@ -311,7 +311,7 @@ Current parsing fixture directories under `tests/data/parsing/` include:
 - `geneve`
   - deterministic Geneve fixtures including inner IPv4/IPv6 TCP/UDP continuation, bounded option skipping, VNI boundary values, inner VLAN composition, malformed/truncated headers, wrong-port negatives, unsupported-protocol cases, and selected-packet Geneve presentation coverage.
 - `gtpu`
-  - deterministic GTP-U fixtures including direct inner IPv4/IPv6 TCP/UDP continuation, TEID boundary values, optional S/PN/E field coverage, bounded extension-header skip, malformed/truncated headers, wrong-port negatives, and selected-packet GTP-U presentation coverage.
+  - deterministic GTP-U fixtures including strict UDP destination-port `2152` gating, direct inner IPv4/IPv6 TCP/UDP continuation, TEID boundary values and TEID-based identity splits, tolerated reserved-bit coverage, optional E/S/PN field combinations, bounded extension-header skip-only handling, outer VLAN/QinQ/legacy-`0x9100` and Linux SLL/SLL2 carrier contexts, nested-overlay-looking inner-UDP termination, outer fragmentation shells, malformed/truncated bounds matrices, wrong-port negatives, control-message outer-UDP fallback, and selected-packet GTP-U presentation coverage.
 - `ah`
   - deterministic AH fixtures including direct IPv4/IPv6 TCP/UDP continuation, IPv6 Hop-by-Hop before AH, bounded tunnel-mode inner IPv4/IPv6 TCP/UDP continuation, SPI-aware identity coverage, and malformed/truncated AH presentation coverage.
 - `esp`
