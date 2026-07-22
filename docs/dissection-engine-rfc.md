@@ -4,6 +4,8 @@ Status: Proposed
 Scope: Packet-oriented L2-L4 and tunnel dissection
 Implementation branch: `feature/unified-packet-dissection`
 
+Static cutover audit: see `docs/dissection-engine-parity-audit.md`.
+
 ## Goal
 
 Define a registry-driven packet dissection architecture that can replace the current centralized `PacketDecoder` traversal without changing current product semantics during the migration.
@@ -298,7 +300,7 @@ Known shadow parity gaps: `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_pa
 
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
-Linux cooked root dissection follows the same staged rule set in shadow mode. `DLT_LINUX_SLL` and `DLT_LINUX_SLL2` are root link-type modules that dispatch only the currently supported cooked-root protocol types for IPv4, IPv6, and ARP through a dedicated selector domain. Their root path contribution uses an explicit commit policy that succeeds for either recognized flows or recognized non-flow terminals such as ARP. Nested policy composition remains monotonic here as well, and the current implementation models that with one linear active descendant policy rather than a general branching scope stack. Unsupported cooked-root VLAN/QinQ values remain conservative no-flow cases, and cooked-root ARP preserves the current production path contract of `LinuxSll` / `LinuxSll2` without appending an extra `ARP` physical-path layer.
+Linux cooked root dissection follows the same staged rule set in shadow mode. `DLT_LINUX_SLL` and `DLT_LINUX_SLL2` are root link-type modules that dispatch only the currently supported cooked-root protocol types for IPv4, IPv6, and ARP through a dedicated selector domain. Their root path contribution uses an explicit commit policy that succeeds for either recognized flows or recognized non-flow terminals such as ARP. Nested policy composition remains monotonic here as well, and the current implementation models that with one linear active descendant policy rather than a general branching scope stack. Unsupported cooked-root VLAN/QinQ values remain conservative no-flow cases. Current shadow ARP behavior is still intentionally divergent from production import: the shadow ARP step finalizes as `recognized_non_flow` and contributes an `ARP` path layer, while production import persists IPv4 ARP as a flow on the carrier path only. The static parity audit therefore treats ARP as a cutover blocker rather than a resolved parity slice.
 
 Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agnostic and be reusable across both `SelectorDomain::ip_protocol` and `SelectorDomain::ipv6_next_header` registrations.
 
@@ -736,13 +738,13 @@ The engine should allow consumer-dependent collection and continuation policy:
 
 ## Migration Plan
 
-### Stage 1: RFC and types
+### Stage 1: RFC and types (`completed`)
 
 - land this RFC and foundational value types;
 - define shared engine/event/selector types;
 - keep legacy `PacketDecoder` as production path.
 
-### Stage 2: common direct modules in shadow tests
+### Stage 2: common direct modules in shadow tests (`completed`)
 
 - implement the explicit registry and bounded engine loop;
 - implement common direct modules in shadow mode only:
@@ -768,7 +770,7 @@ Within this stage, LLC/SNAP parity specifically means:
 - supported SNAP PID continuation is registry-driven for IPv4, IPv6, and ARP;
 - OUI is retained diagnostically but does not become part of persistent path identity.
 
-### Stage 3: remaining currently supported modules in shadow tests
+### Stage 3: remaining currently supported modules in shadow tests (`completed`)
 
 - migrate the remaining packet-oriented families in shadow mode:
   - MPLS;
@@ -822,19 +824,31 @@ PBB, inner MPLS, and inner MACsec remain conservative no-flow stops.
 
 For AH specifically, the shadow registry should keep the IPv4-versus-IPv6 next-selector distinction explicit instead of hiding it behind one domain-agnostic continuation. For ESP, the shadow registry should model the current production subset as an opaque terminal flow candidate keyed by SPI, without decrypting or decoding encrypted payload contents.
 
-### Stage 4: full semantic differential parity
+Stage 3 is no longer a pending scope marker for overlay families such as VXLAN,
+Geneve, or GTP-U. Those families are implemented in shadow mode already; the
+remaining work is parity closure and production integration.
+
+### Stage 4: full semantic differential parity (`in progress`)
 
 - compare the new engine against legacy behavior across all committed fixture families;
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
-### Stage 5: single production import cutover
+The July 22, 2026 static audit in
+`docs/dissection-engine-parity-audit.md` shows three blocking semantic gaps
+remaining before this stage can be considered complete:
+
+- ARP import classification and persistent-path parity;
+- ICMP / ICMPv6 persistent-path parity;
+- PPPoE fixture `20_pppoe_bad_length_extra_payload.pcap` declared-boundary policy.
+
+### Stage 5: single production import cutover (`not started`)
 
 - make the engine the implementation behind the existing `PacketDecoder` / public decode API;
 - continue to produce the existing `DecodedPacket` / `IngestedPacket` structures;
 - do not introduce a production parser feature flag;
 - do not expose a mixed legacy/new production decoder between intermediate commits.
 
-### Stage 6: remove legacy centralized traversal
+### Stage 6: remove legacy centralized traversal (`not started`)
 
 - remove duplicated legacy traversal only after semantic parity, real-capture checks, and performance validation pass;
 - keep `PacketDecodeSupport.h` helpers that remain useful, but retire centralized traversal code paths.
@@ -911,6 +925,16 @@ Do not switch production import to the new engine until all of these are true ac
 
 ## Recommended Next Step
 
-Implement foundational value types and bounds helpers, then the explicit registry and bounded engine loop, then the common direct protocol modules in shadow comparison only.
+The branch is past foundational shadow implementation. The next work should be
+sequenced as an explicit cutover-preparation plan:
 
-Keep production `PacketDecoder` unchanged until all currently supported packet-oriented protocol families reach semantic parity in shadow tests.
+1. resolve ARP import classification and path parity;
+2. resolve ICMP / ICMPv6 persistent protocol-path parity;
+3. make an explicit PPPoE fixture-20 declared-boundary policy decision and align behavior to it;
+4. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
+5. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
+6. run representative real-capture correctness and import-performance validation;
+7. cut over production import in one dedicated change.
+
+Keep production `PacketDecoder` unchanged until the three semantic blockers and
+the import-integration prerequisites are all closed explicitly.
