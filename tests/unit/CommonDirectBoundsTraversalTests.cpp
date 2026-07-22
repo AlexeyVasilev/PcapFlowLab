@@ -270,8 +270,7 @@ void expect_arp_bounds_exclude_padding_for_complete_and_truncated_cases() {
         padded_arp_ethernet.declared_payload_length
     ));
     PFL_EXPECT(padded_arp_step.status == ParseStatus::complete);
-    PFL_REQUIRE(padded_arp_step.path_contribution.has_value());
-    PFL_EXPECT(*padded_arp_step.path_contribution == LayerKey::arp());
+    PFL_EXPECT(!padded_arp_step.path_contribution.has_value());
     PFL_EXPECT(padded_arp_step.bounds.full.declared.length() == 28U);
     PFL_EXPECT(padded_arp_step.bounds.full.captured.length() == 28U);
     PFL_EXPECT(padded_arp_step.bounds.header.declared.length() == 8U);
@@ -279,7 +278,7 @@ void expect_arp_bounds_exclude_padding_for_complete_and_truncated_cases() {
     PFL_REQUIRE(padded_arp_step.bounds.payload.has_value());
     PFL_EXPECT(padded_arp_step.bounds.payload->declared.length() == 20U);
     PFL_EXPECT(padded_arp_step.bounds.payload->captured.length() == 20U);
-    PFL_EXPECT(padded_arp_step.terminal_disposition == TerminalDisposition::recognized_non_flow);
+    PFL_EXPECT(padded_arp_step.terminal_disposition == TerminalDisposition::flow_candidate);
 
     auto truncated_arp_fixed_header_bytes = arp_bytes;
     truncated_arp_fixed_header_bytes.resize(18U);

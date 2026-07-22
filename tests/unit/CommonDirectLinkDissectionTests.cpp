@@ -266,7 +266,7 @@ void expect_linux_cooked_shadow_root_parsers_and_fixture_parity() {
         PFL_EXPECT(step.stop_reason == StopReason::terminal_protocol);
         PFL_EXPECT(!step.path_contribution.has_value());
         PFL_EXPECT(!step.handoff.has_value());
-        PFL_EXPECT(step.terminal_disposition == TerminalDisposition::recognized_non_flow);
+        PFL_EXPECT(step.terminal_disposition == TerminalDisposition::flow_candidate);
         PFL_EXPECT(std::holds_alternative<ArpFacts>(step.facts));
     }
 
@@ -290,17 +290,15 @@ void expect_linux_cooked_shadow_root_parsers_and_fixture_parity() {
         );
     }
 
-    expect_shadow_matches_legacy_recognized_non_flow(
+    expect_shadow_matches_legacy_arp_flow(
         registry,
         require_raw_fixture_packet("parsing/linux_cooked/03_sll_arp.pcap"),
         "LinuxSll",
-        "LinuxSll",
         StopReason::terminal_protocol
     );
-    expect_shadow_matches_legacy_recognized_non_flow(
+    expect_shadow_matches_legacy_arp_flow(
         registry,
         require_raw_fixture_packet("parsing/linux_cooked/07_sll2_arp.pcap"),
-        "LinuxSll2",
         "LinuxSll2",
         StopReason::terminal_protocol
     );
@@ -473,41 +471,39 @@ void expect_llc_snap_shadow_parsers_bounds_and_fixture_parity() {
 
     struct SupportedFlowExpectation {
         const char* relative_path;
-        const char* expected_shadow_path;
-        const char* expected_legacy_path;
+        const char* expected_path;
         StopReason expected_stop_reason;
-        bool recognized_non_flow;
+        bool is_arp_flow;
     };
 
     const std::vector<SupportedFlowExpectation> supported_expectations {
-        {"parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/02_llc_snap_ipv4_udp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/03_llc_snap_ipv6_tcp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> TCP", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> TCP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/04_llc_snap_ipv6_udp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> UDP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/05_llc_snap_arp.pcap", "IEEE 802.3 -> LLC/SNAP", "IEEE 802.3 -> LLC/SNAP", StopReason::terminal_protocol, true},
-        {"parsing/llc_snap/06_vlan_llc_snap_ipv4_tcp.pcap", "EthernetII -> VLAN(vid=100) -> LLC/SNAP -> IPv4 -> TCP", "EthernetII -> VLAN(vid=100) -> LLC/SNAP -> IPv4 -> TCP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/07_qinq_llc_snap_ipv4_udp.pcap", "EthernetII -> VLAN(vid=200) -> VLAN(vid=300) -> LLC/SNAP -> IPv4 -> UDP", "EthernetII -> VLAN(vid=200) -> VLAN(vid=300) -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/14_llc_snap_length_short_payload.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/20_llc_snap_padding_after_declared_payload.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
-        {"parsing/llc_snap/23_vlan_9100_llc_snap_ipv4_udp.pcap", "EthernetII -> VLAN(vid=413) -> LLC/SNAP -> IPv4 -> UDP", "EthernetII -> VLAN(vid=413) -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/01_llc_snap_ipv4_tcp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> TCP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/02_llc_snap_ipv4_udp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/03_llc_snap_ipv6_tcp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> TCP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/04_llc_snap_ipv6_udp.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv6 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/05_llc_snap_arp.pcap", "IEEE 802.3 -> LLC/SNAP", StopReason::terminal_protocol, true},
+        {"parsing/llc_snap/06_vlan_llc_snap_ipv4_tcp.pcap", "EthernetII -> VLAN(vid=100) -> LLC/SNAP -> IPv4 -> TCP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/07_qinq_llc_snap_ipv4_udp.pcap", "EthernetII -> VLAN(vid=200) -> VLAN(vid=300) -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/09_llc_snap_nonzero_oui_ipv4_pid.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/14_llc_snap_length_short_payload.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/20_llc_snap_padding_after_declared_payload.pcap", "IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
+        {"parsing/llc_snap/23_vlan_9100_llc_snap_ipv4_udp.pcap", "EthernetII -> VLAN(vid=413) -> LLC/SNAP -> IPv4 -> UDP", StopReason::terminal_protocol, false},
     };
 
     for (const auto& expectation : supported_expectations) {
         const auto packet = require_raw_fixture_packet(expectation.relative_path);
-        if (expectation.recognized_non_flow) {
-            expect_shadow_matches_legacy_recognized_non_flow(
+        if (expectation.is_arp_flow) {
+            expect_shadow_matches_legacy_arp_flow(
                 registry,
                 packet,
-                expectation.expected_shadow_path,
-                expectation.expected_legacy_path,
+                expectation.expected_path,
                 expectation.expected_stop_reason
             );
         } else {
             expect_shadow_matches_legacy_flow(
                 registry,
                 packet,
-                expectation.expected_shadow_path,
+                expectation.expected_path,
                 expectation.expected_stop_reason
             );
         }
@@ -1130,10 +1126,9 @@ void expect_pbb_shadow_parsers_bounds_and_fixture_parity() {
     {
         const ScopedTestContext fixture_context {"fixture=parsing/pbb/05_pbb_arp.pcap"};
         const auto packet = require_raw_fixture_packet("parsing/pbb/05_pbb_arp.pcap");
-        expect_shadow_matches_legacy_recognized_non_flow(
+        expect_shadow_matches_legacy_arp_flow(
             registry,
             packet,
-            "EthernetII -> PBB(isid=0x123456) -> EthernetII",
             "EthernetII -> PBB(isid=0x123456) -> EthernetII",
             StopReason::terminal_protocol
         );

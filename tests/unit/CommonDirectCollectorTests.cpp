@@ -75,7 +75,7 @@ DissectionStep make_arp_terminal_step(const std::uint32_t sender_ipv4, const std
             .sender_ipv4 = sender_ipv4,
             .target_ipv4 = target_ipv4,
         },
-        .terminal_disposition = TerminalDisposition::recognized_non_flow,
+        .terminal_disposition = TerminalDisposition::flow_candidate,
         .status = ParseStatus::complete,
         .stop_reason = StopReason::terminal_protocol,
     };
@@ -112,7 +112,7 @@ void expect_collector_immediate_path_contribution_survives_unrecognized_stops() 
     }
 }
 
-void expect_collector_recognized_non_flow_finalization_preserves_committed_path() {
+void expect_collector_arp_flow_finalization_preserves_committed_path() {
     ImportDissectionCollector collector {};
     collector.consume(make_path_step(
         DissectionLayerKind::ieee8023,
@@ -135,10 +135,14 @@ void expect_collector_recognized_non_flow_finalization_preserves_committed_path(
     ));
     collector.finish(make_test_result(StopReason::terminal_protocol, 3U));
 
-    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(format_shadow_path(collector.facts()) == "IEEE 802.3 -> LLC/SNAP");
     PFL_EXPECT(collector.facts().terminal_protocol == ProtocolId::arp);
+    PFL_EXPECT(collector.facts().family == DissectionAddressFamily::ipv4);
     PFL_EXPECT(collector.facts().has_arp_addresses);
+    PFL_EXPECT(collector.facts().has_flow_addresses);
+    PFL_EXPECT(collector.facts().src_addr_v4 == ipv4(192, 0, 2, 10));
+    PFL_EXPECT(collector.facts().dst_addr_v4 == ipv4(192, 0, 2, 1));
     PFL_EXPECT(collector.facts().arp_addresses.sender_ipv4 == ipv4(192, 0, 2, 10));
     PFL_EXPECT(collector.facts().arp_addresses.target_ipv4 == ipv4(192, 0, 2, 1));
     PFL_EXPECT(!collector.facts().has_ports);
@@ -188,7 +192,7 @@ void expect_collector_recognized_flow_finalization_populates_terminal_metadata()
 
 void run_common_direct_collector_tests() {
     expect_collector_immediate_path_contribution_survives_unrecognized_stops();
-    expect_collector_recognized_non_flow_finalization_preserves_committed_path();
+    expect_collector_arp_flow_finalization_preserves_committed_path();
     expect_collector_recognized_flow_finalization_populates_terminal_metadata();
 }
 

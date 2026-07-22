@@ -146,7 +146,7 @@ Status vocabulary used here is intentionally narrow:
 | VLAN / QinQ / legacy `0x9100` VLAN stacking | exact | `CommonDirectLinkDissectionTests.cpp`, PBB/VXLAN/Geneve/GTP-U fixture families | Path and tuple parity are broadly asserted through wrapped fixture families. |
 | IEEE 802.3 / LLC-SNAP | exact | `CommonDirectLinkDissectionTests.cpp`, `LlcSnapPcapFixtureTests.cpp` | Declared child bounds and padding exclusion are already fixture-pinned. |
 | Linux cooked SLL / SLL2 | exact | `LinuxCookedPcapFixtureTests.cpp`, registry/link tests | Current supported cooked-root subset is already shadow-covered. |
-| ARP | blocking-gap | `PacketDecoder.cpp`, `ArpPcapFixtureTests.cpp`, `CommonDirectRegistryEngineTests.cpp` | Production imports ARP as flow-bearing carrier-path traffic; shadow finalizes as `recognized_non_flow` with `... -> ARP`. |
+| ARP | exact | `PacketDecoder.cpp`, `ArpPcapFixtureTests.cpp`, `CommonDirectRegistryEngineTests.cpp` | Visible ARP step remains, but supported ARP now imports as a portless IPv4 flow on the same carrier-only persistent path as production. |
 | IPv4 | exact | `CommonDirectNetworkDissectionTests.cpp`, helper parity assertions | Direct-network tuple/path semantics align. |
 | IPv4 options | exact | `CommonDirectNetworkDissectionTests.cpp`, `PacketDetails` coverage | Options remain IPv4-local metadata, not independent path identity. |
 | IPv6 | exact | `CommonDirectNetworkDissectionTests.cpp`, fixture parity helpers | Direct-network tuple/path semantics align. |
@@ -175,11 +175,14 @@ Status vocabulary used here is intentionally narrow:
 
 | ID | Protocol / family | Fixture or source location | Production behavior | Shadow behavior | Import-visible consequence | Recommended resolution | Risk | Suggested separate commit message |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| B1 | ARP | `src/core/decode/PacketDecoder.cpp`, `tests/unit/ArpPcapFixtureTests.cpp`, `tests/unit/CommonDirectRegistryEngineTests.cpp` | Recognized as flow-bearing import traffic on carrier-only path. | Finalized as `recognized_non_flow` with `LayerKey::arp()`. | Flow counts, summary counts, flow rows, and persistent path identity all change. | Decide whether cutover should preserve legacy ARP-as-flow semantics or intentionally migrate production to non-flow ARP semantics; do not cut over until both import classification and persistent path policy are aligned. | medium | `Align ARP shadow import semantics` |
 | B3 | PPPoE / PPP declared-boundary policy | `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_payload.pcap`, `tests/unit/CommonDirectLinkDissectionTests.cpp`, `docs/dissection-engine-rfc.md` | Legacy accepts PPPoE length `33` with inner IPv4 Total Length `37` and recognizes a flow. | Shadow rejects the inner IPv4 child because it exceeds the enclosing PPPoE declared boundary. | Import outcome flips from recognized flow to malformed/unrecognized. | Make an explicit policy decision in a dedicated commit: either (1) emulate the current legacy permissive bounded behavior locally for PPPoE import, or (2) intentionally tighten production import to declared PPPoE boundaries. Weakening the global `PacketSlice` declared-boundary invariant is not acceptable. | high | `Resolve PPPoE declared-boundary policy` |
 
 Resolved note:
 
+- ARP is no longer an active blocker. Shadow still emits a visible
+  `DissectionLayerKind::arp` step with `ArpFacts`, but supported ARP now
+  finalizes as a recognized portless IPv4 flow and no longer contributes a
+  persistent `LayerKey::arp()` path layer.
 - ICMP and ICMPv6 are no longer active blockers. Shadow still emits visible
   `DissectionLayerKind::icmp` / `DissectionLayerKind::icmpv6` steps with typed
   facts, but successful terminal steps no longer contribute persistent
@@ -187,34 +190,26 @@ Resolved note:
 
 ## Exact blocking findings
 
-### 1. ARP is not cutover-ready
+### 1. ARP import/path parity is resolved
 
-Production import behavior:
+Current behavior:
 
-- `PacketDecoder::decode(...)` recognizes IPv4 ARP directly and returns
-  `IngestedPacketV4` with `ProtocolId::arp`.
-- The resulting path is only the outer carrier path already present in
-  `base_builder`.
-- Production fixture tests expect real flow rows and packet counts for ARP.
+- `PacketDecoder::decode(...)` and shadow import both recognize supported IPv4
+  ARP as a portless IPv4 flow with `ProtocolId::arp`;
+- shadow still emits a visible `arp` step and keeps `ArpFacts` available for
+  diagnostics and packet-details presentation;
+- sender/target protocol addresses now populate the shadow flow endpoints;
+- the persistent path now remains on the production-compatible enclosing
+  carrier/tunnel path only, without a terminal `LayerKey::arp()`.
 
-Shadow behavior:
+Effect:
 
-- `dissect_arp(...)` emits `LayerKey::arp()`.
-- `dissect_arp(...)` sets `TerminalDisposition::recognized_non_flow`.
-- `ImportDissectionCollector` finalizes ARP as `recognized_non_flow`.
-- `CommonDirectRegistryEngineTests.cpp` explicitly expects
-  `format_shadow_path(arp_shadow) == "EthernetII -> ARP"`.
-
-Impact:
-
-- summary packet/flow counts would change;
-- ARP would move from flow rows to a non-flow bucket;
-- persistent path identity would change from carrier-only to `... -> ARP`;
-- carrier-wrapped ARP cases also remain classification-divergent where shadow
-  still finalizes as `recognized_non_flow`, even when some wrapped-path text is
-  already kept compatible with legacy.
-
-This is a cutover blocker.
+- summary packet counts and flow-row accounting now match legacy production for
+  supported ARP contexts;
+- `ProtocolPathRegistry` identity no longer diverges solely because the terminal
+  protocol is ARP;
+- malformed or truncated ARP remains conservative and does not fabricate flows
+  or registry entries.
 
 ### 2. ICMP and ICMPv6 path parity is resolved
 
@@ -406,8 +401,7 @@ Recommended verdict:
 
 Reason:
 
-1. ARP import semantics differ materially.
-2. PPPoE fixture 20 remains an intentional import-semantic divergence.
+1. PPPoE fixture 20 remains an intentional import-semantic divergence.
 
 Everything else inspected here points to a strong migration foundation:
 
@@ -420,8 +414,7 @@ But the remaining blockers are import-contract blockers, not cosmetic ones.
 
 ## Minimum expected sequence before cutover
 
-1. Align ARP import classification and persistent path semantics.
-2. Resolve PPPoE fixture 20 declared-boundary behavior explicitly.
-3. Add the import adapter and full-session parity harness.
-4. Validate representative real captures and import performance.
-5. Cut over production import in a single dedicated change.
+1. Resolve PPPoE fixture 20 declared-boundary behavior explicitly.
+2. Add the import adapter and full-session parity harness.
+3. Validate representative real captures and import performance.
+4. Cut over production import in a single dedicated change.

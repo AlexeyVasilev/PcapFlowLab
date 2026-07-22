@@ -128,8 +128,11 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
             } else if constexpr (std::is_same_v<Facts, ArpFacts>) {
                 facts_.has_arp_addresses = true;
                 facts_.arp_addresses = layer_facts;
-                if (layer_facts.has_sender_ipv4 || layer_facts.has_target_ipv4) {
+                if (layer_facts.has_sender_ipv4 && layer_facts.has_target_ipv4) {
                     facts_.family = DissectionAddressFamily::ipv4;
+                    facts_.has_flow_addresses = true;
+                    facts_.src_addr_v4 = layer_facts.sender_ipv4;
+                    facts_.dst_addr_v4 = layer_facts.target_ipv4;
                 }
                 facts_.terminal_protocol = ProtocolId::arp;
             } else if constexpr (std::is_same_v<Facts, Ipv4Facts>) {

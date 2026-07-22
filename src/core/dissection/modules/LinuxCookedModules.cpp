@@ -185,7 +185,7 @@ DissectionStep dissect_linux_cooked_arp(const PacketSlice& slice) {
             .sender_ipv4 = parsed.sender_ipv4,
             .target_ipv4 = parsed.target_ipv4,
         },
-        .terminal_disposition = TerminalDisposition::recognized_non_flow,
+        .terminal_disposition = TerminalDisposition::flow_candidate,
         .status = ParseStatus::complete,
         .stop_reason = StopReason::terminal_protocol,
     };

@@ -103,7 +103,6 @@ DissectionStep dissect_arp(const PacketSlice& slice) {
 
     return DissectionStep {
         .layer = DissectionLayerKind::arp,
-        .path_contribution = LayerKey::arp(),
         .bounds = make_exact_arp_bounds(slice, parsed.declared_length),
         .facts = ArpFacts {
             .hardware_type = parsed.hardware_type,
@@ -116,7 +115,7 @@ DissectionStep dissect_arp(const PacketSlice& slice) {
             .sender_ipv4 = parsed.sender_ipv4,
             .target_ipv4 = parsed.target_ipv4,
         },
-        .terminal_disposition = TerminalDisposition::recognized_non_flow,
+        .terminal_disposition = TerminalDisposition::flow_candidate,
         .status = ParseStatus::complete,
         .stop_reason = StopReason::terminal_protocol,
     };

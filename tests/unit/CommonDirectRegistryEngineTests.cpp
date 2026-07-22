@@ -957,17 +957,57 @@ void expect_shadow_depth_limit_reports_partial_step_sequence(const DissectionReg
 
 void expect_shadow_arp_terminal_and_failure_behavior(const DissectionRegistry& registry) {
     const auto arp_bytes = make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1));
+    const auto arp_packet = make_raw_packet(arp_bytes);
+    const auto arp_steps = collect_shadow_steps(arp_packet, registry);
+    const std::vector<DissectionLayerKind> expected_arp_kinds {
+        DissectionLayerKind::ethernet_ii,
+        DissectionLayerKind::arp,
+    };
+    const auto expected_arp_path = ProtocolPath({LayerKey::ethernet_ii()});
+    PFL_REQUIRE(arp_steps.size() == 2U);
+    PFL_EXPECT(collect_step_kinds(arp_steps) == expected_arp_kinds);
+    PFL_EXPECT(!arp_steps[1].path_contribution.has_value());
+    PFL_EXPECT(std::holds_alternative<ArpFacts>(arp_steps[1].facts));
 
-    const auto arp_shadow = run_shadow(make_raw_packet(arp_bytes), registry);
-    PFL_EXPECT(arp_shadow.outcome == ImportDissectionOutcome::recognized_non_flow);
+    const auto arp_shadow = run_shadow(arp_packet, registry);
+    const auto arp_legacy = decode_legacy_direct(arp_packet);
+    PFL_REQUIRE(arp_legacy.recognized_flow);
+    PFL_EXPECT(arp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(arp_shadow.stop_reason == StopReason::terminal_protocol);
     PFL_EXPECT(arp_shadow.terminal_protocol == ProtocolId::arp);
+    PFL_EXPECT(arp_shadow.family == DissectionAddressFamily::ipv4);
+    PFL_EXPECT(arp_shadow.has_flow_addresses);
+    PFL_EXPECT(arp_shadow.src_addr_v4 == arp_legacy.src_addr_v4);
+    PFL_EXPECT(arp_shadow.dst_addr_v4 == arp_legacy.dst_addr_v4);
     PFL_EXPECT(arp_shadow.has_arp_addresses);
     PFL_EXPECT(arp_shadow.arp_addresses.has_sender_ipv4);
     PFL_EXPECT(arp_shadow.arp_addresses.has_target_ipv4);
     PFL_EXPECT(arp_shadow.arp_addresses.sender_ipv4 == ipv4(10, 10, 12, 2));
     PFL_EXPECT(arp_shadow.arp_addresses.target_ipv4 == ipv4(10, 10, 12, 1));
-    PFL_EXPECT(format_shadow_path(arp_shadow) == "EthernetII -> ARP");
+    PFL_EXPECT(!arp_shadow.has_ports);
+    PFL_EXPECT(shadow_path(arp_shadow) == arp_legacy.path);
+    PFL_EXPECT(shadow_path(arp_shadow) == expected_arp_path);
+    PFL_EXPECT(format_shadow_path(arp_shadow) == "EthernetII");
+
+    const auto tagged_arp_packet = make_raw_packet(add_vlan_tags(
+        make_ethernet_arp_packet(ipv4(10, 10, 12, 2), ipv4(10, 10, 12, 1)),
+        {{0x8100U, 100U}}
+    ));
+    const auto tagged_arp_shadow = run_shadow(tagged_arp_packet, registry);
+    const auto tagged_arp_legacy = decode_legacy_direct(tagged_arp_packet);
+    PFL_REQUIRE(tagged_arp_legacy.recognized_flow);
+    PFL_EXPECT(tagged_arp_shadow.outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(shadow_path(tagged_arp_shadow) == tagged_arp_legacy.path);
+
+    ProtocolPathRegistry path_registry {};
+    const auto direct_legacy_id = path_registry.intern(arp_legacy.path);
+    const auto direct_shadow_id = path_registry.intern(shadow_path(arp_shadow));
+    const auto tagged_shadow_id = path_registry.intern(shadow_path(tagged_arp_shadow));
+    PFL_EXPECT(direct_legacy_id != kInvalidProtocolPathId);
+    PFL_EXPECT(direct_legacy_id == direct_shadow_id);
+    PFL_EXPECT(tagged_shadow_id != kInvalidProtocolPathId);
+    PFL_EXPECT(tagged_shadow_id != direct_shadow_id);
+    const auto registry_size_before_malformed = path_registry.size();
 
     auto truncated_arp_packet = arp_bytes;
     truncated_arp_packet.resize(18U);
@@ -987,6 +1027,7 @@ void expect_shadow_arp_terminal_and_failure_behavior(const DissectionRegistry& r
     PFL_EXPECT(impossible_arp_shadow.stop_reason == StopReason::malformed);
     PFL_EXPECT(impossible_arp_shadow.terminal_protocol == ProtocolId::unknown);
     PFL_EXPECT(format_shadow_path(impossible_arp_shadow) == "EthernetII");
+    PFL_EXPECT(path_registry.size() == registry_size_before_malformed);
 }
 
 }  // namespace

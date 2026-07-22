@@ -95,11 +95,10 @@ void expect_shadow_matches_legacy_portless_terminal_flow(
     const std::string& expected_path,
     StopReason expected_stop_reason
 );
-void expect_shadow_matches_legacy_recognized_non_flow(
+void expect_shadow_matches_legacy_arp_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
-    const std::string& expected_shadow_path,
-    const std::string& expected_legacy_path,
+    const std::string& expected_path,
     StopReason expected_stop_reason
 );
 void record_step_kind(void* context, const DissectionStep& step);

@@ -333,11 +333,10 @@ void expect_shadow_matches_legacy_portless_terminal_flow(
     PFL_EXPECT(shadow.tcp_flags == 0U);
 }
 
-void expect_shadow_matches_legacy_recognized_non_flow(
+void expect_shadow_matches_legacy_arp_flow(
     const DissectionRegistry& registry,
     const RawPcapPacket& packet,
-    const std::string& expected_shadow_path,
-    const std::string& expected_legacy_path,
+    const std::string& expected_path,
     const StopReason expected_stop_reason
 ) {
     const auto legacy = decode_legacy_direct(packet);
@@ -345,19 +344,29 @@ void expect_shadow_matches_legacy_recognized_non_flow(
 
     PFL_REQUIRE(legacy.recognized_flow);
     PFL_EXPECT(legacy.protocol == ProtocolId::arp);
-    PFL_EXPECT(format_protocol_path(legacy.path) == expected_legacy_path);
+    PFL_EXPECT(format_protocol_path(legacy.path) == expected_path);
 
-    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_non_flow);
+    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == expected_stop_reason);
+    PFL_EXPECT(shadow_path(shadow) == legacy.path);
     PFL_EXPECT(shadow.terminal_protocol == ProtocolId::arp);
     PFL_EXPECT(shadow.family == DissectionAddressFamily::ipv4);
     PFL_EXPECT(shadow.has_arp_addresses);
-    PFL_EXPECT(format_shadow_path(shadow) == expected_shadow_path);
+    PFL_EXPECT(shadow.has_flow_addresses);
+    PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
+    PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
+    PFL_EXPECT(shadow.arp_addresses.has_sender_ipv4);
+    PFL_EXPECT(shadow.arp_addresses.has_target_ipv4);
+    PFL_EXPECT(shadow.arp_addresses.sender_ipv4 == legacy.src_addr_v4);
+    PFL_EXPECT(shadow.arp_addresses.target_ipv4 == legacy.dst_addr_v4);
+    PFL_EXPECT(format_shadow_path(shadow) == expected_path);
     PFL_EXPECT(!shadow.has_ports);
     PFL_EXPECT(shadow.src_port == 0U);
     PFL_EXPECT(shadow.dst_port == 0U);
     PFL_EXPECT(!shadow.has_transport_payload_length);
+    PFL_EXPECT(shadow.captured_transport_payload_length == 0U);
     PFL_EXPECT(!shadow.has_tcp_flags);
+    PFL_EXPECT(shadow.tcp_flags == 0U);
 }
 
 void record_step_kind(void* context, const DissectionStep& step) {

@@ -181,9 +181,14 @@ void expect_shadow_arp_fixture(
     if (expected_path.has_value()) {
         PFL_EXPECT(legacy_path_text == *expected_path);
     }
-    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_non_flow);
+    PFL_EXPECT(shadow.outcome == ImportDissectionOutcome::recognized_flow);
     PFL_EXPECT(shadow.stop_reason == StopReason::terminal_protocol);
     PFL_EXPECT(shadow.terminal_protocol == ProtocolId::arp);
+    PFL_EXPECT(shadow.family == legacy.family);
+    PFL_EXPECT(shadow.has_flow_addresses == legacy.has_addresses);
+    PFL_EXPECT(shadow.src_addr_v4 == legacy.src_addr_v4);
+    PFL_EXPECT(shadow.dst_addr_v4 == legacy.dst_addr_v4);
+    PFL_EXPECT(shadow_path(shadow) == legacy.path);
     PFL_EXPECT(format_shadow_path(shadow) == legacy_path_text);
     PFL_EXPECT(shadow.has_arp_addresses);
     PFL_EXPECT(!shadow.has_ports);

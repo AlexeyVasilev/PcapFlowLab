@@ -300,7 +300,7 @@ Known shadow parity gaps: `tests/data/parsing/pppoe/20_pppoe_bad_length_extra_pa
 
 This matches how the current code already branches, but moves those branch tables out of one monolithic traversal function.
 
-Linux cooked root dissection follows the same staged rule set in shadow mode. `DLT_LINUX_SLL` and `DLT_LINUX_SLL2` are root link-type modules that dispatch only the currently supported cooked-root protocol types for IPv4, IPv6, and ARP through a dedicated selector domain. Their root path contribution uses an explicit commit policy that succeeds for either recognized flows or recognized non-flow terminals such as ARP. Nested policy composition remains monotonic here as well, and the current implementation models that with one linear active descendant policy rather than a general branching scope stack. Unsupported cooked-root VLAN/QinQ values remain conservative no-flow cases. Current shadow ARP behavior is still intentionally divergent from production import: the shadow ARP step finalizes as `recognized_non_flow` and contributes an `ARP` path layer, while production import persists IPv4 ARP as a flow on the carrier path only. The static parity audit therefore treats ARP as a cutover blocker rather than a resolved parity slice.
+Linux cooked root dissection follows the same staged rule set in shadow mode. `DLT_LINUX_SLL` and `DLT_LINUX_SLL2` are root link-type modules that dispatch only the currently supported cooked-root protocol types for IPv4, IPv6, and ARP through a dedicated selector domain. Their root path contribution uses an explicit commit policy that succeeds for either recognized flows or recognized non-flow terminals when those policies are selected by descendants. Nested policy composition remains monotonic here as well, and the current implementation models that with one linear active descendant policy rather than a general branching scope stack. Unsupported cooked-root VLAN/QinQ values remain conservative no-flow cases. Under the current import-compatible ARP policy, the shadow ARP step still remains visible and retains `ArpFacts`, but supported IPv4 ARP now finalizes as a recognized portless IPv4 flow on the enclosing cooked-root carrier path only, without a terminal persistent `ARP` path layer.
 
 Transport dissectors such as TCP, UDP, and SCTP should remain address-family-agnostic and be reusable across both `SelectorDomain::ip_protocol` and `SelectorDomain::ipv6_next_header` registrations.
 
@@ -834,10 +834,9 @@ remaining work is parity closure and production integration.
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
 The July 22, 2026 static audit in
-`docs/dissection-engine-parity-audit.md` shows two blocking semantic gaps
+`docs/dissection-engine-parity-audit.md` shows one blocking semantic gap
 remaining before this stage can be considered complete:
 
-- ARP import classification and persistent-path parity;
 - PPPoE fixture `20_pppoe_bad_length_extra_payload.pcap` declared-boundary policy.
 
 ### Stage 5: single production import cutover (`not started`)
@@ -927,12 +926,11 @@ Do not switch production import to the new engine until all of these are true ac
 The branch is past foundational shadow implementation. The next work should be
 sequenced as an explicit cutover-preparation plan:
 
-1. resolve ARP import classification and path parity;
-2. make an explicit PPPoE fixture-20 declared-boundary policy decision and align behavior to it;
-3. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
-4. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
-5. run representative real-capture correctness and import-performance validation;
-6. cut over production import in one dedicated change.
+1. make an explicit PPPoE fixture-20 declared-boundary policy decision and align behavior to it;
+2. implement an import adapter from `ImportDissectionFacts` into the existing `DecodedPacket` / `IngestedPacket` import contract;
+3. add a full-session legacy-vs-shadow import parity harness covering summary counts, flow rows, connections, unrecognized rows, protocol-path registry contents, and persisted packet metadata;
+4. run representative real-capture correctness and import-performance validation;
+5. cut over production import in one dedicated change.
 
 Keep production `PacketDecoder` unchanged until the remaining semantic blockers and
 the import-integration prerequisites are all closed explicitly.

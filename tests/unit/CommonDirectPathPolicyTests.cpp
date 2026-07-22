@@ -73,20 +73,29 @@ DissectionStep make_udp_terminal_step(
     };
 }
 
-DissectionStep make_arp_terminal_step(
-    const std::uint32_t sender_ipv4,
-    const std::uint32_t target_ipv4,
+DissectionStep make_portless_flow_terminal_step(
+    const std::uint8_t protocol,
+    const std::uint32_t src_addr,
+    const std::uint32_t dst_addr,
     const std::optional<LayerKey>& path_contribution = std::nullopt
 ) {
     return DissectionStep {
-        .layer = DissectionLayerKind::arp,
+        .layer = DissectionLayerKind::ipv4,
         .path_contribution = path_contribution,
-        .facts = ArpFacts {
-            .has_sender_ipv4 = true,
-            .has_target_ipv4 = true,
-            .sender_ipv4 = sender_ipv4,
-            .target_ipv4 = target_ipv4,
+        .facts = Ipv4Facts {
+            .protocol = protocol,
+            .src_addr_v4 = src_addr,
+            .dst_addr_v4 = dst_addr,
         },
+        .terminal_disposition = TerminalDisposition::flow_candidate,
+        .status = ParseStatus::complete,
+        .stop_reason = StopReason::terminal_protocol,
+    };
+}
+
+DissectionStep make_recognized_non_flow_terminal_step() {
+    return DissectionStep {
+        .layer = DissectionLayerKind::unknown,
         .terminal_disposition = TerminalDisposition::recognized_non_flow,
         .status = ParseStatus::complete,
         .stop_reason = StopReason::terminal_protocol,
@@ -174,6 +183,35 @@ void expect_deferrable_paths_remain_uncommitted_on_truncation() {
     }
 }
 
+void expect_descendant_policy_cannot_weaken_parent_flow_commit() {
+    ImportDissectionCollector collector {};
+    collector.consume(make_path_step(
+        DissectionLayerKind::ethernet_ii,
+        LayerKey::ethernet_ii()
+    ));
+    collector.consume(make_path_step(
+        DissectionLayerKind::pppoe,
+        LayerKey::pppoe(),
+        PathCommitPolicy::recognized_flow,
+        PathCommitPolicy::recognized_flow
+    ));
+    collector.consume(make_path_step(
+        DissectionLayerKind::ppp,
+        LayerKey::ppp(),
+        PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+        PathCommitPolicy::recognized_flow_or_recognized_non_flow
+    ));
+    collector.consume(make_portless_flow_terminal_step(
+        detail::kIpProtocolIcmp,
+        ipv4(198, 51, 100, 10),
+        ipv4(198, 51, 100, 1)
+    ));
+    collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
+
+    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> PPPoE -> PPP");
+}
+
 void expect_descendant_policy_cannot_weaken_parent_non_flow_commit() {
     ImportDissectionCollector collector {};
     collector.consume(make_path_step(
@@ -192,18 +230,14 @@ void expect_descendant_policy_cannot_weaken_parent_non_flow_commit() {
         PathCommitPolicy::recognized_flow_or_recognized_non_flow,
         PathCommitPolicy::recognized_flow_or_recognized_non_flow
     ));
-    collector.consume(make_arp_terminal_step(
-        ipv4(198, 51, 100, 10),
-        ipv4(198, 51, 100, 1),
-        LayerKey::arp()
-    ));
+    collector.consume(make_recognized_non_flow_terminal_step());
     collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
 
     PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
     PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII");
 }
 
-void expect_intermediate_non_flow_policy_can_commit_nested_path() {
+void expect_intermediate_flow_or_non_flow_policy_can_commit_nested_path_for_recognized_flow() {
     {
         ImportDissectionCollector collector {};
         collector.consume(make_path_step(
@@ -222,11 +256,67 @@ void expect_intermediate_non_flow_policy_can_commit_nested_path() {
             PathCommitPolicy::recognized_flow,
             PathCommitPolicy::recognized_flow
         ));
-        collector.consume(make_arp_terminal_step(
+        collector.consume(make_portless_flow_terminal_step(
+            detail::kIpProtocolIcmp,
             ipv4(198, 51, 100, 20),
-            ipv4(198, 51, 100, 1),
-            LayerKey::arp()
+            ipv4(198, 51, 100, 1)
         ));
+        collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> LinuxSll -> PPPoE");
+    }
+
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(make_path_step(
+            DissectionLayerKind::ethernet_ii,
+            LayerKey::ethernet_ii()
+        ));
+        collector.consume(make_path_step(
+            DissectionLayerKind::pppoe,
+            LayerKey::pppoe(),
+            PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            PathCommitPolicy::recognized_flow_or_recognized_non_flow
+        ));
+        collector.consume(make_path_step(
+            DissectionLayerKind::ppp,
+            LayerKey::ppp(),
+            PathCommitPolicy::recognized_flow,
+            PathCommitPolicy::recognized_flow
+        ));
+        collector.consume(make_portless_flow_terminal_step(
+            detail::kIpProtocolIcmp,
+            ipv4(203, 0, 113, 10),
+            ipv4(203, 0, 113, 1)
+        ));
+        collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
+
+        PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> PPPoE -> PPP");
+    }
+}
+
+void expect_intermediate_flow_or_non_flow_policy_can_commit_nested_path_for_recognized_non_flow() {
+    {
+        ImportDissectionCollector collector {};
+        collector.consume(make_path_step(
+            DissectionLayerKind::ethernet_ii,
+            LayerKey::ethernet_ii()
+        ));
+        collector.consume(make_path_step(
+            DissectionLayerKind::linux_sll,
+            LayerKey::linux_sll(),
+            PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+            PathCommitPolicy::recognized_flow_or_recognized_non_flow
+        ));
+        collector.consume(make_path_step(
+            DissectionLayerKind::pppoe,
+            LayerKey::pppoe(),
+            PathCommitPolicy::recognized_flow,
+            PathCommitPolicy::recognized_flow
+        ));
+        collector.consume(make_recognized_non_flow_terminal_step());
         collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
 
         PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
@@ -251,11 +341,7 @@ void expect_intermediate_non_flow_policy_can_commit_nested_path() {
             PathCommitPolicy::recognized_flow,
             PathCommitPolicy::recognized_flow
         ));
-        collector.consume(make_arp_terminal_step(
-            ipv4(203, 0, 113, 10),
-            ipv4(203, 0, 113, 1),
-            LayerKey::arp()
-        ));
+        collector.consume(make_recognized_non_flow_terminal_step());
         collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
 
         PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
@@ -263,7 +349,7 @@ void expect_intermediate_non_flow_policy_can_commit_nested_path() {
     }
 }
 
-void expect_descendant_flow_policy_alone_does_not_commit_non_flow_parent_path() {
+void expect_descendant_flow_policy_does_not_retroactively_tighten_immediate_parent_path() {
     ImportDissectionCollector collector {};
     collector.consume(make_path_step(
         DissectionLayerKind::ethernet_ii,
@@ -279,15 +365,61 @@ void expect_descendant_flow_policy_alone_does_not_commit_non_flow_parent_path() 
         DissectionLayerKind::ipv4,
         LayerKey::ipv4()
     ));
-    collector.consume(make_arp_terminal_step(
+    collector.consume(make_portless_flow_terminal_step(
+        detail::kIpProtocolIcmp,
         ipv4(203, 0, 113, 30),
-        ipv4(203, 0, 113, 1),
-        LayerKey::arp()
+        ipv4(203, 0, 113, 1)
     ));
     collector.finish(make_test_result(StopReason::terminal_protocol, 4U));
 
-    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_flow);
+    PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII -> PPPoE -> IPv4");
+}
+
+void expect_unrecognized_terminal_commits_only_immediate_paths() {
+    ImportDissectionCollector collector {};
+    collector.consume(make_path_step(
+        DissectionLayerKind::ethernet_ii,
+        LayerKey::ethernet_ii()
+    ));
+    collector.consume(make_path_step(
+        DissectionLayerKind::pppoe,
+        LayerKey::pppoe(),
+        PathCommitPolicy::recognized_flow_or_recognized_non_flow
+    ));
+    collector.consume(make_path_step(
+        DissectionLayerKind::ppp,
+        LayerKey::ppp(),
+        PathCommitPolicy::recognized_flow
+    ));
+    collector.finish(make_test_result(StopReason::unsupported_variant, 3U));
+
+    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::unrecognized);
     PFL_EXPECT(format_shadow_path(collector.facts()) == "EthernetII");
+}
+
+void expect_recognized_non_flow_commits_deferred_parent_path() {
+    ImportDissectionCollector collector {};
+    collector.consume(make_path_step(
+        DissectionLayerKind::ieee8023,
+        LayerKey::ieee8023(),
+        PathCommitPolicy::immediate,
+        std::nullopt,
+        true
+    ));
+    collector.consume(make_path_step(
+        DissectionLayerKind::llc_snap,
+        LayerKey::llc_snap(),
+        PathCommitPolicy::recognized_flow_or_recognized_non_flow,
+        std::nullopt,
+        false,
+        true
+    ));
+    collector.consume(make_recognized_non_flow_terminal_step());
+    collector.finish(make_test_result(StopReason::terminal_protocol, 3U));
+
+    PFL_EXPECT(collector.facts().outcome == ImportDissectionOutcome::recognized_non_flow);
+    PFL_EXPECT(format_shadow_path(collector.facts()) == "IEEE 802.3 -> LLC/SNAP");
 }
 
 void expect_recognized_flow_commits_deferred_parent_path() {
@@ -329,9 +461,13 @@ void expect_recognized_flow_commits_deferred_parent_path() {
 void run_common_direct_path_policy_tests() {
     expect_path_policy_combination_algebra();
     expect_deferrable_paths_remain_uncommitted_on_truncation();
+    expect_descendant_policy_cannot_weaken_parent_flow_commit();
     expect_descendant_policy_cannot_weaken_parent_non_flow_commit();
-    expect_intermediate_non_flow_policy_can_commit_nested_path();
-    expect_descendant_flow_policy_alone_does_not_commit_non_flow_parent_path();
+    expect_intermediate_flow_or_non_flow_policy_can_commit_nested_path_for_recognized_flow();
+    expect_intermediate_flow_or_non_flow_policy_can_commit_nested_path_for_recognized_non_flow();
+    expect_descendant_flow_policy_does_not_retroactively_tighten_immediate_parent_path();
+    expect_unrecognized_terminal_commits_only_immediate_paths();
+    expect_recognized_non_flow_commits_deferred_parent_path();
     expect_recognized_flow_commits_deferred_parent_path();
 }
 
