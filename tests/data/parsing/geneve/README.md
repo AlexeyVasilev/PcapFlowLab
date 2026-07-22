@@ -216,7 +216,7 @@ Per packet:
 | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |
 | `0` | `92` | `16` | `106` | yes, exact 8-byte header only | yes | ordinary outer UDP fallback flow | no | `EthernetII -> IPv4 -> UDP` |
 | `1` | `40` | `20` | `54` | yes, but declared options overrun bounded UDP payload | yes | ordinary outer UDP fallback flow | no | `EthernetII -> IPv4 -> UDP` |
-| `2` | `36` | `72` | `106` | no usable Geneve reachability after top-level UDP declared-bounds failure | no | no flow | yes | none committed |
+| `2` | `36` | `72` | `106` | no usable Geneve reachability after top-level UDP declared-bounds failure | no | no flow | yes | none, because no persistent flow path is created |
 | `3` | `92` | `72` | `106` | yes | yes | recognized inner TCP flow | no | `EthernetII -> IPv4 -> UDP -> Geneve(vni=100) -> EthernetII -> IPv4 -> TCP` |
 
 Packet `2` is the important negative control:
@@ -224,7 +224,11 @@ Packet `2` is the important negative control:
 - outer IPv4 details are still available;
 - Geneve details are absent;
 - the packet lands in the unrecognized list;
-- no Geneve/VNI path is committed.
+- the shadow traversal still retains the successfully decoded outer
+  `EthernetII -> IPv4` layers diagnostically;
+- no UDP fallback flow is created;
+- no Geneve/VNI path is committed;
+- no persistent protocol-path registry entry is created.
 
 ## Generator note
 

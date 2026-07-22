@@ -59,6 +59,7 @@ void run_common_direct_eoip_dissection_tests();
 void run_common_direct_mpls_pseudowire_dissection_tests();
 void run_common_direct_transport_dissection_tests();
 void run_common_direct_vxlan_dissection_tests();
+void run_common_direct_geneve_dissection_tests();
 
 RawPcapPacket make_raw_packet(
     const std::vector<std::uint8_t>& captured_bytes,

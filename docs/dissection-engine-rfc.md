@@ -81,8 +81,10 @@ fixtures under `tests/data/parsing/geneve/` and the production-only assertions
 in `tests/unit/GenevePcapFixtureTests.cpp`.
 
 - The fixture contract covers the exact current production destination-port gate `6081`, version-`0` requirement, bounded 4-byte-unit option skipping, big-endian 24-bit VNI identity, restricted inner Ethernet continuation subset, unsupported inner-EtherType fallback behavior, nested-overlay non-recursion, and exact declared-bounds edge cases.
-- UDP and Ethernet canonical shadow parsers already exist and remain the future migration boundary for Geneve.
-- Shadow Geneve migration is still pending; this RFC note records only the now-explicit production contract and the intended shadow entry constraints.
+- UDP and Ethernet canonical shadow parsers already exist and remain the migration boundary for Geneve.
+- Shadow Geneve dissection now exists in the registry-driven path with the same strict UDP/6081 gate, bounded option skipping, VNI-bearing identity, tolerant OAM/Critical/control-bit handling, and the same restricted inner Ethernet continuation subset as the committed production fixture contract.
+- Unsupported inner Ethernet payloads and nested inner overlay lookalikes do not commit Geneve path identity in shadow mode; they fall back to the ordinary outer UDP flow exactly as the committed production Geneve fixtures require.
+- In the fixture-28 negative declared-bounds case, shadow traversal still retains the successfully decoded outer `EthernetII -> IPv4` layers diagnostically, but the packet remains unrecognized and produces no flow and no persistent protocol-path registry entry.
 
 ## Primary Architectural Decision
 

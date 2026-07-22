@@ -11,6 +11,7 @@ void run_common_direct_dissection_tests() {
     common_direct_test::run_common_direct_mpls_pseudowire_dissection_tests();
     common_direct_test::run_common_direct_transport_dissection_tests();
     common_direct_test::run_common_direct_vxlan_dissection_tests();
+    common_direct_test::run_common_direct_geneve_dissection_tests();
 }
 
 }  // namespace pfl::tests

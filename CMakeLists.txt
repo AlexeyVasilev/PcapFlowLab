@@ -60,6 +60,7 @@ add_library(
     src/core/dissection/modules/ControlMessageModules.cpp
     src/core/dissection/modules/EoipModule.cpp
     src/core/dissection/modules/GreModule.cpp
+    src/core/dissection/modules/GeneveModule.cpp
     src/core/dissection/modules/IpSecurityModules.cpp
     src/core/dissection/modules/Ipv4Module.cpp
     src/core/dissection/modules/Ipv6ExtensionModules.cpp
@@ -319,6 +320,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectMplsPseudowireDissectionTests.cpp
         tests/unit/CommonDirectTransportDissectionTests.cpp
         tests/unit/CommonDirectVxlanDissectionTests.cpp
+        tests/unit/CommonDirectGeneveDissectionTests.cpp
         tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp

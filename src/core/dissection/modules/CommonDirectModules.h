@@ -4,6 +4,7 @@
 #include "core/dissection/modules/ControlMessageModules.h"
 #include "core/dissection/modules/EoipModule.h"
 #include "core/dissection/modules/EthernetVlanModules.h"
+#include "core/dissection/modules/GeneveModule.h"
 #include "core/dissection/modules/GreModule.h"
 #include "core/dissection/modules/IpSecurityModules.h"
 #include "core/dissection/modules/Ipv4Module.h"

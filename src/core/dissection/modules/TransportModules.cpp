@@ -14,6 +14,10 @@ ProtocolSelector make_udp_payload_candidate_selector(const std::uint16_t dst_por
     };
 }
 
+bool is_udp_payload_candidate_port(const std::uint16_t dst_port) noexcept {
+    return dst_port == detail::kUdpPortVxlan || dst_port == detail::kUdpPortGeneve;
+}
+
 DissectionStep make_udp_terminal_step(const PacketSlice& slice, const ParsedUdpDatagram& parsed) {
     return DissectionStep {
         .layer = DissectionLayerKind::udp,
@@ -187,7 +191,7 @@ DissectionStep dissect_udp(const PacketSlice& slice) {
     }
 
     auto step = make_udp_terminal_step(slice, parsed);
-    if (parsed.dst_port != detail::kUdpPortVxlan) {
+    if (!is_udp_payload_candidate_port(parsed.dst_port)) {
         return step;
     }
 

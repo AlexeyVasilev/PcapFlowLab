@@ -102,6 +102,12 @@ enum class SelectorDomain : std::uint8_t {
     vxlan_inner_llc_snap_pid,
     vxlan_inner_ip_protocol,
     vxlan_inner_ipv6_next_header,
+    geneve_inner_frame,
+    geneve_inner_ether_type,
+    geneve_inner_ieee8023_payload,
+    geneve_inner_llc_snap_pid,
+    geneve_inner_ip_protocol,
+    geneve_inner_ipv6_next_header,
     count,
 };
 
@@ -162,6 +168,7 @@ enum class DissectionLayerKind : std::uint16_t {
     ipv6_destination_options,
     ipv6_fragment,
     vxlan,
+    geneve,
     gre,
     eoip,
     mpls,
@@ -395,6 +402,19 @@ struct VxlanFacts {
     [[nodiscard]] friend constexpr bool operator==(const VxlanFacts&, const VxlanFacts&) = default;
 };
 
+struct GeneveFacts {
+    std::uint8_t version {0U};
+    std::uint8_t option_length_words {0U};
+    bool oam_flag {false};
+    bool critical_flag {false};
+    std::uint8_t reserved_control_bits {0U};
+    std::uint16_t protocol_type {0U};
+    std::uint32_t vni {0U};
+    std::uint8_t reserved_trailer_byte {0U};
+
+    [[nodiscard]] friend constexpr bool operator==(const GeneveFacts&, const GeneveFacts&) = default;
+};
+
 struct MplsFacts {
     std::uint32_t label {0U};
     std::uint8_t traffic_class {0U};
@@ -501,6 +521,7 @@ using LayerFacts = std::variant<
     GreFacts,
     EoipFacts,
     VxlanFacts,
+    GeneveFacts,
     MplsFacts,
     MplsPseudowireFacts,
     AhFacts,
