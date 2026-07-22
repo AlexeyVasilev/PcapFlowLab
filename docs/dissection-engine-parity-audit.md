@@ -282,7 +282,7 @@ before any production import cutover can be called ready.
 | ID | Area | Current state | Required before cutover |
 | --- | --- | --- | --- |
 | I1 | Import adapter | Adapter-core now exists and is unit-covered at the `ImportDissectionFacts -> DecodedPacket` boundary. Runtime import still persists `PacketRef` capture context, protocol-path interning, `UnrecognizedPacketRecord`, and existing hint-detection side effects through the legacy `PacketDecoder` path. | Wire the adapter through `CaptureImportProcessor` only after the whole-session parity harness proves no regression in persisted packet/session state. |
-| I2 | Full-session parity harness | Current shadow tests are mostly packet- and fixture-local. | Add a whole-session legacy-vs-shadow harness that compares summary counters, flow rows, connections, packet counts per flow, unrecognized rows, protocol-path registry contents, and persisted packet metadata. |
+| I2 | Full-session parity harness | Implemented for a committed fixture-session corpus through `tests/unit/DissectionImportSessionParityTests.cpp`. The harness imports the same complete capture through legacy runtime import and a test-only unified path, then compares summary accounting, connection/flow grouping, `FlowKey`, `PacketRef`, protocol-path registry contents, unrecognized records, and persisted hint side effects. | Extend the parity corpus further only where remaining cutover risk is still unexercised. |
 | I3 | Real-capture correctness and performance validation | The current audit is static and fixture-driven only. | Validate representative real captures for correctness, import throughput, memory, and no-regression behavior before a single production cutover commit. |
 
 ## Diagnostic-only difference confirmed as safe for persistence
@@ -361,16 +361,18 @@ runtime cutover.
 The shadow test surface is broad, but this audit still does not prove full
 production-import equivalence end to end.
 
-- There is no full-session legacy-vs-shadow import harness yet.
-- There is now focused adapter coverage from `ImportDissectionFacts` into the
-  recognized-flow `DecodedPacket` contract, but there is still no full-session
-  exercised bridge for persisted `PacketRef` capture context,
-  `UnrecognizedPacketRecord`, and end-to-end session state.
-- The static audit does not prove byte-for-byte equivalence for:
-  - timestamps;
-  - file byte offsets;
-  - hint-detection side effects;
-  - final `CaptureState` persistence ordering.
+- There is now a committed full-session legacy-vs-shadow parity harness for a
+  representative fixture corpus, including multi-packet grouping, overlays,
+  fragmentation, hints, and negative cases such as PPPoE fixture 20 and
+  Geneve fixture 28.
+- That harness does not yet claim exhaustive coverage for every committed
+  fixture family or every reader/import mode permutation.
+- The current session corpus does not specifically target the classic-PCAP
+  staged-prefix import path for very large captured packets; that mode still
+  relies on existing legacy import tests plus future real-capture validation.
+- The current parity corpus is still fixture-driven; it does not replace
+  representative real-capture correctness, throughput, memory, or teardown
+  validation.
 - Families already marked `exact` above are exact only to the extent currently
   asserted by fixture and shadow tests; they are not yet backed by a universal
   capture-session diff harness.
@@ -440,6 +442,7 @@ blockers.
 
 ## Minimum expected sequence before cutover
 
-1. Add the full-session parity harness around the existing import adapter.
+1. Expand the full-session parity harness only where remaining fixture or mode
+   gaps are still material.
 2. Validate representative real captures and import performance.
 3. Cut over production import in a single dedicated change.

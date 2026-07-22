@@ -89,6 +89,7 @@ add_library(
     src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
     src/core/services/CaptureImportProcessor.cpp
+    src/core/services/CaptureImportApplication.cpp
     src/core/services/DissectionImportAdapter.cpp
     src/core/services/CaptureImporter.cpp
     src/core/services/ChunkedCaptureImporter.cpp
@@ -311,6 +312,7 @@ if(BUILD_TESTING)
         tests/unit/CommonDirectDissectionTests.cpp
         tests/unit/CommonDirectDissectionTestSupport.cpp
         tests/unit/DissectionImportAdapterTests.cpp
+        tests/unit/DissectionImportSessionParityTests.cpp
         tests/unit/CommonDirectCoreDissectionTests.cpp
         tests/unit/CommonDirectRegistryEngineTests.cpp
         tests/unit/CommonDirectCollectorTests.cpp

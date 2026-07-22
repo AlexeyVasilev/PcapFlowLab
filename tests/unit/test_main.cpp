@@ -37,6 +37,7 @@ void run_flow_key_tests();
 void run_dissection_foundation_tests();
 void run_common_direct_dissection_tests();
 void run_dissection_import_adapter_tests();
+void run_dissection_import_session_parity_tests();
 void run_protocol_path_tests();
 void run_connection_tests();
 void run_ingestor_tests();
@@ -177,6 +178,7 @@ int main() {
         {"dissection_foundation", pfl::tests::run_dissection_foundation_tests},
         {"common_direct_dissection", pfl::tests::run_common_direct_dissection_tests},
         {"dissection_import_adapter", pfl::tests::run_dissection_import_adapter_tests},
+        {"dissection_import_session_parity", pfl::tests::run_dissection_import_session_parity_tests},
         {"protocol_path", pfl::tests::run_protocol_path_tests},
         {"connection", pfl::tests::run_connection_tests},
         {"ingestor", pfl::tests::run_ingestor_tests},
