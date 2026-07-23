@@ -841,7 +841,11 @@ parity harness now exists at
 `tests/unit/DissectionImportSessionParityTests.cpp`, but runtime import still
 uses the legacy decoder path. A production-compatible bridge from
 `ImportDissectionFacts` into the existing recognized-flow `DecodedPacket`
-contract now exists, but it is not yet wired into runtime import.
+contract now exists, but it is not yet wired into runtime import. A
+developer-only validation executable now also exists for arbitrary local PCAP
+and PCAPNG imports, correctness diffing, classic-PCAP staged-prefix coverage,
+and single-process throughput reporting; production import nevertheless remains
+fully legacy during this stage.
 
 ### Stage 5: single production import cutover (`not started`)
 

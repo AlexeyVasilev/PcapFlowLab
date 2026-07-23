@@ -42,6 +42,8 @@ Parity-contract evidence:
 - `tests/unit/CommonDirectDissectionTestSupport.cpp`
 - `tests/unit/DissectionImportAdapterTests.cpp`
 - `tests/unit/CommonDirectCollectorTests.cpp`
+- `tests/unit/DissectionImportSessionParityTests.cpp`
+- `tests/unit/ImportValidationTests.cpp`
 - `tests/unit/CommonDirectRegistryEngineTests.cpp`
 - `tests/unit/CommonDirectLinkDissectionTests.cpp`
 - `tests/unit/CommonDirectEncapsulationDissectionTests.cpp`
@@ -53,6 +55,7 @@ Parity-contract evidence:
 - `tests/data/parsing/vxlan/README.md`
 - `tests/data/parsing/geneve/README.md`
 - `tests/data/parsing/gtpu/README.md`
+- `docs/dissection-import-validation.md`
 - `docs/dissection-engine-rfc.md`
 - `CMakeLists.txt`
 
@@ -283,7 +286,7 @@ before any production import cutover can be called ready.
 | --- | --- | --- | --- |
 | I1 | Import adapter | Adapter-core now exists and is unit-covered at the `ImportDissectionFacts -> DecodedPacket` boundary. Runtime import still persists `PacketRef` capture context, protocol-path interning, `UnrecognizedPacketRecord`, and existing hint-detection side effects through the legacy `PacketDecoder` path. | Wire the adapter through `CaptureImportProcessor` only after the whole-session parity harness proves no regression in persisted packet/session state. |
 | I2 | Full-session parity harness | Implemented for a committed fixture-session corpus through `tests/unit/DissectionImportSessionParityTests.cpp`. The harness imports the same complete capture through legacy runtime import and a test-only unified path, then compares summary accounting, connection/flow grouping, `FlowKey`, `PacketRef`, protocol-path registry contents, unrecognized records, and persisted hint side effects. | Extend the parity corpus further only where remaining cutover risk is still unexercised. |
-| I3 | Real-capture correctness and performance validation | The current audit is static and fixture-driven only. | Validate representative real captures for correctness, import throughput, memory, and no-regression behavior before a single production cutover commit. |
+| I3 | Real-capture correctness and performance validation | Developer-only validation tooling now exists for legacy/unified compare, single-mode throughput, peak-memory measurement, classic-PCAP staged-prefix parity, and PCAPNG validation coverage. Real-capture runs are still pending. | Run representative real captures and review correctness, import throughput, memory, and no-regression behavior before a single production cutover commit. |
 
 ## Diagnostic-only difference confirmed as safe for persistence
 
@@ -367,9 +370,10 @@ production-import equivalence end to end.
   Geneve fixture 28.
 - That harness does not yet claim exhaustive coverage for every committed
   fixture family or every reader/import mode permutation.
-- The current session corpus does not specifically target the classic-PCAP
-  staged-prefix import path for very large captured packets; that mode still
-  relies on existing legacy import tests plus future real-capture validation.
+- The committed session/tool coverage now includes a dedicated classic-PCAP
+  staged-prefix large-packet parity case, including a packet whose transport
+  header falls beyond the initial staged prefix and whose `origlen` exceeds
+  `caplen`.
 - The current parity corpus is still fixture-driven; it does not replace
   representative real-capture correctness, throughput, memory, or teardown
   validation.
@@ -442,7 +446,6 @@ blockers.
 
 ## Minimum expected sequence before cutover
 
-1. Expand the full-session parity harness only where remaining fixture or mode
-   gaps are still material.
-2. Validate representative real captures and import performance.
+1. Run the developer-only validation tool on representative real captures.
+2. Review correctness, throughput, and peak-memory deltas.
 3. Cut over production import in a single dedicated change.

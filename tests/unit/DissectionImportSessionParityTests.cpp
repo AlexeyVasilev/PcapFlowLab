@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "TestSupport.h"
+#include "PcapTestUtils.h"
 #include "core/index/CaptureIndex.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"
@@ -519,11 +520,11 @@ void expect_connection_equal(
 }
 
 void expect_fixture_import_parity(
-    const std::filesystem::path& relative_path,
+    const std::filesystem::path& capture_path,
+    const std::string& context_label,
     const CaptureImportOptions& options = {}
 ) {
-    const ScopedTestContext fixture_context {"fixture=" + relative_path.generic_string()};
-    const auto capture_path = fixture_path(relative_path);
+    const ScopedTestContext fixture_context {context_label};
 
     const auto legacy_state = import_capture_with_legacy_decoder_for_test(capture_path, options);
     const auto unified_state = import_capture_with_unified_dissection_for_test(capture_path, options);
@@ -577,6 +578,17 @@ void expect_fixture_import_parity(
     }
 }
 
+void expect_fixture_import_parity(
+    const std::filesystem::path& relative_path,
+    const CaptureImportOptions& options = {}
+) {
+    expect_fixture_import_parity(
+        fixture_path(relative_path),
+        "fixture=" + relative_path.generic_string(),
+        options
+    );
+}
+
 void expect_direct_and_hint_fixture_parity() {
     expect_fixture_import_parity("parsing/http/http_multi_message_3.pcap");
     expect_fixture_import_parity("parsing/tls/ipv4_tls_constricted_1.pcap");
@@ -618,6 +630,46 @@ void expect_negative_fixture_parity() {
     expect_fixture_import_parity("parsing/linux_cooked/11_sll_unknown_protocol.pcap");
 }
 
+void expect_classic_pcap_staged_prefix_session_parity() {
+    constexpr std::size_t kMinCapturedLengthForStagedImportBytes = 16U * 1024U;
+
+    std::vector<std::uint8_t> long_hop_by_hop_header {
+        17U,
+        19U,
+    };
+    long_hop_by_hop_header.resize(160U, 0x00U);
+
+    auto ipv6_payload = long_hop_by_hop_header;
+    const auto udp_payload_length =
+        static_cast<std::uint16_t>(kMinCapturedLengthForStagedImportBytes + 256U);
+    const auto udp_segment = make_ipv6_udp_segment(53000U, 443U, udp_payload_length);
+    ipv6_payload.insert(ipv6_payload.end(), udp_segment.begin(), udp_segment.end());
+
+    const auto large_ipv6_packet = make_ethernet_ipv6_packet(
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}),
+        ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2}),
+        0U,
+        ipv6_payload
+    );
+
+    const auto capture_path = write_temp_pcap(
+        "pfl_dissection_import_session_staged_prefix_ipv6_udp.pcap",
+        make_classic_pcap_with_captured_lengths({
+            ClassicPcapCapturedRecord {
+                .ts_usec = 100U,
+                .captured_bytes = large_ipv6_packet,
+                .original_length = static_cast<std::uint32_t>(large_ipv6_packet.size() + 512U),
+            },
+        })
+    );
+
+    expect_fixture_import_parity(
+        capture_path,
+        "fixture=synthetic/classic_pcap_staged_prefix_ipv6_udp",
+        {}
+    );
+}
+
 void expect_geneve_packet2_keeps_only_diagnostic_path() {
     const ScopedTestContext fixture_context {
         "fixture=parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap | packet=2"
@@ -651,6 +703,7 @@ void run_dissection_import_session_parity_tests() {
     expect_encapsulation_fixture_parity();
     expect_overlay_and_fragmentation_fixture_parity();
     expect_negative_fixture_parity();
+    expect_classic_pcap_staged_prefix_session_parity();
     expect_geneve_packet2_keeps_only_diagnostic_path();
 }
 
