@@ -5,10 +5,14 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <sstream>
+#include <tuple>
 #include <system_error>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "core/dissection/CommonDirectDissection.h"
@@ -67,6 +71,7 @@ struct ImportExecution {
     std::string error_text {};
     CaptureState state {};
     LegacyImportLoopMetrics loop_metrics {};
+    std::vector<ImportValidationPacketObservation> packet_observations {};
 };
 
 struct MismatchRecorder {
@@ -214,6 +219,211 @@ struct MismatchRecorder {
     return builder.str();
 }
 
+[[nodiscard]] bool protocol_path_less(const ProtocolPath& lhs, const ProtocolPath& rhs) {
+    return std::lexicographical_compare(
+        lhs.begin(),
+        lhs.end(),
+        rhs.begin(),
+        rhs.end(),
+        [](const LayerKey& left, const LayerKey& right) {
+            return left < right;
+        });
+}
+
+[[nodiscard]] PacketRef finalized_observation_packet_ref(
+    const RawPcapPacket& packet,
+    const PacketRef& semantic_packet_ref
+) {
+    auto packet_ref = packet_ref_from_raw_packet(packet);
+    packet_ref.payload_length = semantic_packet_ref.payload_length;
+    packet_ref.tcp_flags = semantic_packet_ref.tcp_flags;
+    packet_ref.is_ip_fragmented = semantic_packet_ref.is_ip_fragmented;
+    return packet_ref;
+}
+
+[[nodiscard]] ImportValidationPacketObservation make_base_observation(const RawPcapPacket& packet) {
+    return ImportValidationPacketObservation {
+        .packet_index = packet.packet_index,
+        .file_offset = packet.data_offset,
+        .captured_length = packet.captured_length,
+        .original_length = packet.original_length,
+        .link_type = packet.data_link_type,
+    };
+}
+
+[[nodiscard]] ImportValidationPacketObservation make_ipv4_observation(
+    const RawPcapPacket& packet,
+    const FlowKeyV4& flow_key,
+    const PacketRef& packet_ref,
+    const ProtocolPath& path,
+    const ImportValidationPacketClassification classification,
+    const dissection::ParseStatus final_status,
+    const dissection::StopReason stop_reason
+) {
+    auto observation = make_base_observation(packet);
+    observation.classification = classification;
+    observation.family = dissection::DissectionAddressFamily::ipv4;
+    observation.protocol = flow_key.protocol;
+    observation.has_addresses = true;
+    observation.src_addr_v4 = flow_key.src_addr;
+    observation.dst_addr_v4 = flow_key.dst_addr;
+    observation.has_ports = flow_key.src_port != 0U || flow_key.dst_port != 0U;
+    observation.src_port = flow_key.src_port;
+    observation.dst_port = flow_key.dst_port;
+    observation.has_transport_payload_length = packet_ref.payload_length > 0U;
+    observation.captured_transport_payload_length = packet_ref.payload_length;
+    observation.has_tcp_flags = flow_key.protocol == ProtocolId::tcp;
+    observation.tcp_flags = packet_ref.tcp_flags;
+    observation.fragmented = packet_ref.is_ip_fragmented;
+    observation.physical_path = path;
+    observation.final_status = final_status;
+    observation.stop_reason = stop_reason;
+    return observation;
+}
+
+[[nodiscard]] ImportValidationPacketObservation make_ipv6_observation(
+    const RawPcapPacket& packet,
+    const FlowKeyV6& flow_key,
+    const PacketRef& packet_ref,
+    const ProtocolPath& path,
+    const ImportValidationPacketClassification classification,
+    const dissection::ParseStatus final_status,
+    const dissection::StopReason stop_reason
+) {
+    auto observation = make_base_observation(packet);
+    observation.classification = classification;
+    observation.family = dissection::DissectionAddressFamily::ipv6;
+    observation.protocol = flow_key.protocol;
+    observation.has_addresses = true;
+    observation.src_addr_v6 = flow_key.src_addr;
+    observation.dst_addr_v6 = flow_key.dst_addr;
+    observation.has_ports = flow_key.src_port != 0U || flow_key.dst_port != 0U;
+    observation.src_port = flow_key.src_port;
+    observation.dst_port = flow_key.dst_port;
+    observation.has_transport_payload_length = packet_ref.payload_length > 0U;
+    observation.captured_transport_payload_length = packet_ref.payload_length;
+    observation.has_tcp_flags = flow_key.protocol == ProtocolId::tcp;
+    observation.tcp_flags = packet_ref.tcp_flags;
+    observation.fragmented = packet_ref.is_ip_fragmented;
+    observation.physical_path = path;
+    observation.final_status = final_status;
+    observation.stop_reason = stop_reason;
+    return observation;
+}
+
+[[nodiscard]] ImportValidationPacketObservation make_arp_observation_from_state(
+    const RawPcapPacket& packet,
+    const CaptureState& state
+) {
+    auto observation = make_base_observation(packet);
+    observation.classification = ImportValidationPacketClassification::recognized_non_flow;
+    observation.family = dissection::DissectionAddressFamily::ipv4;
+    observation.protocol = ProtocolId::arp;
+    observation.final_status = dissection::ParseStatus::complete;
+    observation.stop_reason = dissection::StopReason::terminal_protocol;
+
+    const auto connections = state.ipv4_connections.list();
+    if (!connections.empty()) {
+        const auto* connection = connections.front();
+        observation.has_addresses = true;
+        observation.src_addr_v4 = connection->key.first.addr;
+        observation.dst_addr_v4 = connection->key.second.addr;
+    }
+
+    return observation;
+}
+
+[[nodiscard]] ImportValidationPacketObservation observe_legacy_decoded_packet(
+    const RawPcapPacket& packet,
+    DecodedPacket& decoded
+) {
+    if (decoded.ipv4.has_value()) {
+        return make_ipv4_observation(
+            packet,
+            decoded.ipv4->flow_key,
+            finalized_observation_packet_ref(packet, decoded.ipv4->packet_ref),
+            decoded.protocol_path_builder.to_path(),
+            ImportValidationPacketClassification::recognized_flow,
+            dissection::ParseStatus::complete,
+            dissection::StopReason::terminal_protocol);
+    }
+
+    return make_ipv6_observation(
+        packet,
+        decoded.ipv6->flow_key,
+        finalized_observation_packet_ref(packet, decoded.ipv6->packet_ref),
+        decoded.protocol_path_builder.to_path(),
+        ImportValidationPacketClassification::recognized_flow,
+        dissection::ParseStatus::complete,
+        dissection::StopReason::terminal_protocol);
+}
+
+[[nodiscard]] ImportValidationPacketObservation observe_unified_import_decision(
+    const RawPcapPacket& packet,
+    const dissection::ImportDissectionFacts& facts,
+    const DissectionImportDecision& decision
+) {
+    if (decision.decoded_packet.has_value() && decision.decoded_packet->ipv4.has_value()) {
+        return make_ipv4_observation(
+            packet,
+            decision.decoded_packet->ipv4->flow_key,
+            finalized_observation_packet_ref(packet, decision.decoded_packet->ipv4->packet_ref),
+            decision.physical_path.to_path(),
+            ImportValidationPacketClassification::recognized_flow,
+            decision.final_status,
+            decision.stop_reason);
+    }
+
+    if (decision.decoded_packet.has_value() && decision.decoded_packet->ipv6.has_value()) {
+        return make_ipv6_observation(
+            packet,
+            decision.decoded_packet->ipv6->flow_key,
+            finalized_observation_packet_ref(packet, decision.decoded_packet->ipv6->packet_ref),
+            decision.physical_path.to_path(),
+            ImportValidationPacketClassification::recognized_flow,
+            decision.final_status,
+            decision.stop_reason);
+    }
+
+    if (facts.outcome == dissection::ImportDissectionOutcome::recognized_non_flow) {
+        auto observation = make_base_observation(packet);
+        observation.classification = ImportValidationPacketClassification::recognized_non_flow;
+        observation.family = facts.family;
+        observation.protocol = facts.terminal_protocol;
+        observation.has_addresses = facts.has_flow_addresses || facts.has_arp_addresses;
+        observation.src_addr_v4 = facts.src_addr_v4;
+        observation.dst_addr_v4 = facts.dst_addr_v4;
+        observation.src_addr_v6 = facts.src_addr_v6;
+        observation.dst_addr_v6 = facts.dst_addr_v6;
+        observation.has_ports = facts.has_ports;
+        observation.src_port = facts.src_port;
+        observation.dst_port = facts.dst_port;
+        observation.has_transport_payload_length = facts.has_transport_payload_length;
+        observation.captured_transport_payload_length = facts.captured_transport_payload_length;
+        observation.has_tcp_flags = facts.has_tcp_flags;
+        observation.tcp_flags = facts.tcp_flags;
+        observation.fragmented =
+            (facts.has_ipv4_fragmentation && facts.ipv4_fragmentation.is_fragmented) ||
+            (facts.has_ipv6_fragmentation && facts.ipv6_fragmentation.has_fragment_header);
+        observation.physical_path = decision.physical_path.to_path();
+        observation.final_status = decision.final_status;
+        observation.stop_reason = decision.stop_reason;
+        return observation;
+    }
+
+    auto observation = make_base_observation(packet);
+    observation.classification = ImportValidationPacketClassification::unrecognized;
+    observation.family = decision.family;
+    observation.protocol = decision.terminal_protocol;
+    observation.physical_path = decision.physical_path.to_path();
+    observation.final_status = decision.final_status;
+    observation.stop_reason = decision.stop_reason;
+    observation.unrecognized_reason = classify_unrecognized_packet_reason(
+        packet,
+        std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size()));
+    return observation;
+}
+
 template <typename T>
 void maybe_record_scalar_mismatch(
     MismatchRecorder& recorder,
@@ -350,8 +560,9 @@ template <typename Reader>
 bool legacy_import_reader_loop(
     Reader& reader,
     CaptureState& state,
-    const CaptureImportProcessor& processor,
+    const FlowHintService& hint_service,
     LegacyImportLoopMetrics& metrics,
+    std::vector<ImportValidationPacketObservation>& packet_observations,
     const std::optional<std::uint64_t> max_packets
 ) {
     while (!max_packets.has_value() || metrics.packets_processed < *max_packets) {
@@ -360,7 +571,25 @@ bool legacy_import_reader_loop(
             return !reader.has_error();
         }
 
-        processor.process_packet(*packet, state);
+        auto decoded = PacketDecoder {}.decode(*packet);
+        if (decoded.has_value()) {
+            packet_observations.push_back(observe_legacy_decoded_packet(*packet, decoded));
+            apply_decoded_packet_import(*packet, decoded, state, hint_service);
+        } else {
+            const auto packet_bytes = std::span<const std::uint8_t>(packet->bytes.data(), packet->bytes.size());
+            CaptureState arp_state {};
+            PacketIngestor arp_ingestor {arp_state};
+            if (ingest_fallback_arp_packet(*packet, packet_bytes, arp_ingestor, hint_service)) {
+                packet_observations.push_back(make_arp_observation_from_state(*packet, arp_state));
+            } else {
+                auto observation = make_base_observation(*packet);
+                observation.classification = ImportValidationPacketClassification::unrecognized;
+                observation.unrecognized_reason = classify_unrecognized_packet_reason(*packet, packet_bytes);
+                packet_observations.push_back(std::move(observation));
+            }
+            apply_unrecognized_packet_import(*packet, packet_bytes, state, hint_service);
+        }
+
         ++metrics.packets_processed;
         metrics.captured_bytes += packet->captured_length;
     }
@@ -368,11 +597,170 @@ bool legacy_import_reader_loop(
     return true;
 }
 
+bool process_classic_legacy_import_packet(
+    PcapReader& reader,
+    RawPcapPacket& packet,
+    CaptureState& state,
+    std::size_t& adaptive_header_prefix_bytes,
+    const FlowHintService& hint_service,
+    std::vector<ImportValidationPacketObservation>& packet_observations
+) {
+    const auto finalize_prefix_packet = [&reader, &packet]() {
+        return reader.finish_prefix_packet(packet);
+    };
+
+    if (const auto required_bytes = required_classic_import_prefix_bytes(packet); required_bytes.has_value()) {
+        if (!reader.materialize_packet_bytes(packet)) {
+            return false;
+        }
+
+        adaptive_header_prefix_bytes =
+            grow_adaptive_import_header_prefix(adaptive_header_prefix_bytes, *required_bytes);
+
+        auto decoded = PacketDecoder {}.decode(packet);
+        if (decoded.has_value()) {
+            packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
+            apply_decoded_packet_import(packet, decoded, state, hint_service);
+        } else {
+            const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+            CaptureState arp_state {};
+            PacketIngestor arp_ingestor {arp_state};
+            if (ingest_fallback_arp_packet(packet, packet_bytes, arp_ingestor, hint_service)) {
+                packet_observations.push_back(make_arp_observation_from_state(packet, arp_state));
+            } else {
+                auto observation = make_base_observation(packet);
+                observation.classification = ImportValidationPacketClassification::unrecognized;
+                observation.unrecognized_reason = classify_unrecognized_packet_reason(packet, packet_bytes);
+                packet_observations.push_back(std::move(observation));
+            }
+            apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
+        }
+        return true;
+    }
+
+    PacketIngestor ingestor {state};
+    auto decoded = PacketDecoder {}.decode(packet);
+    auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+
+    if (decoded.ipv4.has_value()) {
+        if (const auto payload_length =
+                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv4->flow_key.protocol);
+            payload_length.has_value()) {
+            decoded.ipv4->packet_ref.payload_length = *payload_length;
+        }
+
+        packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
+        decoded.ipv4->flow_key.protocol_path_id =
+            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
+        auto& connection = ingestor.ingest(*decoded.ipv4);
+        if (!decoded.ipv4->packet_ref.is_ip_fragmented &&
+            connection.should_attempt_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol) &&
+            requires_full_packet_for_hint_detection(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol)) {
+            if (!reader.materialize_packet_bytes(packet)) {
+                return false;
+            }
+
+            packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+            connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, decoded.ipv4->flow_key));
+            connection.note_hint_detection_attempt(decoded.ipv4->packet_ref, decoded.ipv4->flow_key.protocol);
+        } else {
+            apply_import_hints_if_needed(
+                packet,
+                packet_bytes,
+                decoded.ipv4->packet_ref,
+                connection,
+                decoded.ipv4->flow_key,
+                hint_service);
+        }
+        return finalize_prefix_packet();
+    }
+
+    if (decoded.ipv6.has_value()) {
+        if (const auto payload_length =
+                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv6->flow_key.protocol);
+            payload_length.has_value()) {
+            decoded.ipv6->packet_ref.payload_length = *payload_length;
+        }
+
+        packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
+        decoded.ipv6->flow_key.protocol_path_id =
+            intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
+        auto& connection = ingestor.ingest(*decoded.ipv6);
+        if (!decoded.ipv6->packet_ref.is_ip_fragmented &&
+            connection.should_attempt_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol) &&
+            requires_full_packet_for_hint_detection(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol)) {
+            if (!reader.materialize_packet_bytes(packet)) {
+                return false;
+            }
+
+            packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+            connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, decoded.ipv6->flow_key));
+            connection.note_hint_detection_attempt(decoded.ipv6->packet_ref, decoded.ipv6->flow_key.protocol);
+        } else {
+            apply_import_hints_if_needed(
+                packet,
+                packet_bytes,
+                decoded.ipv6->packet_ref,
+                connection,
+                decoded.ipv6->flow_key,
+                hint_service);
+        }
+        return finalize_prefix_packet();
+    }
+
+    if (packet.bytes.size() < packet.captured_length) {
+        if (!reader.materialize_packet_bytes(packet)) {
+            return false;
+        }
+
+        auto decoded_full = PacketDecoder {}.decode(packet);
+        if (decoded_full.has_value()) {
+            packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded_full));
+            apply_decoded_packet_import(packet, decoded_full, state, hint_service);
+        } else {
+            packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+            CaptureState arp_state {};
+            PacketIngestor arp_ingestor {arp_state};
+            if (ingest_fallback_arp_packet(packet, packet_bytes, arp_ingestor, hint_service)) {
+                packet_observations.push_back(make_arp_observation_from_state(packet, arp_state));
+            } else {
+                auto observation = make_base_observation(packet);
+                observation.classification = ImportValidationPacketClassification::unrecognized;
+                observation.unrecognized_reason = classify_unrecognized_packet_reason(packet, packet_bytes);
+                packet_observations.push_back(std::move(observation));
+            }
+            apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
+        }
+        return true;
+    }
+
+    CaptureState arp_state {};
+    PacketIngestor arp_ingestor {arp_state};
+    if (ingest_fallback_arp_packet(packet, packet_bytes, arp_ingestor, hint_service)) {
+        packet_observations.push_back(make_arp_observation_from_state(packet, arp_state));
+    } else {
+        auto observation = make_base_observation(packet);
+        observation.classification = ImportValidationPacketClassification::unrecognized;
+        observation.unrecognized_reason = classify_unrecognized_packet_reason(packet, packet_bytes);
+        packet_observations.push_back(std::move(observation));
+    }
+
+    if (!ingest_fallback_arp_packet(packet, packet_bytes, ingestor, hint_service)) {
+        state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
+            .packet = packet_ref_from_raw_packet(packet),
+            .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
+        });
+    }
+
+    return finalize_prefix_packet();
+}
+
 bool legacy_import_classic_reader_loop(
     PcapReader& reader,
     CaptureState& state,
-    const CaptureImportProcessor& processor,
+    const FlowHintService& hint_service,
     LegacyImportLoopMetrics& metrics,
+    std::vector<ImportValidationPacketObservation>& packet_observations,
     const std::optional<std::uint64_t> max_packets
 ) {
     std::size_t adaptive_header_prefix_bytes = kInitialImportHeaderPrefixBytes;
@@ -386,7 +774,13 @@ bool legacy_import_classic_reader_loop(
             return !reader.has_error();
         }
 
-        if (!processor.process_classic_import_packet(reader, packet, state, adaptive_header_prefix_bytes)) {
+        if (!process_classic_legacy_import_packet(
+                reader,
+                packet,
+                state,
+                adaptive_header_prefix_bytes,
+                hint_service,
+                packet_observations)) {
             return false;
         }
 
@@ -407,6 +801,7 @@ bool unified_import_reader_loop(
     const dissection::DissectionRegistry& registry,
     const FlowHintService& hint_service,
     LegacyImportLoopMetrics& metrics,
+    std::vector<ImportValidationPacketObservation>& packet_observations,
     const std::optional<std::uint64_t> max_packets
 ) {
     while (!max_packets.has_value() || metrics.packets_processed < *max_packets) {
@@ -417,6 +812,7 @@ bool unified_import_reader_loop(
 
         auto facts = run_unified_shadow_import(*packet, registry);
         auto decision = adapt_dissection_import_facts(facts);
+        packet_observations.push_back(observe_unified_import_decision(*packet, facts, decision));
         if (decision.has_decoded_packet()) {
             apply_decoded_packet_import(*packet, *decision.decoded_packet, state, hint_service);
         } else {
@@ -437,7 +833,8 @@ bool process_classic_unified_import_packet(
     CaptureState& state,
     std::size_t& adaptive_header_prefix_bytes,
     const dissection::DissectionRegistry& registry,
-    const FlowHintService& hint_service
+    const FlowHintService& hint_service,
+    std::vector<ImportValidationPacketObservation>& packet_observations
 ) {
     auto finalize_prefix_packet = [&reader, &packet]() {
         return reader.finish_prefix_packet(packet);
@@ -446,6 +843,7 @@ bool process_classic_unified_import_packet(
     if (packet.bytes.size() >= packet.captured_length) {
         auto facts = run_unified_shadow_import(packet, registry);
         auto decision = adapt_dissection_import_facts(facts);
+        packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
         if (decision.has_decoded_packet()) {
             apply_decoded_packet_import(packet, *decision.decoded_packet, state, hint_service);
         } else {
@@ -463,6 +861,7 @@ bool process_classic_unified_import_packet(
         adaptive_header_prefix_bytes = grow_adaptive_import_header_prefix(adaptive_header_prefix_bytes, *required_bytes);
         auto facts = run_unified_shadow_import(packet, registry);
         auto decision = adapt_dissection_import_facts(facts);
+        packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
         if (decision.has_decoded_packet()) {
             apply_decoded_packet_import(packet, *decision.decoded_packet, state, hint_service);
         } else {
@@ -485,6 +884,7 @@ bool process_classic_unified_import_packet(
             decoded.ipv4->packet_ref.payload_length = *payload_length;
         }
 
+        packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
         auto& connection = ingestor.ingest(*decoded.ipv4);
@@ -518,6 +918,7 @@ bool process_classic_unified_import_packet(
             decoded.ipv6->packet_ref.payload_length = *payload_length;
         }
 
+        packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
         auto& connection = ingestor.ingest(*decoded.ipv6);
@@ -550,6 +951,7 @@ bool process_classic_unified_import_packet(
 
         facts = run_unified_shadow_import(packet, registry);
         decision = adapt_dissection_import_facts(facts);
+        packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
         if (decision.has_decoded_packet()) {
             apply_decoded_packet_import(packet, *decision.decoded_packet, state, hint_service);
         } else {
@@ -559,6 +961,7 @@ bool process_classic_unified_import_packet(
         return true;
     }
 
+    packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
     apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
     return finalize_prefix_packet();
 }
@@ -569,6 +972,7 @@ bool unified_import_classic_reader_loop(
     const dissection::DissectionRegistry& registry,
     const FlowHintService& hint_service,
     LegacyImportLoopMetrics& metrics,
+    std::vector<ImportValidationPacketObservation>& packet_observations,
     const std::optional<std::uint64_t> max_packets
 ) {
     std::size_t adaptive_header_prefix_bytes = kInitialImportHeaderPrefixBytes;
@@ -588,7 +992,8 @@ bool unified_import_classic_reader_loop(
                 state,
                 adaptive_header_prefix_bytes,
                 registry,
-                hint_service)) {
+                hint_service,
+                packet_observations)) {
             return false;
         }
 
@@ -668,6 +1073,7 @@ ImportValidationRunResult run_import_mode(
     const auto final_peak_memory = measure_peak_memory ? peak_reader.read() : std::nullopt;
     result.metrics = build_metrics(capture_path, execution.state, execution.loop_metrics, elapsed_seconds, final_peak_memory);
     result.canonical_state = canonicalize_capture_state(execution.state, options.include_hints);
+    result.packet_observations = std::move(execution.packet_observations);
     return result;
 }
 
@@ -676,7 +1082,7 @@ ImportValidationRunResult run_import_mode(
     const ImportValidationOptions& options
 ) {
     ImportExecution execution {};
-    const CaptureImportProcessor processor {};
+    const FlowHintService hint_service {AnalysisSettings {}, true};
 
     switch (detect_capture_source_format(capture_path)) {
     case CaptureSourceFormat::classic_pcap: {
@@ -689,8 +1095,9 @@ ImportValidationRunResult run_import_mode(
         execution.success = legacy_import_classic_reader_loop(
             reader,
             execution.state,
-            processor,
+            hint_service,
             execution.loop_metrics,
+            execution.packet_observations,
             options.max_packets);
         if (!execution.success) {
             execution.error_text = reader_error_text(reader);
@@ -707,8 +1114,9 @@ ImportValidationRunResult run_import_mode(
         execution.success = legacy_import_reader_loop(
             reader,
             execution.state,
-            processor,
+            hint_service,
             execution.loop_metrics,
+            execution.packet_observations,
             options.max_packets);
         if (!execution.success) {
             execution.error_text = reader_error_text(reader);
@@ -748,6 +1156,7 @@ ImportValidationRunResult run_import_mode(
             *built.registry,
             hint_service,
             execution.loop_metrics,
+            execution.packet_observations,
             options.max_packets);
         if (!execution.success) {
             execution.error_text = reader_error_text(reader);
@@ -767,6 +1176,7 @@ ImportValidationRunResult run_import_mode(
             *built.registry,
             hint_service,
             execution.loop_metrics,
+            execution.packet_observations,
             options.max_packets);
         if (!execution.success) {
             execution.error_text = reader_error_text(reader);
@@ -1017,27 +1427,52 @@ ImportValidationCanonicalState canonicalize_capture_state(
         snapshot.protocol_registry_paths.push_back(path);
     }
 
-    auto ipv4_connections = state.ipv4_connections.list();
-    std::sort(
-        ipv4_connections.begin(),
-        ipv4_connections.end(),
-        [](const ConnectionV4* lhs, const ConnectionV4* rhs) {
-            return lhs->key < rhs->key;
-        });
-    for (const auto* connection : ipv4_connections) {
-        snapshot.ipv4_connections.push_back(snapshot_connection(*connection, state.protocol_path_registry, include_hints));
+    for (const auto* connection : state.ipv4_connections.list()) {
+        auto connection_snapshot = snapshot_connection(*connection, state.protocol_path_registry, include_hints);
+        if (connection_snapshot.flow_a.has_value()) {
+            snapshot.ipv4_flows.push_back(*connection_snapshot.flow_a);
+        }
+        if (connection_snapshot.flow_b.has_value()) {
+            snapshot.ipv4_flows.push_back(*connection_snapshot.flow_b);
+        }
+        snapshot.ipv4_connections.push_back(std::move(connection_snapshot));
     }
 
-    auto ipv6_connections = state.ipv6_connections.list();
-    std::sort(
-        ipv6_connections.begin(),
-        ipv6_connections.end(),
-        [](const ConnectionV6* lhs, const ConnectionV6* rhs) {
-            return lhs->key < rhs->key;
-        });
-    for (const auto* connection : ipv6_connections) {
-        snapshot.ipv6_connections.push_back(snapshot_connection(*connection, state.protocol_path_registry, include_hints));
+    for (const auto* connection : state.ipv6_connections.list()) {
+        auto connection_snapshot = snapshot_connection(*connection, state.protocol_path_registry, include_hints);
+        if (connection_snapshot.flow_a.has_value()) {
+            snapshot.ipv6_flows.push_back(*connection_snapshot.flow_a);
+        }
+        if (connection_snapshot.flow_b.has_value()) {
+            snapshot.ipv6_flows.push_back(*connection_snapshot.flow_b);
+        }
+        snapshot.ipv6_connections.push_back(std::move(connection_snapshot));
     }
+
+    std::sort(
+        snapshot.ipv4_flows.begin(),
+        snapshot.ipv4_flows.end(),
+        [](const ImportValidationFlowSnapshotV4& lhs, const ImportValidationFlowSnapshotV4& rhs) {
+            return lhs.key != rhs.key ? lhs.key < rhs.key : protocol_path_less(lhs.protocol_path, rhs.protocol_path);
+        });
+    std::sort(
+        snapshot.ipv6_flows.begin(),
+        snapshot.ipv6_flows.end(),
+        [](const ImportValidationFlowSnapshotV6& lhs, const ImportValidationFlowSnapshotV6& rhs) {
+            return lhs.key != rhs.key ? lhs.key < rhs.key : protocol_path_less(lhs.protocol_path, rhs.protocol_path);
+        });
+    std::sort(
+        snapshot.ipv4_connections.begin(),
+        snapshot.ipv4_connections.end(),
+        [](const ImportValidationConnectionSnapshotV4& lhs, const ImportValidationConnectionSnapshotV4& rhs) {
+            return lhs.key != rhs.key ? lhs.key < rhs.key : protocol_path_less(lhs.protocol_path, rhs.protocol_path);
+        });
+    std::sort(
+        snapshot.ipv6_connections.begin(),
+        snapshot.ipv6_connections.end(),
+        [](const ImportValidationConnectionSnapshotV6& lhs, const ImportValidationConnectionSnapshotV6& rhs) {
+            return lhs.key != rhs.key ? lhs.key < rhs.key : protocol_path_less(lhs.protocol_path, rhs.protocol_path);
+        });
 
     snapshot.unrecognized_packets.reserve(state.unrecognized_packets.size());
     for (const auto& record : state.unrecognized_packets) {
@@ -1048,6 +1483,61 @@ ImportValidationCanonicalState canonicalize_capture_state(
     }
 
     return snapshot;
+}
+
+ImportValidationRegistryComparison compare_structural_protocol_path_registries(
+    const std::vector<ProtocolPath>& legacy,
+    const std::vector<ProtocolPath>& unified
+) {
+    ImportValidationRegistryComparison comparison {};
+
+    auto sorted_legacy = legacy;
+    auto sorted_unified = unified;
+    std::sort(sorted_legacy.begin(), sorted_legacy.end(), protocol_path_less);
+    std::sort(sorted_unified.begin(), sorted_unified.end(), protocol_path_less);
+
+    std::size_t legacy_index = 0U;
+    std::size_t unified_index = 0U;
+    while (legacy_index < sorted_legacy.size() || unified_index < sorted_unified.size()) {
+        if (legacy_index >= sorted_legacy.size()) {
+            comparison.only_in_unified.push_back(sorted_unified[unified_index++]);
+            continue;
+        }
+        if (unified_index >= sorted_unified.size()) {
+            comparison.only_in_legacy.push_back(sorted_legacy[legacy_index++]);
+            continue;
+        }
+
+        if (sorted_legacy[legacy_index] == sorted_unified[unified_index]) {
+            ++comparison.shared_structural_path_count;
+            ++legacy_index;
+            ++unified_index;
+            continue;
+        }
+
+        if (protocol_path_less(sorted_legacy[legacy_index], sorted_unified[unified_index])) {
+            comparison.only_in_legacy.push_back(sorted_legacy[legacy_index++]);
+        } else {
+            comparison.only_in_unified.push_back(sorted_unified[unified_index++]);
+        }
+    }
+
+    std::unordered_map<ProtocolPath, std::size_t, ProtocolPathHash> legacy_ids {};
+    std::unordered_map<ProtocolPath, std::size_t, ProtocolPathHash> unified_ids {};
+    for (std::size_t index = 0U; index < legacy.size(); ++index) {
+        legacy_ids.emplace(legacy[index], index + 1U);
+    }
+    for (std::size_t index = 0U; index < unified.size(); ++index) {
+        unified_ids.emplace(unified[index], index + 1U);
+    }
+    for (const auto& [path, legacy_id] : legacy_ids) {
+        const auto found = unified_ids.find(path);
+        if (found != unified_ids.end() && found->second != legacy_id) {
+            ++comparison.id_drift_count;
+        }
+    }
+
+    return comparison;
 }
 
 ImportValidationCompareResult compare_canonical_states(
@@ -1067,31 +1557,258 @@ ImportValidationCompareResult compare_canonical_states(
     maybe_record_scalar_mismatch(recorder, ImportValidationMismatchCategory::summary, "summary", "flow_count", legacy.summary.flow_count, unified.summary.flow_count);
     maybe_record_scalar_mismatch(recorder, ImportValidationMismatchCategory::summary, "summary", "total_bytes", legacy.summary.total_bytes, unified.summary.total_bytes);
 
-    maybe_record_scalar_mismatch(recorder, ImportValidationMismatchCategory::registry, "registry", "size", legacy.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
-    const auto shared_registry_size = std::min(legacy.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
-    for (std::size_t index = 0U; index < shared_registry_size; ++index) {
-        if (legacy.protocol_registry_paths[index] == unified.protocol_registry_paths[index]) {
-            continue;
-        }
-
+    result.registry_comparison = compare_structural_protocol_path_registries(
+        legacy.protocol_registry_paths,
+        unified.protocol_registry_paths);
+    maybe_record_scalar_mismatch(
+        recorder,
+        ImportValidationMismatchCategory::registry,
+        "registry",
+        "size",
+        legacy.protocol_registry_paths.size(),
+        unified.protocol_registry_paths.size());
+    for (const auto& path : result.registry_comparison.only_in_legacy) {
         recorder.record(
             ImportValidationMismatchCategory::registry,
-            "registry[" + std::to_string(index + 1U) + ']',
-            "protocol_path",
-            format_protocol_path(legacy.protocol_registry_paths[index]),
-            format_protocol_path(unified.protocol_registry_paths[index]));
+            "registry",
+            "only_in_legacy",
+            format_protocol_path(path),
+            "");
+    }
+    for (const auto& path : result.registry_comparison.only_in_unified) {
+        recorder.record(
+            ImportValidationMismatchCategory::registry,
+            "registry",
+            "only_in_unified",
+            "",
+            format_protocol_path(path));
+    }
+    maybe_record_scalar_mismatch(
+        recorder,
+        ImportValidationMismatchCategory::registry,
+        "registry",
+        "id_drift_count",
+        static_cast<std::uint64_t>(result.registry_comparison.id_drift_count),
+        static_cast<std::uint64_t>(0U));
+
+    auto compare_ipv4_flows = [&recorder](const auto& left, const auto& right) {
+        return left.key != right.key ? left.key < right.key : protocol_path_less(left.protocol_path, right.protocol_path);
+    };
+    auto compare_ipv6_flows = compare_ipv4_flows;
+
+    auto compare_ipv4_connections = [&recorder](const auto& left, const auto& right) {
+        return left.key != right.key ? left.key < right.key : protocol_path_less(left.protocol_path, right.protocol_path);
+    };
+    auto compare_ipv6_connections = compare_ipv4_connections;
+
+    {
+        std::size_t left = 0U;
+        std::size_t right = 0U;
+        while (left < legacy.ipv4_flows.size() || right < unified.ipv4_flows.size()) {
+            if (left >= legacy.ipv4_flows.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv4_flow",
+                    "only_in_unified",
+                    "",
+                    format_flow_key(unified.ipv4_flows[right].key, unified.ipv4_flows[right].protocol_path));
+                ++right;
+                continue;
+            }
+            if (right >= unified.ipv4_flows.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv4_flow",
+                    "only_in_legacy",
+                    format_flow_key(legacy.ipv4_flows[left].key, legacy.ipv4_flows[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv4_flows(legacy.ipv4_flows[left], unified.ipv4_flows[right])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv4_flow",
+                    "only_in_legacy",
+                    format_flow_key(legacy.ipv4_flows[left].key, legacy.ipv4_flows[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv4_flows(unified.ipv4_flows[right], legacy.ipv4_flows[left])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv4_flow",
+                    "only_in_unified",
+                    "",
+                    format_flow_key(unified.ipv4_flows[right].key, unified.ipv4_flows[right].protocol_path));
+                ++right;
+                continue;
+            }
+            compare_flow(recorder, "ipv4_flow[" + std::to_string(left) + ']', legacy.ipv4_flows[left], unified.ipv4_flows[right]);
+            ++left;
+            ++right;
+        }
     }
 
-    maybe_record_scalar_mismatch(recorder, ImportValidationMismatchCategory::connection, "ipv4_connections", "size", legacy.ipv4_connections.size(), unified.ipv4_connections.size());
-    const auto shared_ipv4 = std::min(legacy.ipv4_connections.size(), unified.ipv4_connections.size());
-    for (std::size_t index = 0U; index < shared_ipv4; ++index) {
-        compare_connection(recorder, "ipv4_connection[" + std::to_string(index) + ']', legacy.ipv4_connections[index], unified.ipv4_connections[index], options.include_hints);
+    {
+        std::size_t left = 0U;
+        std::size_t right = 0U;
+        while (left < legacy.ipv6_flows.size() || right < unified.ipv6_flows.size()) {
+            if (left >= legacy.ipv6_flows.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv6_flow",
+                    "only_in_unified",
+                    "",
+                    format_flow_key(unified.ipv6_flows[right].key, unified.ipv6_flows[right].protocol_path));
+                ++right;
+                continue;
+            }
+            if (right >= unified.ipv6_flows.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv6_flow",
+                    "only_in_legacy",
+                    format_flow_key(legacy.ipv6_flows[left].key, legacy.ipv6_flows[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv6_flows(legacy.ipv6_flows[left], unified.ipv6_flows[right])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv6_flow",
+                    "only_in_legacy",
+                    format_flow_key(legacy.ipv6_flows[left].key, legacy.ipv6_flows[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv6_flows(unified.ipv6_flows[right], legacy.ipv6_flows[left])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::flow,
+                    "ipv6_flow",
+                    "only_in_unified",
+                    "",
+                    format_flow_key(unified.ipv6_flows[right].key, unified.ipv6_flows[right].protocol_path));
+                ++right;
+                continue;
+            }
+            compare_flow(recorder, "ipv6_flow[" + std::to_string(left) + ']', legacy.ipv6_flows[left], unified.ipv6_flows[right]);
+            ++left;
+            ++right;
+        }
     }
 
-    maybe_record_scalar_mismatch(recorder, ImportValidationMismatchCategory::connection, "ipv6_connections", "size", legacy.ipv6_connections.size(), unified.ipv6_connections.size());
-    const auto shared_ipv6 = std::min(legacy.ipv6_connections.size(), unified.ipv6_connections.size());
-    for (std::size_t index = 0U; index < shared_ipv6; ++index) {
-        compare_connection(recorder, "ipv6_connection[" + std::to_string(index) + ']', legacy.ipv6_connections[index], unified.ipv6_connections[index], options.include_hints);
+    {
+        std::size_t left = 0U;
+        std::size_t right = 0U;
+        while (left < legacy.ipv4_connections.size() || right < unified.ipv4_connections.size()) {
+            if (left >= legacy.ipv4_connections.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv4_connection",
+                    "only_in_unified",
+                    "",
+                    format_connection_key(unified.ipv4_connections[right].key, unified.ipv4_connections[right].protocol_path));
+                ++right;
+                continue;
+            }
+            if (right >= unified.ipv4_connections.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv4_connection",
+                    "only_in_legacy",
+                    format_connection_key(legacy.ipv4_connections[left].key, legacy.ipv4_connections[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv4_connections(legacy.ipv4_connections[left], unified.ipv4_connections[right])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv4_connection",
+                    "only_in_legacy",
+                    format_connection_key(legacy.ipv4_connections[left].key, legacy.ipv4_connections[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv4_connections(unified.ipv4_connections[right], legacy.ipv4_connections[left])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv4_connection",
+                    "only_in_unified",
+                    "",
+                    format_connection_key(unified.ipv4_connections[right].key, unified.ipv4_connections[right].protocol_path));
+                ++right;
+                continue;
+            }
+            compare_connection(
+                recorder,
+                "ipv4_connection[" + std::to_string(left) + ']',
+                legacy.ipv4_connections[left],
+                unified.ipv4_connections[right],
+                options.include_hints);
+            ++left;
+            ++right;
+        }
+    }
+
+    {
+        std::size_t left = 0U;
+        std::size_t right = 0U;
+        while (left < legacy.ipv6_connections.size() || right < unified.ipv6_connections.size()) {
+            if (left >= legacy.ipv6_connections.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv6_connection",
+                    "only_in_unified",
+                    "",
+                    format_connection_key(unified.ipv6_connections[right].key, unified.ipv6_connections[right].protocol_path));
+                ++right;
+                continue;
+            }
+            if (right >= unified.ipv6_connections.size()) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv6_connection",
+                    "only_in_legacy",
+                    format_connection_key(legacy.ipv6_connections[left].key, legacy.ipv6_connections[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv6_connections(legacy.ipv6_connections[left], unified.ipv6_connections[right])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv6_connection",
+                    "only_in_legacy",
+                    format_connection_key(legacy.ipv6_connections[left].key, legacy.ipv6_connections[left].protocol_path),
+                    "");
+                ++left;
+                continue;
+            }
+            if (compare_ipv6_connections(unified.ipv6_connections[right], legacy.ipv6_connections[left])) {
+                recorder.record(
+                    ImportValidationMismatchCategory::connection,
+                    "ipv6_connection",
+                    "only_in_unified",
+                    "",
+                    format_connection_key(unified.ipv6_connections[right].key, unified.ipv6_connections[right].protocol_path));
+                ++right;
+                continue;
+            }
+            compare_connection(
+                recorder,
+                "ipv6_connection[" + std::to_string(left) + ']',
+                legacy.ipv6_connections[left],
+                unified.ipv6_connections[right],
+                options.include_hints);
+            ++left;
+            ++right;
+        }
     }
 
     maybe_record_scalar_mismatch(recorder, ImportValidationMismatchCategory::unrecognized, "unrecognized", "size", legacy.unrecognized_packets.size(), unified.unrecognized_packets.size());

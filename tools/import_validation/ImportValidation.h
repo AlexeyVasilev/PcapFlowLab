@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "core/dissection/DissectionTypes.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/Connection.h"
 #include "core/domain/ConnectionKey.h"
@@ -16,11 +17,13 @@
 #include "core/domain/FlowKey.h"
 #include "core/domain/PacketRef.h"
 #include "core/domain/ProtocolPath.h"
+#include "core/domain/ProtocolId.h"
 
 namespace pfl {
 
 struct ImportValidationOptions {
     std::optional<std::uint64_t> max_packets {};
+    std::optional<std::uint64_t> packet_index {};
     bool include_hints {true};
     std::size_t max_reported_mismatches {32U};
 };
@@ -98,6 +101,8 @@ struct ImportValidationUnrecognizedSnapshot {
 struct ImportValidationCanonicalState {
     CaptureSummary summary {};
     std::vector<ProtocolPath> protocol_registry_paths {};
+    std::vector<ImportValidationFlowSnapshotV4> ipv4_flows {};
+    std::vector<ImportValidationFlowSnapshotV6> ipv6_flows {};
     std::vector<ImportValidationConnectionSnapshotV4> ipv4_connections {};
     std::vector<ImportValidationConnectionSnapshotV6> ipv6_connections {};
     std::vector<ImportValidationUnrecognizedSnapshot> unrecognized_packets {};
@@ -121,6 +126,110 @@ struct ImportValidationMismatch {
     std::string unified_value {};
 };
 
+enum class ImportValidationPacketClassification : std::uint8_t {
+    recognized_flow = 0,
+    recognized_non_flow,
+    unrecognized,
+};
+
+struct ImportValidationPacketObservation {
+    std::uint64_t packet_index {0U};
+    std::uint64_t file_offset {0U};
+    std::uint32_t captured_length {0U};
+    std::uint32_t original_length {0U};
+    std::uint32_t link_type {0U};
+
+    ImportValidationPacketClassification classification {ImportValidationPacketClassification::unrecognized};
+    dissection::DissectionAddressFamily family {dissection::DissectionAddressFamily::unknown};
+    ProtocolId protocol {ProtocolId::unknown};
+
+    bool has_addresses {false};
+    std::uint32_t src_addr_v4 {0U};
+    std::uint32_t dst_addr_v4 {0U};
+    std::array<std::uint8_t, 16> src_addr_v6 {};
+    std::array<std::uint8_t, 16> dst_addr_v6 {};
+
+    bool has_ports {false};
+    std::uint16_t src_port {0U};
+    std::uint16_t dst_port {0U};
+
+    bool has_transport_payload_length {false};
+    std::uint32_t captured_transport_payload_length {0U};
+
+    bool has_tcp_flags {false};
+    std::uint8_t tcp_flags {0U};
+    bool fragmented {false};
+
+    ProtocolPath physical_path {};
+    dissection::ParseStatus final_status {dissection::ParseStatus::opaque};
+    dissection::StopReason stop_reason {dissection::StopReason::none};
+    std::optional<std::string> unrecognized_reason {};
+
+    [[nodiscard]] friend bool operator==(const ImportValidationPacketObservation&, const ImportValidationPacketObservation&) = default;
+};
+
+enum class ImportValidationPacketMismatchCategory : std::uint8_t {
+    classification = 0,
+    address_family,
+    addresses,
+    ports,
+    protocol,
+    payload_length,
+    tcp_flags,
+    fragmentation,
+    physical_path,
+    parse_status,
+    stop_reason,
+    unrecognized_reason,
+};
+
+struct ImportValidationPacketMismatch {
+    std::uint64_t packet_index {0U};
+    std::uint64_t file_offset {0U};
+    std::uint32_t captured_length {0U};
+    std::uint32_t original_length {0U};
+    ImportValidationPacketMismatchCategory category {ImportValidationPacketMismatchCategory::classification};
+    std::string legacy_value {};
+    std::string unified_value {};
+    ProtocolPath legacy_path {};
+    ProtocolPath unified_path {};
+    ImportValidationPacketObservation legacy_observation {};
+    ImportValidationPacketObservation unified_observation {};
+};
+
+struct ImportValidationPacketMismatchGroup {
+    ImportValidationPacketMismatchCategory category {ImportValidationPacketMismatchCategory::classification};
+    ProtocolId legacy_protocol {ProtocolId::unknown};
+    ProtocolId unified_protocol {ProtocolId::unknown};
+    ProtocolPath legacy_path {};
+    ProtocolPath unified_path {};
+    std::optional<std::int64_t> numeric_delta {};
+    std::size_t occurrence_count {0U};
+    std::vector<std::uint64_t> packet_indices {};
+    ImportValidationPacketMismatch representative {};
+};
+
+struct ImportValidationFirstDivergence {
+    std::optional<std::uint64_t> any_packet_index {};
+    std::optional<std::uint64_t> classification_packet_index {};
+    std::optional<std::uint64_t> physical_path_packet_index {};
+    std::optional<std::uint64_t> payload_length_packet_index {};
+};
+
+struct ImportValidationPacketCompareResult {
+    std::size_t mismatch_count {0U};
+    std::vector<ImportValidationPacketMismatch> mismatches {};
+    std::vector<ImportValidationPacketMismatchGroup> groups {};
+    ImportValidationFirstDivergence first_divergence {};
+};
+
+struct ImportValidationRegistryComparison {
+    std::size_t shared_structural_path_count {0U};
+    std::size_t id_drift_count {0U};
+    std::vector<ProtocolPath> only_in_legacy {};
+    std::vector<ProtocolPath> only_in_unified {};
+};
+
 struct ImportValidationMetrics {
     std::uint64_t file_size {0U};
     std::uint64_t packet_count {0U};
@@ -140,6 +249,7 @@ struct ImportValidationRunResult {
     std::string error_text {};
     ImportValidationMetrics metrics {};
     ImportValidationCanonicalState canonical_state {};
+    std::vector<ImportValidationPacketObservation> packet_observations {};
 };
 
 struct ImportValidationCompareResult {
@@ -150,15 +260,46 @@ struct ImportValidationCompareResult {
     std::vector<ImportValidationMismatch> mismatches {};
     ImportValidationMetrics legacy_metrics {};
     ImportValidationMetrics unified_metrics {};
+    ImportValidationRegistryComparison registry_comparison {};
+};
+
+struct ImportValidationDiagnoseResult {
+    bool success {false};
+    std::string error_text {};
+    ImportValidationMetrics legacy_metrics {};
+    ImportValidationMetrics unified_metrics {};
+    ImportValidationCompareResult session_compare {};
+    ImportValidationPacketCompareResult packet_compare {};
+    std::optional<ImportValidationPacketObservation> legacy_packet {};
+    std::optional<ImportValidationPacketObservation> unified_packet {};
 };
 
 [[nodiscard]] std::string format_import_validation_mismatch_category(
     ImportValidationMismatchCategory category
 );
 
+[[nodiscard]] std::string format_import_validation_packet_classification(
+    ImportValidationPacketClassification classification
+);
+
+[[nodiscard]] std::string format_import_validation_packet_mismatch_category(
+    ImportValidationPacketMismatchCategory category
+);
+
 [[nodiscard]] ImportValidationCanonicalState canonicalize_capture_state(
     const CaptureState& state,
     bool include_hints
+);
+
+[[nodiscard]] ImportValidationRegistryComparison compare_structural_protocol_path_registries(
+    const std::vector<ProtocolPath>& legacy,
+    const std::vector<ProtocolPath>& unified
+);
+
+[[nodiscard]] ImportValidationPacketCompareResult compare_packet_observations(
+    const std::vector<ImportValidationPacketObservation>& legacy,
+    const std::vector<ImportValidationPacketObservation>& unified,
+    const ImportValidationOptions& options = {}
 );
 
 [[nodiscard]] ImportValidationCompareResult compare_canonical_states(
@@ -178,6 +319,11 @@ struct ImportValidationCompareResult {
 );
 
 [[nodiscard]] ImportValidationCompareResult compare_import_validation(
+    const std::filesystem::path& capture_path,
+    const ImportValidationOptions& options = {}
+);
+
+[[nodiscard]] ImportValidationDiagnoseResult diagnose_import_validation(
     const std::filesystem::path& capture_path,
     const ImportValidationOptions& options = {}
 );

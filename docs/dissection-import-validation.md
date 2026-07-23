@@ -17,6 +17,7 @@ Developer executable:
 Supported modes:
 
 - `compare <capture>`
+- `diagnose <capture>`
 - `legacy <capture>`
 - `unified <capture>`
 
@@ -28,6 +29,8 @@ Supported formats:
 Useful options:
 
 - `--max-packets N`
+- `--packet-index N`
+- `--max-mismatches N`
 - `--no-hints`
 - `--json <output-file>`
 
@@ -40,18 +43,22 @@ Windows PowerShell:
 
 ```powershell
 .\build\pcap_flow_lab_import_validation.exe compare .\path\to\capture.pcap
+.\build\pcap_flow_lab_import_validation.exe diagnose .\path\to\capture.pcap
 .\build\pcap_flow_lab_import_validation.exe legacy .\path\to\capture.pcap
 .\build\pcap_flow_lab_import_validation.exe unified .\path\to\capture.pcap
 .\build\pcap_flow_lab_import_validation.exe compare .\path\to\capture.pcap --json .\validation.json
+.\build\pcap_flow_lab_import_validation.exe diagnose .\path\to\capture.pcap --packet-index 3876
 ```
 
 Linux shell:
 
 ```bash
 ./build/pcap_flow_lab_import_validation compare ./path/to/capture.pcap
+./build/pcap_flow_lab_import_validation diagnose ./path/to/capture.pcap
 ./build/pcap_flow_lab_import_validation legacy ./path/to/capture.pcap
 ./build/pcap_flow_lab_import_validation unified ./path/to/capture.pcap
 ./build/pcap_flow_lab_import_validation compare ./path/to/capture.pcap --json ./validation.json
+./build/pcap_flow_lab_import_validation diagnose ./path/to/capture.pcap --packet-index 3876
 ```
 
 For peak-memory comparison, run `legacy` and `unified` as separate processes.
@@ -72,10 +79,48 @@ state, then compares:
 - persisted hint state when hint comparison is enabled.
 
 Structural comparison uses resolved `ProtocolPath` values rather than raw
-`protocol_path_id`.
+`protocol_path_id`. Registry reporting now separates:
+
+- structural added/removed paths;
+- shared structural paths;
+- numeric ID drift caused by a real import-order difference.
 
 Peak memory is intentionally not compared in `compare` mode because both paths
 run in the same process.
+
+## Diagnose Mode
+
+`diagnose` keeps the existing whole-session comparison as the final parity
+oracle, but adds packet-level attribution so session-level cascades can be
+reduced to their primary causes.
+
+It compares per-packet legacy and unified import observations before flow and
+registry grouping hides the original source of divergence.
+
+Packet-level mismatch categories include:
+
+- classification;
+- address family;
+- addresses;
+- ports;
+- protocol;
+- captured transport payload length;
+- TCP flags;
+- fragmentation;
+- structural physical path;
+- parse status;
+- stop reason;
+- unrecognized reason.
+
+Repeated packet-level mismatches are grouped by a stable structural signature.
+This is intended to collapse recurring patterns such as repeated
+payload-length deltas into a single grouped diagnostic.
+
+`diagnose <capture> --packet-index N` prints exactly one packet's legacy and
+unified observations and does not require locating the packet through the UI.
+
+`--max-mismatches N` bounds stored mismatch rows and grouped signatures in both
+`compare` and `diagnose` output.
 
 ## Single-Mode Metrics
 
@@ -156,6 +201,7 @@ Implemented:
 
 - developer-only validation executable
 - sequential legacy-versus-unified comparison core
+- packet-level diagnose mode with grouped mismatch attribution
 - classic-PCAP staged-prefix parity coverage
 - PCAPNG validation coverage
 

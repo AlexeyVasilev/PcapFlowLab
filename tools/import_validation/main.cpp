@@ -30,7 +30,8 @@ struct ParsedCommandLine {
 void print_usage() {
     std::cout
         << "Usage:\n"
-        << "  pcap_flow_lab_import_validation compare <capture> [--max-packets N] [--no-hints] [--json <output-file>]\n"
+        << "  pcap_flow_lab_import_validation compare <capture> [--max-packets N] [--max-mismatches N] [--no-hints] [--json <output-file>]\n"
+        << "  pcap_flow_lab_import_validation diagnose <capture> [--packet-index N] [--max-packets N] [--max-mismatches N] [--no-hints] [--json <output-file>]\n"
         << "  pcap_flow_lab_import_validation legacy <capture> [--max-packets N] [--no-hints] [--json <output-file>]\n"
         << "  pcap_flow_lab_import_validation unified <capture> [--max-packets N] [--no-hints] [--json <output-file>]\n";
 }
@@ -101,6 +102,46 @@ std::string format_metrics_json(const pfl::ImportValidationMetrics& metrics) {
     return builder.str();
 }
 
+std::string format_protocol_path_or_empty(const pfl::ProtocolPath& path) {
+    return path.empty() ? std::string {} : pfl::format_protocol_path(path);
+}
+
+std::string format_packet_observation_json(const pfl::ImportValidationPacketObservation& observation) {
+    std::ostringstream builder {};
+    builder
+        << "{"
+        << "\"packet_index\":" << observation.packet_index << ','
+        << "\"file_offset\":" << observation.file_offset << ','
+        << "\"captured_length\":" << observation.captured_length << ','
+        << "\"original_length\":" << observation.original_length << ','
+        << "\"link_type\":" << observation.link_type << ','
+        << "\"classification\":" << quote_json_string(pfl::format_import_validation_packet_classification(observation.classification)) << ','
+        << "\"family\":" << quote_json_string(std::to_string(static_cast<int>(observation.family))) << ','
+        << "\"protocol\":" << quote_json_string(std::to_string(static_cast<int>(observation.protocol))) << ','
+        << "\"has_addresses\":" << (observation.has_addresses ? "true" : "false") << ','
+        << "\"src_addr_v4\":" << observation.src_addr_v4 << ','
+        << "\"dst_addr_v4\":" << observation.dst_addr_v4 << ','
+        << "\"has_ports\":" << (observation.has_ports ? "true" : "false") << ','
+        << "\"src_port\":" << observation.src_port << ','
+        << "\"dst_port\":" << observation.dst_port << ','
+        << "\"has_transport_payload_length\":" << (observation.has_transport_payload_length ? "true" : "false") << ','
+        << "\"captured_transport_payload_length\":" << observation.captured_transport_payload_length << ','
+        << "\"has_tcp_flags\":" << (observation.has_tcp_flags ? "true" : "false") << ','
+        << "\"tcp_flags\":" << static_cast<unsigned int>(observation.tcp_flags) << ','
+        << "\"fragmented\":" << (observation.fragmented ? "true" : "false") << ','
+        << "\"physical_path\":" << quote_json_string(format_protocol_path_or_empty(observation.physical_path)) << ','
+        << "\"parse_status\":" << quote_json_string(std::to_string(static_cast<int>(observation.final_status))) << ','
+        << "\"stop_reason\":" << quote_json_string(std::to_string(static_cast<int>(observation.stop_reason))) << ','
+        << "\"unrecognized_reason\":";
+    if (observation.unrecognized_reason.has_value()) {
+        builder << quote_json_string(*observation.unrecognized_reason);
+    } else {
+        builder << "null";
+    }
+    builder << "}";
+    return builder.str();
+}
+
 void print_metrics(std::string_view label, const pfl::ImportValidationMetrics& metrics) {
     std::cout
         << label << ":\n"
@@ -115,6 +156,35 @@ void print_metrics(std::string_view label, const pfl::ImportValidationMetrics& m
         << "  packets/s: " << std::fixed << std::setprecision(3) << metrics.packets_per_second << '\n'
         << "  MiB/s: " << std::fixed << std::setprecision(3) << metrics.mib_per_second << '\n'
         << "  peak memory: " << format_bytes_and_mib(metrics.peak_memory_bytes) << '\n';
+}
+
+void print_packet_observation(std::string_view label, const pfl::ImportValidationPacketObservation& observation) {
+    std::cout
+        << label << ":\n"
+        << "  packet index: " << observation.packet_index << '\n'
+        << "  file offset: " << observation.file_offset << '\n'
+        << "  caplen/origlen: " << observation.captured_length << '/' << observation.original_length << '\n'
+        << "  link type: " << observation.link_type << '\n'
+        << "  classification: " << pfl::format_import_validation_packet_classification(observation.classification) << '\n'
+        << "  family: " << static_cast<int>(observation.family) << '\n'
+        << "  protocol: " << static_cast<int>(observation.protocol) << '\n'
+        << "  addresses present: " << (observation.has_addresses ? "yes" : "no") << '\n'
+        << "  ports present: " << (observation.has_ports ? "yes" : "no") << '\n'
+        << "  transport payload length: ";
+    if (observation.has_transport_payload_length) {
+        std::cout << observation.captured_transport_payload_length << '\n';
+    } else {
+        std::cout << "none\n";
+    }
+    std::cout
+        << "  tcp flags: " << (observation.has_tcp_flags ? std::to_string(static_cast<unsigned int>(observation.tcp_flags)) : std::string {"none"}) << '\n'
+        << "  fragmented: " << (observation.fragmented ? "yes" : "no") << '\n'
+        << "  physical path: " << format_protocol_path_or_empty(observation.physical_path) << '\n'
+        << "  parse status: " << static_cast<int>(observation.final_status) << '\n'
+        << "  stop reason: " << static_cast<int>(observation.stop_reason) << '\n';
+    if (observation.unrecognized_reason.has_value()) {
+        std::cout << "  unrecognized reason: " << *observation.unrecognized_reason << '\n';
+    }
 }
 
 bool write_json_file(const std::filesystem::path& output_path, std::string_view json_text) {
@@ -137,9 +207,9 @@ ParsedCommandLine parse_command_line(int argc, char* argv[]) {
     }
 
     parsed.mode = argv[1];
-    if (parsed.mode != "compare" && parsed.mode != "legacy" && parsed.mode != "unified") {
+    if (parsed.mode != "compare" && parsed.mode != "diagnose" && parsed.mode != "legacy" && parsed.mode != "unified") {
         parsed.valid = false;
-        parsed.error_text = "mode must be one of: compare, legacy, unified";
+        parsed.error_text = "mode must be one of: compare, diagnose, legacy, unified";
         return parsed;
     }
 
@@ -165,6 +235,45 @@ ParsedCommandLine parse_command_line(int argc, char* argv[]) {
             } catch (const std::exception&) {
                 parsed.valid = false;
                 parsed.error_text = "--max-packets value is invalid";
+                return parsed;
+            }
+            continue;
+        }
+
+        if (option == "--packet-index") {
+            if (parsed.mode != "diagnose") {
+                parsed.valid = false;
+                parsed.error_text = "--packet-index is supported only in diagnose mode";
+                return parsed;
+            }
+            if (index + 1 >= argc) {
+                parsed.valid = false;
+                parsed.error_text = "--packet-index requires a value";
+                return parsed;
+            }
+
+            try {
+                parsed.options.packet_index = static_cast<std::uint64_t>(std::stoull(argv[++index]));
+            } catch (const std::exception&) {
+                parsed.valid = false;
+                parsed.error_text = "--packet-index value is invalid";
+                return parsed;
+            }
+            continue;
+        }
+
+        if (option == "--max-mismatches") {
+            if (index + 1 >= argc) {
+                parsed.valid = false;
+                parsed.error_text = "--max-mismatches requires a value";
+                return parsed;
+            }
+
+            try {
+                parsed.options.max_reported_mismatches = static_cast<std::size_t>(std::stoull(argv[++index]));
+            } catch (const std::exception&) {
+                parsed.valid = false;
+                parsed.error_text = "--max-mismatches value is invalid";
                 return parsed;
             }
             continue;
@@ -205,7 +314,10 @@ int run_compare_mode(const ParsedCommandLine& parsed) {
     print_metrics("Unified import", result.unified_metrics);
     std::cout
         << "Parity: " << (result.parity ? "exact" : "mismatch") << '\n'
-        << "Mismatch count: " << result.mismatch_count << '\n';
+        << "Mismatch count: " << result.mismatch_count << '\n'
+        << "Registry structural diff: only-in-legacy=" << result.registry_comparison.only_in_legacy.size()
+        << ", only-in-unified=" << result.registry_comparison.only_in_unified.size()
+        << ", id-drift=" << result.registry_comparison.id_drift_count << '\n';
 
     if (!result.mismatches.empty()) {
         std::cout << "First mismatches:\n";
@@ -228,7 +340,24 @@ int run_compare_mode(const ParsedCommandLine& parsed) {
             << "\"mismatch_count\":" << result.mismatch_count << ','
             << "\"legacy\":" << format_metrics_json(result.legacy_metrics) << ','
             << "\"unified\":" << format_metrics_json(result.unified_metrics) << ','
-            << "\"mismatches\":[";
+            << "\"registry_structural\":{"
+            << "\"shared\":" << result.registry_comparison.shared_structural_path_count << ','
+            << "\"id_drift_count\":" << result.registry_comparison.id_drift_count << ","
+            << "\"only_in_legacy\":[";
+        for (std::size_t index = 0U; index < result.registry_comparison.only_in_legacy.size(); ++index) {
+            if (index > 0U) {
+                json << ',';
+            }
+            json << quote_json_string(format_protocol_path_or_empty(result.registry_comparison.only_in_legacy[index]));
+        }
+        json << "],\"only_in_unified\":[";
+        for (std::size_t index = 0U; index < result.registry_comparison.only_in_unified.size(); ++index) {
+            if (index > 0U) {
+                json << ',';
+            }
+            json << quote_json_string(format_protocol_path_or_empty(result.registry_comparison.only_in_unified[index]));
+        }
+        json << "]},\"mismatches\":[";
         for (std::size_t index = 0U; index < result.mismatches.size(); ++index) {
             if (index > 0U) {
                 json << ',';
@@ -253,6 +382,159 @@ int run_compare_mode(const ParsedCommandLine& parsed) {
     }
 
     return result.parity ? kExitCodeSuccess : kExitCodeMismatch;
+}
+
+int run_diagnose_mode(const ParsedCommandLine& parsed) {
+    std::cout
+        << "Mode: diagnose\n"
+        << "Capture: " << parsed.capture_path.generic_string() << '\n'
+        << "Hint comparison: " << (parsed.options.include_hints ? "enabled" : "disabled") << '\n';
+    if (parsed.options.packet_index.has_value()) {
+        std::cout << "Packet index: " << *parsed.options.packet_index << '\n';
+    }
+
+    const auto result = pfl::diagnose_import_validation(parsed.capture_path, parsed.options);
+    if (!result.success) {
+        std::cerr << "Import validation failed: " << result.error_text << '\n';
+        return kExitCodeUsageOrImportFailure;
+    }
+
+    print_metrics("Legacy import", result.legacy_metrics);
+    print_metrics("Unified import", result.unified_metrics);
+    std::cout
+        << "Session parity: " << (result.session_compare.parity ? "exact" : "mismatch") << '\n'
+        << "Session mismatch count: " << result.session_compare.mismatch_count << '\n'
+        << "Packet-level mismatch count: " << result.packet_compare.mismatch_count << '\n';
+
+    std::cout << "First divergences:\n";
+    std::cout << "  any: " << (result.packet_compare.first_divergence.any_packet_index.has_value() ? std::to_string(*result.packet_compare.first_divergence.any_packet_index) : std::string {"none"}) << '\n';
+    std::cout << "  classification: " << (result.packet_compare.first_divergence.classification_packet_index.has_value() ? std::to_string(*result.packet_compare.first_divergence.classification_packet_index) : std::string {"none"}) << '\n';
+    std::cout << "  physical path: " << (result.packet_compare.first_divergence.physical_path_packet_index.has_value() ? std::to_string(*result.packet_compare.first_divergence.physical_path_packet_index) : std::string {"none"}) << '\n';
+    std::cout << "  payload length: " << (result.packet_compare.first_divergence.payload_length_packet_index.has_value() ? std::to_string(*result.packet_compare.first_divergence.payload_length_packet_index) : std::string {"none"}) << '\n';
+
+    if (result.legacy_packet.has_value() && result.unified_packet.has_value()) {
+        print_packet_observation("Legacy packet", *result.legacy_packet);
+        print_packet_observation("Unified packet", *result.unified_packet);
+    } else if (!result.packet_compare.groups.empty()) {
+        std::cout << "Grouped packet mismatches:\n";
+        for (const auto& group : result.packet_compare.groups) {
+            std::cout
+                << "  [" << pfl::format_import_validation_packet_mismatch_category(group.category) << "] "
+                << "count=" << group.occurrence_count
+                << " packets=";
+            for (std::size_t index = 0U; index < group.packet_indices.size(); ++index) {
+                if (index > 0U) {
+                    std::cout << ',';
+                }
+                std::cout << group.packet_indices[index];
+            }
+            if (group.numeric_delta.has_value()) {
+                std::cout << " delta=" << *group.numeric_delta;
+            }
+            std::cout
+                << " legacy_path=" << format_protocol_path_or_empty(group.legacy_path)
+                << " unified_path=" << format_protocol_path_or_empty(group.unified_path)
+                << '\n'
+                << "    representative: packet=" << group.representative.packet_index
+                << " caplen/origlen=" << group.representative.captured_length << '/' << group.representative.original_length
+                << " legacy=" << group.representative.legacy_value
+                << " unified=" << group.representative.unified_value
+                << '\n';
+        }
+    }
+
+    if (parsed.json_output_path.has_value()) {
+        std::ostringstream json {};
+        json
+            << "{"
+            << "\"mode\":\"diagnose\","
+            << "\"capture\":" << quote_json_string(parsed.capture_path.generic_string()) << ','
+            << "\"legacy\":" << format_metrics_json(result.legacy_metrics) << ','
+            << "\"unified\":" << format_metrics_json(result.unified_metrics) << ','
+            << "\"session_parity\":" << (result.session_compare.parity ? "true" : "false") << ','
+            << "\"session_mismatch_count\":" << result.session_compare.mismatch_count << ','
+            << "\"packet_mismatch_count\":" << result.packet_compare.mismatch_count << ','
+            << "\"first_divergence\":{"
+            << "\"any\":";
+        if (result.packet_compare.first_divergence.any_packet_index.has_value()) {
+            json << *result.packet_compare.first_divergence.any_packet_index;
+        } else {
+            json << "null";
+        }
+        json << ",\"classification\":";
+        if (result.packet_compare.first_divergence.classification_packet_index.has_value()) {
+            json << *result.packet_compare.first_divergence.classification_packet_index;
+        } else {
+            json << "null";
+        }
+        json << ",\"physical_path\":";
+        if (result.packet_compare.first_divergence.physical_path_packet_index.has_value()) {
+            json << *result.packet_compare.first_divergence.physical_path_packet_index;
+        } else {
+            json << "null";
+        }
+        json << ",\"payload_length\":";
+        if (result.packet_compare.first_divergence.payload_length_packet_index.has_value()) {
+            json << *result.packet_compare.first_divergence.payload_length_packet_index;
+        } else {
+            json << "null";
+        }
+        json << "},\"groups\":[";
+        for (std::size_t index = 0U; index < result.packet_compare.groups.size(); ++index) {
+            if (index > 0U) {
+                json << ',';
+            }
+            const auto& group = result.packet_compare.groups[index];
+            json
+                << "{"
+                << "\"category\":" << quote_json_string(pfl::format_import_validation_packet_mismatch_category(group.category)) << ','
+                << "\"occurrence_count\":" << group.occurrence_count << ','
+                << "\"legacy_protocol\":" << static_cast<int>(group.legacy_protocol) << ','
+                << "\"unified_protocol\":" << static_cast<int>(group.unified_protocol) << ','
+                << "\"legacy_path\":" << quote_json_string(format_protocol_path_or_empty(group.legacy_path)) << ','
+                << "\"unified_path\":" << quote_json_string(format_protocol_path_or_empty(group.unified_path)) << ','
+                << "\"numeric_delta\":";
+            if (group.numeric_delta.has_value()) {
+                json << *group.numeric_delta;
+            } else {
+                json << "null";
+            }
+            json << ",\"packet_indices\":[";
+            for (std::size_t packet_idx = 0U; packet_idx < group.packet_indices.size(); ++packet_idx) {
+                if (packet_idx > 0U) {
+                    json << ',';
+                }
+                json << group.packet_indices[packet_idx];
+            }
+            json
+                << "],\"representative\":{"
+                << "\"packet_index\":" << group.representative.packet_index << ','
+                << "\"file_offset\":" << group.representative.file_offset << ','
+                << "\"captured_length\":" << group.representative.captured_length << ','
+                << "\"original_length\":" << group.representative.original_length << ','
+                << "\"legacy_value\":" << quote_json_string(group.representative.legacy_value) << ','
+                << "\"unified_value\":" << quote_json_string(group.representative.unified_value) << ','
+                << "\"legacy_path\":" << quote_json_string(format_protocol_path_or_empty(group.representative.legacy_path)) << ','
+                << "\"unified_path\":" << quote_json_string(format_protocol_path_or_empty(group.representative.unified_path))
+                << "}}";
+        }
+        json << "]";
+        if (result.legacy_packet.has_value() && result.unified_packet.has_value()) {
+            json
+                << ",\"legacy_packet\":" << format_packet_observation_json(*result.legacy_packet)
+                << ",\"unified_packet\":" << format_packet_observation_json(*result.unified_packet);
+        }
+        json << "}";
+
+        if (!write_json_file(*parsed.json_output_path, json.str())) {
+            std::cerr << "Failed to write JSON output: " << parsed.json_output_path->generic_string() << '\n';
+            return kExitCodeUsageOrImportFailure;
+        }
+    }
+
+    return result.packet_compare.mismatch_count == 0U && result.session_compare.parity
+        ? kExitCodeSuccess
+        : kExitCodeMismatch;
 }
 
 int run_single_mode(const ParsedCommandLine& parsed, const bool unified_mode) {
@@ -304,6 +586,9 @@ int main(int argc, char* argv[]) {
 
         if (parsed.mode == "compare") {
             return run_compare_mode(parsed);
+        }
+        if (parsed.mode == "diagnose") {
+            return run_diagnose_mode(parsed);
         }
 
         return run_single_mode(parsed, parsed.mode == "unified");

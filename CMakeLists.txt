@@ -153,6 +153,7 @@ target_link_libraries(
 add_library(
     pcap_flow_lab_import_validation_lib
     tools/import_validation/ImportValidation.cpp
+    tools/import_validation/ImportValidationDiagnostics.cpp
 )
 
 target_link_libraries(
