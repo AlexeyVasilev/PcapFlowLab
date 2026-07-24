@@ -349,41 +349,62 @@ void expect_ipv4_options_shadow_parsing_and_declared_boundary_semantics() {
     }
 
     {
-        const auto declared_short_ipv4 = strip_ethernet_header(add_ipv4_options(
-            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 7, 1), ipv4(10, 20, 7, 2), 9000U, 9001U),
-            {0x01, 0x01, 0x00, 0x00}
+        const auto declared_short_ipv4 = strip_ethernet_header(make_ethernet_ipv4_udp_packet(
+            ipv4(10, 20, 7, 1), ipv4(10, 20, 7, 2), 9000U, 9001U
         ));
         const auto declared_short_slice = make_root_packet_slice(
             ByteSourceId::captured_frame(99U),
             declared_short_ipv4,
             static_cast<std::uint32_t>(declared_short_ipv4.size()),
-            22U
+            19U
         );
         const auto declared_short_parsed = parse_ipv4_packet(declared_short_slice);
         PFL_EXPECT(declared_short_parsed.status == ParseStatus::malformed);
         const auto declared_short_step = dissect_ipv4(declared_short_slice);
         PFL_EXPECT(declared_short_step.status == ParseStatus::malformed);
+        PFL_EXPECT(declared_short_step.stop_reason == StopReason::malformed);
         PFL_EXPECT(!declared_short_step.path_contribution.has_value());
         PFL_EXPECT(!declared_short_step.handoff.has_value());
     }
 
     {
-        const auto captured_short_ipv4 = strip_ethernet_header(add_ipv4_options(
-            make_ethernet_ipv4_udp_packet(ipv4(10, 20, 8, 1), ipv4(10, 20, 8, 2), 9100U, 9101U),
-            {0x01, 0x01, 0x00, 0x00}
+        const auto captured_short_ipv4 = strip_ethernet_header(make_ethernet_ipv4_udp_packet(
+            ipv4(10, 20, 8, 1), ipv4(10, 20, 8, 2), 9100U, 9101U
         ));
         const auto captured_short_slice = make_root_packet_slice(
             ByteSourceId::captured_frame(100U),
             captured_short_ipv4,
-            22U,
+            19U,
             static_cast<std::uint32_t>(captured_short_ipv4.size())
         );
         const auto captured_short_parsed = parse_ipv4_packet(captured_short_slice);
         PFL_EXPECT(captured_short_parsed.status == ParseStatus::truncated);
         const auto captured_short_step = dissect_ipv4(captured_short_slice);
         PFL_EXPECT(captured_short_step.status == ParseStatus::truncated);
+        PFL_EXPECT(captured_short_step.stop_reason == StopReason::truncated);
         PFL_EXPECT(!captured_short_step.path_contribution.has_value());
         PFL_EXPECT(!captured_short_step.handoff.has_value());
+    }
+
+    {
+        const auto exact_minimum_ipv4 = strip_ethernet_header(make_ethernet_ipv4_udp_packet(
+            ipv4(10, 20, 8, 11), ipv4(10, 20, 8, 12), 9200U, 9201U
+        ));
+        const auto exact_minimum_slice = make_root_packet_slice(
+            ByteSourceId::captured_frame(101U),
+            exact_minimum_ipv4,
+            detail::kIpv4MinimumHeaderSize,
+            detail::kIpv4MinimumHeaderSize
+        );
+        const auto exact_minimum_parsed = parse_ipv4_packet(exact_minimum_slice);
+        PFL_EXPECT(exact_minimum_parsed.status == ParseStatus::complete);
+        PFL_EXPECT(exact_minimum_parsed.header_length == detail::kIpv4MinimumHeaderSize);
+        PFL_EXPECT(exact_minimum_parsed.nominal_packet_end == detail::kIpv4MinimumHeaderSize);
+        const auto exact_minimum_step = dissect_ipv4(exact_minimum_slice);
+        PFL_EXPECT(exact_minimum_step.status == ParseStatus::complete);
+        PFL_EXPECT(exact_minimum_step.stop_reason == StopReason::none);
+        PFL_REQUIRE(exact_minimum_step.path_contribution.has_value());
+        PFL_EXPECT(*exact_minimum_step.path_contribution == LayerKey::ipv4());
     }
 }
 

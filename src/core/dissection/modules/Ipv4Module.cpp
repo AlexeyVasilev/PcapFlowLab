@@ -86,8 +86,14 @@ Ipv4OptionsFacts parse_ipv4_options(const std::span<const std::uint8_t> options_
 }  // namespace
 
 ParsedIpv4Packet parse_ipv4_packet(const PacketSlice& slice) noexcept {
-    const auto bytes = direct::visible_captured_bytes(slice);
     const auto declared_length = direct::slice_declared_length(slice);
+    if (declared_length < detail::kIpv4MinimumHeaderSize) {
+        return ParsedIpv4Packet {
+            .status = ParseStatus::malformed,
+        };
+    }
+
+    const auto bytes = direct::visible_captured_bytes(slice);
     if (bytes.size() < detail::kIpv4MinimumHeaderSize) {
         return ParsedIpv4Packet {
             .status = ParseStatus::truncated,
