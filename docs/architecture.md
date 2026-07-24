@@ -160,11 +160,16 @@ Current scalability risks are still worth watching:
 
 ## Decoder follow-up
 
-Current packet-oriented decode still uses a centralized legacy traversal in `PacketDecoder` for import and a separate best-effort traversal in `PacketDetailsService` for selected-packet details.
+Current packet-oriented handling is now split between the unified registry-driven
+import path and the separate best-effort `PacketDetailsService` path used for
+selected-packet details.
 
-- This split is intentional in current production behavior.
-- A proposed registry-driven replacement is documented in `docs/dissection-engine-rfc.md`.
-- The RFC is design-only for now; production remains on the legacy decode path until staged cutover criteria are met.
+- Production capture import now goes through the unified dissection engine plus
+  the shared import application.
+- Legacy `PacketDecoder` remains temporarily only as a validation oracle and
+  differential-test reference.
+- Ongoing cleanup and remaining migration notes are documented in
+  `docs/dissection-engine-rfc.md`.
 
 ## Known limitations
 
