@@ -94,6 +94,80 @@ void expect_ethernet_and_vlan_canonical_parsers() {
     PFL_EXPECT(parsed_ieee8023.status == ParseStatus::complete);
     PFL_EXPECT(parsed_ieee8023.is_ieee_802_3);
     PFL_EXPECT(parsed_ieee8023.protocol_type == 16U);
+    PFL_EXPECT(parsed_ieee8023.declared_payload_length == 16U);
+
+    {
+        auto padded_ieee8023_bytes = make_ethernet_ieee8023_frame(16U);
+        padded_ieee8023_bytes.push_back(0xdeU);
+        padded_ieee8023_bytes.push_back(0xadU);
+        padded_ieee8023_bytes.push_back(0xbeU);
+        padded_ieee8023_bytes.push_back(0xefU);
+        const auto padded_ieee8023 = make_raw_packet(padded_ieee8023_bytes);
+        const auto root = make_root_slice(padded_ieee8023);
+        const auto parsed = parse_ethernet_frame(root);
+        PFL_REQUIRE(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.is_ieee_802_3);
+        PFL_EXPECT(parsed.declared_payload_length == 16U);
+
+        const auto step = dissect_ethernet(root);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == 30U);
+        PFL_EXPECT(step.bounds.full.captured.length() == 30U);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 16U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 16U);
+        PFL_EXPECT(step.handoff->child->declared_end() == 30U);
+        PFL_EXPECT(step.handoff->child->captured_end() == 30U);
+    }
+
+    {
+        auto truncated_ieee8023_bytes = make_ethernet_ieee8023_frame(16U);
+        truncated_ieee8023_bytes.resize(20U);
+        const auto truncated_ieee8023 = make_raw_packet(truncated_ieee8023_bytes, 30U);
+        const auto root = make_root_slice(truncated_ieee8023);
+        const auto parsed = parse_ethernet_frame(root);
+        PFL_REQUIRE(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.is_ieee_802_3);
+        PFL_EXPECT(parsed.declared_payload_length == 16U);
+
+        const auto step = dissect_ethernet(root);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == 30U);
+        PFL_EXPECT(step.bounds.full.captured.length() == 20U);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 16U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 6U);
+        PFL_EXPECT(step.handoff->child->declared_end() == 30U);
+        PFL_EXPECT(step.handoff->child->captured_end() == 20U);
+    }
+
+    {
+        auto tagged_ieee8023_bytes = add_vlan_tags(make_ethernet_ieee8023_frame(8U), {{0x8100U, 100U}});
+        tagged_ieee8023_bytes.push_back(0xfaU);
+        tagged_ieee8023_bytes.push_back(0xceU);
+        const auto tagged_ieee8023 = make_raw_packet(tagged_ieee8023_bytes);
+        const auto root = make_root_slice(tagged_ieee8023);
+        const auto ethernet = parse_ethernet_frame(root);
+        PFL_REQUIRE(ethernet.status == ParseStatus::complete);
+        const auto vlan_slice = require_child_slice(root, ethernet.header_length, ethernet.declared_payload_length);
+        const auto parsed = parse_vlan_tag(vlan_slice);
+        PFL_REQUIRE(parsed.status == ParseStatus::complete);
+        PFL_EXPECT(parsed.encapsulated_ether_type == 8U);
+        PFL_EXPECT(parsed.declared_payload_length == 8U);
+
+        const auto step = dissect_vlan(vlan_slice);
+        PFL_REQUIRE(step.handoff.has_value());
+        PFL_REQUIRE(step.handoff->child.has_value());
+        PFL_EXPECT(step.bounds.full.declared.length() == 12U);
+        PFL_EXPECT(step.bounds.full.captured.length() == 12U);
+        PFL_REQUIRE(step.bounds.payload.has_value());
+        PFL_EXPECT(step.bounds.payload->declared.length() == 8U);
+        PFL_EXPECT(step.bounds.payload->captured.length() == 8U);
+        PFL_EXPECT(step.handoff->child->declared_end() == 26U);
+        PFL_EXPECT(step.handoff->child->captured_end() == 26U);
+    }
 }
 
 

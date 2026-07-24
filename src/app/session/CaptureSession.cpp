@@ -315,14 +315,18 @@ std::string classify_stream_label(
     const std::uint32_t data_link_type,
     const ProtocolId protocol
 ) {
-    TlsPacketProtocolAnalyzer tls_analyzer {};
-    if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
-        return tls_stream_label_from_protocol_text(*tls_details);
-    }
+    if (protocol == ProtocolId::tcp) {
+        TlsPacketProtocolAnalyzer tls_analyzer {};
+        if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
+            return tls_stream_label_from_protocol_text(*tls_details);
+        }
 
-    HttpPacketProtocolAnalyzer http_analyzer {};
-    if (const auto http_details = http_analyzer.analyze(packet_bytes, data_link_type); http_details.has_value()) {
-        return http_stream_label_from_protocol_text(*http_details);
+        HttpPacketProtocolAnalyzer http_analyzer {};
+        if (const auto http_details = http_analyzer.analyze(packet_bytes, data_link_type); http_details.has_value()) {
+            return http_stream_label_from_protocol_text(*http_details);
+        }
+
+        return fallback_stream_label(protocol);
     }
 
     if (protocol == ProtocolId::udp) {
@@ -337,6 +341,8 @@ std::string classify_stream_label(
             }
             return "DNS Payload";
         }
+
+        return fallback_stream_label(protocol);
     }
 
     return fallback_stream_label(protocol);

@@ -8,6 +8,13 @@ namespace pfl::dissection {
 
 namespace {
 
+std::size_t logical_packet_end(
+    const std::size_t header_length,
+    const std::size_t declared_payload_length
+) noexcept {
+    return header_length + declared_payload_length;
+}
+
 DissectionStep dissect_ethernet_with_domains(
     const PacketSlice& slice,
     const SelectorDomain ether_type_domain,
@@ -25,15 +32,16 @@ DissectionStep dissect_ethernet_with_domains(
     }
 
     const auto layer = parsed.is_ieee_802_3 ? LayerKey::ieee8023() : LayerKey::ethernet_ii();
+    const auto full_end = logical_packet_end(parsed.header_length, parsed.declared_payload_length);
     DissectionStep step {
         .layer = parsed.is_ieee_802_3 ? DissectionLayerKind::ieee8023 : DissectionLayerKind::ethernet_ii,
         .path_contribution = layer,
         .path_contribution_deferrable_by_child = parsed.is_ieee_802_3,
         .bounds = direct::make_layer_bounds(
             slice,
-            direct::slice_declared_length(slice),
+            full_end,
             parsed.header_length,
-            direct::RelativeRange {.begin = parsed.header_length, .end = direct::slice_declared_length(slice)},
+            direct::RelativeRange {.begin = parsed.header_length, .end = full_end},
             true
         ),
         .facts = EthernetFacts {
@@ -49,7 +57,7 @@ DissectionStep dissect_ethernet_with_domains(
         const auto handoff = direct::make_protocol_handoff(
             slice,
             parsed.header_length,
-            parsed.protocol_type,
+            parsed.declared_payload_length,
             ProtocolSelector {
                 .domain = ieee8023_payload_domain,
                 .value = kIeee8023PayloadSelectorValue,
@@ -109,17 +117,17 @@ DissectionStep dissect_vlan_with_domains(
     }
 
     const auto layer = LayerKey::vlan(static_cast<std::uint16_t>(parsed.tci & 0x0FFFU));
+    const auto is_ieee_802_3 = parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff;
+    const auto full_end = logical_packet_end(parsed.header_length, parsed.declared_payload_length);
     const auto handoff = direct::make_protocol_handoff(
         slice,
         parsed.header_length,
-        parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff
-            ? static_cast<std::size_t>(parsed.encapsulated_ether_type)
-            : parsed.declared_payload_length,
+        parsed.declared_payload_length,
         ProtocolSelector {
-            .domain = parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff
+            .domain = is_ieee_802_3
                 ? ieee8023_payload_domain
                 : ether_type_domain,
-            .value = parsed.encapsulated_ether_type < detail::kIeee8023LengthCutoff
+            .value = is_ieee_802_3
                 ? kIeee8023PayloadSelectorValue
                 : parsed.encapsulated_ether_type,
         }
@@ -139,9 +147,9 @@ DissectionStep dissect_vlan_with_domains(
         .path_contribution = layer,
         .bounds = direct::make_layer_bounds(
             slice,
-            direct::slice_declared_length(slice),
+            full_end,
             parsed.header_length,
-            direct::RelativeRange {.begin = parsed.header_length, .end = direct::slice_declared_length(slice)},
+            direct::RelativeRange {.begin = parsed.header_length, .end = full_end},
             true
         ),
         .handoff = *handoff,
@@ -176,7 +184,11 @@ ParsedEthernetFrame parse_ethernet_frame(const PacketSlice& slice) noexcept {
         .status = ParseStatus::complete,
         .protocol_type = ethernet->protocol_type,
         .header_length = detail::kEthernetHeaderSize,
-        .declared_payload_length = direct::slice_declared_length(slice) - detail::kEthernetHeaderSize,
+        .declared_payload_length = ethernet->is_ieee_802_3
+            ? static_cast<std::size_t>(ethernet->declared_payload_length)
+            : (direct::slice_declared_length(slice) > detail::kEthernetHeaderSize
+                ? direct::slice_declared_length(slice) - detail::kEthernetHeaderSize
+                : 0U),
         .is_ieee_802_3 = ethernet->is_ieee_802_3,
     };
 }
@@ -201,7 +213,9 @@ ParsedVlanTag parse_vlan_tag(const PacketSlice& slice) noexcept {
         .tci = vlan->tci,
         .encapsulated_ether_type = vlan->encapsulated_ether_type,
         .header_length = detail::kVlanHeaderSize,
-        .declared_payload_length = direct::slice_declared_length(slice) - detail::kVlanHeaderSize,
+        .declared_payload_length = vlan->encapsulated_ether_type < detail::kIeee8023LengthCutoff
+            ? static_cast<std::size_t>(vlan->encapsulated_ether_type)
+            : direct::slice_declared_length(slice) - detail::kVlanHeaderSize,
     };
 }
 

@@ -1021,6 +1021,47 @@ void run_stream_query_tests() {
     }
 
     {
+        const auto tls_like_udp_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 43, 0, 1), ipv4(10, 43, 0, 2), 54001, 443,
+            make_tls_handshake_record(0x01U, {0xAAU, 0xBBU, 0xCCU})
+        );
+        const auto tls_like_udp_path = write_temp_pcap(
+            "pfl_stream_query_udp_tls_like_payload.pcap",
+            make_classic_pcap({{100, tls_like_udp_packet}})
+        );
+
+        CaptureSession tls_like_udp_session {};
+        PFL_EXPECT(tls_like_udp_session.open_capture(tls_like_udp_path, fast_options));
+        const auto tls_like_udp_rows = tls_like_udp_session.list_flow_stream_items(0);
+        PFL_EXPECT(tls_like_udp_rows.size() == 1U);
+        PFL_EXPECT(tls_like_udp_rows[0].label == "UDP Payload");
+        PFL_EXPECT(!starts_with(tls_like_udp_rows[0].label, "TLS"));
+        PFL_EXPECT(tls_like_udp_rows[0].protocol_text.empty());
+        PFL_EXPECT(tls_like_udp_rows[0].payload_hex_text.empty());
+
+        constexpr std::string_view http_like_udp_text =
+            "GET /udp HTTP/1.1\r\n"
+            "Host: udp.example\r\n"
+            "\r\n";
+        const auto http_like_udp_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 43, 0, 3), ipv4(10, 43, 0, 4), 54002, 80, make_text_bytes(http_like_udp_text)
+        );
+        const auto http_like_udp_path = write_temp_pcap(
+            "pfl_stream_query_udp_http_like_payload.pcap",
+            make_classic_pcap({{100, http_like_udp_packet}})
+        );
+
+        CaptureSession http_like_udp_session {};
+        PFL_EXPECT(http_like_udp_session.open_capture(http_like_udp_path, fast_options));
+        const auto http_like_udp_rows = http_like_udp_session.list_flow_stream_items(0);
+        PFL_EXPECT(http_like_udp_rows.size() == 1U);
+        PFL_EXPECT(http_like_udp_rows[0].label == "UDP Payload");
+        PFL_EXPECT(!starts_with(http_like_udp_rows[0].label, "HTTP"));
+        PFL_EXPECT(http_like_udp_rows[0].protocol_text.empty());
+        PFL_EXPECT(http_like_udp_rows[0].payload_hex_text.empty());
+    }
+
+    {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), fast_options));
 
