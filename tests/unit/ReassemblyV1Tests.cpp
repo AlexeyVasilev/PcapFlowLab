@@ -133,7 +133,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto expected_bytes = std::vector<std::uint8_t> {'G', 'E', 'T', ' ', '/', 'v', '1', '\r', '\n'};
         const auto expected_packet_indices = std::vector<std::uint64_t> {0, 2, 3};
@@ -158,7 +158,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto result = session.reassemble_flow_direction(ReassemblyRequest {
             .flow_index = 0,
@@ -175,14 +175,14 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(write_udp_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(write_udp_capture(), CaptureImportOptions {}));
         const auto result = session.reassemble_flow_direction(ReassemblyRequest {.flow_index = 0});
         PFL_EXPECT(!result.has_value());
     }
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto expected_bytes = std::vector<std::uint8_t> {'G', 'E', 'T', ' ', '/', 'v', '1'};
         const auto expected_packet_indices = std::vector<std::uint64_t> {0, 2};
@@ -204,7 +204,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(tcp_capture_path, CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto expected_bytes = std::vector<std::uint8_t> {'G', 'E', 'T', ' ', '/'};
         const auto expected_packet_indices = std::vector<std::uint64_t> {0, 2};
@@ -226,7 +226,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(write_zero_payload_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(write_zero_payload_capture(), CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto expected_bytes = std::vector<std::uint8_t> {'O', 'K'};
         const auto expected_packet_indices = std::vector<std::uint64_t> {1};
@@ -248,7 +248,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(write_fragmented_tcp_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(write_fragmented_tcp_capture(), CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
 
         const auto result = session.reassemble_flow_direction(ReassemblyRequest {
@@ -270,7 +270,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(write_duplicate_tcp_segment_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(write_duplicate_tcp_segment_capture(), CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto suppressed_packet_indices = session.suspected_tcp_retransmission_packet_indices(0);
         const auto expected_bytes = std::vector<std::uint8_t> {'A', 'B', 'C'};
@@ -295,7 +295,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(write_similar_tcp_segment_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(write_similar_tcp_segment_capture(), CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto suppressed_packet_indices = session.suspected_tcp_retransmission_packet_indices(0);
         const auto expected_bytes = std::vector<std::uint8_t> {'A', 'B', 'C', 'X', 'Y', 'Z'};
@@ -318,7 +318,7 @@ void run_reassembly_v1_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(write_partially_overlapping_tcp_segment_capture(), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(write_partially_overlapping_tcp_segment_capture(), CaptureImportOptions {}));
         const auto direction = direction_for_packet(session, 0, 0);
         const auto suppressed_packet_indices = session.suspected_tcp_retransmission_packet_indices(0);
         const auto expected_bytes = std::vector<std::uint8_t> {'A', 'B', 'C', 'D', 'E', 'F', 'G'};
@@ -343,3 +343,4 @@ void run_reassembly_v1_tests() {
 }
 
 }  // namespace pfl::tests
+

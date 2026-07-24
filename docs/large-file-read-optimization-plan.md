@@ -190,10 +190,12 @@ File:
 Behavior:
 
 - constructs a span over full captured bytes;
-- calls decode;
+- runs the unified dissection/import path and shared import application;
 - calls `FlowHintService::detect(...)` for recognized non-fragment IPv4/IPv6 packets;
-- for fallback ARP, calls `PacketDetailsService::decode(...)`;
-- for unrecognized packets, classifies a reason from packet bytes.
+- appends `UnrecognizedPacketRecord` entries for packets that remain
+  unrecognized after unified import;
+- legacy ARP fallback remains only in the developer validation oracle path, not
+  in normal production import.
 
 Byte need:
 

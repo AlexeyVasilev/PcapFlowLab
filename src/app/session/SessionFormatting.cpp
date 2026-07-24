@@ -440,6 +440,7 @@ std::uint16_t macsec_plaintext_ether_type(const PacketDetails& details) noexcept
 }
 
 PacketSummaryField make_summary_field(std::string label, std::string value);
+std::string format_byte_count(std::size_t bytes);
 bool ipv4_field_available(const IPv4Details& details, std::size_t end_offset) noexcept;
 std::uint16_t vlan_identifier(std::uint16_t tci) noexcept;
 unsigned vlan_priority(std::uint16_t tci) noexcept;
@@ -2131,7 +2132,7 @@ std::optional<PacketSummaryLayer> build_macsec_protected_payload_layer(const Pac
     }
 
     std::vector<PacketSummaryField> fields {
-        make_summary_field("Length", std::to_string(details.macsec.protected_payload_length) + " bytes"),
+        make_summary_field("Length", format_byte_count(details.macsec.protected_payload_length)),
     };
 
     std::size_t preview_offset = 0U;
@@ -2142,7 +2143,7 @@ std::optional<PacketSummaryLayer> build_macsec_protected_payload_layer(const Pac
         ));
         fields.push_back(make_summary_field(
             "Data Length",
-            std::to_string(details.macsec.protected_payload_length - 2U) + " bytes"
+            format_byte_count(details.macsec.protected_payload_length - 2U)
         ));
         preview_offset = 2U;
     }
@@ -2180,7 +2181,7 @@ std::optional<PacketSummaryLayer> build_macsec_icv_layer(const PacketDetails& de
     }
 
     std::vector<PacketSummaryField> fields {
-        make_summary_field("Length", std::to_string(details.macsec.icv_length) + " bytes"),
+        make_summary_field("Length", format_byte_count(details.macsec.icv_length)),
     };
     if (!details.macsec.icv_preview.empty()) {
         fields.push_back(make_summary_field(
@@ -4972,14 +4973,14 @@ std::optional<std::string> build_basic_protocol_details_text(const PacketDetails
         if (details.macsec.sc && details.macsec.available_sci_bytes >= 8U) {
             builder << '\n' << '\t' << "SCI Port ID: " << format_hex16_value(details.macsec.sci_port_id);
         }
-        builder << '\n' << '\t' << "Protected Payload Length: " << details.macsec.protected_payload_length << " bytes";
+        builder << '\n' << '\t' << "Protected Payload Length: " << format_byte_count(details.macsec.protected_payload_length);
         if (has_plaintext_macsec_ether_type(details)) {
             builder << '\n' << '\t' << "Plain EtherType: "
                     << format_ether_type_value(macsec_plaintext_ether_type(details))
-                    << '\n' << '\t' << "Data Length: " << (details.macsec.protected_payload_length - 2U) << " bytes";
+                    << '\n' << '\t' << "Data Length: " << format_byte_count(details.macsec.protected_payload_length - 2U);
         }
         if (details.macsec.icv_length > 0U) {
-            builder << '\n' << '\t' << "ICV Length: " << details.macsec.icv_length << " bytes";
+            builder << '\n' << '\t' << "ICV Length: " << format_byte_count(details.macsec.icv_length);
         }
         builder << '\n' << '\t' << "Protected payload is not decrypted.";
         if (details.macsec.sectag_truncated) {

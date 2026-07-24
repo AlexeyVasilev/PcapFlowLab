@@ -92,6 +92,52 @@ void run_flow_key_tests() {
     PFL_EXPECT(make_connection_key(flow_v4_path_1) == make_connection_key(reverse_flow_v4_path_1));
     PFL_EXPECT(make_connection_key(flow_v4_path_1) != make_connection_key(flow_v4_path_2));
 
+    const auto arp_request = FlowKeyV4 {
+        .src_addr = ipv4(192, 168, 1, 10),
+        .dst_addr = ipv4(192, 168, 1, 1),
+        .src_port = 0,
+        .dst_port = 0,
+        .protocol = ProtocolId::arp,
+        .protocol_path_id = 7U,
+    };
+    const auto arp_reply = FlowKeyV4 {
+        .src_addr = ipv4(192, 168, 1, 1),
+        .dst_addr = ipv4(192, 168, 1, 10),
+        .src_port = 0,
+        .dst_port = 0,
+        .protocol = ProtocolId::arp,
+        .protocol_path_id = 7U,
+    };
+    const auto icmp_same_carrier = FlowKeyV4 {
+        .src_addr = arp_request.src_addr,
+        .dst_addr = arp_request.dst_addr,
+        .src_port = 0,
+        .dst_port = 0,
+        .protocol = ProtocolId::icmp,
+        .protocol_path_id = 7U,
+    };
+    const auto arp_other_path = FlowKeyV4 {
+        .src_addr = arp_request.src_addr,
+        .dst_addr = arp_request.dst_addr,
+        .src_port = 0,
+        .dst_port = 0,
+        .protocol = ProtocolId::arp,
+        .protocol_path_id = 8U,
+    };
+
+    const auto arp_connection_request = make_connection_key(arp_request);
+    const auto arp_connection_reply = make_connection_key(arp_reply);
+    const auto icmp_connection_same_carrier = make_connection_key(icmp_same_carrier);
+    const auto arp_connection_other_path = make_connection_key(arp_other_path);
+
+    PFL_EXPECT(arp_connection_request == arp_connection_reply);
+    PFL_EXPECT(arp_connection_request.first.port == 0U);
+    PFL_EXPECT(arp_connection_request.second.port == 0U);
+    PFL_EXPECT(resolve_direction(arp_connection_request, arp_request) == Direction::b_to_a);
+    PFL_EXPECT(resolve_direction(arp_connection_request, arp_reply) == Direction::a_to_b);
+    PFL_EXPECT(arp_connection_request != icmp_connection_same_carrier);
+    PFL_EXPECT(arp_connection_request != arp_connection_other_path);
+
     const FlowKeyV6 flow_v6_ab {
         .src_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01}),
         .dst_addr = ipv6({0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x02}),

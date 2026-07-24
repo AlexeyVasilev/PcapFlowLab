@@ -364,7 +364,7 @@ void run_index_tests() {
         std::filesystem::remove(stream_index_path);
 
         CaptureSession original_stream_session {};
-        PFL_EXPECT(original_stream_session.open_capture(source_stream_path, CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(original_stream_session.open_capture(source_stream_path, CaptureImportOptions {}));
         const auto original_stream_rows = original_stream_session.list_flow_stream_items(0);
         const auto expected_stream_packet_indices = std::vector<std::uint64_t> {0, 1};
         PFL_EXPECT(original_stream_rows.size() == 1);
@@ -459,4 +459,5 @@ void run_index_tests() {
 }
 
 }  // namespace pfl::tests
+
 

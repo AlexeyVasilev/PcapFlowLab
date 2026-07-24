@@ -110,6 +110,19 @@ struct LinkLayerPayloadView {
     std::uint16_t cooked_hardware_type {0};
 };
 
+struct EthernetHeaderView {
+    std::uint16_t protocol_type {0};
+    std::size_t payload_offset {0};
+    bool is_ieee_802_3 {false};
+    std::uint16_t declared_payload_length {0};
+};
+
+struct VlanHeaderView {
+    std::uint16_t tci {0};
+    std::uint16_t encapsulated_ether_type {0};
+    std::size_t payload_offset {0};
+};
+
 struct LlcSnapPayloadView {
     bool has_llc {false};
     std::uint8_t available_llc_header_bytes {0};
@@ -543,16 +556,51 @@ inline bool is_ipv6_extension_header(const std::uint8_t next_header) noexcept {
            next_header == kIpProtocolAh;
 }
 
+inline std::optional<EthernetHeaderView> parse_ethernet_header_at(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t ethernet_offset
+) {
+    if (bytes.size() < ethernet_offset + kEthernetHeaderSize) {
+        return std::nullopt;
+    }
+
+    const auto protocol_type = read_be16(bytes, ethernet_offset + 12U);
+    return EthernetHeaderView {
+        .protocol_type = protocol_type,
+        .payload_offset = ethernet_offset + kEthernetHeaderSize,
+        .is_ieee_802_3 = protocol_type < kIeee8023LengthCutoff,
+        .declared_payload_length = protocol_type < kIeee8023LengthCutoff
+            ? protocol_type
+            : static_cast<std::uint16_t>(0U),
+    };
+}
+
+inline std::optional<VlanHeaderView> parse_vlan_header_at(
+    std::span<const std::uint8_t> bytes,
+    const std::size_t vlan_offset
+) {
+    if (bytes.size() < vlan_offset + kVlanHeaderSize) {
+        return std::nullopt;
+    }
+
+    return VlanHeaderView {
+        .tci = read_be16(bytes, vlan_offset),
+        .encapsulated_ether_type = read_be16(bytes, vlan_offset + 2U),
+        .payload_offset = vlan_offset + kVlanHeaderSize,
+    };
+}
+
 inline std::optional<LinkLayerPayloadView> parse_link_layer_payload(std::span<const std::uint8_t> bytes,
                                                                     const std::uint32_t data_link_type) {
     if (data_link_type == kLinkTypeEthernet) {
-        if (bytes.size() < kEthernetHeaderSize) {
+        const auto ethernet = parse_ethernet_header_at(bytes, 0U);
+        if (!ethernet.has_value()) {
             return std::nullopt;
         }
 
         LinkLayerPayloadView view {
-            .protocol_type = read_be16(bytes, 12U),
-            .payload_offset = kEthernetHeaderSize,
+            .protocol_type = ethernet->protocol_type,
+            .payload_offset = ethernet->payload_offset,
             .is_ethernet = true,
         };
 
@@ -562,12 +610,13 @@ inline std::optional<LinkLayerPayloadView> parse_link_layer_payload(std::span<co
                 return std::nullopt;
             }
 
-            if (bytes.size() < view.payload_offset + kVlanHeaderSize) {
+            const auto vlan = parse_vlan_header_at(bytes, view.payload_offset);
+            if (!vlan.has_value()) {
                 return std::nullopt;
             }
 
-            view.protocol_type = read_be16(bytes, view.payload_offset + 2U);
-            view.payload_offset += kVlanHeaderSize;
+            view.protocol_type = vlan->encapsulated_ether_type;
+            view.payload_offset = vlan->payload_offset;
             ++vlan_count;
         }
 
@@ -615,13 +664,14 @@ inline std::optional<LinkLayerPayloadView> parse_ethernet_payload_at(
     std::span<const std::uint8_t> bytes,
     const std::size_t ethernet_offset
 ) {
-    if (bytes.size() < ethernet_offset + kEthernetHeaderSize) {
+    const auto ethernet = parse_ethernet_header_at(bytes, ethernet_offset);
+    if (!ethernet.has_value()) {
         return std::nullopt;
     }
 
     LinkLayerPayloadView view {
-        .protocol_type = read_be16(bytes, ethernet_offset + 12U),
-        .payload_offset = ethernet_offset + kEthernetHeaderSize,
+        .protocol_type = ethernet->protocol_type,
+        .payload_offset = ethernet->payload_offset,
         .is_ethernet = true,
     };
 
@@ -631,12 +681,13 @@ inline std::optional<LinkLayerPayloadView> parse_ethernet_payload_at(
             return std::nullopt;
         }
 
-        if (bytes.size() < view.payload_offset + kVlanHeaderSize) {
+        const auto vlan = parse_vlan_header_at(bytes, view.payload_offset);
+        if (!vlan.has_value()) {
             return std::nullopt;
         }
 
-        view.protocol_type = read_be16(bytes, view.payload_offset + 2U);
-        view.payload_offset += kVlanHeaderSize;
+        view.protocol_type = vlan->encapsulated_ether_type;
+        view.payload_offset = vlan->payload_offset;
         ++vlan_count;
     }
 

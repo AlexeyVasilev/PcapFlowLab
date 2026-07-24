@@ -197,7 +197,7 @@ This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Developer note
 
-Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture_fast`, `capture_deep`, and `index_load` operations. This is developer-only instrumentation for local regression tracking and has no effect in normal usage.
+Creating `perf-open.enabled` next to the executable or in the current working directory enables append-only open-time CSV logging to `perf_open_log.csv` for `capture` and `index_load` operations. This is developer-only instrumentation for local regression tracking and has no effect in normal usage.
 
 
 

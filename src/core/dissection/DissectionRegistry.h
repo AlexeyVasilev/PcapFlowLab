@@ -1,0 +1,109 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <vector>
+
+#include "core/dissection/PacketSlice.h"
+
+namespace pfl::dissection {
+
+struct ProtocolHandoff {
+    ProtocolSelector selector {};
+    std::optional<PacketSlice> child {};
+
+    [[nodiscard]] friend bool operator==(const ProtocolHandoff&, const ProtocolHandoff&) = default;
+};
+
+enum class PathCommitPolicy : std::uint8_t {
+    immediate = 0,
+    recognized_flow,
+    recognized_flow_or_recognized_non_flow,
+};
+
+[[nodiscard]] constexpr std::uint8_t path_commit_policy_strength(const PathCommitPolicy policy) noexcept {
+    switch (policy) {
+    case PathCommitPolicy::immediate:
+        return 0U;
+    case PathCommitPolicy::recognized_flow_or_recognized_non_flow:
+        return 1U;
+    case PathCommitPolicy::recognized_flow:
+        return 2U;
+    }
+
+    return 0U;
+}
+
+[[nodiscard]] constexpr PathCommitPolicy combine_path_commit_policies(
+    const PathCommitPolicy lhs,
+    const PathCommitPolicy rhs
+) noexcept {
+    return path_commit_policy_strength(lhs) >= path_commit_policy_strength(rhs) ? lhs : rhs;
+}
+
+struct DissectionStep {
+    DissectionLayerKind layer {DissectionLayerKind::unknown};
+    std::optional<LayerKey> path_contribution {};
+    PathCommitPolicy path_commit_policy {PathCommitPolicy::immediate};
+    std::optional<PathCommitPolicy> descendant_path_commit_policy {};
+    bool path_contribution_deferrable_by_child {false};
+    bool defer_last_deferrable_path_contribution {false};
+    LayerBounds bounds {};
+    std::optional<ProtocolHandoff> handoff {};
+    LayerFacts facts {};
+    TerminalDisposition terminal_disposition {TerminalDisposition::none};
+    ParseStatus status {ParseStatus::opaque};
+    StopReason stop_reason {StopReason::none};
+};
+
+using DissectorFn = DissectionStep (*)(const PacketSlice&);
+
+struct DissectorRegistration {
+    ProtocolSelector selector {};
+    DissectorFn dissector {nullptr};
+};
+
+enum class DissectionRegistryBuildStatus : std::uint8_t {
+    success = 0,
+    duplicate_selector,
+    null_dissector,
+};
+
+class DissectionRegistry;
+struct DissectionRegistryBuildResult;
+
+class DissectionRegistry {
+public:
+    [[nodiscard]] static DissectionRegistryBuildResult build(
+        std::span<const DissectorRegistration> registrations
+    );
+
+    [[nodiscard]] DissectorFn find(const ProtocolSelector& selector) const noexcept;
+    [[nodiscard]] std::size_t entry_count() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
+
+private:
+    struct Entry {
+        std::uint32_t selector_value {0U};
+        DissectorFn dissector {nullptr};
+    };
+
+    std::array<std::vector<Entry>, selector_domain_count> entries_by_domain_ {};
+    std::size_t entry_count_ {0U};
+};
+
+struct DissectionRegistryBuildResult {
+    DissectionRegistryBuildStatus status {DissectionRegistryBuildStatus::success};
+    std::optional<ProtocolSelector> conflicting_selector {};
+    std::optional<std::size_t> conflicting_registration_index {};
+    std::optional<DissectionRegistry> registry {};
+
+    [[nodiscard]] bool ok() const noexcept {
+        return status == DissectionRegistryBuildStatus::success && registry.has_value();
+    }
+};
+
+}  // namespace pfl::dissection

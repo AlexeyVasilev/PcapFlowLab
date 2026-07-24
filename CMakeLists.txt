@@ -48,6 +48,30 @@ add_library(
     src/core/domain/PacketRef.cpp
     src/core/domain/CaptureSummary.cpp
     src/core/domain/PacketDetails.cpp
+    src/core/dissection/PacketSlice.cpp
+    src/core/dissection/DissectionRegistry.cpp
+    src/core/dissection/DissectionEngine.cpp
+    src/core/dissection/CommonDirectDissection.cpp
+    src/core/dissection/modules/EthernetVlanModules.cpp
+    src/core/dissection/modules/LinuxCookedModules.cpp
+    src/core/dissection/modules/LlcSnapModule.cpp
+    src/core/dissection/modules/MacsecModule.cpp
+    src/core/dissection/modules/ArpModule.cpp
+    src/core/dissection/modules/ControlMessageModules.cpp
+    src/core/dissection/modules/EoipModule.cpp
+    src/core/dissection/modules/GreModule.cpp
+    src/core/dissection/modules/GeneveModule.cpp
+    src/core/dissection/modules/GtpuModule.cpp
+    src/core/dissection/modules/IpSecurityModules.cpp
+    src/core/dissection/modules/Ipv4Module.cpp
+    src/core/dissection/modules/Ipv6ExtensionModules.cpp
+    src/core/dissection/modules/Ipv6Module.cpp
+    src/core/dissection/modules/MplsModule.cpp
+    src/core/dissection/modules/MplsPseudowireModule.cpp
+    src/core/dissection/modules/PbbModule.cpp
+    src/core/dissection/modules/PppoePppModules.cpp
+    src/core/dissection/modules/TransportModules.cpp
+    src/core/dissection/modules/VxlanModule.cpp
     src/core/io/PcapReader.cpp
     src/core/io/PcapNgReader.cpp
     src/core/io/PcapWriter.cpp
@@ -64,9 +88,10 @@ add_library(
     src/core/decode/PacketDecoder.cpp
     src/core/reassembly/ReassemblyService.cpp
     src/core/services/PacketIngestor.cpp
+    src/core/services/CaptureImportPrefixPolicy.cpp
     src/core/services/CaptureImportProcessor.cpp
-    src/core/services/FastCaptureImporter.cpp
-    src/core/services/DeepCaptureImporter.cpp
+    src/core/services/CaptureImportApplication.cpp
+    src/core/services/DissectionImportAdapter.cpp
     src/core/services/CaptureImporter.cpp
     src/core/services/ChunkedCaptureImporter.cpp
     src/core/services/FlowExportService.cpp
@@ -120,6 +145,42 @@ set_target_properties(pcap_flow_lab_cli PROPERTIES OUTPUT_NAME "pcap-flow-lab")
 target_link_libraries(
     pcap_flow_lab_cli
     PRIVATE
+        pcap_flow_lab_core
+)
+
+# Developer-only legacy-vs-unified import validation tooling. This does not
+# change production import behavior or add a runtime decoder selector.
+add_library(
+    pcap_flow_lab_import_validation_lib
+    tools/import_validation/ImportValidation.cpp
+    tools/import_validation/ImportValidationDiagnostics.cpp
+)
+
+target_link_libraries(
+    pcap_flow_lab_import_validation_lib
+    PRIVATE
+        pcap_flow_lab_core
+)
+
+target_include_directories(
+    pcap_flow_lab_import_validation_lib
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+if(WIN32)
+    target_link_libraries(pcap_flow_lab_import_validation_lib PRIVATE psapi)
+endif()
+
+add_executable(
+    pcap_flow_lab_import_validation
+    tools/import_validation/main.cpp
+)
+
+target_link_libraries(
+    pcap_flow_lab_import_validation
+    PRIVATE
+        pcap_flow_lab_import_validation_lib
         pcap_flow_lab_core
 )
 
@@ -284,14 +345,32 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         tests/unit/test_main.cpp
         tests/unit/FlowKeyTests.cpp
+        tests/unit/DissectionFoundationTests.cpp
+        tests/unit/CommonDirectDissectionTests.cpp
+        tests/unit/CommonDirectDissectionTestSupport.cpp
+        tests/unit/DissectionImportAdapterTests.cpp
+        tests/unit/DissectionImportSessionParityTests.cpp
+        tests/unit/ImportValidationTests.cpp
+        tests/unit/CommonDirectCoreDissectionTests.cpp
+        tests/unit/CommonDirectRegistryEngineTests.cpp
+        tests/unit/CommonDirectCollectorTests.cpp
+        tests/unit/CommonDirectPathPolicyTests.cpp
+        tests/unit/CommonDirectBoundsTraversalTests.cpp
+        tests/unit/CommonDirectLinkDissectionTests.cpp
+        tests/unit/CommonDirectNetworkDissectionTests.cpp
+        tests/unit/CommonDirectEncapsulationDissectionTests.cpp
+        tests/unit/CommonDirectEoipDissectionTests.cpp
+        tests/unit/CommonDirectMplsPseudowireDissectionTests.cpp
+        tests/unit/CommonDirectTransportDissectionTests.cpp
+        tests/unit/CommonDirectVxlanDissectionTests.cpp
+        tests/unit/CommonDirectGeneveDissectionTests.cpp
+        tests/unit/CommonDirectGtpuDissectionTests.cpp
         tests/unit/ProtocolPathTests.cpp
         tests/unit/ConnectionTests.cpp
         tests/unit/IngestorTests.cpp
         tests/unit/ImportTests.cpp
-        tests/unit/ImportModeTests.cpp
         tests/unit/AnalysisSettingsTests.cpp
         tests/unit/FlowAnalysisTests.cpp
-        tests/unit/CliImportModeTests.cpp
         tests/unit/PacketAccessTests.cpp
         tests/unit/PacketDetailsTests.cpp
         tests/unit/PacketPayloadTests.cpp
@@ -315,6 +394,7 @@ if(BUILD_TESTING)
         tests/unit/EoipPcapFixtureTests.cpp
         tests/unit/IpEncapsulationPcapFixtureTests.cpp
         tests/unit/SctpPcapFixtureTests.cpp
+        tests/unit/LinuxCookedPcapFixtureTests.cpp
         tests/unit/PacketMetadataTests.cpp
         tests/unit/QueryTests.cpp
         tests/unit/StreamQueryTests.cpp
@@ -345,7 +425,28 @@ if(BUILD_TESTING)
         pcap_flow_lab_core_tests
         PRIVATE
             pcap_flow_lab_core
+            pcap_flow_lab_import_validation_lib
     )
+
+    # Keep only the core test executable unoptimized in optimized configs to
+    # reduce compiler memory usage; production targets remain fully optimized.
+    if(MSVC)
+        target_compile_options(
+            pcap_flow_lab_core_tests
+            PRIVATE
+                $<$<CONFIG:Release>:/Od>
+                $<$<CONFIG:RelWithDebInfo>:/Od>
+                $<$<CONFIG:MinSizeRel>:/Od>
+        )
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(
+            pcap_flow_lab_core_tests
+            PRIVATE
+                $<$<CONFIG:Release>:-O0>
+                $<$<CONFIG:RelWithDebInfo>:-O0>
+                $<$<CONFIG:MinSizeRel>:-O0>
+        )
+    endif()
 
     add_test(NAME pcap_flow_lab_core_tests COMMAND pcap_flow_lab_core_tests)
 endif()

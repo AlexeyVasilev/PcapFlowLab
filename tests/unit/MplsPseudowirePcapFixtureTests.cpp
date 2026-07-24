@@ -1,7 +1,10 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <initializer_list>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "PcapTestUtils.h"
@@ -9,6 +12,7 @@
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
+#include "core/domain/ProtocolPath.h"
 #include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
@@ -103,6 +107,24 @@ void expect_layer_prefix(
     }
 }
 
+std::string require_protocol_path_text(const CaptureSession& session, const ProtocolPathId id) {
+    PFL_REQUIRE(id != kInvalidProtocolPathId);
+    const auto* path = session.state().protocol_path_registry.find(id);
+    PFL_REQUIRE(path != nullptr);
+    return format_protocol_path(*path);
+}
+
+std::string require_flow_protocol_path_text(const CaptureSession& session, const FlowRow& row) {
+    return require_protocol_path_text(session, row.protocol_path_id);
+}
+
+struct MplsLabelSpec {
+    std::uint32_t label {0};
+    std::uint8_t traffic_class {0};
+    bool bottom_of_stack {false};
+    std::uint8_t ttl {64};
+};
+
 std::vector<std::uint8_t> make_ethernet_frame_with_payload(
     const std::uint16_t ether_type,
     const std::vector<std::uint8_t>& payload
@@ -120,38 +142,75 @@ void append_mpls_label(
     std::vector<std::uint8_t>& bytes,
     const std::uint32_t label,
     const bool bottom_of_stack,
-    const std::uint8_t ttl = 64U
+    const std::uint8_t ttl = 64U,
+    const std::uint8_t traffic_class = 0U
 ) {
     const auto entry = (label << 12U) |
+        (static_cast<std::uint32_t>(traffic_class & 0x7U) << 9U) |
         (static_cast<std::uint32_t>(bottom_of_stack ? 1U : 0U) << 8U) |
         static_cast<std::uint32_t>(ttl);
     append_be32(bytes, entry);
 }
 
-std::vector<std::uint8_t> make_outer_vlan_mpls_pw_inner_qinq_ipv4_udp_packet() {
-    const auto inner_ipv4_udp = add_vlan_tags(
-        make_ethernet_ipv4_udp_packet(
-            ipv4(192, 0, 2, 50),
-            ipv4(198, 51, 100, 50),
-            53560U,
-            443U
-        ),
-        {
-            {0x88A8U, 100U},
-            {0x8100U, 200U},
-        }
+std::vector<std::uint8_t> make_inner_ethernet_frame_with_payload(
+    const std::array<std::uint8_t, 6>& dst_mac,
+    const std::array<std::uint8_t, 6>& src_mac,
+    const std::uint16_t ether_type,
+    const std::vector<std::uint8_t>& payload
+) {
+    std::vector<std::uint8_t> bytes {};
+    bytes.insert(bytes.end(), dst_mac.begin(), dst_mac.end());
+    bytes.insert(bytes.end(), src_mac.begin(), src_mac.end());
+    append_be16(bytes, ether_type);
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> wrap_mpls_pseudowire_payload(
+    const std::vector<MplsLabelSpec>& labels,
+    const std::vector<std::uint8_t>& inner_payload,
+    const std::optional<std::pair<std::uint16_t, std::uint16_t>>& control_word = std::nullopt
+) {
+    std::vector<std::uint8_t> bytes {};
+    for (const auto& label : labels) {
+        append_mpls_label(bytes, label.label, label.bottom_of_stack, label.ttl, label.traffic_class);
+    }
+    if (control_word.has_value()) {
+        append_be16(bytes, control_word->first);
+        append_be16(bytes, control_word->second);
+    }
+    bytes.insert(bytes.end(), inner_payload.begin(), inner_payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_mpls_pseudowire_frame(
+    const std::vector<MplsLabelSpec>& labels,
+    const std::vector<std::uint8_t>& inner_payload,
+    const std::optional<std::pair<std::uint16_t, std::uint16_t>>& control_word = std::nullopt,
+    const std::vector<std::pair<std::uint16_t, std::uint16_t>>& outer_vlan_tags = {}
+) {
+    auto frame = make_ethernet_frame_with_payload(
+        0x8847U,
+        wrap_mpls_pseudowire_payload(labels, inner_payload, control_word)
     );
+    if (!outer_vlan_tags.empty()) {
+        frame = add_vlan_tags(frame, outer_vlan_tags);
+    }
+    return frame;
+}
 
-    std::vector<std::uint8_t> mpls_payload {};
-    append_mpls_label(mpls_payload, 16000U, false);
-    append_mpls_label(mpls_payload, 16001U, true);
-    append_be16(mpls_payload, 0U);
-    append_be16(mpls_payload, 0x1234U);
-    mpls_payload.insert(mpls_payload.end(), inner_ipv4_udp.begin(), inner_ipv4_udp.end());
-
-    return add_vlan_tags(
-        make_ethernet_frame_with_payload(0x8847U, mpls_payload),
-        {{0x8100U, 300U}}
+std::vector<std::uint8_t> make_default_inner_ipv4_udp_frame() {
+    const auto packet = make_ethernet_ipv4_udp_packet(
+        ipv4(192, 0, 2, 50),
+        ipv4(198, 51, 100, 50),
+        53560U,
+        443U
+    );
+    return make_inner_ethernet_frame_with_payload(
+        {0x02, 0x00, 0x00, 0x00, 0x51, 0x02},
+        {0x02, 0x00, 0x00, 0x00, 0x51, 0x01},
+        0x0800U,
+        std::vector<std::uint8_t>(packet.begin() + 14, packet.end())
     );
 }
 
@@ -167,7 +226,8 @@ void expect_single_ip_flow(
     std::initializer_list<const char*> expected_layer_prefix,
     const bool expect_control_word,
     const std::size_t expected_vlan_count = 0U,
-    const bool expect_snap = false
+    const bool expect_snap = false,
+    const bool expect_payload_extraction = true
 ) {
     PFL_EXPECT(session.open_capture(fixture_path(relative_path)));
     const auto rows = session.list_flows();
@@ -238,9 +298,14 @@ void expect_single_ip_flow(
     const auto packet_bytes = session.read_packet_data(packet);
     PacketPayloadService payload_service {};
     const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
-    PFL_EXPECT(!transport_payload.empty());
-    PFL_EXPECT(static_cast<std::uint32_t>(transport_payload.size()) == packet.payload_length);
-    PFL_EXPECT(!session.read_packet_payload_hex_dump(packet).empty());
+    if (expect_payload_extraction) {
+        PFL_EXPECT(!transport_payload.empty());
+        PFL_EXPECT(static_cast<std::uint32_t>(transport_payload.size()) == packet.payload_length);
+        PFL_EXPECT(!session.read_packet_payload_hex_dump(packet).empty());
+    } else {
+        PFL_EXPECT(transport_payload.empty());
+        PFL_EXPECT(session.read_packet_payload_hex_dump(packet).empty());
+    }
 
     const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
     expect_layer_prefix(summary_layers, expected_layer_prefix);
@@ -399,34 +464,39 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
     }
 
     {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/16_mpls_pw_outer_vlan_inner_qinq_ipv4_udp_cw.pcap"};
         CaptureSession session {};
-        const auto capture_path = write_temp_pcap(
-            "pfl_mpls_pw_outer_vlan_inner_qinq_ipv4_udp.pcap",
-            make_classic_pcap({{100U, make_outer_vlan_mpls_pw_inner_qinq_ipv4_udp_packet()}})
+        expect_single_ip_flow(
+            session,
+            "parsing/mpls_pw/16_mpls_pw_outer_vlan_inner_qinq_ipv4_udp_cw.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.50",
+            53560U,
+            "198.51.100.50",
+            443U,
+            {"frame", "ethernet", "vlan", "mpls", "mpls", "mpls-pw-control-word", "ethernet-inner", "vlan", "vlan", "ipv4", "udp"},
+            true,
+            2U,
+            false,
+            false
         );
-        PFL_EXPECT(session.open_capture(capture_path));
+
         const auto rows = session.list_flows();
         PFL_REQUIRE(rows.size() == 1U);
-        PFL_EXPECT(rows[0].protocol_text == "UDP");
+        PFL_EXPECT(
+            require_flow_protocol_path_text(session, rows[0]) ==
+            "EthernetII -> VLAN(vid=300) -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> VLAN(vid=100) -> VLAN(vid=200) -> IPv4 -> UDP"
+        );
 
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
-        PFL_EXPECT(details->has_mpls);
-        PFL_EXPECT(details->has_inner_ethernet);
-        PFL_EXPECT(details->has_mpls_pseudowire_control_word);
         PFL_REQUIRE(details->encapsulating_vlan_tags.size() == 1U);
         PFL_REQUIRE(details->vlan_tags.size() == 2U);
         PFL_EXPECT(details->encapsulating_vlan_tags[0].tci == 300U);
         PFL_EXPECT(details->vlan_tags[0].tci == 100U);
         PFL_EXPECT(details->vlan_tags[1].tci == 200U);
-
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
-        expect_layer_prefix(
-            summary_layers,
-            {"frame", "ethernet", "vlan", "mpls", "mpls", "mpls-pw-control-word", "ethernet-inner", "vlan", "vlan", "ipv4", "udp"}
-        );
-        PFL_EXPECT(count_layers(summary_layers, "vlan") == 3U);
     }
 
     {
@@ -610,6 +680,242 @@ void run_mpls_pseudowire_pcap_fixture_tests() {
         PFL_EXPECT(!details->has_mpls_pseudowire_control_word);
         PFL_EXPECT(details->has_ipv4);
         PFL_EXPECT(details->has_udp);
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/17_mpls_pw_outer_qinq_inner_ipv4_udp_cw.pcap"};
+        CaptureSession session {};
+        expect_single_ip_flow(
+            session,
+            "parsing/mpls_pw/17_mpls_pw_outer_qinq_inner_ipv4_udp_cw.pcap",
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "192.0.2.50",
+            53560U,
+            "198.51.100.50",
+            443U,
+            {"frame", "ethernet", "vlan", "vlan", "mpls", "mpls", "mpls-pw-control-word", "ethernet-inner", "ipv4", "udp"},
+            true,
+            0U,
+            false,
+            false
+        );
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(
+            require_flow_protocol_path_text(session, rows[0]) ==
+            "EthernetII -> VLAN(vid=310) -> VLAN(vid=311) -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> IPv4 -> UDP"
+        );
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/18_mpls_pw_outer_legacy_vlan_ipv4_tcp_cw.pcap"};
+        CaptureSession session {};
+        expect_single_ip_flow(
+            session,
+            "parsing/mpls_pw/18_mpls_pw_outer_legacy_vlan_ipv4_tcp_cw.pcap",
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "192.0.2.50",
+            49180U,
+            "198.51.100.50",
+            443U,
+            {"frame", "ethernet", "vlan", "mpls", "mpls", "mpls-pw-control-word", "ethernet-inner", "ipv4", "tcp"},
+            true,
+            0U,
+            false,
+            false
+        );
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(
+            require_flow_protocol_path_text(session, rows[0]) ==
+            "EthernetII -> VLAN(vid=320) -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> IPv4 -> TCP"
+        );
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/19_mpls_pw_ambiguous_no_cw_mac_starts_with_4.pcap"};
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls_pw/19_mpls_pw_ambiguous_no_cw_mac_starts_with_4.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 0U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(!rows[0].reason_text.empty());
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/20_mpls_pw_ambiguous_no_cw_mac_starts_with_6.pcap"};
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/mpls_pw/20_mpls_pw_ambiguous_no_cw_mac_starts_with_6.pcap")));
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 0U);
+        const auto rows = session.list_unrecognized_packets(0U, 30U);
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(!rows[0].reason_text.empty());
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/21_mpls_pw_inner_pppoe_session_no_cw.pcap"};
+        CaptureSession session {};
+        expect_single_unrecognized_mpls_pw_packet(
+            session,
+            "parsing/mpls_pw/21_mpls_pw_inner_pppoe_session_no_cw.pcap",
+            "Unknown MPLS payload"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_mpls);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(!details->has_mpls_pseudowire_control_word);
+        PFL_EXPECT(!details->has_ipv4);
+        PFL_EXPECT(!details->has_ipv6);
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/22_mpls_pw_inner_mpls_no_cw.pcap"};
+        CaptureSession session {};
+        expect_single_unrecognized_mpls_pw_packet(
+            session,
+            "parsing/mpls_pw/22_mpls_pw_inner_mpls_no_cw.pcap",
+            "Unknown MPLS pseudowire inner EtherType"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_mpls);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->has_unknown_inner_ethernet_payload);
+        PFL_EXPECT(!details->has_mpls_pseudowire_control_word);
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=parsing/mpls_pw/23_mpls_pw_nonzero_cw_flags_not_recognized.pcap"};
+        CaptureSession session {};
+        expect_single_unrecognized_mpls_pw_packet(
+            session,
+            "parsing/mpls_pw/23_mpls_pw_nonzero_cw_flags_not_recognized.pcap",
+            "Inner Ethernet header truncated"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_mpls);
+        PFL_EXPECT(!details->has_mpls_pseudowire_control_word);
+        PFL_EXPECT(details->has_inner_ethernet);
+        PFL_EXPECT(details->inner_ethernet.header_truncated);
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=temp_mpls_pw_identity_same_tuple_different_labels"};
+        const std::vector<MplsLabelSpec> base_labels {
+            {.label = 24050U, .bottom_of_stack = false},
+            {.label = 16050U, .bottom_of_stack = true},
+        };
+        const auto inner_frame = make_default_inner_ipv4_udp_frame();
+        const auto capture_path = write_temp_pcap(
+            "pfl_mpls_pw_same_tuple_different_labels.pcap",
+            make_classic_pcap({
+                {100U, make_mpls_pseudowire_frame(base_labels, inner_frame)},
+                {200U, make_mpls_pseudowire_frame(
+                    {
+                        {.label = 24051U, .bottom_of_stack = false},
+                        {.label = 16050U, .bottom_of_stack = true},
+                    },
+                    inner_frame
+                )},
+                {300U, make_mpls_pseudowire_frame(
+                    {
+                        {.label = 24050U, .bottom_of_stack = false},
+                        {.label = 16051U, .bottom_of_stack = true},
+                    },
+                    inner_frame
+                )},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 3U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 3U);
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=temp_mpls_pw_identity_non_identity_fields_do_not_split"};
+        const auto inner_frame = make_default_inner_ipv4_udp_frame();
+        const auto capture_path = write_temp_pcap(
+            "pfl_mpls_pw_non_identity_fields.pcap",
+            make_classic_pcap({
+                {100U, make_mpls_pseudowire_frame(
+                    {
+                        {.label = 24050U, .bottom_of_stack = false, .ttl = 64U},
+                        {.label = 16050U, .bottom_of_stack = true, .ttl = 63U},
+                    },
+                    inner_frame,
+                    std::pair<std::uint16_t, std::uint16_t> {0x0000U, 0x0000U}
+                )},
+                {200U, make_mpls_pseudowire_frame(
+                    {
+                        {.label = 24050U, .traffic_class = 7U, .bottom_of_stack = false, .ttl = 64U},
+                        {.label = 16050U, .bottom_of_stack = true, .ttl = 63U},
+                    },
+                    inner_frame,
+                    std::pair<std::uint16_t, std::uint16_t> {0x0000U, 0x1234U}
+                )},
+                {300U, make_mpls_pseudowire_frame(
+                    {
+                        {.label = 24050U, .bottom_of_stack = false, .ttl = 1U},
+                        {.label = 16050U, .bottom_of_stack = true, .ttl = 255U},
+                    },
+                    inner_frame,
+                    std::pair<std::uint16_t, std::uint16_t> {0x0000U, 0x4321U}
+                )},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].packet_count == 3U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+        PFL_EXPECT(
+            require_flow_protocol_path_text(session, rows[0]) ==
+            "EthernetII -> MPLS(label=24050) -> MPLS(label=16050) -> MPLS PW -> EthernetII -> IPv4 -> UDP"
+        );
+    }
+
+    {
+        ScopedTestContext fixture_context {"fixture=temp_mpls_pw_identity_control_word_presence_does_not_split"};
+        const auto inner_frame = make_default_inner_ipv4_udp_frame();
+        const auto labels = std::vector<MplsLabelSpec> {
+            {.label = 24050U, .bottom_of_stack = false},
+            {.label = 16050U, .bottom_of_stack = true},
+        };
+        const auto capture_path = write_temp_pcap(
+            "pfl_mpls_pw_control_word_presence.pcap",
+            make_classic_pcap({
+                {100U, make_mpls_pseudowire_frame(labels, inner_frame)},
+                {200U, make_mpls_pseudowire_frame(labels, inner_frame, std::pair<std::uint16_t, std::uint16_t> {0x0000U, 0x2222U})},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(capture_path));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].packet_count == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
     }
 }
 

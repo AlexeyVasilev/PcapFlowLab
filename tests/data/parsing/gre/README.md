@@ -70,7 +70,7 @@ Notes:
 ## Current implementation status
 
 Implemented in the current GRE pass:
-- direct GRE version 0 inner IPv4/IPv6 plus TCP/UDP flow extraction;
+- direct GRE version 0 inner IPv4/IPv6 plus TCP/UDP flow extraction, along with direct keyed/non-keyed inner ICMP and ICMPv6 portless flow extraction when GRE Protocol Type is IPv4/IPv6;
 - selected-packet GRE Summary / Protocol Details presentation for direct inner IPv4/IPv6, TEB inner Ethernet continuation, GRE MPLS continuation, and optional checksum/key/sequence metadata when fully present;
 - GRE Transparent Ethernet Bridging (`0x6558`) inner Ethernet continuation, including inner VLAN preservation when the inner Ethernet continuation resolves it;
 - GRE MPLS unicast (`0x8847`) continuation using the existing MPLS stack classifier for direct inner IPv4/IPv6 and any already-safe pseudowire continuation that the shared MPLS helper resolves;
@@ -81,7 +81,7 @@ Implemented in the current GRE pass:
 Still staged for later work:
 - GRE version 1 / PPTP-like handling beyond conservative unsupported behavior.
 
-Active regression coverage now expects successful flow extraction for fixtures `01`-`15`, `21`, and `22`, excluding only the unsupported/truncation cases.
+Active regression coverage now expects successful flow extraction for fixtures `01`-`15`, `21`, `22`, and `23`, excluding only the unsupported/truncation cases.
 GRE key-aware protocol-path identity is now supported when the GRE key flag is present and the full 32-bit key is available:
 - same inner tuple + different GRE keys split into distinct flows;
 - same inner tuple + same GRE key remains one flow;
@@ -226,6 +226,13 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 - GRE key on both packets: `0x11111111`
 - Current behavior: one flow with packet count `2` because both packets share the same keyed GRE protocol path.
 
+### 23_gre_key_ipv4_icmp.pcap
+
+- Packets: 1
+- Layer chain: Ethernet / IPv4 / GRE(key) / IPv4 / ICMP
+- GRE key: `0x11111111`
+- Current behavior: recognized as a portless ICMP flow with persistent protocol path `EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4`; selected-packet details still show the inner ICMP structure.
+
 ## Expected generated file list
 
 - `01_gre_ipv4_tcp.pcap`
@@ -250,3 +257,4 @@ GRE key-aware protocol-path identity is now supported when the GRE key flag is p
 - `20_gre_truncated_inner_ipv4.pcap`
 - `21_gre_same_inner_tuple_different_keys.pcap`
 - `22_gre_same_inner_tuple_same_key_two_packets.pcap`
+- `23_gre_key_ipv4_icmp.pcap`

@@ -1,14 +1,18 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
+#include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "TestSupport.h"
 #include "app/session/CaptureSession.h"
 #include "app/session/FlowRows.h"
 #include "app/session/SessionFormatting.h"
+#include "core/domain/ProtocolPath.h"
 
 namespace pfl::tests {
 
@@ -16,6 +20,83 @@ namespace {
 
 std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
+const ProtocolPath* require_protocol_path(const CaptureSession& session, const ProtocolPathId protocol_path_id) {
+    PFL_REQUIRE(protocol_path_id != kInvalidProtocolPathId);
+    const auto* path = session.state().protocol_path_registry.find(protocol_path_id);
+    PFL_REQUIRE(path != nullptr);
+    return path;
+}
+
+std::string require_flow_protocol_path_text(const CaptureSession& session, const FlowRow& row) {
+    return format_protocol_path(*require_protocol_path(session, row.protocol_path_id));
+}
+
+PacketRef require_packet(CaptureSession& session, const std::uint64_t packet_index) {
+    const auto packet = session.find_packet(packet_index);
+    PFL_REQUIRE(packet.has_value());
+    return *packet;
+}
+
+constexpr std::array<std::string_view, 31> kExpectedGtpuFixtureFiles {{
+    "01_gtpu_inner_ipv4_tcp.pcap",
+    "02_gtpu_inner_ipv4_udp.pcap",
+    "03_gtpu_inner_ipv6_tcp.pcap",
+    "04_gtpu_inner_ipv6_udp.pcap",
+    "05_gtpu_truncated_base_header.pcap",
+    "06_gtpu_invalid_version.pcap",
+    "07_gtpu_unsupported_message_type.pcap",
+    "08_gtpu_truncated_inner_ipv4.pcap",
+    "09_gtpu_truncated_inner_ipv6.pcap",
+    "10_gtpu_unknown_inner_payload.pcap",
+    "11_gtpu_inner_ipv4_tcp_bidirectional.pcap",
+    "12_gtpu_same_outer_tuple_different_inner_flows.pcap",
+    "13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap",
+    "14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap",
+    "15_gtpu_teid_boundary_values.pcap",
+    "16_gtpu_with_sequence_inner_ipv4_tcp.pcap",
+    "17_gtpu_with_npdu_inner_ipv4_tcp.pcap",
+    "18_gtpu_with_extension_header_inner_ipv4_tcp.pcap",
+    "19_gtpu_truncated_optional_header.pcap",
+    "20_gtpu_truncated_extension_header.pcap",
+    "21_gtpu_same_inner_tuple_different_teid.pcap",
+    "22_gtpu_udp_port_direction_matrix.pcap",
+    "23_gtpu_control_message_matrix.pcap",
+    "24_gtpu_flag_matrix_inner_ipv4_tcp.pcap",
+    "25_gtpu_outer_tagged_contexts.pcap",
+    "26_gtpu_outer_ipv6_inner_ipv6_udp.pcap",
+    "27_gtpu_linux_sll_inner_ipv4_udp.pcap",
+    "28_gtpu_linux_sll2_inner_ipv6_tcp.pcap",
+    "29_gtpu_nested_overlay_udp_terminal.pcap",
+    "30_gtpu_outer_ipv4_fragmentation.pcap",
+    "31_gtpu_outer_ipv6_fragmentation.pcap",
+}};
+
+std::set<std::string> expected_fixture_file_names() {
+    std::set<std::string> names {};
+    for (const auto file_name : kExpectedGtpuFixtureFiles) {
+        names.emplace(file_name);
+    }
+    return names;
+}
+
+std::set<std::string> actual_fixture_file_names() {
+    std::set<std::string> names {};
+    const auto dir = fixture_path("parsing/gtpu");
+    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        if (entry.path().extension() == ".pcap") {
+            names.emplace(entry.path().filename().string());
+        }
+    }
+    return names;
+}
+
+void expect_gtpu_fixture_directory_matches_contract() {
+    PFL_EXPECT(actual_fixture_file_names() == expected_fixture_file_names());
 }
 
 bool row_matches_tuple(
@@ -59,6 +140,20 @@ const FlowRow* find_flow_by_tuple(
         }
     }
     return nullptr;
+}
+
+const FlowRow* require_flow_by_tuple(
+    const std::vector<FlowRow>& rows,
+    const FlowAddressFamily family,
+    const std::string& protocol,
+    const std::string& address_a,
+    const std::uint16_t port_a,
+    const std::string& address_b,
+    const std::uint16_t port_b
+) {
+    const auto* row = find_flow_by_tuple(rows, family, protocol, address_a, port_a, address_b, port_b);
+    PFL_REQUIRE(row != nullptr);
+    return row;
 }
 
 const session_detail::PacketSummaryLayer* find_layer(
@@ -132,6 +227,29 @@ bool title_contains_all(
         }
     }
     return true;
+}
+
+void expect_outer_udp_flow(
+    const CaptureSession& session,
+    const std::vector<FlowRow>& rows,
+    const std::string& address_a,
+    const std::uint16_t port_a,
+    const std::string& address_b,
+    const std::uint16_t port_b,
+    const std::uint64_t expected_packet_count,
+    const std::string& expected_protocol_path
+) {
+    const auto* row = require_flow_by_tuple(
+        rows,
+        FlowAddressFamily::ipv4,
+        "UDP",
+        address_a,
+        port_a,
+        address_b,
+        port_b
+    );
+    PFL_EXPECT(row->packet_count == expected_packet_count);
+    PFL_EXPECT(require_flow_protocol_path_text(session, *row) == expected_protocol_path);
 }
 
 std::string format_hex_value(const std::uint32_t value, const int width = 0) {
@@ -354,7 +472,7 @@ void expect_gtpu_warning_packet_details(
     }
 }
 
-void run_gtpu_positive_fixture_tests() {
+void run_gtpu_supported_inner_flow_tests() {
     expect_inner_flow_present(
         "parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap",
         FlowAddressFamily::ipv4,
@@ -410,38 +528,6 @@ void run_gtpu_positive_fixture_tests() {
         2U
     );
 
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap")));
-        const auto rows = session.list_flows();
-        const auto* first_flow = find_flow_by_tuple(
-            rows,
-            FlowAddressFamily::ipv4,
-            "TCP",
-            "10.60.0.10",
-            10021U,
-            "10.60.0.20",
-            443U
-        );
-        const auto* second_flow = find_flow_by_tuple(
-            rows,
-            FlowAddressFamily::ipv4,
-            "TCP",
-            "10.60.0.10",
-            10022U,
-            "10.60.0.20",
-            443U
-        );
-        PFL_EXPECT(first_flow != nullptr);
-        PFL_EXPECT(second_flow != nullptr);
-        if (first_flow != nullptr) {
-            PFL_EXPECT(first_flow->packet_count == 1U);
-        }
-        if (second_flow != nullptr) {
-            PFL_EXPECT(second_flow->packet_count == 1U);
-        }
-    }
-
     expect_inner_flow_present(
         "parsing/gtpu/13_gtpu_outer_ipv6_inner_ipv4_tcp.pcap",
         FlowAddressFamily::ipv4,
@@ -452,32 +538,6 @@ void run_gtpu_positive_fixture_tests() {
         443U,
         1U
     );
-
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/15_gtpu_teid_boundary_values.pcap")));
-        const auto rows = session.list_flows();
-        const auto* first_flow = find_flow_by_tuple(
-            rows,
-            FlowAddressFamily::ipv4,
-            "TCP",
-            "10.60.0.10",
-            49660U,
-            "10.60.0.20",
-            443U
-        );
-        const auto* second_flow = find_flow_by_tuple(
-            rows,
-            FlowAddressFamily::ipv4,
-            "TCP",
-            "10.60.0.11",
-            10021U,
-            "10.60.0.21",
-            443U
-        );
-        PFL_EXPECT(first_flow != nullptr);
-        PFL_EXPECT(second_flow != nullptr);
-    }
 
     expect_inner_flow_present(
         "parsing/gtpu/16_gtpu_with_sequence_inner_ipv4_tcp.pcap",
@@ -513,33 +573,376 @@ void run_gtpu_positive_fixture_tests() {
     );
 
     {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/12_gtpu_same_outer_tuple_different_inner_flows.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+
+        const auto* first_flow = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "10.60.0.10",
+            10021U,
+            "10.60.0.20",
+            443U
+        );
+        PFL_EXPECT(first_flow->packet_count == 1U);
+        PFL_EXPECT(require_flow_protocol_path_text(session, *first_flow) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+
+        const auto* second_flow = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "10.60.0.10",
+            10022U,
+            "10.60.0.20",
+            443U
+        );
+        PFL_EXPECT(second_flow->packet_count == 1U);
+        PFL_EXPECT(require_flow_protocol_path_text(session, *second_flow) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/15_gtpu_teid_boundary_values.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/15_gtpu_teid_boundary_values.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 2U);
+
+        const auto* first_flow = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "10.60.0.10",
+            49660U,
+            "10.60.0.20",
+            443U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *first_flow) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x00000000) -> IPv4 -> TCP");
+
+        const auto* second_flow = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "10.60.0.11",
+            10021U,
+            "10.60.0.21",
+            443U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *second_flow) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0xffffffff) -> IPv4 -> TCP");
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap"};
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/21_gtpu_same_inner_tuple_different_teid.pcap")));
         const auto rows = session.list_flows();
-        const auto matching_flow_count = static_cast<std::size_t>(std::count_if(rows.begin(), rows.end(), [&](const FlowRow& row) {
-            return row_matches_tuple(
-                row,
-                FlowAddressFamily::ipv4,
-                "TCP",
-                "10.60.0.10",
-                49660U,
-                "10.60.0.20",
-                443U
-            );
-        }));
-        PFL_EXPECT(rows.size() == 2U);
-        PFL_EXPECT(matching_flow_count == 2U);
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 2U);
         PFL_EXPECT(std::all_of(rows.begin(), rows.end(), [](const FlowRow& row) {
-            return row.packet_count == 1U;
+            return row.family == FlowAddressFamily::ipv4 &&
+                row.protocol_text == "TCP" &&
+                row.address_a == "10.60.0.10" &&
+                row.port_a == 49660U &&
+                row.address_b == "10.60.0.20" &&
+                row.port_b == 443U &&
+                row.packet_count == 1U;
         }));
+
+        std::set<std::string> observed_paths {};
+        for (const auto& row : rows) {
+            observed_paths.emplace(require_flow_protocol_path_text(session, row));
+        }
+        const std::set<std::string> expected_paths {
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP",
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x11223344) -> IPv4 -> TCP",
+        };
+        PFL_EXPECT(observed_paths == expected_paths);
     }
 }
 
-}  // namespace
+void run_gtpu_port_and_header_matrix_tests() {
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/22_gtpu_udp_port_direction_matrix.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/22_gtpu_udp_port_direction_matrix.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 2U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 2U);
 
-void run_gtpu_pcap_fixture_tests() {
-    run_gtpu_positive_fixture_tests();
+        expect_outer_udp_flow(
+            session,
+            rows,
+            "203.0.113.60",
+            2152U,
+            "203.0.113.61",
+            55024U,
+            1U,
+            "EthernetII -> IPv4 -> UDP"
+        );
 
+        const auto* inner_tcp = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "10.60.0.10",
+            49660U,
+            "10.60.0.20",
+            443U
+        );
+        PFL_EXPECT(inner_tcp->packet_count == 1U);
+        PFL_EXPECT(require_flow_protocol_path_text(session, *inner_tcp) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+
+        const auto packet0 = require_packet(session, 0U);
+        const auto packet0_details = session.read_packet_details(packet0);
+        PFL_REQUIRE(packet0_details.has_value());
+        PFL_EXPECT(packet0_details->has_udp);
+        PFL_EXPECT(!packet0_details->has_gtpu);
+
+        const auto packet1 = require_packet(session, 1U);
+        const auto packet1_details = session.read_packet_details(packet1);
+        PFL_REQUIRE(packet1_details.has_value());
+        PFL_EXPECT(packet1_details->has_gtpu);
+        PFL_EXPECT(packet1_details->gtpu.teid == 0x01020304U);
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/24_gtpu_flag_matrix_inner_ipv4_tcp.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 6U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 2U);
+
+        expect_outer_udp_flow(
+            session,
+            rows,
+            "203.0.113.60",
+            55040U,
+            "203.0.113.61",
+            2152U,
+            1U,
+            "EthernetII -> IPv4 -> UDP"
+        );
+
+        const auto* inner_tcp = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "TCP",
+            "10.60.0.10",
+            49660U,
+            "10.60.0.20",
+            443U
+        );
+        PFL_EXPECT(inner_tcp->packet_count == 5U);
+        PFL_EXPECT(require_flow_protocol_path_text(session, *inner_tcp) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP");
+
+        const auto packet0 = require_packet(session, 0U);
+        const auto pt_clear = session.read_packet_details(packet0);
+        PFL_REQUIRE(pt_clear.has_value());
+        PFL_EXPECT(pt_clear->has_gtpu);
+        PFL_EXPECT(!pt_clear->gtpu.protocol_type_flag_set);
+        PFL_EXPECT(!pt_clear->gtpu.has_inner_packet);
+        PFL_EXPECT(session.read_packet_protocol_details_text(packet0).find(
+            "Warning: GTP-U PT flag is not set") != std::string::npos);
+
+        const auto packet1 = require_packet(session, 1U);
+        const auto reserved_bit_set = session.read_packet_details(packet1);
+        PFL_REQUIRE(reserved_bit_set.has_value());
+        PFL_EXPECT(reserved_bit_set->has_gtpu);
+        PFL_EXPECT(reserved_bit_set->gtpu.flags == 0x38U);
+        PFL_EXPECT(reserved_bit_set->gtpu.has_inner_packet);
+
+        const auto packet2 = require_packet(session, 2U);
+        const auto s_and_pn = session.read_packet_details(packet2);
+        PFL_REQUIRE(s_and_pn.has_value());
+        PFL_EXPECT(s_and_pn->has_gtpu);
+        PFL_EXPECT(s_and_pn->gtpu.sequence_number_flag_set);
+        PFL_EXPECT(s_and_pn->gtpu.npdu_number_flag_set);
+        PFL_EXPECT(!s_and_pn->gtpu.extension_header_flag_set);
+        PFL_EXPECT(s_and_pn->gtpu.sequence_number == 0x1235U);
+        PFL_EXPECT(s_and_pn->gtpu.npdu_number == 0x5BU);
+
+        const auto packet3 = require_packet(session, 3U);
+        const auto s_and_e = session.read_packet_details(packet3);
+        PFL_REQUIRE(s_and_e.has_value());
+        PFL_EXPECT(s_and_e->has_gtpu);
+        PFL_EXPECT(s_and_e->gtpu.sequence_number_flag_set);
+        PFL_EXPECT(!s_and_e->gtpu.npdu_number_flag_set);
+        PFL_EXPECT(s_and_e->gtpu.extension_header_flag_set);
+        PFL_EXPECT(s_and_e->gtpu.next_extension_header_type == 0x85U);
+        PFL_EXPECT(s_and_e->gtpu.extension_headers_skipped_bytes == 4U);
+
+        const auto packet4 = require_packet(session, 4U);
+        const auto pn_and_e = session.read_packet_details(packet4);
+        PFL_REQUIRE(pn_and_e.has_value());
+        PFL_EXPECT(pn_and_e->has_gtpu);
+        PFL_EXPECT(!pn_and_e->gtpu.sequence_number_flag_set);
+        PFL_EXPECT(pn_and_e->gtpu.npdu_number_flag_set);
+        PFL_EXPECT(pn_and_e->gtpu.extension_header_flag_set);
+        PFL_EXPECT(pn_and_e->gtpu.npdu_number == 0x5CU);
+        PFL_EXPECT(pn_and_e->gtpu.extension_headers_skipped_bytes == 4U);
+
+        const auto packet5 = require_packet(session, 5U);
+        const auto s_pn_e = session.read_packet_details(packet5);
+        PFL_REQUIRE(s_pn_e.has_value());
+        PFL_EXPECT(s_pn_e->has_gtpu);
+        PFL_EXPECT(s_pn_e->gtpu.sequence_number_flag_set);
+        PFL_EXPECT(s_pn_e->gtpu.npdu_number_flag_set);
+        PFL_EXPECT(s_pn_e->gtpu.extension_header_flag_set);
+        PFL_EXPECT(s_pn_e->gtpu.sequence_number == 0x1237U);
+        PFL_EXPECT(s_pn_e->gtpu.npdu_number == 0x5DU);
+        PFL_EXPECT(s_pn_e->gtpu.next_extension_header_type == 0x85U);
+    }
+}
+
+void run_gtpu_outer_carrier_and_nested_flow_tests() {
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/25_gtpu_outer_tagged_contexts.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 3U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 3U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 3U);
+
+        std::set<std::string> observed_paths {};
+        for (const auto& row : rows) {
+            PFL_EXPECT(row.packet_count == 1U);
+            observed_paths.emplace(require_flow_protocol_path_text(session, row));
+        }
+        const std::set<std::string> expected_paths {
+            "EthernetII -> VLAN(vid=201) -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP",
+            "EthernetII -> VLAN(vid=551) -> VLAN(vid=552) -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP",
+            "EthernetII -> VLAN(vid=701) -> IPv4 -> UDP -> GTP-U(teid=0x01020304) -> IPv4 -> TCP",
+        };
+        PFL_EXPECT(observed_paths == expected_paths);
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/26_gtpu_outer_ipv6_inner_ipv6_udp.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/26_gtpu_outer_ipv6_inner_ipv6_udp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+        const auto* row = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv6,
+            "UDP",
+            "2001:0db8:0060:0000:0000:0000:0000:0010",
+            53760U,
+            "2001:0db8:0060:0000:0000:0000:0000:0020",
+            443U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *row) ==
+            "EthernetII -> IPv6 -> UDP -> GTP-U(teid=0x01020324) -> IPv6 -> UDP");
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/27_gtpu_linux_sll_inner_ipv4_udp.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/27_gtpu_linux_sll_inner_ipv4_udp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+        const auto* row = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "10.60.0.10",
+            53760U,
+            "10.60.0.20",
+            443U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *row) ==
+            "LinuxSll -> IPv4 -> UDP -> GTP-U(teid=0x01020354) -> IPv4 -> UDP");
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/28_gtpu_linux_sll2_inner_ipv6_tcp.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/28_gtpu_linux_sll2_inner_ipv6_tcp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+        const auto* row = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv6,
+            "TCP",
+            "2001:0db8:0060:0000:0000:0000:0000:0010",
+            49660U,
+            "2001:0db8:0060:0000:0000:0000:0000:0020",
+            443U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *row) ==
+            "LinuxSll2 -> IPv6 -> UDP -> GTP-U(teid=0x01020364) -> IPv6 -> TCP");
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/29_gtpu_nested_overlay_udp_terminal.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/29_gtpu_nested_overlay_udp_terminal.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 3U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 3U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 3U);
+
+        const auto* gtpu_like = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "10.60.0.10",
+            53760U,
+            "10.60.0.20",
+            2152U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *gtpu_like) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020374) -> IPv4 -> UDP");
+
+        const auto* vxlan_like = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "10.60.0.10",
+            53760U,
+            "10.60.0.20",
+            4789U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *vxlan_like) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020375) -> IPv4 -> UDP");
+
+        const auto* geneve_like = require_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "10.60.0.10",
+            53760U,
+            "10.60.0.20",
+            6081U
+        );
+        PFL_EXPECT(require_flow_protocol_path_text(session, *geneve_like) ==
+            "EthernetII -> IPv4 -> UDP -> GTP-U(teid=0x01020376) -> IPv4 -> UDP");
+    }
+}
+
+void run_gtpu_outer_udp_fallback_tests() {
     expect_inner_flow_absent(
         "parsing/gtpu/05_gtpu_truncated_base_header.pcap",
         FlowAddressFamily::ipv4,
@@ -630,6 +1033,153 @@ void run_gtpu_pcap_fixture_tests() {
         443U
     );
 
+    struct OuterUdpFallbackExpectation {
+        const char* fixture {};
+        std::uint16_t src_port {0};
+    };
+
+    for (const auto& expectation : std::array<OuterUdpFallbackExpectation, 8> {{
+            {"parsing/gtpu/05_gtpu_truncated_base_header.pcap", 55004U},
+            {"parsing/gtpu/06_gtpu_invalid_version.pcap", 55005U},
+            {"parsing/gtpu/07_gtpu_unsupported_message_type.pcap", 55006U},
+            {"parsing/gtpu/08_gtpu_truncated_inner_ipv4.pcap", 55007U},
+            {"parsing/gtpu/09_gtpu_truncated_inner_ipv6.pcap", 55008U},
+            {"parsing/gtpu/10_gtpu_unknown_inner_payload.pcap", 55009U},
+            {"parsing/gtpu/19_gtpu_truncated_optional_header.pcap", 55020U},
+            {"parsing/gtpu/20_gtpu_truncated_extension_header.pcap", 55021U},
+        }}) {
+        const ScopedTestContext fixture_context {std::string {"fixture="} + expectation.fixture};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(expectation.fixture)));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        expect_outer_udp_flow(
+            session,
+            rows,
+            "203.0.113.60",
+            expectation.src_port,
+            "203.0.113.61",
+            2152U,
+            1U,
+            "EthernetII -> IPv4 -> UDP"
+        );
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        expect_outer_udp_flow(
+            session,
+            rows,
+            "203.0.113.60",
+            55014U,
+            "203.0.113.61",
+            2162U,
+            1U,
+            "EthernetII -> IPv4 -> UDP"
+        );
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(!details->has_gtpu);
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        PFL_EXPECT(find_layer(summary_layers, "gtpu") == nullptr);
+        const auto protocol_text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(protocol_text.find("GTP-U") == std::string::npos);
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/23_gtpu_control_message_matrix.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/23_gtpu_control_message_matrix.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 6U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 6U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+
+        const std::array<std::uint8_t, 6> message_types {{0x01U, 0x02U, 0x1AU, 0xFEU, 0x1FU, 0x7AU}};
+        for (std::size_t index = 0U; index < message_types.size(); ++index) {
+            const auto src_port = static_cast<std::uint16_t>(55030U + index);
+            expect_outer_udp_flow(
+                session,
+                rows,
+                "203.0.113.60",
+                src_port,
+                "203.0.113.61",
+                2152U,
+                1U,
+                "EthernetII -> IPv4 -> UDP"
+            );
+
+            const auto packet = require_packet(session, static_cast<std::uint64_t>(index));
+            const auto details = session.read_packet_details(packet);
+            PFL_REQUIRE(details.has_value());
+            PFL_EXPECT(details->has_gtpu);
+            PFL_EXPECT(details->gtpu.message_type == message_types[index]);
+            PFL_EXPECT(details->gtpu.unsupported_message_type);
+            PFL_EXPECT(!details->gtpu.has_inner_packet);
+
+            const auto protocol_text = session.read_packet_protocol_details_text(packet);
+            PFL_EXPECT(protocol_text.find("Warning: GTP-U message type is not supported.") != std::string::npos);
+            const auto expected_message_type_text = message_types[index] == 0x01U
+                ? std::string {"Echo Request (0x01)"}
+                : format_hex_value(message_types[index], 2);
+            PFL_EXPECT(protocol_text.find("Message Type: " + expected_message_type_text) != std::string::npos);
+        }
+    }
+}
+
+void run_gtpu_fragmentation_contract_tests() {
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/30_gtpu_outer_ipv4_fragmentation.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 2U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].packet_count == 2U);
+        PFL_EXPECT(rows[0].has_fragmented_packets);
+        PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == "EthernetII -> IPv4");
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_ipv4);
+        PFL_EXPECT(!details->has_udp);
+        PFL_EXPECT(!details->has_gtpu);
+    }
+
+    {
+        const ScopedTestContext fixture_context {"fixture=parsing/gtpu/31_gtpu_outer_ipv6_fragmentation.pcap"};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/31_gtpu_outer_ipv6_fragmentation.pcap")));
+        PFL_EXPECT(session.summary().packet_count == 2U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(rows[0].packet_count == 2U);
+        PFL_EXPECT(rows[0].has_fragmented_packets);
+        PFL_EXPECT(require_flow_protocol_path_text(session, rows[0]) == "EthernetII -> IPv6");
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+
+        const auto packet = require_packet(session, 0U);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_ipv6);
+        PFL_EXPECT(!details->has_udp);
+        PFL_EXPECT(!details->has_gtpu);
+    }
+}
+
+void run_gtpu_packet_details_contract_tests() {
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/05_gtpu_truncated_base_header.pcap",
         {"GTP-U", "malformed"},
@@ -662,19 +1212,6 @@ void run_gtpu_pcap_fixture_tests() {
         false,
         false
     );
-
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/07_gtpu_unsupported_message_type.pcap")));
-        const auto packet = session.find_packet(0U);
-        PFL_REQUIRE(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
-        PFL_REQUIRE(details.has_value());
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
-        const auto* gtpu_layer = find_layer(summary_layers, "gtpu");
-        PFL_REQUIRE(gtpu_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Message Type", "Echo Request (0x01)"));
-    }
 
     expect_gtpu_warning_packet_details(
         "parsing/gtpu/08_gtpu_truncated_inner_ipv4.pcap",
@@ -731,23 +1268,6 @@ void run_gtpu_pcap_fixture_tests() {
         false
     );
 
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/20_gtpu_truncated_extension_header.pcap")));
-        const auto packet = session.find_packet(0U);
-        PFL_REQUIRE(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
-        PFL_REQUIRE(details.has_value());
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
-        const auto* gtpu_layer = find_layer(summary_layers, "gtpu");
-        PFL_REQUIRE(gtpu_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(
-            *gtpu_layer,
-            "Next Extension Header Type",
-            "MBMS Support Indication (0x01)"
-        ));
-    }
-
     expect_gtpu_packet_details_present(
         "parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap",
         0U,
@@ -796,33 +1316,6 @@ void run_gtpu_pcap_fixture_tests() {
         "443"
     );
 
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/15_gtpu_teid_boundary_values.pcap")));
-
-        const auto first_packet = session.find_packet(0U);
-        PFL_REQUIRE(first_packet.has_value());
-        const auto first_details = session.read_packet_details(*first_packet);
-        PFL_REQUIRE(first_details.has_value());
-        PFL_EXPECT(first_details->has_gtpu);
-        PFL_EXPECT(first_details->gtpu.teid == 0U);
-        const auto first_layers = session_detail::build_packet_summary_layers(*first_details, *first_packet);
-        const auto* first_gtpu_layer = find_layer(first_layers, "gtpu");
-        PFL_REQUIRE(first_gtpu_layer != nullptr);
-        PFL_EXPECT(title_contains_all(*first_gtpu_layer, {"GTP-U", "0x00000000"}));
-
-        const auto second_packet = session.find_packet(1U);
-        PFL_REQUIRE(second_packet.has_value());
-        const auto second_details = session.read_packet_details(*second_packet);
-        PFL_REQUIRE(second_details.has_value());
-        PFL_EXPECT(second_details->has_gtpu);
-        PFL_EXPECT(second_details->gtpu.teid == 0xFFFFFFFFU);
-        const auto second_layers = session_detail::build_packet_summary_layers(*second_details, *second_packet);
-        const auto* second_gtpu_layer = find_layer(second_layers, "gtpu");
-        PFL_REQUIRE(second_gtpu_layer != nullptr);
-        PFL_EXPECT(title_contains_all(*second_gtpu_layer, {"GTP-U", "0xffffffff"}));
-    }
-
     expect_gtpu_packet_details_present(
         "parsing/gtpu/16_gtpu_with_sequence_inner_ipv4_tcp.pcap",
         0U,
@@ -834,24 +1327,6 @@ void run_gtpu_pcap_fixture_tests() {
         "49660",
         "443"
     );
-
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/16_gtpu_with_sequence_inner_ipv4_tcp.pcap")));
-        const auto packet = session.find_packet(0U);
-        PFL_REQUIRE(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
-        PFL_REQUIRE(details.has_value());
-        PFL_EXPECT(details->has_gtpu);
-        PFL_EXPECT(details->gtpu.sequence_number_flag_set);
-        PFL_EXPECT(details->gtpu.sequence_number_present);
-        PFL_EXPECT(details->gtpu.sequence_number == 0x1234U);
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
-        const auto* gtpu_layer = find_layer(summary_layers, "gtpu");
-        PFL_REQUIRE(gtpu_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "S Flag", "Set"));
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Sequence Number", "0x1234"));
-    }
 
     expect_gtpu_packet_details_present(
         "parsing/gtpu/17_gtpu_with_npdu_inner_ipv4_tcp.pcap",
@@ -865,24 +1340,6 @@ void run_gtpu_pcap_fixture_tests() {
         "443"
     );
 
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/17_gtpu_with_npdu_inner_ipv4_tcp.pcap")));
-        const auto packet = session.find_packet(0U);
-        PFL_REQUIRE(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
-        PFL_REQUIRE(details.has_value());
-        PFL_EXPECT(details->has_gtpu);
-        PFL_EXPECT(details->gtpu.npdu_number_flag_set);
-        PFL_EXPECT(details->gtpu.npdu_number_present);
-        PFL_EXPECT(details->gtpu.npdu_number == 0x5AU);
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
-        const auto* gtpu_layer = find_layer(summary_layers, "gtpu");
-        PFL_REQUIRE(gtpu_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "PN Flag", "Set"));
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "N-PDU Number", "0x5a"));
-    }
-
     expect_gtpu_packet_details_present(
         "parsing/gtpu/18_gtpu_with_extension_header_inner_ipv4_tcp.pcap",
         0U,
@@ -895,41 +1352,54 @@ void run_gtpu_pcap_fixture_tests() {
         "443"
     );
 
-    {
-        CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/18_gtpu_with_extension_header_inner_ipv4_tcp.pcap")));
-        const auto packet = session.find_packet(0U);
-        PFL_REQUIRE(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
-        PFL_REQUIRE(details.has_value());
-        PFL_EXPECT(details->has_gtpu);
-        PFL_EXPECT(details->gtpu.extension_header_flag_set);
-        PFL_EXPECT(details->gtpu.next_extension_header_type_present);
-        PFL_EXPECT(details->gtpu.next_extension_header_type == 0x85U);
-        PFL_EXPECT(details->gtpu.extension_headers_skipped_bytes == 4U);
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
-        const auto* gtpu_layer = find_layer(summary_layers, "gtpu");
-        PFL_REQUIRE(gtpu_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "E Flag", "Set"));
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Next Extension Header Type", "PDU Session Container (0x85)"));
-        PFL_EXPECT(layer_has_field_containing(*gtpu_layer, "Extension Headers Skipped", "4 bytes"));
-        const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-        PFL_EXPECT(protocol_text.find("Next Extension Header Type: PDU Session Container (0x85)") != std::string::npos);
-    }
+    expect_gtpu_packet_details_present(
+        "parsing/gtpu/26_gtpu_outer_ipv6_inner_ipv6_udp.pcap",
+        0U,
+        0x01020324U,
+        "ipv6-inner",
+        "udp-inner",
+        "2001:0db8:0060:0000:0000:0000:0000:0010",
+        "2001:0db8:0060:0000:0000:0000:0000:0020",
+        "53760",
+        "443"
+    );
 
     {
         CaptureSession session {};
-        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/14_gtpu_wrong_udp_port_valid_gtpu_payload.pcap")));
-        const auto packet = session.find_packet(0U);
-        PFL_REQUIRE(packet.has_value());
-        const auto details = session.read_packet_details(*packet);
-        PFL_REQUIRE(details.has_value());
-        PFL_EXPECT(!details->has_gtpu);
-        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
-        PFL_EXPECT(find_layer(summary_layers, "gtpu") == nullptr);
-        const auto protocol_text = session.read_packet_protocol_details_text(*packet);
-        PFL_EXPECT(protocol_text.find("GTP-U") == std::string::npos);
+        PFL_REQUIRE(session.open_capture(fixture_path("parsing/gtpu/15_gtpu_teid_boundary_values.pcap")));
+
+        const auto first_packet = require_packet(session, 0U);
+        const auto first_details = session.read_packet_details(first_packet);
+        PFL_REQUIRE(first_details.has_value());
+        PFL_EXPECT(first_details->has_gtpu);
+        PFL_EXPECT(first_details->gtpu.teid == 0U);
+        const auto first_layers = session_detail::build_packet_summary_layers(*first_details, first_packet);
+        const auto* first_gtpu_layer = find_layer(first_layers, "gtpu");
+        PFL_REQUIRE(first_gtpu_layer != nullptr);
+        PFL_EXPECT(title_contains_all(*first_gtpu_layer, {"GTP-U", "0x00000000"}));
+
+        const auto second_packet = require_packet(session, 1U);
+        const auto second_details = session.read_packet_details(second_packet);
+        PFL_REQUIRE(second_details.has_value());
+        PFL_EXPECT(second_details->has_gtpu);
+        PFL_EXPECT(second_details->gtpu.teid == 0xFFFFFFFFU);
+        const auto second_layers = session_detail::build_packet_summary_layers(*second_details, second_packet);
+        const auto* second_gtpu_layer = find_layer(second_layers, "gtpu");
+        PFL_REQUIRE(second_gtpu_layer != nullptr);
+        PFL_EXPECT(title_contains_all(*second_gtpu_layer, {"GTP-U", "0xffffffff"}));
     }
+}
+
+}  // namespace
+
+void run_gtpu_pcap_fixture_tests() {
+    expect_gtpu_fixture_directory_matches_contract();
+    run_gtpu_supported_inner_flow_tests();
+    run_gtpu_port_and_header_matrix_tests();
+    run_gtpu_outer_carrier_and_nested_flow_tests();
+    run_gtpu_outer_udp_fallback_tests();
+    run_gtpu_fragmentation_contract_tests();
+    run_gtpu_packet_details_contract_tests();
 }
 
 }  // namespace pfl::tests

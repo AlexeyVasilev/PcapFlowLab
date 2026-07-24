@@ -143,7 +143,7 @@ void run_malformed_packet_handling_tests() {
         );
 
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(capture_path, CaptureImportOptions {}));
         const auto packet = session.find_packet(0);
         PFL_EXPECT(packet.has_value());
         PFL_EXPECT(session.read_packet_protocol_details_text(*packet) == kNoProtocolDetailsMessage);
@@ -151,3 +151,4 @@ void run_malformed_packet_handling_tests() {
 }
 
 }  // namespace pfl::tests
+

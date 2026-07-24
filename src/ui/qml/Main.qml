@@ -11,11 +11,6 @@ ApplicationWindow {
     visible: true
     title: "Pcap Flow Lab"
 
-    function browseCaptureWithMode(mode) {
-        mainController.captureOpenMode = mode
-        mainController.browseCaptureFile()
-    }
-
     function fileNameFromPath(path) {
         if (!path || path.length === 0) {
             return ""
@@ -27,25 +22,14 @@ ApplicationWindow {
     }
 
     Action {
-        id: openCaptureFastAction
-        text: "Open Capture (Fast)"
+        id: openCaptureAction
+        text: "Open Capture"
         enabled: !mainController.isOpening &&
                  !mainController.smartExportInProgress &&
                  !mainController.indexSaveInProgress &&
                  !mainController.flowInfoCsvExportInProgress
         shortcut: StandardKey.Open
-        onTriggered: window.browseCaptureWithMode(0)
-    }
-
-    Action {
-        id: openCaptureDeepAction
-        text: "Open Capture (Deep)"
-        enabled: !mainController.isOpening &&
-                 !mainController.smartExportInProgress &&
-                 !mainController.indexSaveInProgress &&
-                 !mainController.flowInfoCsvExportInProgress
-        shortcut: "Ctrl+Shift+O"
-        onTriggered: window.browseCaptureWithMode(1)
+        onTriggered: mainController.browseCaptureFile()
     }
 
     Action {
@@ -141,8 +125,7 @@ ApplicationWindow {
         Menu {
             title: "File"
 
-            MenuItem { action: openCaptureFastAction }
-            MenuItem { action: openCaptureDeepAction }
+            MenuItem { action: openCaptureAction }
             MenuItem { action: openIndexAction }
             MenuSeparator {}
             MenuItem { action: saveIndexAction }
@@ -567,96 +550,6 @@ ApplicationWindow {
                 }
 
                 onClicked: mainController.browseCaptureFile()
-            }
-
-            ComboBox {
-                id: captureModeComboBox
-                enabled: !mainController.isOpening &&
-                         !mainController.smartExportInProgress &&
-                         !mainController.indexSaveInProgress &&
-                         !mainController.flowInfoCsvExportInProgress
-                model: ["Fast", "Deep"]
-                currentIndex: mainController.captureOpenMode
-                implicitHeight: openCaptureButton.implicitHeight
-                Layout.preferredWidth: 110
-
-                contentItem: Label {
-                    text: captureModeComboBox.displayText
-                    color: captureModeComboBox.enabled ? "#0f172a" : "#94a3b8"
-                    font.pixelSize: 14
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: 12
-                    rightPadding: captureModeComboBox.indicator.width + 16
-                }
-
-                indicator: Canvas {
-                    x: captureModeComboBox.width - width - 12
-                    y: (captureModeComboBox.height - height) / 2
-                    width: 10
-                    height: 6
-                    contextType: "2d"
-
-                    onPaint: {
-                        context.reset()
-                        context.moveTo(0, 0)
-                        context.lineTo(width, 0)
-                        context.lineTo(width / 2, height)
-                        context.closePath()
-                        context.fillStyle = captureModeComboBox.enabled ? "#475569" : "#94a3b8"
-                        context.fill()
-                    }
-                }
-
-                background: Rectangle {
-                    radius: 6
-                    color: !captureModeComboBox.enabled
-                        ? "#f8fafc"
-                        : captureModeComboBox.down
-                            ? "#f8fafc"
-                            : captureModeComboBox.hovered
-                                ? "#f8fafc"
-                                : "#ffffff"
-                    border.color: !captureModeComboBox.enabled
-                        ? "#cbd5e1"
-                        : captureModeComboBox.down || captureModeComboBox.hovered
-                            ? "#94a3b8"
-                            : "#cbd5e1"
-                    border.width: 1
-                }
-
-                delegate: ItemDelegate {
-                    required property var modelData
-                    required property int index
-
-                    width: captureModeComboBox.width
-                    text: modelData
-                    font.pixelSize: 14
-                    highlighted: captureModeComboBox.highlightedIndex === index
-                }
-
-                popup: Popup {
-                    y: captureModeComboBox.height + 4
-                    width: captureModeComboBox.width
-                    implicitHeight: contentItem.implicitHeight
-                    padding: 4
-
-                    contentItem: ListView {
-                        clip: true
-                        implicitHeight: contentHeight
-                        model: captureModeComboBox.popup.visible ? captureModeComboBox.delegateModel : null
-                        currentIndex: captureModeComboBox.highlightedIndex
-                    }
-
-                    background: Rectangle {
-                        radius: 6
-                        color: "#ffffff"
-                        border.color: "#cbd5e1"
-                    }
-                }
-
-                onActivated: function(index) {
-                    mainController.captureOpenMode = index
-                }
             }
 
             Frame {

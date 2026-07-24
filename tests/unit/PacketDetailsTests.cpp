@@ -70,7 +70,7 @@ std::vector<session_detail::PacketSummaryLayer> build_fixture_summary_layers(
     const std::filesystem::path& relative_fixture_path
 ) {
     CaptureSession session {};
-    PFL_EXPECT(session.open_capture(fixture_path(relative_fixture_path), CaptureImportOptions {.mode = ImportMode::fast}));
+    PFL_EXPECT(session.open_capture(fixture_path(relative_fixture_path), CaptureImportOptions {}));
     const auto packet = require_packet(session, 0U);
     const auto details = session.read_packet_details(packet);
     PFL_REQUIRE(details.has_value());
@@ -523,7 +523,7 @@ void run_packet_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/dns/dns_request_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
@@ -542,7 +542,7 @@ void run_packet_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {.mode = ImportMode::fast}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_initial_ch_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
@@ -561,7 +561,7 @@ void run_packet_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
@@ -580,7 +580,7 @@ void run_packet_details_tests() {
 
     {
         CaptureSession session {};
-        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {.mode = ImportMode::deep}));
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/http/http_get_1.pcap"), CaptureImportOptions {}));
         const auto packet = require_packet(session, 0U);
         const auto details = session.read_packet_details(packet);
         PFL_REQUIRE(details.has_value());
@@ -975,3 +975,4 @@ void run_packet_details_tests() {
 }
 
 }  // namespace pfl::tests
+

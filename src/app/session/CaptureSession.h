@@ -371,9 +371,7 @@ private:
     std::filesystem::path source_capture_path_ {};
     CaptureSourceInfo source_info_ {};
     CaptureState state_ {};
-    ImportMode import_mode_ {ImportMode::fast};
     AnalysisSettings analysis_settings_ {};
-    bool deep_protocol_details_enabled_ {false};
     bool opened_from_index_ {false};
     bool has_loaded_state_ {false};
     bool partial_open_ {false};

@@ -12,7 +12,6 @@
 
 #include "app/session/CaptureSession.h"
 #include "cli/CliFormatting.h"
-#include "cli/CliImportMode.h"
 #include "core/index/CaptureIndex.h"
 #include "core/index/ImportCheckpointReader.h"
 #include "core/services/ChunkedCaptureImporter.h"
@@ -38,9 +37,7 @@ struct FinalizeImportArgs {
     std::string output_path {};
 };
 
-struct ParsedModeArgs {
-    pfl::CaptureImportOptions options {};
-    bool mode_specified {false};
+struct ParsedArgs {
     bool valid {true};
     std::vector<std::string_view> remaining_args {};
 };
@@ -58,42 +55,23 @@ struct PrintableFlowRow {
 void print_usage() {
     std::cout
         << "Usage:\n"
-        << "  pcap-flow-lab summary <input> [--mode fast|deep]\n"
-        << "  pcap-flow-lab flows <input> [--mode fast|deep]\n"
-        << "  pcap-flow-lab inspect-packet <input> --packet-index <N> [--mode fast|deep]\n"
-        << "  pcap-flow-lab hex <input> --packet-index <N> [--mode fast|deep]\n"
-        << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap> [--mode fast|deep]\n"
-        << "  pcap-flow-lab save-index <capture-file> --out <index-file> [--mode fast|deep]\n"
+        << "  pcap-flow-lab summary <input>\n"
+        << "  pcap-flow-lab flows <input>\n"
+        << "  pcap-flow-lab inspect-packet <input> --packet-index <N>\n"
+        << "  pcap-flow-lab hex <input> --packet-index <N>\n"
+        << "  pcap-flow-lab export-flow <input> --flow-index <N> --out <output.pcap>\n"
+        << "  pcap-flow-lab save-index <capture-file> --out <index-file>\n"
         << "  pcap-flow-lab load-index-summary <index-file>\n"
         << "  pcap-flow-lab chunked-import <capture-file> --checkpoint <checkpoint-file> --max-packets <N>\n"
         << "  pcap-flow-lab resume-import --checkpoint <checkpoint-file> --max-packets <N>\n"
         << "  pcap-flow-lab finalize-import --checkpoint <checkpoint-file> --out <index-file>\n";
 }
 
-ParsedModeArgs parse_mode_args(int argc, char* argv[], int start_index) {
-    ParsedModeArgs result {};
+ParsedArgs parse_args(int argc, char* argv[], int start_index) {
+    ParsedArgs result {};
 
     for (int index = start_index; index < argc; ++index) {
-        const std::string_view argument = argv[index];
-        if (argument == "--mode") {
-            if (result.mode_specified || index + 1 >= argc) {
-                result.valid = false;
-                return result;
-            }
-
-            const auto parsed_mode = pfl::parse_import_mode_value(argv[index + 1]);
-            if (!parsed_mode.has_value()) {
-                result.valid = false;
-                return result;
-            }
-
-            result.options.mode = *parsed_mode;
-            result.mode_specified = true;
-            ++index;
-            continue;
-        }
-
-        result.remaining_args.push_back(argument);
+        result.remaining_args.push_back(argv[index]);
     }
 
     return result;
@@ -237,13 +215,8 @@ std::optional<FinalizeImportArgs> parse_finalize_import_args(int argc, char* arg
     };
 }
 
-bool open_analysis_input(const char* input, const ParsedModeArgs& mode_args, pfl::CaptureSession& session) {
+bool open_analysis_input(const char* input, const ParsedArgs&, pfl::CaptureSession& session) {
     if (pfl::looks_like_index_file(input)) {
-        if (mode_args.mode_specified) {
-            std::cerr << "Import mode is only supported for capture inputs.\n";
-            return false;
-        }
-
         if (session.open_input(input)) {
             return true;
         }
@@ -252,7 +225,7 @@ bool open_analysis_input(const char* input, const ParsedModeArgs& mode_args, pfl
         return false;
     }
 
-    if (session.open_capture(input, mode_args.options)) {
+    if (session.open_capture(input)) {
         return true;
     }
 
@@ -260,8 +233,8 @@ bool open_analysis_input(const char* input, const ParsedModeArgs& mode_args, pfl
     return false;
 }
 
-bool open_capture_only(const char* capture_file, const ParsedModeArgs& mode_args, pfl::CaptureSession& session) {
-    if (session.open_capture(capture_file, mode_args.options)) {
+bool open_capture_only(const char* capture_file, const ParsedArgs&, pfl::CaptureSession& session) {
+    if (session.open_capture(capture_file)) {
         return true;
     }
 
@@ -470,20 +443,20 @@ int main(int argc, char* argv[]) {
         return print_chunked_result(status, checkpoint_args->checkpoint_path);
     }
 
-    const auto mode_args = parse_mode_args(argc, argv, 3);
-    if (!mode_args.valid) {
+    const auto parsed_args = parse_args(argc, argv, 3);
+    if (!parsed_args.valid) {
         print_usage();
         return 1;
     }
 
     if (command == "summary") {
-        if (!mode_args.remaining_args.empty()) {
+        if (!parsed_args.remaining_args.empty()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, mode_args, session)) {
+        if (!open_analysis_input(input, parsed_args, session)) {
             return 1;
         }
 
@@ -507,13 +480,13 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "flows") {
-        if (!mode_args.remaining_args.empty()) {
+        if (!parsed_args.remaining_args.empty()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, mode_args, session)) {
+        if (!open_analysis_input(input, parsed_args, session)) {
             return 1;
         }
 
@@ -537,14 +510,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "inspect-packet") {
-        const auto packet_index = parse_packet_index(mode_args.remaining_args);
+        const auto packet_index = parse_packet_index(parsed_args.remaining_args);
         if (!packet_index.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, mode_args, session)) {
+        if (!open_analysis_input(input, parsed_args, session)) {
             return 1;
         }
 
@@ -565,14 +538,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "hex") {
-        const auto packet_index = parse_packet_index(mode_args.remaining_args);
+        const auto packet_index = parse_packet_index(parsed_args.remaining_args);
         if (!packet_index.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, mode_args, session)) {
+        if (!open_analysis_input(input, parsed_args, session)) {
             return 1;
         }
 
@@ -593,14 +566,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "export-flow") {
-        const auto export_args = parse_export_args(mode_args.remaining_args);
+        const auto export_args = parse_export_args(parsed_args.remaining_args);
         if (!export_args.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_analysis_input(input, mode_args, session)) {
+        if (!open_analysis_input(input, parsed_args, session)) {
             return 1;
         }
 
@@ -614,14 +587,14 @@ int main(int argc, char* argv[]) {
     }
 
     if (command == "save-index") {
-        const auto output_args = parse_output_path_args(mode_args.remaining_args);
+        const auto output_args = parse_output_path_args(parsed_args.remaining_args);
         if (!output_args.has_value()) {
             print_usage();
             return 1;
         }
 
         pfl::CaptureSession session {};
-        if (!open_capture_only(input, mode_args, session)) {
+        if (!open_capture_only(input, parsed_args, session)) {
             return 1;
         }
 

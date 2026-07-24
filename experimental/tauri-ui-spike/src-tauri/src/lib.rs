@@ -15,7 +15,7 @@ use dtos::{
     SettingsDto,
     SmartExportResultDto,
 };
-use ffi::{CppFrontendSessionAdapter, OpenMode};
+use ffi::CppFrontendSessionAdapter;
 use tauri::{AppHandle, State};
 #[cfg(not(target_os = "linux"))]
 use tauri_plugin_dialog::DialogExt;
@@ -207,34 +207,22 @@ fn memory_diagnostics_log(
 fn open_capture(
     state: State<'_, Mutex<AdapterState>>,
     path: String,
-    open_mode: String,
 ) -> Result<OpenCaptureResultDto, String> {
     let mut state = state
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
-    let mode = match open_mode.as_str() {
-        "deep" => OpenMode::Deep,
-        _ => OpenMode::Fast,
-    };
-
-    state.adapter.open_capture(&path, mode)
+    state.adapter.open_capture(&path)
 }
 
 #[tauri::command(rename_all = "snake_case")]
 fn start_open_capture(
     state: State<'_, Mutex<AdapterState>>,
     path: String,
-    open_mode: String,
 ) -> Result<OpenCaptureStartResultDto, String> {
     let mut state = state
         .lock()
         .map_err(|_| "Failed to lock adapter state.".to_string())?;
-    let mode = match open_mode.as_str() {
-        "deep" => OpenMode::Deep,
-        _ => OpenMode::Fast,
-    };
-
-    state.adapter.start_open_capture(&path, mode)
+    state.adapter.start_open_capture(&path)
 }
 
 #[tauri::command(rename_all = "snake_case")]

@@ -53,13 +53,6 @@ struct AnalysisSequenceExportRow {
     std::string protocol_hint_text {};
 };
 
-CaptureImportOptions import_options_for_frontend_mode(const FrontendOpenMode mode, const AnalysisSettings& settings) {
-    return CaptureImportOptions {
-        .mode = (mode == FrontendOpenMode::deep) ? ImportMode::deep : ImportMode::fast,
-        .settings = settings,
-    };
-}
-
 std::string path_to_string(const std::filesystem::path& path) {
     return path.empty() ? std::string {} : path.string();
 }
@@ -1831,10 +1824,7 @@ FrontendSourceAvailabilityDto FrontendSessionAdapter::current_source_availabilit
     };
 }
 
-FrontendOpenResult FrontendSessionAdapter::open_capture(
-    const std::filesystem::path& path,
-    const FrontendOpenMode open_mode
-) {
+FrontendOpenResult FrontendSessionAdapter::open_capture(const std::filesystem::path& path) {
     cancel_and_join_open_worker();
     clear_selection();
     session_ = CaptureSession {};
@@ -1849,7 +1839,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
 
     const bool opened = looks_like_index_file(path)
         ? session_.load_index(path)
-        : session_.open_capture(path, import_options_for_frontend_mode(open_mode, analysis_settings));
+        : session_.open_capture(path, CaptureImportOptions {.settings = analysis_settings});
 
     if (opened) {
         session_.set_analysis_settings(analysis_settings);
@@ -1875,10 +1865,7 @@ FrontendOpenResult FrontendSessionAdapter::open_capture(
     };
 }
 
-FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(
-    const std::filesystem::path& path,
-    const FrontendOpenMode open_mode
-) {
+FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(const std::filesystem::path& path) {
     join_finished_open_worker();
 
     if (path.empty()) {
@@ -1928,11 +1915,11 @@ FrontendOpenStartResult FrontendSessionAdapter::start_open_capture(
         async_open_.progress.input_path = path_to_string(path);
     };
 
-    async_open_.worker = std::thread([this, path, open_mode, open_as_index, analysis_settings, context]() {
+    async_open_.worker = std::thread([this, path, open_as_index, analysis_settings, context]() {
         CaptureSession worker_session {};
         const bool opened = open_as_index
             ? worker_session.load_index(path, context.get())
-            : worker_session.open_capture(path, import_options_for_frontend_mode(open_mode, analysis_settings), context.get());
+            : worker_session.open_capture(path, CaptureImportOptions {.settings = analysis_settings}, context.get());
         if (opened) {
             worker_session.set_analysis_settings(analysis_settings);
         }

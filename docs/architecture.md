@@ -6,6 +6,7 @@ Pcap Flow Lab is a flow-based packet-capture analyzer. The persistent model is p
 
 - `core/io`: classic PCAP and current PCAPNG readers, random-access packet reads, and classic PCAP export.
 - `core/decode`: packet-oriented link and network decoding for ingestion.
+- `docs/dissection-engine-rfc.md`: proposed follow-up architecture for converging legacy import-time decode and selected-packet best-effort details onto a shared registry-driven dissection engine.
 - `core/domain`: connection keys, packet references, runtime flows, summaries, and related lightweight types.
 - `core/services`: capture import, flow aggregation, packet inspection, exports, protocol analyzers, and developer-only perf logging.
 - `core/index`: sectioned binary index and checkpoint formats with exact-version loading.
@@ -139,7 +140,7 @@ Open-time performance logging is developer-only and off by default.
 
 - Creating `perf-open.enabled` in the current working directory or next to the executable enables CSV logging.
 - The log is written to `perf_open_log.csv`.
-- It records application-level timing for `capture_fast`, `capture_deep`, and `index_load` opens.
+- It records application-level timing for `capture` and `index_load` opens.
 - It does not change normal product behavior when disabled.
 
 ## UI list surfaces
@@ -156,6 +157,19 @@ Current scalability risks are still worth watching:
 - Flow and packet rows use wide delegate trees with several formatted labels per visible row.
 - The current flow table is vertically virtualized, but horizontal overflow is still handled by clipping rather than a dedicated horizontal-scrolling table model.
 - Pagination is intentionally deferred until stronger evidence shows that current virtualization is insufficient.
+
+## Decoder follow-up
+
+Current packet-oriented handling is now split between the unified registry-driven
+import path and the separate best-effort `PacketDetailsService` path used for
+selected-packet details.
+
+- Production capture import now goes through the unified dissection engine plus
+  the shared import application.
+- Legacy `PacketDecoder` remains temporarily only as a validation oracle and
+  differential-test reference.
+- Ongoing cleanup and remaining migration notes are documented in
+  `docs/dissection-engine-rfc.md`.
 
 ## Known limitations
 

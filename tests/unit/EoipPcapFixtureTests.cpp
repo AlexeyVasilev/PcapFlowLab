@@ -55,7 +55,7 @@ struct PositiveEoipParserExpectation {
     bool expect_tcp_syn {false};
 };
 
-constexpr std::array<EoipFixtureExpectation, 18> kEoipFixtureExpectations {{
+constexpr std::array<EoipFixtureExpectation, 32> kEoipFixtureExpectations {{
     {"01_ipv4_eoip_inner_ipv4_udp.pcap", 1U},
     {"02_ipv4_eoip_inner_ipv4_tcp.pcap", 1U},
     {"03_ipv4_eoip_inner_ipv6_udp.pcap", 1U},
@@ -74,9 +74,23 @@ constexpr std::array<EoipFixtureExpectation, 18> kEoipFixtureExpectations {{
     {"16_gre_v1_unsupported_protocol_type.pcap", 1U},
     {"17_eoip_truncated_inner_ethernet.pcap", 1U},
     {"18_eoip_truncated_inner_vlan.pcap", 1U},
+    {"19_ipv4_eoip_inner_llc_snap_ipv4_udp.pcap", 1U},
+    {"20_ipv6_gre_v1_k_6400_inner_ipv4_udp_not_eoip.pcap", 1U},
+    {"21_ipv4_gre_v0_inner_ipv4_udp_not_eoip.pcap", 1U},
+    {"22_ipv4_gre_v0_teb_inner_ipv4_udp_not_eoip.pcap", 1U},
+    {"23_ipv4_gre_v0_key_looks_like_eoip_word_inner_ipv4_udp.pcap", 1U},
+    {"24_ipv4_gre_v0_6400_wrong_version_key.pcap", 1U},
+    {"25_ipv4_gre_v1_checksum_key_6400_not_eoip.pcap", 1U},
+    {"26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap", 2U},
+    {"27_same_tunnel_same_inner_tuple_different_outer_vlan_metadata.pcap", 2U},
+    {"28_ipv4_eoip_first_fragment_mf_complete_inner.pcap", 1U},
+    {"29_ipv4_eoip_nonfirst_fragment_valid_looking_bytes_captrunc.pcap", 2U},
+    {"30_ipv4_eoip_inner_unsupported_ethernet_payloads.pcap", 5U},
+    {"31_ipv4_eoip_nested_eoip_not_continued.pcap", 1U},
+    {"32_same_tunnel_same_inner_frame_different_frame_length.pcap", 2U},
 }};
 
-constexpr std::array<PositiveEoipParserExpectation, 11> kPositiveEoipParserExpectations {{
+constexpr std::array<PositiveEoipParserExpectation, 13> kPositiveEoipParserExpectations {{
     {
         "01_ipv4_eoip_inner_ipv4_udp.pcap",
         1U,
@@ -275,6 +289,42 @@ constexpr std::array<PositiveEoipParserExpectation, 11> kPositiveEoipParserExpec
         1U,
         false,
     },
+    {
+        "19_ipv4_eoip_inner_llc_snap_ipv4_udp.pcap",
+        1U,
+        1U,
+        PositiveEoipExpectationKind::single_flow,
+        FlowAddressFamily::ipv4,
+        "UDP",
+        "10.80.0.10",
+        53800U,
+        "10.80.0.20",
+        443U,
+        "EthernetII -> IPv4 -> GRE(key=0x00001900) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP",
+        "",
+        1U,
+        {4U, 0U},
+        1U,
+        false,
+    },
+    {
+        "32_same_tunnel_same_inner_frame_different_frame_length.pcap",
+        2U,
+        1U,
+        PositiveEoipExpectationKind::same_tunnel_two_packets,
+        FlowAddressFamily::ipv4,
+        "UDP",
+        "10.80.0.10",
+        53800U,
+        "10.80.0.20",
+        443U,
+        "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP",
+        "",
+        2U,
+        {4U, 4U},
+        2U,
+        false,
+    },
 }};
 
 constexpr std::array<std::string_view, 7> kMalformedEoipFixturesNow {{
@@ -294,6 +344,9 @@ constexpr std::uint16_t kEtherType8021ad = 0x88A8U;
 constexpr std::uint16_t kEtherTypeIpv4 = 0x0800U;
 constexpr std::uint16_t kEtherTypeIpv6 = 0x86DDU;
 constexpr std::uint16_t kEtherTypeMpls = 0x8847U;
+constexpr std::uint16_t kEtherTypePppoeSession = 0x8864U;
+constexpr std::uint16_t kEtherTypePbb = 0x88E7U;
+constexpr std::uint16_t kEtherTypeMacsec = 0x88E5U;
 constexpr std::uint8_t kIpv4ProtocolGre = 47U;
 
 struct ParsedFrame {
@@ -302,6 +355,12 @@ struct ParsedFrame {
     std::vector<std::pair<std::uint32_t, bool>> mpls_labels {};
     std::size_t ipv4_offset {0U};
     std::size_t gre_offset {0U};
+};
+
+struct ParsedPcapRecord {
+    std::uint32_t incl_len {0U};
+    std::uint32_t orig_len {0U};
+    std::vector<std::uint8_t> data {};
 };
 
 std::filesystem::path fixture_dir() {
@@ -372,6 +431,37 @@ std::vector<std::vector<std::uint8_t>> parse_pcap_records(const std::filesystem:
         records.emplace_back(
             bytes.begin() + static_cast<std::ptrdiff_t>(offset),
             bytes.begin() + static_cast<std::ptrdiff_t>(offset + incl_len));
+        offset += incl_len;
+    }
+    return records;
+}
+
+std::vector<ParsedPcapRecord> parse_pcap_records_with_headers(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    PFL_REQUIRE(stream.good());
+    const std::vector<std::uint8_t> bytes {
+        std::istreambuf_iterator<char>(stream),
+        std::istreambuf_iterator<char>()
+    };
+    PFL_REQUIRE(bytes.size() >= 24U);
+    PFL_EXPECT(read_le32(bytes, 0U) == kPcapMagic);
+    PFL_EXPECT(read_le32(bytes, 20U) == kLinkTypeEthernet);
+
+    std::vector<ParsedPcapRecord> records {};
+    std::size_t offset = 24U;
+    while (offset + 16U <= bytes.size()) {
+        const auto incl_len = read_le32(bytes, offset + 8U);
+        const auto orig_len = read_le32(bytes, offset + 12U);
+        offset += 16U;
+        PFL_REQUIRE(offset + incl_len <= bytes.size());
+        records.push_back(ParsedPcapRecord {
+            .incl_len = incl_len,
+            .orig_len = orig_len,
+            .data = std::vector<std::uint8_t> {
+                bytes.begin() + static_cast<std::ptrdiff_t>(offset),
+                bytes.begin() + static_cast<std::ptrdiff_t>(offset + incl_len)
+            },
+        });
         offset += incl_len;
     }
     return records;
@@ -560,6 +650,13 @@ bool has_protocol_path(const CaptureSession& session, const FlowRow& row, const 
 
     const auto* path = session.state().protocol_path_registry.find(row.protocol_path_id);
     return path != nullptr && format_protocol_path(*path) == expected_path;
+}
+
+std::string require_flow_protocol_path_text(const CaptureSession& session, const FlowRow& row) {
+    PFL_REQUIRE(row.protocol_path_id != kInvalidProtocolPathId);
+    const auto* path = session.state().protocol_path_registry.find(row.protocol_path_id);
+    PFL_REQUIRE(path != nullptr);
+    return format_protocol_path(*path);
 }
 
 const FlowRow* find_flow_with_protocol_path(
@@ -848,6 +945,192 @@ void expect_malformed_fixture_layouts() {
     }
 }
 
+void expect_fixture_19_llc_snap_wire_layout() {
+    const auto records = parse_pcap_records(fixture_path("19_ipv4_eoip_inner_llc_snap_ipv4_udp.pcap"));
+    PFL_REQUIRE(records.size() == 1U);
+    const auto frame = parse_outer_frame(records[0]);
+    PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x2001U);
+    PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6400U);
+
+    const auto inner_offset = frame.gre_offset + 8U;
+    const auto inner_length = read_be16(frame.bytes, inner_offset + 12U);
+    PFL_EXPECT(inner_length < 0x0600U);
+    PFL_EXPECT(frame.bytes[inner_offset + 14U] == 0xaaU);
+    PFL_EXPECT(frame.bytes[inner_offset + 15U] == 0xaaU);
+    PFL_EXPECT(frame.bytes[inner_offset + 16U] == 0x03U);
+    PFL_EXPECT(read_be16(frame.bytes, inner_offset + 20U) == kEtherTypeIpv4);
+}
+
+void expect_gre_eoip_ambiguity_wire_layouts() {
+    {
+        const auto records = parse_pcap_records(fixture_path("20_ipv6_gre_v1_k_6400_inner_ipv4_udp_not_eoip.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto& bytes = records[0];
+        PFL_REQUIRE(bytes.size() >= 62U);
+        PFL_EXPECT(read_be16(bytes, 12U) == kEtherTypeIpv6);
+        PFL_EXPECT(bytes[20U] == kIpv4ProtocolGre);
+        PFL_EXPECT(read_be16(bytes, 54U) == 0x2001U);
+        PFL_EXPECT(read_be16(bytes, 56U) == 0x6400U);
+        PFL_EXPECT(read_be32(bytes, 58U) == 0x002e0019U);
+    }
+    {
+        const auto records = parse_pcap_records(fixture_path("21_ipv4_gre_v0_inner_ipv4_udp_not_eoip.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto frame = parse_outer_frame(records[0]);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x0000U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == kEtherTypeIpv4);
+    }
+    {
+        const auto records = parse_pcap_records(fixture_path("22_ipv4_gre_v0_teb_inner_ipv4_udp_not_eoip.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto frame = parse_outer_frame(records[0]);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x0000U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6558U);
+    }
+    {
+        const auto records = parse_pcap_records(fixture_path("23_ipv4_gre_v0_key_looks_like_eoip_word_inner_ipv4_udp.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto frame = parse_outer_frame(records[0]);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x2000U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == kEtherTypeIpv4);
+        PFL_EXPECT(read_be32(frame.bytes, frame.gre_offset + 4U) == 0x002e0019U);
+    }
+    {
+        const auto records = parse_pcap_records(fixture_path("24_ipv4_gre_v0_6400_wrong_version_key.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto frame = parse_outer_frame(records[0]);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x2000U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6400U);
+        PFL_EXPECT(read_be32(frame.bytes, frame.gre_offset + 4U) == 0xdeadbeefU);
+    }
+    {
+        const auto records = parse_pcap_records(fixture_path("25_ipv4_gre_v1_checksum_key_6400_not_eoip.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto frame = parse_outer_frame(records[0]);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0xa001U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6400U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 4U) == 0x1234U);
+        PFL_EXPECT(read_be32(frame.bytes, frame.gre_offset + 8U) == 0x002e0019U);
+    }
+}
+
+void expect_fixture_26_and_27_identity_wire_layouts() {
+    {
+        const auto records = parse_pcap_records(fixture_path("26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap"));
+        PFL_REQUIRE(records.size() == 2U);
+        const auto first = parse_outer_frame(records[0]);
+        const auto second = parse_outer_frame(records[1]);
+        PFL_EXPECT(read_le16(first.bytes, first.gre_offset + 6U) == 6400U);
+        PFL_EXPECT(read_le16(second.bytes, second.gre_offset + 6U) == 6400U);
+        PFL_EXPECT(read_be32(first.bytes, first.ipv4_offset + 12U) != read_be32(second.bytes, second.ipv4_offset + 12U));
+        PFL_EXPECT(read_be32(first.bytes, first.ipv4_offset + 16U) != read_be32(second.bytes, second.ipv4_offset + 16U));
+    }
+    {
+        const auto records = parse_pcap_records(fixture_path("27_same_tunnel_same_inner_tuple_different_outer_vlan_metadata.pcap"));
+        PFL_REQUIRE(records.size() == 2U);
+        const auto first = parse_outer_frame(records[0]);
+        const auto second = parse_outer_frame(records[1]);
+        PFL_EXPECT(first.outer_vlan_ids.empty());
+        PFL_EXPECT(second.outer_vlan_ids == std::vector<std::uint16_t> {806U});
+        PFL_EXPECT(read_le16(first.bytes, first.gre_offset + 6U) == 6400U);
+        PFL_EXPECT(read_le16(second.bytes, second.gre_offset + 6U) == 6400U);
+    }
+}
+
+void expect_fragmentation_fixture_wire_layouts() {
+    {
+        const auto records = parse_pcap_records(fixture_path("28_ipv4_eoip_first_fragment_mf_complete_inner.pcap"));
+        PFL_REQUIRE(records.size() == 1U);
+        const auto frame = parse_outer_frame(records[0]);
+        PFL_EXPECT(read_be16(frame.bytes, frame.ipv4_offset + 6U) == 0x2000U);
+        PFL_EXPECT(frame.bytes[frame.ipv4_offset + 9U] == kIpv4ProtocolGre);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x2001U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6400U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 4U) == frame.bytes.size() - (frame.gre_offset + 8U));
+        PFL_EXPECT(read_le16(frame.bytes, frame.gre_offset + 6U) == 6400U);
+    }
+    {
+        const auto records = parse_pcap_records_with_headers(
+            fixture_path("29_ipv4_eoip_nonfirst_fragment_valid_looking_bytes_captrunc.pcap")
+        );
+        PFL_REQUIRE(records.size() == 2U);
+
+        const auto first = parse_outer_frame(records[0].data);
+        PFL_EXPECT(records[0].incl_len == records[0].orig_len);
+        PFL_EXPECT(read_be16(first.bytes, first.ipv4_offset + 6U) == 0x2001U);
+        PFL_EXPECT(read_be16(first.bytes, first.gre_offset) == 0x2001U);
+        PFL_EXPECT(read_be16(first.bytes, first.gre_offset + 2U) == 0x6400U);
+        PFL_EXPECT(read_le16(first.bytes, first.gre_offset + 6U) == 6400U);
+
+        const auto second = parse_outer_frame(records[1].data);
+        PFL_EXPECT(records[1].incl_len < records[1].orig_len);
+        PFL_EXPECT(read_be16(second.bytes, second.ipv4_offset + 6U) == 0x0002U);
+        PFL_EXPECT(read_be16(second.bytes, second.gre_offset) == 0x2001U);
+        PFL_EXPECT(read_be16(second.bytes, second.gre_offset + 2U) == 0x6400U);
+        PFL_EXPECT(read_le16(second.bytes, second.gre_offset + 6U) == 6400U);
+    }
+}
+
+void expect_unsupported_inner_ethernet_fixture_wire_layout() {
+    const auto records = parse_pcap_records(fixture_path("30_ipv4_eoip_inner_unsupported_ethernet_payloads.pcap"));
+    PFL_REQUIRE(records.size() == 5U);
+    const std::array<std::uint16_t, 5> expected_inner_types {{
+        kEtherTypePppoeSession,
+        kEtherTypeMpls,
+        kEtherTypePbb,
+        kEtherTypeMacsec,
+        0x1234U,
+    }};
+    const std::array<std::uint16_t, 5> expected_frame_lengths {{
+        59U,
+        57U,
+        72U,
+        74U,
+        18U,
+    }};
+
+    for (std::size_t index = 0U; index < records.size(); ++index) {
+        const auto frame = parse_outer_frame(records[index]);
+        const auto inner_offset = frame.gre_offset + 8U;
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x2001U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6400U);
+        PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 4U) == expected_frame_lengths[index]);
+        PFL_EXPECT(read_le16(frame.bytes, frame.gre_offset + 6U) == 6400U);
+        PFL_EXPECT(read_be16(frame.bytes, inner_offset + 12U) == expected_inner_types[index]);
+    }
+}
+
+void expect_fixture_31_nested_eoip_wire_layout() {
+    const auto records = parse_pcap_records(fixture_path("31_ipv4_eoip_nested_eoip_not_continued.pcap"));
+    PFL_REQUIRE(records.size() == 1U);
+    const auto frame = parse_outer_frame(records[0]);
+    const auto inner_offset = frame.gre_offset + 8U;
+    const auto inner_ipv4_offset = inner_offset + 14U;
+    PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset) == 0x2001U);
+    PFL_EXPECT(read_be16(frame.bytes, frame.gre_offset + 2U) == 0x6400U);
+    PFL_EXPECT(read_le16(frame.bytes, frame.gre_offset + 6U) == 6400U);
+    PFL_EXPECT(read_be16(frame.bytes, inner_offset + 12U) == kEtherTypeIpv4);
+    PFL_EXPECT(frame.bytes[inner_ipv4_offset + 9U] == kIpv4ProtocolGre);
+}
+
+void expect_fixture_32_wire_layout() {
+    const auto records = parse_pcap_records(fixture_path("32_same_tunnel_same_inner_frame_different_frame_length.pcap"));
+    PFL_REQUIRE(records.size() == 2U);
+    const auto first = parse_outer_frame(records[0]);
+    const auto second = parse_outer_frame(records[1]);
+    PFL_EXPECT(read_be16(first.bytes, first.gre_offset + 4U) == 46U);
+    PFL_EXPECT(read_be16(second.bytes, second.gre_offset + 4U) == 50U);
+    PFL_EXPECT(read_le16(first.bytes, first.gre_offset + 6U) == 6400U);
+    PFL_EXPECT(read_le16(second.bytes, second.gre_offset + 6U) == 6400U);
+    PFL_EXPECT(read_be32(first.bytes, first.gre_offset + 4U) == 0x002e0019U);
+    PFL_EXPECT(read_be32(second.bytes, second.gre_offset + 4U) == 0x00320019U);
+    PFL_EXPECT(read_be16(first.bytes, first.gre_offset + 4U) != read_be16(second.bytes, second.gre_offset + 4U));
+    PFL_EXPECT(
+        std::vector<std::uint8_t>(first.bytes.begin() + static_cast<std::ptrdiff_t>(first.gre_offset + 8U), first.bytes.end()) !=
+        std::vector<std::uint8_t>(second.bytes.begin() + static_cast<std::ptrdiff_t>(second.gre_offset + 8U), second.bytes.end())
+    );
+}
+
 void expect_positive_single_flow_fixture(const PositiveEoipParserExpectation& expectation) {
     CaptureSession session {};
     PFL_REQUIRE(session.open_capture(fixture_path(expectation.file_name)));
@@ -1008,6 +1291,7 @@ void expect_positive_parser_expectations() {
 
 void expect_malformed_eoip_fixtures_remain_conservative() {
     for (const auto fixture_name : kMalformedEoipFixturesNow) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {fixture_name}};
         CaptureSession session {};
         PFL_REQUIRE(session.open_capture(fixture_path(fixture_name)));
         const auto storage = session.storage_summary();
@@ -1018,6 +1302,51 @@ void expect_malformed_eoip_fixtures_remain_conservative() {
         PFL_EXPECT(session.unrecognized_packet_count() == 1U);
         PFL_EXPECT(session.list_flows().empty());
     }
+}
+
+void expect_fixture_19_llc_snap_continuation() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("19_ipv4_eoip_inner_llc_snap_ipv4_udp.pcap")));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == 1U);
+    PFL_EXPECT(storage.recognized_packets == 1U);
+    PFL_EXPECT(storage.unrecognized_packets == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    const auto* row = find_flow_by_tuple(
+        rows,
+        FlowAddressFamily::ipv4,
+        "UDP",
+        "10.80.0.10",
+        53800U,
+        "10.80.0.20",
+        443U
+    );
+    PFL_REQUIRE(row != nullptr);
+    PFL_EXPECT(
+        require_flow_protocol_path_text(session, *row) ==
+        "EthernetII -> IPv4 -> GRE(key=0x00001900) -> IEEE 802.3 -> LLC/SNAP -> IPv4 -> UDP"
+    );
+
+    const auto packet_rows = effective_flow_packet_rows(session, row->index);
+    PFL_REQUIRE(packet_rows.size() == 1U);
+    PFL_EXPECT(packet_rows[0].payload_length == 4U);
+
+    const auto details = session.read_packet_details(require_packet(session, 0U));
+    PFL_REQUIRE(details.has_value());
+    PFL_REQUIRE(details->has_gre);
+    PFL_EXPECT(details->gre.is_eoip);
+    PFL_EXPECT(details->has_inner_ethernet);
+    PFL_EXPECT(details->inner_ethernet.uses_length_field);
+
+    const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
+    PFL_EXPECT(protocol_text.find("Protocol: GRE / EoIP") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner Length: ") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner Payload: IPv4") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Inner UDP:") != std::string::npos);
 }
 
 void expect_missing_key_and_unsupported_v1_do_not_claim_eoip() {
@@ -1056,6 +1385,437 @@ void expect_missing_key_and_unsupported_v1_do_not_claim_eoip() {
         for (const auto& fragment : test_case.forbidden_fragments) {
             PFL_EXPECT(protocol_text.find(fragment) == std::string::npos);
         }
+    }
+}
+
+void expect_gre_ambiguity_recognized_flows_do_not_claim_eoip() {
+    struct Case {
+        std::string_view file_name;
+        std::string_view expected_protocol_path;
+        std::vector<std::string> required_protocol_fragments;
+        std::vector<std::string> forbidden_protocol_fragments;
+    };
+
+    const std::array<Case, 3> cases {{
+        {
+            "21_ipv4_gre_v0_inner_ipv4_udp_not_eoip.pcap",
+            "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP",
+            {"Protocol: GRE", "Protocol Type: IPv4 (0x0800)", "Inner Payload: IPv4", "Inner UDP:"},
+            {"Protocol: GRE / EoIP", "Tunnel ID:", "Identity Key:", "EoIP Frame Length:"},
+        },
+        {
+            "22_ipv4_gre_v0_teb_inner_ipv4_udp_not_eoip.pcap",
+            "EthernetII -> IPv4 -> GRE -> EthernetII -> IPv4 -> UDP",
+            {"Protocol: GRE", "Protocol Type: Transparent Ethernet Bridging (0x6558)", "Inner Payload: Ethernet", "Inner UDP:"},
+            {"Protocol: GRE / EoIP", "Tunnel ID:", "Identity Key:", "EoIP Frame Length:"},
+        },
+        {
+            "23_ipv4_gre_v0_key_looks_like_eoip_word_inner_ipv4_udp.pcap",
+            "EthernetII -> IPv4 -> GRE(key=0x002e0019) -> IPv4 -> UDP",
+            {"Protocol: GRE", "Key: 0x002e0019", "Protocol Type: IPv4 (0x0800)", "Inner UDP:"},
+            {"Protocol: GRE / EoIP", "Tunnel ID:", "Identity Key:", "EoIP Frame Length:"},
+        },
+    }};
+
+    for (const auto& test_case : cases) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {test_case.file_name}};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
+
+        const auto storage = session.storage_summary();
+        PFL_EXPECT(storage.total_packets_seen == 1U);
+        PFL_EXPECT(storage.recognized_packets == 1U);
+        PFL_EXPECT(storage.unrecognized_packets == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        const auto* row = find_flow_by_tuple(
+            rows,
+            FlowAddressFamily::ipv4,
+            "UDP",
+            "10.80.0.10",
+            53800U,
+            "10.80.0.20",
+            443U
+        );
+        PFL_REQUIRE(row != nullptr);
+        PFL_EXPECT(require_flow_protocol_path_text(session, *row) == test_case.expected_protocol_path);
+
+        const auto details = session.read_packet_details(require_packet(session, 0U));
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_gre);
+        PFL_EXPECT(!details->gre.is_eoip);
+
+        const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
+        for (const auto& fragment : test_case.required_protocol_fragments) {
+            PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
+        }
+        for (const auto& fragment : test_case.forbidden_protocol_fragments) {
+            PFL_EXPECT(protocol_text.find(fragment) == std::string::npos);
+        }
+    }
+}
+
+void expect_gre_ambiguity_no_flow_cases_do_not_claim_eoip() {
+    struct Case {
+        std::string_view file_name;
+        std::vector<std::string> required_protocol_fragments;
+        std::vector<std::string> forbidden_protocol_fragments;
+    };
+
+    const std::array<Case, 3> cases {{
+        {
+            "20_ipv6_gre_v1_k_6400_inner_ipv4_udp_not_eoip.pcap",
+            {"Protocol: GRE", "Raw GRE Key: 0x002e0019", "Warning: GRE protocol type is not supported."},
+            {"Protocol: GRE / EoIP", "Tunnel ID:", "Identity Key:", "EoIP Frame Length:", "Warning: GRE version is not supported."},
+        },
+        {
+            "24_ipv4_gre_v0_6400_wrong_version_key.pcap",
+            {"Protocol: GRE", "Key: 0xdeadbeef", "Warning: GRE protocol type is not supported."},
+            {"Protocol: GRE / EoIP", "Tunnel ID:", "Identity Key:", "EoIP Frame Length:", "Warning: GRE version is not supported."},
+        },
+        {
+            "25_ipv4_gre_v1_checksum_key_6400_not_eoip.pcap",
+            {"Protocol: GRE", "Checksum: 0x1234", "Raw GRE Key: 0x002e0019", "Warning: GRE protocol type is not supported."},
+            {"Protocol: GRE / EoIP", "Tunnel ID:", "Identity Key:", "EoIP Frame Length:", "Warning: GRE version is not supported."},
+        },
+    }};
+
+    for (const auto& test_case : cases) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {test_case.file_name}};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
+
+        const auto storage = session.storage_summary();
+        PFL_EXPECT(storage.total_packets_seen == 1U);
+        PFL_EXPECT(storage.recognized_packets == 0U);
+        PFL_EXPECT(storage.unrecognized_packets == 1U);
+        PFL_EXPECT(session.summary().packet_count == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+        PFL_EXPECT(session.list_flows().empty());
+
+        const auto details = session.read_packet_details(require_packet(session, 0U));
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_gre);
+        PFL_EXPECT(!details->gre.is_eoip);
+
+        const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
+        for (const auto& fragment : test_case.required_protocol_fragments) {
+            PFL_EXPECT(protocol_text.find(fragment) != std::string::npos);
+        }
+        for (const auto& fragment : test_case.forbidden_protocol_fragments) {
+            PFL_EXPECT(protocol_text.find(fragment) == std::string::npos);
+        }
+    }
+}
+
+void expect_outer_address_change_does_not_split_eoip_identity() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("26_same_tunnel_same_inner_tuple_different_outer_ipv4_endpoints.pcap")));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == 2U);
+    PFL_EXPECT(storage.recognized_packets == 2U);
+    PFL_EXPECT(storage.unrecognized_packets == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    const auto& row = rows[0];
+    PFL_EXPECT(row.family == FlowAddressFamily::ipv4);
+    PFL_EXPECT(row.protocol_text == "UDP");
+    PFL_EXPECT(row.packet_count == 2U);
+    PFL_EXPECT(
+        require_flow_protocol_path_text(session, row) ==
+        "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
+    );
+
+    const auto packet_rows = effective_flow_packet_rows(session, row.index);
+    PFL_REQUIRE(packet_rows.size() == 2U);
+    PFL_EXPECT(packet_rows[0].payload_length == 4U);
+    PFL_EXPECT(packet_rows[1].payload_length == 4U);
+}
+
+void expect_outer_vlan_metadata_stays_in_physical_identity() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("27_same_tunnel_same_inner_tuple_different_outer_vlan_metadata.pcap")));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == 2U);
+    PFL_EXPECT(storage.recognized_packets == 2U);
+    PFL_EXPECT(storage.unrecognized_packets == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 2U);
+
+    const auto* direct_row = find_flow_with_protocol_path(
+        session,
+        rows,
+        "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
+    );
+    const auto* vlan_row = find_flow_with_protocol_path(
+        session,
+        rows,
+        "EthernetII -> VLAN(vid=806) -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
+    );
+    PFL_REQUIRE(direct_row != nullptr);
+    PFL_REQUIRE(vlan_row != nullptr);
+    PFL_EXPECT(direct_row != vlan_row);
+    PFL_EXPECT(row_matches_tuple(*direct_row, FlowAddressFamily::ipv4, "UDP", "10.80.0.10", 53800U, "10.80.0.20", 443U));
+    PFL_EXPECT(row_matches_tuple(*vlan_row, FlowAddressFamily::ipv4, "UDP", "10.80.0.10", 53800U, "10.80.0.20", 443U));
+    PFL_EXPECT(direct_row->packet_count == 1U);
+    PFL_EXPECT(vlan_row->packet_count == 1U);
+}
+
+void expect_outer_ipv4_fragmented_eoip_packets_do_not_continue() {
+    struct Case {
+        std::string_view file_name;
+        std::size_t expected_packets;
+        std::array<std::uint16_t, 2> expected_fragment_fields {};
+        bool has_captrunc {false};
+    };
+
+    const std::array<Case, 2> cases {{
+        {
+            "28_ipv4_eoip_first_fragment_mf_complete_inner.pcap",
+            1U,
+            {0x2000U, 0U},
+            false,
+        },
+        {
+            "29_ipv4_eoip_nonfirst_fragment_valid_looking_bytes_captrunc.pcap",
+            2U,
+            {0x2001U, 0x0002U},
+            true,
+        },
+    }};
+
+    for (const auto& test_case : cases) {
+        const ScopedTestContext fixture_context {"fixture=" + std::string {test_case.file_name}};
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path(test_case.file_name)));
+        const auto records = parse_pcap_records(fixture_path(test_case.file_name));
+        PFL_REQUIRE(records.size() == test_case.expected_packets);
+
+        const auto storage = session.storage_summary();
+        PFL_EXPECT(storage.total_packets_seen == test_case.expected_packets);
+        PFL_EXPECT(storage.recognized_packets == 0U);
+        PFL_EXPECT(storage.unrecognized_packets == test_case.expected_packets);
+        PFL_EXPECT(session.summary().packet_count == 0U);
+        PFL_EXPECT(session.unrecognized_packet_count() == test_case.expected_packets);
+        PFL_EXPECT(session.list_flows().empty());
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 0U);
+
+        for (std::size_t packet_index = 0U; packet_index < test_case.expected_packets; ++packet_index) {
+            const auto frame = parse_outer_frame(records[packet_index]);
+            const auto details = session.read_packet_details(require_packet(session, packet_index));
+            PFL_REQUIRE(details.has_value());
+            PFL_EXPECT(details->has_ipv4);
+            PFL_EXPECT(!details->has_gre);
+            PFL_EXPECT(details->ipv4.protocol == kIpv4ProtocolGre);
+            PFL_EXPECT(read_be16(frame.bytes, frame.ipv4_offset + 6U) == test_case.expected_fragment_fields[packet_index]);
+
+            const auto summary_layers = session_detail::build_packet_summary_layers(*details, require_packet(session, packet_index));
+            PFL_REQUIRE(find_top_level_layer(summary_layers, "ipv4") != nullptr);
+            PFL_EXPECT(find_top_level_layer(summary_layers, "gre") == nullptr);
+            PFL_EXPECT(find_top_level_layer(summary_layers, "ethernet-inner") == nullptr);
+        }
+
+        if (test_case.has_captrunc) {
+            const auto records = parse_pcap_records_with_headers(fixture_path(test_case.file_name));
+            PFL_REQUIRE(records.size() == 2U);
+            PFL_EXPECT(records[1].incl_len < records[1].orig_len);
+            const auto captrunc_details = session.read_packet_details(require_packet(session, 1U));
+            PFL_REQUIRE(captrunc_details.has_value());
+            PFL_EXPECT(captrunc_details->ipv4.available_packet_bytes < captrunc_details->ipv4.total_length);
+        }
+    }
+}
+
+void expect_unsupported_inner_ethernet_continuations_remain_no_flow() {
+    struct Case {
+        std::size_t packet_index;
+        std::uint16_t expected_inner_ether_type;
+        bool expect_mpls;
+        bool expect_ipv4;
+        bool expect_udp;
+        bool expect_no_deeper_layers;
+    };
+
+    const std::array<Case, 5> cases {{
+        {0U, kEtherTypePppoeSession, false, true, true, false},
+        {1U, kEtherTypeMpls, true, true, true, false},
+        {2U, kEtherTypePbb, false, true, true, false},
+        {3U, kEtherTypeMacsec, false, false, false, true},
+        {4U, 0x1234U, false, false, false, true},
+    }};
+
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("30_ipv4_eoip_inner_unsupported_ethernet_payloads.pcap")));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == cases.size());
+    PFL_EXPECT(storage.recognized_packets == 0U);
+    PFL_EXPECT(storage.unrecognized_packets == cases.size());
+    PFL_EXPECT(session.summary().packet_count == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == cases.size());
+    PFL_EXPECT(session.list_flows().empty());
+    PFL_EXPECT(session.state().protocol_path_registry.size() == 0U);
+
+    for (const auto& test_case : cases) {
+        const ScopedTestContext packet_context {"packet=" + std::to_string(test_case.packet_index)};
+        const auto packet = require_packet(session, test_case.packet_index);
+        const auto details = session.read_packet_details(packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_gre);
+        PFL_EXPECT(details->gre.is_eoip);
+        PFL_EXPECT(details->gre.eoip_tunnel_id == 6400U);
+        PFL_EXPECT(details->gre.has_inner_ethernet);
+        PFL_EXPECT(details->gre.has_inner_packet);
+        PFL_REQUIRE(details->gre.inner_packet != nullptr);
+        PFL_EXPECT(details->gre.inner_packet->has_inner_ethernet);
+        PFL_EXPECT(details->gre.inner_packet->inner_ethernet.ether_type == test_case.expected_inner_ether_type);
+        PFL_EXPECT(details->gre.inner_packet->has_mpls == test_case.expect_mpls);
+        PFL_EXPECT(details->gre.inner_packet->has_ipv4 == test_case.expect_ipv4);
+        PFL_EXPECT(details->gre.inner_packet->has_udp == test_case.expect_udp);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+        PFL_REQUIRE(find_top_level_layer(summary_layers, "gre") != nullptr);
+        PFL_REQUIRE(find_top_level_layer(summary_layers, "ethernet-inner") != nullptr);
+        PFL_EXPECT(count_top_level_layers(summary_layers, "mpls") == (test_case.expect_mpls ? 1U : 0U));
+        PFL_EXPECT(count_top_level_layers(summary_layers, "ipv4-inner") == (test_case.expect_ipv4 ? 1U : 0U));
+        PFL_EXPECT(count_top_level_layers(summary_layers, "udp-inner") == (test_case.expect_udp ? 1U : 0U));
+        PFL_EXPECT(count_top_level_layers(summary_layers, "pppoe") == 0U);
+        PFL_EXPECT(count_top_level_layers(summary_layers, "pbb") == 0U);
+        PFL_EXPECT(count_top_level_layers(summary_layers, "macsec") == 0U);
+
+        if (test_case.expect_no_deeper_layers) {
+            PFL_EXPECT(!details->gre.inner_packet->has_ipv4);
+            PFL_EXPECT(!details->gre.inner_packet->has_udp);
+        }
+    }
+}
+
+void expect_nested_eoip_is_not_continued() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("31_ipv4_eoip_nested_eoip_not_continued.pcap")));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == 1U);
+    PFL_EXPECT(storage.recognized_packets == 0U);
+    PFL_EXPECT(storage.unrecognized_packets == 1U);
+    PFL_EXPECT(session.summary().packet_count == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 1U);
+    PFL_EXPECT(session.list_flows().empty());
+    PFL_EXPECT(session.state().protocol_path_registry.size() == 0U);
+
+    const auto packet = require_packet(session, 0U);
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+    PFL_REQUIRE(details->has_gre);
+    PFL_EXPECT(details->gre.is_eoip);
+    PFL_REQUIRE(details->gre.inner_packet != nullptr);
+    PFL_EXPECT(details->gre.inner_packet->has_inner_ethernet);
+    PFL_EXPECT(details->gre.inner_packet->inner_ethernet.ether_type == kEtherTypeIpv4);
+    PFL_EXPECT(details->gre.inner_packet->has_ipv4);
+    PFL_EXPECT(details->gre.inner_packet->ipv4.protocol == kIpv4ProtocolGre);
+    PFL_EXPECT(!details->gre.inner_packet->has_udp);
+    PFL_EXPECT(!details->gre.inner_packet->has_tcp);
+
+    const auto summary_layers = session_detail::build_packet_summary_layers(*details, packet);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "gre") == 1U);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "ethernet-inner") == 1U);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "ipv4-inner") == 1U);
+    PFL_EXPECT(count_top_level_layers(summary_layers, "udp-inner") == 0U);
+
+    const auto protocol_text = session_detail::build_basic_protocol_details_text(*details).value_or(std::string {});
+    PFL_EXPECT(protocol_text.find("Protocol: GRE / EoIP") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Tunnel ID: 6400") != std::string::npos);
+    PFL_EXPECT(protocol_text.find("Tunnel ID: 4660") == std::string::npos);
+}
+
+void expect_frame_length_does_not_split_same_inner_frame_identity() {
+    CaptureSession session {};
+    PFL_REQUIRE(session.open_capture(fixture_path("32_same_tunnel_same_inner_frame_different_frame_length.pcap")));
+
+    const auto storage = session.storage_summary();
+    PFL_EXPECT(storage.total_packets_seen == 2U);
+    PFL_EXPECT(storage.recognized_packets == 2U);
+    PFL_EXPECT(storage.unrecognized_packets == 0U);
+    PFL_EXPECT(session.unrecognized_packet_count() == 0U);
+    PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+
+    const auto rows = session.list_flows();
+    PFL_REQUIRE(rows.size() == 1U);
+    PFL_EXPECT(rows[0].packet_count == 2U);
+    PFL_EXPECT(
+        require_flow_protocol_path_text(session, rows[0]) ==
+        "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
+    );
+
+    const auto packet_rows = effective_flow_packet_rows(session, rows[0].index);
+    PFL_REQUIRE(packet_rows.size() == 2U);
+    PFL_EXPECT(packet_rows[0].payload_length == 4U);
+    PFL_EXPECT(packet_rows[1].payload_length == 4U);
+
+    const auto first_packet = require_packet(session, 0U);
+    const auto second_packet = require_packet(session, 1U);
+    const auto first_details = session.read_packet_details(first_packet);
+    const auto second_details = session.read_packet_details(second_packet);
+    PFL_REQUIRE(first_details.has_value());
+    PFL_REQUIRE(second_details.has_value());
+    PFL_REQUIRE(first_details->has_gre);
+    PFL_REQUIRE(second_details->has_gre);
+    PFL_EXPECT(first_details->gre.key == 0x002e0019U);
+    PFL_EXPECT(second_details->gre.key == 0x00320019U);
+    PFL_EXPECT(first_details->gre.eoip_tunnel_id == 6400U);
+    PFL_EXPECT(second_details->gre.eoip_tunnel_id == 6400U);
+    PFL_EXPECT(first_details->gre.eoip_frame_length == 46U);
+    PFL_EXPECT(second_details->gre.eoip_frame_length == 50U);
+
+    const auto first_payload = session.read_selected_flow_transport_payload(rows[0].index, first_packet);
+    const auto second_payload = session.read_selected_flow_transport_payload(rows[0].index, second_packet);
+    PFL_EXPECT(first_payload.empty());
+    PFL_EXPECT(first_payload == second_payload);
+}
+
+void expect_tunnel_id_path_representation_contract() {
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("07_outer_vlan_mpls2_ipv4_eoip_inner_vlan_ipv4_udp.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 1U);
+        PFL_EXPECT(
+            require_flow_protocol_path_text(session, rows[0]) ==
+            "EthernetII -> VLAN(vid=406) -> MPLS(label=56474) -> MPLS(label=477436) -> IPv4 -> GRE(key=0x00000019) -> EthernetII -> VLAN(vid=3918) -> IPv4 -> UDP"
+        );
+
+        const auto details = session.read_packet_details(require_packet(session, 0U));
+        PFL_REQUIRE(details.has_value());
+        PFL_REQUIRE(details->has_gre);
+        PFL_EXPECT(details->gre.key == 0x00321900U);
+        PFL_EXPECT(details->gre.eoip_tunnel_id == 25U);
+    }
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("08_same_inner_tuple_different_tunnel_ids.pcap")));
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 2U);
+        PFL_EXPECT(session.state().protocol_path_registry.size() == 2U);
+        PFL_REQUIRE(find_flow_with_protocol_path(
+            session,
+            rows,
+            "EthernetII -> IPv4 -> GRE(key=0x00001900) -> EthernetII -> IPv4 -> UDP"
+        ) != nullptr);
+        PFL_REQUIRE(find_flow_with_protocol_path(
+            session,
+            rows,
+            "EthernetII -> IPv4 -> GRE(key=0x00001901) -> EthernetII -> IPv4 -> UDP"
+        ) != nullptr);
     }
 }
 
@@ -1351,11 +2111,28 @@ void run_eoip_pcap_fixture_tests() {
     expect_fixture_08_wire_layout();
     expect_fixture_09_wire_layout();
     expect_fixture_11_wire_layout();
+    expect_fixture_19_llc_snap_wire_layout();
+    expect_gre_eoip_ambiguity_wire_layouts();
+    expect_fixture_26_and_27_identity_wire_layouts();
+    expect_fragmentation_fixture_wire_layouts();
+    expect_unsupported_inner_ethernet_fixture_wire_layout();
+    expect_fixture_31_nested_eoip_wire_layout();
+    expect_fixture_32_wire_layout();
     expect_malformed_fixture_layouts();
 
     expect_positive_parser_expectations();
     expect_malformed_eoip_fixtures_remain_conservative();
+    expect_fixture_19_llc_snap_continuation();
     expect_missing_key_and_unsupported_v1_do_not_claim_eoip();
+    expect_gre_ambiguity_recognized_flows_do_not_claim_eoip();
+    expect_gre_ambiguity_no_flow_cases_do_not_claim_eoip();
+    expect_outer_address_change_does_not_split_eoip_identity();
+    expect_outer_vlan_metadata_stays_in_physical_identity();
+    expect_outer_ipv4_fragmented_eoip_packets_do_not_continue();
+    expect_unsupported_inner_ethernet_continuations_remain_no_flow();
+    expect_nested_eoip_is_not_continued();
+    expect_frame_length_does_not_split_same_inner_frame_identity();
+    expect_tunnel_id_path_representation_contract();
     expect_representative_eoip_presentation_contracts();
     expect_fixture_09_distinguishes_raw_key_from_identity_key();
     expect_representative_malformed_eoip_detail_warnings();

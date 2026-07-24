@@ -24,7 +24,7 @@ ChunkedImportStatus import_with_reader(Reader& reader,
     std::size_t chunk_packet_count {0};
 
     while (chunk_packet_count < max_packets_per_chunk) {
-        const auto packet = reader.read_next();
+        auto packet = reader.read_next();
         if (!packet.has_value()) {
             if (reader.has_error()) {
                 return ChunkedImportStatus::failed;

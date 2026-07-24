@@ -209,7 +209,6 @@
     smartExportBufferBudget: document.getElementById("smartExportBufferBudget"),
     smartExportBufferHelp: document.getElementById("smartExportBufferHelp"),
     capturePath: document.getElementById("capturePath"),
-    openMode: document.getElementById("openMode"),
     openFileButton: document.getElementById("openFileButton"),
     activeSessionPanel: document.getElementById("activeSessionPanel"),
     activeSessionText: document.getElementById("activeSessionText"),
@@ -2085,7 +2084,6 @@
 
   function setOpenControlsDisabled(disabled) {
     elements.capturePath.disabled = disabled;
-    elements.openMode.disabled = disabled;
     elements.openFileButton.disabled = disabled;
     elements.openCancelButton.disabled = !disabled || state.openState !== "opening";
     elements.attachSourceButton.disabled = disabled || state.attachSourceInProgress || !canAttachSourceCapture();
@@ -2138,11 +2136,7 @@
         } else if (action === "smart-export") {
           item.disabled = !canSmartExport();
           item.textContent = state.smartExportInProgress ? "Smart Exporting..." : "Smart Export...";
-        } else if (
-          action === "open-capture-fast"
-          || action === "open-capture-deep"
-          || action === "open-index"
-        ) {
+        } else if (action === "open-capture" || action === "open-index") {
           item.disabled = state.openState === "opening"
             || state.attachSourceInProgress
             || state.saveIndexInProgress
@@ -5399,7 +5393,7 @@
     }
   }
 
-  async function openCapture(pathOverride = null, modeOverride = null) {
+  async function openCapture(pathOverride = null) {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
       render();
@@ -5407,7 +5401,6 @@
     }
 
     const path = String(pathOverride ?? elements.capturePath.value).trim();
-    const openMode = String(modeOverride ?? elements.openMode.value ?? "fast");
     const hadLoadedSession = state.openState === "opened" || state.overview != null || state.flows.length > 0;
 
     if (hadLoadedSession) {
@@ -5438,7 +5431,6 @@
       await logMemoryPhase("before_open_capture", path);
       const startResult = await invoke("start_open_capture", {
         path,
-        open_mode: openMode,
       });
       await logMemoryPhase("after_open_capture", path);
 
@@ -5486,7 +5478,7 @@
     }
   }
 
-  async function openCaptureFromMenu(mode) {
+  async function openCaptureFromMenu() {
     if (typeof invoke !== "function") {
       setStatus("Tauri API is unavailable in this frontend.", "error");
       render();
@@ -5500,8 +5492,7 @@
       }
 
       elements.capturePath.value = selectedPath;
-      elements.openMode.value = mode;
-      await openCapture(selectedPath, mode);
+      await openCapture(selectedPath);
     } catch (error) {
       setStatus(`Failed to open the native file dialog: ${String(error)}`, "error");
       render();
@@ -6086,11 +6077,8 @@
     render();
 
     switch (action) {
-      case "open-capture-fast":
-        await openCaptureFromMenu("fast");
-        return;
-      case "open-capture-deep":
-        await openCaptureFromMenu("deep");
+      case "open-capture":
+        await openCaptureFromMenu();
         return;
       case "open-index":
         await openIndexFromMenu();

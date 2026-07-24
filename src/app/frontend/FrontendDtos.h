@@ -12,11 +12,6 @@
 
 namespace pfl {
 
-enum class FrontendOpenMode : std::uint8_t {
-    fast,
-    deep,
-};
-
 struct FrontendSourceAvailabilityDto {
     bool has_source_capture {false};
     bool source_capture_accessible {false};

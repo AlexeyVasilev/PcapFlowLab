@@ -313,10 +313,9 @@ DirectionalStreamPolicy append_tls_stream_items_from_reassembly(
 std::string classify_stream_label(
     const std::vector<std::uint8_t>& packet_bytes,
     const std::uint32_t data_link_type,
-    const ProtocolId protocol,
-    const bool deep_protocol_details_enabled
+    const ProtocolId protocol
 ) {
-    if (deep_protocol_details_enabled) {
+    if (protocol == ProtocolId::tcp) {
         TlsPacketProtocolAnalyzer tls_analyzer {};
         if (const auto tls_details = tls_analyzer.analyze(packet_bytes, data_link_type); tls_details.has_value()) {
             return tls_stream_label_from_protocol_text(*tls_details);
@@ -327,6 +326,10 @@ std::string classify_stream_label(
             return http_stream_label_from_protocol_text(*http_details);
         }
 
+        return fallback_stream_label(protocol);
+    }
+
+    if (protocol == ProtocolId::udp) {
         DnsPacketProtocolAnalyzer dns_analyzer {};
         if (const auto dns_details = dns_analyzer.analyze(packet_bytes, data_link_type); dns_details.has_value()) {
             const auto text = std::string_view(*dns_details);
@@ -338,6 +341,8 @@ std::string classify_stream_label(
             }
             return "DNS Payload";
         }
+
+        return fallback_stream_label(protocol);
     }
 
     return fallback_stream_label(protocol);
@@ -690,7 +695,6 @@ void append_connection_stream_items_bounded(
     const ProtocolId flow_protocol,
     const std::size_t target_count,
     const std::size_t max_packets_to_scan,
-    const bool deep_protocol_details_enabled,
     const DirectionalStreamPolicy& direction_policy_a,
     const DirectionalStreamPolicy& direction_policy_b
 ) {
@@ -855,7 +859,7 @@ void append_connection_stream_items_bounded(
         } else if (!trimmed_tcp_payload) {
             const auto packet_bytes = session.read_packet_data(packet);
             if (!packet_bytes.empty()) {
-                label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol, deep_protocol_details_enabled);
+                label = classify_stream_label(packet_bytes, packet.data_link_type, flow_protocol);
             }
         }
         rows.push_back(make_stream_item_row(
@@ -1084,7 +1088,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
     const std::size_t flow_index,
     const std::size_t max_packets_to_scan,
     const std::size_t target,
-    const bool deep_protocol_details_enabled,
     const AnalysisSettings& analysis_settings
 ) {
     const auto flow_protocol = protocol_id(connection);
@@ -1212,7 +1215,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 flow_protocol,
                 target,
                 max_packets_to_scan,
-                deep_protocol_details_enabled,
                 direction_policy_a,
                 direction_policy_b
             );
@@ -1227,7 +1229,6 @@ std::vector<StreamItemRow> build_flow_stream_items_bounded(
                 flow_protocol,
                 target,
                 max_packets_to_scan,
-                deep_protocol_details_enabled,
                 direction_policy_a,
                 direction_policy_b
             );
@@ -1258,9 +1259,7 @@ void CaptureSession::reset_runtime_state() noexcept {
     source_capture_path_.clear();
     source_info_ = {};
     state_ = {};
-    import_mode_ = ImportMode::fast;
     analysis_settings_ = {};
-    deep_protocol_details_enabled_ = false;
     opened_from_index_ = false;
     has_loaded_state_ = false;
     last_open_error_text_.clear();
@@ -1297,9 +1296,7 @@ void CaptureSession::swap(CaptureSession& other) noexcept {
     swap(source_capture_path_, other.source_capture_path_);
     swap(source_info_, other.source_info_);
     swap(state_, other.state_);
-    swap(import_mode_, other.import_mode_);
     swap(analysis_settings_, other.analysis_settings_);
-    swap(deep_protocol_details_enabled_, other.deep_protocol_details_enabled_);
     swap(opened_from_index_, other.opened_from_index_);
     swap(has_loaded_state_, other.has_loaded_state_);
     swap(partial_open_, other.partial_open_);
@@ -1333,14 +1330,11 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     OpenContext* effective_ctx = (ctx != nullptr) ? ctx : &local_ctx;
     effective_ctx->clear_failure();
     debug::log_if<debug::kDebugOpen>([&]() {
-        std::clog << "open_capture: " << path.string() << " mode="
-                  << ((options.mode == ImportMode::deep) ? "deep" : "fast") << '\n';
+        std::clog << "open_capture: " << path.string() << " mode=unified\n";
     });
     const auto started_at = std::chrono::steady_clock::now();
     PerfOpenLogger perf_logger {};
-    const auto operation_type = (options.mode == ImportMode::deep)
-        ? PerfOpenOperationType::capture_deep
-        : PerfOpenOperationType::capture_fast;
+    const auto operation_type = PerfOpenOperationType::capture;
 
     CaptureImporter importer {};
     CaptureState imported_state {};
@@ -1369,9 +1363,7 @@ bool CaptureSession::open_capture(const std::filesystem::path& path, const Captu
     capture_path_ = path;
     source_capture_path_ = path;
     state_ = imported_state;
-    import_mode_ = options.mode;
     analysis_settings_ = options.settings;
-    deep_protocol_details_enabled_ = (options.mode == ImportMode::deep);
     opened_from_index_ = false;
     has_loaded_state_ = true;
     partial_open_ = (import_result == CaptureImportResult::partial_success_with_warning);
@@ -1479,9 +1471,7 @@ bool CaptureSession::load_index(const std::filesystem::path& index_path, OpenCon
     source_capture_path_ = std::move(loaded_capture_path);
     source_info_ = std::move(loaded_source_info);
     state_ = std::move(loaded_state);
-    import_mode_ = ImportMode::fast;
     analysis_settings_ = {};
-    deep_protocol_details_enabled_ = false;
     opened_from_index_ = true;
     has_loaded_state_ = true;
     partial_open_ = false;
@@ -3184,7 +3174,6 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items(
         flow_index,
         max_packets_to_scan,
         target,
-        deep_protocol_details_enabled_,
         analysis_settings_
     );
 
@@ -3233,7 +3222,6 @@ std::vector<StreamItemRow> CaptureSession::list_flow_stream_items_for_packet_pre
         flow_index,
         max_packets_to_scan,
         limit,
-        deep_protocol_details_enabled_,
         analysis_settings_
     );
     return rows;

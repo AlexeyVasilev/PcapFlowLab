@@ -114,7 +114,6 @@ std::string require_packet_protocol_path_text(const CaptureState& state, const s
 
 CaptureImportOptions fast_import_options() {
     CaptureImportOptions options {};
-    options.mode = ImportMode::fast;
     return options;
 }
 
@@ -943,7 +942,7 @@ void expect_flow_rows_expose_protocol_path_presentation() {
 
 void expect_frontend_flows_expose_protocol_path_presentation() {
     FrontendSessionAdapter adapter {};
-    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap"), FrontendOpenMode::fast).opened);
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap")).opened);
 
     const auto flows = adapter.get_flows();
     const auto overview = adapter.get_overview();
@@ -1684,7 +1683,7 @@ void expect_protocol_path_statistics_flow_membership_lookup() {
 
 void expect_frontend_protocol_path_statistics_are_loaded_by_mode() {
     FrontendSessionAdapter adapter {};
-    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap"), FrontendOpenMode::fast).opened);
+    PFL_REQUIRE(adapter.open_capture(fixture_path("parsing/vxlan/10_vxlan_same_inner_tuple_different_vni.pcap")).opened);
 
     const auto overview = adapter.get_overview();
     PFL_EXPECT(overview.protocol_path_statistics_default_mode == ProtocolPathStatisticsMode::kind_overview);
@@ -1968,3 +1967,4 @@ void run_protocol_path_tests() {
 }
 
 }  // namespace pfl::tests
+

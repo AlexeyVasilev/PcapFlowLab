@@ -33,7 +33,9 @@ void run_protocol_coverage_tests() {
         const auto arp_key = std::get<ConnectionKeyV4>(rows[0].key);
         PFL_EXPECT(arp_key.protocol == ProtocolId::arp);
         PFL_EXPECT(arp_key.first.addr == ipv4(192, 168, 1, 1));
+        PFL_EXPECT(arp_key.first.port == 0U);
         PFL_EXPECT(arp_key.second.addr == ipv4(192, 168, 1, 10));
+        PFL_EXPECT(arp_key.second.port == 0U);
 
         const auto request_packet = session.find_packet(0);
         PFL_REQUIRE(request_packet.has_value());

@@ -16,17 +16,35 @@ std::vector<RecordedTestFailure>& failure_storage() {
     return failures;
 }
 
+std::vector<std::string>& context_storage() {
+    static std::vector<std::string> contexts {};
+    return contexts;
+}
+
+std::string format_failure_message(const char* file, int line, const char* kind, const char* expression) {
+    std::ostringstream builder {};
+    const auto context = current_test_context();
+    if (!context.empty()) {
+        builder << '[' << context << "] ";
+    }
+    builder << file << ':' << line << ' ' << kind << ": " << expression;
+    return builder.str();
+}
+
 }  // namespace
 
 void run_flow_key_tests();
+void run_dissection_foundation_tests();
+void run_common_direct_dissection_tests();
+void run_dissection_import_adapter_tests();
+void run_dissection_import_session_parity_tests();
+void run_import_validation_tests();
 void run_protocol_path_tests();
 void run_connection_tests();
 void run_ingestor_tests();
 void run_import_tests();
-void run_import_mode_tests();
 void run_analysis_settings_tests();
 void run_flow_analysis_tests();
-void run_cli_import_mode_tests();
 void run_packet_access_tests();
 void run_packet_details_tests();
 void run_packet_payload_tests();
@@ -51,6 +69,7 @@ void run_chunked_import_tests();
 void run_protocol_coverage_tests();
 void run_malformed_packet_handling_tests();
 void run_linux_cooked_tests();
+void run_linux_cooked_pcap_fixture_tests();
 void run_fragmentation_tests();
 void run_reassembly_architecture_tests();
 void run_reassembly_v1_tests();
@@ -80,9 +99,7 @@ void expect(bool condition, const char* expression, const char* file, int line) 
         return;
     }
 
-    std::ostringstream builder {};
-    builder << file << ':' << line << " expectation failed: " << expression;
-    record_failure_message(builder.str());
+    record_failure_message(format_failure_message(file, line, "expectation failed", expression));
 }
 
 void require(bool condition, const char* expression, const char* file, int line) {
@@ -90,9 +107,7 @@ void require(bool condition, const char* expression, const char* file, int line)
         return;
     }
 
-    std::ostringstream builder {};
-    builder << file << ':' << line << " requirement failed: " << expression;
-    throw TestFailure(builder.str());
+    throw TestFailure(format_failure_message(file, line, "requirement failed", expression));
 }
 
 void record_failure_message(std::string message) {
@@ -113,6 +128,42 @@ void clear_recorded_failures() {
     failure_storage().clear();
 }
 
+void push_test_context(std::string context) {
+    context_storage().push_back(std::move(context));
+}
+
+void pop_test_context() {
+    if (!context_storage().empty()) {
+        context_storage().pop_back();
+    }
+}
+
+std::string current_test_context() {
+    const auto& contexts = context_storage();
+    if (contexts.empty()) {
+        return {};
+    }
+
+    std::ostringstream builder {};
+    for (std::size_t index = 0; index < contexts.size(); ++index) {
+        if (index > 0U) {
+            builder << " | ";
+        }
+        builder << contexts[index];
+    }
+    return builder.str();
+}
+
+ScopedTestContext::ScopedTestContext(std::string context) {
+    push_test_context(std::move(context));
+}
+
+ScopedTestContext::~ScopedTestContext() {
+    if (active_) {
+        pop_test_context();
+    }
+}
+
 }  // namespace pfl::tests
 
 int main() {
@@ -125,14 +176,17 @@ int main() {
 
     const std::vector<TestSuiteEntry> suites {
         {"flow_key", pfl::tests::run_flow_key_tests},
+        {"dissection_foundation", pfl::tests::run_dissection_foundation_tests},
+        {"common_direct_dissection", pfl::tests::run_common_direct_dissection_tests},
+        {"dissection_import_adapter", pfl::tests::run_dissection_import_adapter_tests},
+        {"dissection_import_session_parity", pfl::tests::run_dissection_import_session_parity_tests},
+        {"import_validation", pfl::tests::run_import_validation_tests},
         {"protocol_path", pfl::tests::run_protocol_path_tests},
         {"connection", pfl::tests::run_connection_tests},
         {"ingestor", pfl::tests::run_ingestor_tests},
         {"import", pfl::tests::run_import_tests},
-        {"import_mode", pfl::tests::run_import_mode_tests},
         {"analysis_settings", pfl::tests::run_analysis_settings_tests},
         {"flow_analysis", pfl::tests::run_flow_analysis_tests},
-        {"cli_import_mode", pfl::tests::run_cli_import_mode_tests},
         {"packet_access", pfl::tests::run_packet_access_tests},
         {"packet_details", pfl::tests::run_packet_details_tests},
         {"packet_payload", pfl::tests::run_packet_payload_tests},
@@ -157,6 +211,7 @@ int main() {
         {"protocol_coverage", pfl::tests::run_protocol_coverage_tests},
         {"malformed_packet_handling", pfl::tests::run_malformed_packet_handling_tests},
         {"linux_cooked", pfl::tests::run_linux_cooked_tests},
+        {"linux_cooked_pcap_fixtures", pfl::tests::run_linux_cooked_pcap_fixture_tests},
         {"fragmentation", pfl::tests::run_fragmentation_tests},
         {"reassembly_architecture", pfl::tests::run_reassembly_architecture_tests},
         {"reassembly_v1", pfl::tests::run_reassembly_v1_tests},
@@ -184,6 +239,8 @@ int main() {
 
     for (const auto& suite : suites) {
         try {
+            const auto suite_context = std::string {"suite="} + std::string {suite.name};
+            pfl::tests::ScopedTestContext scoped_suite_context {suite_context};
             suite.run();
         } catch (const pfl::tests::TestFailure& failure) {
             pfl::tests::record_failure_message(failure.what());

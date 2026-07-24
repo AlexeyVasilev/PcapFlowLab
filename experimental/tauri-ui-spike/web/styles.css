@@ -461,8 +461,7 @@ body.is-resizing-vertical {
   align-self: stretch;
 }
 
-#openFileButton,
-#openMode {
+#openFileButton {
   min-height: 40px;
 }
 
@@ -481,10 +480,6 @@ body.is-resizing-vertical {
 
 #openFileButton:active:not(:disabled) {
   background: #e6f6ea;
-}
-
-#openMode {
-  min-width: 72px;
 }
 
 .active-session-panel {

@@ -214,7 +214,6 @@ class MainController final : public QObject {
     Q_PROPERTY(qulonglong tlsVersion13 READ tlsVersion13 NOTIFY stateChanged)
     Q_PROPERTY(qulonglong tlsVersionUnknown READ tlsVersionUnknown NOTIFY stateChanged)
     Q_PROPERTY(int statisticsMode READ statisticsMode WRITE setStatisticsMode NOTIFY statisticsModeChanged)
-    Q_PROPERTY(int captureOpenMode READ captureOpenMode WRITE setCaptureOpenMode NOTIFY captureOpenModeChanged)
     Q_PROPERTY(bool httpUsePathAsServiceHint READ httpUsePathAsServiceHint WRITE setHttpUsePathAsServiceHint NOTIFY httpUsePathAsServiceHintChanged)
     Q_PROPERTY(bool usePossibleTlsQuic READ usePossibleTlsQuic WRITE setUsePossibleTlsQuic NOTIFY usePossibleTlsQuicChanged)
     Q_PROPERTY(bool validateSelectedPacketChecksums READ validateSelectedPacketChecksums WRITE setValidateSelectedPacketChecksums NOTIFY validateSelectedPacketChecksumsChanged)
@@ -432,7 +431,6 @@ public:
     [[nodiscard]] qulonglong tlsVersion13() const noexcept;
     [[nodiscard]] qulonglong tlsVersionUnknown() const noexcept;
     [[nodiscard]] int statisticsMode() const noexcept;
-    [[nodiscard]] int captureOpenMode() const noexcept;
     [[nodiscard]] bool httpUsePathAsServiceHint() const noexcept;
     [[nodiscard]] bool usePossibleTlsQuic() const noexcept;
     [[nodiscard]] bool validateSelectedPacketChecksums() const noexcept;
@@ -510,7 +508,6 @@ public:
     Q_INVOKABLE void selectUnrecognizedPackets();
     Q_INVOKABLE QString captureStorageSummaryText() const;
 
-    void setCaptureOpenMode(int mode);
     void setStatisticsMode(int mode);
     void setHttpUsePathAsServiceHint(bool enabled);
     void setUsePossibleTlsQuic(bool enabled);
@@ -529,7 +526,6 @@ signals:
     void statusTextChanged();
     void sourceAvailabilityChanged();
     void actionAvailabilityChanged();
-    void captureOpenModeChanged();
     void statisticsModeChanged();
     void httpUsePathAsServiceHintChanged();
     void usePossibleTlsQuicChanged();
@@ -670,7 +666,6 @@ private:
     bool show_protocol_path_column_ {true};
     int statistics_mode_ {0};
     int loaded_protocol_path_statistics_mode_ {-1};
-    int capture_open_mode_ {0};
     int current_tab_index_ {0};
     int selected_flow_index_ {-1};
     qulonglong selected_packet_index_ {0};
