@@ -119,8 +119,10 @@ Current production has two distinct unsupported inner classes after pseudowire
 - Default transport label: `24050`
 - Default service label: `16050`
 
-All successful fixtures in this directory currently have zero captured transport
-payload bytes after the terminal TCP/UDP/ARP header.
+Successful fixtures in this directory intentionally cover mixed terminal-payload
+shapes: some TCP/UDP cases retain non-empty captured marker payload bytes, some
+terminate with zero captured TCP/UDP payload bytes, and ARP cases follow their
+own header/payload structure.
 
 ## Fixture contract
 

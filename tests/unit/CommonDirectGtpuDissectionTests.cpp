@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
