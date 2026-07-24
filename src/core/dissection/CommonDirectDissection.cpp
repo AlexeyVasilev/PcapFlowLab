@@ -55,6 +55,25 @@ std::uint32_t captured_payload_length_from_bounds(const LayerBounds& bounds) noe
     return static_cast<std::uint32_t>(bounds.payload->captured.length());
 }
 
+std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds_from_layer(
+    const LayerBounds& bounds
+) {
+    if (!bounds.payload.has_value()) {
+        return std::nullopt;
+    }
+
+    const auto payload_begin = bounds.payload->declared.begin();
+    const auto payload_end = bounds.payload->declared.end();
+    if (payload_end < payload_begin) {
+        return std::nullopt;
+    }
+
+    return TerminalTransportPayloadBounds {
+        .payload_offset = payload_begin,
+        .declared_end_offset = payload_end,
+    };
+}
+
 }  // namespace
 
 void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
@@ -220,6 +239,7 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 facts_.tcp_flags = layer_facts.flags;
                 facts_.has_transport_payload_length = step.bounds.payload.has_value();
                 facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
+                facts_.terminal_transport_payload_bounds = terminal_transport_payload_bounds_from_layer(step.bounds);
             } else if constexpr (std::is_same_v<Facts, UdpFacts>) {
                 facts_.terminal_protocol = ProtocolId::udp;
                 facts_.has_ports = true;
@@ -227,6 +247,7 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 facts_.dst_port = layer_facts.dst_port;
                 facts_.has_transport_payload_length = step.bounds.payload.has_value();
                 facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
+                facts_.terminal_transport_payload_bounds = terminal_transport_payload_bounds_from_layer(step.bounds);
             } else if constexpr (std::is_same_v<Facts, SctpFacts>) {
                 facts_.terminal_protocol = ProtocolId::sctp;
                 facts_.has_ports = true;
@@ -234,6 +255,7 @@ void ImportDissectionCollector::consume(const DissectionStep& step) noexcept {
                 facts_.dst_port = layer_facts.dst_port;
                 facts_.has_transport_payload_length = step.bounds.payload.has_value();
                 facts_.captured_transport_payload_length = captured_payload_length_from_bounds(step.bounds);
+                facts_.terminal_transport_payload_bounds = terminal_transport_payload_bounds_from_layer(step.bounds);
             }
         },
         step.facts

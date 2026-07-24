@@ -643,10 +643,14 @@ bool process_classic_legacy_import_packet(
     auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
 
     if (decoded.ipv4.has_value()) {
-        if (const auto payload_length =
-                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv4->flow_key.protocol);
-            payload_length.has_value()) {
-            decoded.ipv4->packet_ref.payload_length = *payload_length;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                decoded.ipv4->packet_ref.payload_length = *payload_length;
+            }
         }
 
         packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
@@ -676,10 +680,14 @@ bool process_classic_legacy_import_packet(
     }
 
     if (decoded.ipv6.has_value()) {
-        if (const auto payload_length =
-                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv6->flow_key.protocol);
-            payload_length.has_value()) {
-            decoded.ipv6->packet_ref.payload_length = *payload_length;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                decoded.ipv6->packet_ref.payload_length = *payload_length;
+            }
         }
 
         packet_observations.push_back(observe_legacy_decoded_packet(packet, decoded));
@@ -878,10 +886,14 @@ bool process_classic_unified_import_packet(
 
     if (decision.decoded_packet.has_value() && decision.decoded_packet->ipv4.has_value()) {
         auto& decoded = *decision.decoded_packet;
-        if (const auto payload_length =
-                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv4->flow_key.protocol);
-            payload_length.has_value()) {
-            decoded.ipv4->packet_ref.payload_length = *payload_length;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                decoded.ipv4->packet_ref.payload_length = *payload_length;
+            }
         }
 
         packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));
@@ -912,10 +924,14 @@ bool process_classic_unified_import_packet(
 
     if (decision.decoded_packet.has_value() && decision.decoded_packet->ipv6.has_value()) {
         auto& decoded = *decision.decoded_packet;
-        if (const auto payload_length =
-                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv6->flow_key.protocol);
-            payload_length.has_value()) {
-            decoded.ipv6->packet_ref.payload_length = *payload_length;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                decoded.ipv6->packet_ref.payload_length = *payload_length;
+            }
         }
 
         packet_observations.push_back(observe_unified_import_decision(packet, facts, decision));

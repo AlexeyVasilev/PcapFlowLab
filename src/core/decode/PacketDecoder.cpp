@@ -27,17 +27,52 @@ PacketRef make_packet_ref(const RawPcapPacket& packet, const bool is_ip_fragment
     };
 }
 
-DecodedPacket make_decoded_packet(const IngestedPacketV4& packet, const ProtocolPathBuilder& builder) {
-    return DecodedPacket {
-        .ipv4 = packet,
-        .protocol_path_builder = builder,
+std::optional<TerminalTransportPayloadBounds> make_terminal_transport_payload_bounds(
+    const std::size_t payload_offset,
+    const std::size_t declared_end_offset
+) {
+    if (declared_end_offset < payload_offset) {
+        return std::nullopt;
+    }
+
+    return TerminalTransportPayloadBounds {
+        .payload_offset = payload_offset,
+        .declared_end_offset = declared_end_offset,
     };
 }
 
-DecodedPacket make_decoded_packet(const IngestedPacketV6& packet, const ProtocolPathBuilder& builder) {
+std::size_t effective_declared_end_offset(
+    const std::optional<std::size_t> enclosing_packet_end,
+    const std::size_t declared_end_offset
+) {
+    if (!enclosing_packet_end.has_value()) {
+        return declared_end_offset;
+    }
+
+    return std::min(*enclosing_packet_end, declared_end_offset);
+}
+
+DecodedPacket make_decoded_packet(
+    const IngestedPacketV4& packet,
+    const ProtocolPathBuilder& builder,
+    std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds = std::nullopt
+) {
+    return DecodedPacket {
+        .ipv4 = packet,
+        .protocol_path_builder = builder,
+        .terminal_transport_payload_bounds = terminal_transport_payload_bounds,
+    };
+}
+
+DecodedPacket make_decoded_packet(
+    const IngestedPacketV6& packet,
+    const ProtocolPathBuilder& builder,
+    std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds = std::nullopt
+) {
     return DecodedPacket {
         .ipv6 = packet,
         .protocol_path_builder = builder,
+        .terminal_transport_payload_bounds = terminal_transport_payload_bounds,
     };
 }
 
@@ -156,6 +191,8 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
     const auto protocol = bounded_bytes[ipv4_offset + 9U];
     const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
     const auto packet_end = ipv4_bounds->packet_end;
+    const auto declared_packet_end =
+        effective_declared_end_offset(bounded_packet_end, ipv4_bounds->nominal_packet_end);
 
     if (protocol == detail::kIpProtocolTcp) {
         if (transport_offset + detail::kTcpMinimumHeaderSize > packet_end ||
@@ -183,13 +220,16 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
         packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
         static_cast<void>(builder.push(LayerKey::ipv4()));
         static_cast<void>(builder.push(LayerKey::tcp()));
+        const auto payload_bounds =
+            make_terminal_transport_payload_bounds(transport_offset + tcp_header_length, declared_packet_end);
 
         return make_decoded_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -217,13 +257,21 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
         static_cast<void>(builder.push(LayerKey::ipv4()));
         static_cast<void>(builder.push(LayerKey::udp()));
+        const auto payload_bounds = make_terminal_transport_payload_bounds(
+            udp_payload->payload_offset,
+            effective_declared_end_offset(
+                bounded_packet_end,
+                transport_offset + static_cast<std::size_t>(udp_payload->datagram_length)
+            )
+        );
 
         return make_decoded_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -245,13 +293,16 @@ std::optional<DecodedPacket> decode_ipv4_transport_payload(
         packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
         static_cast<void>(builder.push(LayerKey::ipv4()));
         static_cast<void>(builder.push(LayerKey::sctp()));
+        const auto payload_bounds =
+            make_terminal_transport_payload_bounds(sctp->payload_offset, declared_packet_end);
 
         return make_decoded_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -279,6 +330,10 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
 
     const auto ipv6_payload_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
     const auto packet_end = std::min(ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length, bounded_bytes.size());
+    const auto declared_packet_end = effective_declared_end_offset(
+        bounded_packet_end,
+        ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+    );
 
     const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
     if (!payload.has_value() || payload->payload_offset > packet_end || payload->has_fragment_header) {
@@ -316,13 +371,16 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
         static_cast<void>(builder.push(LayerKey::ipv6()));
         static_cast<void>(builder.push(LayerKey::tcp()));
+        const auto payload_bounds =
+            make_terminal_transport_payload_bounds(payload->payload_offset + tcp_header_length, declared_packet_end);
 
         return make_decoded_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -349,13 +407,21 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
         static_cast<void>(builder.push(LayerKey::ipv6()));
         static_cast<void>(builder.push(LayerKey::udp()));
+        const auto payload_bounds = make_terminal_transport_payload_bounds(
+            udp_payload->payload_offset,
+            effective_declared_end_offset(
+                bounded_packet_end,
+                payload->payload_offset + static_cast<std::size_t>(udp_payload->datagram_length)
+            )
+        );
 
         return make_decoded_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -377,13 +443,16 @@ std::optional<DecodedPacket> decode_ipv6_transport_payload(
         packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
         static_cast<void>(builder.push(LayerKey::ipv6()));
         static_cast<void>(builder.push(LayerKey::sctp()));
+        const auto payload_bounds =
+            make_terminal_transport_payload_bounds(sctp->payload_offset, declared_packet_end);
 
         return make_decoded_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -455,13 +524,16 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
         );
         packet_ref.tcp_flags = bounded_bytes[ah->payload_offset + 13U];
         static_cast<void>(builder.push(LayerKey::tcp()));
+        const auto payload_bounds =
+            make_terminal_transport_payload_bounds(ah->payload_offset + tcp_header_length, ipv4_bounds.nominal_packet_end);
 
         return make_decoded_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -488,13 +560,18 @@ std::optional<DecodedPacket> try_decode_direct_ipv4_ah_transport_packet(
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
         static_cast<void>(builder.push(LayerKey::udp()));
+        const auto payload_bounds = make_terminal_transport_payload_bounds(
+            udp_payload->payload_offset,
+            ah->payload_offset + static_cast<std::size_t>(udp_payload->datagram_length)
+        );
 
         return make_decoded_packet(
             IngestedPacketV4 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -567,13 +644,16 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
         );
         packet_ref.tcp_flags = bounded_bytes[ah->payload_offset + 13U];
         static_cast<void>(builder.push(LayerKey::tcp()));
+        const auto payload_bounds =
+            make_terminal_transport_payload_bounds(ah->payload_offset + tcp_header_length, nominal_packet_end);
 
         return make_decoded_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -600,13 +680,18 @@ std::optional<DecodedPacket> try_decode_direct_ipv6_ah_transport_packet(
         auto packet_ref = make_packet_ref(packet);
         packet_ref.payload_length = static_cast<std::uint32_t>(udp_payload->payload_length);
         static_cast<void>(builder.push(LayerKey::udp()));
+        const auto payload_bounds = make_terminal_transport_payload_bounds(
+            udp_payload->payload_offset,
+            ah->payload_offset + static_cast<std::size_t>(udp_payload->datagram_length)
+        );
 
         return make_decoded_packet(
             IngestedPacketV6 {
                 .flow_key = flow_key,
                 .packet_ref = packet_ref,
             },
-            builder
+            builder,
+            payload_bounds
         );
     }
 
@@ -1133,12 +1218,17 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             packet_ref.tcp_flags = bounded_bytes[transport_offset + 13U];
             auto builder = ipv4_builder;
             static_cast<void>(builder.push(LayerKey::tcp()));
+            const auto payload_bounds = make_terminal_transport_payload_bounds(
+                transport_offset + tcp_header_length,
+                ipv4_bounds->nominal_packet_end
+            );
             return make_decoded_packet(
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-                builder
+                builder,
+                payload_bounds
             );
         }
 
@@ -1216,13 +1306,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 packet_ref.payload_length = static_cast<std::uint32_t>(
                     packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
             }
+            const auto payload_bounds = udp_payload.has_value()
+                ? make_terminal_transport_payload_bounds(
+                    udp_payload->payload_offset,
+                    transport_offset + static_cast<std::size_t>(udp_payload->datagram_length)
+                )
+                : std::nullopt;
 
             return make_decoded_packet(
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-                udp_builder
+                udp_builder,
+                payload_bounds
             );
         }
 
@@ -1245,12 +1342,15 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
             auto builder = ipv4_builder;
             static_cast<void>(builder.push(LayerKey::sctp()));
+            const auto payload_bounds =
+                make_terminal_transport_payload_bounds(sctp->payload_offset, ipv4_bounds->nominal_packet_end);
             return make_decoded_packet(
                 IngestedPacketV4 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-                builder
+                builder,
+                payload_bounds
             );
         }
 
@@ -1477,12 +1577,17 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             packet_ref.tcp_flags = bounded_bytes[payload->payload_offset + 13U];
             auto builder = ipv6_builder;
             static_cast<void>(builder.push(LayerKey::tcp()));
+            const auto payload_bounds = make_terminal_transport_payload_bounds(
+                payload->payload_offset + tcp_header_length,
+                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+            );
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-                builder
+                builder,
+                payload_bounds
             );
         }
 
@@ -1560,13 +1665,20 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
                 packet_ref.payload_length = static_cast<std::uint32_t>(
                     packet_end > payload_offset ? (packet_end - payload_offset) : 0U);
             }
+            const auto payload_bounds = udp_payload.has_value()
+                ? make_terminal_transport_payload_bounds(
+                    udp_payload->payload_offset,
+                    payload->payload_offset + static_cast<std::size_t>(udp_payload->datagram_length)
+                )
+                : std::nullopt;
 
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-                udp_builder
+                udp_builder,
+                payload_bounds
             );
         }
 
@@ -1588,12 +1700,17 @@ DecodedPacket PacketDecoder::decode(const RawPcapPacket& packet) const noexcept 
             packet_ref.payload_length = static_cast<std::uint32_t>(sctp->payload_length);
             auto builder = ipv6_builder;
             static_cast<void>(builder.push(LayerKey::sctp()));
+            const auto payload_bounds = make_terminal_transport_payload_bounds(
+                sctp->payload_offset,
+                ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length
+            );
             return make_decoded_packet(
                 IngestedPacketV6 {
                     .flow_key = flow_key,
                     .packet_ref = packet_ref,
                 },
-                builder
+                builder,
+                payload_bounds
             );
         }
 

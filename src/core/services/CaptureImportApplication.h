@@ -6,6 +6,7 @@
 
 #include "core/decode/PacketDecoder.h"
 #include "core/domain/CaptureState.h"
+#include "core/domain/TerminalTransportPayloadBounds.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/PacketIngestor.h"
 
@@ -35,9 +36,9 @@ namespace pfl {
     ProtocolId protocol
 ) noexcept;
 
-[[nodiscard]] std::optional<std::uint32_t> derive_captured_transport_payload_length_from_prefix(
+[[nodiscard]] std::optional<std::uint32_t> derive_captured_terminal_transport_payload_length(
     const RawPcapPacket& packet,
-    ProtocolId protocol
+    const TerminalTransportPayloadBounds& bounds
 );
 
 template <typename Connection, typename FlowKey>

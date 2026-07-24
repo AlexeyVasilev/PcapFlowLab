@@ -776,10 +776,14 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
     auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
 
     if (decoded.ipv4.has_value()) {
-        if (const auto payload_length =
-                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv4->flow_key.protocol);
-            payload_length.has_value()) {
-            decoded.ipv4->packet_ref.payload_length = *payload_length;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                decoded.ipv4->packet_ref.payload_length = *payload_length;
+            }
         }
 
         decoded.ipv4->flow_key.protocol_path_id =
@@ -808,10 +812,14 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
     }
 
     if (decoded.ipv6.has_value()) {
-        if (const auto payload_length =
-                derive_captured_transport_payload_length_from_prefix(packet, decoded.ipv6->flow_key.protocol);
-            payload_length.has_value()) {
-            decoded.ipv6->packet_ref.payload_length = *payload_length;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                decoded.ipv6->packet_ref.payload_length = *payload_length;
+            }
         }
 
         decoded.ipv6->flow_key.protocol_path_id =

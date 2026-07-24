@@ -617,7 +617,9 @@ The first engine version does not need to subsume app-level hints fully, but it 
 
 ### Selected-flow payload-length consumer
 
-`SelectedFlowPacketSemantics` currently reparses headers again to recover captured/original transport payload lengths. The new engine should eventually allow those lengths to come from the same dissection facts instead of header-specific re-walks.
+`SelectedFlowPacketSemantics` currently reparses headers again to recover captured/original transport payload lengths. The new engine should eventually allow those lengths to come from the same dissection facts instead of header-specific re-walks. The retained captured payload length belongs to the effective terminal transport chosen for the final flow, not to any enclosing carrier transport that happens to use the same `ProtocolId`.
+
+For staged-prefix import, source-relative terminal payload bounds are sufficient to recover captured terminal payload length from `caplen` without re-walking outer Ethernet/IP/UDP headers. Those bounds remain transient import metadata only; they should not be persisted into `PacketRef`, flow identity, or index formats.
 
 ## Protocol Module Layout
 

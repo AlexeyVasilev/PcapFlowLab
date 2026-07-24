@@ -12,6 +12,10 @@ namespace pfl::tests {
 
 namespace {
 
+std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
+    return std::filesystem::path(__FILE__).parent_path().parent_path() / "data" / relative_path;
+}
+
 std::filesystem::path write_empty_classic_pcap(const std::string& file_name) {
     return write_temp_pcap(
         file_name,
@@ -397,6 +401,21 @@ void run_import_validation_tests() {
     expect_compare_success_with_exact_parity(
         write_staged_prefix_classic_pcap("pfl_import_validation_staged_prefix_ipv6_udp.pcap"),
         "staged_prefix_classic_pcap"
+    );
+
+    expect_compare_success_with_exact_parity(
+        fixture_path("parsing/vxlan/02_vxlan_inner_ipv4_udp.pcap"),
+        "vxlan_inner_ipv4_udp_overlay_exact_parity"
+    );
+
+    expect_compare_success_with_exact_parity(
+        fixture_path("parsing/geneve/02_geneve_inner_ipv4_udp.pcap"),
+        "geneve_inner_ipv4_udp_overlay_exact_parity"
+    );
+
+    expect_compare_success_with_exact_parity(
+        fixture_path("parsing/gtpu/02_gtpu_inner_ipv4_udp.pcap"),
+        "gtpu_inner_ipv4_udp_overlay_exact_parity"
     );
 
     expect_compare_success_with_exact_parity(

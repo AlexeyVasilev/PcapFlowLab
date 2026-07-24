@@ -38,6 +38,7 @@ DecodedPacket make_ipv4_decoded_packet(const dissection::ImportDissectionFacts& 
         .packet_ref = make_import_semantic_packet_ref(facts),
     };
     decoded.protocol_path_builder = facts.physical_path;
+    decoded.terminal_transport_payload_bounds = facts.terminal_transport_payload_bounds;
     return decoded;
 }
 
@@ -54,6 +55,7 @@ DecodedPacket make_ipv6_decoded_packet(const dissection::ImportDissectionFacts& 
         .packet_ref = make_import_semantic_packet_ref(facts),
     };
     decoded.protocol_path_builder = facts.physical_path;
+    decoded.terminal_transport_payload_bounds = facts.terminal_transport_payload_bounds;
     return decoded;
 }
 

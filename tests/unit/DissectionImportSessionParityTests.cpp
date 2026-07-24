@@ -118,6 +118,8 @@ struct CaptureStateSnapshot {
     std::vector<ConnectionSnapshotV4> ipv4_connections {};
     std::vector<ConnectionSnapshotV6> ipv6_connections {};
     std::vector<UnrecognizedSnapshot> unrecognized_packets {};
+
+    [[nodiscard]] friend bool operator==(const CaptureStateSnapshot&, const CaptureStateSnapshot&) = default;
 };
 
 std::string format_packet_ref(const PacketRef& packet) {
@@ -670,6 +672,78 @@ void expect_classic_pcap_staged_prefix_session_parity() {
     );
 }
 
+const PacketRef& require_single_ingested_ipv4_packet_ref(const CaptureState& state) {
+    PFL_REQUIRE(state.ipv4_connections.size() == 1U);
+    const auto connections = state.ipv4_connections.list();
+    PFL_REQUIRE(connections.size() == 1U);
+    const auto* connection = connections.front();
+    PFL_REQUIRE(connection != nullptr);
+    PFL_REQUIRE(connection->has_flow_a);
+    PFL_REQUIRE(connection->flow_a.packets.size() == 1U);
+    return connection->flow_a.packets.front();
+}
+
+void expect_overlay_terminal_payload_length_regression() {
+    struct OverlayPayloadCase {
+        std::string_view fixture {};
+        std::uint32_t expected_inner_payload_length {0U};
+    };
+
+    constexpr std::array<OverlayPayloadCase, 3> cases {{
+        {"parsing/vxlan/02_vxlan_inner_ipv4_udp.pcap", 14U},
+        {"parsing/geneve/02_geneve_inner_ipv4_udp.pcap", 15U},
+        {"parsing/gtpu/02_gtpu_inner_ipv4_udp.pcap", 13U},
+    }};
+
+    for (const auto& test_case : cases) {
+        const ScopedTestContext fixture_context {
+            "fixture=" + std::string(test_case.fixture) + " | overlay_terminal_payload_length_regression"
+        };
+
+        const auto packet = require_raw_fixture_packet(std::filesystem::path {std::string(test_case.fixture)});
+
+        auto decoded = PacketDecoder {}.decode(packet);
+        PFL_REQUIRE(decoded.ipv4.has_value());
+        PFL_EXPECT(decoded.ipv4->flow_key.protocol == ProtocolId::udp);
+        PFL_EXPECT(decoded.ipv4->packet_ref.payload_length == test_case.expected_inner_payload_length);
+        PFL_REQUIRE(decoded.terminal_transport_payload_bounds.has_value());
+        const auto legacy_recovered_payload_length = derive_captured_terminal_transport_payload_length(
+            packet,
+            *decoded.terminal_transport_payload_bounds
+        );
+        PFL_REQUIRE(legacy_recovered_payload_length.has_value());
+        PFL_EXPECT(*legacy_recovered_payload_length == test_case.expected_inner_payload_length);
+
+        const auto facts = run_shadow(packet, require_common_direct_registry());
+        PFL_EXPECT(facts.outcome == ImportDissectionOutcome::recognized_flow);
+        PFL_EXPECT(facts.has_transport_payload_length);
+        PFL_EXPECT(facts.captured_transport_payload_length == test_case.expected_inner_payload_length);
+        PFL_REQUIRE(facts.terminal_transport_payload_bounds.has_value());
+        PFL_EXPECT(*facts.terminal_transport_payload_bounds == *decoded.terminal_transport_payload_bounds);
+
+        const auto decision = adapt_dissection_import_facts(facts);
+        PFL_REQUIRE(decision.has_decoded_packet());
+        PFL_REQUIRE(decision.decoded_packet->ipv4.has_value());
+        PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == test_case.expected_inner_payload_length);
+        PFL_REQUIRE(decision.decoded_packet->terminal_transport_payload_bounds.has_value());
+        PFL_EXPECT(*decision.decoded_packet->terminal_transport_payload_bounds == *decoded.terminal_transport_payload_bounds);
+
+        CaptureState legacy_state {};
+        const FlowHintService hint_service {AnalysisSettings {}, true};
+        auto legacy_imported = decoded;
+        apply_decoded_packet_import(packet, legacy_imported, legacy_state, hint_service);
+        const auto legacy_snapshot = snapshot_state(legacy_state);
+
+        auto imported = *decision.decoded_packet;
+        CaptureState unified_state {};
+        apply_decoded_packet_import(packet, imported, unified_state, hint_service);
+        const auto unified_snapshot = snapshot_state(unified_state);
+
+        PFL_EXPECT(require_single_ingested_ipv4_packet_ref(unified_state).payload_length == test_case.expected_inner_payload_length);
+        PFL_EXPECT(unified_snapshot == legacy_snapshot);
+    }
+}
+
 void expect_geneve_packet2_keeps_only_diagnostic_path() {
     const ScopedTestContext fixture_context {
         "fixture=parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap | packet=2"
@@ -704,6 +778,7 @@ void run_dissection_import_session_parity_tests() {
     expect_overlay_and_fragmentation_fixture_parity();
     expect_negative_fixture_parity();
     expect_classic_pcap_staged_prefix_session_parity();
+    expect_overlay_terminal_payload_length_regression();
     expect_geneve_packet2_keeps_only_diagnostic_path();
 }
 

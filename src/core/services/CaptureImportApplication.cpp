@@ -1,6 +1,7 @@
 #include "core/services/CaptureImportApplication.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include "core/decode/PacketDecodeSupport.h"
@@ -425,142 +426,27 @@ bool requires_full_packet_for_hint_detection(const PacketRef& packet_ref, const 
     return (protocol == ProtocolId::tcp || protocol == ProtocolId::udp) && packet_ref.payload_length > 0U;
 }
 
-std::optional<std::uint32_t> derive_captured_transport_payload_length_from_prefix(
+std::optional<std::uint32_t> derive_captured_terminal_transport_payload_length(
     const RawPcapPacket& packet,
-    const ProtocolId protocol
+    const TerminalTransportPayloadBounds& bounds
 ) {
-    if (protocol != ProtocolId::tcp && protocol != ProtocolId::udp) {
+    if (bounds.declared_end_offset < bounds.payload_offset) {
         return std::nullopt;
     }
 
-    const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-    const auto network = detail::parse_network_payload(packet_bytes, packet.data_link_type);
-    if (!network.has_value()) {
+    const auto captured_end = std::min(
+        static_cast<std::size_t>(packet.captured_length),
+        bounds.declared_end_offset
+    );
+    if (captured_end < bounds.payload_offset) {
         return std::nullopt;
     }
-    const auto bounded_bytes = network->bounded_packet_end.has_value()
-        ? packet_bytes.first(std::min(*network->bounded_packet_end, packet_bytes.size()))
-        : packet_bytes;
-
-    if (network->protocol_type == detail::kEtherTypeIpv4) {
-        const auto ipv4_offset = network->payload_offset;
-        const auto ipv4_bounds = detail::parse_ipv4_packet_bounds(bounded_bytes, ipv4_offset);
-        if (!ipv4_bounds.has_value()) {
-            return std::nullopt;
-        }
-
-        const auto outer_protocol = bounded_bytes[ipv4_offset + 9U];
-        if ((protocol == ProtocolId::tcp && outer_protocol != detail::kIpProtocolTcp) ||
-            (protocol == ProtocolId::udp && outer_protocol != detail::kIpProtocolUdp)) {
-            return std::nullopt;
-        }
-
-        const auto transport_offset = ipv4_offset + ipv4_bounds->header_length;
-        auto packet_end = std::min(
-            ipv4_bounds->nominal_packet_end,
-            static_cast<std::size_t>(packet.captured_length));
-        if (network->bounded_packet_end.has_value()) {
-            packet_end = std::min(packet_end, *network->bounded_packet_end);
-        }
-        if (packet_end < transport_offset) {
-            return 0U;
-        }
-
-        if (protocol == ProtocolId::tcp) {
-            if (bounded_bytes.size() < transport_offset + detail::kTcpMinimumHeaderSize) {
-                return std::nullopt;
-            }
-
-            const auto tcp_header_length =
-                static_cast<std::size_t>((bounded_bytes[transport_offset + 12U] >> 4U) * 4U);
-            if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
-                packet_end < transport_offset + tcp_header_length ||
-                bounded_bytes.size() < transport_offset + tcp_header_length) {
-                return std::nullopt;
-            }
-
-            return static_cast<std::uint32_t>(packet_end - (transport_offset + tcp_header_length));
-        }
-
-        if (bounded_bytes.size() < transport_offset + detail::kUdpHeaderSize) {
-            return std::nullopt;
-        }
-
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, transport_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize ||
-            transport_offset + udp_length > ipv4_bounds->nominal_packet_end) {
-            return std::nullopt;
-        }
-
-        const auto payload_offset = transport_offset + detail::kUdpHeaderSize;
-        const auto available_payload_length = packet_end > payload_offset ? (packet_end - payload_offset) : 0U;
-        return static_cast<std::uint32_t>(std::min(udp_length - detail::kUdpHeaderSize, available_payload_length));
+    const auto payload_length = captured_end - bounds.payload_offset;
+    if (payload_length > static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        return std::nullopt;
     }
 
-    if (network->protocol_type == detail::kEtherTypeIpv6) {
-        const auto ipv6_offset = network->payload_offset;
-        if (bounded_bytes.size() < ipv6_offset + detail::kIpv6HeaderSize) {
-            return std::nullopt;
-        }
-
-        if (static_cast<std::uint8_t>(bounded_bytes[ipv6_offset] >> 4U) != 6U) {
-            return std::nullopt;
-        }
-
-        const auto ipv6_payload_length =
-            static_cast<std::size_t>(detail::read_be16(bounded_bytes, ipv6_offset + 4U));
-        const auto payload = detail::parse_ipv6_payload(bounded_bytes, ipv6_offset);
-        if (!payload.has_value()) {
-            return std::nullopt;
-        }
-
-        if ((protocol == ProtocolId::tcp && payload->next_header != detail::kIpProtocolTcp) ||
-            (protocol == ProtocolId::udp && payload->next_header != detail::kIpProtocolUdp)) {
-            return std::nullopt;
-        }
-
-        auto packet_end = std::min(
-            ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length,
-            static_cast<std::size_t>(packet.captured_length));
-        if (network->bounded_packet_end.has_value()) {
-            packet_end = std::min(packet_end, *network->bounded_packet_end);
-        }
-        if (packet_end < payload->payload_offset) {
-            return 0U;
-        }
-
-        if (protocol == ProtocolId::tcp) {
-            if (bounded_bytes.size() < payload->payload_offset + detail::kTcpMinimumHeaderSize) {
-                return std::nullopt;
-            }
-
-            const auto tcp_header_length =
-                static_cast<std::size_t>((bounded_bytes[payload->payload_offset + 12U] >> 4U) * 4U);
-            if (tcp_header_length < detail::kTcpMinimumHeaderSize ||
-                packet_end < payload->payload_offset + tcp_header_length ||
-                bounded_bytes.size() < payload->payload_offset + tcp_header_length) {
-                return std::nullopt;
-            }
-
-            return static_cast<std::uint32_t>(packet_end - (payload->payload_offset + tcp_header_length));
-        }
-
-        if (bounded_bytes.size() < payload->payload_offset + detail::kUdpHeaderSize) {
-            return std::nullopt;
-        }
-
-        const auto udp_length = static_cast<std::size_t>(detail::read_be16(bounded_bytes, payload->payload_offset + 4U));
-        if (udp_length < detail::kUdpHeaderSize ||
-            payload->payload_offset + udp_length > ipv6_offset + detail::kIpv6HeaderSize + ipv6_payload_length) {
-            return std::nullopt;
-        }
-
-        const auto payload_offset = payload->payload_offset + detail::kUdpHeaderSize;
-        const auto available_payload_length = packet_end > payload_offset ? (packet_end - payload_offset) : 0U;
-        return static_cast<std::uint32_t>(std::min(udp_length - detail::kUdpHeaderSize, available_payload_length));
-    }
-
-    return std::nullopt;
+    return static_cast<std::uint32_t>(payload_length);
 }
 
 void apply_decoded_packet_import(

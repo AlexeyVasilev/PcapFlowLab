@@ -58,6 +58,13 @@ void expect_packet_ref_context_unset(const PacketRef& packet_ref) {
     PFL_EXPECT(packet_ref.ts_usec == 0U);
 }
 
+void expect_terminal_payload_bounds_match(
+    const DecodedPacket& adapted,
+    const DecodedPacket& legacy
+) {
+    PFL_EXPECT(adapted.terminal_transport_payload_bounds == legacy.terminal_transport_payload_bounds);
+}
+
 void expect_adapted_packet_matches_legacy_semantics(
     const std::filesystem::path& relative_path,
     const std::size_t packet_index = 0U
@@ -73,6 +80,7 @@ void expect_adapted_packet_matches_legacy_semantics(
     PFL_REQUIRE(adapted.has_decoded_packet());
 
     PFL_EXPECT(adapted.decoded_packet->protocol_path_builder.to_path() == legacy.protocol_path_builder.to_path());
+    expect_terminal_payload_bounds_match(*adapted.decoded_packet, legacy);
     PFL_EXPECT(adapted.family == (legacy.ipv4.has_value() ? DissectionAddressFamily::ipv4 : DissectionAddressFamily::ipv6));
     PFL_EXPECT(adapted.terminal_protocol ==
         (legacy.ipv4.has_value() ? legacy.ipv4->flow_key.protocol : legacy.ipv6->flow_key.protocol));
@@ -104,6 +112,7 @@ void expect_adapter_matches_legacy_for_direct_transport_fixtures() {
     expect_adapted_packet_matches_legacy_semantics("parsing/tcp/tcp_generic_payload_7.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/udp/ipv6_udp_bad_checksum_1.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/sctp/01_sctp_ipv4_data_s1ap.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/ip_encapsulation/01_ipv4_in_ipv4_tcp.pcap");
 }
 
 void expect_adapter_matches_legacy_for_portless_protocol_fixtures() {
@@ -117,8 +126,17 @@ void expect_adapter_matches_legacy_for_portless_protocol_fixtures() {
 void expect_adapter_matches_legacy_for_overlay_and_carrier_fixtures() {
     expect_adapted_packet_matches_legacy_semantics("parsing/gre/07_gre_key_ipv4_udp.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/02_vxlan_inner_ipv4_udp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/09_vxlan_unsupported_inner_ethertype.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/15_vxlan_wrong_udp_port_valid_vxlan_payload.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/geneve/01_geneve_inner_ipv4_tcp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/geneve/02_geneve_inner_ipv4_udp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/geneve/15_geneve_wrong_udp_port_valid_geneve_payload.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/gtpu/01_gtpu_inner_ipv4_tcp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/gtpu/02_gtpu_inner_ipv4_udp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/gtpu/04_gtpu_inner_ipv6_udp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/gtpu/10_gtpu_unknown_inner_payload.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/gtpu/16_gtpu_with_sequence_inner_ipv4_tcp.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/pppoe/04_pppoe_session_ipv6_udp.pcap");
 }
 
@@ -201,6 +219,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.tcp_flags == 0x12U);
         PFL_EXPECT(!decision.decoded_packet->ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(!decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         expect_packet_ref_context_unset(decision.decoded_packet->ipv4->packet_ref);
     }
 
@@ -231,6 +250,7 @@ void expect_adapter_maps_synthetic_portless_and_payload_edge_cases() {
         PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.payload_length == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.tcp_flags == 0U);
         PFL_EXPECT(decision.decoded_packet->ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(!decision.decoded_packet->terminal_transport_payload_bounds.has_value());
         expect_packet_ref_context_unset(decision.decoded_packet->ipv4->packet_ref);
     }
 }

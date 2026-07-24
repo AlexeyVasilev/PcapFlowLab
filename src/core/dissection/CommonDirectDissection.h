@@ -6,6 +6,7 @@
 
 #include "core/dissection/DissectionEngine.h"
 #include "core/io/LinkType.h"
+#include "core/domain/TerminalTransportPayloadBounds.h"
 
 namespace pfl::dissection {
 
@@ -47,6 +48,7 @@ struct ImportDissectionFacts {
     bool has_ports {false};
     bool has_transport_payload_length {false};
     std::uint32_t captured_transport_payload_length {0U};
+    std::optional<TerminalTransportPayloadBounds> terminal_transport_payload_bounds {};
     bool has_tcp_flags {false};
     std::uint8_t tcp_flags {0U};
     bool has_ipv4_fragmentation {false};
