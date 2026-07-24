@@ -117,7 +117,7 @@ CaptureImportResult import_classic_packets(PcapReader& reader,
 
 template <typename Reader>
 CaptureImportResult import_full_packets(Reader& reader, CaptureState& state, const CaptureImportProcessor& processor, OpenContext* ctx) {
-    while (const auto packet = reader.read_next()) {
+    while (auto packet = reader.read_next()) {
         if (should_cancel(ctx)) {
             report_open_progress(ctx);
             return CaptureImportResult::failure;
@@ -218,10 +218,9 @@ bool CaptureImportProcessor::process_classic_import_packet(PcapReader& reader,
     return finalize_prefix_packet();
 }
 
-void CaptureImportProcessor::process_packet(const RawPcapPacket& packet, CaptureState& state) const {
-    auto packet_copy = packet;
+void CaptureImportProcessor::process_packet(RawPcapPacket& packet, CaptureState& state) const {
     static_cast<void>(process_packet_with_unified_dissection(
-        packet_copy,
+        packet,
         state,
         *registry_,
         hint_service_

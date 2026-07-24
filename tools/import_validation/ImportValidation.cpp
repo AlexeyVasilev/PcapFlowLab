@@ -541,7 +541,7 @@ bool legacy_import_reader_loop(
     const std::optional<std::uint64_t> max_packets
 ) {
     while (!max_packets.has_value() || metrics.packets_processed < *max_packets) {
-        const auto packet = reader.read_next();
+        auto packet = reader.read_next();
         if (!packet.has_value()) {
             return !reader.has_error();
         }
