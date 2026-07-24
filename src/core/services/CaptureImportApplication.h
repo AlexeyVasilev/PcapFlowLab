@@ -1,16 +1,35 @@
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
 
 #include "core/decode/PacketDecoder.h"
+#include "core/dissection/CommonDirectDissection.h"
 #include "core/domain/CaptureState.h"
 #include "core/domain/TerminalTransportPayloadBounds.h"
 #include "core/services/FlowHintService.h"
 #include "core/services/PacketIngestor.h"
+#include "core/services/DissectionImportAdapter.h"
 
 namespace pfl {
+
+struct PacketBytesMaterializer {
+    using Callback = bool (*)(void* context);
+
+    Callback callback {nullptr};
+    void* context {nullptr};
+
+    [[nodiscard]] bool ensure_full_packet_bytes() const {
+        return callback == nullptr || callback(context);
+    }
+};
+
+struct UnifiedImportPacketResult {
+    dissection::ImportDissectionFacts facts {};
+    DissectionImportDecision decision {};
+};
 
 [[nodiscard]] ProtocolPathId intern_protocol_path_id_for_flow_identity(
     CaptureState& state,
@@ -56,11 +75,41 @@ void apply_import_hints_if_needed(const RawPcapPacket& packet,
     connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
 }
 
-void apply_decoded_packet_import(
+[[nodiscard]] UnifiedImportPacketResult run_unified_import_packet(
+    const RawPcapPacket& packet,
+    const dissection::DissectionRegistry& registry
+);
+
+[[nodiscard]] bool apply_decoded_packet_import(
     const RawPcapPacket& packet,
     DecodedPacket& decoded,
     CaptureState& state,
     const FlowHintService& hint_service
+);
+
+[[nodiscard]] bool apply_decoded_packet_import(
+    RawPcapPacket& packet,
+    DecodedPacket& decoded,
+    CaptureState& state,
+    const FlowHintService& hint_service,
+    PacketBytesMaterializer materializer = {}
+);
+
+[[nodiscard]] bool apply_unified_import_packet_result(
+    RawPcapPacket& packet,
+    UnifiedImportPacketResult& result,
+    CaptureState& state,
+    const FlowHintService& hint_service,
+    PacketBytesMaterializer materializer = {}
+);
+
+[[nodiscard]] bool process_packet_with_unified_dissection(
+    RawPcapPacket& packet,
+    CaptureState& state,
+    const dissection::DissectionRegistry& registry,
+    const FlowHintService& hint_service,
+    PacketBytesMaterializer materializer = {},
+    UnifiedImportPacketResult* result = nullptr
 );
 
 void apply_unrecognized_packet_import(

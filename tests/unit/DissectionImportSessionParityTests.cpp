@@ -339,17 +339,16 @@ void expect_equal(std::string_view field, const T& legacy, const T& unified) {
 }
 
 template <typename Reader>
-void import_reader_with_unified_dissection(
+void import_reader_with_legacy_decoder(
     Reader& reader,
     CaptureState& state,
-    const DissectionRegistry& registry,
     const FlowHintService& hint_service
 ) {
-    while (const auto packet = reader.read_next()) {
-        const auto facts = run_shadow(*packet, registry);
-        auto decision = adapt_dissection_import_facts(facts);
-        if (decision.has_decoded_packet()) {
-            apply_decoded_packet_import(*packet, *decision.decoded_packet, state, hint_service);
+    PacketDecoder decoder {};
+    while (auto packet = reader.read_next()) {
+        auto decoded = decoder.decode(*packet);
+        if (decoded.has_value()) {
+            static_cast<void>(apply_decoded_packet_import(*packet, decoded, state, hint_service));
             continue;
         }
 
@@ -358,7 +357,53 @@ void import_reader_with_unified_dissection(
     }
 }
 
+template <typename Reader>
+void import_reader_with_unified_dissection(
+    Reader& reader,
+    CaptureState& state,
+    const DissectionRegistry& registry,
+    const FlowHintService& hint_service
+) {
+    while (auto packet = reader.read_next()) {
+        static_cast<void>(process_packet_with_unified_dissection(
+            *packet,
+            state,
+            registry,
+            hint_service
+        ));
+    }
+}
+
 CaptureState import_capture_with_legacy_decoder_for_test(
+    const std::filesystem::path& capture_path,
+    const CaptureImportOptions& options = {}
+) {
+    CaptureState state {};
+    const FlowHintService hint_service {options.settings, true};
+
+    switch (detect_capture_source_format(capture_path)) {
+    case CaptureSourceFormat::classic_pcap: {
+        PcapReader reader {};
+        PFL_REQUIRE(reader.open(capture_path));
+        import_reader_with_legacy_decoder(reader, state, hint_service);
+        PFL_EXPECT(!reader.has_error());
+        break;
+    }
+    case CaptureSourceFormat::pcapng: {
+        PcapNgReader reader {};
+        PFL_REQUIRE(reader.open(capture_path));
+        import_reader_with_legacy_decoder(reader, state, hint_service);
+        PFL_EXPECT(!reader.has_error());
+        break;
+    }
+    default:
+        PFL_REQUIRE(false);
+    }
+
+    return state;
+}
+
+CaptureState import_capture_with_production_import_for_test(
     const std::filesystem::path& capture_path,
     const CaptureImportOptions& options = {}
 ) {
@@ -529,21 +574,35 @@ void expect_fixture_import_parity(
     const ScopedTestContext fixture_context {context_label};
 
     const auto legacy_state = import_capture_with_legacy_decoder_for_test(capture_path, options);
+    const auto production_state = import_capture_with_production_import_for_test(capture_path, options);
     const auto unified_state = import_capture_with_unified_dissection_for_test(capture_path, options);
 
     const auto legacy = snapshot_state(legacy_state);
+    const auto production = snapshot_state(production_state);
     const auto unified = snapshot_state(unified_state);
 
     if (!(legacy.summary == unified.summary)) {
         record_mismatch("summary", format_summary(legacy.summary), format_summary(unified.summary));
     }
+    if (!(production.summary == unified.summary)) {
+        record_mismatch("production.summary", format_summary(production.summary), format_summary(unified.summary));
+    }
 
     expect_equal("protocol_registry.size", legacy.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
+    expect_equal("production.protocol_registry.size", production.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
     const auto shared_path_count = std::min(legacy.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
     for (std::size_t index = 0U; index < shared_path_count; ++index) {
         expect_equal(
             "protocol_registry.path[" + std::to_string(index + 1U) + ']',
             legacy.protocol_registry_paths[index],
+            unified.protocol_registry_paths[index]
+        );
+    }
+    const auto shared_production_path_count = std::min(production.protocol_registry_paths.size(), unified.protocol_registry_paths.size());
+    for (std::size_t index = 0U; index < shared_production_path_count; ++index) {
+        expect_equal(
+            "production.protocol_registry.path[" + std::to_string(index + 1U) + ']',
+            production.protocol_registry_paths[index],
             unified.protocol_registry_paths[index]
         );
     }
@@ -553,11 +612,29 @@ void expect_fixture_import_parity(
     for (std::size_t index = 0U; index < shared_ipv4; ++index) {
         expect_connection_equal("ipv4_connection[" + std::to_string(index) + ']', legacy.ipv4_connections[index], unified.ipv4_connections[index]);
     }
+    expect_equal("production.ipv4_connection_count", production.ipv4_connections.size(), unified.ipv4_connections.size());
+    const auto shared_production_ipv4 = std::min(production.ipv4_connections.size(), unified.ipv4_connections.size());
+    for (std::size_t index = 0U; index < shared_production_ipv4; ++index) {
+        expect_connection_equal(
+            "production.ipv4_connection[" + std::to_string(index) + ']',
+            production.ipv4_connections[index],
+            unified.ipv4_connections[index]
+        );
+    }
 
     expect_equal("ipv6_connection_count", legacy.ipv6_connections.size(), unified.ipv6_connections.size());
     const auto shared_ipv6 = std::min(legacy.ipv6_connections.size(), unified.ipv6_connections.size());
     for (std::size_t index = 0U; index < shared_ipv6; ++index) {
         expect_connection_equal("ipv6_connection[" + std::to_string(index) + ']', legacy.ipv6_connections[index], unified.ipv6_connections[index]);
+    }
+    expect_equal("production.ipv6_connection_count", production.ipv6_connections.size(), unified.ipv6_connections.size());
+    const auto shared_production_ipv6 = std::min(production.ipv6_connections.size(), unified.ipv6_connections.size());
+    for (std::size_t index = 0U; index < shared_production_ipv6; ++index) {
+        expect_connection_equal(
+            "production.ipv6_connection[" + std::to_string(index) + ']',
+            production.ipv6_connections[index],
+            unified.ipv6_connections[index]
+        );
     }
 
     expect_equal("unrecognized_count", legacy.unrecognized_packets.size(), unified.unrecognized_packets.size());
@@ -575,6 +652,24 @@ void expect_fixture_import_parity(
         expect_equal(
             "unrecognized[" + std::to_string(index) + "].reason",
             legacy_record.reason_text,
+            unified_record.reason_text
+        );
+    }
+    expect_equal("production.unrecognized_count", production.unrecognized_packets.size(), unified.unrecognized_packets.size());
+    const auto shared_production_unrecognized = std::min(production.unrecognized_packets.size(), unified.unrecognized_packets.size());
+    for (std::size_t index = 0U; index < shared_production_unrecognized; ++index) {
+        const auto& production_record = production.unrecognized_packets[index];
+        const auto& unified_record = unified.unrecognized_packets[index];
+        if (production_record.packet != unified_record.packet) {
+            record_mismatch(
+                "production.unrecognized[" + std::to_string(index) + "].packet",
+                format_packet_ref(production_record.packet),
+                format_packet_ref(unified_record.packet)
+            );
+        }
+        expect_equal(
+            "production.unrecognized[" + std::to_string(index) + "].reason",
+            production_record.reason_text,
             unified_record.reason_text
         );
     }
@@ -732,12 +827,12 @@ void expect_overlay_terminal_payload_length_regression() {
         CaptureState legacy_state {};
         const FlowHintService hint_service {AnalysisSettings {}, true};
         auto legacy_imported = decoded;
-        apply_decoded_packet_import(packet, legacy_imported, legacy_state, hint_service);
+        static_cast<void>(apply_decoded_packet_import(packet, legacy_imported, legacy_state, hint_service));
         const auto legacy_snapshot = snapshot_state(legacy_state);
 
         auto imported = *decision.decoded_packet;
         CaptureState unified_state {};
-        apply_decoded_packet_import(packet, imported, unified_state, hint_service);
+        static_cast<void>(apply_decoded_packet_import(packet, imported, unified_state, hint_service));
         const auto unified_snapshot = snapshot_state(unified_state);
 
         PFL_EXPECT(require_single_ingested_ipv4_packet_ref(unified_state).payload_length == test_case.expected_inner_payload_length);

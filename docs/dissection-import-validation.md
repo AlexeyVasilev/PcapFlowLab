@@ -1,12 +1,13 @@
 # Unified Import Validation
 
-Date: 2026-07-22
+Date: 2026-07-24
 Branch: `feature/unified-packet-dissection`
 
 This document describes the developer-only validation executable used to compare
 legacy import against unified shadow import on arbitrary local captures.
 
-Production runtime import remains legacy `PacketDecoder`.
+Production runtime import now uses unified dissection. The `legacy` mode remains
+temporary and exists only as a post-cutover comparison oracle.
 
 ## Tool
 
@@ -204,9 +205,10 @@ Implemented:
 - packet-level diagnose mode with grouped mismatch attribution
 - classic-PCAP staged-prefix parity coverage
 - PCAPNG validation coverage
+- production import cutover to unified dissection
 
-Still pending before any production cutover claim:
+Legacy mode remains intentionally available after the cutover only for:
 
-- real-capture validation runs
-- review of measured throughput and peak-memory deltas
-- explicit production import cutover change
+- post-cutover regression comparison
+- packet-level diagnosis of future parity regressions
+- safe retirement planning for the retained legacy decoder

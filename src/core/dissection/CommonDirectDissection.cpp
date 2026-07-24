@@ -559,6 +559,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
         },
         DissectorRegistration {
             .selector = ProtocolSelector {
+                .domain = SelectorDomain::native_ether_type,
+                .value = detail::kEtherTypeMplsMulticast,
+            },
+            .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
                 .domain = SelectorDomain::ieee8023_payload,
                 .value = kIeee8023PayloadSelectorValue,
             },
@@ -631,6 +638,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::ether_type,
                 .value = detail::kEtherTypeMplsUnicast,
+            },
+            .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::ether_type,
+                .value = detail::kEtherTypeMplsMulticast,
             },
             .dissector = dissect_mpls_label,
         },
@@ -897,6 +911,13 @@ DissectionRegistryBuildResult make_common_direct_registry() {
             .selector = ProtocolSelector {
                 .domain = SelectorDomain::gre_protocol_type,
                 .value = detail::kEtherTypeMplsUnicast,
+            },
+            .dissector = dissect_mpls_label,
+        },
+        DissectorRegistration {
+            .selector = ProtocolSelector {
+                .domain = SelectorDomain::gre_protocol_type,
+                .value = detail::kEtherTypeMplsMulticast,
             },
             .dissector = dissect_mpls_label,
         },

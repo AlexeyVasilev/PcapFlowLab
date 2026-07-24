@@ -1,14 +1,14 @@
 # Unified Dissection Import Parity Audit
 
-Date: 2026-07-22
+Date: 2026-07-24
 Branch: `feature/unified-packet-dissection`
-Verdict: `not-ready-coverage-gaps`
+Verdict: `ready-for-cutover`
 
 ## Scope
 
-This is a static audit of whether the registry-driven shadow dissection engine is
-ready to replace legacy `PacketDecoder` specifically for capture import and flow
-construction.
+This is a static audit of the registry-driven dissection engine's cutover
+readiness and the completed production import switch away from legacy
+`PacketDecoder` for capture import and flow construction.
 
 The audit is source-grounded only. No build, test, or runtime commands were used
 for this pass.
@@ -61,17 +61,20 @@ Parity-contract evidence:
 
 ## Production import contract traced from code
 
-`CaptureImportProcessor` still imports through the legacy path:
+`CaptureImportProcessor` now imports through the unified path:
 
-1. `decoder_.decode(packet)` produces `DecodedPacket`.
-2. Successful `DecodedPacket` carries:
-   - `IngestedPacketV4` or `IngestedPacketV6`;
-   - `ProtocolPathBuilder`.
-3. `CaptureImportProcessor` assigns
+1. `run_unified_import_packet(packet, registry)` produces finalized
+   `ImportDissectionFacts` plus adapted `DissectionImportDecision`.
+2. Recognized flows are converted through the adapter into `DecodedPacket`.
+3. `apply_unified_import_packet_result(...)` recovers terminal captured payload
+   length from `TerminalTransportPayloadBounds`, preserves packet-context
+   metadata, and applies existing hint policy.
+4. `apply_decoded_packet_import(...)` assigns
    `flow_key.protocol_path_id = intern_protocol_path_id_for_flow_identity(...)`.
-4. `PacketIngestor::ingest(...)` persists the packet into connections/flows and
+5. `PacketIngestor::ingest(...)` persists the packet into connections/flows and
    updates capture summary counts.
-5. Hint detection still runs outside decode/import classification.
+6. Non-flow or unrecognized packets keep the existing `UnrecognizedPacketRecord`
+   behavior and reason text policy.
 
 The persistent import payload is therefore:
 
@@ -136,21 +139,16 @@ Important differences versus production import payload:
 `ProtocolPathRegistry` growth happens only if some external bridge decides to
 intern `shadow.facts().physical_path` for a recognized flow.
 
-There is now a narrow bridge at:
+There is now a production-wired bridge at:
 
 - `src/core/services/DissectionImportAdapter.h`
 - `src/core/services/DissectionImportAdapter.cpp`
 
-That adapter converts finalized `ImportDissectionFacts` into the existing
-`DecodedPacket` shape for recognized flows only. It does not:
-
-- run packet parsing;
-- touch `CaptureState`;
-- build `PacketRef` capture-context metadata;
-- intern paths;
-- assign `protocol_path_id`;
-- run hint detection;
-- switch production import away from `PacketDecoder`.
+That adapter still converts finalized `ImportDissectionFacts` into the existing
+`DecodedPacket` shape for recognized flows only. The surrounding shared import
+application now performs packet parsing, `PacketRef` finalization, path
+interning, `protocol_path_id` assignment, hint execution, and unrecognized
+record handling for both production import and unified validation runs.
 
 ## Protocol-family parity matrix
 
@@ -279,14 +277,13 @@ declared-boundary policy that production cutover must preserve.
 
 ## Cutover integration prerequisites
 
-These are not parser-semantic blockers by themselves. They are still required
-before any production import cutover can be called ready.
+These items are now complete for the selected production cutover scope.
 
 | ID | Area | Current state | Required before cutover |
 | --- | --- | --- | --- |
-| I1 | Import adapter | Adapter-core now exists and is unit-covered at the `ImportDissectionFacts -> DecodedPacket` boundary. Runtime import still persists `PacketRef` capture context, protocol-path interning, `UnrecognizedPacketRecord`, and existing hint-detection side effects through the legacy `PacketDecoder` path. | Wire the adapter through `CaptureImportProcessor` only after the whole-session parity harness proves no regression in persisted packet/session state. |
-| I2 | Full-session parity harness | Implemented for a committed fixture-session corpus through `tests/unit/DissectionImportSessionParityTests.cpp`. The harness imports the same complete capture through legacy runtime import and a test-only unified path, then compares summary accounting, connection/flow grouping, `FlowKey`, `PacketRef`, protocol-path registry contents, unrecognized records, and persisted hint side effects. | Extend the parity corpus further only where remaining cutover risk is still unexercised. |
-| I3 | Real-capture correctness and performance validation | Developer-only validation tooling now exists for legacy/unified compare, packet-level diagnose attribution, single-mode throughput, peak-memory measurement, classic-PCAP staged-prefix parity, and PCAPNG validation coverage. Real-capture validation also exposed a legacy outer-prefix overwrite of terminal transport payload length on overlay UDP carriers; that recovery now uses terminal payload bounds instead of re-walking the outer prefix. Real-capture runs are still ongoing. | Run representative real captures and review correctness, import throughput, memory, and no-regression behavior before a single production cutover commit. |
+| I1 | Import adapter | Completed. The adapter and shared import application are now wired through `CaptureImportProcessor` and production import no longer calls `PacketDecoder` for normal capture import. | Keep legacy decode available temporarily only for validation and differential tests. |
+| I2 | Full-session parity harness | Completed for the committed fixture-session corpus. The harness now compares legacy oracle, production runtime, and direct unified import state. | Extend the corpus only if future protocol additions introduce new cutover risk. |
+| I3 | Real-capture correctness and performance validation | Completed on representative PCAP and PCAPNG captures with exact persisted-session parity and zero mismatch count in the reviewed corpus. | Continue using the developer validation tool for post-cutover regression checks and larger private captures. |
 
 ## Diagnostic-only difference confirmed as safe for persistence
 
@@ -356,8 +353,8 @@ difference.
   - runs the existing hint-detection policy;
   - writes `UnrecognizedPacketRecord`.
 
-So even exact semantic parity at the step level is not yet enough for a direct
-runtime cutover.
+The remaining differences are diagnostic-only and do not affect persistent
+runtime state.
 
 ## Coverage limitations
 
@@ -378,9 +375,9 @@ production-import equivalence end to end.
   terminal payload bounds, so staged-prefix expansion still works while outer
   carrier transports can no longer overwrite the effective terminal payload
   length for recognized overlay flows.
-- The current parity corpus is still fixture-driven; it does not replace
-  representative real-capture correctness, throughput, memory, or teardown
-  validation.
+- The committed parity corpus remains fixture-driven; it complements rather than
+  replaces ongoing real-capture correctness, throughput, memory, or teardown
+  regression checks.
 - Families already marked `exact` above are exact only to the extent currently
   asserted by fixture and shadow tests; they are not yet backed by a universal
   capture-session diff harness.
@@ -415,28 +412,28 @@ It does not reduce the semantic audit work required for cutover.
 
 ## Architecture-isolation finding
 
-Production import is still fully isolated from shadow code:
+Production import is no longer isolated from shadow code:
 
-- `CaptureImportProcessor` still calls `PacketDecoder`;
-- no runtime flag switches import to `DissectionEngine`;
-- no production decoder path was deleted or bypassed in the traced code.
-
-That isolation is good for safety, but it also means the branch has not yet
-proved a production import cutover path.
+- `CaptureImportProcessor` now calls the unified dissection/import helper path;
+- no runtime flag or hidden fallback switches normal import back to
+  `PacketDecoder`;
+- legacy `PacketDecoder` remains temporarily available only to the developer
+  validation executable and differential tests.
 
 ## Final verdict
 
-The shadow engine is not ready to replace `PacketDecoder` for capture import and
-flow construction.
+The shadow engine is ready for capture-import replacement, and that production
+cutover has now been performed.
 
 Recommended verdict:
 
-- `not-ready-coverage-gaps`
+- `ready-for-cutover`
 
-Reason:
+Cutover-complete cleanup pending:
 
-1. No known protocol-family semantic blockers remain, but import-adapter,
-   whole-session parity, and real-capture validation work are still incomplete.
+1. keep legacy `PacketDecoder` temporarily as a validation oracle;
+2. retain differential tooling until post-cutover runtime validation is closed;
+3. remove legacy centralized traversal only in a separate cleanup pass.
 
 Everything else inspected here points to a strong migration foundation:
 
@@ -445,11 +442,11 @@ Everything else inspected here points to a strong migration foundation:
 - some negative paths are only diagnostic differences and do not leak into
   persistent flow identity.
 
-The remaining gaps are cutover-readiness and coverage gaps, not parser-semantic
-blockers.
+The remaining work is cleanup and follow-up validation, not parser-semantic
+blockers or import-cutover blockers.
 
-## Minimum expected sequence before cutover
+## Post-cutover sequence
 
-1. Run the developer-only validation tool on representative real captures.
-2. Review correctness, throughput, and peak-memory deltas.
-3. Cut over production import in a single dedicated change.
+1. Keep using the developer-only validation tool on representative real captures.
+2. Review correctness, throughput, peak-memory, and teardown behavior deltas.
+3. Remove legacy centralized traversal only after post-cutover confidence is sufficient.

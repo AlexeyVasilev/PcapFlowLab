@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <filesystem>
 
-#include "core/decode/PacketDecoder.h"
+#include "core/dissection/CommonDirectDissection.h"
 #include "core/domain/CaptureState.h"
 #include "core/io/PcapNgReader.h"
 #include "core/io/PcapReader.h"
@@ -26,7 +26,7 @@ public:
                                                      std::size_t& adaptive_header_prefix_bytes) const;
 
 private:
-    PacketDecoder decoder_ {};
+    const dissection::DissectionRegistry* registry_ {nullptr};
     FlowHintService hint_service_ {};
 };
 

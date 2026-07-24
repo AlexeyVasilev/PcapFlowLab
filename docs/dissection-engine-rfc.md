@@ -23,8 +23,11 @@ Today the production packet path is split across two different styles.
 
 ### Import-time path
 
-- `CaptureImportProcessor` calls `PacketDecoder::decode(...)`.
-- `PacketDecoder` performs a large centralized conditional traversal over:
+- `CaptureImportProcessor` now calls the unified registry-driven dissection path
+  plus the shared import application.
+- Legacy `PacketDecoder` still exists temporarily as a validation oracle and for
+  differential tests.
+- `PacketDecoder` still performs a large centralized conditional traversal over:
   - outer link handling from `parse_network_payload(...)`;
   - IPv4 / IPv6 transport dispatch;
   - plain IP encapsulation;
@@ -32,10 +35,12 @@ Today the production packet path is split across two different styles.
   - GRE / EoIP;
   - AH / ESP;
   - ARP / IGMP / ICMP / ICMPv6 / SCTP / TCP / UDP.
-- The decoder returns a small `DecodedPacket`:
+- The legacy decoder returns a small `DecodedPacket`:
   - `IngestedPacketV4` or `IngestedPacketV6`;
   - `ProtocolPathBuilder`.
-- `CaptureImportProcessor` interns the decoded protocol path and finalizes flow identity before `PacketIngestor` writes packet metadata into `CaptureState`.
+- The shared import application interns the decoded protocol path and finalizes
+  flow identity before `PacketIngestor` writes packet metadata into
+  `CaptureState`.
 
 ### Selected-packet path
 
@@ -124,7 +129,9 @@ Each protocol module is responsible for:
 
 Instead of one centralized function knowing every transition, the engine owns the traversal loop and the modules own protocol-local decisions.
 
-The current production path remains on legacy `PacketDecoder` until a staged cutover is complete.
+Production capture import now uses the unified dissection path. Legacy
+`PacketDecoder` remains temporarily for validation and differential testing
+until the cleanup stage is complete.
 
 For IPv6 specifically, this means extension-header traversal must not be hidden inside an IPv6-local chain walker. Each supported IPv6 extension header must be registered under `SelectorDomain::ipv6_next_header` and traversed by the generic engine as its own dissection step.
 
@@ -828,42 +835,40 @@ Stage 3 is no longer a pending scope marker for overlay families such as VXLAN,
 Geneve, or GTP-U. Those families are implemented in shadow mode already; the
 remaining work is parity closure and production integration.
 
-### Stage 4: full semantic differential parity (`in progress`)
+### Stage 4: full semantic differential parity (`completed`)
 
 - compare the new engine against legacy behavior across all committed fixture families;
 - verify tuple recognition, payload bounds, path contributions, stop reasons, and conservative no-flow behavior.
 
-The July 22, 2026 static audit in
+The July 24, 2026 static audit in
 `docs/dissection-engine-parity-audit.md` no longer identifies any known
 protocol-family semantic blockers in the audited fixture set. This stage
-remains in progress because production still imports through legacy
-`PacketDecoder`, and cutover still needs broader whole-session coverage
-plus real-capture validation. A committed legacy-vs-unified whole-session
-parity harness now exists at
-`tests/unit/DissectionImportSessionParityTests.cpp`, but runtime import still
-uses the legacy decoder path. A production-compatible bridge from
-`ImportDissectionFacts` into the existing recognized-flow `DecodedPacket`
-contract now exists, but it is not yet wired into runtime import. A
-developer-only validation executable now also exists for arbitrary local PCAP
-and PCAPNG imports, correctness diffing, classic-PCAP staged-prefix coverage,
-and single-process throughput reporting; production import nevertheless remains
-fully legacy during this stage.
+is now complete for the selected fixture corpus and representative real-capture
+validation set. The committed whole-session parity harness at
+`tests/unit/DissectionImportSessionParityTests.cpp` now compares legacy oracle,
+production runtime, and direct unified import state. The production-compatible
+bridge from `ImportDissectionFacts` into the existing recognized-flow
+`DecodedPacket` contract is wired into runtime import, while the developer-only
+validation executable remains available for post-cutover comparison and packet-
+level diagnosis.
 
-### Stage 5: single production import cutover (`not started`)
+### Stage 5: single production import cutover (`completed`)
 
-- make the engine the implementation behind the existing `PacketDecoder` / public decode API;
-- continue to produce the existing `DecodedPacket` / `IngestedPacket` structures;
+- production `CaptureImportProcessor` now uses unified dissection plus the
+  shared import application;
+- import continues to produce the existing `DecodedPacket` /
+  `IngestedPacket` structures for recognized flows;
 - do not introduce a production parser feature flag;
 - do not expose a mixed legacy/new production decoder between intermediate commits.
 
-### Stage 6: remove legacy centralized traversal (`not started`)
+### Stage 6: remove legacy centralized traversal (`pending`)
 
 - remove duplicated legacy traversal only after semantic parity, real-capture checks, and performance validation pass;
 - keep `PacketDecodeSupport.h` helpers that remain useful, but retire centralized traversal code paths.
 
 ### Deferred follow-up
 
-Only after import cutover:
+Still outside the completed import cutover:
 
 - `PacketDetailsService` convergence;
 - ordered packet dissection for selected-packet surfaces;
@@ -933,12 +938,12 @@ Do not switch production import to the new engine until all of these are true ac
 
 ## Recommended Next Step
 
-The branch is past foundational shadow implementation. The next work should be
-sequenced as an explicit cutover-preparation plan:
+The branch is past foundational shadow implementation and production import
+cutover. The next work should be sequenced as a cleanup and follow-up plan:
 
-1. extend the full-session legacy-vs-shadow import parity harness only where remaining fixture or mode gaps still matter;
-2. run representative real-capture correctness and import-performance validation;
-3. cut over production import in one dedicated change.
+1. keep the full-session legacy-vs-shadow import parity harness focused on new risk introduced by later protocol work;
+2. continue representative real-capture correctness and import-performance validation after the cutover;
+3. remove the retained legacy centralized traversal in one dedicated cleanup change.
 
-Keep production `PacketDecoder` unchanged until the import-integration
-prerequisites are all closed explicitly.
+Keep the retained legacy `PacketDecoder` available only until post-cutover
+validation confidence is sufficient to delete it safely.

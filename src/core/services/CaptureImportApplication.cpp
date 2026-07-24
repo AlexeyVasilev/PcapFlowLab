@@ -1,10 +1,13 @@
 #include "core/services/CaptureImportApplication.h"
 
 #include <algorithm>
+#include <array>
 #include <limits>
+#include <utility>
 #include <vector>
 
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/dissection/DissectionEngine.h"
 #include "core/services/PacketDetailsService.h"
 
 namespace pfl {
@@ -43,6 +46,49 @@ namespace {
     }
 
     return ProtocolPath {std::move(normalized_layers)};
+}
+
+[[nodiscard]] dissection::PacketSlice make_import_root_slice(const RawPcapPacket& packet) {
+    return dissection::make_root_packet_slice(
+        dissection::ByteSourceId::captured_frame(static_cast<std::uint32_t>(packet.packet_index)),
+        packet.bytes,
+        packet.captured_length,
+        packet.original_length
+    );
+}
+
+template <typename Connection, typename FlowKey>
+[[nodiscard]] bool apply_decoded_flow_import(
+    RawPcapPacket& packet,
+    Connection& connection,
+    const FlowKey& flow_key,
+    PacketRef& packet_ref,
+    const FlowHintService& hint_service,
+    const PacketBytesMaterializer materializer
+) {
+    auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+    if (!packet_ref.is_ip_fragmented &&
+        connection.should_attempt_hint_detection(packet_ref, flow_key.protocol) &&
+        requires_full_packet_for_hint_detection(packet_ref, flow_key.protocol)) {
+        if (packet.bytes.size() < packet.captured_length && !materializer.ensure_full_packet_bytes()) {
+            return false;
+        }
+
+        packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+        connection.apply_hints(hint_service.detect(packet_bytes, packet.data_link_type, flow_key));
+        connection.note_hint_detection_attempt(packet_ref, flow_key.protocol);
+        return true;
+    }
+
+    apply_import_hints_if_needed(
+        packet,
+        packet_bytes,
+        packet_ref,
+        connection,
+        flow_key,
+        hint_service
+    );
+    return true;
 }
 
 }  // namespace
@@ -449,14 +495,44 @@ std::optional<std::uint32_t> derive_captured_terminal_transport_payload_length(
     return static_cast<std::uint32_t>(payload_length);
 }
 
-void apply_decoded_packet_import(
+UnifiedImportPacketResult run_unified_import_packet(
+    const RawPcapPacket& packet,
+    const dissection::DissectionRegistry& registry
+) {
+    dissection::ImportDissectionCollector collector {};
+    const dissection::DissectionEngine engine {};
+    const auto engine_result = engine.run(
+        registry,
+        dissection::make_link_type_selector(packet.data_link_type),
+        make_import_root_slice(packet),
+        collector.consumer()
+    );
+    collector.finish(engine_result);
+
+    UnifiedImportPacketResult result {};
+    result.facts = collector.facts();
+    result.decision = adapt_dissection_import_facts(result.facts);
+    return result;
+}
+
+bool apply_decoded_packet_import(
     const RawPcapPacket& packet,
     DecodedPacket& decoded,
     CaptureState& state,
     const FlowHintService& hint_service
 ) {
+    auto packet_copy = packet;
+    return apply_decoded_packet_import(packet_copy, decoded, state, hint_service, {});
+}
+
+bool apply_decoded_packet_import(
+    RawPcapPacket& packet,
+    DecodedPacket& decoded,
+    CaptureState& state,
+    const FlowHintService& hint_service,
+    const PacketBytesMaterializer materializer
+) {
     PacketIngestor ingestor {state};
-    const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
 
     if (decoded.ipv4.has_value()) {
         auto packet_ref = packet_ref_from_raw_packet(packet);
@@ -467,15 +543,14 @@ void apply_decoded_packet_import(
         decoded.ipv4->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
         auto& connection = ingestor.ingest(*decoded.ipv4);
-        apply_import_hints_if_needed(
+        return apply_decoded_flow_import(
             packet,
-            packet_bytes,
-            decoded.ipv4->packet_ref,
             connection,
             decoded.ipv4->flow_key,
-            hint_service
+            decoded.ipv4->packet_ref,
+            hint_service,
+            materializer
         );
-        return;
     }
 
     if (decoded.ipv6.has_value()) {
@@ -487,15 +562,71 @@ void apply_decoded_packet_import(
         decoded.ipv6->flow_key.protocol_path_id =
             intern_protocol_path_id_for_flow_identity(state, decoded.protocol_path_builder);
         auto& connection = ingestor.ingest(*decoded.ipv6);
-        apply_import_hints_if_needed(
+        return apply_decoded_flow_import(
             packet,
-            packet_bytes,
-            decoded.ipv6->packet_ref,
             connection,
             decoded.ipv6->flow_key,
-            hint_service
+            decoded.ipv6->packet_ref,
+            hint_service,
+            materializer
         );
     }
+
+    return true;
+}
+
+bool apply_unified_import_packet_result(
+    RawPcapPacket& packet,
+    UnifiedImportPacketResult& result,
+    CaptureState& state,
+    const FlowHintService& hint_service,
+    const PacketBytesMaterializer materializer
+) {
+    if (result.decision.has_decoded_packet()) {
+        auto& decoded = *result.decision.decoded_packet;
+        if (decoded.terminal_transport_payload_bounds.has_value()) {
+            if (const auto payload_length = derive_captured_terminal_transport_payload_length(
+                    packet,
+                    *decoded.terminal_transport_payload_bounds
+                );
+                payload_length.has_value()) {
+                if (decoded.ipv4.has_value()) {
+                    decoded.ipv4->packet_ref.payload_length = *payload_length;
+                }
+                if (decoded.ipv6.has_value()) {
+                    decoded.ipv6->packet_ref.payload_length = *payload_length;
+                }
+            }
+        }
+
+        return apply_decoded_packet_import(packet, decoded, state, hint_service, materializer);
+    }
+
+    const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
+    apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
+    return true;
+}
+
+bool process_packet_with_unified_dissection(
+    RawPcapPacket& packet,
+    CaptureState& state,
+    const dissection::DissectionRegistry& registry,
+    const FlowHintService& hint_service,
+    const PacketBytesMaterializer materializer,
+    UnifiedImportPacketResult* result
+) {
+    auto local_result = run_unified_import_packet(packet, registry);
+    const auto applied = apply_unified_import_packet_result(
+        packet,
+        local_result,
+        state,
+        hint_service,
+        materializer
+    );
+    if (result != nullptr) {
+        *result = std::move(local_result);
+    }
+    return applied;
 }
 
 void apply_unrecognized_packet_import(
