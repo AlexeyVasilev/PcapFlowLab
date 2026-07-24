@@ -25,7 +25,7 @@ struct GreFixtureExpectation {
     bool is_positive_decode_fixture;
 };
 
-constexpr std::array<GreFixtureExpectation, 22> kGreFixtureExpectations {{
+constexpr std::array<GreFixtureExpectation, 23> kGreFixtureExpectations {{
     {"01_gre_ipv4_tcp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE -> IPv4 -> TCP", true},
     {"02_gre_ipv4_udp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE -> IPv4 -> UDP", true},
     {"03_gre_ipv6_tcp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE -> IPv6 -> TCP", true},
@@ -48,9 +48,10 @@ constexpr std::array<GreFixtureExpectation, 22> kGreFixtureExpectations {{
     {"20_gre_truncated_inner_ipv4.pcap", 1U, 0U, "", false},
     {"21_gre_same_inner_tuple_different_keys.pcap", 2U, 2U, "", true},
     {"22_gre_same_inner_tuple_same_key_two_packets.pcap", 2U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4 -> UDP", true},
+    {"23_gre_key_ipv4_icmp.pcap", 1U, 1U, "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4", true},
 }};
 
-constexpr std::array<std::string_view, 17> kSupportedGreFixturesNow {{
+constexpr std::array<std::string_view, 18> kSupportedGreFixturesNow {{
     "01_gre_ipv4_tcp.pcap",
     "02_gre_ipv4_udp.pcap",
     "03_gre_ipv6_tcp.pcap",
@@ -68,6 +69,7 @@ constexpr std::array<std::string_view, 17> kSupportedGreFixturesNow {{
     "15_gre_mpls_ipv4_udp.pcap",
     "21_gre_same_inner_tuple_different_keys.pcap",
     "22_gre_same_inner_tuple_same_key_two_packets.pcap",
+    "23_gre_key_ipv4_icmp.pcap",
 }};
 
 constexpr std::array<std::string_view, 5> kUnsupportedGreFixturesNow {{
@@ -676,6 +678,44 @@ void expect_gre_packet_details_summary_and_protocol_text() {
     expect_gre_teb_packet_details_present("11_gre_teb_ethernet_ipv4_tcp.pcap", "tcp-inner", false);
     expect_gre_teb_packet_details_present("12_gre_teb_ethernet_vlan_ipv4_udp.pcap", "udp-inner", true);
     expect_gre_mpls_packet_details_present();
+
+    {
+        CaptureSession session {};
+        PFL_REQUIRE(session.open_capture(fixture_path("23_gre_key_ipv4_icmp.pcap")));
+
+        const auto rows = session.list_flows();
+        PFL_REQUIRE(rows.size() == 1U);
+        PFL_REQUIRE(rows[0].protocol_path_id != kInvalidProtocolPathId);
+        const auto* path = session.state().protocol_path_registry.find(rows[0].protocol_path_id);
+        PFL_REQUIRE(path != nullptr);
+        PFL_EXPECT(format_protocol_path(*path) == "EthernetII -> IPv4 -> GRE(key=0x11111111) -> IPv4");
+
+        const auto* key = std::get_if<ConnectionKeyV4>(&rows[0].key);
+        PFL_REQUIRE(key != nullptr);
+        PFL_EXPECT(key->protocol == ProtocolId::icmp);
+        PFL_EXPECT(key->first.port == 0U);
+        PFL_EXPECT(key->second.port == 0U);
+
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto details = session.read_packet_details(*packet);
+        PFL_REQUIRE(details.has_value());
+        PFL_EXPECT(details->has_gre);
+
+        const auto summary_layers = session_detail::build_packet_summary_layers(*details, *packet);
+        const auto* gre_layer = find_layer(summary_layers, "gre");
+        const auto* inner_ipv4_layer = find_top_level_layer(summary_layers, "ipv4-inner");
+        PFL_REQUIRE(gre_layer != nullptr);
+        PFL_REQUIRE(inner_ipv4_layer != nullptr);
+        PFL_EXPECT(layer_has_field_containing(*gre_layer, "Protocol Type", "IPv4 (0x0800)"));
+        PFL_EXPECT(layer_has_field_containing(*gre_layer, "Key", "0x11111111"));
+        PFL_EXPECT(title_contains_all(*inner_ipv4_layer, {"Inner IPv4", "10.30.0.10", "10.30.0.20"}));
+
+        const auto protocol_text = session.read_packet_protocol_details_text(*packet);
+        PFL_EXPECT(protocol_text.find("Protocol: GRE") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Key: 0x11111111") != std::string::npos);
+        PFL_EXPECT(protocol_text.find("Inner IPv4: ICMP") != std::string::npos);
+    }
 }
 
 void expect_gre_warning_packet_details_are_conservative() {

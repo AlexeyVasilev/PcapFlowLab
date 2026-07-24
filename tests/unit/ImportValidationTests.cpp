@@ -419,6 +419,11 @@ void run_import_validation_tests() {
     );
 
     expect_compare_success_with_exact_parity(
+        fixture_path("parsing/gre/23_gre_key_ipv4_icmp.pcap"),
+        "gre_key_inner_ipv4_icmp_exact_parity"
+    );
+
+    expect_compare_success_with_exact_parity(
         write_single_tcp_pcapng("pfl_import_validation_single_tcp.pcapng"),
         "single_tcp_pcapng"
     );

@@ -125,6 +125,7 @@ void expect_adapter_matches_legacy_for_portless_protocol_fixtures() {
 
 void expect_adapter_matches_legacy_for_overlay_and_carrier_fixtures() {
     expect_adapted_packet_matches_legacy_semantics("parsing/gre/07_gre_key_ipv4_udp.pcap");
+    expect_adapted_packet_matches_legacy_semantics("parsing/gre/23_gre_key_ipv4_icmp.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/01_vxlan_inner_ipv4_tcp.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/02_vxlan_inner_ipv4_udp.pcap");
     expect_adapted_packet_matches_legacy_semantics("parsing/vxlan/09_vxlan_unsupported_inner_ethertype.pcap");

@@ -1019,6 +1019,8 @@ std::optional<DecodedPacket> try_decode_gre_inner_packet(
         return std::nullopt;
     }
 
+    const auto effective_gre_packet_end = gre->bounded_packet_end.value_or(gre_payload_end);
+
     if (gre->is_eoip) {
         static_cast<void>(builder.push(LayerKey::gre(gre->eoip_tunnel_id)));
     } else {
@@ -1043,6 +1045,44 @@ std::optional<DecodedPacket> try_decode_gre_inner_packet(
             push_llc_snap_path_if_resolved(builder, mpls.inner_ethernet, mpls.inner_protocol_type);
         }
     }
+
+    // Preserve the existing direct GRE TCP/UDP/SCTP path first, then fall back to
+    // plain-inner-IP handling so GRE-carried portless ICMP/ICMPv6 becomes visible
+    // without regressing existing SCTP support.
+    if (gre->protocol_type == detail::kEtherTypeIpv4 || gre->protocol_type == detail::kEtherTypeIpv6) {
+        if (const auto direct_transport = decode_supported_ip_transport_payload(
+                packet_bytes,
+                gre->resolved_protocol_type,
+                gre->resolved_payload_offset,
+                gre->bounded_packet_end,
+                packet,
+                builder
+            );
+            direct_transport.has_value()) {
+            return direct_transport;
+        }
+    }
+
+    if (gre->protocol_type == detail::kEtherTypeIpv4) {
+        return try_decode_plain_ipv4_encapsulated_inner_packet(
+            packet_bytes,
+            gre->resolved_payload_offset,
+            effective_gre_packet_end,
+            packet,
+            std::move(builder)
+        );
+    }
+
+    if (gre->protocol_type == detail::kEtherTypeIpv6) {
+        return try_decode_plain_ipv6_encapsulated_inner_packet(
+            packet_bytes,
+            gre->resolved_payload_offset,
+            effective_gre_packet_end,
+            packet,
+            std::move(builder)
+        );
+    }
+
     return decode_supported_ip_transport_payload(
         packet_bytes,
         gre->resolved_protocol_type,

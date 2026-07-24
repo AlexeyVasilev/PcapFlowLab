@@ -608,6 +608,7 @@ void expect_portless_and_link_fixture_parity() {
 void expect_encapsulation_fixture_parity() {
     expect_fixture_import_parity("parsing/ip_encapsulation/14_same_inner_tuple_same_outer_ipv4_two_packets.pcap");
     expect_fixture_import_parity("parsing/gre/22_gre_same_inner_tuple_same_key_two_packets.pcap");
+    expect_fixture_import_parity("parsing/gre/23_gre_key_ipv4_icmp.pcap");
     expect_fixture_import_parity("parsing/eoip/10_same_tunnel_id_two_packets.pcap");
     expect_fixture_import_parity("parsing/mpls_pw/16_mpls_pw_outer_vlan_inner_qinq_ipv4_udp_cw.pcap");
     expect_fixture_import_parity("parsing/ah/06_ipv4_ah_same_spi_two_packets.pcap");
