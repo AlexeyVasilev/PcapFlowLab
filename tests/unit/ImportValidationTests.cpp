@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 
+#include "CommonDirectDissectionTestSupport.h"
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
+#include "core/decode/PacketDecoder.h"
 #include "tools/import_validation/ImportValidation.h"
 
 namespace pfl::tests {
@@ -383,6 +385,32 @@ void run_import_validation_tests() {
         PFL_REQUIRE(diagnose.unified_packet.has_value());
         PFL_EXPECT(diagnose.legacy_packet->packet_index == 0U);
         PFL_EXPECT(diagnose.unified_packet->packet_index == 0U);
+    }
+
+    {
+        const ScopedTestContext context {"legacy_mode_matches_packet_decoder_oracle"};
+        const auto capture_path = fixture_path("parsing/gre/23_gre_key_ipv4_icmp.pcap");
+        const auto legacy = run_legacy_import_validation(capture_path);
+        PFL_REQUIRE(legacy.success);
+        PFL_REQUIRE(legacy.packet_observations.size() == 1U);
+
+        const auto packet = common_direct_test::require_raw_fixture_packet("parsing/gre/23_gre_key_ipv4_icmp.pcap");
+        auto decoded = PacketDecoder {}.decode(packet);
+        PFL_REQUIRE(decoded.has_value());
+        PFL_REQUIRE(decoded.ipv4.has_value());
+
+        const auto& observation = legacy.packet_observations[0];
+        PFL_EXPECT(observation.classification == ImportValidationPacketClassification::recognized_flow);
+        PFL_EXPECT(observation.family == dissection::DissectionAddressFamily::ipv4);
+        PFL_EXPECT(observation.protocol == decoded.ipv4->flow_key.protocol);
+        PFL_EXPECT(observation.has_addresses);
+        PFL_EXPECT(observation.src_addr_v4 == decoded.ipv4->flow_key.src_addr);
+        PFL_EXPECT(observation.dst_addr_v4 == decoded.ipv4->flow_key.dst_addr);
+        PFL_EXPECT(!observation.has_ports);
+        PFL_EXPECT(observation.has_transport_payload_length == (decoded.ipv4->packet_ref.payload_length > 0U));
+        PFL_EXPECT(observation.captured_transport_payload_length == decoded.ipv4->packet_ref.payload_length);
+        PFL_EXPECT(observation.fragmented == decoded.ipv4->packet_ref.is_ip_fragmented);
+        PFL_EXPECT(observation.physical_path == decoded.protocol_path_builder.to_path());
     }
 
     {

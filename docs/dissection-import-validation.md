@@ -8,6 +8,8 @@ legacy import against unified shadow import on arbitrary local captures.
 
 Production runtime import now uses unified dissection. The `legacy` mode remains
 temporary and exists only as a post-cutover comparison oracle.
+It is not an application runtime option and does not switch the Qt, CLI, or
+other production capture-import path back to `PacketDecoder`.
 
 ## Tool
 

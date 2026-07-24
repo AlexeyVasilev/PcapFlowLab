@@ -861,10 +861,13 @@ level diagnosis.
 - do not introduce a production parser feature flag;
 - do not expose a mixed legacy/new production decoder between intermediate commits.
 
-### Stage 6: remove legacy centralized traversal (`pending`)
+### Stage 6: remove legacy centralized traversal (`in progress`)
 
 - remove duplicated legacy traversal only after semantic parity, real-capture checks, and performance validation pass;
-- keep `PacketDecodeSupport.h` helpers that remain useful, but retire centralized traversal code paths.
+- keep `PacketDecodeSupport.h` helpers that remain useful, but retire centralized traversal code paths;
+- production import is already cut over, but full `PacketDecoder` deletion is a
+  later cleanup step because validation and differential tests still retain the
+  legacy oracle temporarily.
 
 ### Deferred follow-up
 

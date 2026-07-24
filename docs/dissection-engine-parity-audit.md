@@ -2,7 +2,7 @@
 
 Date: 2026-07-24
 Branch: `feature/unified-packet-dissection`
-Verdict: `ready-for-cutover`
+Verdict: `post-cutover-cleanup-in-progress`
 
 ## Scope
 
@@ -93,11 +93,11 @@ The persistent import payload is therefore:
   - TCP flags;
   - IP-fragment shell flag.
 
-If decode fails, production still has two additional import behaviors:
+If decode fails, production appends an `UnrecognizedPacketRecord` with
+`PacketRef` plus `reason_text`.
 
-- selected ARP packets may still be ingested through `ingest_fallback_arp_packet(...)`;
-- otherwise an `UnrecognizedPacketRecord` is appended with `PacketRef` plus
-  `reason_text`.
+Legacy ARP fallback now remains outside normal production import wiring and is
+kept only in the developer validation oracle path.
 
 `PacketRef` does not store `protocol_path_id`.
 
@@ -425,15 +425,19 @@ Production import is no longer isolated from shadow code:
 The shadow engine is ready for capture-import replacement, and that production
 cutover has now been performed.
 
+Stage 6 legacy-cleanup work is now in progress for the retained
+`PacketDecoder` oracle wiring.
+
 Recommended verdict:
 
-- `ready-for-cutover`
+- `post-cutover-cleanup-in-progress`
 
 Cutover-complete cleanup pending:
 
 1. keep legacy `PacketDecoder` temporarily as a validation oracle;
 2. retain differential tooling until post-cutover runtime validation is closed;
-3. remove legacy centralized traversal only in a separate cleanup pass.
+3. continue Stage 6 cleanup until the retained legacy centralized traversal can
+   be removed in a separate follow-up pass.
 
 Everything else inspected here points to a strong migration foundation:
 

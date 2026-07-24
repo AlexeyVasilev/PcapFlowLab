@@ -50,6 +50,13 @@ struct UnifiedImportPacketResult {
     const FlowHintService& hint_service
 );
 
+[[nodiscard]] bool apply_legacy_unrecognized_packet_import(
+    const RawPcapPacket& packet,
+    std::span<const std::uint8_t> packet_bytes,
+    CaptureState& state,
+    const FlowHintService& hint_service
+);
+
 [[nodiscard]] bool requires_full_packet_for_hint_detection(
     const PacketRef& packet_ref,
     ProtocolId protocol
@@ -115,8 +122,7 @@ void apply_import_hints_if_needed(const RawPcapPacket& packet,
 void apply_unrecognized_packet_import(
     const RawPcapPacket& packet,
     std::span<const std::uint8_t> packet_bytes,
-    CaptureState& state,
-    const FlowHintService& hint_service
+    CaptureState& state
 );
 
 }  // namespace pfl

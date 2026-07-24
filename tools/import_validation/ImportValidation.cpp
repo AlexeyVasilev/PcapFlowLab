@@ -562,7 +562,7 @@ bool legacy_import_reader_loop(
                 observation.unrecognized_reason = classify_unrecognized_packet_reason(*packet, packet_bytes);
                 packet_observations.push_back(std::move(observation));
             }
-            apply_unrecognized_packet_import(*packet, packet_bytes, state, hint_service);
+            static_cast<void>(apply_legacy_unrecognized_packet_import(*packet, packet_bytes, state, hint_service));
         }
 
         ++metrics.packets_processed;
@@ -608,7 +608,7 @@ bool process_classic_legacy_import_packet(
                 observation.unrecognized_reason = classify_unrecognized_packet_reason(packet, packet_bytes);
                 packet_observations.push_back(std::move(observation));
             }
-            apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
+            static_cast<void>(apply_legacy_unrecognized_packet_import(packet, packet_bytes, state, hint_service));
         }
         return true;
     }
@@ -712,7 +712,7 @@ bool process_classic_legacy_import_packet(
                 observation.unrecognized_reason = classify_unrecognized_packet_reason(packet, packet_bytes);
                 packet_observations.push_back(std::move(observation));
             }
-            apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
+            static_cast<void>(apply_legacy_unrecognized_packet_import(packet, packet_bytes, state, hint_service));
         }
         return true;
     }
@@ -728,12 +728,7 @@ bool process_classic_legacy_import_packet(
         packet_observations.push_back(std::move(observation));
     }
 
-    if (!ingest_fallback_arp_packet(packet, packet_bytes, ingestor, hint_service)) {
-        state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
-            .packet = packet_ref_from_raw_packet(packet),
-            .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
-        });
-    }
+    static_cast<void>(apply_legacy_unrecognized_packet_import(packet, packet_bytes, state, hint_service));
 
     return finalize_prefix_packet();
 }

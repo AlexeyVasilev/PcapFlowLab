@@ -603,7 +603,7 @@ bool apply_unified_import_packet_result(
     }
 
     const auto packet_bytes = std::span<const std::uint8_t>(packet.bytes.data(), packet.bytes.size());
-    apply_unrecognized_packet_import(packet, packet_bytes, state, hint_service);
+    apply_unrecognized_packet_import(packet, packet_bytes, state);
     return true;
 }
 
@@ -629,19 +629,30 @@ bool process_packet_with_unified_dissection(
     return applied;
 }
 
-void apply_unrecognized_packet_import(
+bool apply_legacy_unrecognized_packet_import(
     const RawPcapPacket& packet,
     const std::span<const std::uint8_t> packet_bytes,
     CaptureState& state,
     const FlowHintService& hint_service
 ) {
     PacketIngestor ingestor {state};
-    if (!ingest_fallback_arp_packet(packet, packet_bytes, ingestor, hint_service)) {
-        state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
-            .packet = packet_ref_from_raw_packet(packet),
-            .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
-        });
+    if (ingest_fallback_arp_packet(packet, packet_bytes, ingestor, hint_service)) {
+        return true;
     }
+
+    apply_unrecognized_packet_import(packet, packet_bytes, state);
+    return false;
+}
+
+void apply_unrecognized_packet_import(
+    const RawPcapPacket& packet,
+    const std::span<const std::uint8_t> packet_bytes,
+    CaptureState& state
+) {
+    state.unrecognized_packets.push_back(UnrecognizedPacketRecord {
+        .packet = packet_ref_from_raw_packet(packet),
+        .reason_text = classify_unrecognized_packet_reason(packet, packet_bytes),
+    });
 }
 
 }  // namespace pfl

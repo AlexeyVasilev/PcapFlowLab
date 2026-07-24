@@ -353,7 +353,7 @@ void import_reader_with_legacy_decoder(
         }
 
         const auto packet_bytes = std::span<const std::uint8_t>(packet->bytes.data(), packet->bytes.size());
-        apply_unrecognized_packet_import(*packet, packet_bytes, state, hint_service);
+        static_cast<void>(apply_legacy_unrecognized_packet_import(*packet, packet_bytes, state, hint_service));
     }
 }
 
@@ -855,14 +855,42 @@ void expect_geneve_packet2_keeps_only_diagnostic_path() {
     PFL_EXPECT(format_protocol_path(decision.physical_path.to_path()) == "EthernetII -> IPv4");
 
     CaptureState state {};
-    const FlowHintService hint_service {AnalysisSettings {}, true};
     const auto packet_bytes = std::span<const std::uint8_t>(packets[2].bytes.data(), packets[2].bytes.size());
-    apply_unrecognized_packet_import(packets[2], packet_bytes, state, hint_service);
+    apply_unrecognized_packet_import(packets[2], packet_bytes, state);
 
     PFL_EXPECT(state.summary.packet_count == 0U);
     PFL_EXPECT(state.summary.flow_count == 0U);
     PFL_EXPECT(state.protocol_path_registry.size() == 0U);
     PFL_EXPECT(state.unrecognized_packets.size() == 1U);
+}
+
+void expect_production_import_matches_unified_on_geneve_packet2() {
+    const ScopedTestContext fixture_context {
+        "fixture=parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap | packet=2 | production_runtime_isolation"
+    };
+    const auto packets = require_raw_fixture_packets("parsing/geneve/28_geneve_udp_declared_bounds_matrix.pcap");
+    PFL_REQUIRE(packets.size() > 2U);
+
+    const auto single_packet_capture = write_temp_pcap(
+        "pfl_dissection_geneve_packet2_runtime_isolation.pcap",
+        make_classic_pcap({
+            {
+                100U,
+                packets[2].bytes,
+            },
+        })
+    );
+
+    const auto production_state = import_capture_with_production_import_for_test(single_packet_capture);
+    const auto unified_state = import_capture_with_unified_dissection_for_test(single_packet_capture);
+
+    const auto production_snapshot = snapshot_state(production_state);
+    const auto unified_snapshot = snapshot_state(unified_state);
+    PFL_EXPECT(production_snapshot == unified_snapshot);
+    PFL_EXPECT(production_snapshot.summary.packet_count == 0U);
+    PFL_EXPECT(production_snapshot.summary.flow_count == 0U);
+    PFL_EXPECT(production_snapshot.protocol_registry_paths.empty());
+    PFL_REQUIRE(production_snapshot.unrecognized_packets.size() == 1U);
 }
 
 }  // namespace
@@ -876,6 +904,7 @@ void run_dissection_import_session_parity_tests() {
     expect_classic_pcap_staged_prefix_session_parity();
     expect_overlay_terminal_payload_length_regression();
     expect_geneve_packet2_keeps_only_diagnostic_path();
+    expect_production_import_matches_unified_on_geneve_packet2();
 }
 
 }  // namespace pfl::tests
