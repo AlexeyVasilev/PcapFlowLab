@@ -291,7 +291,7 @@ struct MismatchRecorder {
     const CaptureState& state
 ) {
     auto observation = make_base_observation(packet);
-    observation.classification = ImportValidationPacketClassification::recognized_non_flow;
+    observation.classification = ImportValidationPacketClassification::recognized_flow;
     observation.family = dissection::DissectionAddressFamily::ipv4;
     observation.protocol = ProtocolId::arp;
     observation.final_status = dissection::ParseStatus::complete;

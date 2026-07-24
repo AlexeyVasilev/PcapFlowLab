@@ -125,6 +125,13 @@ unified observations and does not require locating the packet through the UI.
 `--max-mismatches N` bounds stored mismatch rows and grouped signatures in both
 `compare` and `diagnose` output.
 
+When `--json` is used with packet-level diagnose output:
+
+- packet-observation enum-backed fields such as `family`, `protocol`,
+  `parse_status`, and `stop_reason` are emitted as numeric JSON values;
+- if only one side has a packet observation for a reported mismatch, the
+  missing side is emitted explicitly as `null`.
+
 ## Single-Mode Metrics
 
 `legacy` and `unified` each report:

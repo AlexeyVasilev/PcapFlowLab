@@ -169,7 +169,8 @@ struct ImportValidationPacketObservation {
 };
 
 enum class ImportValidationPacketMismatchCategory : std::uint8_t {
-    classification = 0,
+    observation_presence = 0,
+    classification,
     address_family,
     addresses,
     ports,
@@ -193,8 +194,8 @@ struct ImportValidationPacketMismatch {
     std::string unified_value {};
     ProtocolPath legacy_path {};
     ProtocolPath unified_path {};
-    ImportValidationPacketObservation legacy_observation {};
-    ImportValidationPacketObservation unified_observation {};
+    std::optional<ImportValidationPacketObservation> legacy_observation {};
+    std::optional<ImportValidationPacketObservation> unified_observation {};
 };
 
 struct ImportValidationPacketMismatchGroup {
@@ -284,6 +285,14 @@ struct ImportValidationDiagnoseResult {
 
 [[nodiscard]] std::string format_import_validation_packet_mismatch_category(
     ImportValidationPacketMismatchCategory category
+);
+
+[[nodiscard]] std::string format_import_validation_packet_observation_json(
+    const ImportValidationPacketObservation& observation
+);
+
+[[nodiscard]] std::string format_import_validation_packet_mismatch_json(
+    const ImportValidationPacketMismatch& mismatch
 );
 
 [[nodiscard]] ImportValidationCanonicalState canonicalize_capture_state(

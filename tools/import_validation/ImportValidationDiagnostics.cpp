@@ -1,7 +1,9 @@
 #include "tools/import_validation/ImportValidation.h"
 
 #include <algorithm>
+#include <iomanip>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 
 namespace pfl {
@@ -10,6 +12,54 @@ namespace {
 
 [[nodiscard]] std::string format_protocol_path_or_empty(const ProtocolPath& path) {
     return path.empty() ? std::string {} : format_protocol_path(path);
+}
+
+[[nodiscard]] std::string escape_json(std::string_view text) {
+    std::ostringstream builder {};
+    for (const char raw_ch : text) {
+        const auto ch = static_cast<unsigned char>(raw_ch);
+        switch (ch) {
+        case '\\':
+            builder << "\\\\";
+            break;
+        case '"':
+            builder << "\\\"";
+            break;
+        case '\b':
+            builder << "\\b";
+            break;
+        case '\f':
+            builder << "\\f";
+            break;
+        case '\n':
+            builder << "\\n";
+            break;
+        case '\r':
+            builder << "\\r";
+            break;
+        case '\t':
+            builder << "\\t";
+            break;
+        default:
+            if (ch < 0x20U) {
+                builder << "\\u"
+                        << std::hex
+                        << std::setw(4)
+                        << std::setfill('0')
+                        << static_cast<unsigned int>(ch)
+                        << std::dec
+                        << std::setfill(' ');
+            } else {
+                builder << static_cast<char>(ch);
+            }
+            break;
+        }
+    }
+    return builder.str();
+}
+
+[[nodiscard]] std::string quote_json_string(std::string_view text) {
+    return '"' + escape_json(text) + '"';
 }
 
 [[nodiscard]] std::string format_family(const dissection::DissectionAddressFamily family) {
@@ -131,17 +181,32 @@ namespace {
 
 [[nodiscard]] std::optional<std::int64_t> packet_mismatch_numeric_delta(
     const ImportValidationPacketMismatchCategory category,
-    const ImportValidationPacketObservation& legacy,
-    const ImportValidationPacketObservation& unified
+    const ImportValidationPacketObservation* legacy,
+    const ImportValidationPacketObservation* unified
 ) {
     if (category != ImportValidationPacketMismatchCategory::payload_length ||
-        !legacy.has_transport_payload_length ||
-        !unified.has_transport_payload_length) {
+        legacy == nullptr ||
+        unified == nullptr ||
+        !legacy->has_transport_payload_length ||
+        !unified->has_transport_payload_length) {
         return std::nullopt;
     }
 
-    return static_cast<std::int64_t>(legacy.captured_transport_payload_length) -
-        static_cast<std::int64_t>(unified.captured_transport_payload_length);
+    return static_cast<std::int64_t>(legacy->captured_transport_payload_length) -
+        static_cast<std::int64_t>(unified->captured_transport_payload_length);
+}
+
+[[nodiscard]] const ImportValidationPacketObservation* select_present_observation(
+    const ImportValidationPacketObservation* legacy,
+    const ImportValidationPacketObservation* unified
+) {
+    return legacy != nullptr ? legacy : unified;
+}
+
+[[nodiscard]] std::string format_observation_presence_value(
+    const ImportValidationPacketObservation* observation
+) {
+    return observation != nullptr ? "present" : "missing";
 }
 
 [[nodiscard]] std::string packet_field_value(
@@ -149,6 +214,8 @@ namespace {
     const ImportValidationPacketMismatchCategory category
 ) {
     switch (category) {
+    case ImportValidationPacketMismatchCategory::observation_presence:
+        return "present";
     case ImportValidationPacketMismatchCategory::classification:
         return format_import_validation_packet_classification(observation.classification);
     case ImportValidationPacketMismatchCategory::address_family:
@@ -180,6 +247,8 @@ namespace {
 
 struct PacketMismatchGroupSignature {
     ImportValidationPacketMismatchCategory category {ImportValidationPacketMismatchCategory::classification};
+    bool has_legacy_observation {true};
+    bool has_unified_observation {true};
     ProtocolId legacy_protocol {ProtocolId::unknown};
     ProtocolId unified_protocol {ProtocolId::unknown};
     ProtocolPath legacy_path {};
@@ -192,6 +261,8 @@ struct PacketMismatchGroupSignature {
 struct PacketMismatchGroupSignatureHash {
     [[nodiscard]] std::size_t operator()(const PacketMismatchGroupSignature& signature) const noexcept {
         std::size_t seed = static_cast<std::size_t>(signature.category);
+        seed = detail::hash_combine(seed, static_cast<std::size_t>(signature.has_legacy_observation));
+        seed = detail::hash_combine(seed, static_cast<std::size_t>(signature.has_unified_observation));
         seed = detail::hash_combine(seed, static_cast<std::size_t>(signature.legacy_protocol));
         seed = detail::hash_combine(seed, static_cast<std::size_t>(signature.unified_protocol));
         seed = detail::hash_combine(seed, ProtocolPathHash {}(signature.legacy_path));
@@ -231,24 +302,33 @@ void append_packet_mismatch(
     std::unordered_map<PacketMismatchGroupSignature, std::size_t, PacketMismatchGroupSignatureHash>& groups_by_signature,
     const ImportValidationOptions& options,
     const ImportValidationPacketMismatchCategory category,
-    const ImportValidationPacketObservation& legacy,
-    const ImportValidationPacketObservation& unified
+    const ImportValidationPacketObservation* legacy,
+    const ImportValidationPacketObservation* unified
 ) {
+    const auto* reference_observation = select_present_observation(legacy, unified);
+    if (reference_observation == nullptr) {
+        return;
+    }
+
     ++result.mismatch_count;
-    note_first_divergence(result.first_divergence, category, legacy.packet_index);
+    note_first_divergence(result.first_divergence, category, reference_observation->packet_index);
 
     ImportValidationPacketMismatch mismatch {
-        .packet_index = legacy.packet_index,
-        .file_offset = legacy.file_offset,
-        .captured_length = legacy.captured_length,
-        .original_length = legacy.original_length,
+        .packet_index = reference_observation->packet_index,
+        .file_offset = reference_observation->file_offset,
+        .captured_length = reference_observation->captured_length,
+        .original_length = reference_observation->original_length,
         .category = category,
-        .legacy_value = packet_field_value(legacy, category),
-        .unified_value = packet_field_value(unified, category),
-        .legacy_path = legacy.physical_path,
-        .unified_path = unified.physical_path,
-        .legacy_observation = legacy,
-        .unified_observation = unified,
+        .legacy_value = category == ImportValidationPacketMismatchCategory::observation_presence
+            ? format_observation_presence_value(legacy)
+            : (legacy != nullptr ? packet_field_value(*legacy, category) : "missing"),
+        .unified_value = category == ImportValidationPacketMismatchCategory::observation_presence
+            ? format_observation_presence_value(unified)
+            : (unified != nullptr ? packet_field_value(*unified, category) : "missing"),
+        .legacy_path = legacy != nullptr ? legacy->physical_path : ProtocolPath {},
+        .unified_path = unified != nullptr ? unified->physical_path : ProtocolPath {},
+        .legacy_observation = legacy != nullptr ? std::optional<ImportValidationPacketObservation> {*legacy} : std::nullopt,
+        .unified_observation = unified != nullptr ? std::optional<ImportValidationPacketObservation> {*unified} : std::nullopt,
     };
 
     if (result.mismatches.size() < options.max_reported_mismatches) {
@@ -257,10 +337,12 @@ void append_packet_mismatch(
 
     const PacketMismatchGroupSignature signature {
         .category = category,
-        .legacy_protocol = legacy.protocol,
-        .unified_protocol = unified.protocol,
-        .legacy_path = legacy.physical_path,
-        .unified_path = unified.physical_path,
+        .has_legacy_observation = legacy != nullptr,
+        .has_unified_observation = unified != nullptr,
+        .legacy_protocol = legacy != nullptr ? legacy->protocol : ProtocolId::unknown,
+        .unified_protocol = unified != nullptr ? unified->protocol : ProtocolId::unknown,
+        .legacy_path = legacy != nullptr ? legacy->physical_path : ProtocolPath {},
+        .unified_path = unified != nullptr ? unified->physical_path : ProtocolPath {},
         .numeric_delta = packet_mismatch_numeric_delta(category, legacy, unified),
     };
 
@@ -269,7 +351,7 @@ void append_packet_mismatch(
         auto& group = result.groups[found->second];
         ++group.occurrence_count;
         if (group.packet_indices.size() < 8U) {
-            group.packet_indices.push_back(legacy.packet_index);
+            group.packet_indices.push_back(reference_observation->packet_index);
         }
         return;
     }
@@ -281,13 +363,13 @@ void append_packet_mismatch(
     groups_by_signature.emplace(signature, result.groups.size());
     result.groups.push_back(ImportValidationPacketMismatchGroup {
         .category = category,
-        .legacy_protocol = legacy.protocol,
-        .unified_protocol = unified.protocol,
-        .legacy_path = legacy.physical_path,
-        .unified_path = unified.physical_path,
+        .legacy_protocol = legacy != nullptr ? legacy->protocol : ProtocolId::unknown,
+        .unified_protocol = unified != nullptr ? unified->protocol : ProtocolId::unknown,
+        .legacy_path = legacy != nullptr ? legacy->physical_path : ProtocolPath {},
+        .unified_path = unified != nullptr ? unified->physical_path : ProtocolPath {},
         .numeric_delta = signature.numeric_delta,
         .occurrence_count = 1U,
-        .packet_indices = {legacy.packet_index},
+        .packet_indices = {reference_observation->packet_index},
         .representative = std::move(mismatch),
     });
 }
@@ -303,7 +385,7 @@ void compare_packet_field(
     Predicate&& differs
 ) {
     if (differs()) {
-        append_packet_mismatch(result, groups_by_signature, options, category, legacy, unified);
+        append_packet_mismatch(result, groups_by_signature, options, category, &legacy, &unified);
     }
 }
 
@@ -327,6 +409,8 @@ std::string format_import_validation_packet_mismatch_category(
     const ImportValidationPacketMismatchCategory category
 ) {
     switch (category) {
+    case ImportValidationPacketMismatchCategory::observation_presence:
+        return "observation_presence";
     case ImportValidationPacketMismatchCategory::classification:
         return "classification";
     case ImportValidationPacketMismatchCategory::address_family:
@@ -355,6 +439,75 @@ std::string format_import_validation_packet_mismatch_category(
     return "classification";
 }
 
+std::string format_import_validation_packet_observation_json(
+    const ImportValidationPacketObservation& observation
+) {
+    std::ostringstream builder {};
+    builder
+        << "{"
+        << "\"packet_index\":" << observation.packet_index << ','
+        << "\"file_offset\":" << observation.file_offset << ','
+        << "\"captured_length\":" << observation.captured_length << ','
+        << "\"original_length\":" << observation.original_length << ','
+        << "\"link_type\":" << observation.link_type << ','
+        << "\"classification\":" << quote_json_string(format_import_validation_packet_classification(observation.classification)) << ','
+        << "\"family\":" << static_cast<int>(observation.family) << ','
+        << "\"protocol\":" << static_cast<int>(observation.protocol) << ','
+        << "\"has_addresses\":" << (observation.has_addresses ? "true" : "false") << ','
+        << "\"src_addr_v4\":" << observation.src_addr_v4 << ','
+        << "\"dst_addr_v4\":" << observation.dst_addr_v4 << ','
+        << "\"has_ports\":" << (observation.has_ports ? "true" : "false") << ','
+        << "\"src_port\":" << observation.src_port << ','
+        << "\"dst_port\":" << observation.dst_port << ','
+        << "\"has_transport_payload_length\":" << (observation.has_transport_payload_length ? "true" : "false") << ','
+        << "\"captured_transport_payload_length\":" << observation.captured_transport_payload_length << ','
+        << "\"has_tcp_flags\":" << (observation.has_tcp_flags ? "true" : "false") << ','
+        << "\"tcp_flags\":" << static_cast<unsigned int>(observation.tcp_flags) << ','
+        << "\"fragmented\":" << (observation.fragmented ? "true" : "false") << ','
+        << "\"physical_path\":" << quote_json_string(format_protocol_path_or_empty(observation.physical_path)) << ','
+        << "\"parse_status\":" << static_cast<int>(observation.final_status) << ','
+        << "\"stop_reason\":" << static_cast<int>(observation.stop_reason) << ','
+        << "\"unrecognized_reason\":";
+    if (observation.unrecognized_reason.has_value()) {
+        builder << quote_json_string(*observation.unrecognized_reason);
+    } else {
+        builder << "null";
+    }
+    builder << "}";
+    return builder.str();
+}
+
+std::string format_import_validation_packet_mismatch_json(
+    const ImportValidationPacketMismatch& mismatch
+) {
+    std::ostringstream builder {};
+    builder
+        << "{"
+        << "\"packet_index\":" << mismatch.packet_index << ','
+        << "\"file_offset\":" << mismatch.file_offset << ','
+        << "\"captured_length\":" << mismatch.captured_length << ','
+        << "\"original_length\":" << mismatch.original_length << ','
+        << "\"category\":" << quote_json_string(format_import_validation_packet_mismatch_category(mismatch.category)) << ','
+        << "\"legacy_value\":" << quote_json_string(mismatch.legacy_value) << ','
+        << "\"unified_value\":" << quote_json_string(mismatch.unified_value) << ','
+        << "\"legacy_path\":" << quote_json_string(format_protocol_path_or_empty(mismatch.legacy_path)) << ','
+        << "\"unified_path\":" << quote_json_string(format_protocol_path_or_empty(mismatch.unified_path)) << ','
+        << "\"legacy_observation\":";
+    if (mismatch.legacy_observation.has_value()) {
+        builder << format_import_validation_packet_observation_json(*mismatch.legacy_observation);
+    } else {
+        builder << "null";
+    }
+    builder << ",\"unified_observation\":";
+    if (mismatch.unified_observation.has_value()) {
+        builder << format_import_validation_packet_observation_json(*mismatch.unified_observation);
+    } else {
+        builder << "null";
+    }
+    builder << "}";
+    return builder.str();
+}
+
 ImportValidationPacketCompareResult compare_packet_observations(
     const std::vector<ImportValidationPacketObservation>& legacy,
     const std::vector<ImportValidationPacketObservation>& unified,
@@ -364,7 +517,9 @@ ImportValidationPacketCompareResult compare_packet_observations(
     std::unordered_map<PacketMismatchGroupSignature, std::size_t, PacketMismatchGroupSignatureHash> groups_by_signature {};
 
     std::size_t start_index = 0U;
-    std::size_t end_index = std::min(legacy.size(), unified.size());
+    const auto shared_size = std::min(legacy.size(), unified.size());
+    const auto max_size = std::max(legacy.size(), unified.size());
+    std::size_t end_index = shared_size;
     if (options.packet_index.has_value()) {
         start_index = static_cast<std::size_t>(*options.packet_index);
         end_index = std::min(start_index + 1U, end_index);
@@ -489,23 +644,29 @@ ImportValidationPacketCompareResult compare_packet_observations(
     }
 
     if (legacy.size() != unified.size()) {
-        const auto missing_index = std::min(legacy.size(), unified.size());
-        if (missing_index < legacy.size()) {
-            append_packet_mismatch(
-                result,
-                groups_by_signature,
-                options,
-                ImportValidationPacketMismatchCategory::classification,
-                legacy[missing_index],
-                ImportValidationPacketObservation {});
-        } else if (missing_index < unified.size()) {
-            append_packet_mismatch(
-                result,
-                groups_by_signature,
-                options,
-                ImportValidationPacketMismatchCategory::classification,
-                ImportValidationPacketObservation {},
-                unified[missing_index]);
+        const auto tail_start = std::max(start_index, shared_size);
+        const auto tail_end = options.packet_index.has_value()
+            ? std::min(start_index + 1U, max_size)
+            : max_size;
+
+        for (std::size_t index = tail_start; index < tail_end; ++index) {
+            if (index < legacy.size()) {
+                append_packet_mismatch(
+                    result,
+                    groups_by_signature,
+                    options,
+                    ImportValidationPacketMismatchCategory::observation_presence,
+                    &legacy[index],
+                    nullptr);
+            } else if (index < unified.size()) {
+                append_packet_mismatch(
+                    result,
+                    groups_by_signature,
+                    options,
+                    ImportValidationPacketMismatchCategory::observation_presence,
+                    nullptr,
+                    &unified[index]);
+            }
         }
     }
 
@@ -554,14 +715,18 @@ ImportValidationDiagnoseResult diagnose_import_validation(
 
     if (effective_options.packet_index.has_value()) {
         const auto index = static_cast<std::size_t>(*effective_options.packet_index);
-        if (index >= legacy.packet_observations.size() || index >= unified.packet_observations.size()) {
+        if (index >= legacy.packet_observations.size() && index >= unified.packet_observations.size()) {
             result.success = false;
             result.error_text = "requested packet index is outside the imported packet range";
             return result;
         }
 
-        result.legacy_packet = legacy.packet_observations[index];
-        result.unified_packet = unified.packet_observations[index];
+        if (index < legacy.packet_observations.size()) {
+            result.legacy_packet = legacy.packet_observations[index];
+        }
+        if (index < unified.packet_observations.size()) {
+            result.unified_packet = unified.packet_observations[index];
+        }
     }
 
     return result;

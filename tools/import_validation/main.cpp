@@ -38,13 +38,20 @@ void print_usage() {
 
 std::string escape_json(std::string_view text) {
     std::ostringstream builder {};
-    for (const char ch : text) {
+    for (const char raw_ch : text) {
+        const auto ch = static_cast<unsigned char>(raw_ch);
         switch (ch) {
         case '\\':
             builder << "\\\\";
             break;
         case '"':
             builder << "\\\"";
+            break;
+        case '\b':
+            builder << "\\b";
+            break;
+        case '\f':
+            builder << "\\f";
             break;
         case '\n':
             builder << "\\n";
@@ -56,7 +63,17 @@ std::string escape_json(std::string_view text) {
             builder << "\\t";
             break;
         default:
-            builder << ch;
+            if (ch < 0x20U) {
+                builder << "\\u"
+                        << std::hex
+                        << std::setw(4)
+                        << std::setfill('0')
+                        << static_cast<unsigned int>(ch)
+                        << std::dec
+                        << std::setfill(' ');
+            } else {
+                builder << static_cast<char>(ch);
+            }
             break;
         }
     }
@@ -104,42 +121,6 @@ std::string format_metrics_json(const pfl::ImportValidationMetrics& metrics) {
 
 std::string format_protocol_path_or_empty(const pfl::ProtocolPath& path) {
     return path.empty() ? std::string {} : pfl::format_protocol_path(path);
-}
-
-std::string format_packet_observation_json(const pfl::ImportValidationPacketObservation& observation) {
-    std::ostringstream builder {};
-    builder
-        << "{"
-        << "\"packet_index\":" << observation.packet_index << ','
-        << "\"file_offset\":" << observation.file_offset << ','
-        << "\"captured_length\":" << observation.captured_length << ','
-        << "\"original_length\":" << observation.original_length << ','
-        << "\"link_type\":" << observation.link_type << ','
-        << "\"classification\":" << quote_json_string(pfl::format_import_validation_packet_classification(observation.classification)) << ','
-        << "\"family\":" << quote_json_string(std::to_string(static_cast<int>(observation.family))) << ','
-        << "\"protocol\":" << quote_json_string(std::to_string(static_cast<int>(observation.protocol))) << ','
-        << "\"has_addresses\":" << (observation.has_addresses ? "true" : "false") << ','
-        << "\"src_addr_v4\":" << observation.src_addr_v4 << ','
-        << "\"dst_addr_v4\":" << observation.dst_addr_v4 << ','
-        << "\"has_ports\":" << (observation.has_ports ? "true" : "false") << ','
-        << "\"src_port\":" << observation.src_port << ','
-        << "\"dst_port\":" << observation.dst_port << ','
-        << "\"has_transport_payload_length\":" << (observation.has_transport_payload_length ? "true" : "false") << ','
-        << "\"captured_transport_payload_length\":" << observation.captured_transport_payload_length << ','
-        << "\"has_tcp_flags\":" << (observation.has_tcp_flags ? "true" : "false") << ','
-        << "\"tcp_flags\":" << static_cast<unsigned int>(observation.tcp_flags) << ','
-        << "\"fragmented\":" << (observation.fragmented ? "true" : "false") << ','
-        << "\"physical_path\":" << quote_json_string(format_protocol_path_or_empty(observation.physical_path)) << ','
-        << "\"parse_status\":" << quote_json_string(std::to_string(static_cast<int>(observation.final_status))) << ','
-        << "\"stop_reason\":" << quote_json_string(std::to_string(static_cast<int>(observation.stop_reason))) << ','
-        << "\"unrecognized_reason\":";
-    if (observation.unrecognized_reason.has_value()) {
-        builder << quote_json_string(*observation.unrecognized_reason);
-    } else {
-        builder << "null";
-    }
-    builder << "}";
-    return builder.str();
 }
 
 void print_metrics(std::string_view label, const pfl::ImportValidationMetrics& metrics) {
@@ -412,9 +393,18 @@ int run_diagnose_mode(const ParsedCommandLine& parsed) {
     std::cout << "  physical path: " << (result.packet_compare.first_divergence.physical_path_packet_index.has_value() ? std::to_string(*result.packet_compare.first_divergence.physical_path_packet_index) : std::string {"none"}) << '\n';
     std::cout << "  payload length: " << (result.packet_compare.first_divergence.payload_length_packet_index.has_value() ? std::to_string(*result.packet_compare.first_divergence.payload_length_packet_index) : std::string {"none"}) << '\n';
 
-    if (result.legacy_packet.has_value() && result.unified_packet.has_value()) {
-        print_packet_observation("Legacy packet", *result.legacy_packet);
-        print_packet_observation("Unified packet", *result.unified_packet);
+    if (result.legacy_packet.has_value() || result.unified_packet.has_value()) {
+        if (result.legacy_packet.has_value()) {
+            print_packet_observation("Legacy packet", *result.legacy_packet);
+        } else {
+            std::cout << "Legacy packet: missing\n";
+        }
+
+        if (result.unified_packet.has_value()) {
+            print_packet_observation("Unified packet", *result.unified_packet);
+        } else {
+            std::cout << "Unified packet: missing\n";
+        }
     } else if (!result.packet_compare.groups.empty()) {
         std::cout << "Grouped packet mismatches:\n";
         for (const auto& group : result.packet_compare.groups) {
@@ -505,24 +495,27 @@ int run_diagnose_mode(const ParsedCommandLine& parsed) {
                     json << ',';
                 }
                 json << group.packet_indices[packet_idx];
-            }
+                }
             json
-                << "],\"representative\":{"
-                << "\"packet_index\":" << group.representative.packet_index << ','
-                << "\"file_offset\":" << group.representative.file_offset << ','
-                << "\"captured_length\":" << group.representative.captured_length << ','
-                << "\"original_length\":" << group.representative.original_length << ','
-                << "\"legacy_value\":" << quote_json_string(group.representative.legacy_value) << ','
-                << "\"unified_value\":" << quote_json_string(group.representative.unified_value) << ','
-                << "\"legacy_path\":" << quote_json_string(format_protocol_path_or_empty(group.representative.legacy_path)) << ','
-                << "\"unified_path\":" << quote_json_string(format_protocol_path_or_empty(group.representative.unified_path))
-                << "}}";
+                << "],\"representative\":"
+                << pfl::format_import_validation_packet_mismatch_json(group.representative)
+                << "}";
         }
         json << "]";
-        if (result.legacy_packet.has_value() && result.unified_packet.has_value()) {
+        if (result.legacy_packet.has_value() || result.unified_packet.has_value()) {
             json
-                << ",\"legacy_packet\":" << format_packet_observation_json(*result.legacy_packet)
-                << ",\"unified_packet\":" << format_packet_observation_json(*result.unified_packet);
+                << ",\"legacy_packet\":";
+            if (result.legacy_packet.has_value()) {
+                json << pfl::format_import_validation_packet_observation_json(*result.legacy_packet);
+            } else {
+                json << "null";
+            }
+            json << ",\"unified_packet\":";
+            if (result.unified_packet.has_value()) {
+                json << pfl::format_import_validation_packet_observation_json(*result.unified_packet);
+            } else {
+                json << "null";
+            }
         }
         json << "}";
 

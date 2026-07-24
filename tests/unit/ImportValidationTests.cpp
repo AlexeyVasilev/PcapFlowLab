@@ -72,6 +72,21 @@ std::filesystem::path write_single_tcp_pcapng(const std::string& file_name) {
     );
 }
 
+std::filesystem::path write_single_arp_classic_pcap(const std::string& file_name) {
+    return write_temp_pcap(
+        file_name,
+        make_classic_pcap({
+            {
+                100U,
+                make_ethernet_arp_packet(
+                    ipv4(192, 0, 2, 10),
+                    ipv4(198, 51, 100, 20)
+                ),
+            },
+        })
+    );
+}
+
 std::filesystem::path write_staged_prefix_classic_pcap(const std::string& file_name) {
     constexpr std::size_t kMinCapturedLengthForStagedImportBytes = 16U * 1024U;
 
@@ -286,6 +301,108 @@ void run_import_validation_tests() {
     }
 
     {
+        const ScopedTestContext context {"packet_presence_mismatch_explicit_missing_in_legacy"};
+        const ProtocolPath path {
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        };
+        const std::vector<ImportValidationPacketObservation> legacy {};
+        const std::vector<ImportValidationPacketObservation> unified {
+            make_ipv4_tcp_observation(7U, 42U, path),
+        };
+
+        const auto result = compare_packet_observations(legacy, unified);
+        PFL_EXPECT(result.mismatch_count == 1U);
+        PFL_REQUIRE(result.mismatches.size() == 1U);
+        PFL_REQUIRE(result.groups.size() == 1U);
+        PFL_EXPECT(result.groups[0].category == ImportValidationPacketMismatchCategory::observation_presence);
+        PFL_EXPECT(result.groups[0].occurrence_count == 1U);
+        PFL_REQUIRE(result.groups[0].packet_indices.size() == 1U);
+        PFL_EXPECT(result.groups[0].packet_indices[0] == 7U);
+        PFL_EXPECT(result.first_divergence.any_packet_index == std::optional<std::uint64_t> {7U});
+        PFL_EXPECT(!result.first_divergence.classification_packet_index.has_value());
+
+        const auto& mismatch = result.mismatches[0];
+        PFL_EXPECT(mismatch.category == ImportValidationPacketMismatchCategory::observation_presence);
+        PFL_EXPECT(mismatch.packet_index == 7U);
+        PFL_EXPECT(mismatch.file_offset == 700U);
+        PFL_EXPECT(mismatch.legacy_value == "missing");
+        PFL_EXPECT(mismatch.unified_value == "present");
+        PFL_EXPECT(!mismatch.legacy_observation.has_value());
+        PFL_REQUIRE(mismatch.unified_observation.has_value());
+        PFL_EXPECT(mismatch.unified_observation->packet_index == 7U);
+    }
+
+    {
+        const ScopedTestContext context {"unmatched_tail_counts_all_packets_even_when_reporting_is_bounded"};
+        const ProtocolPath path {
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        };
+        const std::vector<ImportValidationPacketObservation> legacy {
+            make_ipv4_tcp_observation(0U, 10U, path),
+            make_ipv4_tcp_observation(1U, 11U, path),
+            make_ipv4_tcp_observation(2U, 12U, path),
+        };
+        const std::vector<ImportValidationPacketObservation> unified {
+            make_ipv4_tcp_observation(0U, 10U, path),
+        };
+        const ImportValidationOptions options {
+            .max_packets = std::nullopt,
+            .include_hints = true,
+            .max_reported_mismatches = 1U,
+        };
+
+        const auto result = compare_packet_observations(legacy, unified, options);
+        PFL_EXPECT(result.mismatch_count == 2U);
+        PFL_REQUIRE(result.mismatches.size() == 1U);
+        PFL_REQUIRE(result.groups.size() == 1U);
+        PFL_EXPECT(result.groups[0].category == ImportValidationPacketMismatchCategory::observation_presence);
+        PFL_EXPECT(result.groups[0].occurrence_count == 2U);
+        PFL_REQUIRE(result.groups[0].packet_indices.size() == 2U);
+        PFL_EXPECT(result.groups[0].packet_indices[0] == 1U);
+        PFL_EXPECT(result.groups[0].packet_indices[1] == 2U);
+        PFL_EXPECT(result.first_divergence.any_packet_index == std::optional<std::uint64_t> {1U});
+    }
+
+    {
+        const ScopedTestContext context {"packet_index_filter_reports_unmatched_tail_presence_mismatch"};
+        const ProtocolPath path {
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        };
+        const std::vector<ImportValidationPacketObservation> legacy {
+            make_ipv4_tcp_observation(0U, 10U, path),
+            make_ipv4_tcp_observation(1U, 20U, path),
+        };
+        const std::vector<ImportValidationPacketObservation> unified {
+            make_ipv4_tcp_observation(0U, 10U, path),
+        };
+        const ImportValidationOptions options {
+            .max_packets = std::nullopt,
+            .packet_index = 1U,
+            .include_hints = true,
+            .max_reported_mismatches = 32U,
+        };
+
+        const auto result = compare_packet_observations(legacy, unified, options);
+        PFL_EXPECT(result.mismatch_count == 1U);
+        PFL_REQUIRE(result.mismatches.size() == 1U);
+        PFL_REQUIRE(result.groups.size() == 1U);
+        PFL_EXPECT(result.groups[0].category == ImportValidationPacketMismatchCategory::observation_presence);
+        PFL_REQUIRE(result.groups[0].packet_indices.size() == 1U);
+        PFL_EXPECT(result.groups[0].packet_indices[0] == 1U);
+        PFL_EXPECT(result.first_divergence.any_packet_index == std::optional<std::uint64_t> {1U});
+        PFL_EXPECT(result.mismatches[0].legacy_value == "present");
+        PFL_EXPECT(result.mismatches[0].unified_value == "missing");
+        PFL_REQUIRE(result.mismatches[0].legacy_observation.has_value());
+        PFL_EXPECT(!result.mismatches[0].unified_observation.has_value());
+    }
+
+    {
         const ScopedTestContext context {"registry_comparison_reports_added_path_and_id_drift"};
         const ProtocolPath path_a {LayerKey::ethernet_ii(), LayerKey::ipv4(), LayerKey::udp()};
         const ProtocolPath path_b {LayerKey::ethernet_ii(), LayerKey::vlan(7U), LayerKey::ipv4(), LayerKey::udp()};
@@ -411,6 +528,84 @@ void run_import_validation_tests() {
         PFL_EXPECT(observation.captured_transport_payload_length == decoded.ipv4->packet_ref.payload_length);
         PFL_EXPECT(observation.fragmented == decoded.ipv4->packet_ref.is_ip_fragmented);
         PFL_EXPECT(observation.physical_path == decoded.protocol_path_builder.to_path());
+    }
+
+    {
+        const ScopedTestContext context {"fallback_arp_observation_is_classified_as_recognized_flow"};
+        const auto legacy = run_legacy_import_validation(
+            write_single_arp_classic_pcap("pfl_import_validation_single_arp.pcap")
+        );
+        PFL_REQUIRE(legacy.success);
+        PFL_REQUIRE(legacy.packet_observations.size() == 1U);
+        const auto& observation = legacy.packet_observations[0];
+        PFL_EXPECT(observation.classification == ImportValidationPacketClassification::recognized_flow);
+        PFL_EXPECT(observation.family == dissection::DissectionAddressFamily::ipv4);
+        PFL_EXPECT(observation.protocol == ProtocolId::arp);
+        PFL_EXPECT(observation.has_addresses);
+    }
+
+    {
+        const ScopedTestContext context {"packet_observation_json_uses_numeric_enums_and_complete_escaping"};
+        const ProtocolPath path {
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        };
+        auto observation = make_ipv4_tcp_observation(
+            9U,
+            64U,
+            path,
+            ImportValidationPacketClassification::unrecognized
+        );
+        std::string unrecognized_reason {};
+        unrecognized_reason.push_back(static_cast<char>(0x00));
+        unrecognized_reason.push_back(static_cast<char>(0x01));
+        unrecognized_reason.push_back('\b');
+        unrecognized_reason.push_back('\f');
+        unrecognized_reason.push_back('\n');
+        unrecognized_reason.push_back('\t');
+        unrecognized_reason.push_back('"');
+        unrecognized_reason.push_back('\\');
+        observation.unrecognized_reason = unrecognized_reason;
+
+        const auto json = format_import_validation_packet_observation_json(observation);
+        PFL_EXPECT(json.find("\"classification\":\"unrecognized\"") != std::string::npos);
+        PFL_EXPECT(json.find("\"family\":" + std::to_string(static_cast<int>(observation.family))) != std::string::npos);
+        PFL_EXPECT(json.find("\"family\":\"") == std::string::npos);
+        PFL_EXPECT(json.find("\"protocol\":" + std::to_string(static_cast<int>(observation.protocol))) != std::string::npos);
+        PFL_EXPECT(json.find("\"protocol\":\"") == std::string::npos);
+        PFL_EXPECT(json.find("\"parse_status\":" + std::to_string(static_cast<int>(observation.final_status))) != std::string::npos);
+        PFL_EXPECT(json.find("\"parse_status\":\"") == std::string::npos);
+        PFL_EXPECT(json.find("\"stop_reason\":" + std::to_string(static_cast<int>(observation.stop_reason))) != std::string::npos);
+        PFL_EXPECT(json.find("\"stop_reason\":\"") == std::string::npos);
+        PFL_EXPECT(json.find("\\u0000") != std::string::npos);
+        PFL_EXPECT(json.find("\\u0001") != std::string::npos);
+        PFL_EXPECT(json.find("\\b") != std::string::npos);
+        PFL_EXPECT(json.find("\\f") != std::string::npos);
+        PFL_EXPECT(json.find("\\n") != std::string::npos);
+        PFL_EXPECT(json.find("\\t") != std::string::npos);
+        PFL_EXPECT(json.find("\\\"") != std::string::npos);
+        PFL_EXPECT(json.find("\\\\") != std::string::npos);
+    }
+
+    {
+        const ScopedTestContext context {"packet_mismatch_json_uses_null_for_absent_observations"};
+        const ProtocolPath path {
+            LayerKey::ethernet_ii(),
+            LayerKey::ipv4(),
+            LayerKey::tcp(),
+        };
+        const auto result = compare_packet_observations(
+            std::vector<ImportValidationPacketObservation> {},
+            std::vector<ImportValidationPacketObservation> {
+                make_ipv4_tcp_observation(5U, 32U, path),
+            }
+        );
+        PFL_REQUIRE(result.mismatches.size() == 1U);
+        const auto json = format_import_validation_packet_mismatch_json(result.mismatches[0]);
+        PFL_EXPECT(json.find("\"category\":\"observation_presence\"") != std::string::npos);
+        PFL_EXPECT(json.find("\"legacy_observation\":null") != std::string::npos);
+        PFL_EXPECT(json.find("\"unified_observation\":{") != std::string::npos);
     }
 
     {
