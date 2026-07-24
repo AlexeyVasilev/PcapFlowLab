@@ -577,11 +577,12 @@ void run_macsec_pcap_fixture_tests() {
         const auto summary_layers = session_detail::build_packet_summary_layers(details, packet);
         const auto* payload_layer = find_layer(summary_layers, "macsec-payload");
         PFL_REQUIRE(payload_layer != nullptr);
-        PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "1 bytes"));
+        PFL_EXPECT(layer_has_field_containing(*payload_layer, "Length", "1 byte"));
         PFL_EXPECT(layer_has_field_containing(*payload_layer, "Raw", "45"));
         PFL_EXPECT(!layer_has_field_label(*payload_layer, "Plain EtherType"));
         PFL_EXPECT(!layer_has_field_label(*payload_layer, "Data Length"));
         const auto protocol_text = session.read_packet_protocol_details_text(packet);
+        PFL_EXPECT(protocol_text.find("Protected Payload Length: 1 byte") != std::string::npos);
         PFL_EXPECT(protocol_text.find("Plain EtherType:") == std::string::npos);
         PFL_EXPECT(protocol_text.find("Data Length:") == std::string::npos);
     }
