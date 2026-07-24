@@ -47,7 +47,7 @@ DissectionStep dissect_ah(
         .path_contribution = LayerKey::ah(parsed.spi),
         .bounds = direct::make_layer_bounds(
             slice,
-            parsed.header_length,
+            direct::slice_declared_length(slice),
             parsed.header_length,
             direct::RelativeRange {.begin = parsed.header_length, .end = direct::slice_declared_length(slice)},
             true

@@ -175,7 +175,7 @@ DissectionStep dissect_gre(const PacketSlice& slice) {
         .path_contribution = parsed.has_key ? LayerKey::gre(parsed.key) : LayerKey::gre(),
         .bounds = direct::make_layer_bounds(
             slice,
-            parsed.header_length,
+            direct::slice_declared_length(slice),
             parsed.header_length,
             direct::RelativeRange {.begin = parsed.header_length, .end = direct::slice_declared_length(slice)},
             true

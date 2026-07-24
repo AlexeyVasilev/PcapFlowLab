@@ -81,6 +81,33 @@ void expect_ah_and_esp_shadow_parsers_bounds_and_traversal() {
     }
 
     {
+        auto ah_with_icv_and_payload = make_ah_header(
+            detail::kIpProtocolUdp,
+            0x21222324U,
+            0x25262728U,
+            {0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7}
+        );
+        const auto udp_payload = make_ipv4_udp_segment(5300U, 53U, 4U);
+        ah_with_icv_and_payload.insert(
+            ah_with_icv_and_payload.end(),
+            udp_payload.begin(),
+            udp_payload.end()
+        );
+
+        const auto ah_with_icv_and_payload_packet = make_raw_packet(ah_with_icv_and_payload);
+        const auto ah_with_icv_and_payload_step = dissect_ipv4_ah(make_root_slice(ah_with_icv_and_payload_packet));
+        PFL_EXPECT(ah_with_icv_and_payload_step.status == ParseStatus::complete);
+        PFL_EXPECT(ah_with_icv_and_payload_step.stop_reason == StopReason::none);
+        PFL_EXPECT(ah_with_icv_and_payload_step.bounds.full.declared.length() == ah_with_icv_and_payload.size());
+        PFL_EXPECT(ah_with_icv_and_payload_step.bounds.full.captured.length() == ah_with_icv_and_payload.size());
+        PFL_EXPECT(ah_with_icv_and_payload_step.bounds.header.declared.length() == 20U);
+        PFL_EXPECT(ah_with_icv_and_payload_step.bounds.header.captured.length() == 20U);
+        PFL_REQUIRE(ah_with_icv_and_payload_step.bounds.payload.has_value());
+        PFL_EXPECT(ah_with_icv_and_payload_step.bounds.payload->declared.length() == udp_payload.size());
+        PFL_EXPECT(ah_with_icv_and_payload_step.bounds.payload->captured.length() == udp_payload.size());
+    }
+
+    {
         auto truncated_fixed_ah = make_ah_header(detail::kIpProtocolTcp, 0x01020304U, 0x05060708U);
         truncated_fixed_ah.resize(10U);
         const auto parsed = parse_ah_header(make_root_slice(make_raw_packet(truncated_fixed_ah, 12U)));
@@ -892,6 +919,28 @@ void expect_gre_shadow_parsers_bounds_and_traversal() {
         PFL_REQUIRE(exact_header_facts != nullptr);
         PFL_EXPECT(exact_header_facts->protocol_type == detail::kEtherTypeIpv4);
         PFL_EXPECT(exact_header_facts->header_length == detail::kGreBaseHeaderSize);
+    }
+
+    {
+        const auto inner_ipv4_payload = make_ipv4_payload_packet(
+            ipv4(172, 20, 10, 1),
+            ipv4(172, 20, 10, 2),
+            detail::kIpProtocolUdp,
+            make_ipv4_udp_segment(5300U, 53U, 4U)
+        );
+        const auto gre_with_inner_ipv4_packet = make_raw_packet(
+            make_gre_header(detail::kEtherTypeIpv4, inner_ipv4_payload)
+        );
+        const auto gre_with_inner_ipv4_step = dissect_gre(make_root_slice(gre_with_inner_ipv4_packet));
+        PFL_EXPECT(gre_with_inner_ipv4_step.status == ParseStatus::complete);
+        PFL_EXPECT(gre_with_inner_ipv4_step.stop_reason == StopReason::none);
+        PFL_EXPECT(gre_with_inner_ipv4_step.bounds.full.declared.length() == gre_with_inner_ipv4_packet.bytes.size());
+        PFL_EXPECT(gre_with_inner_ipv4_step.bounds.full.captured.length() == gre_with_inner_ipv4_packet.bytes.size());
+        PFL_EXPECT(gre_with_inner_ipv4_step.bounds.header.declared.length() == detail::kGreBaseHeaderSize);
+        PFL_EXPECT(gre_with_inner_ipv4_step.bounds.header.captured.length() == detail::kGreBaseHeaderSize);
+        PFL_REQUIRE(gre_with_inner_ipv4_step.bounds.payload.has_value());
+        PFL_EXPECT(gre_with_inner_ipv4_step.bounds.payload->declared.length() == inner_ipv4_payload.size());
+        PFL_EXPECT(gre_with_inner_ipv4_step.bounds.payload->captured.length() == inner_ipv4_payload.size());
     }
 
     {
