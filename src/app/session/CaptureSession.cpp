@@ -73,6 +73,7 @@ using session_detail::protocol_id;
 using session_detail::effective_protocol_hint;
 using session_detail::find_quic_client_initial_connection_id_for_connection;
 using session_detail::find_quic_client_initial_connection_id_for_packets;
+using session_detail::has_confirming_quic_long_header_for_packets;
 using session_detail::build_quic_presentation_for_selected_direction;
 using session_detail::build_quic_stream_packet_presentation;
 using session_detail::QuicPresentationResult;
@@ -430,12 +431,14 @@ bool append_quic_stream_items_for_packet(
     const PacketRef& packet,
     const std::string_view direction_text,
     std::span<const std::uint8_t> payload_span,
+    const bool quic_stream_confirmed,
     HexDumpService& hex_dump_service,
     std::span<const std::uint8_t> initial_secret_connection_id
 ) {
-    // Stream-level QUIC labeling is allowed only after the scanned connection prefix
-    // yields a confirmed client Initial connection ID.
-    if (initial_secret_connection_id.empty()) {
+    // Stream-level QUIC labeling requires a confirmed QUIC flow in the scanned
+    // prefix. The Client Initial DCID is optional context for Initial-specific
+    // enrichment and decryption, not the confirmation signal itself.
+    if (!quic_stream_confirmed) {
         return false;
     }
 
@@ -705,11 +708,19 @@ void append_connection_stream_items_bounded(
     const DirectionalStreamPolicy& direction_policy_b
 ) {
     HexDumpService hex_dump_service {};
-    const auto bounded_quic_packets = flow_protocol == ProtocolId::udp
+    constexpr std::uint16_t kQuicCandidatePort = 443U;
+    const bool uses_quic_candidate_port = flow_protocol == ProtocolId::udp &&
+        (connection.flow_a.key.src_port == kQuicCandidatePort || connection.flow_a.key.dst_port == kQuicCandidatePort);
+    const auto bounded_quic_packets = uses_quic_candidate_port
         ? merge_packet_refs_by_index(bounded_direction_packets_a, bounded_direction_packets_b)
         : std::vector<PacketRef> {};
+    const bool quic_stream_confirmed = uses_quic_candidate_port &&
+        has_confirming_quic_long_header_for_packets(
+            session,
+            std::span<const PacketRef>(bounded_quic_packets.data(), bounded_quic_packets.size()),
+            flow_index);
     const auto quic_initial_secret_connection_id =
-        flow_protocol == ProtocolId::udp
+        quic_stream_confirmed
             ? find_quic_client_initial_connection_id_for_packets(
                 session,
                 std::span<const PacketRef>(bounded_quic_packets.data(), bounded_quic_packets.size()),
@@ -824,6 +835,7 @@ void append_connection_stream_items_bounded(
                     packet,
                     direction_text,
                     payload_span,
+                    quic_stream_confirmed,
                     hex_dump_service,
                     quic_initial_secret_connection_id.has_value()
                         ? std::span<const std::uint8_t>(
@@ -840,6 +852,7 @@ void append_connection_stream_items_bounded(
                     packet,
                     direction_text,
                     payload_span,
+                    quic_stream_confirmed,
                     hex_dump_service,
                     quic_initial_secret_connection_id.has_value()
                         ? std::span<const std::uint8_t>(

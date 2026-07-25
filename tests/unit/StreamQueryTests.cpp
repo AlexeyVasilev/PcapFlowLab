@@ -190,6 +190,27 @@ std::vector<std::uint8_t> make_quic_truncated_payload() {
     };
 }
 
+std::vector<std::uint8_t> make_quic_short_header_like_payload(
+    const std::vector<std::uint8_t>& payload = std::vector<std::uint8_t> {0x01U, 0x02U, 0x03U}
+) {
+    std::vector<std::uint8_t> bytes {0x40U};
+    bytes.insert(bytes.end(), payload.begin(), payload.end());
+    return bytes;
+}
+
+std::vector<std::uint8_t> make_quic_retry_like_payload() {
+    std::vector<std::uint8_t> payload {
+        0xF0U,
+        0x00U, 0x00U, 0x00U, 0x01U,
+        0x08U,
+        0x11U, 0x22U, 0x33U, 0x44U, 0x55U, 0x66U, 0x77U, 0x88U,
+        0x08U,
+        0x99U, 0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU, 0xFFU, 0x00U,
+    };
+    payload.insert(payload.end(), 16U, 0xABU);
+    return payload;
+}
+
 std::vector<std::uint8_t> make_tls_server_hello_handshake_bytes() {
     std::vector<std::uint8_t> body {};
     append_be16(body, 0x0303U);
@@ -1097,15 +1118,75 @@ void run_stream_query_tests() {
 
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "UDP Payload");
-        PFL_EXPECT(rows[0].protocol_text.empty());
-        PFL_EXPECT(rows[0].payload_hex_text.empty());
+        PFL_EXPECT(rows[0].label == "Handshake");
+        PFL_EXPECT(rows[0].protocol_text.find("Packet Type: Handshake") != std::string::npos);
+        PFL_EXPECT(rows[0].protocol_text.find("Header Form: Long") != std::string::npos);
+        PFL_EXPECT(!rows[0].payload_hex_text.empty());
     }
 
     {
         CaptureSession session {};
         PFL_EXPECT(session.open_capture(fixture_path("parsing/quic/quic_protected_payload_4.pcap"), fast_options));
 
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].protocol_text.empty());
+        PFL_EXPECT(rows[0].payload_hex_text.empty());
+    }
+
+    {
+        constexpr std::string_view ssdp_like_payload =
+            "NOTIFY * HTTP/1.1\r\n"
+            "HOST: 239.255.255.250:1900\r\n"
+            "NTS: ssdp:alive\r\n"
+            "\r\n";
+        const auto packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 2, 10), ipv4(239, 255, 255, 250), 51515, 1900, make_text_bytes(ssdp_like_payload)
+        );
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_udp_ssdp_like_payload.pcap",
+            make_classic_pcap({{100, packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].protocol_text.empty());
+        PFL_EXPECT(rows[0].payload_hex_text.empty());
+    }
+
+    {
+        const auto packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 2, 11), ipv4(10, 41, 2, 12), 54011, 443, make_quic_short_header_like_payload()
+        );
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_short_header_only_udp443.pcap",
+            make_classic_pcap({{100, packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].protocol_text.empty());
+        PFL_EXPECT(rows[0].payload_hex_text.empty());
+    }
+
+    {
+        const auto packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 2, 13), ipv4(10, 41, 2, 14), 54012, 137, make_quic_retry_like_payload()
+        );
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_retry_like_udp137.pcap",
+            make_classic_pcap({{100, packet}})
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
         PFL_EXPECT(rows[0].label == "UDP Payload");
@@ -1293,6 +1374,32 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].label == "UDP Payload");
         PFL_EXPECT(rows[0].protocol_text.empty());
         PFL_EXPECT(rows[0].payload_hex_text.empty());
+    }
+
+    {
+        const auto initial_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 2, 21), ipv4(10, 41, 2, 22), 54021, 443, make_plaintext_quic_initial_payload(make_quic_crypto_frame_bytes())
+        );
+        const auto protected_packet = make_ethernet_ipv4_udp_packet_with_bytes_payload(
+            ipv4(10, 41, 2, 22), ipv4(10, 41, 2, 21), 443, 54021, make_quic_short_header_like_payload({0xAAU, 0xBBU, 0xCCU, 0xDDU})
+        );
+        const auto path = write_temp_pcap(
+            "pfl_stream_query_quic_confirmed_then_short_header.pcap",
+            make_classic_pcap({
+                {100, initial_packet},
+                {200, protected_packet},
+            })
+        );
+
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(path, fast_options));
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 2U);
+        PFL_EXPECT(rows[0].label == "QUIC Initial: CRYPTO");
+        PFL_EXPECT(rows[1].label == "Protected payload");
+        PFL_EXPECT(rows[1].protocol_text.find("Packet Type: Protected Payload") != std::string::npos);
+        PFL_EXPECT(rows[1].protocol_text.find("Header Form: Short") != std::string::npos);
+        PFL_EXPECT(!rows[1].payload_hex_text.empty());
     }
 
     {
