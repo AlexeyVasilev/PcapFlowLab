@@ -1097,10 +1097,9 @@ void run_stream_query_tests() {
 
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "Handshake");
-        PFL_EXPECT(rows[0].protocol_text.find("Packet Type: Handshake") != std::string::npos);
-        PFL_EXPECT(rows[0].protocol_text.find("Header Form: Long") != std::string::npos);
-        PFL_EXPECT(!rows[0].payload_hex_text.empty());
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].protocol_text.empty());
+        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {
@@ -1109,9 +1108,9 @@ void run_stream_query_tests() {
 
         const auto rows = session.list_flow_stream_items(0);
         PFL_EXPECT(rows.size() == 1U);
-        PFL_EXPECT(rows[0].label == "Protected payload");
-        PFL_EXPECT(rows[0].protocol_text.find("Packet Type: Protected Payload") != std::string::npos);
-        PFL_EXPECT(rows[0].protocol_text.find("Header Form: Short") != std::string::npos);
+        PFL_EXPECT(rows[0].label == "UDP Payload");
+        PFL_EXPECT(rows[0].protocol_text.empty());
+        PFL_EXPECT(rows[0].payload_hex_text.empty());
     }
 
     {

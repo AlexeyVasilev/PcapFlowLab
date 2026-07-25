@@ -433,6 +433,12 @@ bool append_quic_stream_items_for_packet(
     HexDumpService& hex_dump_service,
     std::span<const std::uint8_t> initial_secret_connection_id
 ) {
+    // Stream-level QUIC labeling is allowed only after the scanned connection prefix
+    // yields a confirmed client Initial connection ID.
+    if (initial_secret_connection_id.empty()) {
+        return false;
+    }
+
     const auto presentation = build_quic_stream_packet_presentation(
         session,
         flow_index,
