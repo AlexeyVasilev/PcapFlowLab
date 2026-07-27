@@ -226,6 +226,50 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet summary exposes a default-expanded TLS `ServerHello` layer;
+  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
+- `tests/unit/PacketProtocolDetailsTests.cpp`
+  - packet-local raw TLS parsing asserts:
+    - one complete record and no trailing bytes;
+    - payload length `96`, record length `91`, handshake length `87`;
+    - handshake type `ServerHello`, selected TLS version `TLS 1.2`, selected cipher suite `0xc02f`;
+    - session ID length `32`, compression method `0`, extension count `3`.
+  - Packet Details Protocol text asserts the current rendered values for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`;
+    - extension names `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
+- `tests/unit/StreamQueryTests.cpp`
+  - fast-mode stream query returns one row:
+    - `TLS ServerHello | 96 bytes | packet #1`;
+    - stream direction matches the packet-row direction for packet `0`.
+  - stream protocol details stay semantically aligned with packet protocol details for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet summary exposes a default-expanded TLS `ServerHello` layer;
+  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
+- `tests/unit/PacketProtocolDetailsTests.cpp`
+  - packet-local raw TLS parsing asserts:
+    - one complete record and no trailing bytes;
+    - payload length `96`, record length `91`, handshake length `87`;
+    - handshake type `ServerHello`, selected TLS version `TLS 1.2`, selected cipher suite `0xc02f`;
+    - session ID length `32`, compression method `0`, extension count `3`.
+  - Packet Details Protocol text asserts the current rendered values for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`;
+    - extension names `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
+- `tests/unit/StreamQueryTests.cpp`
+  - fast-mode stream query returns one row:
+    - `TLS ServerHello | 96 bytes | packet #1`;
+    - stream direction matches the packet-row direction for packet `0`.
+  - stream protocol details stay semantically aligned with packet protocol details for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`.
 
 #### Unique purpose
 
@@ -393,6 +437,28 @@ Current additional TLS fields available only in Protocol:
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet summary exposes a default-expanded TLS `ServerHello` layer;
+  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
+- `tests/unit/PacketProtocolDetailsTests.cpp`
+  - packet-local raw TLS parsing asserts:
+    - one complete record and no trailing bytes;
+    - payload length `96`, record length `91`, handshake length `87`;
+    - handshake type `ServerHello`, selected TLS version `TLS 1.2`, selected cipher suite `0xc02f`;
+    - session ID length `32`, compression method `0`, extension count `3`.
+  - Packet Details Protocol text asserts the current rendered values for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`;
+    - extension names `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
+- `tests/unit/StreamQueryTests.cpp`
+  - fast-mode stream query returns one row:
+    - `TLS ServerHello | 96 bytes | packet #1`;
+    - stream direction matches the packet-row direction for packet `0`.
+  - stream protocol details stay semantically aligned with packet protocol details for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`.
 
 #### Unique purpose
 
@@ -401,11 +467,9 @@ Current additional TLS fields available only in Protocol:
 
 #### Missing assertions
 
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested.
-- Stream label is not tested.
-- No ServerHello-specific fields are asserted from the PCAP path.
 - Direction text in the PFL export should be normalized against the manually verified server-to-client packet direction before turning it into a future contract.
+- No user-facing field currently surfaces compression method directly, so that fact is only pinned through packet-local TLS payload parsing.
+- Packet Details Summary still does not expose structured session-ID or extension inventories.
 
 #### Manual Wireshark verification required
 
@@ -574,6 +638,32 @@ Current additional TLS fields available only in Protocol:
   - matching raw bytes yield service hint `p101-fmf.icloud.com`.
 - `tests/unit/ImportTests.cpp`
   - imported flow list contains a `tls` flow with service hint `p101-fmf.icloud.com`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet summary exposes a default-expanded TLS `ClientHello` layer;
+  - summary title contains `Transport Layer Security` and `ClientHello`;
+  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `SNI`.
+- `tests/unit/PacketProtocolDetailsTests.cpp`
+  - packet-local raw TLS parsing asserts:
+    - one complete record and no trailing bytes;
+    - payload length `517`, record length `512`, handshake length `508`;
+    - handshake type `ClientHello`, handshake version `TLS 1.2`;
+    - session ID length `32`, cipher-suite count `21`, compression-method count `1`, extension count `16`;
+    - SNI `p101-fmf.icloud.com`;
+    - ALPN includes `h2` and `http/1.1`;
+    - supported versions include `TLS 1.3`, `TLS 1.2`, `TLS 1.1`, and `TLS 1.0`.
+  - Packet Details Protocol text asserts the current rendered values for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`, `Handshake Version`;
+    - `Session ID`, `Cipher Suites`, `Extensions`;
+    - `SNI`, `ALPN`, `Supported Versions`.
+- `tests/unit/StreamQueryTests.cpp`
+  - fast-mode stream query returns one row:
+    - `TLS ClientHello | 517 bytes | packet #1`;
+    - stream direction matches the packet-row direction for packet `0`.
+  - stream protocol details stay semantically aligned with packet protocol details for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`, `Handshake Version`;
+    - `SNI`, `ALPN`, `Supported Versions`.
 
 #### Unique purpose
 
@@ -582,12 +672,8 @@ Current additional TLS fields available only in Protocol:
 
 #### Missing assertions
 
-- Packet Details Summary is not tested.
-- Packet Details Protocol is not tested from the PCAP path.
-- Stream label is not tested.
-- Exact ClientHello fields other than service hint are not asserted.
-- Extension count and supported-version list are not asserted.
-- ALPN presence is not asserted.
+- Exact extension-name inventory is not asserted yet.
+- The current Packet Details Summary does not expose structured cipher-suite, extension, or supported-version lists, so those remain protocol-text/raw-parse contracts only.
 
 #### Manual Wireshark verification required
 
@@ -702,11 +788,37 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
-  - Packet Details Protocol contains `TLS`;
-  - `Handshake Type: ServerHello`;
-  - `Selected TLS Version:`;
-  - `Selected Cipher Suite:`;
-  - `Session ID:`.
+  - packet-local raw TLS parsing asserts:
+    - payload length `1400`;
+    - two complete records plus `179` trailing bytes;
+    - first record `Handshake`, record version `TLS 1.2`, record length `1210`, handshake length `1206`;
+    - `ServerHello` selects `TLS 1.3` and cipher suite `0x1301`;
+    - session ID length `32`, compression method `0`, extension count `2`;
+    - second record is `ChangeCipherSpec` with record length `1`.
+  - Packet Details Protocol text asserts the current rendered values for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`, `Session ID`, `Extensions`.
+- `tests/unit/PacketDetailsTests.cpp`
+  - packet summary exposes a TLS `ServerHello` layer with current title and fields;
+  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`;
+  - the test deliberately does not pin multi-record packet-local summary layer count.
+- `tests/unit/StreamQueryTests.cpp`
+  - fast-mode stream query returns exactly three rows:
+    - `TLS ServerHello | 1215 bytes | packet #1`;
+    - `TLS ChangeCipherSpec | 6 bytes | packet #1`;
+    - `TLS Record Fragment (partial) | 179 bytes | packet #1`.
+  - all three rows keep the packet-row direction for packet `0`.
+  - `TLS ServerHello` stream protocol details stay semantically aligned with packet protocol details for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`;
+    - `Selected TLS Version`, `Selected Cipher Suite`.
+  - `TLS ChangeCipherSpec` protocol details assert:
+    - `Record Type: ChangeCipherSpec`;
+    - `Record Version: TLS 1.2 (0x0303)`;
+    - `Record Length: 1`;
+    - no `Handshake Type` field.
+  - `TLS Record Fragment (partial)` asserts only the current conservative partial-record message and absence of fabricated `Record Type`, `Handshake Type`, `Selected TLS Version`, and `Selected Cipher Suite` fields.
 
 #### Unique purpose
 
@@ -715,9 +827,6 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 
 #### Missing assertions
 
-- Packet Details Summary is not tested directly.
-- Stream label is not tested.
-- Exact selected-version and cipher-suite values are not asserted.
 - Ordered multi-record packet-local Summary projection is not tested because current Packet Details Summary exposes only one TLS layer.
 - ChangeCipherSpec and partial-fragment packet-local Summary cards do not yet exist.
 
@@ -828,16 +937,30 @@ Current additional TLS fields available only in Protocol:
   - packet summary layers end with `tcp` then `tls`;
   - TCP is not expanded by default;
   - TLS is expanded by default;
-  - TLS title contains `Transport Layer Security`.
+  - TLS title contains `Transport Layer Security` and `ClientHello`;
+  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `SNI`.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
-  - Packet Details Protocol contains `TLS`;
-  - `Record Type: Handshake`;
-  - `Record Version:`;
-  - `Handshake Type: ClientHello`;
-  - `Handshake Version:`;
-  - `Cipher Suites:`;
-  - `Extensions:`;
-  - `SNI: auth.split.io`.
+  - packet-local raw TLS parsing asserts:
+    - one complete record and no trailing bytes;
+    - payload length `517`, record length `512`, handshake length `508`;
+    - handshake type `ClientHello`, handshake version `TLS 1.2`;
+    - session ID length `32`, cipher-suite count `16`, compression-method count `1`, extension count `18`;
+    - SNI `auth.split.io`;
+    - ALPN includes `h2` and `http/1.1`;
+    - supported versions include `TLS 1.3` and `TLS 1.2`.
+  - Packet Details Protocol text asserts the current rendered values for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`, `Handshake Version`;
+    - `Session ID`, `Cipher Suites`, `Extensions`;
+    - `SNI`, `ALPN`, `Supported Versions`.
+- `tests/unit/StreamQueryTests.cpp`
+  - fast-mode stream query returns one row:
+    - `TLS ClientHello | 517 bytes | packet #1`;
+    - stream direction matches the packet-row direction for packet `0`.
+  - stream protocol details stay semantically aligned with packet protocol details for:
+    - `Record Type`, `Record Version`, `Record Length`;
+    - `Handshake Type`, `Handshake Length`, `Handshake Version`;
+    - `SNI`, `ALPN`, `Supported Versions`.
 - `tests/ui/MainControllerUiTests.cpp`
   - analysis pane reports protocol hint `TLS`;
   - protocol version text is non-empty;
@@ -851,10 +974,7 @@ Current additional TLS fields available only in Protocol:
 
 #### Missing assertions
 
-- Stream label is not tested from the PCAP path.
-- Exact selected summary fields are not exhaustively asserted.
-- Exact ClientHello extension inventory is not asserted.
-- Supported-version and ALPN fields are not asserted.
+- Exact ClientHello extension-name inventory is not asserted.
 - The current Packet Details Summary does not expose structured cipher-suite, extension, or supported-version lists.
 
 #### Manual Wireshark verification required

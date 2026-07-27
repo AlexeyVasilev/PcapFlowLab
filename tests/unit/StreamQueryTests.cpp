@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -253,6 +254,51 @@ std::filesystem::path fixture_path(const std::filesystem::path& relative_path) {
 
 bool starts_with(const std::string_view value, const std::string_view prefix) {
     return value.rfind(prefix, 0U) == 0U;
+}
+
+std::string_view trim_ascii(std::string_view text) {
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r')) {
+        text.remove_prefix(1U);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r')) {
+        text.remove_suffix(1U);
+    }
+    return text;
+}
+
+std::optional<std::string_view> find_protocol_detail_value(
+    const std::string_view protocol_text,
+    const std::string_view label_with_colon
+) {
+    std::size_t line_start = 0U;
+    while (line_start <= protocol_text.size()) {
+        const auto line_end = protocol_text.find('\n', line_start);
+        const auto raw_line = protocol_text.substr(
+            line_start,
+            line_end == std::string_view::npos ? protocol_text.size() - line_start : line_end - line_start
+        );
+        const auto line = trim_ascii(raw_line);
+        if (line.starts_with(label_with_colon)) {
+            return trim_ascii(line.substr(label_with_colon.size()));
+        }
+        if (line_end == std::string_view::npos) {
+            break;
+        }
+        line_start = line_end + 1U;
+    }
+    return std::nullopt;
+}
+
+void expect_matching_protocol_detail(
+    const std::string_view packet_protocol_text,
+    const std::string_view stream_protocol_text,
+    const std::string_view label_with_colon
+) {
+    const auto packet_value = find_protocol_detail_value(packet_protocol_text, label_with_colon);
+    const auto stream_value = find_protocol_detail_value(stream_protocol_text, label_with_colon);
+    PFL_REQUIRE(packet_value.has_value());
+    PFL_REQUIRE(stream_value.has_value());
+    PFL_EXPECT(*packet_value == *stream_value);
 }
 
 const StreamItemRow* find_stream_row_by_label(const std::vector<StreamItemRow>& rows, const std::string_view label) {
@@ -1024,6 +1070,144 @@ void run_stream_query_tests() {
         PFL_EXPECT(data_like_it != rows.end());
         PFL_EXPECT(!data_like_it->protocol_text.empty());
         PFL_EXPECT(!data_like_it->payload_hex_text.empty());
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_client_hello_1.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto packet_protocol_text = session.read_packet_protocol_details_text(*packet);
+
+        PFL_EXPECT(rows[0].label == "TLS ClientHello");
+        PFL_EXPECT(rows[0].byte_count == 517U);
+        PFL_EXPECT(rows[0].packet_count == 1U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(!rows[0].payload_hex_text.empty());
+        PFL_EXPECT(!rows[0].protocol_text.empty());
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "SNI:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "ALPN:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Supported Versions:");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_client_hello_5.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto packet_protocol_text = session.read_packet_protocol_details_text(*packet);
+
+        PFL_EXPECT(rows[0].label == "TLS ClientHello");
+        PFL_EXPECT(rows[0].byte_count == 517U);
+        PFL_EXPECT(rows[0].packet_count == 1U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(!rows[0].payload_hex_text.empty());
+        PFL_EXPECT(!rows[0].protocol_text.empty());
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "SNI:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "ALPN:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Supported Versions:");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_2_server_hello_4.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 1U);
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto packet_protocol_text = session.read_packet_protocol_details_text(*packet);
+
+        PFL_EXPECT(rows[0].label == "TLS ServerHello");
+        PFL_EXPECT(rows[0].byte_count == 96U);
+        PFL_EXPECT(rows[0].packet_count == 1U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(!rows[0].payload_hex_text.empty());
+        PFL_EXPECT(!rows[0].protocol_text.empty());
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Selected TLS Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Selected Cipher Suite:");
+    }
+
+    {
+        CaptureSession session {};
+        PFL_EXPECT(session.open_capture(fixture_path("parsing/tls/tls_1_3_server_hello_6.pcap"), fast_options));
+
+        const auto packet_rows = session.list_flow_packets(0);
+        PFL_EXPECT(packet_rows.size() == 1U);
+        const auto rows = session.list_flow_stream_items(0);
+        PFL_EXPECT(rows.size() == 3U);
+        const auto packet = session.find_packet(0U);
+        PFL_REQUIRE(packet.has_value());
+        const auto packet_protocol_text = session.read_packet_protocol_details_text(*packet);
+
+        PFL_EXPECT(rows[0].label == "TLS ServerHello");
+        PFL_EXPECT(rows[0].byte_count == 1215U);
+        PFL_EXPECT(rows[0].packet_count == 1U);
+        PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Type:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Handshake Length:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Selected TLS Version:");
+        expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Selected Cipher Suite:");
+
+        PFL_EXPECT(rows[1].label == "TLS ChangeCipherSpec");
+        PFL_EXPECT(rows[1].byte_count == 6U);
+        PFL_EXPECT(rows[1].packet_count == 1U);
+        PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[1].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Record Type:").has_value());
+        PFL_EXPECT(*find_protocol_detail_value(rows[1].protocol_text, "Record Type:") == "ChangeCipherSpec");
+        PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Record Version:").has_value());
+        PFL_EXPECT(*find_protocol_detail_value(rows[1].protocol_text, "Record Version:") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Record Length:").has_value());
+        PFL_EXPECT(*find_protocol_detail_value(rows[1].protocol_text, "Record Length:") == "1");
+        PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Handshake Type:").has_value() == false);
+
+        PFL_EXPECT(rows[2].label == "TLS Record Fragment (partial)");
+        PFL_EXPECT(rows[2].byte_count == 179U);
+        PFL_EXPECT(rows[2].packet_count == 1U);
+        PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t> {0U});
+        PFL_EXPECT(rows[2].direction_text == direction_for_packet(packet_rows, 0U));
+        PFL_EXPECT(rows[2].protocol_text.find("complete TLS record") != std::string::npos);
+        PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Record Type:").has_value() == false);
+        PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Handshake Type:").has_value() == false);
+        PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Selected TLS Version:").has_value() == false);
+        PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Selected Cipher Suite:").has_value() == false);
     }
 
     {
