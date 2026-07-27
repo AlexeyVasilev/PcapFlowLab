@@ -56,7 +56,8 @@ Current structured-parser limitations and boundaries:
 
 - handshake messages spanning multiple TLS records are not reconstructed across record boundaries yet;
 - the parser consumes only the supplied TLS byte span and does not inspect Ethernet/IP/TCP state itself;
-- Packet Details Summary, Stream presentation, flow hints, and UI are not yet migrated to this parser in this pass.
+- packet-local Packet Details Summary now uses the structured parser through the shared selected-packet Summary DTO;
+- Packet Details Protocol, Stream presentation, and flow hints are not yet migrated to this parser in this pass.
 
 ## Inventory
 
@@ -68,12 +69,12 @@ Current structured-parser limitations and boundaries:
 | `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS AppData hint coverage | Yes | Keep for now |
 | `tls_1_2_change_cipher_spec_2.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS ChangeCipherSpec hint coverage | Yes | Keep for now |
 | `tls_1_2_new_session_ticket_9.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP NewSessionTicket hint coverage | Yes | Keep for now |
-| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `TlsInspectionParserTests` | Weak | Small TLS 1.2 ServerHello PCAP with newly documented manual baseline | Partially complete | Keep for now |
+| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `TlsInspectionParserTests` | Medium | Small TLS 1.2 ServerHello PCAP with manually verified packet-local Summary baseline | Partially complete | Keep for now |
 | `tls_1_3_app_data_7.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 AppData hint coverage | Yes | Keep for now |
 | `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 ChangeCipherSpec hint coverage | Yes | Keep for now |
-| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with newly documented manual baseline | Partially complete | Keep for now |
-| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketProtocolDetailsTests`, `TlsInspectionParserTests` | Medium | Current ServerHello protocol-details fixture; packet-local multiple-record baseline | Partially complete | Keep for now |
-| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet-details and UI fixture with newly documented manual baseline | Partially complete | Keep for now |
+| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `PacketDetailsTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with packet-local structured Summary baseline | Partially complete | Keep for now |
+| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `TlsInspectionParserTests` | Strong | Current anchor for packet-local multiple-record TLS Summary behavior | Partially complete | Keep for now |
+| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet-summary and UI fixture with manually verified baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
 | `tls_server_handshake_retransmit_6.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Retransmission/deduplication and multi-packet contribution coverage | Yes | Keep for now |
@@ -351,7 +352,7 @@ Source: `tmp/tls_inspection_1/pfl/pfl_tls_1_2_server_hello_4_info.txt`
 
 ##### Packet Details Summary
 
-Currently shown:
+Now shown from the structured packet-local TLS parser:
 
 - `Frame`;
 - `Ethernet II`;
@@ -359,7 +360,9 @@ Currently shown:
 - `IPv4`;
 - `TCP`;
 - `Transport Layer Security, ServerHello`;
-- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `Selected TLS Version`.
+- TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+- TLS fields: `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`;
+- TLS fields: `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, `Extension Count`.
 
 ##### Packet Details Protocol
 
@@ -419,7 +422,9 @@ Current additional TLS fields available only in Protocol:
   - Selected TLS Version `0x0303`.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary exposes a default-expanded TLS `ServerHello` layer;
-  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
+  - summary fields assert `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+  - summary fields assert `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`;
+  - summary fields assert `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - one complete record and no trailing bytes;
@@ -448,8 +453,8 @@ Current additional TLS fields available only in Protocol:
 #### Missing assertions
 
 - Direction text in the PFL export should be normalized against the manually verified server-to-client packet direction before turning it into a future contract.
-- No user-facing field currently surfaces compression method directly, so that fact is only pinned through packet-local TLS payload parsing.
-- Packet Details Summary still does not expose structured session-ID or extension inventories.
+- Packet Details Summary still does not expose the raw Session ID bytes or extension-name inventory as structured lists.
+- Stream Item Summary has not yet been migrated to the structured TLS parser.
 
 #### Manual Wireshark verification required
 
@@ -552,7 +557,7 @@ Source: `tmp/tls_inspection_1/pfl/pfl_tls_1_3_client_hello_5_info.txt`
 
 ##### Packet Details Summary
 
-Currently shown:
+Now shown from the structured packet-local TLS parser:
 
 - `Frame`;
 - `Ethernet II`;
@@ -560,7 +565,9 @@ Currently shown:
 - `IPv4`;
 - `TCP`;
 - `Transport Layer Security, ClientHello`;
-- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `SNI`.
+- TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+- TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
+- TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, `Supported TLS Versions`.
 
 ##### Packet Details Protocol
 
@@ -630,7 +637,9 @@ Current additional TLS fields available only in Protocol:
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary exposes a default-expanded TLS `ClientHello` layer;
   - summary title contains `Transport Layer Security` and `ClientHello`;
-  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `SNI`.
+  - summary fields assert `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+  - summary fields assert `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`;
+  - summary fields assert `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - one complete record and no trailing bytes;
@@ -662,7 +671,8 @@ Current additional TLS fields available only in Protocol:
 #### Missing assertions
 
 - Exact extension-name inventory is not asserted yet.
-- The current Packet Details Summary does not expose structured cipher-suite, extension, or supported-version lists, so those remain protocol-text/raw-parse contracts only.
+- Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
+- Stream Item Summary has not yet been migrated to the structured TLS parser.
 
 #### Manual Wireshark verification required
 
@@ -709,7 +719,7 @@ Source: `tmp/tls_inspection_1/pfl/pfl_tls_1_3_server_hello_6_info.txt`
 
 ##### Packet Details Summary
 
-Currently shown:
+Now shown from the structured packet-local TLS parser:
 
 - `Frame`;
 - `Ethernet II`;
@@ -717,7 +727,12 @@ Currently shown:
 - `IPv4`;
 - `TCP`;
 - `Transport Layer Security, ServerHello`;
-- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `Selected TLS Version`.
+- `Transport Layer Security, ChangeCipherSpec`;
+- `TLS Record Fragment (partial)`;
+- complete-record fields include `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+- handshake fields include `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`;
+- `ServerHello` additionally exposes `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`;
+- the trailing fragment exposes only conservative partial-record fields such as `Status`, `Available Bytes`, and header-derived values when present.
 
 ##### Packet Details Protocol
 
@@ -796,9 +811,13 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
     - `Handshake Type`, `Handshake Length`;
     - `Selected TLS Version`, `Selected Cipher Suite`, `Session ID`, `Extensions`.
 - `tests/unit/PacketDetailsTests.cpp`
-  - packet summary exposes a TLS `ServerHello` layer with current title and fields;
-  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`;
-  - the test deliberately does not pin multi-record packet-local summary layer count.
+  - packet summary exposes exactly three TLS layers after TCP in wire order:
+    - `Transport Layer Security, ServerHello`;
+    - `Transport Layer Security, ChangeCipherSpec`;
+    - `TLS Record Fragment (partial)`;
+  - the first layer asserts `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`, `Handshake Type`, `Handshake Length`, `ServerHello Legacy Version`, `Session ID Length`, `Selected TLS Version`, `Selected Cipher Suite`, `Compression Method`, and `Extension Count`;
+  - the second layer asserts `Record Type`, `Record Legacy Version`, `Record Length`, and `Total Record Size`, with no fabricated handshake fields;
+  - the third layer asserts conservative partial-record fields only, including `Status` and `Available Bytes`.
 - `tests/unit/StreamQueryTests.cpp`
   - fast-mode stream query returns exactly three rows:
     - `TLS ServerHello | 1215 bytes | packet #1`;
@@ -823,8 +842,9 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 
 #### Missing assertions
 
-- Ordered multi-record packet-local Summary projection is not tested because current Packet Details Summary exposes only one TLS layer.
-- ChangeCipherSpec and partial-fragment packet-local Summary cards do not yet exist.
+- Packet Details Summary does not yet expose raw Session ID bytes or extension-name inventories as structured lists.
+- No current fixture asserts the multiple-handshakes-in-one-record child-layer behavior.
+- Stream Item Summary has not yet been migrated to the structured TLS parser.
 
 #### Manual Wireshark verification required
 
@@ -869,7 +889,7 @@ Source: `tmp/tls_inspection_1/pfl/pfl_tls_client_hello_1_info.txt`
 
 ##### Packet Details Summary
 
-Currently shown:
+Now shown from the structured packet-local TLS parser:
 
 - `Frame`;
 - `Ethernet II`;
@@ -877,7 +897,9 @@ Currently shown:
 - `IPv4`;
 - `TCP`;
 - `Transport Layer Security, ClientHello`;
-- TLS fields: `Handshake Type`, `Record Type`, `Record Version`, `SNI`.
+- TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+- TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
+- TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, `Supported TLS Versions`.
 
 ##### Packet Details Protocol
 
@@ -943,7 +965,9 @@ Current additional TLS fields available only in Protocol:
   - TCP is not expanded by default;
   - TLS is expanded by default;
   - TLS title contains `Transport Layer Security` and `ClientHello`;
-  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `SNI`.
+  - summary fields assert `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+  - summary fields assert `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`;
+  - summary fields assert `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - one complete record and no trailing bytes;
@@ -974,13 +998,14 @@ Current additional TLS fields available only in Protocol:
 
 #### Unique purpose
 
-- Strongest current ClientHello packet-details and UI fixture.
-- Current best baseline for future ClientHello Summary parity work.
+- Strongest current ClientHello packet-summary and UI fixture.
+- Current best baseline for packet-local structured ClientHello Summary parity.
 
 #### Missing assertions
 
 - Exact ClientHello extension-name inventory is not asserted.
-- The current Packet Details Summary does not expose structured cipher-suite, extension, or supported-version lists.
+- Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
+- Stream Item Summary has not yet been migrated to the structured TLS parser.
 
 #### Manual Wireshark verification required
 
@@ -1079,7 +1104,7 @@ Current additional TLS fields available only in Protocol:
 
 ## Target TLS Summary presentation contract
 
-The global direction is to remove the Protocol tab. TLS data therefore needs a structured Summary contract first, with Protocol retained only temporarily for parity and debugging.
+The global direction is still to remove the Protocol tab. Packet-local TLS Summary now uses the structured parser; Protocol remains temporary for parity and debugging while Stream Summary still needs migration.
 
 ### Packet Summary mapping rule
 
@@ -1087,11 +1112,11 @@ The global direction is to remove the Protocol tab. TLS data therefore needs a s
 - One partial trailing TLS record maps to one TLS Summary layer/card representing a partial fragment.
 - If a packet contains several TLS records, Packet Details Summary must expose all of them in wire order.
 
-For `tls_1_3_server_hello_6.pcap`, the target ordered packet-local TLS layers are:
+For `tls_1_3_server_hello_6.pcap`, the current ordered packet-local TLS layers are:
 
-1. `TLS ServerHello`, `1215` total bytes;
-2. `TLS ChangeCipherSpec`, `6` total bytes;
-3. `TLS Record Fragment`, `179` available bytes.
+1. `Transport Layer Security, ServerHello`, `1215` total bytes;
+2. `Transport Layer Security, ChangeCipherSpec`, `6` total bytes;
+3. `TLS Record Fragment (partial)`, `179` available bytes.
 
 ### Target Packet Summary fields
 
@@ -1164,16 +1189,17 @@ For constricted or partial items, Summary should also preserve:
 
 ## Multiple-record packet behavior
 
-Packet-local TLS Summary must no longer collapse a multi-record packet into a single TLS layer. The manually characterized `tls_1_3_server_hello_6.pcap` fixture is the current anchor for this rule:
+Packet-local TLS Summary no longer collapses a multi-record packet into a single TLS layer. The manually characterized `tls_1_3_server_hello_6.pcap` fixture is the current anchor for this rule:
 
 - the packet contains a complete `ServerHello` record;
 - then a complete `ChangeCipherSpec` record;
 - then a partial trailing TLS fragment;
-- all three items must remain visible and ordered in both packet-local and stream-local summary views.
+- all three items must remain visible and ordered in packet-local Summary;
+- Stream Item Summary remains a separate migration task.
 
 ## Structured list presentation
 
-The target Summary presentation should use structured expandable lists for:
+The long-term Summary presentation should use structured expandable lists for:
 
 - cipher suites;
 - compression methods;
@@ -1184,13 +1210,13 @@ The target Summary presentation should use structured expandable lists for:
 - signature algorithms;
 - key shares.
 
-The current long comma-separated Protocol strings are a temporary migration format, not the target UI representation.
+In this pass, packet-local Summary uses exact scalar counts plus compact text for ALPN and supported versions. The current long comma-separated Protocol strings remain a temporary migration format, not the target UI representation.
 
 ## Proposed shared structured TLS model
 
-This is now partially implemented as an isolated bounded parser with direct tests, but it is not wired into production presentation in this pass.
+This is now partially adopted in production presentation: packet-local Summary uses the bounded structured parser, while Packet Details Protocol and stream-local TLS presentation still use legacy text-oriented paths.
 
-The current code still has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and Summary extraction in `src/app/session/SessionFormatting.cpp` that reparses Protocol text. The new direct parser tests are an intermediate step toward replacing that text-driven Summary dependency with one shared structured TLS model.
+The current code still has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and stream/protocol presentation that has not yet been migrated. `src/app/session/SessionFormatting.cpp` no longer derives TLS Summary fields by reparsing Protocol text.
 
 Suggested narrow internal model:
 

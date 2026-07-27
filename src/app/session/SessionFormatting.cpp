@@ -1,4 +1,5 @@
 #include "app/session/SessionFormatting.h"
+#include "core/services/TlsInspectionParser.h"
 
 #include <algorithm>
 #include <ctime>
@@ -3182,6 +3183,341 @@ std::optional<PacketSummaryLayer> build_icmpv6_summary_layer(const PacketDetails
     };
 }
 
+bool looks_like_tls_summary_payload(std::span<const std::uint8_t> payload) {
+    if (payload.size() < 5U) {
+        return false;
+    }
+
+    const auto content_type = payload[0];
+    if (content_type < 20U || content_type > 23U) {
+        return false;
+    }
+
+    if (payload[1] != 0x03U || payload[2] > 0x04U) {
+        return false;
+    }
+
+    const auto record_length = static_cast<std::size_t>(
+        (static_cast<std::uint16_t>(payload[3]) << 8U) |
+        static_cast<std::uint16_t>(payload[4])
+    );
+    return record_length > 0U && record_length <= (payload.size() - 5U);
+}
+
+std::string format_tls_version_value(const std::uint16_t version) {
+    switch (version) {
+    case 0x0301U:
+        return "TLS 1.0 (0x0301)";
+    case 0x0302U:
+        return "TLS 1.1 (0x0302)";
+    case 0x0303U:
+        return "TLS 1.2 (0x0303)";
+    case 0x0304U:
+        return "TLS 1.3 (0x0304)";
+    default:
+        return format_hex_value(version, 4);
+    }
+}
+
+std::string format_tls_record_type_value(
+    const TlsRecordContentTypeKind kind,
+    const std::optional<std::uint8_t> content_type
+) {
+    switch (kind) {
+    case TlsRecordContentTypeKind::change_cipher_spec:
+        return "ChangeCipherSpec";
+    case TlsRecordContentTypeKind::alert:
+        return "Alert";
+    case TlsRecordContentTypeKind::handshake:
+        return "Handshake";
+    case TlsRecordContentTypeKind::application_data:
+        return "ApplicationData";
+    case TlsRecordContentTypeKind::unknown:
+        return content_type.has_value() ? format_hex_value(*content_type, 2) : "Unknown";
+    }
+
+    return "Unknown";
+}
+
+std::string format_tls_handshake_type_value(
+    const TlsHandshakeKind kind,
+    const std::optional<std::uint8_t> handshake_type
+) {
+    switch (kind) {
+    case TlsHandshakeKind::client_hello:
+        return "ClientHello";
+    case TlsHandshakeKind::server_hello:
+        return "ServerHello";
+    case TlsHandshakeKind::new_session_ticket:
+        return "NewSessionTicket";
+    case TlsHandshakeKind::encrypted_extensions:
+        return "EncryptedExtensions";
+    case TlsHandshakeKind::certificate:
+        return "Certificate";
+    case TlsHandshakeKind::server_key_exchange:
+        return "ServerKeyExchange";
+    case TlsHandshakeKind::certificate_request:
+        return "CertificateRequest";
+    case TlsHandshakeKind::server_hello_done:
+        return "ServerHelloDone";
+    case TlsHandshakeKind::certificate_verify:
+        return "CertificateVerify";
+    case TlsHandshakeKind::client_key_exchange:
+        return "ClientKeyExchange";
+    case TlsHandshakeKind::finished:
+        return "Finished";
+    case TlsHandshakeKind::unknown:
+        return handshake_type.has_value() ? format_hex_value(*handshake_type, 2) : "Unknown";
+    }
+
+    return "Unknown";
+}
+
+std::string format_tls_cipher_suite_value(const std::uint16_t cipher_suite) {
+    switch (cipher_suite) {
+    case 0x002FU:
+        return "TLS_RSA_WITH_AES_128_CBC_SHA (0x002f)";
+    case 0x0035U:
+        return "TLS_RSA_WITH_AES_256_CBC_SHA (0x0035)";
+    case 0x009CU:
+        return "TLS_RSA_WITH_AES_128_GCM_SHA256 (0x009c)";
+    case 0x009DU:
+        return "TLS_RSA_WITH_AES_256_GCM_SHA384 (0x009d)";
+    case 0x1301U:
+        return "TLS_AES_128_GCM_SHA256 (0x1301)";
+    case 0x1302U:
+        return "TLS_AES_256_GCM_SHA384 (0x1302)";
+    case 0x1303U:
+        return "TLS_CHACHA20_POLY1305_SHA256 (0x1303)";
+    case 0xC02BU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xc02b)";
+    case 0xC02CU:
+        return "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xc02c)";
+    case 0xC02FU:
+        return "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)";
+    case 0xC030U:
+        return "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xc030)";
+    case 0xC013U:
+        return "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA (0xc013)";
+    case 0xC014U:
+        return "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA (0xc014)";
+    case 0xCCA8U:
+        return "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca8)";
+    case 0xCCA9U:
+        return "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xcca9)";
+    default:
+        return format_hex_value(cipher_suite, 4);
+    }
+}
+
+std::string format_tls_compression_method_value(const std::uint8_t compression_method) {
+    return compression_method == 0U ? "null (0)" : std::to_string(static_cast<unsigned>(compression_method));
+}
+
+std::string join_tls_texts(const std::vector<std::string>& values, const std::size_t limit = 8U) {
+    if (values.empty()) {
+        return {};
+    }
+
+    std::ostringstream builder {};
+    const auto emit_count = std::min(values.size(), limit);
+    for (std::size_t index = 0U; index < emit_count; ++index) {
+        if (index != 0U) {
+            builder << ", ";
+        }
+        builder << values[index];
+    }
+    if (values.size() > emit_count) {
+        builder << " (" << values.size() << " total)";
+    }
+    return builder.str();
+}
+
+std::string join_tls_version_values(const std::vector<std::uint16_t>& versions, const std::size_t limit = 8U) {
+    if (versions.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> formatted_versions {};
+    formatted_versions.reserve(versions.size());
+    for (const auto version : versions) {
+        formatted_versions.push_back(format_tls_version_value(version));
+    }
+    return join_tls_texts(formatted_versions, limit);
+}
+
+std::string format_tls_session_id_value(std::span<const std::uint8_t> bytes) {
+    return bytes.empty() ? "<empty>" : format_hex_byte_sequence(bytes, ' ');
+}
+
+std::string tls_partial_record_status_text(const TlsRecordStatus status) {
+    switch (status) {
+    case TlsRecordStatus::partial_header:
+        return "Incomplete record header";
+    case TlsRecordStatus::partial_body:
+        return "Incomplete record body";
+    case TlsRecordStatus::complete:
+        return "Complete";
+    }
+
+    return "Incomplete record";
+}
+
+std::string tls_record_summary_title(const TlsRecordModel& record) {
+    if (record.status != TlsRecordStatus::complete) {
+        return "TLS Record Fragment (partial)";
+    }
+
+    if (record.content_type_kind == TlsRecordContentTypeKind::handshake &&
+        record.handshake_messages.size() == 1U &&
+        record.handshake_messages[0].status == TlsHandshakeStatus::complete) {
+        const auto handshake_type = format_tls_handshake_type_value(
+            record.handshake_messages[0].kind,
+            record.handshake_messages[0].type
+        );
+        if (!handshake_type.empty() && handshake_type != "Unknown") {
+            return "Transport Layer Security, " + handshake_type;
+        }
+    }
+
+    return "Transport Layer Security, " +
+        format_tls_record_type_value(record.content_type_kind, record.content_type);
+}
+
+void append_tls_handshake_fields(
+    std::vector<PacketSummaryField>& fields,
+    const TlsHandshakeModel& handshake
+) {
+    if (handshake.type.has_value()) {
+        fields.push_back(make_summary_field(
+            "Handshake Type",
+            format_tls_handshake_type_value(handshake.kind, handshake.type)
+        ));
+    }
+    if (handshake.declared_body_length.has_value()) {
+        fields.push_back(make_summary_field("Handshake Length", std::to_string(*handshake.declared_body_length)));
+    }
+
+    if (handshake.client_hello.has_value()) {
+        const auto& hello = *handshake.client_hello;
+        fields.push_back(make_summary_field("ClientHello Legacy Version", format_tls_version_value(hello.legacy_version)));
+        fields.push_back(make_summary_field("Session ID Length", std::to_string(hello.session_id.size())));
+        fields.push_back(make_summary_field("Session ID", format_tls_session_id_value(hello.session_id)));
+        fields.push_back(make_summary_field("Cipher Suite Count", std::to_string(hello.cipher_suites.size())));
+        fields.push_back(make_summary_field("Compression Method Count", std::to_string(hello.compression_methods.size())));
+        fields.push_back(make_summary_field("Extension Count", std::to_string(hello.extensions.size())));
+        if (!hello.sni_names.empty()) {
+            fields.push_back(make_summary_field("SNI", join_tls_texts(hello.sni_names)));
+        }
+        if (!hello.alpn_protocols.empty()) {
+            fields.push_back(make_summary_field("ALPN", join_tls_texts(hello.alpn_protocols, 4U)));
+        }
+        if (!hello.supported_versions.empty()) {
+            fields.push_back(make_summary_field(
+                "Supported TLS Versions",
+                join_tls_version_values(hello.supported_versions, 8U)
+            ));
+        }
+    } else if (handshake.server_hello.has_value()) {
+        const auto& hello = *handshake.server_hello;
+        fields.push_back(make_summary_field("ServerHello Legacy Version", format_tls_version_value(hello.legacy_version)));
+        fields.push_back(make_summary_field("Session ID Length", std::to_string(hello.session_id.size())));
+        fields.push_back(make_summary_field("Session ID", format_tls_session_id_value(hello.session_id)));
+        fields.push_back(make_summary_field("Selected TLS Version", format_tls_version_value(hello.selected_tls_version)));
+        fields.push_back(make_summary_field("Selected Cipher Suite", format_tls_cipher_suite_value(hello.selected_cipher_suite)));
+        fields.push_back(make_summary_field("Compression Method", format_tls_compression_method_value(hello.compression_method)));
+        fields.push_back(make_summary_field("Extension Count", std::to_string(hello.extensions.size())));
+    }
+}
+
+std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& record) {
+    std::vector<PacketSummaryField> fields {};
+    std::vector<PacketSummaryLayer> children {};
+
+    if (record.status == TlsRecordStatus::complete) {
+        fields.push_back(make_summary_field(
+            "Record Type",
+            format_tls_record_type_value(record.content_type_kind, record.content_type)
+        ));
+        if (record.legacy_version.has_value()) {
+            fields.push_back(make_summary_field("Record Legacy Version", format_tls_version_value(*record.legacy_version)));
+        }
+        if (record.declared_payload_length.has_value()) {
+            fields.push_back(make_summary_field("Record Length", std::to_string(*record.declared_payload_length)));
+        }
+        if (record.total_size.has_value()) {
+            fields.push_back(make_summary_field("Total Record Size", format_byte_count(*record.total_size)));
+        }
+
+        if (record.handshake_messages.size() == 1U) {
+            append_tls_handshake_fields(fields, record.handshake_messages.front());
+        } else if (!record.handshake_messages.empty()) {
+            fields.push_back(make_summary_field("Handshake Count", std::to_string(record.handshake_messages.size())));
+            for (std::size_t index = 0U; index < record.handshake_messages.size(); ++index) {
+                const auto& handshake = record.handshake_messages[index];
+                auto handshake_fields = std::vector<PacketSummaryField> {};
+                append_tls_handshake_fields(handshake_fields, handshake);
+                if (!handshake_fields.empty()) {
+                    children.push_back(PacketSummaryLayer {
+                        .id = "tls_handshake",
+                        .title = "TLS Handshake #" + std::to_string(index + 1U) + ", " +
+                            format_tls_handshake_type_value(handshake.kind, handshake.type),
+                        .fields = std::move(handshake_fields),
+                    });
+                }
+            }
+        }
+
+        return PacketSummaryLayer {
+            .id = "tls",
+            .title = tls_record_summary_title(record),
+            .fields = std::move(fields),
+            .children = std::move(children),
+        };
+    }
+
+    fields.push_back(make_summary_field("Status", tls_partial_record_status_text(record.status)));
+    fields.push_back(make_summary_field("Available Bytes", std::to_string(record.available_bytes)));
+    if (record.content_type.has_value()) {
+        fields.push_back(make_summary_field(
+            "Record Type",
+            format_tls_record_type_value(record.content_type_kind, record.content_type)
+        ));
+    }
+    if (record.legacy_version.has_value()) {
+        fields.push_back(make_summary_field("Record Legacy Version", format_tls_version_value(*record.legacy_version)));
+    }
+    if (record.declared_payload_length.has_value()) {
+        fields.push_back(make_summary_field("Declared Record Length", std::to_string(*record.declared_payload_length)));
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = tls_record_summary_title(record),
+        .fields = std::move(fields),
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
+std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
+    if (!looks_like_tls_summary_payload(transport_payload_bytes)) {
+        return {};
+    }
+
+    TlsInspectionParser parser {};
+    const auto inspection = parser.inspect(transport_payload_bytes);
+
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(inspection.records.size());
+    for (const auto& record : inspection.records) {
+        if (const auto layer = build_tls_summary_layer(record); layer.has_value()) {
+            layers.push_back(*layer);
+        }
+    }
+    return layers;
+}
+
 std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     const PacketDetails& details,
     std::string_view protocol_details_text
@@ -3206,31 +3542,6 @@ std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
     const auto first_line = first_non_empty_line(protocol_details_text);
     if (!first_line.has_value()) {
         return std::nullopt;
-    }
-
-    if (*first_line == "TLS") {
-        std::vector<PacketSummaryField> fields {};
-        const auto handshake_type = find_protocol_detail_value(protocol_details_text, "Handshake Type:");
-        const auto record_type = find_protocol_detail_value(protocol_details_text, "Record Type:");
-        const auto sni = find_protocol_detail_value(protocol_details_text, "SNI:");
-        append_protocol_field_if_present(fields, "Handshake Type", handshake_type);
-        append_protocol_field_if_present(fields, "Record Type", record_type);
-        append_protocol_field_if_present(fields, "Record Version", find_protocol_detail_value(protocol_details_text, "Record Version:"));
-        append_protocol_field_if_present(fields, "SNI", sni);
-        append_protocol_field_if_present(fields, "Selected TLS Version", find_protocol_detail_value(protocol_details_text, "Selected TLS Version:"));
-
-        std::string title = "Transport Layer Security";
-        if (handshake_type.has_value()) {
-            title += ", " + *handshake_type;
-        } else if (record_type.has_value()) {
-            title += ", " + *record_type;
-        }
-
-        return PacketSummaryLayer {
-            .id = "tls",
-            .title = std::move(title),
-            .fields = std::move(fields),
-        };
     }
 
     if (*first_line == "QUIC") {
@@ -4924,8 +5235,13 @@ std::vector<PacketSummaryLayer> build_packet_summary_layers(
         append_layer_if_not_empty(layers, *trailer_layer);
     }
 
-    if (const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
-        protocol_layer.has_value()) {
+    const auto tls_layers = build_tls_summary_layers(options.transport_payload_bytes);
+    if (!tls_layers.empty()) {
+        for (const auto& tls_layer : tls_layers) {
+            append_layer_if_not_empty(layers, tls_layer);
+        }
+    } else if (const auto protocol_layer = build_protocol_text_summary_layer(details, options.protocol_details_text);
+               protocol_layer.has_value()) {
         append_layer_if_not_empty(layers, *protocol_layer);
     }
 

@@ -4,6 +4,7 @@
 #include "app/session/ProtocolPathPresentation.h"
 #include "app/session/SessionFormatting.h"
 #include "core/decode/PacketDecodeSupport.h"
+#include "core/services/PacketPayloadService.h"
 
 #include <algorithm>
 #include <array>
@@ -5703,6 +5704,8 @@ void MainController::reloadSelectedPacketDetails() {
             std::span<const std::uint8_t>(packetBytes.data(), packetBytes.size()),
             *packet
         );
+        PacketPayloadService payload_service {};
+        const auto transport_payload = payload_service.extract_transport_payload(packetBytes, packet->data_link_type);
         packet_details_model_.setPacketDetailsText(buildPacketSummary(*details, *packet, checksum_sections, payload_lengths));
         packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
             session_detail::build_packet_summary_layers(*details, *packet, {
@@ -5716,6 +5719,7 @@ void MainController::reloadSelectedPacketDetails() {
                 }(),
                 .transport_payload_length = payload_lengths.real_payload_length,
                 .original_transport_payload_length = payload_lengths.original_payload_length,
+                .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
                 .protocol_details_text = protocolText.toStdString(),
                 .checksum_summary_lines = [&]() {
                     std::vector<std::string> lines {};

@@ -183,6 +183,7 @@ fn main() {
         "src/core/services/PacketDetailsService.cpp",
         "src/core/services/PacketPayloadService.cpp",
         "src/core/services/PerfOpenLogger.cpp",
+        "src/core/services/TlsInspectionParser.cpp",
         "src/core/services/TlsHandshakeDetails.cpp",
         "src/core/services/TlsPacketProtocolAnalyzer.cpp",
         "src/core/services/QuicPacketProtocolAnalyzer.cpp",

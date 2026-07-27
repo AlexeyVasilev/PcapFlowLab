@@ -3030,6 +3030,8 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
         const auto original_transport_payload_length =
             session_detail::derive_original_transport_payload_length_from_headers(session_, packet);
         const auto captured_transport_payload_length = std::optional<std::uint32_t> {packet.payload_length};
+        PacketPayloadService payload_service {};
+        const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
 
         result.details_available = true;
         result.payload_tab_title = packet_payload_tab_title(*details);
@@ -3041,6 +3043,7 @@ FrontendPacketDetailsDto FrontendSessionAdapter::build_frontend_packet_details(
             .flow_packet_index = flow_packet_index,
             .transport_payload_length = captured_transport_payload_length,
             .original_transport_payload_length = original_transport_payload_length,
+            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
             .protocol_details_text = result.protocol_details_text,
             .checksum_summary_lines = result.checksum_summary_lines,
             .checksum_warning_lines = result.checksum_warning_lines,
