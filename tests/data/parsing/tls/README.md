@@ -43,6 +43,21 @@ For the first four manually characterized fixtures, this document now distinguis
 - current automated test coverage from repository tests;
 - planned presentation contracts that are not yet implemented.
 
+## Structured TLS inspection parser status
+
+A bounded structured TLS inspection parser now has isolated direct fixture contracts for:
+
+- `tls_client_hello_1.pcap`;
+- `tls_1_3_client_hello_5.pcap`;
+- `tls_1_2_server_hello_4.pcap`;
+- `tls_1_3_server_hello_6.pcap`.
+
+Current structured-parser limitations and boundaries:
+
+- handshake messages spanning multiple TLS records are not reconstructed across record boundaries yet;
+- the parser consumes only the supplied TLS byte span and does not inspect Ethernet/IP/TCP state itself;
+- Packet Details Summary, Stream presentation, flow hints, and UI are not yet migrated to this parser in this pass.
+
 ## Inventory
 
 | Fixture | Category | Current consumers | Current contract strength | Unique role | Manual verification | Decision |
@@ -53,12 +68,12 @@ For the first four manually characterized fixtures, this document now distinguis
 | `tls_1_2_app_data_3.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS AppData hint coverage | Yes | Keep for now |
 | `tls_1_2_change_cipher_spec_2.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS ChangeCipherSpec hint coverage | Yes | Keep for now |
 | `tls_1_2_new_session_ticket_9.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP NewSessionTicket hint coverage | Yes | Keep for now |
-| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Small TLS 1.2 ServerHello PCAP with newly documented manual baseline | Partially complete | Keep for now |
+| `tls_1_2_server_hello_4.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `TlsInspectionParserTests` | Weak | Small TLS 1.2 ServerHello PCAP with newly documented manual baseline | Partially complete | Keep for now |
 | `tls_1_3_app_data_7.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 AppData hint coverage | Yes | Keep for now |
 | `tls_1_3_change_cipher_spec_8.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests` | Weak | Real-PCAP TLS 1.3 ChangeCipherSpec hint coverage | Yes | Keep for now |
-| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests` | Medium | Import/service-hint TLS ClientHello coverage with newly documented manual baseline | Partially complete | Keep for now |
-| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketProtocolDetailsTests` | Medium | Current ServerHello protocol-details fixture; packet-local multiple-record baseline | Partially complete | Keep for now |
-| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests` | Strong | Strongest current ClientHello packet-details and UI fixture with newly documented manual baseline | Partially complete | Keep for now |
+| `tls_1_3_client_hello_5.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `ImportTests`, `TlsInspectionParserTests` | Medium | Import/service-hint TLS ClientHello coverage with newly documented manual baseline | Partially complete | Keep for now |
+| `tls_1_3_server_hello_6.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `FlowHintsRawFixturesTests`, `PacketProtocolDetailsTests`, `TlsInspectionParserTests` | Medium | Current ServerHello protocol-details fixture; packet-local multiple-record baseline | Partially complete | Keep for now |
+| `tls_client_hello_1.pcap` | Small single-record / handshake | `FlowHintsRealFixturesTests`, `PacketDetailsTests`, `PacketProtocolDetailsTests`, `MainControllerUiTests`, `TlsInspectionParserTests` | Strong | Strongest current ClientHello packet-details and UI fixture with newly documented manual baseline | Partially complete | Keep for now |
 | `tls_normal_1.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Current full-session stream smoke coverage | Yes | Keep for now |
 | `tls_partial_tail_5.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Conservative incomplete-tail coverage | Yes | Keep for now |
 | `tls_server_handshake_retransmit_6.pcap` | Session and reassembly | `StreamQueryTests` | Medium | Retransmission/deduplication and multi-packet contribution coverage | Yes | Keep for now |
@@ -226,50 +241,6 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
-- `tests/unit/PacketDetailsTests.cpp`
-  - packet summary exposes a default-expanded TLS `ServerHello` layer;
-  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
-- `tests/unit/PacketProtocolDetailsTests.cpp`
-  - packet-local raw TLS parsing asserts:
-    - one complete record and no trailing bytes;
-    - payload length `96`, record length `91`, handshake length `87`;
-    - handshake type `ServerHello`, selected TLS version `TLS 1.2`, selected cipher suite `0xc02f`;
-    - session ID length `32`, compression method `0`, extension count `3`.
-  - Packet Details Protocol text asserts the current rendered values for:
-    - `Record Type`, `Record Version`, `Record Length`;
-    - `Handshake Type`, `Handshake Length`;
-    - `Selected TLS Version`, `Selected Cipher Suite`;
-    - extension names `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
-- `tests/unit/StreamQueryTests.cpp`
-  - fast-mode stream query returns one row:
-    - `TLS ServerHello | 96 bytes | packet #1`;
-    - stream direction matches the packet-row direction for packet `0`.
-  - stream protocol details stay semantically aligned with packet protocol details for:
-    - `Record Type`, `Record Version`, `Record Length`;
-    - `Handshake Type`, `Handshake Length`;
-    - `Selected TLS Version`, `Selected Cipher Suite`.
-- `tests/unit/PacketDetailsTests.cpp`
-  - packet summary exposes a default-expanded TLS `ServerHello` layer;
-  - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
-- `tests/unit/PacketProtocolDetailsTests.cpp`
-  - packet-local raw TLS parsing asserts:
-    - one complete record and no trailing bytes;
-    - payload length `96`, record length `91`, handshake length `87`;
-    - handshake type `ServerHello`, selected TLS version `TLS 1.2`, selected cipher suite `0xc02f`;
-    - session ID length `32`, compression method `0`, extension count `3`.
-  - Packet Details Protocol text asserts the current rendered values for:
-    - `Record Type`, `Record Version`, `Record Length`;
-    - `Handshake Type`, `Handshake Length`;
-    - `Selected TLS Version`, `Selected Cipher Suite`;
-    - extension names `ec_point_formats`, `renegotiation_info`, `extended_master_secret`.
-- `tests/unit/StreamQueryTests.cpp`
-  - fast-mode stream query returns one row:
-    - `TLS ServerHello | 96 bytes | packet #1`;
-    - stream direction matches the packet-row direction for packet `0`.
-  - stream protocol details stay semantically aligned with packet protocol details for:
-    - `Record Type`, `Record Version`, `Record Length`;
-    - `Handshake Type`, `Handshake Length`;
-    - `Selected TLS Version`, `Selected Cipher Suite`.
 
 #### Unique purpose
 
@@ -437,6 +408,15 @@ Current additional TLS fields available only in Protocol:
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - direct structured parser asserts one complete record;
+  - consumed bytes `96`;
+  - Record Legacy Version `0x0303`, record payload length `91`;
+  - one complete `ServerHello`, handshake length `87`;
+  - ServerHello Legacy Version `0x0303`;
+  - session ID length `32`, selected cipher suite `0xc02f`, compression method `0`;
+  - ordered extensions `ec_point_formats`, `renegotiation_info`, `extended_master_secret`;
+  - Selected TLS Version `0x0303`.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary exposes a default-expanded TLS `ServerHello` layer;
   - summary fields assert `Handshake Type`, `Record Type`, `Record Version`, and `Selected TLS Version`.
@@ -638,6 +618,15 @@ Current additional TLS fields available only in Protocol:
   - matching raw bytes yield service hint `p101-fmf.icloud.com`.
 - `tests/unit/ImportTests.cpp`
   - imported flow list contains a `tls` flow with service hint `p101-fmf.icloud.com`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - direct structured parser asserts one complete record and consumed bytes `517`;
+  - Record Legacy Version `0x0301`, record payload length `512`;
+  - one complete `ClientHello`, handshake length `508`;
+  - ClientHello Legacy Version `0x0303`;
+  - session ID length `32`, cipher-suite count `21`, compression-method count `1`, extension count `16`;
+  - SNI `p101-fmf.icloud.com`;
+  - ALPN `h2`, `http/1.1`;
+  - supported versions retain wire order `0x3a3a`, `0x0304`, `0x0303`, `0x0302`, `0x0301`.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary exposes a default-expanded TLS `ClientHello` layer;
   - summary title contains `Transport Layer Security` and `ClientHello`;
@@ -787,6 +776,13 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
   - at least one flow is detected as `tls`.
 - `tests/unit/FlowHintsRawFixturesTests.cpp`
   - matching raw bytes are detected as `FlowProtocolHint::tls`.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - direct structured parser asserts exact ordered records:
+    - complete `Handshake` record at offset `0`, total size `1215`, payload length `1210`, Record Legacy Version `0x0303`;
+    - complete `ServerHello` with handshake length `1206`, ServerHello Legacy Version `0x0303`, session ID length `32`, selected cipher suite `0x1301`, compression method `0`, ordered extensions `key_share`, `supported_versions`, Selected TLS Version `0x0304`;
+    - complete `ChangeCipherSpec` record at offset `1215`, total size `6`, payload length `1`, Record Legacy Version `0x0303`, no handshake messages;
+    - partial trailing record at offset `1221` with `179` available bytes and no fabricated complete handshake.
+  - total input length `1400` and consumed bytes `1400`.
 - `tests/unit/PacketProtocolDetailsTests.cpp`
   - packet-local raw TLS parsing asserts:
     - payload length `1400`;
@@ -933,6 +929,15 @@ Current additional TLS fields available only in Protocol:
 - `tests/unit/FlowHintsRealFixturesTests.cpp`
   - at least one flow is detected as `tls`;
   - service hint `auth.split.io` is present.
+- `tests/unit/TlsInspectionParserTests.cpp`
+  - direct structured parser asserts one complete record and consumed bytes `517`;
+  - Record Legacy Version `0x0301`, record payload length `512`;
+  - one complete `ClientHello`, handshake length `508`;
+  - ClientHello Legacy Version `0x0303`;
+  - session ID length `32`, cipher-suite count `16`, compression-method count `1`, extension count `18`;
+  - SNI `auth.split.io`;
+  - ALPN `h2`, `http/1.1`;
+  - supported versions retain wire order `0x5a5a`, `0x0304`, `0x0303`.
 - `tests/unit/PacketDetailsTests.cpp`
   - packet summary layers end with `tcp` then `tls`;
   - TCP is not expanded by default;
@@ -1183,9 +1188,9 @@ The current long comma-separated Protocol strings are a temporary migration form
 
 ## Proposed shared structured TLS model
 
-This is a proposal only. It is not implemented in this pass.
+This is now partially implemented as an isolated bounded parser with direct tests, but it is not wired into production presentation in this pass.
 
-The current code already has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and Summary extraction in `src/app/session/SessionFormatting.cpp` that reparses Protocol text. The target direction should replace that text-driven Summary dependency with one shared structured TLS model.
+The current code still has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and Summary extraction in `src/app/session/SessionFormatting.cpp` that reparses Protocol text. The new direct parser tests are an intermediate step toward replacing that text-driven Summary dependency with one shared structured TLS model.
 
 Suggested narrow internal model:
 

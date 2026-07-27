@@ -99,6 +99,7 @@ add_library(
     src/core/services/PacketDetailsService.cpp
     src/core/services/PacketPayloadService.cpp
     src/core/services/PerfOpenLogger.cpp
+    src/core/services/TlsInspectionParser.cpp
     src/core/services/TlsHandshakeDetails.cpp
     src/core/services/TlsPacketProtocolAnalyzer.cpp
     src/core/services/QuicPacketProtocolAnalyzer.cpp
@@ -375,6 +376,7 @@ if(BUILD_TESTING)
         tests/unit/PacketDetailsTests.cpp
         tests/unit/PacketPayloadTests.cpp
         tests/unit/PacketProtocolDetailsTests.cpp
+        tests/unit/TlsInspectionParserTests.cpp
         tests/unit/ArpPcapFixtureTests.cpp
         tests/unit/IgmpPcapFixtureTests.cpp
         tests/unit/Ipv4OptionsPcapFixtureTests.cpp
