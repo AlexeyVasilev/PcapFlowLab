@@ -623,6 +623,32 @@ QVariantMap find_protocol_distribution_row(const QVariantList& rows, const QStri
     return {};
 }
 
+QVariantMap find_top_level_summary_layer(const QVariantList& layers, const QString& id, int occurrence = 0) {
+    int current = 0;
+    for (const auto& value : layers) {
+        const auto layer = value.toMap();
+        if (layer.value(QStringLiteral("id")).toString() != id) {
+            continue;
+        }
+        if (current == occurrence) {
+            return layer;
+        }
+        ++current;
+    }
+    return {};
+}
+
+QString find_summary_field_value(const QVariantMap& layer, const QString& label) {
+    const auto fields = layer.value(QStringLiteral("fields")).toList();
+    for (const auto& value : fields) {
+        const auto field = value.toMap();
+        if (field.value(QStringLiteral("label")).toString() == label) {
+            return field.value(QStringLiteral("value")).toString();
+        }
+    }
+    return {};
+}
+
 std::filesystem::path ui_test_root() {
     return std::filesystem::path(__FILE__).parent_path().parent_path();
 }
@@ -2900,6 +2926,16 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Label: TLS ServerHello")));
     UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Source packets: #1,#2")));
     UI_EXPECT(split_tls_details_model->summaryText().contains(QStringLiteral("Details source: Stream item")));
+    UI_EXPECT(!split_tls_details_model->summaryLayers().isEmpty());
+    const auto split_tls_layers = split_tls_details_model->summaryLayers();
+    const auto split_tls_item_layer = find_top_level_summary_layer(split_tls_layers, QStringLiteral("stream_item"));
+    const auto split_tls_record_layer = find_top_level_summary_layer(split_tls_layers, QStringLiteral("tls"));
+    UI_EXPECT(!split_tls_item_layer.isEmpty());
+    UI_EXPECT(!split_tls_record_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(split_tls_item_layer, QStringLiteral("Label")) == QStringLiteral("TLS ServerHello"));
+    UI_EXPECT(find_summary_field_value(split_tls_item_layer, QStringLiteral("Source packets")) == QStringLiteral("#1,#2"));
+    UI_EXPECT(find_summary_field_value(split_tls_record_layer, QStringLiteral("Record Type")) == QStringLiteral("Handshake"));
+    UI_EXPECT(find_summary_field_value(split_tls_record_layer, QStringLiteral("Handshake Type")) == QStringLiteral("ServerHello"));
     UI_EXPECT(split_tls_details_model->payloadTabTitle() == QStringLiteral("Item Payload"));
 
     const auto tls_constricted_stream_fixture_path = ui_test_root() / "data" / "parsing" / "tls" / "ipv4_tls_constricted_1.pcap";
@@ -2976,6 +3012,17 @@ int main(int argc, char* argv[]) {
     UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("#7 contributed 8 / 274 bytes")));
     UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));
     UI_EXPECT(tls_constricted_stream_details_model->summaryText().contains(QStringLiteral("Constricted packet #7: captured 66 / original 332 bytes.")));
+    UI_EXPECT(!tls_constricted_stream_details_model->summaryLayers().isEmpty());
+    const auto tls_constricted_layers = tls_constricted_stream_details_model->summaryLayers();
+    const auto tls_constricted_item_layer = find_top_level_summary_layer(tls_constricted_layers, QStringLiteral("stream_item"));
+    const auto tls_constricted_record_layer = find_top_level_summary_layer(tls_constricted_layers, QStringLiteral("tls"));
+    UI_EXPECT(!tls_constricted_item_layer.isEmpty());
+    UI_EXPECT(!tls_constricted_record_layer.isEmpty());
+    UI_EXPECT(find_summary_field_value(tls_constricted_item_layer, QStringLiteral("Source packets")) == QStringLiteral("#6,#7"));
+    UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Status")) == QStringLiteral("Constricted item"));
+    UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Available Bytes")) == QStringLiteral("3061"));
+    UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Record Type")).isEmpty());
+    UI_EXPECT(find_summary_field_value(tls_constricted_record_layer, QStringLiteral("Record Length")).isEmpty());
     UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Type: ApplicationData")));
     UI_EXPECT(tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Record Length: 3056")));
     UI_EXPECT(!tls_constricted_stream_details_model->protocolText().contains(QStringLiteral("Constricted packet #6: captured 199 / original 2978 bytes.")));

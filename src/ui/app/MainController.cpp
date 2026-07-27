@@ -5780,7 +5780,14 @@ void MainController::reloadSelectedStreamDetails() {
         stream_item_header_badge_text(*itemIt)
     );
     packet_details_model_.setPacketDetailsText(buildStreamItemSummary(*itemIt, current_flow_packet_numbers_));
-    packet_details_model_.setSummaryLayers({});
+    packet_details_model_.setSummaryLayers(packet_summary_layers_to_variant_list(
+        session_detail::build_stream_item_summary_layers(
+            *itemIt,
+            format_stream_source_packets(*itemIt, current_flow_packet_numbers_).toStdString(),
+            stream_item_details_source(*itemIt).toStdString(),
+            stream_item_frames_hint_text(*itemIt).toStdString()
+        )
+    ));
     packet_details_model_.setPayloadTabTitle(stream_item_payload_tab_title(*itemIt));
 
     if (!itemIt->payload_hex_text.empty() || !itemIt->protocol_text.empty()) {

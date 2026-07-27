@@ -944,6 +944,16 @@ std::string stream_item_json(const pfl::FrontendStreamItemDto& item) {
         << "\"header_secondary_text\":" << json_string(item.header_secondary_text) << ','
         << "\"badge_text\":" << json_string(item.badge_text) << ','
         << "\"summary_text\":" << json_string(item.summary_text) << ','
+        << "\"summary_layers\":[";
+
+    for (std::size_t index = 0; index < item.summary_layers.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_summary_layer_json(item.summary_layers[index]);
+    }
+
+    out << "],"
         << "\"payload_tab_title\":" << json_string(item.payload_tab_title) << ','
         << "\"payload_preview_text\":" << json_string(item.payload_preview_text) << ','
         << "\"payload_preview_unavailable_text\":" << json_string(item.payload_preview_unavailable_text) << ','

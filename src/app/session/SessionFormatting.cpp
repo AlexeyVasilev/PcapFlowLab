@@ -3500,7 +3500,7 @@ std::optional<PacketSummaryLayer> build_tls_summary_layer(const TlsRecordModel& 
     };
 }
 
-std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
+std::vector<PacketSummaryLayer> build_tls_summary_layers_impl(std::span<const std::uint8_t> transport_payload_bytes) {
     if (!looks_like_tls_summary_payload(transport_payload_bytes)) {
         return {};
     }
@@ -3516,6 +3516,188 @@ std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::ui
         }
     }
     return layers;
+}
+
+std::optional<PacketSummaryLayer> build_tls_partial_stream_summary_layer(const StreamItemRow& row) {
+    if (row.label != "TLS Record Fragment (partial)" && row.label != "TLS Payload (partial)") {
+        return std::nullopt;
+    }
+
+    const auto status_text = row.label == "TLS Record Fragment (partial)"
+        ? "Incomplete record body"
+        : "Incomplete TLS payload";
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = row.label,
+        .fields = {
+            make_summary_field("Status", status_text),
+            make_summary_field("Available Bytes", std::to_string(row.byte_count)),
+        },
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
+std::optional<PacketSummaryLayer> build_conservative_tls_stream_summary_layer(const StreamItemRow& row) {
+    if (const auto partial_layer = build_tls_partial_stream_summary_layer(row); partial_layer.has_value()) {
+        return partial_layer;
+    }
+
+    if (!row.has_constricted_contribution) {
+        return std::nullopt;
+    }
+
+    return PacketSummaryLayer {
+        .id = "tls",
+        .title = row.label,
+        .fields = {
+            make_summary_field("Status", "Constricted item"),
+            make_summary_field("Available Bytes", std::to_string(row.byte_count)),
+        },
+        .warning = true,
+        .marker_text = "Warning",
+    };
+}
+
+std::optional<std::uint8_t> hex_nibble(const char ch) noexcept {
+    if (ch >= '0' && ch <= '9') {
+        return static_cast<std::uint8_t>(ch - '0');
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return static_cast<std::uint8_t>(10 + (ch - 'a'));
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return static_cast<std::uint8_t>(10 + (ch - 'A'));
+    }
+    return std::nullopt;
+}
+
+std::vector<std::uint8_t> decode_hex_dump_bytes(std::string_view hex_dump_text) {
+    std::vector<std::uint8_t> bytes {};
+    std::size_t line_start = 0U;
+    while (line_start <= hex_dump_text.size()) {
+        const auto line_end = hex_dump_text.find('\n', line_start);
+        const auto line = hex_dump_text.substr(
+            line_start,
+            line_end == std::string_view::npos ? std::string_view::npos : (line_end - line_start)
+        );
+        if (line.size() >= 10U) {
+            constexpr std::size_t bytes_offset = 10U;
+            for (std::size_t index = 0U; index < 16U; ++index) {
+                const auto group_offset = bytes_offset + (index * 3U);
+                if (group_offset + 1U >= line.size()) {
+                    break;
+                }
+
+                const auto high = hex_nibble(line[group_offset]);
+                const auto low = hex_nibble(line[group_offset + 1U]);
+                if (!high.has_value() || !low.has_value()) {
+                    continue;
+                }
+
+                bytes.push_back(static_cast<std::uint8_t>((*high << 4U) | *low));
+            }
+        }
+
+        if (line_end == std::string_view::npos) {
+            break;
+        }
+        line_start = line_end + 1U;
+    }
+    return bytes;
+}
+
+std::pair<std::string, std::string> stream_source_packets_field(std::string_view source_packets_text) {
+    if (source_packets_text.rfind("packet ", 0U) == 0U) {
+        return {"Source packet", std::string {source_packets_text.substr(7U)}};
+    }
+    if (source_packets_text.rfind("packets ", 0U) == 0U) {
+        return {"Source packets", std::string {source_packets_text.substr(8U)}};
+    }
+    return {"Source packets", std::string {source_packets_text}};
+}
+
+PacketSummaryLayer build_stream_item_metadata_layer(
+    const StreamItemRow& row,
+    std::string_view source_packets_text,
+    std::string_view details_source_text,
+    std::string_view frames_hint_text,
+    const std::size_t structured_tls_record_count
+) {
+    auto fields = std::vector<PacketSummaryField> {
+        make_summary_field("Label", row.label),
+        make_summary_field("Size", format_byte_count(row.byte_count)),
+    };
+
+    if (!frames_hint_text.empty()) {
+        fields.push_back(make_summary_field("Frames", std::string {frames_hint_text}));
+    }
+
+    const auto [source_label, source_value] = stream_source_packets_field(source_packets_text);
+    fields.push_back(make_summary_field(source_label, source_value));
+    fields.push_back(make_summary_field("Details source", std::string {details_source_text}));
+
+    if (structured_tls_record_count > 1U) {
+        fields.push_back(make_summary_field("Structured TLS Records", std::to_string(structured_tls_record_count)));
+    }
+
+    auto children = std::vector<PacketSummaryLayer> {};
+    if (structured_tls_record_count > 1U) {
+        children.push_back(PacketSummaryLayer {
+            .id = "stream_item_note",
+            .title = "Inspection Note",
+            .fields = {
+                make_summary_field(
+                    "Reason",
+                    "Selected stream item contains multiple TLS records within one logical item."
+                ),
+            },
+            .warning = true,
+            .marker_text = "Note",
+        });
+    }
+
+    if (!row.constricted_contribution_notes.empty()) {
+        auto note_fields = std::vector<PacketSummaryField> {};
+        note_fields.reserve(row.constricted_contribution_notes.size());
+        for (const auto& note : row.constricted_contribution_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "stream_item_constricted_contributions",
+            .title = row.constricted_contribution_notes.size() == 1U
+                ? "Constricted Contribution"
+                : "Constricted Contributions",
+            .fields = std::move(note_fields),
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    if (!row.constricted_packet_notes.empty()) {
+        auto note_fields = std::vector<PacketSummaryField> {};
+        note_fields.reserve(row.constricted_packet_notes.size());
+        for (const auto& note : row.constricted_packet_notes) {
+            note_fields.push_back(make_summary_field("Note", note));
+        }
+        children.push_back(PacketSummaryLayer {
+            .id = "stream_item_constricted_packets",
+            .title = row.constricted_packet_notes.size() == 1U
+                ? "Constricted Packet Note"
+                : "Constricted Packet Notes",
+            .fields = std::move(note_fields),
+            .warning = true,
+            .marker_text = "Warning",
+        });
+    }
+
+    return PacketSummaryLayer {
+        .id = "stream_item",
+        .title = "Stream Item",
+        .fields = std::move(fields),
+        .children = std::move(children),
+    };
 }
 
 std::optional<PacketSummaryLayer> build_protocol_text_summary_layer(
@@ -3943,6 +4125,58 @@ std::vector<std::string> build_basic_summary_lines(const PacketDetails& details)
     }
 
     return lines;
+}
+
+std::vector<PacketSummaryLayer> build_stream_item_summary_layers(
+    const StreamItemRow& row,
+    std::string_view source_packets_text,
+    std::string_view details_source_text,
+    std::string_view frames_hint_text
+) {
+    if (row.label.rfind("TLS ", 0U) != 0U) {
+        return {};
+    }
+
+    std::vector<PacketSummaryLayer> tls_layers {};
+    const auto can_parse_structured_tls =
+        !row.has_constricted_contribution &&
+        row.label != "TLS Record Fragment (partial)" &&
+        row.label != "TLS Payload (partial)" &&
+        !row.payload_hex_text.empty();
+    if (can_parse_structured_tls) {
+        // Selected stream-item Summary currently reparses the exact logical item bytes
+        // from the existing hex payload preview on demand. Stream rows do not yet expose
+        // direct logical byte spans separately from the legacy presentation path.
+        const auto payload_bytes = decode_hex_dump_bytes(row.payload_hex_text);
+        tls_layers = build_tls_summary_layers(std::span<const std::uint8_t>(payload_bytes.data(), payload_bytes.size()));
+    }
+
+    if (tls_layers.empty()) {
+        if (const auto conservative_tls_layer = build_conservative_tls_stream_summary_layer(row);
+            conservative_tls_layer.has_value()) {
+            tls_layers.push_back(*conservative_tls_layer);
+        }
+    }
+
+    std::vector<PacketSummaryLayer> layers {};
+    layers.reserve(1U + tls_layers.size());
+    layers.push_back(build_stream_item_metadata_layer(
+        row,
+        source_packets_text,
+        details_source_text,
+        frames_hint_text,
+        tls_layers.size()
+    ));
+    for (auto& tls_layer : tls_layers) {
+        layers.push_back(std::move(tls_layer));
+    }
+
+    apply_default_summary_layer_expansion(layers);
+    return layers;
+}
+
+std::vector<PacketSummaryLayer> build_tls_summary_layers(std::span<const std::uint8_t> transport_payload_bytes) {
+    return build_tls_summary_layers_impl(transport_payload_bytes);
 }
 
 std::vector<PacketSummaryLayer> build_packet_summary_layers(

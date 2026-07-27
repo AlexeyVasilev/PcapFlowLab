@@ -33,7 +33,7 @@ Frame {
     }
 
     function summaryLayers() {
-        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket || root.isStreamItemDetails()) {
+        if (!root.packetDetailsModel || !root.packetDetailsModel.hasPacket) {
             return []
         }
 
@@ -1020,9 +1020,12 @@ Frame {
             currentIndex: streamTabs.currentIndex
 
             Rectangle {
+                id: streamSummaryPane
                 color: "transparent"
 
                 readonly property string summary: root.summaryText()
+                readonly property var layers: root.summaryLayers()
+                readonly property bool renderableLayers: root.hasRenderableSummaryLayers(layers)
                 readonly property string warningText: root.warningBlockText(summary)
                 readonly property string bodyText: root.summaryBodyText(summary)
 
@@ -1032,7 +1035,7 @@ Frame {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        visible: parent.parent.warningText.length > 0
+                        visible: !streamSummaryPane.renderableLayers && streamSummaryPane.warningText.length > 0
                         color: "#fff6d6"
                         border.color: "#e7d38d"
                         radius: 6
@@ -1046,16 +1049,47 @@ Frame {
                             anchors.margins: 6
                             textColor: "#7a5d10"
                             textWrapMode: TextEdit.Wrap
-                            text: parent.parent.parent.warningText.length > 0
-                                ? "Warnings\n" + parent.parent.parent.warningText
+                            text: streamSummaryPane.warningText.length > 0
+                                ? "Warnings\n" + streamSummaryPane.warningText
                                 : ""
+                        }
+                    }
+
+                    ScrollView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        visible: streamSummaryPane.renderableLayers
+                        ScrollBar.vertical.policy: contentHeight > height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        ColumnLayout {
+                            width: parent.width
+                            spacing: 6
+
+                            Repeater {
+                                model: streamSummaryPane.layers
+
+                                delegate: Loader {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    sourceComponent: summaryLayerCardComponent
+
+                                    onLoaded: {
+                                        if (item) {
+                                            item.modelData = modelData
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
                     TextPane {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        viewText: parent.parent.bodyText
+                        visible: !streamSummaryPane.renderableLayers
+                        viewText: streamSummaryPane.bodyText
                     }
                 }
             }

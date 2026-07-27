@@ -941,6 +941,18 @@ std::string build_stream_item_summary_text(
     return out.str();
 }
 
+std::vector<session_detail::PacketSummaryLayer> build_stream_item_summary_layers(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) {
+    return session_detail::build_stream_item_summary_layers(
+        row,
+        format_stream_source_packets_text(row, flow_packet_numbers),
+        stream_item_details_source_text(row),
+        stream_item_frames_hint_text(row)
+    );
+}
+
 std::string frontend_stream_payload_text(const CaptureSession& session, const StreamItemRow& row) {
     if (!row.payload_hex_text.empty()) {
         return row.payload_hex_text;
@@ -3185,6 +3197,7 @@ FrontendStreamItemDto FrontendSessionAdapter::to_frontend_stream_item(
         .header_secondary_text = stream_item_header_secondary_text(row, flow_packet_numbers),
         .badge_text = stream_item_header_badge_text(row),
         .summary_text = build_stream_item_summary_text(row, flow_packet_numbers),
+        .summary_layers = include_details ? build_stream_item_summary_layers(row, flow_packet_numbers) : std::vector<session_detail::PacketSummaryLayer> {},
         .payload_tab_title = stream_item_payload_tab_title(row),
         .payload_preview_text = payload_preview_text,
         .payload_preview_unavailable_text = include_details && payload_preview_text.empty()

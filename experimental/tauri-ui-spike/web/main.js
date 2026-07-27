@@ -3594,7 +3594,7 @@
     elements.streamDetailsHeaderBadge.classList.toggle("is-hidden", String(item.badge_text || "").trim().length === 0);
     elements.streamDetailsHeaderBadge.classList.toggle("is-warning", String(item.badge_text || "").trim() === "Constricted");
     elements.streamDetailsPayloadTabButton.textContent = item.payload_tab_title || "Payload";
-    elements.streamDetailsSummaryText.textContent = item.summary_text || "No summary details are available for this stream item.";
+    renderStreamItemSummary(elements.streamDetailsSummaryText, item);
 
     if (state.streamDetailsState === "loading") {
       elements.streamDetailsPayloadStateText.textContent = "Loading payload details...";
@@ -3892,6 +3892,18 @@
 
     const summaryText = String(details?.summary_text || "").trim() || fallbackPacketSummaryText(selectedPacket, details, sourceAvailability);
     container.innerHTML = `<pre class="details-pre packet-summary-pre">${escapeHtml(summaryText)}</pre>`;
+  }
+
+  function renderStreamItemSummary(container, item) {
+    renderPacketSummary(
+      container,
+      {
+        summary_layers: Array.isArray(item?.summary_layers) ? item.summary_layers : [],
+        summary_text: item?.summary_text || "",
+      },
+      null,
+      null
+    );
   }
 
   function renderPacketDetails() {

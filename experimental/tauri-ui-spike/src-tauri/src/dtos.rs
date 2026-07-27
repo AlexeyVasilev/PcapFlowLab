@@ -333,6 +333,7 @@ pub struct StreamItemDto {
     pub header_secondary_text: String,
     pub badge_text: String,
     pub summary_text: String,
+    pub summary_layers: Vec<PacketSummaryLayerDto>,
     pub payload_tab_title: String,
     pub payload_preview_text: String,
     pub payload_preview_unavailable_text: String,

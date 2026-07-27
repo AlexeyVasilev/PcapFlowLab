@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -10,7 +12,9 @@
 #include "TestSupport.h"
 #include "PcapTestUtils.h"
 #include "app/session/CaptureSession.h"
+#include "app/session/SessionFormatting.h"
 #include "app/session/SessionQuicPresentation.h"
+#include "core/services/PacketPayloadService.h"
 
 namespace pfl::tests {
 
@@ -312,6 +316,194 @@ std::size_t count_stream_rows_by_label(const std::vector<StreamItemRow>& rows, c
     return static_cast<std::size_t>(std::count_if(rows.begin(), rows.end(), [&](const StreamItemRow& row) {
         return row.label == label;
     }));
+}
+
+std::map<std::uint64_t, std::uint64_t> build_flow_packet_numbers(const std::vector<PacketRow>& packet_rows) {
+    std::map<std::uint64_t, std::uint64_t> flow_packet_numbers {};
+    for (const auto& row : packet_rows) {
+        flow_packet_numbers.emplace(row.packet_index, row.row_number);
+    }
+    return flow_packet_numbers;
+}
+
+std::string format_stream_source_packets_text_for_test(
+    const StreamItemRow& row,
+    const std::map<std::uint64_t, std::uint64_t>& flow_packet_numbers
+) {
+    std::vector<std::string> packet_numbers {};
+    packet_numbers.reserve(row.packet_indices.size());
+    bool used_flow_numbers = true;
+    for (const auto packet_index : row.packet_indices) {
+        const auto flow_it = flow_packet_numbers.find(packet_index);
+        if (flow_it == flow_packet_numbers.end()) {
+            used_flow_numbers = false;
+            break;
+        }
+        packet_numbers.push_back("#" + std::to_string(flow_it->second));
+    }
+
+    if (!used_flow_numbers) {
+        packet_numbers.clear();
+        packet_numbers.reserve(row.packet_indices.size());
+        for (const auto packet_index : row.packet_indices) {
+            packet_numbers.push_back("#" + std::to_string(packet_index));
+        }
+    }
+
+    if (packet_numbers.empty()) {
+        return row.packet_count == 1U
+            ? "1 packet"
+            : std::to_string(row.packet_count) + " packets";
+    }
+
+    std::ostringstream out {};
+    out << (packet_numbers.size() == 1U ? "packet " : "packets ");
+    for (std::size_t index = 0U; index < packet_numbers.size(); ++index) {
+        if (index != 0U) {
+            out << ',';
+        }
+        out << packet_numbers[index];
+    }
+    return out.str();
+}
+
+bool stream_item_uses_packet_fallback_for_test(const StreamItemRow& row) {
+    return row.payload_hex_text.empty() && row.protocol_text.empty() && row.packet_indices.size() == 1U;
+}
+
+std::string stream_item_frames_hint_text_for_test(const StreamItemRow& row) {
+    if (row.protocol_text.empty()) {
+        return {};
+    }
+
+    std::vector<std::string> hints {};
+    const auto extract_line_value = [&](const std::string& marker) -> std::string {
+        const auto marker_index = row.protocol_text.find(marker);
+        if (marker_index == std::string::npos) {
+            return {};
+        }
+
+        const auto line_start = marker_index + marker.size();
+        const auto line_end = row.protocol_text.find('\n', line_start);
+        auto value = row.protocol_text.substr(
+            line_start,
+            line_end == std::string::npos ? std::string::npos : (line_end - line_start)
+        );
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
+            value.erase(value.begin());
+        }
+        while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
+            value.pop_back();
+        }
+        return value;
+    };
+
+    const auto append_normalized_values = [&](const std::string& value) {
+        std::stringstream stream {value};
+        std::string part {};
+        while (std::getline(stream, part, ',')) {
+            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.front())) != 0) {
+                part.erase(part.begin());
+            }
+            while (!part.empty() && std::isspace(static_cast<unsigned char>(part.back())) != 0) {
+                part.pop_back();
+            }
+            if (part == "Protected Payload") {
+                part = "Protected payload";
+            }
+            if (part.empty() || part == "Packet Type: Initial" || part == "Initial") {
+                continue;
+            }
+            if (std::find(hints.begin(), hints.end(), part) == hints.end()) {
+                hints.push_back(part);
+            }
+        }
+    };
+
+    append_normalized_values(extract_line_value("Frame Presence:"));
+    append_normalized_values(extract_line_value("Packet Type:"));
+    append_normalized_values(extract_line_value("Additional Packet Types:"));
+
+    if (hints.empty()) {
+        return {};
+    }
+
+    std::ostringstream out {};
+    out << "Frames: ";
+    for (std::size_t index = 0U; index < hints.size(); ++index) {
+        if (index != 0U) {
+            out << ", ";
+        }
+        out << hints[index];
+    }
+    return out.str();
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_stream_summary_layers(
+    const StreamItemRow& row,
+    const std::vector<PacketRow>& packet_rows
+) {
+    return session_detail::build_stream_item_summary_layers(
+        row,
+        format_stream_source_packets_text_for_test(row, build_flow_packet_numbers(packet_rows)),
+        stream_item_uses_packet_fallback_for_test(row) ? "Packet fallback" : "Stream item",
+        stream_item_frames_hint_text_for_test(row)
+    );
+}
+
+std::vector<session_detail::PacketSummaryLayer> build_packet_summary_layers_for_packet(
+    CaptureSession& session,
+    const PacketRef& packet
+) {
+    const auto details = session.read_packet_details(packet);
+    PFL_REQUIRE(details.has_value());
+    const auto packet_bytes = session.read_packet_data(packet);
+    PacketPayloadService payload_service {};
+    const auto transport_payload = payload_service.extract_transport_payload(packet_bytes, packet.data_link_type);
+    return session_detail::build_packet_summary_layers(
+        *details,
+        packet,
+        {
+            .transport_payload_bytes = std::span<const std::uint8_t>(transport_payload.data(), transport_payload.size()),
+        }
+    );
+}
+
+const session_detail::PacketSummaryLayer* find_top_level_summary_layer(
+    const std::vector<session_detail::PacketSummaryLayer>& layers,
+    const std::string_view id,
+    const std::size_t occurrence = 0U
+) {
+    std::size_t current = 0U;
+    for (const auto& layer : layers) {
+        if (layer.id != id) {
+            continue;
+        }
+        if (current == occurrence) {
+            return &layer;
+        }
+        ++current;
+    }
+    return nullptr;
+}
+
+const session_detail::PacketSummaryField* find_summary_field(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view label
+) {
+    const auto it = std::find_if(layer.fields.begin(), layer.fields.end(), [&](const session_detail::PacketSummaryField& field) {
+        return field.label == label;
+    });
+    return it == layer.fields.end() ? nullptr : &(*it);
+}
+
+std::string require_summary_field_value(
+    const session_detail::PacketSummaryLayer& layer,
+    const std::string_view label
+) {
+    const auto* field = find_summary_field(layer, label);
+    PFL_REQUIRE(field != nullptr);
+    return field->value;
 }
 
 }  // namespace
@@ -1091,6 +1283,39 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
         PFL_EXPECT(!rows[0].protocol_text.empty());
+        const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* stream_item_layer = find_top_level_summary_layer(stream_summary_layers, "stream_item");
+        const auto* stream_tls_layer = find_top_level_summary_layer(stream_summary_layers, "tls");
+        PFL_REQUIRE(stream_item_layer != nullptr);
+        PFL_REQUIRE(stream_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Label") == "TLS ClientHello");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Size") == "517 bytes");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Source packet") == "#1");
+        PFL_EXPECT(require_summary_field_value(*stream_item_layer, "Details source") == "Stream item");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Length") == "512");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Total Record Size") == "517 bytes");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Legacy Version") == "TLS 1.0 (0x0301)");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Handshake Length") == "508");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "ClientHello Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Session ID Length") == "32");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Cipher Suite Count") == "16");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Compression Method Count") == "1");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Extension Count") == "18");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "SNI") == "auth.split.io");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "ALPN") == "h2, http/1.1");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Supported TLS Versions").find("TLS 1.3 (0x0304)") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Supported TLS Versions").find("TLS 1.2 (0x0303)") != std::string::npos);
+        const auto packet_summary_layers = build_packet_summary_layers_for_packet(session, *packet);
+        const auto* packet_tls_layer = find_top_level_summary_layer(packet_summary_layers, "tls");
+        PFL_REQUIRE(packet_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Type") == require_summary_field_value(*packet_tls_layer, "Record Type"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Legacy Version") == require_summary_field_value(*packet_tls_layer, "Record Legacy Version"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Length") == require_summary_field_value(*packet_tls_layer, "Record Length"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Total Record Size") == require_summary_field_value(*packet_tls_layer, "Total Record Size"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Handshake Type") == require_summary_field_value(*packet_tls_layer, "Handshake Type"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Handshake Length") == require_summary_field_value(*packet_tls_layer, "Handshake Length"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "SNI") == require_summary_field_value(*packet_tls_layer, "SNI"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Supported TLS Versions") == require_summary_field_value(*packet_tls_layer, "Supported TLS Versions"));
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
@@ -1121,6 +1346,22 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
         PFL_EXPECT(!rows[0].protocol_text.empty());
+        const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* stream_tls_layer = find_top_level_summary_layer(stream_summary_layers, "tls");
+        PFL_REQUIRE(stream_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Cipher Suite Count") == "21");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Extension Count") == "16");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "SNI") == "p101-fmf.icloud.com");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "ALPN") == "h2, http/1.1");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Supported TLS Versions").find("TLS 1.3 (0x0304)") != std::string::npos);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Supported TLS Versions").find("TLS 1.0 (0x0301)") != std::string::npos);
+        const auto packet_summary_layers = build_packet_summary_layers_for_packet(session, *packet);
+        const auto* packet_tls_layer = find_top_level_summary_layer(packet_summary_layers, "tls");
+        PFL_REQUIRE(packet_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "SNI") == require_summary_field_value(*packet_tls_layer, "SNI"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "ALPN") == require_summary_field_value(*packet_tls_layer, "ALPN"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Supported TLS Versions") ==
+            require_summary_field_value(*packet_tls_layer, "Supported TLS Versions"));
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
@@ -1151,6 +1392,26 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
         PFL_EXPECT(!rows[0].payload_hex_text.empty());
         PFL_EXPECT(!rows[0].protocol_text.empty());
+        const auto stream_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* stream_tls_layer = find_top_level_summary_layer(stream_summary_layers, "tls");
+        PFL_REQUIRE(stream_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Record Length") == "91");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Total Record Size") == "96 bytes");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Handshake Length") == "87");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "ServerHello Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Selected TLS Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Selected Cipher Suite") ==
+            "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 (0xc02f)");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Session ID Length") == "32");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Compression Method") == "null (0)");
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Extension Count") == "3");
+        const auto packet_summary_layers = build_packet_summary_layers_for_packet(session, *packet);
+        const auto* packet_tls_layer = find_top_level_summary_layer(packet_summary_layers, "tls");
+        PFL_REQUIRE(packet_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Selected TLS Version") ==
+            require_summary_field_value(*packet_tls_layer, "Selected TLS Version"));
+        PFL_EXPECT(require_summary_field_value(*stream_tls_layer, "Selected Cipher Suite") ==
+            require_summary_field_value(*packet_tls_layer, "Selected Cipher Suite"));
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
@@ -1177,6 +1438,17 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[0].packet_count == 1U);
         PFL_EXPECT(rows[0].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[0].direction_text == direction_for_packet(packet_rows, 0U));
+        const auto server_hello_summary_layers = build_stream_summary_layers(rows[0], packet_rows);
+        const auto* server_hello_stream_item_layer = find_top_level_summary_layer(server_hello_summary_layers, "stream_item");
+        const auto* server_hello_tls_layer = find_top_level_summary_layer(server_hello_summary_layers, "tls");
+        PFL_REQUIRE(server_hello_stream_item_layer != nullptr);
+        PFL_REQUIRE(server_hello_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*server_hello_stream_item_layer, "Label") == "TLS ServerHello");
+        PFL_EXPECT(require_summary_field_value(*server_hello_stream_item_layer, "Size") == "1215 bytes");
+        PFL_EXPECT(require_summary_field_value(*server_hello_stream_item_layer, "Source packet") == "#1");
+        PFL_EXPECT(require_summary_field_value(*server_hello_tls_layer, "Record Length") == "1210");
+        PFL_EXPECT(require_summary_field_value(*server_hello_tls_layer, "Total Record Size") == "1215 bytes");
+        PFL_EXPECT(require_summary_field_value(*server_hello_tls_layer, "Handshake Length") == "1206");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Type:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Version:");
         expect_matching_protocol_detail(packet_protocol_text, rows[0].protocol_text, "Record Length:");
@@ -1190,6 +1462,13 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[1].packet_count == 1U);
         PFL_EXPECT(rows[1].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[1].direction_text == direction_for_packet(packet_rows, 0U));
+        const auto ccs_summary_layers = build_stream_summary_layers(rows[1], packet_rows);
+        const auto* ccs_tls_layer = find_top_level_summary_layer(ccs_summary_layers, "tls");
+        PFL_REQUIRE(ccs_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*ccs_tls_layer, "Record Type") == "ChangeCipherSpec");
+        PFL_EXPECT(require_summary_field_value(*ccs_tls_layer, "Record Legacy Version") == "TLS 1.2 (0x0303)");
+        PFL_EXPECT(require_summary_field_value(*ccs_tls_layer, "Record Length") == "1");
+        PFL_EXPECT(find_summary_field(*ccs_tls_layer, "Handshake Type") == nullptr);
         PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Record Type:").has_value());
         PFL_EXPECT(*find_protocol_detail_value(rows[1].protocol_text, "Record Type:") == "ChangeCipherSpec");
         PFL_EXPECT(find_protocol_detail_value(rows[1].protocol_text, "Record Version:").has_value());
@@ -1203,6 +1482,14 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[2].packet_count == 1U);
         PFL_EXPECT(rows[2].packet_indices == std::vector<std::uint64_t> {0U});
         PFL_EXPECT(rows[2].direction_text == direction_for_packet(packet_rows, 0U));
+        const auto partial_summary_layers = build_stream_summary_layers(rows[2], packet_rows);
+        const auto* partial_tls_layer = find_top_level_summary_layer(partial_summary_layers, "tls");
+        PFL_REQUIRE(partial_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*partial_tls_layer, "Status") == "Incomplete record body");
+        PFL_EXPECT(require_summary_field_value(*partial_tls_layer, "Available Bytes") == "179");
+        PFL_EXPECT(find_summary_field(*partial_tls_layer, "Handshake Type") == nullptr);
+        PFL_EXPECT(find_summary_field(*partial_tls_layer, "Selected TLS Version") == nullptr);
+        PFL_EXPECT(find_summary_field(*partial_tls_layer, "Selected Cipher Suite") == nullptr);
         PFL_EXPECT(rows[2].protocol_text.find("complete TLS record") != std::string::npos);
         PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Record Type:").has_value() == false);
         PFL_EXPECT(find_protocol_detail_value(rows[2].protocol_text, "Handshake Type:").has_value() == false);
@@ -1820,6 +2107,18 @@ void run_stream_query_tests() {
         PFL_EXPECT(rows[3].protocol_text.find("Record Length: 3056") != std::string::npos);
         PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #6: captured 199 / original 2978 bytes.") == std::string::npos);
         PFL_EXPECT(rows[3].protocol_text.find("Constricted packet #7: captured 66 / original 332 bytes.") == std::string::npos);
+        const auto app_data_summary_layers = build_stream_summary_layers(rows[3], moved_packet_rows);
+        const auto* app_data_item_layer = find_top_level_summary_layer(app_data_summary_layers, "stream_item");
+        const auto* app_data_tls_layer = find_top_level_summary_layer(app_data_summary_layers, "tls");
+        PFL_REQUIRE(app_data_item_layer != nullptr);
+        PFL_REQUIRE(app_data_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*app_data_item_layer, "Source packets") == "#6,#7");
+        PFL_EXPECT(find_top_level_summary_layer(app_data_summary_layers, "stream_item_constricted_contributions") != nullptr);
+        PFL_EXPECT(find_top_level_summary_layer(app_data_summary_layers, "stream_item_constricted_packets") != nullptr);
+        PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Status") == "Constricted item");
+        PFL_EXPECT(require_summary_field_value(*app_data_tls_layer, "Available Bytes") == "3061");
+        PFL_EXPECT(find_summary_field(*app_data_tls_layer, "Record Type") == nullptr);
+        PFL_EXPECT(find_summary_field(*app_data_tls_layer, "Record Length") == nullptr);
         PFL_EXPECT(rows[4].label == "TLS ChangeCipherSpec");
         PFL_EXPECT(rows[4].byte_count == 6U);
         PFL_EXPECT(rows[4].packet_indices == std::vector<std::uint64_t> {8U});
@@ -2300,6 +2599,20 @@ void run_stream_query_tests() {
         PFL_EXPECT(certificate != nullptr);
         PFL_EXPECT(certificate->protocol_text.find("Certificate Entries:") != std::string::npos);
         PFL_EXPECT(certificate->protocol_text.find("Leaf Certificate Size:") != std::string::npos);
+        const auto packet_rows = session.list_flow_packets(0);
+        const auto multi_packet_handshake = std::find_if(rows.begin(), rows.end(), [](const StreamItemRow& row) {
+            return (row.label == "TLS Certificate" || row.label == "TLS ServerKeyExchange" || row.label == "TLS ServerHelloDone")
+                && row.packet_count > 1U;
+        });
+        PFL_REQUIRE(multi_packet_handshake != rows.end());
+        const auto multi_packet_summary_layers = build_stream_summary_layers(*multi_packet_handshake, packet_rows);
+        const auto* multi_packet_item_layer = find_top_level_summary_layer(multi_packet_summary_layers, "stream_item");
+        const auto* multi_packet_tls_layer = find_top_level_summary_layer(multi_packet_summary_layers, "tls");
+        PFL_REQUIRE(multi_packet_item_layer != nullptr);
+        PFL_REQUIRE(multi_packet_tls_layer != nullptr);
+        PFL_EXPECT(require_summary_field_value(*multi_packet_item_layer, "Details source") == "Stream item");
+        PFL_EXPECT(require_summary_field_value(*multi_packet_item_layer, "Source packets").find('#') != std::string::npos);
+        PFL_EXPECT(find_summary_field(*multi_packet_tls_layer, "Record Type") != nullptr);
         PFL_EXPECT(std::any_of(rows.begin(), rows.end(), [](const StreamItemRow& row) {
             return (row.label == "TLS Certificate" || row.label == "TLS ServerKeyExchange" || row.label == "TLS ServerHelloDone")
                 && row.packet_count > 1U

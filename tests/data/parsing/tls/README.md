@@ -128,10 +128,12 @@ Filename similarity or a matching TLS record type is not enough to prove redunda
   - exact row labels, byte counts, packet indices, and constricted-contribution notes are asserted;
   - no `TLS Gap` row is present;
   - selected AppData protocol text contains `Record Type: ApplicationData` and `Record Length: 3056`;
+  - selected AppData Stream Item Summary is conservative and does not fabricate `Record Type` or `Record Length`;
   - constricted packet notes appear in stream details, not in protocol text.
 - `tests/ui/MainControllerUiTests.cpp`
   - Qt projection mirrors the exact stream row labels, byte counts, source packet text, and constricted-contribution flags;
   - selected stream item details show exact constricted contribution lines and packet notes;
+  - selected AppData Stream Item Summary remains conservative and avoids fabricated complete-record fields;
   - no `TLS Gap` row is present.
 - `tests/unit/ProtocolPathTests.cpp`
   - fixture remains a single flow/path family under current protocol-path rules.
@@ -384,12 +386,12 @@ The intended stream label is `TLS ServerHello`, not `TLS ClientHello`.
 
 ##### Stream Item Summary
 
-Currently shown:
+Now shown from structured Stream Item Summary:
 
-- `Label`;
-- `Size`;
-- `Source packet`;
-- `Details source`.
+- generic `Stream Item` metadata layer with `Label`, `Size`, `Source packet`, and `Details source`;
+- structured `Transport Layer Security, ServerHello` layer;
+- TLS fields: `Record Length`, `Total Record Size`, `Handshake Length`, `ServerHello Legacy Version`;
+- TLS fields: `Selected TLS Version`, `Selected Cipher Suite`, `Session ID Length`, `Compression Method`, and `Extension Count`.
 
 ##### Stream Item Protocol
 
@@ -454,7 +456,7 @@ Current additional TLS fields available only in Protocol:
 
 - Direction text in the PFL export should be normalized against the manually verified server-to-client packet direction before turning it into a future contract.
 - Packet Details Summary still does not expose the raw Session ID bytes or extension-name inventory as structured lists.
-- Stream Item Summary has not yet been migrated to the structured TLS parser.
+- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
 #### Manual Wireshark verification required
 
@@ -591,12 +593,13 @@ Protocol is a temporary legacy presentation source, not the future UI contract.
 
 ##### Stream Item Summary
 
-Currently shown:
+Now shown from structured Stream Item Summary:
 
-- `Label`;
-- `Size`;
-- `Source packet`;
-- `Details source`.
+- generic `Stream Item` metadata layer with `Label`, `Size`, `Source packet`, and `Details source`;
+- structured `Transport Layer Security, ClientHello` layer;
+- TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+- TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
+- TLS fields: `Cipher Suite Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
 
 ##### Stream Item Protocol
 
@@ -672,7 +675,7 @@ Current additional TLS fields available only in Protocol:
 
 - Exact extension-name inventory is not asserted yet.
 - Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
-- Stream Item Summary has not yet been migrated to the structured TLS parser.
+- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
 #### Manual Wireshark verification required
 
@@ -756,12 +759,11 @@ The second and third items are intentionally `6` and `179` bytes. The earlier ma
 
 ##### Stream Item Summary
 
-Currently shown:
+Now shown from structured Stream Item Summary:
 
-- `Label`;
-- `Size`;
-- `Source packet`;
-- `Details source`.
+- `Item #1` exposes generic item metadata plus a structured `ServerHello` Summary layer;
+- `Item #2` exposes generic item metadata plus a structured `ChangeCipherSpec` Summary layer;
+- `Item #3` exposes generic item metadata plus a conservative partial-record Summary layer with no fabricated handshake fields.
 
 ##### Stream Item Protocol
 
@@ -844,7 +846,7 @@ For `TLS Record Fragment (partial)`, current Protocol text is a conservative par
 
 - Packet Details Summary does not yet expose raw Session ID bytes or extension-name inventories as structured lists.
 - No current fixture asserts the multiple-handshakes-in-one-record child-layer behavior.
-- Stream Item Summary has not yet been migrated to the structured TLS parser.
+- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
 #### Manual Wireshark verification required
 
@@ -923,11 +925,13 @@ Protocol is a temporary legacy presentation source, not the future UI contract.
 
 ##### Stream Item Summary
 
-Currently shown:
+Now shown from structured Stream Item Summary:
 
-- `Size`;
-- `Source packet`;
-- `Details source`.
+- generic `Stream Item` metadata layer with `Label`, `Size`, `Source packet`, and `Details source`;
+- structured `Transport Layer Security, ClientHello` layer;
+- TLS fields: `Record Type`, `Record Legacy Version`, `Record Length`, `Total Record Size`;
+- TLS fields: `Handshake Type`, `Handshake Length`, `ClientHello Legacy Version`, `Session ID Length`, `Session ID`;
+- TLS fields: `Cipher Suite Count`, `Compression Method Count`, `Extension Count`, `SNI`, `ALPN`, and `Supported TLS Versions`.
 
 ##### Stream Item Protocol
 
@@ -1005,7 +1009,7 @@ Current additional TLS fields available only in Protocol:
 
 - Exact ClientHello extension-name inventory is not asserted.
 - Packet Details Summary currently exposes scalar counts plus compact ALPN / supported-version text, not full structured cipher-suite or extension lists.
-- Stream Item Summary has not yet been migrated to the structured TLS parser.
+- Stream Item Summary now uses the structured TLS parser; stream record construction still uses the legacy stream builder.
 
 #### Manual Wireshark verification required
 
@@ -1104,7 +1108,7 @@ Current additional TLS fields available only in Protocol:
 
 ## Target TLS Summary presentation contract
 
-The global direction is still to remove the Protocol tab. Packet-local TLS Summary now uses the structured parser; Protocol remains temporary for parity and debugging while Stream Summary still needs migration.
+The global direction is still to remove the Protocol tab. Packet and Stream TLS Summary now use the structured parser with shared TLS field mapping; Protocol remains temporary for parity and debugging while stream record construction still uses the legacy reassembly/presentation path.
 
 ### Packet Summary mapping rule
 
@@ -1186,6 +1190,7 @@ For constricted or partial items, Summary should also preserve:
 - constricted contribution notes;
 - constricted packet notes;
 - partial-record status.
+- It must not recover structured TLS record fields by reparsing legacy Protocol text.
 
 ## Multiple-record packet behavior
 
@@ -1195,7 +1200,7 @@ Packet-local TLS Summary no longer collapses a multi-record packet into a single
 - then a complete `ChangeCipherSpec` record;
 - then a partial trailing TLS fragment;
 - all three items must remain visible and ordered in packet-local Summary;
-- Stream Item Summary remains a separate migration task.
+- Stream Item Summary now exposes the same structured ordered TLS records for this fixture.
 
 ## Structured list presentation
 
@@ -1214,9 +1219,11 @@ In this pass, packet-local Summary uses exact scalar counts plus compact text fo
 
 ## Proposed shared structured TLS model
 
-This is now partially adopted in production presentation: packet-local Summary uses the bounded structured parser, while Packet Details Protocol and stream-local TLS presentation still use legacy text-oriented paths.
+This is now partially adopted in production presentation: packet-local Summary and selected Stream Item Summary use the bounded structured parser, while Packet Details Protocol and stream record construction still use legacy text-oriented paths.
 
-The current code still has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and stream/protocol presentation that has not yet been migrated. `src/app/session/SessionFormatting.cpp` no longer derives TLS Summary fields by reparsing Protocol text.
+The current code still has partial structured parsing in `src/app/session/SessionTlsPresentation.cpp`, a packet-local textual analyzer in `src/core/services/TlsPacketProtocolAnalyzer.cpp`, and legacy stream record construction feeding the selected-item Summary adapter. `src/app/session/SessionFormatting.cpp` no longer derives TLS Summary fields by reparsing Protocol text, and Packet/Stream Summary now share the same TLS field mapping.
+
+Current migration limitation: selected Stream Item Summary still decodes the existing `payload_hex_text` on demand because stream rows do not yet expose direct logical TLS bytes separately from the legacy presentation path. Partial and constricted items therefore fall back to conservative metadata-only TLS Summary fields instead of fabricated record semantics.
 
 Suggested narrow internal model:
 
